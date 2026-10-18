@@ -1,6 +1,6 @@
 # Atlas Stage Runner
 
-VS Code companion and local Codex bridge for the Atlas plugin. It checks the backend connection and stages reviewed Metadata or Model changes. **Stage never Applies changes.**
+VS Code companion and local Codex bridge for the Atlas plugin. It checks the backend connection and stages reviewed Metadata or Project changes. **Stage never Applies changes.**
 
 ## User guides
 
@@ -50,5 +50,5 @@ client ID is needed. Microsoft tokens stay in the extension.
 
 The bridge uses private local sockets/named pipes, short-lived pairing, a pinned
 Microsoft account, and the reviewed governed tool allowlist. Stage payloads are
-read by this extension and never relayed through model context. Workspace,
+read by this extension and never relayed through project context. Workspace,
 backend or account changes stop the bridge; unfinished writes are not replayed.

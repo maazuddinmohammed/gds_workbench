@@ -4,18 +4,18 @@ from __future__ import annotations
 
 from typing import Any, LiteralString, Protocol, cast
 
-from gds_etl_workbench.application.change_sets.model_validation import PhysicalModelCatalog
+from gds_etl_workbench.application.change_sets.project_validation import PhysicalProjectCatalog
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     GeneratedCodeRecord,
     GeneratedCodeSourceSystemRecord,
 )
-from gds_etl_workbench.domain.snapshots.model import ModelSnapshot
+from gds_etl_workbench.domain.snapshots.project import ProjectSnapshot
 from gds_etl_workbench.infrastructure.postgres import ReadTransaction
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 
 from gds_workbench_api.features.workflows.authoring.context import (
-    load_frozen_model_graph,
+    load_frozen_project_graph,
     reject_forbidden_provider_json,
 )
 from gds_workbench_api.features.workflows.authoring.plan import AgentRunPlan
@@ -27,18 +27,18 @@ _JSON_VALUE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 _CONTEXT_SQL: LiteralString = """
 WITH requested_run AS MATERIALIZED (
     SELECT run.workflow_run_id,
-           run.model_id,
+           run.project_id,
            run.modeled_entity_type
       FROM application.workflow_run AS run
-      JOIN model.model AS target_model
-        ON target_model.model_id = run.model_id
-       AND target_model.tenant_id = %s
-       AND target_model.is_active
-     WHERE run.model_id = %s
+      JOIN project.project AS target_project
+        ON target_project.project_id = run.project_id
+       AND target_project.tenant_id = %s
+       AND target_project.is_active
+     WHERE run.project_id = %s
        AND run.workflow_run_id = %s
-       AND run.model_revision = target_model.model_revision
-       AND target_model.model_revision = %s
-       AND run.model_workflow = 'code_generation'
+       AND run.project_revision = target_project.project_revision
+       AND target_project.project_revision = %s
+       AND run.project_workflow = 'code_generation'
        AND run.workflow_run_state = 'running'
        AND run.modeled_entity_type = %s
 ), selected AS MATERIALIZED (
@@ -47,7 +47,7 @@ WITH requested_run AS MATERIALIZED (
       FROM requested_run AS run
       JOIN application.workflow_run_entity_selection AS selection
         ON selection.workflow_run_id = run.workflow_run_id
-       AND selection.model_id = run.model_id
+       AND selection.project_id = run.project_id
 )
 SELECT target.modeled_entity_id,
        target.modeled_entity_schema_name,
@@ -63,7 +63,7 @@ SELECT target.modeled_entity_id,
   JOIN selected
     ON TRUE
   JOIN workflow.list_code_generation_target_context(
-           run.model_id,
+           run.project_id,
            run.modeled_entity_type
        ) AS target
     ON target.modeled_entity_id = selected.modeled_entity_id
@@ -116,7 +116,7 @@ SELECT target.modeled_entity_id,
                ON system.system_id = source.source_system_id
             WHERE source.generated_code_id = generated.generated_code_id
        ) AS association
-       WHERE generated.model_id = run.model_id
+       WHERE generated.project_id = run.project_id
          AND generated.modeled_entity_type = run.modeled_entity_type
          AND coalesce(generated.logical_entity_id, generated.dimensional_entity_id) =
              target.modeled_entity_id
@@ -140,8 +140,8 @@ class CodeGenerationExecutionContext(BaseModel):
         min_length=1,
     )
     agent_context: JsonValue = Field(repr=False)
-    snapshot: ModelSnapshot | None = Field(default=None, repr=False, exclude=True)
-    physical_scope: PhysicalModelCatalog | None = Field(default=None, repr=False, exclude=True)
+    snapshot: ProjectSnapshot | None = Field(default=None, repr=False, exclude=True)
+    physical_scope: PhysicalProjectCatalog | None = Field(default=None, repr=False, exclude=True)
 
 
 class PostgresCodeGenerationContextRepository:
@@ -152,21 +152,21 @@ class PostgresCodeGenerationContextRepository:
         tenant_id: int,
         plan: AgentRunPlan,
     ) -> CodeGenerationExecutionContext:
-        if plan.model_workflow != "code_generation" or plan.modeled_entity_type is None:
+        if plan.project_workflow != "code_generation" or plan.modeled_entity_type is None:
             raise InvalidRequestError("The Code Generation run plan is invalid.")
         rows = await transaction.fetch_all(
             _CONTEXT_SQL,
             (
                 tenant_id,
-                plan.model_id,
+                plan.project_id,
                 plan.workflow_run_id,
-                plan.model_revision,
+                plan.project_revision,
                 plan.modeled_entity_type,
             ),
         )
         try:
             context = _assemble_context(plan=plan, rows=rows)
-            snapshot, physical_scope = await load_frozen_model_graph(
+            snapshot, physical_scope = await load_frozen_project_graph(
                 cast(ReadTransaction, transaction),
                 tenant_id=tenant_id,
                 plan=plan,
@@ -266,7 +266,7 @@ def _assemble_context(
                 if artifact.generated_code_status == "active" and assigned_codes & selected_codes:
                     raise InvalidRequestError(
                         "Selected Systems already use Git-stored Code. Update its assignments "
-                        "through a Model Change Set before generating table-stored SQL."
+                        "through a Project Change Set before generating table-stored SQL."
                     )
                 continue
             if (

@@ -43,7 +43,9 @@ def _settings() -> RuntimeSettings:
             "GDS_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
             "GDS_LOCAL_PRINCIPAL_OBJECT_ID": ("33333333-3333-3333-3333-333333333333"),
             "GDS_MCP_PUBLIC_URL": "https://testserver/mcp",
-            "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": ("https://snapshot.blob.core.windows.net"),
+            "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": (
+                "https://snapshot.blob.core.windows.net"
+            ),
             "GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER": "snapshots",
         }
     )
@@ -85,9 +87,9 @@ def catalog_seed(postgres_database: DisposablePostgres) -> CatalogSeed:
 
         project = connection.execute(
             """
-            INSERT INTO core.project (project_code, project_name)
+            INSERT INTO core.lane (lane_code, lane_name)
             VALUES (%s, %s)
-            RETURNING project_id
+            RETURNING lane_id
             """,
             (f"{prefix}_PROJECT", f"{prefix} Project"),
         ).fetchone()
@@ -95,14 +97,14 @@ def catalog_seed(postgres_database: DisposablePostgres) -> CatalogSeed:
         tenant = connection.execute(
             """
             INSERT INTO core.tenant (
-                project_id, tenant_code, tenant_name, tenant_description,
+                lane_id, tenant_code, tenant_name, tenant_description,
                 tenant_catalog, gds_admin_catalog
             )
             VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING tenant_id
             """,
             (
-                project["project_id"],
+                project["lane_id"],
                 f"{prefix}_TENANT",
                 f"{prefix} Tenant",
                 "Catalog tool integration Tenant",
@@ -113,14 +115,14 @@ def catalog_seed(postgres_database: DisposablePostgres) -> CatalogSeed:
         gds_tenant = connection.execute(
             """
             INSERT INTO core.tenant (
-                project_id, tenant_code, tenant_name,
+                lane_id, tenant_code, tenant_name,
                 tenant_catalog, gds_admin_catalog
             )
             VALUES (%s, %s, %s, %s, %s)
             RETURNING tenant_id
             """,
             (
-                project["project_id"],
+                project["lane_id"],
                 f"{prefix}_GDS_TENANT",
                 f"{prefix} GDS Tenant",
                 f"{prefix.lower()}_gds_catalog",
@@ -231,10 +233,14 @@ def catalog_seed(postgres_database: DisposablePostgres) -> CatalogSeed:
             if row["object_name"] == "customer" and row["zone_id"] == bronze_zone_id
         )
         unmapped_bronze_object_id = next(
-            int(row["object_id"]) for row in objects if row["object_name"] == "unmapped_customer"
+            int(row["object_id"])
+            for row in objects
+            if row["object_name"] == "unmapped_customer"
         )
         unrelated_bronze_object_id = next(
-            int(row["object_id"]) for row in objects if row["object_name"] == "private_other"
+            int(row["object_id"])
+            for row in objects
+            if row["object_name"] == "private_other"
         )
         connection.execute(
             """
@@ -501,7 +507,9 @@ async def test_get_tenant_details_returns_connection_grain_zone_counts(
     assert result.is_error is False
     assert result.structured_content is not None
     assert result.structured_content["tenant"]["tenant_id"] == catalog_seed.tenant_id
-    connections = {item["connection_id"]: item for item in result.structured_content["connections"]}
+    connections = {
+        item["connection_id"]: item for item in result.structured_content["connections"]
+    }
     assert connections[catalog_seed.source_connection_id]["active_object_counts"] == {
         "source": 1,
         "bronze": 0,
@@ -514,8 +522,12 @@ async def test_get_tenant_details_returns_connection_grain_zone_counts(
         "silver": 0,
         "gold": 0,
     }
-    assert connections[catalog_seed.gds_connection_id]["is_tenant_gds_connection"] is True
-    assert connections[catalog_seed.gds_connection_id]["contains_tenant_objects"] is True
+    assert (
+        connections[catalog_seed.gds_connection_id]["is_tenant_gds_connection"] is True
+    )
+    assert (
+        connections[catalog_seed.gds_connection_id]["contains_tenant_objects"] is True
+    )
 
 
 @pytest.mark.asyncio
@@ -607,7 +619,9 @@ async def test_get_objects_returns_batched_objects_and_attributes(
 
     assert rejected.is_error is True
     assert isinstance(rejected.content[0], TextContent)
-    assert rejected.content[0].text.endswith("invalid_request: One or more Objects were not found.")
+    assert rejected.content[0].text.endswith(
+        "invalid_request: One or more Objects were not found."
+    )
 
 
 @pytest.mark.asyncio
@@ -634,7 +648,9 @@ async def test_get_object_lineage_returns_direct_ingestion_mapping(
     assert result.structured_content is not None
     mappings = result.structured_content["payload"]["mappings"]
     assert len(mappings) == 1
-    assert mappings[0]["ingestion_object_mapping_id"] == catalog_seed.ingestion_mapping_id
+    assert (
+        mappings[0]["ingestion_object_mapping_id"] == catalog_seed.ingestion_mapping_id
+    )
     assert mappings[0]["direction"] == "upstream"
     assert mappings[0]["source_object"]["object_id"] == catalog_seed.source_object_id
     assert mappings[0]["target_object"]["object_id"] == catalog_seed.bronze_object_id
@@ -686,7 +702,9 @@ async def test_copy_group_tools_resolve_tenant_owned_ingestion_configuration(
     assert details["copy_group"]["process_group_count"] == 1
     assert details["copies"][0]["copy_id"] == catalog_seed.copy_id
     assert details["copies"][0]["has_initial_sql"] is True
-    assert details["copies"][0]["source_object"]["object_id"] == (catalog_seed.source_object_id)
+    assert details["copies"][0]["source_object"]["object_id"] == (
+        catalog_seed.source_object_id
+    )
     assert details["controls"][0]["member_group_name"].endswith("Member Group")
     assert "copy_source_initial_sql_script" not in details["copies"][0]
     assert "copy_group_control_last_run_value" not in details["controls"][0]

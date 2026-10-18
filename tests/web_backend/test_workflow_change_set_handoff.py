@@ -8,10 +8,10 @@ from uuid import UUID
 
 import pytest
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.model import StageModelChange
-from gds_etl_workbench.application.change_sets.model_validation import (
-    ModelValidationIssue,
-    ValidatedModelChangeSet,
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
+from gds_etl_workbench.application.change_sets.project_validation import (
+    ProjectValidationIssue,
+    ValidatedProjectChangeSet,
 )
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import (
@@ -19,7 +19,7 @@ from gds_etl_workbench.domain.errors import (
     DependencyUnavailableError,
     InvalidRequestError,
 )
-from gds_workbench_api.features.models import ModelRevisionConflictError
+from gds_workbench_api.features.projects import ProjectRevisionConflictError
 from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetHandoff,
     WorkflowChangeSetValidationError,
@@ -40,8 +40,8 @@ def _principal() -> RequestPrincipal:
     )
 
 
-def _change() -> StageModelChange:
-    return StageModelChange(
+def _change() -> StageProjectChange:
+    return StageProjectChange(
         dataset="conceptual_object",
         records=[
             {
@@ -61,21 +61,21 @@ def _change() -> StageModelChange:
 
 def _change_set_row(*, status: str = "active") -> dict[str, Any]:
     return {
-        "model_change_set_id": _CHANGE_SET_ID,
-        "model_id": 18,
+        "project_change_set_id": _CHANGE_SET_ID,
+        "project_id": 18,
         "workflow_run_id": 1048,
-        "model_change_set_status": status,
-        "base_model_revision": 7,
+        "project_change_set_status": status,
+        "base_project_revision": 7,
         "base_source_context_digest": "a" * 64,
-        "base_assertion_digest": "b" * 64,
+        "base_context_digest": "b" * 64,
         "base_policy_digest": "c" * 64,
         "draft_revision": 2 if status == "validated" else 1,
         "candidate_digest": "d" * 64 if status == "validated" else None,
         "validation_outcome": {} if status == "validated" else None,
-        "model_input_scope_document": {},
+        "project_input_scope_document": {},
         "profiling_document": {},
         "enrichment_document": {},
-        "assertion_document": {},
+        "context_document": {},
         "analysis_document": {},
         "conceptual_document": {"conceptual_object": _change().records},
         "logical_document": {},
@@ -102,7 +102,7 @@ class HandoffTransaction:
         actor_principal_id: int = 41,
         workflow: str = "conceptual",
         state: str = "running",
-        model_revision: int = 7,
+        project_revision: int = 7,
         fail_event: bool = False,
         fail_workflow_event: bool = False,
         claim_assertion_fails: bool = False,
@@ -111,7 +111,7 @@ class HandoffTransaction:
         self.actor_principal_id = actor_principal_id
         self.workflow = workflow
         self.state = state
-        self.model_revision = model_revision
+        self.project_revision = project_revision
         self.fail_event = fail_event
         self.fail_workflow_event = fail_workflow_event
         self.claim_assertion_fails = claim_assertion_fails
@@ -126,7 +126,7 @@ class HandoffTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
-        if "model.assert_writable" in query:
+        if "project.assert_writable" in query:
             return {"assert_writable": None}
         self.calls.append((query, parameters))
         if "application.assert_workflow_run_claim" in query:
@@ -134,16 +134,16 @@ class HandoffTransaction:
             if self.claim_assertion_fails:
                 return None
             return {"assert_workflow_run_claim": None}
-        if "INSERT INTO mcp.model_change_set (" in query:
+        if "INSERT INTO mcp.project_change_set (" in query:
             self.created = True
             self.row = _change_set_row()
             return self.row
-        if "FROM model.model AS target_model" in query:
+        if "FROM project.project AS target_project" in query:
             return {
-                "model_id": 18,
+                "project_id": 18,
                 "tenant_id": 7,
-                "model_name": "Customer 360",
-                "model_revision": self.model_revision,
+                "project_name": "Customer 360",
+                "project_revision": self.project_revision,
             }
         if "security.authorize_tenant_operation" in query:
             return {
@@ -159,43 +159,43 @@ class HandoffTransaction:
         if "application.lock_authoring_workflow_run" in query:
             return {
                 "workflow_run_id": 1048,
-                "model_id": 18,
-                "model_workflow": self.workflow,
+                "project_id": 18,
+                "project_workflow": self.workflow,
                 "workflow_execution_mode": "one_shot",
                 "actor_principal_id": self.actor_principal_id,
                 "workflow_run_state": self.state,
                 "correlation_id": _CORRELATION_ID,
             }
-        if "model_change_set.workflow_run_id" in query:
+        if "project_change_set.workflow_run_id" in query:
             return self.existing
-        if "INSERT INTO mcp.model_change_set_event" in query:
+        if "INSERT INTO mcp.project_change_set_event" in query:
             event_type = parameters[2]
             assert isinstance(event_type, str)
             self.events.append(event_type)
             if self.fail_event:
                 raise RuntimeError("event persistence failed")
-            return {"model_change_set_event_id": len(self.events)}
-        if "SET model_input_scope_document" in query:
+            return {"project_change_set_event_id": len(self.events)}
+        if "SET project_input_scope_document" in query:
             assert self.row is not None
             self.row = {**self.row, "draft_revision": 2}
             return {
                 "draft_revision": 2,
-                "model_change_set_status": "active",
+                "project_change_set_status": "active",
                 "expires_time": _NOW + timedelta(hours=4),
             }
-        if "model_change_set.model_change_set_id" in query:
+        if "project_change_set.project_change_set_id" in query:
             return self.row
-        if "SET model_change_set_status = %s" in query:
+        if "SET project_change_set_status = %s" in query:
             assert self.row is not None
             self.row = {
                 **self.row,
-                "model_change_set_status": "validated",
+                "project_change_set_status": "validated",
                 "draft_revision": 2,
                 "candidate_digest": "d" * 64,
                 "validated_time": _NOW,
             }
             return {
-                "model_change_set_status": "validated",
+                "project_change_set_status": "validated",
                 "draft_revision": 2,
                 "candidate_digest": "d" * 64,
                 "validated_time": _NOW,
@@ -205,7 +205,7 @@ class HandoffTransaction:
             self.workflow_calls.append("append")
             if self.fail_workflow_event:
                 raise RuntimeError("workflow event persistence failed")
-            return {"model_event_log_id": 91}
+            return {"project_event_log_id": 91}
         if "application.complete_workflow_run" in query:
             self.workflow_calls.append("complete")
             return {
@@ -247,11 +247,11 @@ class HandoffDatabase:
 
 async def _valid_validator(
     transaction: object,
-    model: object,
+    project: object,
     row: object,
-) -> ValidatedModelChangeSet:
-    del transaction, model, row
-    return ValidatedModelChangeSet(
+) -> ValidatedProjectChangeSet:
+    del transaction, project, row
+    return ValidatedProjectChangeSet(
         records={"conceptual_object": ()},
         phase="complete",
         candidate_digest="d" * 64,
@@ -274,7 +274,9 @@ def _final_event() -> AgentWorkflowEvent:
 
 
 @pytest.mark.asyncio
-async def test_handoff_atomically_creates_stages_and_validates_one_bound_draft() -> None:
+async def test_handoff_atomically_creates_stages_and_validates_one_bound_draft() -> (
+    None
+):
     database = HandoffDatabase(HandoffTransaction())
     handoff = WorkflowChangeSetHandoff(
         database=database,
@@ -285,16 +287,16 @@ async def test_handoff_atomically_creates_stages_and_validates_one_bound_draft()
     result = await handoff.handoff(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
         expected_workflow="conceptual",
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
         changes=(_change(),),
     )
 
     assert result.replayed is False
-    assert result.model_change_set_id == _CHANGE_SET_ID
+    assert result.project_change_set_id == _CHANGE_SET_ID
     assert result.draft_revision == 2
     assert result.candidate_digest == "d" * 64
     assert result.staged_record_count == 1
@@ -307,15 +309,17 @@ async def test_handoff_atomically_creates_stages_and_validates_one_bound_draft()
 
 @pytest.mark.asyncio
 async def test_handoff_replays_the_existing_validated_bound_draft() -> None:
-    database = HandoffDatabase(HandoffTransaction(existing=_change_set_row(status="validated")))
+    database = HandoffDatabase(
+        HandoffTransaction(existing=_change_set_row(status="validated"))
+    )
     validator_called = False
 
     async def unexpected_validator(
         transaction: object,
-        model: object,
+        project: object,
         row: object,
-    ) -> ValidatedModelChangeSet:
-        del transaction, model, row
+    ) -> ValidatedProjectChangeSet:
+        del transaction, project, row
         nonlocal validator_called
         validator_called = True
         raise AssertionError("validated replay must not revalidate")
@@ -329,10 +333,10 @@ async def test_handoff_replays_the_existing_validated_bound_draft() -> None:
     result = await handoff.handoff(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
         expected_workflow="conceptual",
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
         changes=(_change(),),
     )
@@ -355,10 +359,10 @@ async def test_finalization_commits_draft_event_and_completion_together() -> Non
     result = await finalizer.finalize(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
         expected_workflow="conceptual",
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
         changes=(_change(),),
         final_event=_final_event(),
@@ -373,7 +377,9 @@ async def test_finalization_commits_draft_event_and_completion_together() -> Non
         for call in database.transaction.calls
         if "application.assert_workflow_run_claim" in call[0]
     ]
-    assert claim_assertions == [(database.transaction.calls[0][0], (1048, _CLAIM_TOKEN))]
+    assert claim_assertions == [
+        (database.transaction.calls[0][0], (1048, _CLAIM_TOKEN))
+    ]
     assert database.transaction.events == ["created", "section_put", "validated"]
     assert database.transaction.workflow_calls == ["append", "complete"]
 
@@ -396,10 +402,10 @@ async def test_claim_fence_rejection_stops_before_handoff_or_finalization(
             await service.handoff(
                 _principal(),
                 tenant_id=7,
-                model_id=18,
+                project_id=18,
                 workflow_run_id=1048,
                 expected_workflow="conceptual",
-                expected_model_revision=7,
+                expected_project_revision=7,
                 workflow_run_claim_token=_CLAIM_TOKEN,
                 changes=(_change(),),
             )
@@ -407,10 +413,10 @@ async def test_claim_fence_rejection_stops_before_handoff_or_finalization(
             await service.finalize(
                 _principal(),
                 tenant_id=7,
-                model_id=18,
+                project_id=18,
                 workflow_run_id=1048,
                 expected_workflow="conceptual",
-                expected_model_revision=7,
+                expected_project_revision=7,
                 workflow_run_claim_token=_CLAIM_TOKEN,
                 changes=(_change(),),
                 final_event=_final_event(),
@@ -429,7 +435,7 @@ async def test_finalization_replays_terminal_receipt_without_current_revision() 
         HandoffTransaction(
             existing=_change_set_row(status="validated"),
             state="completed",
-            model_revision=8,
+            project_revision=8,
         )
     )
     finalizer = WorkflowChangeSetHandoff(
@@ -441,10 +447,10 @@ async def test_finalization_replays_terminal_receipt_without_current_revision() 
     result = await finalizer.finalize(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
         expected_workflow="conceptual",
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
         changes=(_change(),),
         final_event=_final_event(),
@@ -471,10 +477,10 @@ async def test_finalization_rolls_back_the_draft_when_workflow_event_fails() -> 
         await finalizer.finalize(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
             expected_workflow="conceptual",
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
             changes=(_change(),),
             final_event=_final_event(),
@@ -486,7 +492,9 @@ async def test_finalization_rolls_back_the_draft_when_workflow_event_fails() -> 
 
 @pytest.mark.asyncio
 async def test_handoff_rejects_different_output_for_the_same_workflow_run() -> None:
-    database = HandoffDatabase(HandoffTransaction(existing=_change_set_row(status="validated")))
+    database = HandoffDatabase(
+        HandoffTransaction(existing=_change_set_row(status="validated"))
+    )
     handoff = WorkflowChangeSetHandoff(
         database=database,
         authorizer=AuthorizationService(),
@@ -502,13 +510,13 @@ async def test_handoff_rejects_different_output_for_the_same_workflow_run() -> N
         await handoff.handoff(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
             expected_workflow="conceptual",
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
             changes=(
-                StageModelChange(
+                StageProjectChange(
                     dataset="conceptual_object",
                     records=[changed_record],
                 ),
@@ -526,7 +534,7 @@ async def test_handoff_rejects_different_output_for_the_same_workflow_run() -> N
         (HandoffTransaction(actor_principal_id=99), AuthorizationDeniedError),
         (HandoffTransaction(workflow="logical"), InvalidRequestError),
         (HandoffTransaction(state="completed"), InvalidRequestError),
-        (HandoffTransaction(model_revision=8), ModelRevisionConflictError),
+        (HandoffTransaction(project_revision=8), ProjectRevisionConflictError),
     ],
 )
 async def test_handoff_rejects_wrong_run_binding_before_creating_a_draft(
@@ -544,10 +552,10 @@ async def test_handoff_rejects_wrong_run_binding_before_creating_a_draft(
         await handoff.handoff(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
             expected_workflow="conceptual",
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
             changes=(_change(),),
         )
@@ -561,16 +569,16 @@ async def test_handoff_rolls_back_an_invalid_candidate_without_a_bound_draft() -
 
     async def invalid_validator(
         transaction: object,
-        model: object,
+        project: object,
         row: object,
-    ) -> ValidatedModelChangeSet:
-        del transaction, model, row
-        return ValidatedModelChangeSet(
+    ) -> ValidatedProjectChangeSet:
+        del transaction, project, row
+        return ValidatedProjectChangeSet(
             records={},
             phase="references",
             candidate_digest=None,
             issues=(
-                ModelValidationIssue(
+                ProjectValidationIssue(
                     code="reference_not_found",
                     dataset="conceptual_relationship",
                     record_number=1,
@@ -591,10 +599,10 @@ async def test_handoff_rolls_back_an_invalid_candidate_without_a_bound_draft() -
         await handoff.handoff(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
             expected_workflow="conceptual",
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
             changes=(_change(),),
         )
@@ -616,10 +624,10 @@ async def test_handoff_rolls_back_when_event_persistence_fails() -> None:
         await handoff.handoff(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
             expected_workflow="conceptual",
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
             changes=(_change(),),
         )

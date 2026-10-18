@@ -6,9 +6,9 @@ Load for architecture questions or to resolve responsibility; ordinary workflows
 
 - **Tenant** is an authorization and metadata ownership boundary. Physical storage can belong to a different GDS Tenant; never infer ownership from placement.
 - **System** identifies a contributing source/business system. A **Connection** identifies registered access or placement; its secret values are not agent inputs.
-- **Object / Attribute** describe physical relations and columns. Model Input Scope selects eligible applied inputs and is configured outside plugin authoring.
-- A **Model** owns scoped evidence, Assertions, Conceptual, Logical and Dimensional designs, Mapping, Code and Validation definitions. [Terminology](../terminology.md) and individual record guides distinguish these meanings.
-- **Conceptual** describes business meaning; **Logical** defines normalized grain, identity and relationships; **Dimensional** defines analytical grain, measures and history. A Submodel organizes a useful part of a design; it is not a separate authorization boundary.
+- **Object / Attribute** describe physical relations and columns. Project Input Scope selects eligible applied inputs and is configured outside plugin authoring.
+- A **Project** owns scoped evidence, Context records, Conceptual, Logical and Dimensional designs, Mapping, Code and Validation definitions. [Terminology](../terminology.md) and individual record guides distinguish these meanings.
+- **Conceptual** is a standalone business-meaning deliverable and never feeds Logical or Dimensional. **Logical** defines normalized grain, identity and relationships from its own eligible evidence; **Dimensional** consumes applied Logical records to define analytical grain, measures and history. A Submodel organizes a useful part of a design; it is not a separate authorization boundary.
 - **Mapping** specifies transformations for target/System branches. **Code** implements saved Mapping. **Validation definitions** describe checks; saving them does not execute them.
 
 ## Execution boundaries
@@ -29,4 +29,4 @@ Applied records are authoritative. Snapshots are immutable baselines. The effect
 
 Skills own task sequences, references own modeling knowledge, machine contracts own syntax, and validators own enforceable checks. Do not copy field schemas or tool arguments into every skill. Read only relevant references; relationship links are not recursive loading instructions.
 
-Keep Tenant/Model-specific facts in governed records or bound task evidence. Only confirmed reusable rules belong in [domain knowledge](../domains/index.md). A rationale inferred from today's model is not recorded historical intent. Templates format existing evidence; they do not create another state store.
+Keep Tenant/Project-specific facts in governed records or bound task evidence. Only confirmed reusable rules belong in [domain knowledge](../domains/index.md). A rationale inferred from today's project is not recorded historical intent. Templates format existing evidence; they do not create another state store.

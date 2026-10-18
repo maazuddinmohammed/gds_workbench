@@ -65,10 +65,12 @@ def test_system_workbook_has_only_entity_sheets_and_the_agreed_two_sections(
         target_table_name="DimCustomer",
         entity_type="dimension",
         dependency_order=0,
-        attributes=(replace(entity.attributes[1], is_natural_key=False, is_surrogate_key=True),),
+        attributes=(
+            replace(entity.attributes[1], is_natural_key=False, is_surrogate_key=True),
+        ),
     )
     content = build_mapping_workbook(
-        model_name="Customer model",
+        project_name="Customer project",
         tenant_name="Owning Tenant",
         system_code="CRM",
         entities=(entity, dimension),
@@ -78,8 +80,10 @@ def test_system_workbook_has_only_entity_sheets_and_the_agreed_two_sections(
         assert workbook.sheetnames == ["DimCustomer", "Customer"]
         assert all(sheet.sheet_state == "visible" for sheet in workbook)
         customer = workbook["Customer"]
-        assert list(customer.iter_rows(min_row=1, max_row=12, max_col=2, values_only=True)) == [
-            ("ModelName", "Customer model"),
+        assert list(
+            customer.iter_rows(min_row=1, max_row=12, max_col=2, values_only=True)
+        ) == [
+            ("ProjectName", "Customer project"),
             ("TenantName", "Owning Tenant"),
             ("SystemCode", "CRM"),
             ("TargetLayer", "Silver"),
@@ -140,7 +144,9 @@ def test_system_workbook_has_only_entity_sheets_and_the_agreed_two_sections(
         workbook.close()
 
 
-@pytest.mark.parametrize("literal", ["=1+1", '=HYPERLINK("https://example.test")', "#N/A"])
+@pytest.mark.parametrize(
+    "literal", ["=1+1", '=HYPERLINK("https://example.test")', "#N/A"]
+)
 def test_mapping_text_is_preserved_as_literal_cells_without_formulas_or_external_links(
     entity: MappingWorkbookEntity,
     literal: str,
@@ -157,7 +163,7 @@ def test_mapping_text_is_preserved_as_literal_cells_without_formulas_or_external
         ),
     )
     content = build_mapping_workbook(
-        model_name=literal,
+        project_name=literal,
         tenant_name=literal,
         system_code=literal,
         entities=(entity,),
@@ -183,14 +189,22 @@ def test_mapping_text_is_preserved_as_literal_cells_without_formulas_or_external
 def test_sheet_titles_are_unique_valid_and_keep_full_names_in_headers(
     entity: MappingWorkbookEntity,
 ) -> None:
-    names = ("Customer", "customer", "'A/B:C?D*E[F]G\\H'", "X" * 40, "X" * 39 + "Y", "History")
+    names = (
+        "Customer",
+        "customer",
+        "'A/B:C?D*E[F]G\\H'",
+        "X" * 40,
+        "X" * 39 + "Y",
+        "History",
+    )
     entities = tuple(
-        replace(entity, target_table_name=name, dependency_order=i) for i, name in enumerate(names)
+        replace(entity, target_table_name=name, dependency_order=i)
+        for i, name in enumerate(names)
     )
     workbook = load_workbook(
         BytesIO(
             build_mapping_workbook(
-                model_name="Model",
+                project_name="Project",
                 tenant_name="Tenant",
                 system_code="CRM",
                 entities=entities,
@@ -203,7 +217,8 @@ def test_sheet_titles_are_unique_valid_and_keep_full_names_in_headers(
         assert len({name.casefold() for name in workbook.sheetnames}) == len(names)
         assert all(1 <= len(name) <= 31 for name in workbook.sheetnames)
         assert all(
-            not any(character in name for character in "[]:*?/\\") for name in workbook.sheetnames
+            not any(character in name for character in "[]:*?/\\")
+            for name in workbook.sheetnames
         )
         assert all(name.casefold() != "history" for name in workbook.sheetnames)
         assert [sheet["B6"].value for sheet in workbook] == list(names)
@@ -220,7 +235,7 @@ def test_oversized_cells_fail_without_truncation_or_content_in_the_error(
         MappingWorkbookBuildError, match="cell exceeding Excel's text limit"
     ) as error:
         build_mapping_workbook(
-            model_name="Model",
+            project_name="Project",
             tenant_name="Tenant",
             system_code="CRM",
             entities=(replace(entity, sample_query=text),),
@@ -235,9 +250,11 @@ def test_unrepresentable_text_fails_without_echoing_the_value(
     entity: MappingWorkbookEntity,
     text: str,
 ) -> None:
-    with pytest.raises(MappingWorkbookBuildError, match="text Excel cannot represent") as error:
+    with pytest.raises(
+        MappingWorkbookBuildError, match="text Excel cannot represent"
+    ) as error:
         build_mapping_workbook(
-            model_name="Model",
+            project_name="Project",
             tenant_name="Tenant",
             system_code="CRM",
             entities=(replace(entity, sample_query=text),),
@@ -248,7 +265,7 @@ def test_unrepresentable_text_fails_without_echoing_the_value(
 def test_empty_export_does_not_create_a_placeholder_sheet() -> None:
     with pytest.raises(MappingWorkbookBuildError, match="No saved Mapping Entities"):
         build_mapping_workbook(
-            model_name="Model",
+            project_name="Project",
             tenant_name="Tenant",
             system_code="CRM",
             entities=(),
@@ -275,7 +292,7 @@ def test_export_bounds_fail_explicitly_instead_of_producing_partial_workbooks(
     monkeypatch.setattr(mapping_workbook, limit, 0)
     with pytest.raises(MappingWorkbookBuildError, match=message):
         build_mapping_workbook(
-            model_name="Model",
+            project_name="Project",
             tenant_name="Tenant",
             system_code="CRM",
             entities=(entity,),

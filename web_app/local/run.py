@@ -135,13 +135,13 @@ def detect_compose_command() -> tuple[str, ...]:
 def _compose_base(
     *,
     compose_command: tuple[str, ...],
-    project_name: str,
+    lane_name: str,
     environment_file: Path,
 ) -> list[str]:
     return [
         *compose_command,
         "--project-name",
-        project_name,
+        lane_name,
         "--env-file",
         str(environment_file),
         "--file",
@@ -165,13 +165,13 @@ def run_local(*, frontend_port: int, api_port: int) -> int:
     compose_command = detect_compose_command()
     _check_local_docker()
     values = build_local_environment(frontend_port=frontend_port, api_port=api_port)
-    project_name = values["GDS_LOCAL_PROJECT_NAME"]
+    lane_name = values["GDS_LOCAL_PROJECT_NAME"]
 
     with tempfile.TemporaryDirectory(prefix="gds-workbench-local-") as temporary:
         environment_file = write_environment_file(Path(temporary), values)
         compose = _compose_base(
             compose_command=compose_command,
-            project_name=project_name,
+            lane_name=lane_name,
             environment_file=environment_file,
         )
         result = 0

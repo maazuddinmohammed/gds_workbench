@@ -138,7 +138,7 @@ export function DatabaseIcon() {
   );
 }
 
-export function ModelIcon() {
+export function ProjectIcon() {
   return (
     <NavIcon>
       <path d="m12 3 8 4.25-8 4.25-8-4.25L12 3Z" />

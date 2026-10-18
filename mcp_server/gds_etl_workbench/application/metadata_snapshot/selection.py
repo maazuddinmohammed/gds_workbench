@@ -16,7 +16,7 @@ from .archive import (
     SnapshotContractError,
     encode_dataset,
 )
-from .projection import REFERENCE_ID_COLUMNS, project_id_free_rows
+from .projection import REFERENCE_ID_COLUMNS, lane_id_free_rows
 from .sql import (
     ATTRIBUTE_ROWS_SQL,
     CONNECTION_LOCATION_ROWS_SQL,
@@ -24,7 +24,7 @@ from .sql import (
     COPY_GROUP_ROWS_SQL,
     COPY_ROWS_SQL,
     FOUNDATION_CONNECTION_ROWS_SQL,
-    FOUNDATION_PROJECT_ROWS_SQL,
+    FOUNDATION_LANE_ROWS_SQL,
     FOUNDATION_SYSTEM_ROWS_SQL,
     FOUNDATION_TENANT_ROWS_SQL,
     INGESTION_ATTRIBUTE_MAPPING_ROWS_SQL,
@@ -259,13 +259,13 @@ async def select_snapshot_datasets(
     if not required_connection_ids.issubset(connection_by_id):
         raise SnapshotContractError("foundation Connection closure is incomplete")
 
-    project_ids = {row["project_id"] for row in tenant_rows}
-    project_rows = await transaction.fetch_all(
-        FOUNDATION_PROJECT_ROWS_SQL,
-        (sorted(project_ids),),
+    lane_ids = {row["lane_id"] for row in tenant_rows}
+    lane_rows = await transaction.fetch_all(
+        FOUNDATION_LANE_ROWS_SQL,
+        (sorted(lane_ids),),
     )
-    if {row["project_id"] for row in project_rows} != project_ids:
-        raise SnapshotContractError("foundation Project closure is incomplete")
+    if {row["lane_id"] for row in lane_rows} != lane_ids:
+        raise SnapshotContractError("foundation Lane closure is incomplete")
 
     required_system_ids = {
         *(row["system_id"] for row in connection_rows),
@@ -339,7 +339,7 @@ async def select_snapshot_datasets(
         "process": process_rows,
     }
     foundation_rows_by_dataset = {
-        "project": project_rows,
+        "lane": lane_rows,
         "tenant": tenant_rows,
         "system": system_rows,
         "connection": connection_rows,
@@ -353,7 +353,7 @@ async def select_snapshot_datasets(
         **rows_by_dataset,
         **configuration_rows_by_dataset,
     }
-    projected_rows = project_id_free_rows(raw_rows_by_dataset)
+    projected_rows = lane_id_free_rows(raw_rows_by_dataset)
     encoded_datasets = tuple(
         encode_dataset(definition, projected_rows[definition.name]) for definition in DATASETS
     )

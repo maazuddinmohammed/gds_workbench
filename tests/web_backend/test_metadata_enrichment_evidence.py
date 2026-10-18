@@ -380,7 +380,7 @@ async def test_inactive_source_does_not_consume_cached_active_source_samples() -
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mask_location", ["target", "source", "model_pii"])
+@pytest.mark.parametrize("mask_location", ["target", "source", "project_pii"])
 async def test_masked_attributes_never_enter_sample_queries(mask_location: str) -> None:
     item = _object()
     attribute = item.attributes[0]
@@ -393,7 +393,7 @@ async def test_masked_attributes_never_enter_sample_queries(mask_location: str) 
                 )
             }
         )
-    elif mask_location == "model_pii":
+    elif mask_location == "project_pii":
         attribute = attribute.model_copy(update={"is_pii": True})
     else:
         attribute = attribute.model_copy(update={"is_masking_required": True})

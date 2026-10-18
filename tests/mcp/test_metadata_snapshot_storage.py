@@ -101,7 +101,7 @@ class RecordingStore:
         assert snapshot_kind == "metadata"
         assert tenant_id == 123
         assert scope_id == 123
-        assert schema_version == "2.0"
+        assert schema_version == "3.0"
         assert snapshot_id == SNAPSHOT_ID
         assert created_at == CREATED_AT
         assert available_until == AVAILABLE_UNTIL
@@ -170,7 +170,9 @@ async def test_archive_upload_failure_also_removes_temporary_file() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("snapshot_kind,scope_id", [("metadata", 123), ("model", 456)])
+@pytest.mark.parametrize(
+    "snapshot_kind,scope_id", [("metadata", 123), ("project", 456)]
+)
 @pytest.mark.parametrize(
     "created_at,date_path",
     [
@@ -200,7 +202,9 @@ async def test_azure_store_uploads_create_only_and_mints_read_only_sas(
     def fake_blob_service_client(**_kwargs: object) -> FakeBlobService:
         return service
 
-    monkeypatch.setattr(storage_module, "DefaultAzureCredential", fake_default_azure_credential)
+    monkeypatch.setattr(
+        storage_module, "DefaultAzureCredential", fake_default_azure_credential
+    )
     monkeypatch.setattr(storage_module, "BlobServiceClient", fake_blob_service_client)
 
     def fake_generate_blob_sas(**kwargs: Any) -> str:
@@ -233,7 +237,7 @@ async def test_azure_store_uploads_create_only_and_mints_read_only_sas(
         snapshot_kind=snapshot_kind,
         tenant_id=123,
         scope_id=scope_id,
-        schema_version="2.0",
+        schema_version="3.0",
         snapshot_id=SNAPSHOT_ID,
         created_at=created_at,
         available_until=available_until,
@@ -247,9 +251,9 @@ async def test_azure_store_uploads_create_only_and_mints_read_only_sas(
     assert blob.upload["length"] == 7
     assert blob.upload["metadata"] == {
         "snapshot_kind": snapshot_kind,
-        "schema_version": "2.0",
+        "schema_version": "3.0",
         "tenant_id": "123",
-        **({"model_id": str(scope_id)} if snapshot_kind == "model" else {}),
+        **({"project_id": str(scope_id)} if snapshot_kind == "project" else {}),
         "snapshot_id": str(SNAPSHOT_ID),
         "created_time": created_utc.isoformat().replace("+00:00", "Z"),
         "available_until": available_until.isoformat().replace("+00:00", "Z"),
@@ -272,7 +276,7 @@ async def test_azure_store_uploads_create_only_and_mints_read_only_sas(
         snapshot_kind=snapshot_kind,
         tenant_id=123,
         scope_id=scope_id,
-        schema_version="2.0",
+        schema_version="3.0",
         snapshot_id=SNAPSHOT_ID,
         created_at=created_at,
         now=now,
@@ -289,11 +293,13 @@ async def test_azure_store_uploads_create_only_and_mints_read_only_sas(
 
     invalid_metadata = {
         "tenant_id": "999",
-        "created_time": (created_utc - timedelta(days=1)).isoformat().replace("+00:00", "Z"),
+        "created_time": (created_utc - timedelta(days=1))
+        .isoformat()
+        .replace("+00:00", "Z"),
         "available_until": created_utc.isoformat().replace("+00:00", "Z"),
     }
-    if snapshot_kind == "model":
-        invalid_metadata["model_id"] = "999"
+    if snapshot_kind == "project":
+        invalid_metadata["project_id"] = "999"
     for field, value in invalid_metadata.items():
         service.delegation_request = None
         blob.properties.metadata = {**blob.upload["metadata"], field: value}
@@ -302,7 +308,7 @@ async def test_azure_store_uploads_create_only_and_mints_read_only_sas(
                 snapshot_kind=snapshot_kind,
                 tenant_id=123,
                 scope_id=scope_id,
-                schema_version="2.0",
+                schema_version="3.0",
                 snapshot_id=SNAPSHOT_ID,
                 created_at=created_at,
                 now=now,

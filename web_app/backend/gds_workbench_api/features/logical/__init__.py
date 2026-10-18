@@ -2,12 +2,11 @@
 
 from .candidate import LogicalCandidateValidator
 from .read_contracts import (
-    AssertionRecordReference,
     Cardinality,
     Confidence,
+    ContextRecordReference,
     ContractModel,
-    LogicalAssertionSource,
-    LogicalAttributeAssertionSource,
+    LogicalAttributeContextSource,
     LogicalAttributeDetail,
     LogicalAttributeFilters,
     LogicalAttributeListQuery,
@@ -17,6 +16,7 @@ from .read_contracts import (
     LogicalAttributeSource,
     LogicalAttributeSourceBase,
     LogicalAttributeSummary,
+    LogicalContextSource,
     LogicalDetailLimitExceededError,
     LogicalEntityDetail,
     LogicalEntityFilters,
@@ -58,14 +58,14 @@ from .router import LogicalWorkflowService, create_logical_workflow_router
 from .service import LogicalExecutionFailedError, LogicalWorkflow
 
 __all__ = [
-    "AssertionRecordReference",
+    "ContextRecordReference",
     "Cardinality",
     "Confidence",
     "ContractModel",
     "LogicalWorkflow",
     "DatabaseLogicalService",
-    "LogicalAssertionSource",
-    "LogicalAttributeAssertionSource",
+    "LogicalContextSource",
+    "LogicalAttributeContextSource",
     "LogicalAttributeDetail",
     "LogicalAttributeFilters",
     "LogicalAttributeListQuery",

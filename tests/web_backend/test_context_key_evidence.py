@@ -1,4 +1,4 @@
-"""Registered key evidence survives unknown or contradictory Model enrichment."""
+"""Registered key evidence survives unknown or contradictory Project enrichment."""
 
 # Synthetic context only; no provider or database calls.
 # pyright: reportPrivateUsage=false
@@ -13,8 +13,12 @@ from gds_workbench_api.features.workflows.authoring.context_contracts import (
     WORKFLOW_INPUTS,
     workflow_input_contracts,
 )
-from gds_workbench_api.features.workflows.authoring.context_inputs import project_context_inputs
-from gds_workbench_api.features.workflows.authoring.context_readers import FrozenContextReaders
+from gds_workbench_api.features.workflows.authoring.context_inputs import (
+    project_context_inputs,
+)
+from gds_workbench_api.features.workflows.authoring.context_readers import (
+    FrozenContextReaders,
+)
 from jsonschema import Draft202012Validator
 
 from tests.web_backend.test_logical_executor import _context_bundle
@@ -22,7 +26,11 @@ from tests.web_backend.test_logical_executor import _context_bundle
 
 @pytest.mark.parametrize(
     "workflow",
-    [name for name, inputs in WORKFLOW_INPUTS.items() if "object_attribute_context" in inputs],
+    [
+        name
+        for name, inputs in WORKFLOW_INPUTS.items()
+        if "object_attribute_context" in inputs
+    ],
 )
 @pytest.mark.parametrize("registered", [True, False])
 @pytest.mark.parametrize("enriched", ["absent", None, False, True])
@@ -31,10 +39,12 @@ def test_registered_and_enriched_natural_keys_remain_distinct(
     workflow: str, registered: bool, enriched: str | bool | None, mode: str
 ) -> None:
     context = deepcopy(_context_bundle().context.model_dump(mode="json"))
-    context["model_workflow"] = workflow
+    context["project_workflow"] = workflow
     attribute = context["selected_objects"][0]["attributes"][0]
     attribute["is_natural_key"] = registered
-    attribute["enrichment"] = {} if enriched == "absent" else {"is_natural_key": enriched}
+    attribute["enrichment"] = (
+        {} if enriched == "absent" else {"is_natural_key": enriched}
+    )
     if workflow == "dimensional":
         context["supporting_objects"] = context["selected_objects"]
         context["selected_objects"] = []
@@ -61,7 +71,11 @@ def test_registered_and_enriched_natural_keys_remain_distinct(
 
 @pytest.mark.parametrize(
     "workflow",
-    [name for name, inputs in WORKFLOW_INPUTS.items() if "object_attribute_context" in inputs],
+    [
+        name
+        for name, inputs in WORKFLOW_INPUTS.items()
+        if "object_attribute_context" in inputs
+    ],
 )
 def test_older_frozen_attribute_context_remains_readable(workflow: str) -> None:
     values = deepcopy(INPUT_EXAMPLES[workflow])
@@ -75,4 +89,7 @@ def test_older_frozen_attribute_context_remains_readable(workflow: str) -> None:
         max_page_records=20,
         max_cumulative_result_bytes=None,
     )
-    assert reader.invoke("get_object_details", {})["items"] == values["object_attribute_context"]
+    assert (
+        reader.invoke("get_object_details", {})["items"]
+        == values["object_attribute_context"]
+    )

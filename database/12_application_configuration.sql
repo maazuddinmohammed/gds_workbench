@@ -74,20 +74,20 @@ REVOKE ALL ON FUNCTION application.set_principal_last_tenant(
     BIGINT
 ) FROM PUBLIC;
 
-CREATE FUNCTION application.create_model(
+CREATE FUNCTION application.create_project(
     p_entra_tenant_id UUID,
     p_entra_object_id UUID,
     p_expected_principal_type VARCHAR(30),
     p_tenant_id BIGINT,
-    p_model_name VARCHAR(255),
-    p_model_description VARCHAR(2000),
+    p_project_name VARCHAR(255),
+    p_project_description VARCHAR(2000),
     p_logical_schemas JSONB,
     p_dimensional_schemas JSONB,
-    p_silver_model_naming_instructions TEXT,
-    p_silver_model_audit_columns_template JSONB,
-    p_gold_model_naming_instructions TEXT,
-    p_gold_model_technical_columns_template JSONB,
-    p_gold_model_audit_columns_template JSONB,
+    p_silver_project_naming_instructions TEXT,
+    p_silver_project_audit_columns_template JSONB,
+    p_gold_project_naming_instructions TEXT,
+    p_gold_project_technical_columns_template JSONB,
+    p_gold_project_audit_columns_template JSONB,
     p_default_agent_sdk_code VARCHAR(100),
     p_default_agent_provider_code VARCHAR(100),
     p_default_agent_model_code VARCHAR(200),
@@ -102,15 +102,15 @@ CREATE FUNCTION application.create_model(
     p_logical_enforce_coverage_threshold BOOLEAN DEFAULT FALSE,
     p_dimensional_enforce_coverage_threshold BOOLEAN DEFAULT FALSE
 )
-RETURNS SETOF model.model
+RETURNS SETOF project.project
 LANGUAGE plpgsql
 VOLATILE
 SECURITY DEFINER
 SET search_path = pg_catalog
-AS $create_model$
+AS $create_project$
 DECLARE
     v_decision RECORD;
-    v_created model.model%ROWTYPE;
+    v_created project.project%ROWTYPE;
 BEGIN
     SELECT *
       INTO v_decision
@@ -119,10 +119,10 @@ BEGIN
           p_entra_object_id,
           p_expected_principal_type,
           p_tenant_id,
-          'tenant_model_write'
+          'tenant_project_write'
       );
     IF NOT FOUND OR NOT v_decision.authorized THEN
-        RAISE EXCEPTION 'Model creation denied: %',
+        RAISE EXCEPTION 'Project creation denied: %',
             coalesce(v_decision.denial_code, 'authorization_denied');
     END IF;
 
@@ -135,10 +135,10 @@ BEGIN
         RAISE EXCEPTION 'Default Mapping System is unavailable for this Tenant';
     END IF;
 
-    INSERT INTO model.model AS target_model (
+    INSERT INTO project.project AS target_project (
         tenant_id,
-        model_name,
-        model_description,
+        project_name,
+        project_description,
         logical_schemas,
         dimensional_schemas,
         silver_model_naming_instructions,
@@ -161,15 +161,15 @@ BEGIN
         dimensional_enforce_coverage_threshold
     ) VALUES (
         p_tenant_id,
-        p_model_name,
-        p_model_description,
+        p_project_name,
+        p_project_description,
         p_logical_schemas,
         p_dimensional_schemas,
-        p_silver_model_naming_instructions,
-        p_silver_model_audit_columns_template,
-        p_gold_model_naming_instructions,
-        p_gold_model_technical_columns_template,
-        p_gold_model_audit_columns_template,
+        p_silver_project_naming_instructions,
+        p_silver_project_audit_columns_template,
+        p_gold_project_naming_instructions,
+        p_gold_project_technical_columns_template,
+        p_gold_project_audit_columns_template,
         p_default_agent_sdk_code,
         p_default_agent_provider_code,
         p_default_agent_model_code,
@@ -184,21 +184,21 @@ BEGIN
         coalesce(p_logical_enforce_coverage_threshold, FALSE),
         coalesce(p_dimensional_enforce_coverage_threshold, FALSE)
     )
-    RETURNING target_model.* INTO v_created;
+    RETURNING target_project.* INTO v_created;
 
-    INSERT INTO model.model_revision_transaction (
-        model_id,
+    INSERT INTO project.project_revision_transaction (
+        project_id,
         change_kind
     ) VALUES (
-        v_created.model_id,
-        'web_model_create'
+        v_created.project_id,
+        'web_project_create'
     );
 
     RETURN NEXT v_created;
 END;
-$create_model$;
+$create_project$;
 
-REVOKE ALL ON FUNCTION application.create_model(
+REVOKE ALL ON FUNCTION application.create_project(
     UUID,
     UUID,
     VARCHAR,
@@ -227,21 +227,21 @@ REVOKE ALL ON FUNCTION application.create_model(
     BOOLEAN
 ) FROM PUBLIC;
 
-CREATE FUNCTION application.update_model(
+CREATE FUNCTION application.update_project(
     p_entra_tenant_id UUID,
     p_entra_object_id UUID,
     p_expected_principal_type VARCHAR(30),
-    p_model_id BIGINT,
-    p_expected_model_revision BIGINT,
-    p_model_name VARCHAR(255),
-    p_model_description VARCHAR(2000),
+    p_project_id BIGINT,
+    p_expected_project_revision BIGINT,
+    p_project_name VARCHAR(255),
+    p_project_description VARCHAR(2000),
     p_logical_schemas JSONB,
     p_dimensional_schemas JSONB,
-    p_silver_model_naming_instructions TEXT,
-    p_silver_model_audit_columns_template JSONB,
-    p_gold_model_naming_instructions TEXT,
-    p_gold_model_technical_columns_template JSONB,
-    p_gold_model_audit_columns_template JSONB,
+    p_silver_project_naming_instructions TEXT,
+    p_silver_project_audit_columns_template JSONB,
+    p_gold_project_naming_instructions TEXT,
+    p_gold_project_technical_columns_template JSONB,
+    p_gold_project_audit_columns_template JSONB,
     p_default_agent_sdk_code VARCHAR(100),
     p_default_agent_provider_code VARCHAR(100),
     p_default_agent_model_code VARCHAR(200),
@@ -256,26 +256,26 @@ CREATE FUNCTION application.update_model(
     p_logical_enforce_coverage_threshold BOOLEAN DEFAULT FALSE,
     p_dimensional_enforce_coverage_threshold BOOLEAN DEFAULT FALSE
 )
-RETURNS SETOF model.model
+RETURNS SETOF project.project
 LANGUAGE plpgsql
 VOLATILE
 SECURITY DEFINER
 SET search_path = pg_catalog
-AS $update_model$
+AS $update_project$
 DECLARE
-    v_existing model.model%ROWTYPE;
+    v_existing project.project%ROWTYPE;
     v_decision RECORD;
-    v_updated model.model%ROWTYPE;
+    v_updated project.project%ROWTYPE;
     v_updated_time TIMESTAMPTZ;
 BEGIN
-    SELECT target_model.*
+    SELECT target_project.*
       INTO v_existing
-      FROM model.model AS target_model
-     WHERE target_model.model_id = p_model_id
-       AND target_model.is_active
-     FOR UPDATE OF target_model;
+      FROM project.project AS target_project
+     WHERE target_project.project_id = p_project_id
+       AND target_project.is_active
+     FOR UPDATE OF target_project;
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'Model is unavailable';
+        RAISE EXCEPTION 'Project is unavailable';
     END IF;
 
     SELECT *
@@ -285,15 +285,15 @@ BEGIN
           p_entra_object_id,
           p_expected_principal_type,
           v_existing.tenant_id,
-          'tenant_model_write'
+          'tenant_project_write'
       );
     IF NOT FOUND OR NOT v_decision.authorized THEN
-        RAISE EXCEPTION 'Model update denied: %',
+        RAISE EXCEPTION 'Project update denied: %',
             coalesce(v_decision.denial_code, 'authorization_denied');
     END IF;
-    IF p_expected_model_revision IS NULL
-       OR v_existing.model_revision <> p_expected_model_revision THEN
-        RAISE EXCEPTION 'stale_model_revision';
+    IF p_expected_project_revision IS NULL
+       OR v_existing.project_revision <> p_expected_project_revision THEN
+        RAISE EXCEPTION 'stale_project_revision';
     END IF;
     IF p_default_mapping_source_system_id IS NOT NULL AND NOT EXISTS (
         SELECT 1 FROM core.connection AS connection
@@ -304,8 +304,8 @@ BEGIN
         RAISE EXCEPTION 'Default Mapping System is unavailable for this Tenant';
     END IF;
     IF ROW(
-        v_existing.model_name,
-        v_existing.model_description,
+        v_existing.project_name,
+        v_existing.project_description,
         v_existing.logical_schemas,
         v_existing.dimensional_schemas,
         v_existing.silver_model_naming_instructions,
@@ -327,15 +327,15 @@ BEGIN
         v_existing.logical_enforce_coverage_threshold,
         v_existing.dimensional_enforce_coverage_threshold
     ) IS NOT DISTINCT FROM ROW(
-        p_model_name,
-        p_model_description,
+        p_project_name,
+        p_project_description,
         p_logical_schemas,
         p_dimensional_schemas,
-        p_silver_model_naming_instructions,
-        p_silver_model_audit_columns_template,
-        p_gold_model_naming_instructions,
-        p_gold_model_technical_columns_template,
-        p_gold_model_audit_columns_template,
+        p_silver_project_naming_instructions,
+        p_silver_project_audit_columns_template,
+        p_gold_project_naming_instructions,
+        p_gold_project_technical_columns_template,
+        p_gold_project_audit_columns_template,
         p_default_agent_sdk_code,
         p_default_agent_provider_code,
         p_default_agent_model_code,
@@ -355,22 +355,22 @@ BEGIN
     END IF;
 
     v_updated_time := clock_timestamp();
-    UPDATE model.model AS target_model
-       SET model_name = p_model_name,
-           model_description = p_model_description,
+    UPDATE project.project AS target_project
+       SET project_name = p_project_name,
+           project_description = p_project_description,
            logical_schemas = p_logical_schemas,
            dimensional_schemas = p_dimensional_schemas,
-           model_revision = target_model.model_revision + 1,
+           project_revision = target_project.project_revision + 1,
            silver_model_naming_instructions =
-               p_silver_model_naming_instructions,
+               p_silver_project_naming_instructions,
            silver_model_audit_columns_template =
-               p_silver_model_audit_columns_template,
+               p_silver_project_audit_columns_template,
            gold_model_naming_instructions =
-               p_gold_model_naming_instructions,
+               p_gold_project_naming_instructions,
            gold_model_technical_columns_template =
-               p_gold_model_technical_columns_template,
+               p_gold_project_technical_columns_template,
            gold_model_audit_columns_template =
-               p_gold_model_audit_columns_template,
+               p_gold_project_audit_columns_template,
            default_agent_sdk_code = p_default_agent_sdk_code,
            default_agent_provider_code = p_default_agent_provider_code,
            default_agent_model_code = p_default_agent_model_code,
@@ -387,22 +387,22 @@ BEGIN
            dimensional_enforce_coverage_threshold = coalesce(p_dimensional_enforce_coverage_threshold, FALSE),
            updated_time = v_updated_time,
            updated_by = CURRENT_USER
-     WHERE target_model.model_id = p_model_id
-    RETURNING target_model.* INTO v_updated;
+     WHERE target_project.project_id = p_project_id
+    RETURNING target_project.* INTO v_updated;
 
-    INSERT INTO model.model_revision_transaction (
-        model_id,
+    INSERT INTO project.project_revision_transaction (
+        project_id,
         change_kind
     ) VALUES (
-        v_updated.model_id,
-        'web_model_update'
+        v_updated.project_id,
+        'web_project_update'
     );
 
     RETURN NEXT v_updated;
 END;
-$update_model$;
+$update_project$;
 
-REVOKE ALL ON FUNCTION application.update_model(
+REVOKE ALL ON FUNCTION application.update_project(
     UUID,
     UUID,
     VARCHAR,
@@ -432,32 +432,32 @@ REVOKE ALL ON FUNCTION application.update_model(
     BOOLEAN
 ) FROM PUBLIC;
 
-CREATE FUNCTION application.archive_model(
+CREATE FUNCTION application.archive_project(
     p_entra_tenant_id UUID,
     p_entra_object_id UUID,
     p_expected_principal_type VARCHAR(30),
-    p_model_id BIGINT,
-    p_expected_model_revision BIGINT
+    p_project_id BIGINT,
+    p_expected_project_revision BIGINT
 )
-RETURNS SETOF model.model
+RETURNS SETOF project.project
 LANGUAGE plpgsql
 VOLATILE
 SECURITY DEFINER
 SET search_path = pg_catalog
-AS $archive_model$
+AS $archive_project$
 DECLARE
-    v_existing model.model%ROWTYPE;
+    v_existing project.project%ROWTYPE;
     v_decision RECORD;
-    v_archived model.model%ROWTYPE;
+    v_archived project.project%ROWTYPE;
 BEGIN
-    SELECT target_model.*
+    SELECT target_project.*
       INTO v_existing
-      FROM model.model AS target_model
-     WHERE target_model.model_id = p_model_id
-       AND target_model.is_active
-     FOR UPDATE OF target_model;
+      FROM project.project AS target_project
+     WHERE target_project.project_id = p_project_id
+       AND target_project.is_active
+     FOR UPDATE OF target_project;
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'Model is unavailable';
+        RAISE EXCEPTION 'Project is unavailable';
     END IF;
 
     SELECT *
@@ -467,15 +467,15 @@ BEGIN
           p_entra_object_id,
           p_expected_principal_type,
           v_existing.tenant_id,
-          'tenant_model_write'
+          'tenant_project_write'
       );
     IF NOT FOUND OR NOT v_decision.authorized THEN
-        RAISE EXCEPTION 'Model archive denied: %',
+        RAISE EXCEPTION 'Project archive denied: %',
             coalesce(v_decision.denial_code, 'authorization_denied');
     END IF;
-    IF p_expected_model_revision IS NULL
-       OR v_existing.model_revision <> p_expected_model_revision THEN
-        RAISE EXCEPTION 'stale_model_revision';
+    IF p_expected_project_revision IS NULL
+       OR v_existing.project_revision <> p_expected_project_revision THEN
+        RAISE EXCEPTION 'stale_project_revision';
     END IF;
     IF EXISTS (
         SELECT 1
@@ -486,27 +486,27 @@ BEGIN
         RAISE EXCEPTION 'tenant_workflow_conflict';
     END IF;
 
-    UPDATE model.model AS target_model
-       SET model_revision = target_model.model_revision + 1,
+    UPDATE project.project AS target_project
+       SET project_revision = target_project.project_revision + 1,
            is_active = FALSE,
            updated_time = clock_timestamp(),
            updated_by = CURRENT_USER
-     WHERE target_model.model_id = p_model_id
-    RETURNING target_model.* INTO v_archived;
+     WHERE target_project.project_id = p_project_id
+    RETURNING target_project.* INTO v_archived;
 
-    INSERT INTO model.model_revision_transaction (
-        model_id,
+    INSERT INTO project.project_revision_transaction (
+        project_id,
         change_kind
     ) VALUES (
-        v_archived.model_id,
-        'web_model_archive'
+        v_archived.project_id,
+        'web_project_archive'
     );
 
     RETURN NEXT v_archived;
 END;
-$archive_model$;
+$archive_project$;
 
-REVOKE ALL ON FUNCTION application.archive_model(
+REVOKE ALL ON FUNCTION application.archive_project(
     UUID,
     UUID,
     VARCHAR,
@@ -516,7 +516,7 @@ REVOKE ALL ON FUNCTION application.archive_model(
 
 CREATE TABLE application.workflow_stage (
     workflow_stage_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    model_workflow VARCHAR(30) NOT NULL,
+    project_workflow VARCHAR(30) NOT NULL,
     workflow_execution_mode VARCHAR(50),
     workflow_stage_code VARCHAR(100) NOT NULL,
     workflow_stage_name VARCHAR(200) NOT NULL,
@@ -529,17 +529,17 @@ CREATE TABLE application.workflow_stage (
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     CONSTRAINT uq_workflow_stage_identity UNIQUE NULLS NOT DISTINCT (
-        model_workflow,
+        project_workflow,
         workflow_execution_mode,
         workflow_stage_code
     ),
     CONSTRAINT uq_workflow_stage_order UNIQUE NULLS NOT DISTINCT (
-        model_workflow,
+        project_workflow,
         workflow_execution_mode,
         workflow_stage_order
     ),
     CONSTRAINT ck_workflow_stage_workflow CHECK (
-        model_workflow IN (
+        project_workflow IN (
             'profiling', 'analysis', 'conceptual', 'logical',
             'dimensional', 'mapping', 'code_generation', 'validation',
             'metadata_enrichment', 'metadata_enrichment_object', 'metadata_enrichment_attribute'
@@ -552,7 +552,7 @@ CREATE TABLE application.workflow_stage (
         )
     ),
     CONSTRAINT ck_workflow_stage_metadata_enrichment_mode CHECK (
-        model_workflow NOT IN ('metadata_enrichment', 'metadata_enrichment_object', 'metadata_enrichment_attribute')
+        project_workflow NOT IN ('metadata_enrichment', 'metadata_enrichment_object', 'metadata_enrichment_attribute')
         OR workflow_execution_mode IS NOT DISTINCT FROM 'one_shot'
     ),
     CONSTRAINT ck_workflow_stage_code CHECK (
@@ -570,7 +570,7 @@ CREATE TABLE application.workflow_stage (
 
 CREATE INDEX ix_workflow_stage_lookup
     ON application.workflow_stage (
-        model_workflow,
+        project_workflow,
         workflow_execution_mode,
         is_active,
         workflow_stage_order
@@ -882,13 +882,13 @@ BEGIN
     END IF;
 
     IF NEW.agent_tool_names IS NOT NULL THEN
-        SELECT workflow_execution_mode, model_workflow INTO v_mode, v_workflow
+        SELECT workflow_execution_mode, project_workflow INTO v_mode, v_workflow
           FROM application.workflow_stage WHERE workflow_stage_id = NEW.workflow_stage_id;
         v_allowed_tools := CASE v_workflow
-            WHEN 'analysis' THEN ARRAY['get_source_context', 'get_gds_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_modeling_assertions']
-            WHEN 'conceptual' THEN ARRAY['get_source_context', 'get_gds_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_modeling_assertions', 'list_conceptual_objects', 'get_conceptual_objects', 'list_conceptual_relationships', 'get_conceptual_relationships']
-            WHEN 'logical' THEN ARRAY['get_source_context', 'get_gds_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_modeling_assertions', 'list_conceptual_objects', 'get_conceptual_objects', 'list_conceptual_relationships', 'get_conceptual_relationships', 'list_logical_submodels', 'get_logical_submodels', 'list_logical_entities', 'get_logical_entities', 'list_logical_attributes', 'get_logical_attributes', 'list_logical_relationships', 'get_logical_relationships']
-            WHEN 'dimensional' THEN ARRAY['get_source_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_gds_context', 'get_selected_logical_entities', 'get_modeling_assertions', 'list_logical_submodels', 'get_logical_submodels', 'list_logical_entities', 'get_logical_entities', 'list_logical_attributes', 'get_logical_attributes', 'list_logical_relationships', 'get_logical_relationships', 'list_dimensional_submodels', 'get_dimensional_submodels', 'list_dimensional_entities', 'get_dimensional_entities', 'list_dimensional_attributes', 'get_dimensional_attributes', 'list_dimensional_relationships', 'get_dimensional_relationships']
+            WHEN 'analysis' THEN ARRAY['get_source_context', 'get_gds_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_context_records']
+            WHEN 'conceptual' THEN ARRAY['get_source_context', 'get_gds_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_context_records', 'list_conceptual_objects', 'get_conceptual_objects', 'list_conceptual_relationships', 'get_conceptual_relationships']
+            WHEN 'logical' THEN ARRAY['get_source_context', 'get_gds_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_context_records', 'list_logical_submodels', 'get_logical_submodels', 'list_logical_entities', 'get_logical_entities', 'list_logical_attributes', 'get_logical_attributes', 'list_logical_relationships', 'get_logical_relationships']
+            WHEN 'dimensional' THEN ARRAY['get_source_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_gds_context', 'get_selected_logical_entities', 'get_context_records', 'list_logical_submodels', 'get_logical_submodels', 'list_logical_entities', 'get_logical_entities', 'list_logical_attributes', 'get_logical_attributes', 'list_logical_relationships', 'get_logical_relationships', 'list_dimensional_submodels', 'get_dimensional_submodels', 'list_dimensional_entities', 'get_dimensional_entities', 'list_dimensional_attributes', 'get_dimensional_attributes', 'list_dimensional_relationships', 'get_dimensional_relationships']
             WHEN 'mapping' THEN ARRAY['get_mapping_target', 'get_mapping_sources', 'get_existing_mapping', 'get_mapping_support', 'get_mapping_support_records']
             WHEN 'code_generation' THEN ARRAY['get_code_target', 'get_code_sources', 'get_code_source_systems', 'get_object_transformations', 'get_attribute_transformations']
             WHEN 'validation' THEN ARRAY['get_mapping_evidence', 'get_current_code', 'get_applied_groups', 'get_applied_checks']
@@ -1001,7 +1001,7 @@ CREATE TABLE application.prompt_assignment (
     workflow_stage_id BIGINT NOT NULL,
     prompt_template_version_id BIGINT NOT NULL,
     prompt_assignment_scope VARCHAR(20) NOT NULL,
-    model_id BIGINT,
+    project_id BIGINT,
     assigned_by_principal_id BIGINT NOT NULL,
     deactivated_by_principal_id BIGINT,
     deactivated_time TIMESTAMPTZ,
@@ -1017,8 +1017,8 @@ CREATE TABLE application.prompt_assignment (
         prompt_template_version_id,
         workflow_stage_id
     ) ON DELETE NO ACTION,
-    CONSTRAINT fk_prompt_assignment_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_prompt_assignment_project FOREIGN KEY (project_id)
+        REFERENCES project.project (project_id) ON DELETE NO ACTION,
     CONSTRAINT fk_prompt_assignment_actor FOREIGN KEY (
         assigned_by_principal_id
     ) REFERENCES security.principal (principal_id) ON DELETE NO ACTION,
@@ -1028,10 +1028,10 @@ CREATE TABLE application.prompt_assignment (
     CONSTRAINT ck_prompt_assignment_shape CHECK (
         (
             prompt_assignment_scope = 'global_default'
-            AND model_id IS NULL
+            AND project_id IS NULL
         ) OR (
-            prompt_assignment_scope = 'model_default'
-            AND model_id IS NOT NULL
+            prompt_assignment_scope = 'project_default'
+            AND project_id IS NOT NULL
         )
     ),
     CONSTRAINT ck_prompt_assignment_lifecycle CHECK (
@@ -1051,9 +1051,9 @@ CREATE TABLE application.prompt_assignment (
 CREATE UNIQUE INDEX ux_prompt_assignment_global_active
     ON application.prompt_assignment (workflow_stage_id)
     WHERE prompt_assignment_scope = 'global_default' AND is_active;
-CREATE UNIQUE INDEX ux_prompt_assignment_model_active
-    ON application.prompt_assignment (model_id, workflow_stage_id)
-    WHERE prompt_assignment_scope = 'model_default' AND is_active;
+CREATE UNIQUE INDEX ux_prompt_assignment_project_active
+    ON application.prompt_assignment (project_id, workflow_stage_id)
+    WHERE prompt_assignment_scope = 'project_default' AND is_active;
 CREATE INDEX ix_prompt_assignment_version
     ON application.prompt_assignment (
         prompt_template_version_id,
@@ -1072,7 +1072,7 @@ DECLARE
     v_template_active BOOLEAN;
     v_stage_agentic BOOLEAN;
     v_stage_active BOOLEAN;
-    v_model_tenant_id BIGINT;
+    v_project_tenant_id BIGINT;
     v_actor_super_admin BOOLEAN;
     v_actor_authorized BOOLEAN;
     v_actor_has_lock BOOLEAN;
@@ -1084,13 +1084,13 @@ BEGIN
            NEW.workflow_stage_id,
            NEW.prompt_template_version_id,
            NEW.prompt_assignment_scope,
-           NEW.model_id,
+           NEW.project_id,
            NEW.assigned_by_principal_id
        ) IS NOT DISTINCT FROM ROW(
            OLD.workflow_stage_id,
            OLD.prompt_template_version_id,
            OLD.prompt_assignment_scope,
-           OLD.model_id,
+           OLD.project_id,
            OLD.assigned_by_principal_id
        ) THEN
         RETURN NEW;
@@ -1143,24 +1143,24 @@ BEGIN
         RETURN NEW;
     END IF;
 
-    SELECT model.tenant_id
-      INTO v_model_tenant_id
-      FROM model.model AS model
-     WHERE model.model_id = NEW.model_id
-       AND model.is_active;
+    SELECT project.tenant_id
+      INTO v_project_tenant_id
+      FROM project.project AS project
+     WHERE project.project_id = NEW.project_id
+       AND project.is_active;
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'assignment Model is unavailable';
+        RAISE EXCEPTION 'assignment Project is unavailable';
     END IF;
 
     IF v_template_scope = 'tenant'
-       AND v_template_tenant_id <> v_model_tenant_id THEN
-        RAISE EXCEPTION 'prompt does not belong to the Model owner Tenant';
+       AND v_template_tenant_id <> v_project_tenant_id THEN
+        RAISE EXCEPTION 'prompt does not belong to the Project owner Tenant';
     END IF;
 
     SELECT v_actor_super_admin OR EXISTS (
                SELECT 1
                  FROM security.tenant_principal_access AS access
-                WHERE access.tenant_id = v_model_tenant_id
+                WHERE access.tenant_id = v_project_tenant_id
                   AND access.principal_id = NEW.assigned_by_principal_id
                   AND access.tenant_role IN ('architect', 'tenant_admin')
                   AND access.is_active
@@ -1171,20 +1171,20 @@ BEGIN
            )
       INTO v_actor_authorized;
     IF NOT v_actor_authorized THEN
-        RAISE EXCEPTION 'Model prompt assignment is not authorized';
+        RAISE EXCEPTION 'Project prompt assignment is not authorized';
     END IF;
 
     SELECT EXISTS (
                SELECT 1
                  FROM security.tenant_lock AS tenant_lock
-                WHERE tenant_lock.tenant_id = v_model_tenant_id
+                WHERE tenant_lock.tenant_id = v_project_tenant_id
                   AND tenant_lock.locked_by_principal_id =
                       NEW.assigned_by_principal_id
                   AND tenant_lock.tenant_lock_expires_time > clock_timestamp()
            )
       INTO v_actor_has_lock;
     IF NOT v_actor_has_lock THEN
-        RAISE EXCEPTION 'Model prompt assignment requires the owned Tenant Lock';
+        RAISE EXCEPTION 'Project prompt assignment requires the owned Tenant Lock';
     END IF;
 
     RETURN NEW;
@@ -1267,7 +1267,7 @@ BEGIN
               p_entra_object_id,
               p_expected_principal_type,
               v_owner_tenant_id,
-              'tenant_model_write'
+              'tenant_project_write'
           );
         IF NOT FOUND OR NOT v_decision.authorized THEN
             RAISE EXCEPTION 'Tenant Prompt Template denied: %',
@@ -1512,7 +1512,7 @@ BEGIN
               p_entra_object_id,
               p_expected_principal_type,
               v_template.owner_tenant_id,
-              'tenant_model_write'
+              'tenant_project_write'
           );
         IF NOT FOUND OR NOT v_decision.authorized THEN
             RAISE EXCEPTION 'Tenant Prompt Template draft denied: %',
@@ -1700,7 +1700,7 @@ BEGIN
               p_entra_object_id,
               p_expected_principal_type,
               v_template.owner_tenant_id,
-              'tenant_model_write'
+              'tenant_project_write'
           );
         IF NOT FOUND OR NOT v_decision.authorized THEN
             RAISE EXCEPTION 'Tenant Prompt Template transition denied: %',
@@ -1785,7 +1785,7 @@ CREATE FUNCTION application.set_prompt_assignment(
     p_expected_principal_type VARCHAR(30),
     p_workflow_stage_id BIGINT,
     p_prompt_assignment_scope VARCHAR(20),
-    p_model_id BIGINT,
+    p_project_id BIGINT,
     p_prompt_template_version_id BIGINT,
     p_expected_prompt_assignment_id BIGINT
 )
@@ -1798,7 +1798,7 @@ AS $set_prompt_assignment$
 DECLARE
     v_decision RECORD;
     v_actor RECORD;
-    v_model_tenant_id BIGINT;
+    v_project_tenant_id BIGINT;
     v_current application.prompt_assignment%ROWTYPE;
     v_saved application.prompt_assignment%ROWTYPE;
     v_target_template_id BIGINT;
@@ -1816,7 +1816,7 @@ BEGIN
         RAISE EXCEPTION 'Prompt assignment requires an active agentic Workflow Stage';
     END IF;
 
-    IF p_prompt_assignment_scope = 'global_default' AND p_model_id IS NULL THEN
+    IF p_prompt_assignment_scope = 'global_default' AND p_project_id IS NULL THEN
         SELECT principal.principal_id, principal.is_super_admin
           INTO v_actor
           FROM security.entra_principal_identity AS identity
@@ -1832,16 +1832,16 @@ BEGIN
         IF NOT FOUND OR NOT v_actor.is_super_admin THEN
             RAISE EXCEPTION 'Global Prompt assignment requires Super Admin';
         END IF;
-    ELSIF p_prompt_assignment_scope = 'model_default'
-          AND p_model_id IS NOT NULL THEN
-        SELECT target_model.tenant_id
-          INTO v_model_tenant_id
-          FROM model.model AS target_model
-         WHERE target_model.model_id = p_model_id
-           AND target_model.is_active
-         FOR UPDATE OF target_model;
+    ELSIF p_prompt_assignment_scope = 'project_default'
+          AND p_project_id IS NOT NULL THEN
+        SELECT target_project.tenant_id
+          INTO v_project_tenant_id
+          FROM project.project AS target_project
+         WHERE target_project.project_id = p_project_id
+           AND target_project.is_active
+         FOR UPDATE OF target_project;
         IF NOT FOUND THEN
-            RAISE EXCEPTION 'Prompt assignment Model is unavailable';
+            RAISE EXCEPTION 'Prompt assignment Project is unavailable';
         END IF;
 
         SELECT *
@@ -1850,11 +1850,11 @@ BEGIN
               p_entra_tenant_id,
               p_entra_object_id,
               p_expected_principal_type,
-              v_model_tenant_id,
-              'tenant_model_write'
+              v_project_tenant_id,
+              'tenant_project_write'
           );
         IF NOT FOUND OR NOT v_decision.authorized THEN
-            RAISE EXCEPTION 'Model Prompt assignment denied: %',
+            RAISE EXCEPTION 'Project Prompt assignment denied: %',
                 coalesce(v_decision.denial_code, 'authorization_denied');
         END IF;
         v_actor := v_decision;
@@ -1869,7 +1869,7 @@ BEGIN
                 'application.prompt_assignment',
                 p_workflow_stage_id::TEXT,
                 p_prompt_assignment_scope,
-                coalesce(p_model_id::TEXT, 'global')
+                coalesce(p_project_id::TEXT, 'global')
             ),
             0
         )
@@ -1919,11 +1919,11 @@ BEGIN
                'global' THEN
             RAISE EXCEPTION 'Global default requires a global Prompt';
         END IF;
-        IF p_prompt_assignment_scope = 'model_default'
+        IF p_prompt_assignment_scope = 'project_default'
            AND v_target_template.prompt_template_ownership_scope = 'tenant'
-           AND v_target_template.owner_tenant_id <> v_model_tenant_id THEN
+           AND v_target_template.owner_tenant_id <> v_project_tenant_id THEN
             RAISE EXCEPTION
-                'Prompt does not belong to the Model owner Tenant';
+                'Prompt does not belong to the Project owner Tenant';
         END IF;
     END IF;
 
@@ -1932,7 +1932,7 @@ BEGIN
       FROM application.prompt_assignment AS assignment
      WHERE assignment.workflow_stage_id = p_workflow_stage_id
        AND assignment.prompt_assignment_scope = p_prompt_assignment_scope
-       AND assignment.model_id IS NOT DISTINCT FROM p_model_id
+       AND assignment.project_id IS NOT DISTINCT FROM p_project_id
        AND assignment.is_active
      FOR UPDATE OF assignment;
 
@@ -1982,13 +1982,13 @@ BEGIN
         workflow_stage_id,
         prompt_template_version_id,
         prompt_assignment_scope,
-        model_id,
+        project_id,
         assigned_by_principal_id
     ) VALUES (
         p_workflow_stage_id,
         p_prompt_template_version_id,
         p_prompt_assignment_scope,
-        p_model_id,
+        p_project_id,
         v_actor.principal_id
     )
     RETURNING assignment.* INTO v_saved;
@@ -2209,38 +2209,38 @@ CREATE INDEX ix_mapping_attribute_output_template
 
 -- Applied Mapping consumers depend on the Output Template tables above.
 CREATE FUNCTION workflow.list_code_generation_target_context(
-    p_model_id BIGINT, p_modeled_entity_type VARCHAR(30),
+    p_project_id BIGINT, p_modeled_entity_type VARCHAR(30),
     p_required_artifact_type VARCHAR(30) DEFAULT 'sql_file'
 )
 RETURNS TABLE (
-    model_id BIGINT, modeled_entity_type VARCHAR(30), modeled_entity_id BIGINT,
+    project_id BIGINT, modeled_entity_type VARCHAR(30), modeled_entity_id BIGINT,
     modeled_entity_schema_name VARCHAR(400), modeled_entity_name VARCHAR(255),
     source_system_count INTEGER, code_input_digest CHAR(64), source_context JSONB
 )
 LANGUAGE SQL STABLE SECURITY INVOKER SET search_path = pg_catalog
 AS $list_code_generation_target_context$
     WITH target AS MATERIALIZED (
-        SELECT entity.*, model.tenant_id, model.silver_model_audit_columns_template,
-               model.gold_model_audit_columns_template, model.gold_model_technical_columns_template,
+        SELECT entity.*, project.tenant_id, project.silver_model_audit_columns_template,
+               project.gold_model_audit_columns_template, project.gold_model_technical_columns_template,
                owner.tenant_code AS source_tenant_code, owner.tenant_name AS source_tenant_name,
                connection.connection_id, connection.connection_code,
                placement.tenant_id AS placement_tenant_id, placement.tenant_code,
                placement.tenant_name, placement.tenant_catalog,
                system.system_id, system.system_code, system.system_name
           FROM workflow.modeled_entity AS entity
-          JOIN model.model AS model ON model.model_id = entity.model_id AND model.is_active
-          JOIN core.tenant AS owner ON owner.tenant_id = model.tenant_id AND owner.is_active
+          JOIN project.project AS project ON project.project_id = entity.project_id AND project.is_active
+          JOIN core.tenant AS owner ON owner.tenant_id = project.tenant_id AND owner.is_active
           JOIN core.connection AS connection ON connection.connection_id = owner.gds_connection_id
            AND connection.is_active AND connection.is_global_data_store
           JOIN core.tenant AS placement ON placement.tenant_id = connection.tenant_id AND placement.is_active
           JOIN core.system AS system ON system.system_id = connection.system_id AND system.is_active
-         WHERE entity.model_id = p_model_id AND entity.modeled_entity_type = p_modeled_entity_type
+         WHERE entity.project_id = p_project_id AND entity.modeled_entity_type = p_modeled_entity_type
            AND entity.status = 'active'
            AND (p_required_artifact_type IS NULL OR p_required_artifact_type IN ('sql_file','python_file','python_notebook'))
     ), active_mapping AS MATERIALIZED (
         SELECT mapping.*, source.system_code AS source_system_code, source.system_name AS source_system_name
           FROM workflow.mapping_object AS mapping
-          JOIN target ON target.model_id = mapping.model_id AND target.modeled_entity_type = mapping.modeled_entity_type
+          JOIN target ON target.project_id = mapping.project_id AND target.modeled_entity_type = mapping.modeled_entity_type
            AND target.modeled_entity_id = coalesce(mapping.logical_entity_id, mapping.dimensional_entity_id)
           JOIN core.system AS source ON source.system_id = mapping.source_system_id AND source.is_active
          WHERE mapping.object_mapping_status = 'active'
@@ -2251,7 +2251,7 @@ AS $list_code_generation_target_context$
                 OR EXISTS (
                     SELECT 1 FROM workflow.mapping_attribute AS mapped
                     JOIN workflow.modeled_attribute AS attribute
-                      ON attribute.model_id = mapping.model_id
+                      ON attribute.project_id = mapping.project_id
                      AND attribute.modeled_entity_type = mapping.modeled_entity_type
                      AND attribute.modeled_entity_id = coalesce(mapping.logical_entity_id,mapping.dimensional_entity_id)
                      AND attribute.modeled_attribute_id = coalesce(mapped.logical_attribute_id,mapped.dimensional_attribute_id)
@@ -2262,18 +2262,18 @@ AS $list_code_generation_target_context$
                 ))
     ), eligible AS MATERIALIZED (
         SELECT target.* FROM target
-         WHERE EXISTS (SELECT 1 FROM active_mapping AS mapping WHERE mapping.model_id = target.model_id
+         WHERE EXISTS (SELECT 1 FROM active_mapping AS mapping WHERE mapping.project_id = target.project_id
            AND mapping.modeled_entity_type = target.modeled_entity_type
            AND coalesce(mapping.logical_entity_id,mapping.dimensional_entity_id) = target.modeled_entity_id)
            -- A NULL artifact type is the existing complete-Mapping contract
            -- used by Validation and execution-readiness consumers.
            AND (p_required_artifact_type IS NOT NULL OR NOT EXISTS (
              SELECT 1 FROM active_mapping AS mapping
-              WHERE mapping.model_id = target.model_id AND mapping.modeled_entity_type = target.modeled_entity_type
+              WHERE mapping.project_id = target.project_id AND mapping.modeled_entity_type = target.modeled_entity_type
                 AND coalesce(mapping.logical_entity_id,mapping.dimensional_entity_id) = target.modeled_entity_id
                 AND (mapping.mapping_transformation_document IS NULL OR EXISTS (
                   SELECT 1 FROM workflow.modeled_attribute AS attribute
-                   WHERE attribute.model_id = target.model_id AND attribute.modeled_entity_type = target.modeled_entity_type
+                   WHERE attribute.project_id = target.project_id AND attribute.modeled_entity_type = target.modeled_entity_type
                      AND attribute.modeled_entity_id = target.modeled_entity_id AND attribute.status = 'active'
                      AND NOT EXISTS (
                        SELECT 1 FROM workflow.mapping_attribute AS mapped
@@ -2285,13 +2285,13 @@ AS $list_code_generation_target_context$
                 ))
            ))
     ), assembled AS (
-      SELECT target.model_id, target.modeled_entity_type, target.modeled_entity_id,
+      SELECT target.project_id, target.modeled_entity_type, target.modeled_entity_id,
              target.modeled_entity_schema_name, target.modeled_entity_name,
              systems.source_system_count,
              jsonb_build_object(
-               'consumer_context_version','entity-3',
+               'consumer_context_version','entity-4',
                'target', jsonb_build_object(
-                 'model_id',target.model_id,'modeled_entity_type',target.modeled_entity_type,
+                 'project_id',target.project_id,'modeled_entity_type',target.modeled_entity_type,
                  'modeled_entity_id',target.modeled_entity_id,
                  'modeled_entity_schema_name',target.modeled_entity_schema_name,
                  'modeled_entity_name',target.modeled_entity_name,
@@ -2320,7 +2320,7 @@ AS $list_code_generation_target_context$
             'is_surrogate_key',a.is_surrogate_key,'is_natural_key',a.is_natural_key,'is_meta_data',a.is_audit_column,
             'is_masking_required',FALSE,'is_active',a.status = 'active','is_locked',a.is_locked
           ) ORDER BY a.ordinal_position,a.modeled_attribute_id),'[]'::JSONB) AS documents
-          FROM workflow.modeled_attribute AS a WHERE a.model_id = target.model_id
+          FROM workflow.modeled_attribute AS a WHERE a.project_id = target.project_id
            AND a.modeled_entity_type = target.modeled_entity_type AND a.modeled_entity_id = target.modeled_entity_id
         ) AS attributes
         CROSS JOIN LATERAL (
@@ -2328,7 +2328,7 @@ AS $list_code_generation_target_context$
                  jsonb_agg(jsonb_build_object('source_system_id',m.source_system_id,
                    'system_code',m.source_system_code,'system_name',m.source_system_name)
                    ORDER BY lower(m.source_system_code),m.source_system_id) AS documents
-            FROM active_mapping AS m WHERE m.model_id = target.model_id AND m.modeled_entity_type = target.modeled_entity_type
+            FROM active_mapping AS m WHERE m.project_id = target.project_id AND m.modeled_entity_type = target.modeled_entity_type
              AND coalesce(m.logical_entity_id,m.dimensional_entity_id) = target.modeled_entity_id
         ) AS systems
         CROSS JOIN LATERAL (
@@ -2337,27 +2337,24 @@ AS $list_code_generation_target_context$
                    'output_template_code',template.output_template_code,
                    'entity',jsonb_build_object('entity_type',target.modeled_entity_type,'entity_id',target.modeled_entity_id,
                      'entity_schema_name',target.modeled_entity_schema_name,'entity_name',target.modeled_entity_name,
-                     'definition',target.definition,'classification',target.classification,'grain',target.grain,'assertions',assertions.documents),
+                     'definition',target.definition,'classification',target.classification,'grain',target.grain,'context_records',project_context.documents),
                    'transformation',m.mapping_transformation_document)
                    ORDER BY lower(m.source_system_code),m.source_system_id,m.object_dependency_order,m.mapping_object_id) AS documents
             FROM active_mapping AS m
             LEFT JOIN application.output_template AS template ON template.output_template_id = m.output_template_id
             CROSS JOIN LATERAL (
               SELECT coalesce(jsonb_agg(jsonb_build_object(
-                'modeling_assertion_record_key',a.modeling_assertion_record_key,
-                'modeling_assertion_record_type',a.modeling_assertion_record_type,'modeling_assertion_text',a.modeling_assertion_text,
-                'modeling_assertion_details',a.modeling_assertion_details,'modeling_assertion_source_location',a.modeling_assertion_source_location,
-                'modeling_assertion_confidence',a.modeling_assertion_confidence,'modeling_assertion_document_name',d.modeling_assertion_document_name
-              ) ORDER BY lower(a.modeling_assertion_record_key)),'[]'::JSONB) AS documents
-              FROM model.modeling_assertion_record AS a JOIN model.modeling_assertion_document AS d
-                ON d.modeling_assertion_document_id = a.modeling_assertion_document_id AND d.model_id = a.model_id AND d.is_active
-              WHERE a.model_id = target.model_id AND a.modeling_assertion_record_status = 'active'
-                AND (d.system_id IS NULL OR d.system_id = m.source_system_id)
-                AND (d.tenant_id IS NULL OR d.tenant_id = target.tenant_id OR EXISTS (
-                  SELECT 1 FROM model.model_input_scope AS scope JOIN core.object AS source ON source.object_id = scope.object_id
-                   WHERE scope.model_id = target.model_id AND scope.is_active AND source.source_tenant_id = d.tenant_id))
-            ) AS assertions
-           WHERE m.model_id = target.model_id AND m.modeled_entity_type = target.modeled_entity_type
+                'context_record_id',a.context_record_id,
+                'context_text',a.context_text, 'source_reference',a.source_reference,
+                'context_group_name',d.name, 'context_type_name',t.name
+              ) ORDER BY a.context_record_id),'[]'::JSONB) AS documents
+              FROM project.context_record AS a JOIN project.context_group AS d
+                ON d.context_group_id = a.context_group_id AND d.project_id = a.project_id AND d.is_active
+              JOIN reference.context_type AS t ON t.context_type_id = d.context_type_id
+              WHERE a.project_id = target.project_id AND a.status = 'active'
+                AND (d.source_system_id IS NULL OR d.source_system_id = m.source_system_id)
+            ) AS project_context
+           WHERE m.project_id = target.project_id AND m.modeled_entity_type = target.modeled_entity_type
              AND coalesce(m.logical_entity_id,m.dimensional_entity_id) = target.modeled_entity_id
         ) AS mappings
         CROSS JOIN LATERAL (
@@ -2371,7 +2368,7 @@ AS $list_code_generation_target_context$
                  ) ORDER BY lower(m.source_system_code),m.source_system_id,attribute.ordinal_position,
                      coalesce(a.mapping_attribute_id,attribute.modeled_attribute_id)),'[]'::JSONB) AS documents
             FROM active_mapping AS m
-            JOIN workflow.modeled_attribute AS attribute ON attribute.model_id = m.model_id
+            JOIN workflow.modeled_attribute AS attribute ON attribute.project_id = m.project_id
               AND attribute.modeled_entity_type = m.modeled_entity_type
               AND attribute.modeled_entity_id = coalesce(m.logical_entity_id,m.dimensional_entity_id)
               AND attribute.status = 'active'
@@ -2379,7 +2376,7 @@ AS $list_code_generation_target_context$
               AND a.attribute_mapping_status = 'active'
               AND attribute.modeled_attribute_id = coalesce(a.logical_attribute_id,a.dimensional_attribute_id)
             LEFT JOIN application.output_template AS template ON template.output_template_id = a.output_template_id
-           WHERE m.model_id = target.model_id AND m.modeled_entity_type = target.modeled_entity_type
+           WHERE m.project_id = target.project_id AND m.modeled_entity_type = target.modeled_entity_type
              AND coalesce(m.logical_entity_id,m.dimensional_entity_id) = target.modeled_entity_id
         ) AS attribute_mappings
         CROSS JOIN LATERAL (
@@ -2393,18 +2390,18 @@ AS $list_code_generation_target_context$
           FROM application.output_template AS template
           JOIN (
             SELECT m.output_template_id FROM active_mapping AS m
-             WHERE m.model_id = target.model_id AND m.modeled_entity_type = target.modeled_entity_type
+             WHERE m.project_id = target.project_id AND m.modeled_entity_type = target.modeled_entity_type
                AND coalesce(m.logical_entity_id,m.dimensional_entity_id) = target.modeled_entity_id
             UNION
             SELECT a.output_template_id FROM active_mapping AS m
             JOIN workflow.mapping_attribute AS a ON a.mapping_object_id = m.mapping_object_id
               AND a.attribute_mapping_status = 'active'
-            JOIN workflow.modeled_attribute AS attribute ON attribute.model_id = m.model_id
+            JOIN workflow.modeled_attribute AS attribute ON attribute.project_id = m.project_id
               AND attribute.modeled_entity_type = m.modeled_entity_type
               AND attribute.modeled_entity_id = coalesce(m.logical_entity_id,m.dimensional_entity_id)
               AND attribute.modeled_attribute_id = coalesce(a.logical_attribute_id,a.dimensional_attribute_id)
               AND attribute.status = 'active'
-             WHERE m.model_id = target.model_id AND m.modeled_entity_type = target.modeled_entity_type
+             WHERE m.project_id = target.project_id AND m.modeled_entity_type = target.modeled_entity_type
                AND coalesce(m.logical_entity_id,m.dimensional_entity_id) = target.modeled_entity_id
           ) AS used ON used.output_template_id = template.output_template_id
           CROSS JOIN LATERAL (
@@ -2427,7 +2424,7 @@ AS $list_code_generation_target_context$
             'object',CASE WHEN source.source_object_id IS NOT NULL THEN physical.document ELSE modeled.document END
           ) ORDER BY lower(m.source_system_code),m.source_system_id,source.mapping_order NULLS LAST,source.source_object_id,source.source_logical_entity_id,source.source_dimensional_entity_id),'[]'::JSONB) AS documents
           FROM active_mapping AS m
-          CROSS JOIN LATERAL workflow.list_mapping_source_objects(m.model_id,target.modeled_entity_id,target.modeled_entity_type,m.source_system_id) AS source
+          CROSS JOIN LATERAL workflow.list_mapping_source_objects(m.project_id,target.modeled_entity_id,target.modeled_entity_type,m.source_system_id) AS source
           LEFT JOIN LATERAL (
             SELECT jsonb_build_object(
               'object_id',o.object_id,'source_tenant_id',o.source_tenant_id,'tenant_id',t.tenant_id,
@@ -2445,11 +2442,11 @@ AS $list_code_generation_target_context$
                 'is_nullable',enrichment.is_nullable,'is_pii',enrichment.is_pii,'is_meta_data',a.is_meta_data,
                 'is_masking_required',a.is_masking_required,'is_active',a.is_active,'is_locked',a.is_locked
               ) ORDER BY a.attribute_ordinal_position,a.attribute_id),'[]'::JSONB) FROM core.attribute AS a LEFT JOIN workflow.attribute_enrichment AS enrichment
-                  ON enrichment.model_id = target.model_id AND enrichment.attribute_id = a.attribute_id
+                  ON enrichment.project_id = target.project_id AND enrichment.attribute_id = a.attribute_id
                 WHERE a.object_id = o.object_id)
             ) AS document
             FROM core.object AS o LEFT JOIN workflow.object_enrichment AS object_enrichment
-              ON object_enrichment.model_id = target.model_id AND object_enrichment.object_id = o.object_id
+              ON object_enrichment.project_id = target.project_id AND object_enrichment.object_id = o.object_id
              JOIN core.connection AS c ON c.connection_id = o.connection_id
              JOIN core.tenant AS t ON t.tenant_id = c.tenant_id JOIN core.system AS system ON system.system_id = c.system_id
              JOIN reference.zone AS z ON z.zone_id = o.zone_id WHERE o.object_id = source.source_object_id
@@ -2477,21 +2474,21 @@ AS $list_code_generation_target_context$
                 CASE e.modeled_entity_type WHEN 'logical_entity' THEN 'logical_attribute_name' ELSE 'dimensional_attribute_name' END,
                 a.attribute_name
               ) ORDER BY a.ordinal_position,a.modeled_attribute_id),'[]'::JSONB) FROM workflow.modeled_attribute AS a
-              WHERE a.model_id = e.model_id AND a.modeled_entity_type = e.modeled_entity_type AND a.modeled_entity_id = e.modeled_entity_id)
+              WHERE a.project_id = e.project_id AND a.modeled_entity_type = e.modeled_entity_type AND a.modeled_entity_id = e.modeled_entity_id)
             ) || CASE e.modeled_entity_type WHEN 'logical_entity' THEN jsonb_build_object(
               'logical_entity_schema_name',e.modeled_entity_schema_name,'logical_entity_name',e.modeled_entity_name
             ) ELSE jsonb_build_object(
               'dimensional_entity_schema_name',e.modeled_entity_schema_name,'dimensional_entity_name',e.modeled_entity_name
             ) END AS document FROM workflow.modeled_entity AS e
-             WHERE e.model_id = target.model_id
+             WHERE e.project_id = target.project_id
                AND e.modeled_entity_type = CASE WHEN source.source_dimensional_entity_id IS NOT NULL THEN 'dimensional_entity' ELSE 'logical_entity' END
                AND e.modeled_entity_id = coalesce(source.source_logical_entity_id,source.source_dimensional_entity_id)
           ) AS modeled ON TRUE
-          WHERE m.model_id = target.model_id AND m.modeled_entity_type = target.modeled_entity_type
+          WHERE m.project_id = target.project_id AND m.modeled_entity_type = target.modeled_entity_type
             AND coalesce(m.logical_entity_id,m.dimensional_entity_id) = target.modeled_entity_id
         ) AS sources
     )
-    SELECT assembled.model_id,assembled.modeled_entity_type,assembled.modeled_entity_id,
+    SELECT assembled.project_id,assembled.modeled_entity_type,assembled.modeled_entity_id,
            assembled.modeled_entity_schema_name,assembled.modeled_entity_name,assembled.source_system_count,
            encode(sha256(convert_to(assembled.source_context::TEXT,'UTF8')),'hex')::CHAR(64),assembled.source_context
       FROM assembled ORDER BY assembled.modeled_entity_id;

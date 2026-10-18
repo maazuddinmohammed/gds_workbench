@@ -4,9 +4,9 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "../../core/http";
-import type { ModelsApi } from "../models/api";
+import type { ProjectsApi } from "../projects/api";
 import type {
-  ModelWorkflow,
+  ProjectWorkflow,
   WorkflowDraftReview,
   WorkflowRunDetail,
   WorkflowRunEvent,
@@ -53,9 +53,9 @@ describe("Workflow Run monitor", () => {
   it.each(["analysis", "conceptual", "logical", "dimensional", "mapping", "code_generation", "validation", "metadata_enrichment"] as const)(
     "cancels a running %s run and refreshes its saved status", async (workflow) => {
       const api = monitorApi();
-      const run: WorkflowRunDetail = { ...workflowRun(false), model_workflow: workflow,
-        workflow_run_state: "running", completed_at: null, model_change_set_id: null,
-        model_change_set_status: null, draft_revision: null, candidate_digest: null, validated_at: null };
+      const run: WorkflowRunDetail = { ...workflowRun(false), project_workflow: workflow,
+        workflow_run_state: "running", completed_at: null, project_change_set_id: null,
+        project_change_set_status: null, draft_revision: null, candidate_digest: null, validated_at: null };
       api.readWorkflowRun.mockResolvedValue(run);
       api.listWorkflowRuns.mockResolvedValue({ items: [run], next_cursor: null });
       renderMonitor(api, vi.fn(async () => undefined), workflow);
@@ -74,7 +74,7 @@ describe("Workflow Run monitor", () => {
   it("allows queued cancellation to be retried after an uncertain response", async () => {
     const api = monitorApi();
     const run: WorkflowRunDetail = { ...workflowRun(false), workflow_run_state: "queued",
-      model_change_set_id: null, model_change_set_status: null };
+      project_change_set_id: null, project_change_set_status: null };
     api.readWorkflowRun.mockResolvedValue(run);
     api.listWorkflowRuns.mockResolvedValue({ items: [run], next_cursor: null });
     api.cancelWorkflowRun.mockRejectedValueOnce(new Error("Network unavailable"));
@@ -100,7 +100,7 @@ describe("Workflow Run monitor", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><WorkflowCommandCenter className="test-page">
       <WorkflowCommandTools />
-      <WorkflowRunMonitor api={api} tenantId={7} modelId={18} modelRevision={5} workflow="conceptual"
+      <WorkflowRunMonitor api={api} tenantId={7} projectId={18} projectRevision={5} workflow="conceptual"
         hasTenantLock={false} focusRunId={null} onApplied={async () => undefined} />
     </WorkflowCommandCenter></QueryClientProvider>);
     await waitFor(() => expect(api.listWorkflowRuns).toHaveBeenCalledOnce());
@@ -194,7 +194,7 @@ describe("Workflow Run monitor", () => {
       expect(dialog).toHaveTextContent("1 failed pair remains unchanged.");
       expect(api.applyWorkflowDraft).not.toHaveBeenCalled();
 
-      api.readWorkflowRun.mockResolvedValue({ ...run, model_change_set_status: "applied" });
+      api.readWorkflowRun.mockResolvedValue({ ...run, project_change_set_status: "applied" });
       await user.click(within(dialog).getByRole("button", { name: "Apply exact draft" }));
       await waitFor(() => expect(api.applyWorkflowDraft).toHaveBeenCalledWith(
         7, 18, 1048, 5, 2, "d".repeat(64), expect.any(String),
@@ -213,7 +213,7 @@ describe("Workflow Run monitor", () => {
     const api = monitorApi();
     const run: WorkflowRunDetail = { ...partialMappingRun(), workflow_run_state: "failed",
       mapping_outcome: { completed_pair_count: 0, preserved_pair_count: 0, no_source_pair_count: 0, failed_pair_count: 201 },
-      mapping_failures_truncated: true, model_change_set_id: null, model_change_set_status: null,
+      mapping_failures_truncated: true, project_change_set_id: null, project_change_set_status: null,
       draft_revision: null, candidate_digest: null, validated_at: null };
     api.readWorkflowRun.mockResolvedValue(run);
     api.listWorkflowRuns.mockResolvedValue({ items: [run], next_cursor: null });
@@ -255,7 +255,7 @@ describe("Workflow Run monitor", () => {
   it.each(["queued", "running"] as const)("keeps a %s Mapping run in progress after a pair fails", async (state) => {
     const api = monitorApi();
     const run: WorkflowRunDetail = { ...partialMappingRun(), workflow_run_state: state,
-      model_change_set_id: null, model_change_set_status: null, draft_revision: null,
+      project_change_set_id: null, project_change_set_status: null, draft_revision: null,
       candidate_digest: null, validated_at: null };
     api.readWorkflowRun.mockResolvedValue(run);
     api.listWorkflowRuns.mockResolvedValue({ items: [run], next_cursor: null });
@@ -272,7 +272,7 @@ describe("Workflow Run monitor", () => {
     const api = monitorApi();
     const user = userEvent.setup();
     const running: WorkflowRunDetail = { ...workflowRun(false), workflow_run_state: "running",
-      model_change_set_id: null, model_change_set_status: null,
+      project_change_set_id: null, project_change_set_status: null,
       token_usage: { status: "recording", request_count: 2, reported_request_count: 1,
         pending_request_count: 1, missing_usage_request_count: 0,
         input_tokens: 900, output_tokens: 100, total_tokens: 1_000,
@@ -303,7 +303,7 @@ describe("Workflow Run monitor", () => {
     expect(api.readWorkflowRun).toHaveBeenCalledTimes(2);
   });
 
-  it("shows recorded zero model usage for deterministic Analysis validation", async () => {
+  it("shows recorded zero project usage for deterministic Analysis validation", async () => {
     const api = monitorApi({ deterministic: true });
     const run = workflowRun(true);
     api.readWorkflowRun.mockResolvedValue({ ...run, token_usage: {
@@ -323,11 +323,11 @@ describe("Workflow Run monitor", () => {
     const api = monitorApi();
     const user = userEvent.setup();
     const run: WorkflowRunDetail = { ...workflowRun(false), workflow_run_state: "failed",
-      model_change_set_status: "active", candidate_digest: null, validated_at: null,
+      project_change_set_status: "active", candidate_digest: null, validated_at: null,
       failure_code: "workflow_change_set_validation_failed", failure_message: "Draft needs corrections." };
     const review = failedDraftReview();
     api.readWorkflowRun.mockResolvedValue(run);
-    api.readWorkflowDraftReview.mockImplementation(async (_tenant, _model, _id, dataset) => ({
+    api.readWorkflowDraftReview.mockImplementation(async (_tenant, _project, _id, dataset) => ({
       ...review, dataset: dataset ?? null,
       records: dataset ? [{ conceptual_object_name: "Customer", conceptual_object_definition: "A customer account." },
         { conceptual_object_name: "Purchase", conceptual_object_definition: "An order placed by a customer." }] : null,
@@ -341,7 +341,7 @@ describe("Workflow Run monitor", () => {
     await user.click(screen.getByRole("button", { name: "Inspect conceptual object record 2" }));
     const record = await screen.findByRole("article", { name: "Generated conceptual object record 2" });
     expect(record).toHaveTextContent("An order placed by a customer.");
-    expect(api.readWorkflowDraftReview).toHaveBeenLastCalledWith(7, 18, run.model_change_set_id, "conceptual_object");
+    expect(api.readWorkflowDraftReview).toHaveBeenLastCalledWith(7, 18, run.project_change_set_id, "conceptual_object");
     await user.click(screen.getByRole("button", { name: "Previous record" }));
     expect(screen.getByRole("article", { name: "Generated conceptual object record 1" })).toHaveTextContent("A customer account.");
     expect(api.applyWorkflowDraft).not.toHaveBeenCalled();
@@ -349,19 +349,19 @@ describe("Workflow Run monitor", () => {
     await waitFor(() => expect(api.readWorkflowDraftReview).toHaveBeenCalledTimes(4));
   });
 
-  it.each(["wrong revision", "wrong model", "expired", "unavailable"])(
+  it.each(["wrong revision", "wrong project", "expired", "unavailable"])(
     "hides retained records when their response is %s", async (reason) => {
       const api = monitorApi();
       const user = userEvent.setup();
       api.readWorkflowRun.mockResolvedValue({ ...workflowRun(false), workflow_run_state: "failed",
-        model_change_set_status: "active", candidate_digest: null, validated_at: null });
+        project_change_set_status: "active", candidate_digest: null, validated_at: null });
       const review = failedDraftReview();
-      api.readWorkflowDraftReview.mockImplementation(async (_tenant, _model, _id, dataset) => {
+      api.readWorkflowDraftReview.mockImplementation(async (_tenant, _project, _id, dataset) => {
         if (!dataset) return review;
         if (reason === "unavailable") throw new Error("Unavailable");
         return { ...review, dataset, records: [{ conceptual_object_definition: "Stale content must be hidden." }],
           ...(reason === "wrong revision" ? { draft_revision: 99 } : {}),
-          ...(reason === "wrong model" ? { model_id: 99 } : {}),
+          ...(reason === "wrong project" ? { project_id: 99 } : {}),
           ...(reason === "expired" ? { expires_at: "2020-01-01T00:00:00Z" } : {}),
         };
       });
@@ -376,7 +376,7 @@ describe("Workflow Run monitor", () => {
   it("keeps failed-draft controls unavailable when summary loading fails", async () => {
     const api = monitorApi();
     api.readWorkflowRun.mockResolvedValue({ ...workflowRun(false), workflow_run_state: "failed",
-      model_change_set_status: "active", candidate_digest: null, validated_at: null });
+      project_change_set_status: "active", candidate_digest: null, validated_at: null });
     api.readWorkflowDraftReview.mockRejectedValue(new Error("Unavailable"));
     renderMonitor(api, vi.fn(async () => undefined));
     expect(await screen.findByText(/The retained draft is unavailable or changed/)).toBeVisible();
@@ -428,11 +428,11 @@ describe("Workflow Run monitor", () => {
 
   it("expands when a newly started run becomes the focused run", async () => {
     const api = monitorApi();
-    const readOverview = vi.fn<ModelsApi["readModelOverview"]>().mockResolvedValue({
-      model_id: 18, model_revision: 5, items: [], section_states: [{ section: "conceptual", state: "not_run" }],
+    const readOverview = vi.fn<ProjectsApi["readProjectOverview"]>().mockResolvedValue({
+      project_id: 18, project_revision: 5, items: [], section_states: [{ section: "conceptual", state: "not_run" }],
     });
     api.listWorkflowRuns.mockResolvedValue({ items: [workflowRun(false), { ...workflowRun(false), workflow_run_id: 1047 }], next_cursor: null });
-    api.readWorkflowRun.mockImplementation(async (_tenant, _model, id) => ({ ...workflowRun(false), workflow_run_id: id }));
+    api.readWorkflowRun.mockImplementation(async (_tenant, _project, id) => ({ ...workflowRun(false), workflow_run_id: id }));
     const { rerenderMonitor } = renderMonitor(
       api,
       vi.fn(async () => undefined),
@@ -448,7 +448,7 @@ describe("Workflow Run monitor", () => {
     await waitFor(() => expect(sectionState).toHaveTextContent("not_run"));
     expect(readOverview).toHaveBeenCalledExactlyOnceWith(7, 18);
     readOverview.mockResolvedValue({
-      model_id: 18, model_revision: 5, items: [], section_states: [{ section: "conceptual", state: "queued" }],
+      project_id: 18, project_revision: 5, items: [], section_states: [{ section: "conceptual", state: "queued" }],
     });
     rerenderMonitor(1048);
 
@@ -468,8 +468,8 @@ describe("Workflow Run monitor", () => {
     const api = monitorApi();
     const onApplied = vi.fn(async () => undefined);
     const user = userEvent.setup();
-    const readOverview = vi.fn<ModelsApi["readModelOverview"]>().mockResolvedValue({
-      model_id: 18, model_revision: 5, items: [], section_states: [{ section: "conceptual", state: "completed" }],
+    const readOverview = vi.fn<ProjectsApi["readProjectOverview"]>().mockResolvedValue({
+      project_id: 18, project_revision: 5, items: [], section_states: [{ section: "conceptual", state: "completed" }],
     });
     renderMonitor(api, onApplied, "conceptual", 1048, readOverview);
 
@@ -488,7 +488,7 @@ describe("Workflow Run monitor", () => {
     });
     expect(api.applyWorkflowDraft).not.toHaveBeenCalled();
     readOverview.mockResolvedValue({
-      model_id: 18, model_revision: 6, items: [], section_states: [{ section: "conceptual", state: "results_available" }],
+      project_id: 18, project_revision: 6, items: [], section_states: [{ section: "conceptual", state: "results_available" }],
     });
     await user.click(within(confirmation).getByRole("button", { name: "Apply exact draft" }));
 
@@ -517,7 +517,7 @@ describe("Workflow Run monitor", () => {
     const api = monitorApi();
     const validationRun: WorkflowRunDetail = {
       ...workflowRun(false),
-      model_workflow: "validation",
+      project_workflow: "validation",
       workflow_execution_mode: null,
     };
     const validationReview: WorkflowDraftReview = {
@@ -582,7 +582,7 @@ describe("Workflow Run monitor", () => {
 
   it("loads the authoritative draft for Code Generation with its fixed execution profile", async () => {
     const api = monitorApi();
-    const run: WorkflowRunDetail = { ...workflowRun(false), model_workflow: "code_generation", workflow_execution_mode: null };
+    const run: WorkflowRunDetail = { ...workflowRun(false), project_workflow: "code_generation", workflow_execution_mode: null };
     api.listWorkflowRuns.mockResolvedValue({ items: [run], next_cursor: null });
     api.readWorkflowRun.mockResolvedValue(run);
     renderMonitor(api, vi.fn(async () => undefined), "code_generation");
@@ -610,12 +610,12 @@ describe("Workflow Run monitor", () => {
     const api = monitorApi();
     const olderRun = { ...workflowRun(false), workflow_run_id: 1047 };
     const directRun = { ...workflowRun(false), workflow_run_id: 1039 };
-    api.listWorkflowRuns.mockImplementation(async (_tenant, _model, _workflow, _state, _size, cursor) => (
+    api.listWorkflowRuns.mockImplementation(async (_tenant, _project, _workflow, _state, _size, cursor) => (
       cursor
         ? { items: [olderRun], next_cursor: null }
         : { items: [workflowRun(false)], next_cursor: "older" }
     ));
-    api.readWorkflowRun.mockImplementation(async (_tenant, _model, runId) => (
+    api.readWorkflowRun.mockImplementation(async (_tenant, _project, runId) => (
       runId === 1039 ? directRun : runId === 1047 ? olderRun : workflowRun(false)
     ));
     const user = userEvent.setup();
@@ -633,7 +633,7 @@ describe("Workflow Run monitor", () => {
   it("aggregates every event page and refreshes all selected-run resources", async () => {
     const api = monitorApi();
     const firstPage = Array.from({ length: 200 }, (_, index) => workflowEvent(index + 1));
-    api.listWorkflowRunEvents.mockImplementation(async (_tenant, _model, _run, after) => (
+    api.listWorkflowRunEvents.mockImplementation(async (_tenant, _project, _run, after) => (
       after === 0
         ? { items: firstPage, next_after_sequence: 200 }
         : after === 200
@@ -661,15 +661,15 @@ describe("Workflow Run monitor", () => {
 
   it("does not poll an active run and refreshes only after the user asks", async () => {
     const api = monitorApi();
-    const readOverview = vi.fn<ModelsApi["readModelOverview"]>().mockResolvedValue({
-      model_id: 18, model_revision: 5, items: [], section_states: [{ section: "conceptual", state: "running" }],
+    const readOverview = vi.fn<ProjectsApi["readProjectOverview"]>().mockResolvedValue({
+      project_id: 18, project_revision: 5, items: [], section_states: [{ section: "conceptual", state: "running" }],
     });
     const activeRun: WorkflowRunDetail = {
       ...workflowRun(false),
       workflow_run_state: "running",
       completed_at: null,
-      model_change_set_id: null,
-      model_change_set_status: null,
+      project_change_set_id: null,
+      project_change_set_status: null,
       draft_revision: null,
       candidate_digest: null,
       validated_at: null,
@@ -718,7 +718,7 @@ describe("Workflow Run monitor", () => {
     expect(screen.queryByText(progressing.message)).not.toBeInTheDocument();
 
     readOverview.mockResolvedValue({
-      model_id: 18, model_revision: 5, items: [], section_states: [{ section: "conceptual", state: "failed" }],
+      project_id: 18, project_revision: 5, items: [], section_states: [{ section: "conceptual", state: "failed" }],
     });
     await user.click(screen.getByRole("button", { name: "Refresh runs" }));
     await waitFor(() => {
@@ -795,8 +795,8 @@ describe("Workflow Run monitor", () => {
       failure_message: (
         "The selected execution mode cannot accept this context. Choose another mode explicitly."
       ),
-      model_change_set_id: null,
-      model_change_set_status: null,
+      project_change_set_id: null,
+      project_change_set_status: null,
       draft_revision: null,
       candidate_digest: null,
       validated_at: null,
@@ -873,7 +873,7 @@ describe("Workflow Run monitor", () => {
     await user.click(await screen.findByRole("button", { name: "Apply validated draft" }));
     let confirmation = await screen.findByRole("dialog", { name: "Apply validated Conceptual draft?" });
     await user.click(within(confirmation).getByRole("button", { name: "Apply exact draft" }));
-    expect(await within(confirmation).findByRole("alert")).toHaveTextContent("Model or draft changed");
+    expect(await within(confirmation).findByRole("alert")).toHaveTextContent("Project or draft changed");
     await user.click(within(confirmation).getByRole("button", { name: "Close draft confirmation" }));
 
     await user.click(screen.getByRole("button", { name: "Apply validated draft" }));
@@ -921,9 +921,9 @@ describe("Workflow Run monitor", () => {
 function renderMonitor(
   api: WorkflowRunMonitorApi,
   onApplied: () => Promise<void>,
-  workflow: Exclude<ModelWorkflow, "profiling"> = "conceptual",
+  workflow: Exclude<ProjectWorkflow, "profiling"> = "conceptual",
   focusRunId: number | null = 1048,
-  readOverview?: ModelsApi["readModelOverview"],
+  readOverview?: ProjectsApi["readProjectOverview"],
   hasTenantLock = true,
 ) {
   const queryClient = new QueryClient({
@@ -938,8 +938,8 @@ function renderMonitor(
       <WorkflowRunMonitor
         api={api}
         tenantId={7}
-        modelId={18}
-        modelRevision={5}
+        projectId={18}
+        projectRevision={5}
         workflow={workflow}
         hasTenantLock={hasTenantLock}
         focusRunId={nextFocusRunId}
@@ -959,8 +959,8 @@ function renderMonitor(
   };
 }
 
-function SectionStatus({ readOverview }: { readOverview: ModelsApi["readModelOverview"] }) {
-  const query = useQuery({ queryKey: ["model-overview", 7, 18], queryFn: () => readOverview(7, 18),
+function SectionStatus({ readOverview }: { readOverview: ProjectsApi["readProjectOverview"] }) {
+  const query = useQuery({ queryKey: ["project-overview", 7, 18], queryFn: () => readOverview(7, 18),
     staleTime: 30_000, refetchOnWindowFocus: false });
   return <output aria-label="Conceptual section state">
     {query.data?.section_states?.find((entry) => entry.section === "conceptual")?.state ?? "Loading"}
@@ -978,7 +978,7 @@ function monitorApi(options: {
     options.expiredReview ?? false,
   );
   return {
-    cancelWorkflowRun: vi.fn<WorkflowRunMonitorApi["cancelWorkflowRun"]>(async (_tenant, _model, runId) => ({
+    cancelWorkflowRun: vi.fn<WorkflowRunMonitorApi["cancelWorkflowRun"]>(async (_tenant, _project, runId) => ({
       changed: true, workflow_run_id: runId, workflow_run_state: "cancelled", completed_at: "2026-10-01T14:00:00Z",
     })),
     listWorkflowRuns: vi.fn<WorkflowRunMonitorApi["listWorkflowRuns"]>(
@@ -1005,14 +1005,14 @@ function monitorApi(options: {
     ),
     applyWorkflowDraft: vi.fn<WorkflowRunMonitorApi["applyWorkflowDraft"]>(async () => ({
       schema_version: "1.0" as const,
-      model_id: 18,
+      project_id: 18,
       workflow_run_id: 1048,
-      model_change_set_id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      project_change_set_id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
       replayed: false,
       draft_revision: 2,
       candidate_digest: "d".repeat(64),
       action_count: 3,
-      model_revision: 6,
+      project_revision: 6,
       applied_at: "2026-08-25T12:02:00Z",
     })),
   } satisfies WorkflowRunMonitorApi;
@@ -1032,7 +1032,7 @@ function workflowRun(deterministic: boolean): WorkflowRunDetail {
       history_incomplete: false,
     },
     workflow_run_id: 1048,
-    model_workflow: deterministic ? "analysis" : "conceptual",
+    project_workflow: deterministic ? "analysis" : "conceptual",
     workflow_execution_mode: deterministic ? null : "one_shot",
     modeled_entity_type: null,
     selected_scope_count: 2,
@@ -1051,8 +1051,8 @@ function workflowRun(deterministic: boolean): WorkflowRunDetail {
     validation_retry_count: deterministic ? null : 1,
     failure_code: null,
     failure_message: null,
-    model_change_set_id: deterministic ? null : "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-    model_change_set_status: deterministic ? null : "validated",
+    project_change_set_id: deterministic ? null : "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    project_change_set_status: deterministic ? null : "validated",
     draft_revision: deterministic ? null : 2,
     candidate_digest: deterministic ? null : "d".repeat(64),
     validated_at: deterministic ? null : "2026-08-25T12:00:55Z",
@@ -1060,7 +1060,7 @@ function workflowRun(deterministic: boolean): WorkflowRunDetail {
 }
 
 function partialMappingRun(): WorkflowRunDetail {
-  return { ...workflowRun(false), model_workflow: "mapping", workflow_run_state: "completed_with_repair",
+  return { ...workflowRun(false), project_workflow: "mapping", workflow_run_state: "completed_with_repair",
     mapping_outcome: { completed_pair_count: 1, preserved_pair_count: 0, no_source_pair_count: 0, failed_pair_count: 1 },
     mapping_failures: [{ source_system_id: 22, system_code: "ERP", modeled_entity_id: 42,
       entity_schema_name: "silver", entity_name: "Order", message: "OrderDate requires a transformation rule." }],
@@ -1070,8 +1070,8 @@ function partialMappingRun(): WorkflowRunDetail {
 function workflowDraftReview(stale: boolean, expired = false): WorkflowDraftReview {
   return {
     schema_version: "1.0",
-    model_id: 18,
-    model_change_set_id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    project_id: 18,
+    project_change_set_id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
     status: "validated",
     draft_revision: 2,
     candidate_digest: (stale ? "e" : "d").repeat(64),

@@ -49,8 +49,8 @@ def _payload() -> dict[str, Any]:
     }
     return {
         "tenant_id": 7,
-        "model_id": 18,
-        "model_revision": 4,
+        "project_id": 18,
+        "project_revision": 4,
         "workflow_run_id": 1048,
         "workflow_run_state": "completed",
         "total_count": 3,
@@ -108,8 +108,8 @@ class ReadTransaction:
                 "lock_expires_time": None,
             }
         if "SELECT run.workflow_run_id" in query:
-            assert "run.tenant_id = %s AND run.model_id = %s" in query
-            assert "run.model_workflow = 'metadata_enrichment'" in query
+            assert "run.tenant_id = %s AND run.project_id = %s" in query
+            assert "run.project_workflow = 'metadata_enrichment'" in query
             assert parameters == (7, 18, 1048)
             return {"workflow_run_id": 1048} if self.route_exists else None
         assert "application.get_metadata_enrichment_results" in query
@@ -164,7 +164,7 @@ async def test_enrichment_read_pages_keep_whole_run_summary_and_safe_labels() ->
         await service.read_results(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
             limit=1,
             offset=offset,
@@ -191,19 +191,19 @@ async def test_enrichment_read_requires_authorization_before_run_lookup() -> Non
     database.transaction.authorized = False
     with pytest.raises(AuthorizationDeniedError):
         await _service(database).read_results(
-            _principal(), tenant_id=7, model_id=18, workflow_run_id=1048
+            _principal(), tenant_id=7, project_id=18, workflow_run_id=1048
         )
     assert len(database.transaction.calls) == 1
 
 
-async def test_enrichment_read_rejects_foreign_model_or_wrong_workflow_before_result_function() -> (
+async def test_enrichment_read_rejects_foreign_project_or_wrong_workflow_before_result_function() -> (
     None
 ):
     database = ReadDatabase()
     database.transaction.route_exists = False
     with pytest.raises(WorkflowRunNotFoundError):
         await _service(database).read_results(
-            _principal(), tenant_id=7, model_id=18, workflow_run_id=1048
+            _principal(), tenant_id=7, project_id=18, workflow_run_id=1048
         )
     assert len(database.transaction.calls) == 2
 
@@ -215,7 +215,7 @@ async def test_enrichment_read_revalidates_page_bounds(limit: int, offset: int) 
         await _service(database).read_results(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
             limit=limit,
             offset=offset,
@@ -248,7 +248,7 @@ async def test_enrichment_read_rejects_malformed_or_unscoped_database_output(
         payload["results"][0]["applied_value"] = "é" * 1_001
     with pytest.raises(DependencyUnavailableError):
         await _service(database).read_results(
-            _principal(), tenant_id=7, model_id=18, workflow_run_id=1048
+            _principal(), tenant_id=7, project_id=18, workflow_run_id=1048
         )
 
 
@@ -267,7 +267,7 @@ def test_enrichment_result_router_publishes_paginated_contract_and_validates_inp
     )
     with TestClient(app) as client:
         response = client.get(
-            "/api/v1/tenants/7/models/18/runs/1048/metadata-enrichment?limit=1&offset=1"
+            "/api/v1/tenants/7/projects/18/runs/1048/metadata-enrichment?limit=1&offset=1"
         )
         assert response.status_code == 200
         assert response.json()["results"][0]["status"] == "existing"
@@ -276,13 +276,13 @@ def test_enrichment_result_router_publishes_paginated_contract_and_validates_inp
         for query in ("limit=201", "offset=-1", "offset=30201"):
             assert (
                 client.get(
-                    f"/api/v1/tenants/7/models/18/runs/1048/metadata-enrichment?{query}"
+                    f"/api/v1/tenants/7/projects/18/runs/1048/metadata-enrichment?{query}"
                 ).status_code
                 == 422
             )
         database.transaction.route_exists = False
         missing = client.get(
-            "/api/v1/tenants/7/models/18/runs/1048/metadata-enrichment"
+            "/api/v1/tenants/7/projects/18/runs/1048/metadata-enrichment"
         )
         assert missing.status_code == 404
         assert missing.json()["error"]["code"] == "workflow_run_not_found"

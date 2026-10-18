@@ -26,10 +26,6 @@ from gds_workbench_api.features.analysis.validation_router import (
     AnalysisValidationWorkflowService,
     create_analysis_validation_workflow_router,
 )
-from gds_workbench_api.features.assertions import (
-    AssertionsService,
-    create_assertions_router,
-)
 from gds_workbench_api.features.code_generation import (
     CodeGenerationService,
     create_code_generation_router,
@@ -42,6 +38,10 @@ from gds_workbench_api.features.conceptual import ConceptualService, create_conc
 from gds_workbench_api.features.conceptual.router import (
     ConceptualWorkflowService,
     create_conceptual_workflow_router,
+)
+from gds_workbench_api.features.context import (
+    ContextService,
+    create_context_router,
 )
 from gds_workbench_api.features.dimensional import (
     DimensionalService,
@@ -87,24 +87,6 @@ from gds_workbench_api.features.metadata_enrichment.router import (
     MetadataEnrichmentWorkflowService,
     create_metadata_enrichment_workflow_router,
 )
-from gds_workbench_api.features.model_change_sets.router import (
-    ModelChangeSetService,
-    create_model_change_sets_router,
-)
-from gds_workbench_api.features.model_input_scope import (
-    ModelInputScopeService,
-    create_input_scope_router,
-)
-from gds_workbench_api.features.model_targets.router import (
-    ModelTargetsService,
-    create_model_targets_router,
-)
-from gds_workbench_api.features.models import (
-    ModelCommandService,
-    ModelService,
-    create_model_commands_router,
-    create_models_router,
-)
 from gds_workbench_api.features.output_templates import (
     OutputTemplateService,
     create_output_templates_router,
@@ -114,6 +96,24 @@ from gds_workbench_api.features.profiling import (
     ProfilingWorkflowService,
     create_profiling_router,
     create_profiling_workflow_router,
+)
+from gds_workbench_api.features.project_change_sets.router import (
+    ProjectChangeSetService,
+    create_project_change_sets_router,
+)
+from gds_workbench_api.features.project_input_scope import (
+    ProjectInputScopeService,
+    create_input_scope_router,
+)
+from gds_workbench_api.features.project_targets.router import (
+    ProjectTargetsService,
+    create_project_targets_router,
+)
+from gds_workbench_api.features.projects import (
+    ProjectCommandService,
+    ProjectService,
+    create_project_commands_router,
+    create_projects_router,
 )
 from gds_workbench_api.features.prompts import PromptService, create_prompts_router
 from gds_workbench_api.features.session import SessionService, create_session_router
@@ -156,11 +156,11 @@ def create_app(
     identity_provider: IdentityProvider | None = None,
     session_service: SessionService | None = None,
     tenant_service: TenantService | None = None,
-    model_service: ModelService | None = None,
-    model_command_service: ModelCommandService | None = None,
-    model_change_set_service: ModelChangeSetService | None = None,
+    project_service: ProjectService | None = None,
+    project_command_service: ProjectCommandService | None = None,
+    project_change_set_service: ProjectChangeSetService | None = None,
     workflow_draft_apply_service: WorkflowDraftApplyService | None = None,
-    model_input_scope_service: ModelInputScopeService | None = None,
+    project_input_scope_service: ProjectInputScopeService | None = None,
     enrichment_dictionary_service: DatabaseEnrichmentDictionaryService | None = None,
     enrichment_review_service: DatabaseEnrichmentReviewService | None = None,
     agent_capability_registry: AgentCapabilityRegistry | None = None,
@@ -176,11 +176,11 @@ def create_app(
     analysis_review_service: AnalysisReviewService | None = None,
     analysis_inference_workflow_service: AnalysisInferenceWorkflowService | None = None,
     analysis_validation_workflow_service: AnalysisValidationWorkflowService | None = None,
-    assertions_service: AssertionsService | None = None,
+    context_service: ContextService | None = None,
     conceptual_service: ConceptualService | None = None,
     conceptual_workflow_service: ConceptualWorkflowService | None = None,
     logical_service: LogicalService | None = None,
-    model_targets_service: ModelTargetsService | None = None,
+    project_targets_service: ProjectTargetsService | None = None,
     logical_workflow_service: LogicalWorkflowService | None = None,
     dimensional_service: DimensionalService | None = None,
     dimensional_workflow_service: DimensionalWorkflowService | None = None,
@@ -243,25 +243,25 @@ def create_app(
             )
         )
 
-    if model_service is not None:
+    if project_service is not None:
         app.include_router(
-            create_models_router(
+            create_projects_router(
                 identity_provider=identity_provider,
-                service=model_service,
+                service=project_service,
             )
         )
-    if model_command_service is not None:
+    if project_command_service is not None:
         app.include_router(
-            create_model_commands_router(
+            create_project_commands_router(
                 identity_provider=identity_provider,
-                service=model_command_service,
+                service=project_command_service,
             )
         )
-    if model_change_set_service is not None:
+    if project_change_set_service is not None:
         app.include_router(
-            create_model_change_sets_router(
+            create_project_change_sets_router(
                 identity_provider=identity_provider,
-                service=model_change_set_service,
+                service=project_change_set_service,
             )
         )
     if workflow_draft_apply_service is not None:
@@ -271,11 +271,11 @@ def create_app(
                 service=workflow_draft_apply_service,
             )
         )
-    if model_input_scope_service is not None:
+    if project_input_scope_service is not None:
         app.include_router(
             create_input_scope_router(
                 identity_provider=identity_provider,
-                service=model_input_scope_service,
+                service=project_input_scope_service,
             )
         )
     if agent_capability_registry is not None:
@@ -361,11 +361,11 @@ def create_app(
                 service=analysis_validation_workflow_service,
             )
         )
-    if assertions_service is not None:
+    if context_service is not None:
         app.include_router(
-            create_assertions_router(
+            create_context_router(
                 identity_provider=identity_provider,
-                service=assertions_service,
+                service=context_service,
             )
         )
     if conceptual_service is not None:
@@ -382,10 +382,10 @@ def create_app(
                 service=conceptual_workflow_service,
             )
         )
-    if model_targets_service is not None:
+    if project_targets_service is not None:
         app.include_router(
-            create_model_targets_router(
-                identity_provider=identity_provider, service=model_targets_service
+            create_project_targets_router(
+                identity_provider=identity_provider, service=project_targets_service
             )
         )
     if logical_service is not None:

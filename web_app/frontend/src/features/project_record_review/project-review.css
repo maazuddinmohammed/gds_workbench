@@ -1,0 +1,100 @@
+.project-delete-count {
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.project-delete-sections {
+  min-width: 0;
+  border-top: 1px solid var(--line);
+}
+
+.project-delete-section {
+  min-width: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.project-delete-section > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 3rem;
+  padding-block: 0.7rem;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.8rem;
+}
+
+.project-delete-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.project-delete-section > summary::before {
+  width: 0.45rem;
+  height: 0.45rem;
+  flex-shrink: 0;
+  border-top: 1.5px solid var(--muted);
+  border-right: 1.5px solid var(--muted);
+  transform: rotate(45deg);
+  content: "";
+}
+
+.project-delete-section[open] > summary::before {
+  transform: rotate(135deg);
+}
+
+.project-delete-section > summary > span:first-child {
+  font-weight: 650;
+}
+
+.project-delete-section > summary > span:last-child {
+  margin-left: auto;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.project-record-review-body .project-delete-section .table-scroll table {
+  min-width: 28rem;
+  table-layout: auto;
+}
+
+.project-record-review-body .project-delete-section :is(th, td):first-child {
+  width: 55%;
+}
+
+.project-record-review-body .project-delete-section :is(th, td):nth-child(2) {
+  width: 15%;
+}
+
+.project-delete-section td .text-action {
+  display: block;
+  margin-top: 0.25rem;
+}
+
+.project-delete-section > .field-help {
+  padding-bottom: 0.75rem;
+}
+
+.project-delete-record-types {
+  margin-left: 0.25rem;
+  padding-left: 1rem;
+  border-left: 1px solid var(--line);
+}
+
+.project-delete-record-types > .project-delete-section:last-child {
+  border-bottom: 0;
+}
+
+.project-delete-record-types > .project-delete-section > summary {
+  min-height: 2.5rem;
+  font-size: 0.75rem;
+}
+
+.project-delete-notes {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.project-delete-notes > summary {
+  padding-block: 0.25rem;
+  cursor: pointer;
+}

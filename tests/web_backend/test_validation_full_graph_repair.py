@@ -53,9 +53,9 @@ async def test_retiring_group_with_locked_check_preserves_parent_without_agent_r
     await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
     assert not no_op.requests and not handoff.retained and lifecycle.failed is None

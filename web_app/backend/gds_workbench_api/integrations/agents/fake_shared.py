@@ -450,7 +450,7 @@ def analysis_selected_attributes(
 def modeled_output_schema(context: JsonValue, workflow: str) -> str:
     """Use the first configured schema; a fake must not invent authoring configuration."""
     original = original_context(context)
-    details = original.get("model_details")
+    details = original.get("project_details")
     schemas = (
         details.get(f"{workflow}_schemas") if isinstance(details, dict) else original.get("schemas")
     )

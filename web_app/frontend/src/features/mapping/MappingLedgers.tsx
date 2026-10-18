@@ -1,5 +1,5 @@
 import { WorkflowFilters } from "../workflows/WorkflowCommandCenter";
-import { reviewSelectionColumn } from "../model_record_review/selection";
+import { reviewSelectionColumn } from "../project_record_review/selection";
 import { useMemo, type ReactNode } from "react";
 import { useForm } from "@tanstack/react-form";
 import { Link } from "@tanstack/react-router";
@@ -16,7 +16,7 @@ import type {
   MappingApi,
 } from "./api";
 import "./mapping-ledger.css";
-import { SourceCodeFilter, SourceFilterNotice } from "../model_input_scope/scopeFilterChoices";
+import { SourceCodeFilter, SourceFilterNotice } from "../project_input_scope/scopeFilterChoices";
 import { MappingTransformationValue, useMappingAttributeDocuments } from "./MappingAttributeDocuments";
 import { Fact } from "../../shared/ui";
 import { formatRequiredDateTime } from "../../shared/presentation";
@@ -36,7 +36,7 @@ interface CommonLedgerProps {
   selectedIds: Set<number>;
   onSelectionChange: (ids: Set<number>) => void;
   tenantId: number;
-  modelId: number;
+  projectId: number;
   filters: MappingFilters;
   state: MappingLedgerState;
   onApplyFilters: (filters: MappingFilters) => void;
@@ -46,7 +46,7 @@ interface CommonLedgerProps {
 export function MappingObjectsLedger({
   sourceChoices,
   tenantId,
-  modelId,
+  projectId,
   selectedIds, onSelectionChange,
   items,
   filters,
@@ -75,11 +75,11 @@ export function MappingObjectsLedger({
         <div className="workflow-command-actions"><Link
           className="text-action"
           aria-label={`Open Object Mapping ${row.original.mapping_object_id}`}
-          to="/tenants/$tenantId/mapping/models/$modelId/objects/$mappingObjectId"
+          to="/tenants/$tenantId/mapping/projects/$projectId/objects/$mappingObjectId"
           search={{ layer: row.original.target.entity_type === "logical_entity" ? "logical" : "dimensional" }}
           params={{
             tenantId: String(tenantId),
-            modelId: String(modelId),
+            projectId: String(projectId),
             mappingObjectId: String(row.original.mapping_object_id),
           }}
         >
@@ -87,7 +87,7 @@ export function MappingObjectsLedger({
         </Link></div>
       ),
     },
-  ], [items, selectedIds, onSelectionChange, modelId, tenantId]);
+  ], [items, selectedIds, onSelectionChange, projectId, tenantId]);
   return (
     <MappingLedgerSurface
       label="Object Mappings"
@@ -105,7 +105,7 @@ export function MappingAttributesLedger({
   filtersOpen,
   filterId,
   tenantId,
-  modelId,
+  projectId,
   selectedIds, onSelectionChange,
   items,
   filters,
@@ -118,7 +118,7 @@ export function MappingAttributesLedger({
   filtersOpen: boolean;
   filterId: string;
 }) {
-  const { documents, fields } = useMappingAttributeDocuments({ api, tenantId, modelId, items,
+  const { documents, fields } = useMappingAttributeDocuments({ api, tenantId, projectId, items,
     enabled: !state.isLoading && !state.isError && !state.isDenied && !state.revisionMismatch });
   const documentColumns = fields.length ? fields.map((field) => ({
     id: `field:${field}`, header: () => <span title={field}>{humanize(field) || "Unnamed field"}</span>,
@@ -315,7 +315,7 @@ function MappingLedgerSurface<T>({
         <div className="surface-state is-error" role="alert">{label} could not be loaded.</div>
       ) : state.revisionMismatch ? (
         <div className="surface-state is-error" role="alert">
-          The Model changed while {label} were loading. Refresh to reconcile revisions.
+          The Project changed while {label} were loading. Refresh to reconcile revisions.
         </div>
       ) : items.length === 0 ? (
         <div className="empty-state compact">No {label} match these filters.</div>

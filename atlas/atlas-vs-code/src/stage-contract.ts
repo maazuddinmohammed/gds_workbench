@@ -3,7 +3,7 @@ import { unicodeCasefold, unicodeLower } from "./unicode.js";
 // @ts-expect-error Shared Atlas Local Workbench serialization intentionally has no declaration file.
 import workbenchCore from "../../atlas-plugin/workbench/core.js";
 export const stableStringify = workbenchCore.stableStringify as (value: unknown) => string;
-export const isEntityOwnedModelCatalog = workbenchCore.isEntityOwnedModelCatalog as (catalog: unknown) => boolean;
+export const isEntityOwnedProjectCatalog = workbenchCore.isEntityOwnedProjectCatalog as (catalog: unknown) => boolean;
 export const SHA256 = /^[0-9a-f]{64}$/;
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export const MAX_MANIFEST_BYTES = 128 * 1024;
@@ -12,10 +12,10 @@ export const DIRECT_STAGE_MAX_BYTES = 64 * 1024;
 export const MAX_STAGE_CHUNKS = 64;
 export const MAX_STAGE_CHUNK_RECORDS = 5_000;
 export const METADATA_STAGE_CHUNK_MAX_BYTES = 450 * 1024;
-export const MODEL_STAGE_CHUNK_MAX_BYTES = 1024 * 1024;
+export const PROJECT_STAGE_CHUNK_MAX_BYTES = 1024 * 1024;
 export const MAX_LOCAL_PAYLOAD_BYTES: Record<Area, number> = {
   metadata: MAX_STAGE_CHUNKS * METADATA_STAGE_CHUNK_MAX_BYTES + 1024,
-  model: MAX_STAGE_CHUNKS * MODEL_STAGE_CHUNK_MAX_BYTES + 1024,
+  project: MAX_STAGE_CHUNKS * PROJECT_STAGE_CHUNK_MAX_BYTES + 1024,
 };
 export const ALLOWED_DATASETS: Record<Area, ReadonlySet<string>> = {
   metadata: new Set([
@@ -36,15 +36,15 @@ export const ALLOWED_DATASETS: Record<Area, ReadonlySet<string>> = {
     "process_group",
     "process",
   ]),
-  model: new Set([
-    "model_details",
-    "model_input_scope",
+  project: new Set([
+    "project_details",
+    "project_input_scope",
     "profiling_profile",
     "object_enrichment",
     "attribute_enrichment",
     "analysis_result",
-    "modeling_assertion_document",
-    "modeling_assertion_record",
+    "context_group",
+    "context_record",
     "conceptual_object",
     "conceptual_relationship",
     "logical_submodel",
@@ -64,7 +64,7 @@ export const ALLOWED_DATASETS: Record<Area, ReadonlySet<string>> = {
   ]),
 };
 
-export type Area = "metadata" | "model";
+export type Area = "metadata" | "project";
 export type JsonRecord = Record<string, unknown>;
 
 export interface StageRequestDataset {
@@ -76,7 +76,7 @@ export interface StageRequestDataset {
 }
 
 export interface StageRequest {
-  schema_version: "1.0";
+  schema_version: "2.0";
   kind: "atlas-stage-request";
   area: Area;
   task: string;
@@ -92,9 +92,9 @@ export interface StageRequest {
   };
   target: {
     tenant_code?: string;
-    model_id?: number;
-    model_name?: string;
-    model_revision?: number;
+    project_id?: number;
+    project_name?: string;
+    project_revision?: number;
     change_set_id: string;
     starting_revision: number;
   };
@@ -126,7 +126,7 @@ export interface StageRunnerDependencies {
 }
 
 export interface StageReceipt {
-  schema_version: "1.0";
+  schema_version: "2.0";
   status: "staged";
   task_id: string;
   operation_id: string;
@@ -170,7 +170,7 @@ export function canonicalRecordsSha256(records: JsonRecord[]): string {
 
 export function normalizedKeyValue(area: Area, field: string, value: unknown): unknown {
   if (typeof value !== "string") return value;
-  if (area === "model") return unicodeCasefold(value.replace(/^ +| +$/g, ""));
+  if (area === "project") return unicodeCasefold(value.replace(/^ +| +$/g, ""));
   return /(_code|_name|_schema)$/.test(field)
     ? unicodeLower(value.replace(/^ +| +$/g, ""))
     : value;

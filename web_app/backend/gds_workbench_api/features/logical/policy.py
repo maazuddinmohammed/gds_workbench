@@ -5,21 +5,21 @@ from __future__ import annotations
 import json
 from typing import Literal, cast
 
-from gds_etl_workbench.application.change_sets.model import StageModelChange
-from gds_etl_workbench.application.change_sets.model_validation import validate_staged_records
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
+from gds_etl_workbench.application.change_sets.project_validation import validate_staged_records
 from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.domain.model_policy import (
+from gds_etl_workbench.domain.modeling_policy import (
     GoldAuditPolicy as LogicalAuditPolicy,
 )
-from gds_etl_workbench.domain.model_policy import (
+from gds_etl_workbench.domain.modeling_policy import (
     GoldPolicyColumn as LogicalAuditPolicyColumn,
 )
 from gds_etl_workbench.domain.modeling_records import (
     LogicalAttributeRecord,
     LogicalEntityRecord,
-    normalize_model_key_value,
+    normalize_project_key_value,
 )
-from gds_etl_workbench.domain.snapshots.model import LogicalSection
+from gds_etl_workbench.domain.snapshots.project import LogicalSection
 from pydantic import BaseModel, ValidationError
 
 from gds_workbench_api.features.workflows.authoring.audit_policy import effective_audit_template
@@ -27,10 +27,10 @@ from gds_workbench_api.features.workflows.authoring.audit_policy import effectiv
 
 def project_logical_audit_policy(
     *,
-    changes: tuple[StageModelChange, ...],
+    changes: tuple[StageProjectChange, ...],
     applied: LogicalSection | None,
     raw_template: dict[str, object] | None,
-) -> tuple[StageModelChange, ...]:
+) -> tuple[StageProjectChange, ...]:
     """Add the configured audit columns to every effective active Logical Entity."""
 
     policy = _parse_policy(effective_audit_template(raw_template))
@@ -82,7 +82,7 @@ def project_logical_audit_policy(
                     )
             else:
                 name = f"{entity.logical_entity_name}ID"
-                if (*entity_key, normalize_model_key_value(name)) in attributes:
+                if (*entity_key, normalize_project_key_value(name)) in attributes:
                     raise InvalidRequestError(
                         "The generated key name conflicts with a business Attribute."
                     )
@@ -125,7 +125,7 @@ def project_logical_audit_policy(
             default=0,
         )
         for offset, column in enumerate(policy.columns):
-            key = (*entity_key, normalize_model_key_value(column.semantic_name))
+            key = (*entity_key, normalize_project_key_value(column.semantic_name))
             existing = attributes.get(key)
             desired = _policy_attribute(
                 entity=entity,
@@ -147,7 +147,7 @@ def project_logical_audit_policy(
         if applied_attributes.get(key) != record
     }
 
-    output: list[StageModelChange] = []
+    output: list[StageProjectChange] = []
     for dataset in (
         "logical_submodel",
         "logical_entity",
@@ -163,7 +163,7 @@ def project_logical_audit_policy(
             change = changes_by_dataset.get(dataset)
             records = [] if change is None else change.records
         if records:
-            output.append(StageModelChange(dataset=dataset, records=records))
+            output.append(StageProjectChange(dataset=dataset, records=records))
     return tuple(output)
 
 
@@ -183,7 +183,7 @@ def _parse_policy(raw_template: dict[str, object]) -> LogicalAuditPolicy:
 
 
 def _parse_records[T: BaseModel](
-    change: StageModelChange | None,
+    change: StageProjectChange | None,
     *,
     dataset: Literal["logical_entity", "logical_attribute"],
     record_type: type[T],
@@ -205,11 +205,12 @@ def _policy_attribute(
 ) -> LogicalAttributeRecord:
     if existing is not None and (
         not existing.logical_attribute_is_audit_column
-        or normalize_model_key_value(existing.logical_attribute_data_type)
-        != normalize_model_key_value(column.data_type)
+        or normalize_project_key_value(existing.logical_attribute_data_type)
+        != normalize_project_key_value(column.data_type)
         or existing.logical_attribute_is_nullable != column.nullable
         or (
-            existing.sources and normalize_model_key_value(column.semantic_name) != "sourcesystemid"
+            existing.sources
+            and normalize_project_key_value(column.semantic_name) != "sourcesystemid"
         )
     ):
         raise InvalidRequestError(
@@ -241,16 +242,16 @@ def _policy_attribute(
 
 def _entity_key(record: LogicalEntityRecord) -> tuple[str, str]:
     return (
-        normalize_model_key_value(record.logical_entity_schema_name),
-        normalize_model_key_value(record.logical_entity_name),
+        normalize_project_key_value(record.logical_entity_schema_name),
+        normalize_project_key_value(record.logical_entity_name),
     )
 
 
 def _attribute_key(record: LogicalAttributeRecord) -> tuple[str, str, str]:
     return (
-        normalize_model_key_value(record.logical_entity_schema_name),
-        normalize_model_key_value(record.logical_entity_name),
-        normalize_model_key_value(record.logical_attribute_name),
+        normalize_project_key_value(record.logical_entity_schema_name),
+        normalize_project_key_value(record.logical_entity_name),
+        normalize_project_key_value(record.logical_attribute_name),
     )
 
 

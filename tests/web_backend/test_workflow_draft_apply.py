@@ -11,7 +11,10 @@ from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import InvalidRequestError, ModelChangeSetNotFoundError
+from gds_etl_workbench.domain.errors import (
+    InvalidRequestError,
+    ProjectChangeSetNotFoundError,
+)
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 from gds_workbench_api.features.workflows.authoring.change_set_apply import (
     ApplyWorkflowDraftRequest,
@@ -30,26 +33,26 @@ class StaticWorkflowDraftApplyService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         command: ApplyWorkflowDraftRequest,
         idempotency_key: UUID,
     ) -> ApplyWorkflowDraftResult:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, workflow_run_id) == (7, 18, 44)
-        assert command.expected_model_revision == 4
+        assert (tenant_id, project_id, workflow_run_id) == (7, 18, 44)
+        assert command.expected_project_revision == 4
         assert command.expected_draft_revision == 2
         assert command.expected_candidate_digest == "d" * 64
         assert idempotency_key == UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
         return ApplyWorkflowDraftResult(
-            model_id=model_id,
+            project_id=project_id,
             workflow_run_id=workflow_run_id,
-            model_change_set_id=UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"),
+            project_change_set_id=UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"),
             replayed=False,
             draft_revision=2,
             candidate_digest="d" * 64,
             action_count=3,
-            model_revision=5,
+            project_revision=5,
             applied_at=datetime(2026, 8, 24, 16, 0, tzinfo=UTC),
         )
 
@@ -76,10 +79,10 @@ def test_workflow_draft_apply_route_is_explicit_and_fenced() -> None:
 
     with TestClient(app) as client:
         response = client.post(
-            "/api/v1/tenants/7/models/18/runs/44/draft/apply",
+            "/api/v1/tenants/7/projects/18/runs/44/draft/apply",
             headers={"Idempotency-Key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"},
             json={
-                "expected_model_revision": 4,
+                "expected_project_revision": 4,
                 "expected_draft_revision": 2,
                 "expected_candidate_digest": "d" * 64,
             },
@@ -88,14 +91,14 @@ def test_workflow_draft_apply_route_is_explicit_and_fenced() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "schema_version": "1.0",
-        "model_id": 18,
+        "project_id": 18,
         "workflow_run_id": 44,
-        "model_change_set_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "project_change_set_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
         "replayed": False,
         "draft_revision": 2,
         "candidate_digest": "d" * 64,
         "action_count": 3,
-        "model_revision": 5,
+        "project_revision": 5,
         "applied_at": "2026-08-24T16:00:00Z",
     }
 
@@ -112,10 +115,10 @@ class MissingMappingDraftTransaction:
     def __init__(
         self,
         *,
-        model_workflow: str,
+        project_workflow: str,
         workflow_execution_mode: str | None,
     ) -> None:
-        self.model_workflow = model_workflow
+        self.project_workflow = project_workflow
         self.workflow_execution_mode = workflow_execution_mode
 
     async def fetch_one(
@@ -123,12 +126,12 @@ class MissingMappingDraftTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
-        if "FROM model.model AS target_model" in query:
+        if "FROM project.project AS target_project" in query:
             return {
-                "model_id": 18,
+                "project_id": 18,
                 "tenant_id": 7,
-                "model_name": "Customer 360",
-                "model_revision": 4,
+                "project_name": "Customer 360",
+                "project_revision": 4,
             }
         if "security.authorize_tenant_operation" in query or "WITH actor AS" in query:
             return {
@@ -146,8 +149,8 @@ class MissingMappingDraftTransaction:
             assert "mapping_attribute_output_template_id" in query
             return {
                 "workflow_run_id": 44,
-                "model_id": 18,
-                "model_workflow": self.model_workflow,
+                "project_id": 18,
+                "project_workflow": self.project_workflow,
                 "workflow_execution_mode": self.workflow_execution_mode,
                 "actor_principal_id": 41,
                 "workflow_run_state": "completed",
@@ -155,7 +158,7 @@ class MissingMappingDraftTransaction:
                 "mapping_object_output_template_id": 501,
                 "mapping_attribute_output_template_id": 502,
             }
-        if "model_change_set.workflow_run_id" in query:
+        if "project_change_set.workflow_run_id" in query:
             return None
         raise AssertionError(f"unexpected draft apply query: {query}")
 
@@ -164,10 +167,10 @@ class MissingMappingDraftDatabase:
     def __init__(
         self,
         *,
-        model_workflow: str = "mapping",
+        project_workflow: str = "mapping",
         workflow_execution_mode: str | None = "one_shot",
     ) -> None:
-        self.model_workflow = model_workflow
+        self.project_workflow = project_workflow
         self.workflow_execution_mode = workflow_execution_mode
 
     @asynccontextmanager
@@ -175,7 +178,7 @@ class MissingMappingDraftDatabase:
         yield cast(
             WriteTransaction,
             MissingMappingDraftTransaction(
-                model_workflow=self.model_workflow,
+                project_workflow=self.project_workflow,
                 workflow_execution_mode=self.workflow_execution_mode,
             ),
         )
@@ -193,14 +196,14 @@ async def test_completed_mapping_run_reaches_validated_draft_lookup() -> None:
         entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
     )
 
-    with pytest.raises(ModelChangeSetNotFoundError):
+    with pytest.raises(ProjectChangeSetNotFoundError):
         await service.apply(
             principal,
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=44,
             command=ApplyWorkflowDraftRequest(
-                expected_model_revision=4,
+                expected_project_revision=4,
                 expected_draft_revision=2,
                 expected_candidate_digest="d" * 64,
             ),
@@ -211,7 +214,7 @@ async def test_completed_mapping_run_reaches_validated_draft_lookup() -> None:
 @pytest.mark.asyncio
 async def test_apply_whitelist_message_includes_all_authoring_workflows() -> None:
     service = DatabaseWorkflowDraftApplyService(
-        database=MissingMappingDraftDatabase(model_workflow="profiling"),
+        database=MissingMappingDraftDatabase(project_workflow="profiling"),
         authorizer=AuthorizationService(),
     )
     principal = RequestPrincipal(
@@ -220,14 +223,16 @@ async def test_apply_whitelist_message_includes_all_authoring_workflows() -> Non
         entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
     )
 
-    with pytest.raises(InvalidRequestError, match="Code Generation, or Validation authoring"):
+    with pytest.raises(
+        InvalidRequestError, match="Code Generation, or Validation authoring"
+    ):
         await service.apply(
             principal,
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=44,
             command=ApplyWorkflowDraftRequest(
-                expected_model_revision=4,
+                expected_project_revision=4,
                 expected_draft_revision=2,
                 expected_candidate_digest="d" * 64,
             ),
@@ -236,13 +241,13 @@ async def test_apply_whitelist_message_includes_all_authoring_workflows() -> Non
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("model_workflow", ("code_generation", "validation"))
+@pytest.mark.parametrize("project_workflow", ("code_generation", "validation"))
 async def test_modeless_authoring_run_reaches_validated_draft_lookup(
-    model_workflow: str,
+    project_workflow: str,
 ) -> None:
     service = DatabaseWorkflowDraftApplyService(
         database=MissingMappingDraftDatabase(
-            model_workflow=model_workflow,
+            project_workflow=project_workflow,
             workflow_execution_mode=None,
         ),
         authorizer=AuthorizationService(),
@@ -253,14 +258,14 @@ async def test_modeless_authoring_run_reaches_validated_draft_lookup(
         entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
     )
 
-    with pytest.raises(ModelChangeSetNotFoundError):
+    with pytest.raises(ProjectChangeSetNotFoundError):
         await service.apply(
             principal,
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=44,
             command=ApplyWorkflowDraftRequest(
-                expected_model_revision=4,
+                expected_project_revision=4,
                 expected_draft_revision=2,
                 expected_candidate_digest="d" * 64,
             ),
@@ -270,16 +275,16 @@ async def test_modeless_authoring_run_reaches_validated_draft_lookup(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("model_workflow", "workflow_execution_mode"),
+    ("project_workflow", "workflow_execution_mode"),
     (("mapping", None), ("code_generation", "one_shot"), ("validation", "one_shot")),
 )
 async def test_apply_rejects_the_wrong_execution_mode_shape(
-    model_workflow: str,
+    project_workflow: str,
     workflow_execution_mode: str | None,
 ) -> None:
     service = DatabaseWorkflowDraftApplyService(
         database=MissingMappingDraftDatabase(
-            model_workflow=model_workflow,
+            project_workflow=project_workflow,
             workflow_execution_mode=workflow_execution_mode,
         ),
         authorizer=AuthorizationService(),
@@ -294,10 +299,10 @@ async def test_apply_rejects_the_wrong_execution_mode_shape(
         await service.apply(
             principal,
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=44,
             command=ApplyWorkflowDraftRequest(
-                expected_model_revision=4,
+                expected_project_revision=4,
                 expected_draft_revision=2,
                 expected_candidate_digest="d" * 64,
             ),

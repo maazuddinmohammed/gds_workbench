@@ -7,12 +7,12 @@ CREATE FUNCTION application.get_profiling_execution_context(
     p_entra_object_id UUID,
     p_expected_principal_type VARCHAR(30),
     p_workflow_run_id BIGINT,
-    p_expected_model_revision BIGINT
+    p_expected_project_revision BIGINT
 )
 RETURNS TABLE (
     workflow_run_id BIGINT,
-    model_id BIGINT,
-    model_revision BIGINT,
+    project_id BIGINT,
+    project_revision BIGINT,
     requested_batch_id VARCHAR(500),
     selection_order INTEGER,
     source_tenant_id BIGINT,
@@ -57,29 +57,29 @@ DECLARE
 BEGIN
     IF p_workflow_run_id IS NULL
        OR p_workflow_run_id < 1
-       OR p_expected_model_revision IS NULL
-       OR p_expected_model_revision < 1 THEN
+       OR p_expected_project_revision IS NULL
+       OR p_expected_project_revision < 1 THEN
         RAISE EXCEPTION
             'invalid_request: Profiling execution context input is invalid';
     END IF;
 
     SELECT run.workflow_run_id,
-           run.model_id,
+           run.project_id,
            run.actor_principal_id,
-           run.model_workflow,
+           run.project_workflow,
            run.workflow_run_state,
            run.requested_batch_id,
            run.execution_backend,
            run.selected_scope_count,
-           target_model.tenant_id,
-           target_model.model_revision
+           target_project.tenant_id,
+           target_project.project_revision
       INTO v_run
       FROM application.workflow_run AS run
-      JOIN model.model AS target_model
-        ON target_model.model_id = run.model_id
-       AND target_model.is_active
+      JOIN project.project AS target_project
+        ON target_project.project_id = run.project_id
+       AND target_project.is_active
      WHERE run.workflow_run_id = p_workflow_run_id
-     FOR SHARE OF run, target_model;
+     FOR SHARE OF run, target_project;
     IF NOT FOUND THEN
         RAISE EXCEPTION
             'profiling_run_not_found: Profiling Workflow Run is unavailable';
@@ -92,7 +92,7 @@ BEGIN
           p_entra_object_id,
           p_expected_principal_type,
           v_run.tenant_id,
-          'tenant_model_write'
+          'tenant_project_write'
       );
     IF NOT FOUND OR NOT v_decision.authorized THEN
         RAISE EXCEPTION 'profiling_execution_denied: %',
@@ -102,20 +102,20 @@ BEGIN
         RAISE EXCEPTION
             'workflow_run_owner_mismatch: Workflow Run belongs to another Principal';
     END IF;
-    IF v_run.model_workflow <> 'profiling'
+    IF v_run.project_workflow <> 'profiling'
        OR v_run.workflow_run_state <> 'running' THEN
         RAISE EXCEPTION
             'profiling_run_not_running: A running Profiling Workflow Run is required';
     END IF;
-    IF v_run.model_revision <> p_expected_model_revision THEN
-        RAISE EXCEPTION 'stale_model_revision';
+    IF v_run.project_revision <> p_expected_project_revision THEN
+        RAISE EXCEPTION 'stale_project_revision';
     END IF;
 
     SELECT count(*)::INTEGER
       INTO v_selected_scope_count
       FROM application.workflow_run_object_selection AS selection
      WHERE selection.workflow_run_id = p_workflow_run_id
-       AND selection.model_id = v_run.model_id;
+       AND selection.project_id = v_run.project_id;
     IF v_selected_scope_count <> v_run.selected_scope_count THEN
         RAISE EXCEPTION
             'profiling_scope_incomplete: Workflow Run Selected Scope is incomplete';
@@ -146,7 +146,7 @@ BEGIN
        AND gds_connection.is_active
        AND gds_connection.is_global_data_store
      WHERE selection.workflow_run_id = p_workflow_run_id
-       AND selection.model_id = v_run.model_id
+       AND selection.project_id = v_run.project_id
        AND CASE lower(btrim(zone_record.zone_code))
                WHEN 'source' THEN
                    source_connection.has_foreign_catalog
@@ -160,21 +160,21 @@ BEGIN
            END;
     IF v_owned_object_count <> v_run.selected_scope_count THEN
         RAISE EXCEPTION
-            'profiling_relation_unavailable: Every selected Object must be an eligible Source foreign-catalog or Bronze relation owned by the Model Tenant';
+            'profiling_relation_unavailable: Every selected Object must be an eligible Source foreign-catalog or Bronze relation owned by the Project Tenant';
     END IF;
 
     SELECT count(*)::INTEGER
       INTO v_eligible_object_count
       FROM application.workflow_run_object_selection AS selection
-      JOIN workflow.list_model_object_eligibility(v_run.model_id) AS eligible
-        ON eligible.model_id = selection.model_id
+      JOIN workflow.list_project_object_eligibility(v_run.project_id) AS eligible
+        ON eligible.project_id = selection.project_id
        AND eligible.object_id = selection.object_id
-       AND eligible.is_model_input_eligible
+       AND eligible.is_project_input_eligible
      WHERE selection.workflow_run_id = p_workflow_run_id
-       AND selection.model_id = v_run.model_id;
+       AND selection.project_id = v_run.project_id;
     IF v_eligible_object_count <> v_run.selected_scope_count THEN
         RAISE EXCEPTION
-            'profiling_scope_changed: Selected Model Input Scope membership has changed';
+            'profiling_scope_changed: Selected Project Input Scope membership has changed';
     END IF;
 
     SELECT count(DISTINCT eligible.object_id)::INTEGER,
@@ -182,10 +182,10 @@ BEGIN
       INTO v_attribute_object_count,
            v_attribute_count
       FROM application.workflow_run_object_selection AS selection
-      JOIN workflow.list_model_attribute_eligibility(v_run.model_id) AS eligible
-        ON eligible.model_id = selection.model_id
+      JOIN workflow.list_project_attribute_eligibility(v_run.project_id) AS eligible
+        ON eligible.project_id = selection.project_id
        AND eligible.object_id = selection.object_id
-       AND eligible.is_model_input_eligible
+       AND eligible.is_project_input_eligible
       JOIN core.object AS selected_object
         ON selected_object.object_id = eligible.object_id
       JOIN reference.zone AS selected_zone
@@ -198,7 +198,7 @@ BEGIN
            OR reference.is_nonblank(selected_attribute.fc_attribute_name)
        )
      WHERE selection.workflow_run_id = p_workflow_run_id
-       AND selection.model_id = v_run.model_id;
+       AND selection.project_id = v_run.project_id;
     IF v_attribute_object_count <> v_run.selected_scope_count THEN
         RAISE EXCEPTION
             'profiling_attributes_missing: Every selected Object requires one active eligible Attribute';
@@ -210,8 +210,8 @@ BEGIN
 
     RETURN QUERY
     SELECT v_run.workflow_run_id,
-           v_run.model_id,
-           v_run.model_revision,
+           v_run.project_id,
+           v_run.project_revision,
            v_run.requested_batch_id,
            selection.selection_order,
            source_tenant.tenant_id,
@@ -254,10 +254,10 @@ BEGIN
            AND lower(btrim(object_record.batch_attribute_name)) =
                lower(btrim(eligible.attribute_name))
       FROM application.workflow_run_object_selection AS selection
-      JOIN workflow.list_model_attribute_eligibility(v_run.model_id) AS eligible
-        ON eligible.model_id = selection.model_id
+      JOIN workflow.list_project_attribute_eligibility(v_run.project_id) AS eligible
+        ON eligible.project_id = selection.project_id
        AND eligible.object_id = selection.object_id
-       AND eligible.is_model_input_eligible
+       AND eligible.is_project_input_eligible
       JOIN core.attribute AS attribute_record
         ON attribute_record.attribute_id = eligible.attribute_id
        AND attribute_record.object_id = eligible.object_id
@@ -284,7 +284,7 @@ BEGIN
        AND gds_connection.is_active
        AND gds_connection.is_global_data_store
      WHERE selection.workflow_run_id = p_workflow_run_id
-       AND selection.model_id = v_run.model_id
+       AND selection.project_id = v_run.project_id
        AND CASE lower(btrim(zone_record.zone_code))
                WHEN 'source' THEN
                    source_connection.has_foreign_catalog
@@ -318,13 +318,13 @@ CREATE FUNCTION application.get_profiling_connection_values(
     p_entra_object_id UUID,
     p_expected_principal_type VARCHAR(30),
     p_workflow_run_id BIGINT,
-    p_expected_model_revision BIGINT,
+    p_expected_project_revision BIGINT,
     p_environment_code VARCHAR(100)
 )
 RETURNS TABLE (
     workflow_run_id BIGINT,
-    model_id BIGINT,
-    model_revision BIGINT,
+    project_id BIGINT,
+    project_revision BIGINT,
     gds_connection_id BIGINT,
     environment_code VARCHAR(100),
     failure_code VARCHAR(50),
@@ -340,8 +340,8 @@ SET search_path = pg_catalog
 AS $get_profiling_connection_values$
 DECLARE
     v_workflow_run_id BIGINT;
-    v_model_id BIGINT;
-    v_model_revision BIGINT;
+    v_project_id BIGINT;
+    v_project_revision BIGINT;
     v_gds_connection_ids BIGINT[];
     v_environment_id BIGINT;
     v_environment_code VARCHAR(100);
@@ -350,22 +350,22 @@ DECLARE
     v_connection_snapshot JSONB;
 BEGIN
     SELECT min(context.workflow_run_id),
-           min(context.model_id),
-           min(context.model_revision),
+           min(context.project_id),
+           min(context.project_revision),
            array_agg(
                DISTINCT context.gds_connection_id
                ORDER BY context.gds_connection_id
            )
       INTO v_workflow_run_id,
-           v_model_id,
-           v_model_revision,
+           v_project_id,
+           v_project_revision,
            v_gds_connection_ids
       FROM application.get_profiling_execution_context(
                p_entra_tenant_id,
                p_entra_object_id,
                p_expected_principal_type,
                p_workflow_run_id,
-               p_expected_model_revision
+               p_expected_project_revision
            ) AS context;
     v_connection_count := cardinality(v_gds_connection_ids);
 
@@ -374,8 +374,8 @@ BEGIN
        OR length(btrim(p_environment_code)) > 100 THEN
         RETURN QUERY SELECT
             v_workflow_run_id,
-            v_model_id,
-            v_model_revision,
+            v_project_id,
+            v_project_revision,
             NULL::BIGINT,
             NULL::VARCHAR(100),
             'invalid_request'::VARCHAR(50),
@@ -398,8 +398,8 @@ BEGIN
     IF NOT FOUND THEN
         RETURN QUERY SELECT
             v_workflow_run_id,
-            v_model_id,
-            v_model_revision,
+            v_project_id,
+            v_project_revision,
             NULL::BIGINT,
             NULL::VARCHAR(100),
             'environment_not_found'::VARCHAR(50),
@@ -479,8 +479,8 @@ BEGIN
        OR v_complete_connection_count <> v_connection_count THEN
         RETURN QUERY SELECT
             v_workflow_run_id,
-            v_model_id,
-            v_model_revision,
+            v_project_id,
+            v_project_revision,
             NULL::BIGINT,
             v_environment_code,
             'connection_values_missing'::VARCHAR(50),
@@ -493,8 +493,8 @@ BEGIN
 
     RETURN QUERY
     SELECT v_workflow_run_id,
-           v_model_id,
-           v_model_revision,
+           v_project_id,
+           v_project_revision,
            snapshot.gds_connection_id,
            v_environment_code,
            NULL::VARCHAR(50),
@@ -530,13 +530,13 @@ CREATE FUNCTION application.get_analysis_validation_execution_context(
     p_entra_object_id UUID,
     p_expected_principal_type VARCHAR(30),
     p_workflow_run_id BIGINT,
-    p_expected_model_revision BIGINT,
+    p_expected_project_revision BIGINT,
     p_environment_code VARCHAR(100)
 )
 RETURNS TABLE (
     workflow_run_id BIGINT,
-    model_id BIGINT,
-    model_revision BIGINT,
+    project_id BIGINT,
+    project_revision BIGINT,
     requested_batch_id VARCHAR(500),
     analysis_result_id BIGINT,
     relationship_kind VARCHAR(100),
@@ -586,8 +586,8 @@ DECLARE
 BEGIN
     IF p_workflow_run_id IS NULL
        OR p_workflow_run_id < 1
-       OR p_expected_model_revision IS NULL
-       OR p_expected_model_revision < 1
+       OR p_expected_project_revision IS NULL
+       OR p_expected_project_revision < 1
        OR p_environment_code IS NULL
        OR NOT reference.is_nonblank(p_environment_code)
        OR length(btrim(p_environment_code)) > 100 THEN
@@ -596,24 +596,24 @@ BEGIN
     END IF;
 
     SELECT run.workflow_run_id,
-           run.model_id,
+           run.project_id,
            run.actor_principal_id,
            run.actor_entra_principal_identity_id,
-           run.model_workflow,
+           run.project_workflow,
            run.workflow_execution_mode,
            run.workflow_run_state,
            run.requested_batch_id,
            run.selected_scope_digest,
            run.selected_scope_count,
-           target_model.tenant_id,
-           target_model.model_revision
+           target_project.tenant_id,
+           target_project.project_revision
       INTO v_run
       FROM application.workflow_run AS run
-      JOIN model.model AS target_model
-        ON target_model.model_id = run.model_id
-       AND target_model.is_active
+      JOIN project.project AS target_project
+        ON target_project.project_id = run.project_id
+       AND target_project.is_active
      WHERE run.workflow_run_id = p_workflow_run_id
-     FOR SHARE OF run, target_model;
+     FOR SHARE OF run, target_project;
     IF NOT FOUND THEN
         RAISE EXCEPTION
             'analysis_validation_run_not_found: Analysis Workflow Run is unavailable';
@@ -626,7 +626,7 @@ BEGIN
           p_entra_object_id,
           p_expected_principal_type,
           v_run.tenant_id,
-          'tenant_model_write'
+          'tenant_project_write'
       );
     IF NOT FOUND OR NOT v_decision.authorized THEN
         RAISE EXCEPTION 'analysis_validation_execution_denied: %',
@@ -649,14 +649,14 @@ BEGIN
         RAISE EXCEPTION
             'workflow_run_owner_mismatch: Workflow Run belongs to another Principal';
     END IF;
-    IF v_run.model_workflow <> 'analysis'
+    IF v_run.project_workflow <> 'analysis'
        OR v_run.workflow_execution_mode IS NOT NULL
        OR v_run.workflow_run_state <> 'running' THEN
         RAISE EXCEPTION
             'analysis_validation_run_not_running: A running deterministic Analysis Workflow Run is required';
     END IF;
-    IF v_run.model_revision <> p_expected_model_revision THEN
-        RAISE EXCEPTION 'stale_model_revision';
+    IF v_run.project_revision <> p_expected_project_revision THEN
+        RAISE EXCEPTION 'stale_project_revision';
     END IF;
 
     SELECT environment_record.environment_id,
@@ -677,7 +677,7 @@ BEGIN
       INTO v_selected_scope_count
       FROM application.workflow_run_object_selection AS selection
      WHERE selection.workflow_run_id = p_workflow_run_id
-       AND selection.model_id = v_run.model_id;
+       AND selection.project_id = v_run.project_id;
     IF v_selected_scope_count <> v_run.selected_scope_count THEN
         RAISE EXCEPTION
             'analysis_validation_scope_incomplete: Workflow Run Selected Scope is incomplete';
@@ -695,13 +695,13 @@ BEGIN
           LEFT JOIN application.workflow_run_object_selection
                AS from_selection
             ON from_selection.workflow_run_id = p_workflow_run_id
-           AND from_selection.model_id = result.model_id
+           AND from_selection.project_id = result.project_id
            AND from_selection.object_id = result.from_object_id
           LEFT JOIN application.workflow_run_object_selection AS to_selection
             ON to_selection.workflow_run_id = p_workflow_run_id
-           AND to_selection.model_id = result.model_id
+           AND to_selection.project_id = result.project_id
            AND to_selection.object_id = result.to_object_id
-         WHERE result.model_id = v_run.model_id
+         WHERE result.project_id = v_run.project_id
            AND result.analysis_result_status = 'active'
     ), selected_relationship AS MATERIALIZED (
         SELECT membership.*
@@ -750,18 +750,18 @@ BEGIN
                token_value.connection_value_id AS token_connection_value_id,
                token_value.row_version AS token_connection_value_row_version
           FROM selected_relationship AS result
-          JOIN workflow.list_model_attribute_eligibility(v_run.model_id)
+          JOIN workflow.list_project_attribute_eligibility(v_run.project_id)
                AS from_eligible
-            ON from_eligible.model_id = result.model_id
+            ON from_eligible.project_id = result.project_id
            AND from_eligible.object_id = result.from_object_id
            AND from_eligible.attribute_id = result.from_attribute_id
-           AND from_eligible.is_model_input_eligible
-          JOIN workflow.list_model_attribute_eligibility(v_run.model_id)
+           AND from_eligible.is_project_input_eligible
+          JOIN workflow.list_project_attribute_eligibility(v_run.project_id)
                AS to_eligible
-            ON to_eligible.model_id = result.model_id
+            ON to_eligible.project_id = result.project_id
            AND to_eligible.object_id = result.to_object_id
            AND to_eligible.attribute_id = result.to_attribute_id
-           AND to_eligible.is_model_input_eligible
+           AND to_eligible.is_project_input_eligible
           JOIN core.object AS from_object
             ON from_object.object_id = result.from_object_id
            AND from_object.connection_id = from_eligible.connection_id
@@ -876,7 +876,7 @@ BEGIN
                            jsonb_build_object(
                                'schema_version', '1.0',
                                'workflow_run_id', v_run.workflow_run_id,
-                               'model_id', v_run.model_id,
+                               'project_id', v_run.project_id,
                                'selected_scope_digest',
                                v_run.selected_scope_digest,
                                'requested_batch_id', v_run.requested_batch_id,
@@ -969,8 +969,8 @@ BEGIN
                        SELECT jsonb_agg(
                                   jsonb_build_object(
                                       'workflow_run_id', v_run.workflow_run_id,
-                                      'model_id', v_run.model_id,
-                                      'model_revision', v_run.model_revision,
+                                      'project_id', v_run.project_id,
+                                      'project_revision', v_run.project_revision,
                                       'requested_batch_id',
                                       v_run.requested_batch_id,
                                       'analysis_result_id',
@@ -1070,8 +1070,8 @@ BEGIN
     SELECT snapshot.*
       FROM jsonb_to_recordset(v_context_snapshot -> 'rows') AS snapshot(
                workflow_run_id BIGINT,
-               model_id BIGINT,
-               model_revision BIGINT,
+               project_id BIGINT,
+               project_revision BIGINT,
                requested_batch_id VARCHAR(500),
                analysis_result_id BIGINT,
                relationship_kind VARCHAR(100),
@@ -1122,13 +1122,13 @@ CREATE FUNCTION application.get_analysis_validation_connection_values(
     p_entra_object_id UUID,
     p_expected_principal_type VARCHAR(30),
     p_workflow_run_id BIGINT,
-    p_expected_model_revision BIGINT,
+    p_expected_project_revision BIGINT,
     p_environment_code VARCHAR(100)
 )
 RETURNS TABLE (
     workflow_run_id BIGINT,
-    model_id BIGINT,
-    model_revision BIGINT,
+    project_id BIGINT,
+    project_revision BIGINT,
     gds_connection_id BIGINT,
     environment_code VARCHAR(100),
     failure_code VARCHAR(50),
@@ -1144,8 +1144,8 @@ SET search_path = pg_catalog
 AS $get_analysis_validation_connection_values$
 DECLARE
     v_workflow_run_id BIGINT;
-    v_model_id BIGINT;
-    v_model_revision BIGINT;
+    v_project_id BIGINT;
+    v_project_revision BIGINT;
     v_gds_connection_ids BIGINT[];
     v_environment_id BIGINT;
     v_environment_code VARCHAR(100);
@@ -1154,22 +1154,22 @@ DECLARE
     v_connection_snapshot JSONB;
 BEGIN
     SELECT min(context.workflow_run_id),
-           min(context.model_id),
-           min(context.model_revision),
+           min(context.project_id),
+           min(context.project_revision),
            array_agg(
                DISTINCT context.gds_connection_id
                ORDER BY context.gds_connection_id
            )
       INTO v_workflow_run_id,
-           v_model_id,
-           v_model_revision,
+           v_project_id,
+           v_project_revision,
            v_gds_connection_ids
       FROM application.get_analysis_validation_execution_context(
                p_entra_tenant_id,
                p_entra_object_id,
                p_expected_principal_type,
                p_workflow_run_id,
-               p_expected_model_revision,
+               p_expected_project_revision,
                p_environment_code
            ) AS context;
     v_connection_count := cardinality(v_gds_connection_ids);
@@ -1179,8 +1179,8 @@ BEGIN
        OR length(btrim(p_environment_code)) > 100 THEN
         RETURN QUERY SELECT
             v_workflow_run_id,
-            v_model_id,
-            v_model_revision,
+            v_project_id,
+            v_project_revision,
             NULL::BIGINT,
             NULL::VARCHAR(100),
             'invalid_request'::VARCHAR(50),
@@ -1203,8 +1203,8 @@ BEGIN
     IF NOT FOUND THEN
         RETURN QUERY SELECT
             v_workflow_run_id,
-            v_model_id,
-            v_model_revision,
+            v_project_id,
+            v_project_revision,
             NULL::BIGINT,
             NULL::VARCHAR(100),
             'environment_not_found'::VARCHAR(50),
@@ -1284,8 +1284,8 @@ BEGIN
        OR v_complete_connection_count <> v_connection_count THEN
         RETURN QUERY SELECT
             v_workflow_run_id,
-            v_model_id,
-            v_model_revision,
+            v_project_id,
+            v_project_revision,
             NULL::BIGINT,
             v_environment_code,
             'connection_values_missing'::VARCHAR(50),
@@ -1298,8 +1298,8 @@ BEGIN
 
     RETURN QUERY
     SELECT v_workflow_run_id,
-           v_model_id,
-           v_model_revision,
+           v_project_id,
+           v_project_revision,
            snapshot.gds_connection_id,
            v_environment_code,
            NULL::VARCHAR(50),
@@ -1334,15 +1334,15 @@ CREATE FUNCTION application.persist_analysis_validation_results(
     p_entra_object_id UUID,
     p_expected_principal_type VARCHAR(30),
     p_workflow_run_id BIGINT,
-    p_expected_model_revision BIGINT,
+    p_expected_project_revision BIGINT,
     p_environment_code VARCHAR(100),
     p_validation_results JSONB
 )
 RETURNS TABLE (
     changed BOOLEAN,
     workflow_run_id BIGINT,
-    model_id BIGINT,
-    model_revision BIGINT,
+    project_id BIGINT,
+    project_revision BIGINT,
     submitted_result_count INTEGER,
     changed_result_count INTEGER
 )
@@ -1361,7 +1361,7 @@ DECLARE
     v_expected_context_digests JSONB;
     v_payload_context_digests JSONB;
     v_changed_result_count INTEGER;
-    v_model_revision BIGINT;
+    v_project_revision BIGINT;
 BEGIN
     IF p_validation_results IS NULL
        OR jsonb_typeof(p_validation_results) <> 'array'
@@ -1604,21 +1604,21 @@ BEGIN
     END IF;
 
     SELECT run.workflow_run_id,
-           run.model_id,
+           run.project_id,
            run.actor_principal_id,
            run.actor_entra_principal_identity_id,
-           run.model_workflow,
+           run.project_workflow,
            run.workflow_execution_mode,
            run.workflow_run_state,
-           target_model.tenant_id,
-           target_model.model_revision
+           target_project.tenant_id,
+           target_project.project_revision
       INTO v_run
       FROM application.workflow_run AS run
-      JOIN model.model AS target_model
-        ON target_model.model_id = run.model_id
-       AND target_model.is_active
+      JOIN project.project AS target_project
+        ON target_project.project_id = run.project_id
+       AND target_project.is_active
      WHERE run.workflow_run_id = p_workflow_run_id
-     FOR UPDATE OF run, target_model;
+     FOR UPDATE OF run, target_project;
     IF NOT FOUND THEN
         RAISE EXCEPTION
             'analysis_validation_run_not_found: Analysis Workflow Run is unavailable';
@@ -1631,7 +1631,7 @@ BEGIN
           p_entra_object_id,
           p_expected_principal_type,
           v_run.tenant_id,
-          'tenant_model_write'
+          'tenant_project_write'
       );
     IF NOT FOUND OR NOT v_decision.authorized THEN
         RAISE EXCEPTION 'analysis_validation_persistence_denied: %',
@@ -1654,22 +1654,22 @@ BEGIN
         RAISE EXCEPTION
             'workflow_run_owner_mismatch: Workflow Run belongs to another Principal';
     END IF;
-    IF v_run.model_workflow <> 'analysis'
+    IF v_run.project_workflow <> 'analysis'
        OR v_run.workflow_execution_mode IS NOT NULL
        OR v_run.workflow_run_state <> 'running' THEN
         RAISE EXCEPTION
             'analysis_validation_run_not_running: A running deterministic Analysis Workflow Run is required';
     END IF;
-    IF p_expected_model_revision IS NULL
-       OR v_run.model_revision <> p_expected_model_revision THEN
-        RAISE EXCEPTION 'stale_model_revision';
+    IF p_expected_project_revision IS NULL
+       OR v_run.project_revision <> p_expected_project_revision THEN
+        RAISE EXCEPTION 'stale_project_revision';
     END IF;
 
-    -- Freeze all existing Analysis rows for this Model. The Model row lock also
+    -- Freeze all existing Analysis rows for this Project. The Project row lock also
     -- fences inserts through the Analysis Result foreign key until commit.
     PERFORM result.analysis_result_id
       FROM workflow.analysis_result AS result
-     WHERE result.model_id = v_run.model_id
+     WHERE result.project_id = v_run.project_id
      ORDER BY result.analysis_result_id
      FOR UPDATE OF result;
 
@@ -1695,7 +1695,7 @@ BEGIN
                p_entra_object_id,
                p_expected_principal_type,
                p_workflow_run_id,
-               p_expected_model_revision,
+               p_expected_project_revision,
                p_environment_code
            ) AS context;
 
@@ -1772,7 +1772,7 @@ BEGIN
                updated_time = CURRENT_TIMESTAMP,
                updated_by = CURRENT_USER
           FROM result_payload AS payload
-         WHERE stored.model_id = v_run.model_id
+         WHERE stored.project_id = v_run.project_id
            AND stored.analysis_result_id = payload.analysis_result_id
            AND ROW(
                    stored.validation_workflow_run_id,
@@ -1808,29 +1808,29 @@ BEGIN
       FROM changed_results;
 
     IF v_changed_result_count > 0 THEN
-        UPDATE model.model AS target_model
-           SET model_revision = target_model.model_revision + 1,
+        UPDATE project.project AS target_project
+           SET project_revision = target_project.project_revision + 1,
                updated_time = CURRENT_TIMESTAMP,
                updated_by = CURRENT_USER
-         WHERE target_model.model_id = v_run.model_id
-        RETURNING target_model.model_revision INTO v_model_revision;
+         WHERE target_project.project_id = v_run.project_id
+        RETURNING target_project.project_revision INTO v_project_revision;
 
-        INSERT INTO model.model_revision_transaction (
-            model_id,
+        INSERT INTO project.project_revision_transaction (
+            project_id,
             change_kind
         ) VALUES (
-            v_run.model_id,
+            v_run.project_id,
             'web_analysis_validation_results_persist'
         );
     ELSE
-        v_model_revision := v_run.model_revision;
+        v_project_revision := v_run.project_revision;
     END IF;
 
     RETURN QUERY SELECT
         v_changed_result_count > 0,
         v_run.workflow_run_id::BIGINT,
-        v_run.model_id::BIGINT,
-        v_model_revision,
+        v_run.project_id::BIGINT,
+        v_project_revision,
         v_result_count,
         v_changed_result_count;
 END;
@@ -1851,14 +1851,14 @@ CREATE FUNCTION application.persist_profiling_results(
     p_entra_object_id UUID,
     p_expected_principal_type VARCHAR(30),
     p_workflow_run_id BIGINT,
-    p_expected_model_revision BIGINT,
+    p_expected_project_revision BIGINT,
     p_profiles JSONB
 )
 RETURNS TABLE (
     changed BOOLEAN,
     workflow_run_id BIGINT,
-    model_id BIGINT,
-    model_revision BIGINT,
+    project_id BIGINT,
+    project_revision BIGINT,
     submitted_profile_count INTEGER,
     changed_profile_count INTEGER
 )
@@ -1881,7 +1881,7 @@ DECLARE
     v_payload_context_digests JSONB;
     v_removed_profile_count INTEGER;
     v_changed_profile_count INTEGER;
-    v_model_revision BIGINT;
+    v_project_revision BIGINT;
 BEGIN
     IF p_profiles IS NULL
        OR jsonb_typeof(p_profiles) <> 'array'
@@ -2060,22 +2060,22 @@ BEGIN
     END IF;
 
     SELECT run.workflow_run_id,
-           run.model_id,
+           run.project_id,
            run.actor_principal_id,
-           run.model_workflow,
+           run.project_workflow,
            run.workflow_run_state,
            run.requested_batch_id,
            run.execution_backend,
            run.selected_scope_count,
-           target_model.tenant_id,
-           target_model.model_revision
+           target_project.tenant_id,
+           target_project.project_revision
       INTO v_run
       FROM application.workflow_run AS run
-      JOIN model.model AS target_model
-        ON target_model.model_id = run.model_id
-       AND target_model.is_active
+      JOIN project.project AS target_project
+        ON target_project.project_id = run.project_id
+       AND target_project.is_active
      WHERE run.workflow_run_id = p_workflow_run_id
-     FOR UPDATE OF run, target_model;
+     FOR UPDATE OF run, target_project;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Profiling Workflow Run is unavailable';
     END IF;
@@ -2087,7 +2087,7 @@ BEGIN
           p_entra_object_id,
           p_expected_principal_type,
           v_run.tenant_id,
-          'tenant_model_write'
+          'tenant_project_write'
       );
     IF NOT FOUND OR NOT v_decision.authorized THEN
         RAISE EXCEPTION 'Profiling result persistence denied: %',
@@ -2096,14 +2096,14 @@ BEGIN
     IF v_run.actor_principal_id <> v_decision.principal_id THEN
         RAISE EXCEPTION 'Workflow Run belongs to another Principal';
     END IF;
-    IF v_run.model_workflow <> 'profiling'
+    IF v_run.project_workflow <> 'profiling'
        OR v_run.workflow_run_state <> 'running' THEN
         RAISE EXCEPTION
             'A running Profiling Workflow Run is required';
     END IF;
-    IF p_expected_model_revision IS NULL
-       OR v_run.model_revision <> p_expected_model_revision THEN
-        RAISE EXCEPTION 'stale_model_revision';
+    IF p_expected_project_revision IS NULL
+       OR v_run.project_revision <> p_expected_project_revision THEN
+        RAISE EXCEPTION 'stale_project_revision';
     END IF;
 
     SELECT count(*)::INTEGER
@@ -2119,8 +2119,8 @@ BEGIN
     -- activation and membership changes.
     PERFORM object_record.object_id
       FROM application.workflow_run_object_selection AS selection
-      JOIN model.model_input_scope AS scope
-        ON scope.model_id = selection.model_id
+      JOIN project.project_input_scope AS scope
+        ON scope.project_id = selection.project_id
        AND scope.object_id = selection.object_id
        AND scope.is_active
       JOIN core.object AS object_record
@@ -2142,7 +2142,7 @@ BEGIN
        AND (lower(btrim(zone.zone_code)) = 'bronze'
             OR (v_run.execution_backend = 'mcp' AND lower(btrim(zone.zone_code)) = 'source'))
      WHERE selection.workflow_run_id = p_workflow_run_id
-       AND selection.model_id = v_run.model_id
+       AND selection.project_id = v_run.project_id
      ORDER BY object_record.object_id
      FOR UPDATE OF object_record
      FOR SHARE OF selection, scope, connection, object_tenant, system, zone;
@@ -2157,7 +2157,7 @@ BEGIN
       JOIN core.attribute AS attribute
         ON attribute.object_id = selection.object_id
      WHERE selection.workflow_run_id = p_workflow_run_id
-       AND selection.model_id = v_run.model_id
+       AND selection.project_id = v_run.project_id
      ORDER BY attribute.attribute_id
      FOR UPDATE OF attribute;
 
@@ -2178,13 +2178,13 @@ BEGIN
       INTO v_expected_attribute_ids,
            v_expected_object_ids
       FROM application.workflow_run_object_selection AS selection
-      JOIN workflow.list_model_attribute_eligibility(v_run.model_id)
+      JOIN workflow.list_project_attribute_eligibility(v_run.project_id)
            AS eligible
-        ON eligible.model_id = selection.model_id
+        ON eligible.project_id = selection.project_id
        AND eligible.object_id = selection.object_id
-       AND eligible.is_model_input_eligible
+       AND eligible.is_project_input_eligible
      WHERE selection.workflow_run_id = p_workflow_run_id
-       AND selection.model_id = v_run.model_id;
+       AND selection.project_id = v_run.project_id;
 
     SELECT coalesce(
                array_agg(profile.attribute_id ORDER BY profile.attribute_id),
@@ -2250,11 +2250,11 @@ BEGIN
            )
       INTO v_expected_context_digests
       FROM application.workflow_run_object_selection AS selection
-      JOIN workflow.list_model_attribute_eligibility(v_run.model_id)
+      JOIN workflow.list_project_attribute_eligibility(v_run.project_id)
            AS eligible
-        ON eligible.model_id = selection.model_id
+        ON eligible.project_id = selection.project_id
        AND eligible.object_id = selection.object_id
-       AND eligible.is_model_input_eligible
+       AND eligible.is_project_input_eligible
       JOIN core.attribute AS attribute
         ON attribute.attribute_id = eligible.attribute_id
        AND attribute.object_id = eligible.object_id
@@ -2270,7 +2270,7 @@ BEGIN
         ON source_tenant.tenant_id = object_record.source_tenant_id
        AND source_tenant.is_active
      WHERE selection.workflow_run_id = p_workflow_run_id
-       AND selection.model_id = v_run.model_id;
+       AND selection.project_id = v_run.project_id;
 
     IF v_run.execution_backend = 'mcp' THEN
         SELECT jsonb_object_agg(item->>'attribute_id', item->>'source_context_digest')
@@ -2321,8 +2321,8 @@ BEGIN
         DELETE FROM workflow.attribute_profile AS stored
          USING application.workflow_run_object_selection AS selection
          WHERE selection.workflow_run_id = p_workflow_run_id
-           AND selection.model_id = v_run.model_id
-           AND stored.model_id = selection.model_id
+           AND selection.project_id = v_run.project_id
+           AND stored.project_id = selection.project_id
            AND stored.object_id = selection.object_id
            AND NOT EXISTS (
                    SELECT 1
@@ -2334,7 +2334,7 @@ BEGIN
     ),
     changed_profiles AS (
         INSERT INTO workflow.attribute_profile AS stored (
-            model_id,
+            project_id,
             attribute_id,
             object_id,
             agent_run_id,
@@ -2354,7 +2354,7 @@ BEGIN
             percent_blank,
             percent_distinct
         )
-        SELECT v_run.model_id,
+        SELECT v_run.project_id,
                profile.attribute_id,
                profile.object_id,
                NULL,
@@ -2442,29 +2442,29 @@ BEGIN
         v_removed_profile_count + v_changed_profile_count;
 
     IF v_changed_profile_count > 0 THEN
-        UPDATE model.model AS target_model
-           SET model_revision = target_model.model_revision + 1,
+        UPDATE project.project AS target_project
+           SET project_revision = target_project.project_revision + 1,
                updated_time = CURRENT_TIMESTAMP,
                updated_by = CURRENT_USER
-         WHERE target_model.model_id = v_run.model_id
-        RETURNING target_model.model_revision INTO v_model_revision;
+         WHERE target_project.project_id = v_run.project_id
+        RETURNING target_project.project_revision INTO v_project_revision;
 
-        INSERT INTO model.model_revision_transaction (
-            model_id,
+        INSERT INTO project.project_revision_transaction (
+            project_id,
             change_kind
         ) VALUES (
-            v_run.model_id,
+            v_run.project_id,
             'web_profiling_results_persist'
         );
     ELSE
-        v_model_revision := v_run.model_revision;
+        v_project_revision := v_run.project_revision;
     END IF;
 
     RETURN QUERY SELECT
         v_changed_profile_count > 0,
         v_run.workflow_run_id::BIGINT,
-        v_run.model_id::BIGINT,
-        v_model_revision,
+        v_run.project_id::BIGINT,
+        v_project_revision,
         v_profile_count,
         v_changed_profile_count;
 END;
@@ -2486,7 +2486,7 @@ CREATE FUNCTION application.get_metadata_enrichment_execution_context(
     p_entra_object_id UUID,
     p_expected_principal_type VARCHAR(30),
     p_workflow_run_id BIGINT,
-    p_expected_model_revision BIGINT
+    p_expected_project_revision BIGINT
 )
 RETURNS JSONB
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
@@ -2499,39 +2499,39 @@ DECLARE
     v_context JSONB;
     v_count INTEGER;
 BEGIN
-    SELECT run.*, target_model.model_revision AS current_model_revision
+    SELECT run.*, target_project.project_revision AS current_project_revision
       INTO v_run
       FROM application.workflow_run AS run
-      JOIN model.model AS target_model USING (model_id, tenant_id)
-     WHERE run.workflow_run_id = p_workflow_run_id AND target_model.is_active
-     FOR SHARE OF run, target_model;
+      JOIN project.project AS target_project USING (project_id, tenant_id)
+     WHERE run.workflow_run_id = p_workflow_run_id AND target_project.is_active
+     FOR SHARE OF run, target_project;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'metadata_enrichment_run_unavailable';
     END IF;
     SELECT * INTO v_decision FROM security.authorize_tenant_operation(
         p_entra_tenant_id, p_entra_object_id, p_expected_principal_type,
-        v_run.tenant_id, 'tenant_model_write');
+        v_run.tenant_id, 'tenant_project_write');
     IF NOT coalesce(v_decision.authorized, FALSE) THEN
         RAISE EXCEPTION 'metadata_enrichment_denied';
     END IF;
     IF v_run.actor_principal_id <> v_decision.principal_id THEN
         RAISE EXCEPTION 'workflow_run_owner_mismatch';
     END IF;
-    IF v_run.model_workflow <> 'metadata_enrichment'
+    IF v_run.project_workflow <> 'metadata_enrichment'
        OR v_run.workflow_run_state <> 'running' THEN
         RAISE EXCEPTION 'metadata_enrichment_run_not_running';
     END IF;
-    IF p_expected_model_revision IS NULL
-       OR v_run.model_revision <> p_expected_model_revision
-       OR v_run.current_model_revision <> p_expected_model_revision THEN
-        RAISE EXCEPTION 'stale_model_revision';
+    IF p_expected_project_revision IS NULL
+       OR v_run.project_revision <> p_expected_project_revision
+       OR v_run.current_project_revision <> p_expected_project_revision THEN
+        RAISE EXCEPTION 'stale_project_revision';
     END IF;
     PERFORM 1 FROM core.object AS object
       JOIN application.workflow_run_object_selection AS selection USING (object_id)
      WHERE selection.workflow_run_id = p_workflow_run_id
      ORDER BY object.object_id FOR SHARE OF object;
-    PERFORM 1 FROM model.model_input_scope AS scope
-      JOIN application.workflow_run_object_selection AS selection USING (model_id, object_id)
+    PERFORM 1 FROM project.project_input_scope AS scope
+      JOIN application.workflow_run_object_selection AS selection USING (project_id, object_id)
      WHERE selection.workflow_run_id = p_workflow_run_id
      ORDER BY scope.object_id FOR SHARE OF scope;
     PERFORM 1 FROM core.tenant AS tenant WHERE tenant.tenant_id = v_run.tenant_id FOR SHARE;
@@ -2549,14 +2549,14 @@ BEGIN
     ) ORDER BY system.system_id FOR SHARE;
     SELECT count(*) INTO v_count
       FROM application.workflow_run_object_selection AS selection
-      JOIN model.model_input_scope AS scope USING (model_id, object_id)
+      JOIN project.project_input_scope AS scope USING (project_id, object_id)
       JOIN core.object AS object USING (object_id)
       JOIN core.connection AS connection USING (connection_id)
       JOIN core.system AS system USING (system_id)
       JOIN core.tenant AS tenant ON tenant.tenant_id = object.source_tenant_id
       JOIN reference.zone AS zone USING (zone_id)
      WHERE selection.workflow_run_id = p_workflow_run_id
-       AND selection.model_id = v_run.model_id AND scope.is_active
+       AND selection.project_id = v_run.project_id AND scope.is_active
        AND object.is_active AND object.source_tenant_id = v_run.tenant_id
        AND connection.is_active AND system.is_active AND tenant.is_active
        AND zone.is_active AND lower(btrim(zone.zone_code)) IN ('source', 'bronze');
@@ -2571,8 +2571,8 @@ BEGIN
          WHERE selection.workflow_run_id = p_workflow_run_id
     ), objects AS MATERIALIZED (
         SELECT object.*, lower(btrim(zone.zone_code)) AS zone_code,
-               enriched.object_description AS model_object_description,
-               coalesce(enriched.is_locked, FALSE) AS model_is_locked,
+               enriched.object_description AS project_object_description,
+               coalesce(enriched.is_locked, FALSE) AS project_is_locked,
                connection.tenant_id, tenant.tenant_catalog, system.system_code,
                jsonb_build_object('tenant_code', physical_tenant.tenant_code,
                    'system_code', system.system_code, 'connection_code', connection.connection_code,
@@ -2623,7 +2623,7 @@ BEGIN
           JOIN reference.system_type AS system_type USING (system_type_id)
           JOIN reference.connection_type AS connection_type USING (connection_type_id)
           LEFT JOIN core.connection AS gds ON gds.connection_id = tenant.gds_connection_id
-          LEFT JOIN workflow.object_enrichment AS enriched ON enriched.model_id = v_run.model_id
+          LEFT JOIN workflow.object_enrichment AS enriched ON enriched.project_id = v_run.project_id
               AND enriched.object_id = object.object_id
          WHERE object.object_id IN (SELECT object_id FROM selected)
             OR object.object_id IN (
@@ -2651,11 +2651,11 @@ BEGIN
          WHERE attribute_mapping.target_object_id IN (SELECT object_id FROM selected)
     ), attributes AS MATERIALIZED (
         SELECT attribute.*, object.zone_code,
-               enriched.attribute_description AS model_attribute_description,
-               enriched.attribute_inferred_data_type AS model_inferred_data_type,
-               enriched.is_natural_key AS model_is_natural_key,
+               enriched.attribute_description AS project_attribute_description,
+               enriched.attribute_inferred_data_type AS project_inferred_data_type,
+               enriched.is_natural_key AS project_is_natural_key,
                enriched.is_primary_key, enriched.is_nullable, enriched.is_pii,
-               coalesce(enriched.is_locked, FALSE) AS model_is_locked,
+               coalesce(enriched.is_locked, FALSE) AS project_is_locked,
                to_jsonb(enriched) AS enrichment_baseline,
                CASE WHEN profile.attribute_id IS NOT NULL THEN jsonb_build_object(
                    'profiled_at', profile.updated_time,
@@ -2676,12 +2676,12 @@ BEGIN
                          THEN nullif(btrim(attribute.fc_attribute_name), '')
                     ELSE attribute.attribute_name END AS relation_column
           FROM core.attribute AS attribute JOIN objects AS object USING (object_id)
-          LEFT JOIN workflow.attribute_enrichment AS enriched ON enriched.model_id = v_run.model_id
+          LEFT JOIN workflow.attribute_enrichment AS enriched ON enriched.project_id = v_run.project_id
               AND enriched.attribute_id = attribute.attribute_id
-          LEFT JOIN workflow.attribute_profile AS profile ON profile.model_id = v_run.model_id
+          LEFT JOIN workflow.attribute_profile AS profile ON profile.project_id = v_run.project_id
               AND profile.object_id = attribute.object_id AND profile.attribute_id = attribute.attribute_id
           LEFT JOIN application.workflow_run AS profile_run ON profile_run.workflow_run_id = profile.workflow_run_id
-              AND profile_run.model_id = v_run.model_id AND profile_run.model_workflow = 'profiling'
+              AND profile_run.project_id = v_run.project_id AND profile_run.project_workflow = 'profiling'
           LEFT JOIN LATERAL (
               SELECT count(*) FILTER (WHERE candidate.eligible)::INTEGER AS count,
                      min(candidate.source_attribute_id) FILTER (WHERE candidate.eligible) AS attribute_id
@@ -2691,8 +2691,8 @@ BEGIN
     )
     SELECT coalesce(jsonb_agg(jsonb_build_object(
                'object_id', object.object_id, 'object_name', object.object_name,
-               'object_schema', object.object_schema, 'object_description', object.model_object_description,
-               'is_active', object.is_active, 'is_locked', object.model_is_locked,
+               'object_schema', object.object_schema, 'object_description', object.project_object_description,
+               'is_active', object.is_active, 'is_locked', object.project_is_locked,
                'zone_code', object.zone_code, 'source_tenant_id', object.source_tenant_id,
                'tenant_id', object.tenant_id, 'tenant_catalog', object.tenant_catalog,
                'system_code', object.system_code, 'connection_id', object.connection_id,
@@ -2712,19 +2712,19 @@ BEGIN
                    'gds_context', CASE WHEN object.zone_code = 'source' THEN '[]'::JSONB
                        ELSE jsonb_build_array(object.gds_context) END,
                    'object_context', jsonb_build_array(object.physical_key || jsonb_build_object(
-                       'object_description', object.model_object_description, 'zone_code', object.zone_code)),
+                       'object_description', object.project_object_description, 'zone_code', object.zone_code)),
                    'object_attribute_context', jsonb_build_array(object.physical_key || jsonb_build_object(
                        'selected_attribute_names', (SELECT coalesce(jsonb_agg(attribute.attribute_name
                            ORDER BY attribute.attribute_ordinal_position, attribute.attribute_id), '[]'::JSONB)
                            FROM attributes AS attribute WHERE attribute.object_id = object.object_id AND attribute.is_active),
                        'attributes', (SELECT coalesce(jsonb_agg(jsonb_build_object(
                            'attribute_name', attribute.attribute_name,
-                           'attribute_description', attribute.model_attribute_description,
+                           'attribute_description', attribute.project_attribute_description,
                            'attribute_data_type', attribute.attribute_data_type,
-                           'attribute_inferred_data_type', attribute.model_inferred_data_type,
+                           'attribute_inferred_data_type', attribute.project_inferred_data_type,
                            'attribute_nullability', attribute.attribute_nullability,
                            'registered_is_natural_key', attribute.is_natural_key,
-                           'is_natural_key', attribute.model_is_natural_key,
+                           'is_natural_key', attribute.project_is_natural_key,
                            'is_primary_key', attribute.is_primary_key,
                            'is_nullable', attribute.is_nullable, 'is_pii', attribute.is_pii,
                            'is_surrogate_key', attribute.is_surrogate_key,
@@ -2747,13 +2747,13 @@ BEGIN
                    SELECT coalesce(jsonb_agg(jsonb_build_object(
                        'attribute_id', attribute.attribute_id, 'attribute_name', attribute.attribute_name,
                        'attribute_data_type', attribute.attribute_data_type,
-                       'attribute_inferred_data_type', attribute.model_inferred_data_type,
-                       'attribute_description', attribute.model_attribute_description,
+                       'attribute_inferred_data_type', attribute.project_inferred_data_type,
+                       'attribute_description', attribute.project_attribute_description,
                        'attribute_ordinal_position', attribute.attribute_ordinal_position,
-                       'is_natural_key', attribute.model_is_natural_key,
+                       'is_natural_key', attribute.project_is_natural_key,
                        'is_primary_key', attribute.is_primary_key,
                        'is_nullable', attribute.is_nullable, 'is_pii', attribute.is_pii,
-                       'is_active', attribute.is_active, 'is_locked', attribute.model_is_locked,
+                       'is_active', attribute.is_active, 'is_locked', attribute.project_is_locked,
                        'is_masking_required', attribute.is_masking_required,
                        'relation_column', attribute.relation_column,
                        'source_candidate_count', attribute.source_candidate_count,
@@ -2788,7 +2788,7 @@ BEGIN
       INTO v_objects, v_baseline
       FROM objects AS object WHERE object.object_id IN (SELECT object_id FROM selected);
     v_context := jsonb_build_object('workflow_run_id', p_workflow_run_id,
-        'model_id', v_run.model_id, 'model_revision', p_expected_model_revision,
+        'project_id', v_run.project_id, 'project_revision', p_expected_project_revision,
         'baseline_digest', encode(sha256(convert_to(v_baseline::TEXT, 'UTF8')), 'hex'),
         'objects', v_objects,
         'description_targets', v_run.metadata_enrichment_description_targets,
@@ -2800,8 +2800,8 @@ BEGIN
                     AND attribute.attribute_id = (target->>'attribute_id')::BIGINT
                 WHERE object.object_id = (target->>'object_id')::BIGINT
                   AND CASE WHEN target->>'attribute_id' IS NULL
-                      THEN workflow.enrichment_review_revision(v_run.model_id, object.object_id) = target->>'expected_revision'
-                      ELSE workflow.enrichment_review_revision(v_run.model_id, object.object_id, attribute.attribute_id) = target->>'expected_revision' END
+                      THEN workflow.enrichment_review_revision(v_run.project_id, object.object_id) = target->>'expected_revision'
+                      ELSE workflow.enrichment_review_revision(v_run.project_id, object.object_id, attribute.attribute_id) = target->>'expected_revision' END
             )
         ));
     RETURN v_context;
@@ -2811,11 +2811,11 @@ REVOKE ALL ON FUNCTION application.get_metadata_enrichment_execution_context(UUI
 
 CREATE FUNCTION application.get_metadata_enrichment_connection_values(
     p_entra_tenant_id UUID, p_entra_object_id UUID, p_expected_principal_type VARCHAR(30),
-    p_workflow_run_id BIGINT, p_expected_model_revision BIGINT,
+    p_workflow_run_id BIGINT, p_expected_project_revision BIGINT,
     p_connection_id BIGINT, p_environment_code VARCHAR(100)
 )
 RETURNS TABLE (
-    workflow_run_id BIGINT, model_id BIGINT, model_revision BIGINT,
+    workflow_run_id BIGINT, project_id BIGINT, project_revision BIGINT,
     gds_connection_id BIGINT, environment_code VARCHAR(100),
     failure_code VARCHAR(50), failure_message VARCHAR(200),
     databricks_host_name TEXT, databricks_http_path TEXT, databricks_token TEXT
@@ -2829,7 +2829,7 @@ DECLARE
 BEGIN
     v_context := application.get_metadata_enrichment_execution_context(
         p_entra_tenant_id, p_entra_object_id, p_expected_principal_type,
-        p_workflow_run_id, p_expected_model_revision);
+        p_workflow_run_id, p_expected_project_revision);
     IF p_connection_id IS NULL OR NOT EXISTS (
         SELECT 1 FROM jsonb_array_elements(v_context -> 'objects') AS object
          WHERE (object #>> '{relation,connection_id}')::BIGINT = p_connection_id
@@ -2846,8 +2846,8 @@ BEGIN
        AND lower(btrim(environment_record.environment_code)) = lower(btrim(p_environment_code))
      FOR SHARE;
     IF NOT FOUND THEN
-        RETURN QUERY SELECT p_workflow_run_id, (v_context ->> 'model_id')::BIGINT,
-            p_expected_model_revision, p_connection_id, NULL::VARCHAR(100),
+        RETURN QUERY SELECT p_workflow_run_id, (v_context ->> 'project_id')::BIGINT,
+            p_expected_project_revision, p_connection_id, NULL::VARCHAR(100),
             'environment_not_found'::VARCHAR(50), 'Enrichment Environment is unavailable.'::VARCHAR(200),
             NULL::TEXT, NULL::TEXT, NULL::TEXT;
         RETURN;
@@ -2860,14 +2860,14 @@ BEGIN
      WHERE value.connection_id = p_connection_id
        AND value.environment_id = v_environment.environment_id AND parameter.is_active;
     IF v_values.host IS NULL OR v_values.path IS NULL OR v_values.token IS NULL THEN
-        RETURN QUERY SELECT p_workflow_run_id, (v_context ->> 'model_id')::BIGINT,
-            p_expected_model_revision, p_connection_id, v_environment.environment_code,
+        RETURN QUERY SELECT p_workflow_run_id, (v_context ->> 'project_id')::BIGINT,
+            p_expected_project_revision, p_connection_id, v_environment.environment_code,
             'connection_values_missing'::VARCHAR(50), 'Enrichment connection values are incomplete.'::VARCHAR(200),
             NULL::TEXT, NULL::TEXT, NULL::TEXT;
         RETURN;
     END IF;
-    RETURN QUERY SELECT p_workflow_run_id, (v_context ->> 'model_id')::BIGINT,
-        p_expected_model_revision, p_connection_id, v_environment.environment_code,
+    RETURN QUERY SELECT p_workflow_run_id, (v_context ->> 'project_id')::BIGINT,
+        p_expected_project_revision, p_connection_id, v_environment.environment_code,
         NULL::VARCHAR(50), NULL::VARCHAR(200), v_values.host, v_values.path, v_values.token;
 END;
 $get_metadata_enrichment_connection_values$;
@@ -2894,9 +2894,9 @@ BEGIN
         RAISE EXCEPTION 'metadata_enrichment_invalid_page';
     END IF;
     SELECT run.* INTO v_run FROM application.workflow_run AS run
-      JOIN model.model AS target USING (model_id, tenant_id)
+      JOIN project.project AS target USING (project_id, tenant_id)
      WHERE run.workflow_run_id = p_workflow_run_id AND target.is_active
-       AND run.model_workflow = 'metadata_enrichment';
+       AND run.project_workflow = 'metadata_enrichment';
     IF NOT FOUND THEN RAISE EXCEPTION 'metadata_enrichment_run_unavailable'; END IF;
     SELECT * INTO v_decision FROM security.authorize_tenant_operation(
         p_entra_tenant_id, p_entra_object_id, p_expected_principal_type,
@@ -2933,8 +2933,8 @@ BEGIN
            AND object.source_tenant_id = v_run.tenant_id
       LEFT JOIN core.attribute AS attribute ON attribute.attribute_id = result.attribute_id
            AND attribute.object_id = object.object_id;
-    RETURN jsonb_build_object('workflow_run_id', p_workflow_run_id, 'model_id', v_run.model_id,
-        'tenant_id', v_run.tenant_id, 'model_revision', v_run.model_revision,
+    RETURN jsonb_build_object('workflow_run_id', p_workflow_run_id, 'project_id', v_run.project_id,
+        'tenant_id', v_run.tenant_id, 'project_revision', v_run.project_revision,
         'workflow_run_state', v_run.workflow_run_state,
         'total_count', v_total, 'result_count', v_total, 'warning_count', v_warnings,
         'counts', v_counts, 'applied_field_counts', v_applied_field_counts, 'results', v_results);
@@ -2944,7 +2944,7 @@ REVOKE ALL ON FUNCTION application.get_metadata_enrichment_results(UUID, UUID, V
 
 CREATE FUNCTION application.complete_metadata_enrichment(
     p_entra_tenant_id UUID, p_entra_object_id UUID, p_expected_principal_type VARCHAR(30),
-    p_workflow_run_id BIGINT, p_expected_model_revision BIGINT,
+    p_workflow_run_id BIGINT, p_expected_project_revision BIGINT,
     p_workflow_run_claim_token UUID, p_expected_baseline_digest CHAR(64), p_results JSONB
 )
 RETURNS JSONB
@@ -2976,23 +2976,23 @@ BEGIN
         RAISE EXCEPTION 'metadata_enrichment_invalid_results';
     END IF;
     v_receipt_digest := encode(sha256(convert_to(jsonb_build_object(
-        'run', p_workflow_run_id, 'revision', p_expected_model_revision,
+        'run', p_workflow_run_id, 'revision', p_expected_project_revision,
         'claim_digest', encode(sha256(convert_to(p_workflow_run_claim_token::TEXT, 'UTF8')), 'hex'),
         'baseline', p_expected_baseline_digest, 'results', p_results)::TEXT, 'UTF8')), 'hex');
-    SELECT run.*, target.model_revision AS current_model_revision INTO v_run
-      FROM application.workflow_run AS run JOIN model.model AS target USING (model_id, tenant_id)
+    SELECT run.*, target.project_revision AS current_project_revision INTO v_run
+      FROM application.workflow_run AS run JOIN project.project AS target USING (project_id, tenant_id)
      WHERE run.workflow_run_id = p_workflow_run_id AND target.is_active
      FOR UPDATE OF run, target;
     IF NOT FOUND THEN RAISE EXCEPTION 'metadata_enrichment_run_unavailable'; END IF;
     SELECT * INTO v_decision FROM security.authorize_tenant_operation(
         p_entra_tenant_id, p_entra_object_id, p_expected_principal_type,
-        v_run.tenant_id, 'tenant_model_write');
+        v_run.tenant_id, 'tenant_project_write');
     IF NOT coalesce(v_decision.authorized, FALSE) THEN RAISE EXCEPTION 'metadata_enrichment_denied'; END IF;
     IF v_run.actor_principal_id <> v_decision.principal_id THEN RAISE EXCEPTION 'workflow_run_owner_mismatch'; END IF;
-    IF v_run.model_workflow <> 'metadata_enrichment' THEN RAISE EXCEPTION 'metadata_enrichment_run_unavailable'; END IF;
-    IF p_expected_model_revision IS NULL OR v_run.model_revision <> p_expected_model_revision
-       OR v_run.current_model_revision <> p_expected_model_revision THEN
-        RAISE EXCEPTION 'stale_model_revision';
+    IF v_run.project_workflow <> 'metadata_enrichment' THEN RAISE EXCEPTION 'metadata_enrichment_run_unavailable'; END IF;
+    IF p_expected_project_revision IS NULL OR v_run.project_revision <> p_expected_project_revision
+       OR v_run.current_project_revision <> p_expected_project_revision THEN
+        RAISE EXCEPTION 'stale_project_revision';
     END IF;
     -- Completed replay precedes the live-claim check: completion clears claims.
     IF v_run.metadata_enrichment_receipt_digest IS NOT NULL THEN
@@ -3043,7 +3043,7 @@ BEGIN
     PERFORM 1 FROM reference.zone AS zone ORDER BY zone.zone_id FOR SHARE;
     v_context := application.get_metadata_enrichment_execution_context(
         p_entra_tenant_id, p_entra_object_id, p_expected_principal_type,
-        p_workflow_run_id, p_expected_model_revision);
+        p_workflow_run_id, p_expected_project_revision);
     v_drift := v_context ->> 'baseline_digest' <> p_expected_baseline_digest
         OR NOT (v_context->>'description_revision_matches')::BOOLEAN;
     IF EXISTS (SELECT 1 FROM jsonb_array_elements(p_results) AS result
@@ -3134,23 +3134,23 @@ BEGIN
          WHERE selection.workflow_run_id = p_workflow_run_id AND object.object_id = v_object_id;
         IF NOT FOUND THEN RAISE EXCEPTION 'metadata_enrichment_result_outside_scope'; END IF;
         SELECT object_description INTO v_current FROM workflow.object_enrichment
-         WHERE model_id = v_run.model_id AND object_id = v_object_id;
+         WHERE project_id = v_run.project_id AND object_id = v_object_id;
         v_status := CASE WHEN NOT v_object.is_active THEN 'inactive'
             WHEN coalesce((SELECT is_locked FROM workflow.object_enrichment
-                WHERE model_id = v_run.model_id AND object_id = v_object_id), FALSE) THEN 'locked' END;
+                WHERE project_id = v_run.project_id AND object_id = v_object_id), FALSE) THEN 'locked' END;
         IF v_attribute_id IS NOT NULL THEN
             SELECT * INTO v_attribute FROM core.attribute AS attribute
              WHERE attribute.attribute_id = v_attribute_id AND attribute.object_id = v_object_id;
             IF NOT FOUND THEN RAISE EXCEPTION 'metadata_enrichment_result_outside_scope'; END IF;
             SELECT to_jsonb(enriched)->>v_field INTO v_current FROM workflow.attribute_enrichment AS enriched
-             WHERE model_id = v_run.model_id AND attribute_id = v_attribute_id;
+             WHERE project_id = v_run.project_id AND attribute_id = v_attribute_id;
             v_status := CASE WHEN NOT v_attribute.is_active THEN 'inactive'
                 WHEN v_status IS NOT NULL THEN v_status
                 WHEN coalesce((SELECT is_locked FROM workflow.attribute_enrichment
-                    WHERE model_id = v_run.model_id AND attribute_id = v_attribute_id), FALSE) THEN 'locked' END;
+                    WHERE project_id = v_run.project_id AND attribute_id = v_attribute_id), FALSE) THEN 'locked' END;
             IF v_result ->> 'evidence_method' IN ('source_sample', 'bronze_sample') AND (
                 v_attribute.is_masking_required OR coalesce((SELECT is_pii FROM workflow.attribute_enrichment
-                    WHERE model_id = v_run.model_id AND attribute_id = v_attribute_id), FALSE) OR EXISTS (
+                    WHERE project_id = v_run.project_id AND attribute_id = v_attribute_id), FALSE) OR EXISTS (
                     SELECT 1 FROM jsonb_array_elements(v_context -> 'objects') AS object,
                         jsonb_array_elements(object -> 'attributes') AS attribute
                      WHERE (attribute ->> 'attribute_id')::BIGINT = v_attribute_id
@@ -3176,21 +3176,21 @@ BEGIN
             ELSE 'inconclusive' END;
         IF v_status = 'applied' THEN
             IF v_field = 'object_description' THEN
-                INSERT INTO workflow.object_enrichment (model_id, object_id, object_description,
+                INSERT INTO workflow.object_enrichment (project_id, object_id, object_description,
                     workflow_run_id, created_by, updated_by)
-                VALUES (v_run.model_id, v_object_id, v_value, p_workflow_run_id,
+                VALUES (v_run.project_id, v_object_id, v_value, p_workflow_run_id,
                     v_decision.principal_id::TEXT, v_decision.principal_id::TEXT)
-                ON CONFLICT (model_id, object_id) DO UPDATE SET
+                ON CONFLICT (project_id, object_id) DO UPDATE SET
                     object_description = EXCLUDED.object_description,
                     workflow_run_id = EXCLUDED.workflow_run_id,
                     updated_time = clock_timestamp(), updated_by = EXCLUDED.updated_by;
             ELSE
-                -- Field identity is validated above; one row per Model/Attribute.
-                INSERT INTO workflow.attribute_enrichment (model_id, object_id, attribute_id,
+                -- Field identity is validated above; one row per Project/Attribute.
+                INSERT INTO workflow.attribute_enrichment (project_id, object_id, attribute_id,
                     workflow_run_id, created_by, updated_by)
-                VALUES (v_run.model_id, v_object_id, v_attribute_id, p_workflow_run_id,
+                VALUES (v_run.project_id, v_object_id, v_attribute_id, p_workflow_run_id,
                     v_decision.principal_id::TEXT, v_decision.principal_id::TEXT)
-                ON CONFLICT (model_id, attribute_id) DO NOTHING;
+                ON CONFLICT (project_id, attribute_id) DO NOTHING;
                 UPDATE workflow.attribute_enrichment SET
                     attribute_description = CASE WHEN v_field = 'attribute_description' THEN v_value ELSE attribute_description END,
                     attribute_inferred_data_type = CASE WHEN v_field = 'attribute_inferred_data_type' THEN v_value ELSE attribute_inferred_data_type END,
@@ -3200,7 +3200,7 @@ BEGIN
                     is_pii = CASE WHEN v_field = 'is_pii' THEN v_value::BOOLEAN ELSE is_pii END,
                     workflow_run_id = p_workflow_run_id,
                     updated_time = clock_timestamp(), updated_by = v_decision.principal_id::TEXT
-                WHERE model_id = v_run.model_id AND attribute_id = v_attribute_id;
+                WHERE project_id = v_run.project_id AND attribute_id = v_attribute_id;
             END IF;
         END IF;
         INSERT INTO application.metadata_enrichment_result (
@@ -3244,7 +3244,7 @@ BEGIN
     SELECT count(*)::INTEGER INTO v_warning_count FROM application.metadata_enrichment_result
      WHERE workflow_run_id = p_workflow_run_id AND status IN ('changed', 'unavailable', 'inconclusive');
     PERFORM application.complete_workflow_run(p_entra_tenant_id, p_entra_object_id,
-        p_expected_principal_type, p_workflow_run_id, p_expected_model_revision, v_warning_count);
+        p_expected_principal_type, p_workflow_run_id, p_expected_project_revision, v_warning_count);
     v_summary := application.get_metadata_enrichment_results(p_entra_tenant_id, p_entra_object_id,
         p_expected_principal_type, p_workflow_run_id, 1, 0);
     RETURN v_summary - 'results' - 'total_count' - 'tenant_id' - 'applied_field_counts';
@@ -3252,11 +3252,11 @@ END;
 $complete_metadata_enrichment$;
 REVOKE ALL ON FUNCTION application.complete_metadata_enrichment(UUID, UUID, VARCHAR, BIGINT, BIGINT, UUID, CHAR, JSONB) FROM PUBLIC;
 
--- Private, append-only audit for human Model Enrichment reviews.
+-- Private, append-only audit for human Project Enrichment reviews.
 CREATE TABLE application.metadata_review_event (
     metadata_review_event_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES core.tenant (tenant_id),
-    model_id BIGINT,
+    project_id BIGINT,
     actor_principal_id BIGINT NOT NULL REFERENCES security.principal (principal_id),
     correlation_id UUID NOT NULL,
     record_type VARCHAR(10) NOT NULL,
@@ -3266,12 +3266,12 @@ CREATE TABLE application.metadata_review_event (
     before_records JSONB NOT NULL,
     records JSONB NOT NULL,
     created_time TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
-    CONSTRAINT fk_metadata_review_model FOREIGN KEY (model_id, tenant_id)
-        REFERENCES model.model (model_id, tenant_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_metadata_review_project FOREIGN KEY (project_id, tenant_id)
+        REFERENCES project.project (project_id, tenant_id) ON DELETE NO ACTION,
     CONSTRAINT uq_metadata_review_request UNIQUE (tenant_id, actor_principal_id, correlation_id),
     CONSTRAINT ck_metadata_review_action CHECK (
         record_type IN ('object', 'attribute') AND action IN ('lock', 'unlock', 'deactivate', 'reactivate', 'describe', 'edit')
-        AND (action <> 'edit' OR model_id IS NOT NULL)
+        AND (action <> 'edit' OR project_id IS NOT NULL)
         AND request_digest ~ '^[0-9a-f]{64}$'
     ),
     CONSTRAINT ck_metadata_review_records CHECK (
@@ -3293,35 +3293,35 @@ CREATE TRIGGER guard_metadata_review_event BEFORE UPDATE OR DELETE
 ON application.metadata_review_event FOR EACH ROW EXECUTE FUNCTION application.guard_metadata_review_event();
 REVOKE ALL ON application.metadata_review_event FROM PUBLIC;
 
--- Model review and workflow start both lock Model before Tenant. Read authority
+-- Project review and workflow start both lock Project before Tenant. Read authority
 -- precedes the exclusive fence; write authority is checked again after waiting.
-CREATE FUNCTION application.authorize_model_record_review(
+CREATE FUNCTION application.authorize_project_record_review(
     p_entra_tenant_id UUID, p_entra_object_id UUID, p_expected_principal_type VARCHAR,
-    p_tenant_id BIGINT, p_model_id BIGINT
+    p_tenant_id BIGINT, p_project_id BIGINT
 )
 RETURNS TABLE (
-    denial_code VARCHAR(50), principal_id BIGINT, model_id BIGINT,
-    tenant_id BIGINT, model_name VARCHAR(255), model_revision BIGINT
+    denial_code VARCHAR(50), principal_id BIGINT, project_id BIGINT,
+    tenant_id BIGINT, project_name VARCHAR(255), project_revision BIGINT
 )
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
-AS $authorize_model_record_review$
+AS $authorize_project_record_review$
 DECLARE
-    v_model model.model%ROWTYPE;
+    v_project project.project%ROWTYPE;
     v_decision RECORD;
 BEGIN
     IF p_entra_tenant_id IS NULL OR p_entra_object_id IS NULL
        OR p_tenant_id IS NULL OR p_tenant_id < 1
-       OR p_model_id IS NULL OR p_model_id < 1 THEN
+       OR p_project_id IS NULL OR p_project_id < 1 THEN
         denial_code := 'invalid_request'; RETURN NEXT; RETURN;
     END IF;
     IF p_expected_principal_type IS DISTINCT FROM 'user' THEN
         denial_code := 'authorization_denied'; RETURN NEXT; RETURN;
     END IF;
-    SELECT target.* INTO v_model FROM model.model AS target
-     WHERE target.model_id = p_model_id AND target.tenant_id = p_tenant_id AND target.is_active
+    SELECT target.* INTO v_project FROM project.project AS target
+     WHERE target.project_id = p_project_id AND target.tenant_id = p_tenant_id AND target.is_active
      FOR UPDATE;
     IF NOT FOUND THEN
-        denial_code := 'model_not_found'; RETURN NEXT; RETURN;
+        denial_code := 'project_not_found'; RETURN NEXT; RETURN;
     END IF;
     SELECT * INTO v_decision FROM security.authorize_tenant_operation(
         p_entra_tenant_id, p_entra_object_id, p_expected_principal_type, p_tenant_id, 'tenant_read');
@@ -3332,29 +3332,29 @@ BEGIN
     PERFORM 1 FROM security.tenant_lock AS tenant_lock
      WHERE tenant_lock.tenant_id = p_tenant_id FOR UPDATE;
     SELECT * INTO v_decision FROM security.authorize_tenant_operation(
-        p_entra_tenant_id, p_entra_object_id, p_expected_principal_type, p_tenant_id, 'tenant_model_write');
+        p_entra_tenant_id, p_entra_object_id, p_expected_principal_type, p_tenant_id, 'tenant_project_write');
     IF NOT FOUND OR NOT v_decision.authorized THEN
         denial_code := coalesce(v_decision.denial_code, 'authorization_denied'); RETURN NEXT; RETURN;
     END IF;
     principal_id := v_decision.principal_id;
-    model_id := v_model.model_id;
-    tenant_id := v_model.tenant_id;
-    model_name := v_model.model_name;
-    model_revision := v_model.model_revision;
+    project_id := v_project.project_id;
+    tenant_id := v_project.tenant_id;
+    project_name := v_project.project_name;
+    project_revision := v_project.project_revision;
     RETURN NEXT;
 END;
-$authorize_model_record_review$;
-REVOKE ALL ON FUNCTION application.authorize_model_record_review(UUID, UUID, VARCHAR, BIGINT, BIGINT) FROM PUBLIC;
+$authorize_project_record_review$;
+REVOKE ALL ON FUNCTION application.authorize_project_record_review(UUID, UUID, VARCHAR, BIGINT, BIGINT) FROM PUBLIC;
 
 -- Narrow web-only Scope primitive. The caller records the validated Change Set
 -- and advances its revision in this same transaction; direct table writes stay denied.
-CREATE FUNCTION application.add_model_input_scope_objects(
+CREATE FUNCTION application.add_project_input_scope_objects(
     p_entra_tenant_id UUID, p_entra_object_id UUID, p_tenant_id BIGINT,
-    p_model_id BIGINT, p_expected_model_revision BIGINT, p_object_ids BIGINT[]
+    p_project_id BIGINT, p_expected_project_revision BIGINT, p_object_ids BIGINT[]
 )
 RETURNS INTEGER
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
-AS $add_model_input_scope_objects$
+AS $add_project_input_scope_objects$
 DECLARE
     v_decision RECORD;
     v_count INTEGER;
@@ -3367,21 +3367,21 @@ BEGIN
        OR EXISTS (SELECT 1 FROM unnest(p_object_ids) AS ids(id) WHERE id IS NULL OR id < 1) THEN
         RAISE EXCEPTION 'invalid Input Scope selection' USING ERRCODE = '22023';
     END IF;
-    SELECT * INTO v_decision FROM application.authorize_model_record_review(
-        p_entra_tenant_id, p_entra_object_id, 'user', p_tenant_id, p_model_id);
+    SELECT * INTO v_decision FROM application.authorize_project_record_review(
+        p_entra_tenant_id, p_entra_object_id, 'user', p_tenant_id, p_project_id);
     IF NOT FOUND OR v_decision.denial_code IS NOT NULL THEN
         RAISE EXCEPTION 'Input Scope authorization denied' USING ERRCODE = '42501';
     END IF;
-    IF v_decision.model_revision IS DISTINCT FROM p_expected_model_revision THEN
-        RAISE EXCEPTION 'Model revision changed' USING ERRCODE = '40001';
+    IF v_decision.project_revision IS DISTINCT FROM p_expected_project_revision THEN
+        RAISE EXCEPTION 'Project revision changed' USING ERRCODE = '40001';
     END IF;
     IF EXISTS (SELECT 1 FROM application.workflow_run AS run
-        JOIN model.model AS target ON target.model_id = run.model_id
+        JOIN project.project AS target ON target.project_id = run.project_id
         WHERE target.tenant_id = p_tenant_id AND run.workflow_run_state = 'running') THEN
         RAISE EXCEPTION 'Tenant workflow is running' USING ERRCODE = '55000';
     END IF;
-    IF (SELECT count(*) FROM workflow.list_model_object_eligibility(p_model_id) AS eligible
-        WHERE eligible.object_id = ANY(p_object_ids) AND eligible.is_model_input_eligible)
+    IF (SELECT count(*) FROM workflow.list_project_object_eligibility(p_project_id) AS eligible
+        WHERE eligible.object_id = ANY(p_object_ids) AND eligible.is_project_input_eligible)
         <> cardinality(p_object_ids) THEN
         RAISE EXCEPTION 'Objects are not eligible for Input Scope' USING ERRCODE = '22023';
     END IF;
@@ -3395,40 +3395,40 @@ BEGIN
             RAISE EXCEPTION 'Input Scope source authorization denied' USING ERRCODE = '42501';
         END IF;
     END LOOP;
-    PERFORM 1 FROM model.model_input_scope AS scope
-     WHERE scope.model_id = p_model_id AND scope.object_id = ANY(p_object_ids)
-     ORDER BY scope.model_input_scope_id FOR UPDATE;
-    IF EXISTS (SELECT 1 FROM model.model_input_scope AS scope
-        WHERE scope.model_id = p_model_id AND scope.object_id = ANY(p_object_ids)
-          AND scope.model_input_scope_is_locked AND NOT scope.is_active) THEN
+    PERFORM 1 FROM project.project_input_scope AS scope
+     WHERE scope.project_id = p_project_id AND scope.object_id = ANY(p_object_ids)
+     ORDER BY scope.project_input_scope_id FOR UPDATE;
+    IF EXISTS (SELECT 1 FROM project.project_input_scope AS scope
+        WHERE scope.project_id = p_project_id AND scope.object_id = ANY(p_object_ids)
+          AND scope.project_input_scope_is_locked AND NOT scope.is_active) THEN
         RAISE EXCEPTION 'Input Scope record is locked' USING ERRCODE = '55000';
     END IF;
-    INSERT INTO model.model_input_scope (model_id, object_id, created_by, updated_by)
-    SELECT p_model_id, id, v_decision.principal_id::TEXT, v_decision.principal_id::TEXT
+    INSERT INTO project.project_input_scope (project_id, object_id, created_by, updated_by)
+    SELECT p_project_id, id, v_decision.principal_id::TEXT, v_decision.principal_id::TEXT
       FROM unnest(p_object_ids) AS ids(id) ORDER BY id
-    ON CONFLICT (model_id, object_id) DO UPDATE
+    ON CONFLICT (project_id, object_id) DO UPDATE
        SET is_active = TRUE, updated_time = clock_timestamp(),
            updated_by = EXCLUDED.updated_by
-     WHERE NOT model.model_input_scope.is_active;
+     WHERE NOT project.project_input_scope.is_active;
     GET DIAGNOSTICS v_count = ROW_COUNT;
     RETURN v_count;
 END;
-$add_model_input_scope_objects$;
-REVOKE ALL ON FUNCTION application.add_model_input_scope_objects(
+$add_project_input_scope_objects$;
+REVOKE ALL ON FUNCTION application.add_project_input_scope_objects(
     UUID, UUID, BIGINT, BIGINT, BIGINT, BIGINT[]) FROM PUBLIC;
 
 
 -- Web-only permanent deletion. The server supplies an explicitly confirmed plan;
 -- this primitive rechecks identity, ownership, locks, revision, and the audit receipt.
 -- No direct DELETE privilege is granted to either application role.
-CREATE FUNCTION application.delete_model_records(
+CREATE FUNCTION application.delete_project_records(
     p_entra_tenant_id UUID, p_entra_object_id UUID, p_tenant_id BIGINT,
-    p_model_id BIGINT, p_expected_model_revision BIGINT,
+    p_project_id BIGINT, p_expected_project_revision BIGINT,
     p_change_set_id UUID, p_records JSONB
 )
 RETURNS INTEGER
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
-AS $delete_model_records$
+AS $delete_project_records$
 DECLARE
     v_decision RECORD;
     v_table TEXT;
@@ -3450,22 +3450,22 @@ DECLARE
         'conceptual_support', 'conceptual_relationship', 'conceptual_object'
     ];
 BEGIN
-    SELECT * INTO v_decision FROM application.authorize_model_record_review(
-        p_entra_tenant_id, p_entra_object_id, 'user', p_tenant_id, p_model_id);
+    SELECT * INTO v_decision FROM application.authorize_project_record_review(
+        p_entra_tenant_id, p_entra_object_id, 'user', p_tenant_id, p_project_id);
     IF NOT FOUND OR v_decision.denial_code IS NOT NULL THEN
-        RAISE EXCEPTION 'Model deletion authorization denied' USING ERRCODE = '42501';
+        RAISE EXCEPTION 'Project deletion authorization denied' USING ERRCODE = '42501';
     END IF;
-    IF v_decision.model_revision IS DISTINCT FROM p_expected_model_revision THEN
-        RAISE EXCEPTION 'Model revision changed' USING ERRCODE = '40001';
+    IF v_decision.project_revision IS DISTINCT FROM p_expected_project_revision THEN
+        RAISE EXCEPTION 'Project revision changed' USING ERRCODE = '40001';
     END IF;
     SELECT * INTO v_decision FROM security.authorize_tenant_operation(
-        p_entra_tenant_id, p_entra_object_id, 'user', p_tenant_id, 'tenant_model_write');
+        p_entra_tenant_id, p_entra_object_id, 'user', p_tenant_id, 'tenant_project_write');
     IF NOT FOUND OR NOT v_decision.authorized
        OR v_decision.effective_role NOT IN ('super_admin', 'tenant_admin') THEN
-        RAISE EXCEPTION 'Only administrators may delete Model records' USING ERRCODE = '42501';
+        RAISE EXCEPTION 'Only administrators may delete Project records' USING ERRCODE = '42501';
     END IF;
     IF EXISTS (SELECT 1 FROM application.workflow_run AS run
-        JOIN model.model AS target ON target.model_id = run.model_id
+        JOIN project.project AS target ON target.project_id = run.project_id
         WHERE target.tenant_id = p_tenant_id AND run.workflow_run_state = 'running') THEN
         RAISE EXCEPTION 'Tenant workflow is running' USING ERRCODE = '55000';
     END IF;
@@ -3476,11 +3476,11 @@ BEGIN
                WHERE NOT name = ANY(v_tables)) THEN
         RAISE EXCEPTION 'Unsupported deletion dataset' USING ERRCODE = '22023';
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM mcp.model_change_set AS change_set
-        WHERE change_set.model_change_set_id = p_change_set_id
-          AND change_set.model_id = p_model_id
+    IF NOT EXISTS (SELECT 1 FROM mcp.project_change_set AS change_set
+        WHERE change_set.project_change_set_id = p_change_set_id
+          AND change_set.project_id = p_project_id
           AND change_set.created_by_principal_id = v_decision.principal_id
-          AND change_set.model_change_set_status = 'validated'
+          AND change_set.project_change_set_status = 'validated'
           AND change_set.validation_outcome->'delete_records' = p_records) THEN
         RAISE EXCEPTION 'A validated deletion receipt is required' USING ERRCODE = '42501';
     END IF;
@@ -3498,10 +3498,10 @@ BEGIN
             RAISE EXCEPTION 'Invalid deletion identities' USING ERRCODE = '22023';
         END IF;
         v_scope := CASE v_table
-            WHEN 'mapping_attribute' THEN 'EXISTS (SELECT 1 FROM workflow.mapping_object m WHERE m.mapping_object_id = target.mapping_object_id AND m.model_id = $1)'
-            WHEN 'generated_code_source_system' THEN 'EXISTS (SELECT 1 FROM workflow.generated_code c WHERE c.generated_code_id = target.generated_code_id AND c.model_id = $1)'
-            WHEN 'validation_check' THEN 'EXISTS (SELECT 1 FROM workflow.validation_group g WHERE g.validation_group_id = target.validation_group_id AND g.model_id = $1)'
-            ELSE 'target.model_id = $1'
+            WHEN 'mapping_attribute' THEN 'EXISTS (SELECT 1 FROM workflow.mapping_object m WHERE m.mapping_object_id = target.mapping_object_id AND m.project_id = $1)'
+            WHEN 'generated_code_source_system' THEN 'EXISTS (SELECT 1 FROM workflow.generated_code c WHERE c.generated_code_id = target.generated_code_id AND c.project_id = $1)'
+            WHEN 'validation_check' THEN 'EXISTS (SELECT 1 FROM workflow.validation_group g WHERE g.validation_group_id = target.validation_group_id AND g.project_id = $1)'
+            ELSE 'target.project_id = $1'
         END;
         v_lock_column := CASE v_table
             WHEN 'mapping_object' THEN 'object_mapping_is_locked'
@@ -3512,32 +3512,32 @@ BEGIN
         END;
         EXECUTE format('SELECT count(*), bool_or(target.%I) FROM workflow.%I target WHERE %s AND target.%I = ANY($2)',
             v_lock_column, v_table, v_scope, v_table || '_id')
-            INTO v_count, v_locked USING p_model_id, v_ids;
+            INTO v_count, v_locked USING p_project_id, v_ids;
         IF v_count <> cardinality(v_ids) THEN
-            RAISE EXCEPTION 'Deletion records changed or are outside the Model' USING ERRCODE = '40001';
+            RAISE EXCEPTION 'Deletion records changed or are outside the Project' USING ERRCODE = '40001';
         END IF;
         IF v_locked THEN
             RAISE EXCEPTION 'Unlock protected records before deletion' USING ERRCODE = '55000';
         END IF;
         EXECUTE format('DELETE FROM workflow.%I target WHERE %s AND target.%I = ANY($2)',
-            v_table, v_scope, v_table || '_id') USING p_model_id, v_ids;
+            v_table, v_scope, v_table || '_id') USING p_project_id, v_ids;
         GET DIAGNOSTICS v_count = ROW_COUNT;
         v_total := v_total + v_count;
     END LOOP;
     RETURN v_total;
 END;
-$delete_model_records$;
-REVOKE ALL ON FUNCTION application.delete_model_records(
+$delete_project_records$;
+REVOKE ALL ON FUNCTION application.delete_project_records(
     UUID, UUID, BIGINT, BIGINT, BIGINT, UUID, JSONB) FROM PUBLIC;
 
--- Human Model-local enrichment edits. The receipt stores witnesses, never descriptions.
-CREATE FUNCTION application.review_model_enrichment(
+-- Human Project-local enrichment edits. The receipt stores witnesses, never descriptions.
+CREATE FUNCTION application.review_project_enrichment(
     p_entra_tenant_id UUID, p_entra_object_id UUID, p_tenant_id BIGINT,
-    p_model_id BIGINT, p_expected_model_revision BIGINT,
+    p_project_id BIGINT, p_expected_project_revision BIGINT,
     p_record_type VARCHAR, p_action VARCHAR, p_records JSONB, p_correlation_id UUID
 )
 RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
-AS $review_model_enrichment$
+AS $review_project_enrichment$
 DECLARE
     v_decision RECORD;
     v_existing application.metadata_review_event%ROWTYPE;
@@ -3566,11 +3566,11 @@ BEGIN
            <> jsonb_array_length(p_records) THEN
         RAISE EXCEPTION 'enrichment_invalid_review';
     END IF;
-    SELECT * INTO v_decision FROM application.authorize_model_record_review(
-        p_entra_tenant_id, p_entra_object_id, 'user', p_tenant_id, p_model_id);
+    SELECT * INTO v_decision FROM application.authorize_project_record_review(
+        p_entra_tenant_id, p_entra_object_id, 'user', p_tenant_id, p_project_id);
     IF v_decision.denial_code IS NOT NULL THEN RAISE EXCEPTION '%', v_decision.denial_code; END IF;
     v_request_digest := encode(sha256(convert_to(jsonb_build_object(
-        'model_id', p_model_id, 'model_revision', p_expected_model_revision,
+        'project_id', p_project_id, 'project_revision', p_expected_project_revision,
         'record_type', p_record_type, 'action', p_action, 'records', p_records
     )::TEXT, 'UTF8')), 'hex');
     SELECT * INTO v_existing FROM application.metadata_review_event
@@ -3583,8 +3583,8 @@ BEGIN
         RETURN jsonb_build_object('review_event_id', v_existing.metadata_review_event_id,
             'action_count', v_existing.action_count, 'records', v_existing.records);
     END IF;
-    IF p_expected_model_revision IS NULL OR v_decision.model_revision <> p_expected_model_revision THEN
-        RAISE EXCEPTION 'stale_model_revision';
+    IF p_expected_project_revision IS NULL OR v_decision.project_revision <> p_expected_project_revision THEN
+        RAISE EXCEPTION 'stale_project_revision';
     END IF;
     IF EXISTS (SELECT 1 FROM application.workflow_run WHERE tenant_id = p_tenant_id
         AND workflow_run_state IN ('queued', 'running')) THEN
@@ -3619,8 +3619,8 @@ BEGIN
            )) THEN RAISE EXCEPTION 'enrichment_invalid_review'; END IF;
         v_attribute_id := CASE WHEN p_record_type = 'attribute' THEN (v_item->>'record_id')::BIGINT END;
         SELECT object.object_id INTO v_object_id
-          FROM core.object AS object JOIN model.model_input_scope AS scope USING (object_id)
-         WHERE scope.model_id = p_model_id AND scope.is_active AND object.is_active
+          FROM core.object AS object JOIN project.project_input_scope AS scope USING (object_id)
+         WHERE scope.project_id = p_project_id AND scope.is_active AND object.is_active
            AND object.source_tenant_id = p_tenant_id
            AND ((p_record_type = 'object' AND object.object_id = (v_item->>'record_id')::BIGINT)
              OR (p_record_type = 'attribute' AND EXISTS (SELECT 1 FROM core.attribute
@@ -3630,17 +3630,17 @@ BEGIN
         IF v_attribute_id IS NOT NULL THEN
             PERFORM 1 FROM core.attribute WHERE attribute_id = v_attribute_id FOR UPDATE;
         END IF;
-        v_revision := workflow.enrichment_review_revision(p_model_id, v_object_id, v_attribute_id);
+        v_revision := workflow.enrichment_review_revision(p_project_id, v_object_id, v_attribute_id);
         IF v_revision IS DISTINCT FROM v_item->>'expected_revision' THEN
             RAISE EXCEPTION 'enrichment_revision_conflict';
         END IF;
         SELECT is_locked INTO v_parent_locked FROM workflow.object_enrichment
-         WHERE model_id = p_model_id AND object_id = v_object_id FOR UPDATE;
+         WHERE project_id = p_project_id AND object_id = v_object_id FOR UPDATE;
         v_locked := coalesce(v_parent_locked, FALSE);
         IF v_attribute_id IS NOT NULL THEN
             IF v_locked THEN RAISE EXCEPTION 'object_locked'; END IF;
             SELECT is_locked INTO v_locked FROM workflow.attribute_enrichment
-             WHERE model_id = p_model_id AND attribute_id = v_attribute_id FOR UPDATE;
+             WHERE project_id = p_project_id AND attribute_id = v_attribute_id FOR UPDATE;
         END IF;
         IF p_action = 'edit' AND coalesce(v_locked, FALSE) THEN
             RAISE EXCEPTION 'enrichment_locked';
@@ -3648,24 +3648,24 @@ BEGIN
         v_before := v_before || jsonb_build_array(jsonb_build_object(
             'record_id', (v_item->>'record_id')::BIGINT, 'review_revision', v_revision));
         IF v_attribute_id IS NULL THEN
-            INSERT INTO workflow.object_enrichment (model_id, object_id, object_description,
+            INSERT INTO workflow.object_enrichment (project_id, object_id, object_description,
                 is_locked, created_by, updated_by)
-            VALUES (p_model_id, v_object_id, nullif(btrim(v_item->>'description'), ''),
+            VALUES (p_project_id, v_object_id, nullif(btrim(v_item->>'description'), ''),
                 p_action = 'lock', v_decision.principal_id::TEXT, v_decision.principal_id::TEXT)
-            ON CONFLICT (model_id, object_id) DO UPDATE SET
+            ON CONFLICT (project_id, object_id) DO UPDATE SET
                 object_description = CASE WHEN p_action = 'edit' THEN EXCLUDED.object_description ELSE workflow.object_enrichment.object_description END,
                 is_locked = CASE WHEN p_action = 'edit' THEN workflow.object_enrichment.is_locked ELSE p_action = 'lock' END,
                 updated_time = clock_timestamp(), updated_by = EXCLUDED.updated_by;
         ELSE
-            INSERT INTO workflow.attribute_enrichment (model_id, object_id, attribute_id,
+            INSERT INTO workflow.attribute_enrichment (project_id, object_id, attribute_id,
                 attribute_description, attribute_inferred_data_type, is_natural_key, is_primary_key,
                 is_nullable, is_pii, is_locked, created_by, updated_by)
-            VALUES (p_model_id, v_object_id, v_attribute_id, nullif(btrim(v_item->>'description'), ''),
+            VALUES (p_project_id, v_object_id, v_attribute_id, nullif(btrim(v_item->>'description'), ''),
                 nullif(btrim(v_item->>'attribute_inferred_data_type'), ''),
                 (v_item->>'is_natural_key')::BOOLEAN, (v_item->>'is_primary_key')::BOOLEAN,
                 (v_item->>'is_nullable')::BOOLEAN, (v_item->>'is_pii')::BOOLEAN,
                 p_action = 'lock', v_decision.principal_id::TEXT, v_decision.principal_id::TEXT)
-            ON CONFLICT (model_id, attribute_id) DO UPDATE SET
+            ON CONFLICT (project_id, attribute_id) DO UPDATE SET
                 attribute_description = CASE WHEN p_action = 'edit' THEN EXCLUDED.attribute_description ELSE workflow.attribute_enrichment.attribute_description END,
                 attribute_inferred_data_type = CASE WHEN p_action = 'edit' THEN EXCLUDED.attribute_inferred_data_type ELSE workflow.attribute_enrichment.attribute_inferred_data_type END,
                 is_natural_key = CASE WHEN p_action = 'edit' THEN EXCLUDED.is_natural_key ELSE workflow.attribute_enrichment.is_natural_key END,
@@ -3684,21 +3684,21 @@ BEGIN
         v_object_id := CASE WHEN v_attribute_id IS NULL THEN (v_item->>'record_id')::BIGINT
             ELSE (SELECT object_id FROM core.attribute WHERE attribute_id = v_attribute_id) END;
         v_locked := CASE WHEN v_attribute_id IS NULL THEN
-            (SELECT is_locked FROM workflow.object_enrichment WHERE model_id = p_model_id AND object_id = v_object_id)
-            ELSE (SELECT is_locked FROM workflow.attribute_enrichment WHERE model_id = p_model_id AND attribute_id = v_attribute_id) END;
+            (SELECT is_locked FROM workflow.object_enrichment WHERE project_id = p_project_id AND object_id = v_object_id)
+            ELSE (SELECT is_locked FROM workflow.attribute_enrichment WHERE project_id = p_project_id AND attribute_id = v_attribute_id) END;
         v_records := v_records || jsonb_build_array(jsonb_build_object(
             'record_id', (v_item->>'record_id')::BIGINT, 'is_active', TRUE, 'is_locked', v_locked,
-            'review_revision', workflow.enrichment_review_revision(p_model_id, v_object_id, v_attribute_id)));
+            'review_revision', workflow.enrichment_review_revision(p_project_id, v_object_id, v_attribute_id)));
     END LOOP;
-    SELECT * INTO v_decision FROM application.authorize_model_record_review(
-        p_entra_tenant_id, p_entra_object_id, 'user', p_tenant_id, p_model_id);
+    SELECT * INTO v_decision FROM application.authorize_project_record_review(
+        p_entra_tenant_id, p_entra_object_id, 'user', p_tenant_id, p_project_id);
     IF v_decision.denial_code IS NOT NULL THEN RAISE EXCEPTION '%', v_decision.denial_code; END IF;
-    INSERT INTO application.metadata_review_event (tenant_id, model_id, actor_principal_id,
+    INSERT INTO application.metadata_review_event (tenant_id, project_id, actor_principal_id,
         correlation_id, record_type, action, request_digest, action_count, before_records, records)
-    VALUES (p_tenant_id, p_model_id, v_decision.principal_id, p_correlation_id,
+    VALUES (p_tenant_id, p_project_id, v_decision.principal_id, p_correlation_id,
         p_record_type, p_action, v_request_digest, v_count, v_before, v_records)
     RETURNING metadata_review_event_id INTO v_event_id;
     RETURN jsonb_build_object('review_event_id', v_event_id, 'action_count', v_count, 'records', v_records);
 END;
-$review_model_enrichment$;
-REVOKE ALL ON FUNCTION application.review_model_enrichment(UUID, UUID, BIGINT, BIGINT, BIGINT, VARCHAR, VARCHAR, JSONB, UUID) FROM PUBLIC;
+$review_project_enrichment$;
+REVOKE ALL ON FUNCTION application.review_project_enrichment(UUID, UUID, BIGINT, BIGINT, BIGINT, VARCHAR, VARCHAR, JSONB, UUID) FROM PUBLIC;

@@ -32,19 +32,19 @@ class _StaticConceptualWorkflowService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         expected_execution_mode: str,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart:
         del principal
         self.starts.append(
             (
                 tenant_id,
-                model_id,
+                project_id,
                 workflow_run_id,
                 expected_execution_mode,
-                expected_model_revision,
+                expected_project_revision,
             )
         )
         return AgentWorkflowRunStart(
@@ -52,7 +52,7 @@ class _StaticConceptualWorkflowService:
             workflow_run_id=workflow_run_id,
             workflow_run_state="running",
             started_at=datetime(2026, 8, 24, 10, tzinfo=UTC),
-            model_revision=expected_model_revision,
+            project_revision=expected_project_revision,
         )
 
     async def execute_started(
@@ -60,15 +60,15 @@ class _StaticConceptualWorkflowService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
     ) -> None:
         del principal
         assert workflow_run_claim_token == _CLAIM_TOKEN
         self.executions.append(
-            (tenant_id, model_id, workflow_run_id, expected_model_revision)
+            (tenant_id, project_id, workflow_run_id, expected_project_revision)
         )
 
 
@@ -90,10 +90,10 @@ def test_execute_endpoint_starts_without_process_local_execution() -> None:
 
     with _client(service) as client:
         response = client.post(
-            "/api/v1/tenants/7/models/18/conceptual/runs/1048/execute",
+            "/api/v1/tenants/7/projects/18/conceptual/runs/1048/execute",
             json={
                 "execution_mode": "tool_assisted",
-                "expected_model_revision": 4,
+                "expected_project_revision": 4,
             },
         )
 
@@ -102,10 +102,10 @@ def test_execute_endpoint_starts_without_process_local_execution() -> None:
         ExecuteConceptualRunRequest.model_validate(
             {
                 "execution_mode": "tool_assisted",
-                "expected_model_revision": 4,
+                "expected_project_revision": 4,
             },
             strict=True,
-        ).expected_model_revision
+        ).expected_project_revision
         == 4
     )
     assert service.starts == [(7, 18, 1048, "tool_assisted", 4)]
@@ -117,8 +117,8 @@ def test_execute_endpoint_does_not_duplicate_an_already_started_run() -> None:
 
     with _client(service) as client:
         response = client.post(
-            "/api/v1/tenants/7/models/18/conceptual/runs/1048/execute",
-            json={"execution_mode": "one_shot", "expected_model_revision": 4},
+            "/api/v1/tenants/7/projects/18/conceptual/runs/1048/execute",
+            json={"execution_mode": "one_shot", "expected_project_revision": 4},
         )
 
     assert response.status_code == 200
@@ -131,10 +131,10 @@ def test_execute_endpoint_accepts_explicit_one_shot_mode() -> None:
 
     with _client(service) as client:
         response = client.post(
-            "/api/v1/tenants/7/models/18/conceptual/runs/1048/execute",
+            "/api/v1/tenants/7/projects/18/conceptual/runs/1048/execute",
             json={
                 "execution_mode": "one_shot",
-                "expected_model_revision": 4,
+                "expected_project_revision": 4,
             },
         )
 

@@ -30,7 +30,7 @@ def test_schema_has_no_redundant_same_predicate_index_prefixes(
               JOIN pg_class AS larger_index
                 ON larger_index.oid = larger.indexrelid
              WHERE namespace.nspname IN (
-                       'reference', 'core', 'security', 'model', 'workflow',
+                       'reference', 'core', 'security', 'project', 'workflow',
                        'application', 'mcp'
                    )
                AND smaller.indisvalid

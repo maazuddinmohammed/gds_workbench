@@ -54,16 +54,16 @@ class MetadataRecord(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
-class ProjectRecord(MetadataRecord):
-    project_code: Code100
-    project_name: Name200
-    project_description: str | None
+class LaneRecord(MetadataRecord):
+    lane_code: Code100
+    lane_name: Name200
+    lane_description: str | None
     is_active: bool
 
 
 class TenantRecord(MetadataRecord):
     tenant_code: Code100
-    project_code: Code100
+    lane_code: Code100
     tenant_name: Name200
     tenant_description: str | None
     tenant_catalog: Annotated[str, StringConstraints(min_length=1, max_length=255)]

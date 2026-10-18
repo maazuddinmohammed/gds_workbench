@@ -109,7 +109,9 @@ async def test_responses_truncation_is_detected_without_usage_recorder() -> None
     await hooks.on_response(
         httpx2.Response(
             200,
-            request=httpx2.Request("POST", "https://fixture.invalid/openai/v1/responses"),
+            request=httpx2.Request(
+                "POST", "https://fixture.invalid/openai/v1/responses"
+            ),
             json={
                 "status": "incomplete",
                 "incomplete_details": {"reason": "max_output_tokens"},

@@ -1,13 +1,13 @@
 import type { LogicalTransport } from "../logical/api";
-import type { ModelTargetsTransport } from "../model_targets/api";
-import type { ModelRecordHistoryApi } from "../model_record_review/api";
+import type { ProjectTargetsTransport } from "../project_targets/api";
+import type { ProjectRecordHistoryApi } from "../project_record_review/api";
 import type { HttpRequest } from "../../core/http";
 import type {
   ModelingCardinality,
   ModelingConfidence,
   ReviewStatus,
 } from "../../shared/contracts";
-import type { ModelInputScopeApi } from "../model_input_scope/api";
+import type { ProjectInputScopeApi } from "../project_input_scope/api";
 import type { WorkflowsApi } from "../workflows/api";
 
 export interface DimensionalFilters {
@@ -37,8 +37,8 @@ export interface DimensionalObject {
 }
 
 export interface DimensionalObjectPage {
-  model_id: number;
-  model_revision: number;
+  project_id: number;
+  project_revision: number;
   items: DimensionalObject[];
   next_cursor: string | null;
 }
@@ -60,14 +60,13 @@ export interface DimensionalLogicalEntityReference {
   logical_entity_name: string;
 }
 
-export interface DimensionalAssertionReference {
-  modeling_assertion_record_id: number;
-  modeling_assertion_record_key: string;
-  modeling_assertion_document_name: string;
-  modeling_assertion_record_type: string;
-  modeling_assertion_text: string;
-  modeling_assertion_confidence: ModelingConfidence | null;
-  modeling_assertion_record_status: ReviewStatus;
+export interface DimensionalContextReference {
+  context_record_id: string;
+  context_group_name: string;
+  context_type_name: string;
+  context_text: string;
+  source_reference: string | null;
+  status: ReviewStatus;
 }
 
 interface DimensionalObjectSourceBase {
@@ -87,12 +86,12 @@ export interface DimensionalLogicalEntitySource extends DimensionalObjectSourceB
   source_logical_entity: DimensionalLogicalEntityReference;
 }
 
-export interface DimensionalAssertionSource extends DimensionalObjectSourceBase {
-  support_source_type: "assertion";
-  assertion_record: DimensionalAssertionReference;
+export interface DimensionalContextSource extends DimensionalObjectSourceBase {
+  support_source_type: "context_record";
+  context_record: DimensionalContextReference;
 }
 
-export type DimensionalObjectSource = DimensionalLogicalEntitySource | DimensionalAssertionSource;
+export type DimensionalObjectSource = DimensionalLogicalEntitySource | DimensionalContextSource;
 
 export interface DimensionalObjectDetail extends DimensionalObject {
   dimensional_entity_definition: string;
@@ -137,8 +136,8 @@ export interface DimensionalAttribute {
 }
 
 export interface DimensionalAttributePage {
-  model_id: number;
-  model_revision: number;
+  project_id: number;
+  project_revision: number;
   items: DimensionalAttribute[];
   next_cursor: string | null;
 }
@@ -165,14 +164,14 @@ export interface DimensionalLogicalAttributeSource extends DimensionalAttributeS
   source_logical_attribute: DimensionalLogicalAttributeReference;
 }
 
-export interface DimensionalAttributeAssertionSource extends DimensionalAttributeSourceBase {
-  support_source_type: "assertion";
-  assertion_record: DimensionalAssertionReference;
+export interface DimensionalAttributeContextSource extends DimensionalAttributeSourceBase {
+  support_source_type: "context_record";
+  context_record: DimensionalContextReference;
 }
 
 export type DimensionalAttributeSource =
   | DimensionalLogicalAttributeSource
-  | DimensionalAttributeAssertionSource;
+  | DimensionalAttributeContextSource;
 
 export interface DimensionalAttributeDetail extends DimensionalAttribute {
   dimensional_attribute_definition: string;
@@ -210,8 +209,8 @@ export interface DimensionalRelationship {
 }
 
 export interface DimensionalRelationshipPage {
-  model_id: number;
-  model_revision: number;
+  project_id: number;
+  project_revision: number;
   items: DimensionalRelationship[];
   next_cursor: string | null;
 }
@@ -226,43 +225,43 @@ export interface DimensionalRelationshipDetail extends DimensionalRelationship {
 export interface DimensionalTransport {
   listDimensionalObjects: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     filters?: DimensionalFilters,
     pageSize?: number,
     cursor?: string,
   ) => Promise<DimensionalObjectPage>;
   readDimensionalObject: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     dimensionalEntityId: number,
   ) => Promise<DimensionalObjectDetail>;
   listDimensionalAttributes: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     filters?: DimensionalAttributeFilters,
     pageSize?: number,
     cursor?: string,
   ) => Promise<DimensionalAttributePage>;
   readDimensionalAttribute: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     dimensionalAttributeId: number,
   ) => Promise<DimensionalAttributeDetail>;
   listDimensionalRelationships: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     filters?: DimensionalRelationshipFilters,
     pageSize?: number,
     cursor?: string,
   ) => Promise<DimensionalRelationshipPage>;
   readDimensionalRelationship: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     dimensionalRelationshipId: number,
   ) => Promise<DimensionalRelationshipDetail>;
 }
 
-export type DimensionalApi = Pick<LogicalTransport, "listLogicalEntities"> & DimensionalTransport & Pick<ModelTargetsTransport, "readTargetOptions" | "exportModelTargets" | "exportModelDdl"> & ModelRecordHistoryApi
+export type DimensionalApi = Pick<LogicalTransport, "listLogicalEntities"> & DimensionalTransport & Pick<ProjectTargetsTransport, "readTargetOptions" | "exportProjectTargets" | "exportProjectDdl"> & ProjectRecordHistoryApi
   & Pick<
     WorkflowsApi,
     | "applyWorkflowDraft"
@@ -275,61 +274,61 @@ export type DimensionalApi = Pick<LogicalTransport, "listLogicalEntities"> & Dim
     | "readWorkflowDraftReview"
     | "readWorkflowRun"
   >
-  & Pick<ModelInputScopeApi, "listModelInputScope">;
+  & Pick<ProjectInputScopeApi, "listProjectInputScope">;
 
 export function createDimensionalApi(request: HttpRequest): DimensionalTransport {
   return {
-    listDimensionalObjects: (tenantId, modelId, filters = {}, pageSize = 200, cursor) =>
+    listDimensionalObjects: (tenantId, projectId, filters = {}, pageSize = 200, cursor) =>
       request<DimensionalObjectPage>(
-        dimensionalCollectionPath(tenantId, modelId, "objects", filters, pageSize, cursor),
+        dimensionalCollectionPath(tenantId, projectId, "objects", filters, pageSize, cursor),
       ),
-    readDimensionalObject: (tenantId, modelId, dimensionalEntityId) =>
+    readDimensionalObject: (tenantId, projectId, dimensionalEntityId) =>
       request<DimensionalObjectDetail>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/dimensional/objects/${dimensionalEntityId}`,
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/dimensional/objects/${dimensionalEntityId}`,
       ),
-    listDimensionalAttributes: (tenantId, modelId, filters = {}, pageSize = 200, cursor) =>
+    listDimensionalAttributes: (tenantId, projectId, filters = {}, pageSize = 200, cursor) =>
       request<DimensionalAttributePage>(
-        dimensionalCollectionPath(tenantId, modelId, "attributes", filters, pageSize, cursor),
+        dimensionalCollectionPath(tenantId, projectId, "attributes", filters, pageSize, cursor),
       ),
-    readDimensionalAttribute: (tenantId, modelId, dimensionalAttributeId) =>
+    readDimensionalAttribute: (tenantId, projectId, dimensionalAttributeId) =>
       request<DimensionalAttributeDetail>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/dimensional/attributes/${dimensionalAttributeId}`,
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/dimensional/attributes/${dimensionalAttributeId}`,
       ),
-    listDimensionalRelationships: (tenantId, modelId, filters = {}, pageSize = 200, cursor) =>
+    listDimensionalRelationships: (tenantId, projectId, filters = {}, pageSize = 200, cursor) =>
       request<DimensionalRelationshipPage>(
-        dimensionalCollectionPath(tenantId, modelId, "relationships", filters, pageSize, cursor),
+        dimensionalCollectionPath(tenantId, projectId, "relationships", filters, pageSize, cursor),
       ),
-    readDimensionalRelationship: (tenantId, modelId, dimensionalRelationshipId) =>
+    readDimensionalRelationship: (tenantId, projectId, dimensionalRelationshipId) =>
       request<DimensionalRelationshipDetail>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/dimensional/relationships/${dimensionalRelationshipId}`,
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/dimensional/relationships/${dimensionalRelationshipId}`,
       ),
   };
 }
 
 export const dimensionalQueryKeys = {
-  objects: (tenantId: number, modelId: number, filters: unknown) => (
-    ["dimensional-objects", tenantId, modelId, filters] as const
+  objects: (tenantId: number, projectId: number, filters: unknown) => (
+    ["dimensional-objects", tenantId, projectId, filters] as const
   ),
-  object: (tenantId: number, modelId: number, entityId: number) => (
-    ["dimensional-object", tenantId, modelId, entityId] as const
+  object: (tenantId: number, projectId: number, entityId: number) => (
+    ["dimensional-object", tenantId, projectId, entityId] as const
   ),
-  attributes: (tenantId: number, modelId: number, filters: unknown) => (
-    ["dimensional-attributes", tenantId, modelId, filters] as const
+  attributes: (tenantId: number, projectId: number, filters: unknown) => (
+    ["dimensional-attributes", tenantId, projectId, filters] as const
   ),
-  attribute: (tenantId: number, modelId: number, attributeId: number) => (
-    ["dimensional-attribute", tenantId, modelId, attributeId] as const
+  attribute: (tenantId: number, projectId: number, attributeId: number) => (
+    ["dimensional-attribute", tenantId, projectId, attributeId] as const
   ),
-  relationships: (tenantId: number, modelId: number, filters: unknown) => (
-    ["dimensional-relationships", tenantId, modelId, filters] as const
+  relationships: (tenantId: number, projectId: number, filters: unknown) => (
+    ["dimensional-relationships", tenantId, projectId, filters] as const
   ),
-  relationship: (tenantId: number, modelId: number, relationshipId: number) => (
-    ["dimensional-relationship", tenantId, modelId, relationshipId] as const
+  relationship: (tenantId: number, projectId: number, relationshipId: number) => (
+    ["dimensional-relationship", tenantId, projectId, relationshipId] as const
   ),
 };
 
 function dimensionalCollectionPath(
   tenantId: number,
-  modelId: number,
+  projectId: number,
   collection: "objects" | "attributes" | "relationships",
   filters: DimensionalFilters | DimensionalAttributeFilters | DimensionalRelationshipFilters,
   pageSize: number,
@@ -347,7 +346,7 @@ function dimensionalCollectionPath(
   }
   query.set("page_size", String(pageSize));
   if (cursor) query.set("cursor", cursor);
-  return `/api/v1/tenants/${tenantId}/models/${modelId}/dimensional/${collection}?${query}`;
+  return `/api/v1/tenants/${tenantId}/projects/${projectId}/dimensional/${collection}?${query}`;
 }
 
 function normalizeNaturalKeyFilter(value: string | undefined): string {

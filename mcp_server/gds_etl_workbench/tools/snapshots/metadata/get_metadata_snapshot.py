@@ -50,14 +50,14 @@ class MetadataSnapshotContractModel(BaseModel):
 
 class CreateMetadataSnapshotRequest(MetadataSnapshotContractModel):
     tenant_id: int = Field(gt=0, le=9_223_372_036_854_775_807)
-    schema_version: Literal["2.0"] = "2.0"
+    schema_version: Literal["3.0"] = "3.0"
     source_tenant_ids: tuple[Annotated[int, Field(gt=0, le=9_223_372_036_854_775_807)], ...] = (
         Field(default=(), max_length=200)
     )
 
 
 class CreateMetadataSnapshotResult(MetadataSnapshotContractModel):
-    schema_version: Literal["2.0"] = "2.0"
+    schema_version: Literal["3.0"] = "3.0"
     snapshot_id: UUID
     snapshot_kind: Literal["metadata"] = "metadata"
     status: Literal["ready"] = "ready"
@@ -112,7 +112,7 @@ def register_create_metadata_snapshot_tool(
     async def create_metadata_snapshot_tool(
         ctx: Context[None],
         tenant_id: Annotated[int, Field(gt=0, le=9_223_372_036_854_775_807)],
-        schema_version: Literal["2.0"] = "2.0",
+        schema_version: Literal["3.0"] = "3.0",
         source_tenant_ids: Annotated[
             tuple[Annotated[int, Field(gt=0, le=9_223_372_036_854_775_807)], ...],
             Field(max_length=200),
@@ -143,7 +143,7 @@ def register_create_metadata_snapshot_tool(
                 snapshot_kind="metadata",
                 tenant_id=ready.tenant_id,
                 scope_id=ready.tenant_id,
-                schema_version="2.0",
+                schema_version="3.0",
                 snapshot_id=ready.snapshot_id,
                 created_at=ready.created_at,
                 available_until=ready.available_until,
@@ -189,7 +189,7 @@ def _audit_input_metadata(arguments: Mapping[str, Any]) -> dict[str, str | int]:
         else "invalid"
     )
     return {
-        "schema_version": "2.0" if arguments.get("schema_version", "2.0") == "2.0" else "invalid",
+        "schema_version": "3.0" if arguments.get("schema_version", "3.0") == "3.0" else "invalid",
         "tenant_id": tenant_id,
     }
 
@@ -264,7 +264,7 @@ async def build_and_upload_metadata_snapshot(
         snapshot_kind="metadata",
         tenant_id=tenant_id,
         scope_id=tenant_id,
-        schema_version="2.0",
+        schema_version="3.0",
         snapshot_id=snapshot_id,
         created_at=created_at,
         available_until=available_until,

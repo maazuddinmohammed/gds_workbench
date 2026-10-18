@@ -1,6 +1,6 @@
 # Tenant — `core.tenant`
 
-Ownership and authorization scope for metadata, Models, and principals; belongs to a Project.
+Ownership and authorization scope for metadata, Projects, and principals; belongs to a Lane.
 
 **Datasets:** `tenant`.
 **Change Set:** read-only; cannot be staged.
@@ -19,7 +19,7 @@ Every field is listed explicitly. Exact current MCP/Snapshot schemas remain auth
 |---|---|---|
 | `value` | any valid JSON; optional; null allowed | Optional additional details. Preserve existing JSON; populate only when requested. No implied execution behavior. |
 | `tenant_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the Tenant. |
-| `project_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the Project. Reference: [project](project.md). |
+| `lane_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the Lane. Reference: [lane](lane.md). |
 | `tenant_name` | string; minLength=1; maxLength=200; pattern=\S; required | Name identifying the Tenant. |
 | `tenant_description` | string; required; null allowed | Plain-language description of the Tenant. |
 | `tenant_catalog` | string; minLength=1; maxLength=255; required | Target data catalog assigned to this Tenant. Used in qualified Databricks evidence queries for its owned Bronze/Silver/Gold Objects. |
@@ -32,7 +32,7 @@ Every field is listed explicitly. Exact current MCP/Snapshot schemas remain auth
 
 ## References and dependencies
 
-- `project_code` → [project](project.md): `project_code`. Required reference.
+- `lane_code` → [lane](lane.md): `lane_code`. Required reference.
 - `gds_connection_tenant_code`, `gds_connection_system_code`, `gds_connection_code` → [connection](connection.md): `tenant_code`, `system_code`, `connection_code`. Nullable reference; use the full declared key when populated.
 - Referenced by: [connection](connection.md), [object](../tables/object.md), [copy group](../tables/copy-group.md), [member group](../tables/member-group.md), [process group](../tables/process-group.md).
 

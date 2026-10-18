@@ -177,23 +177,23 @@ class AuthorizationService:
         *,
         tenant_id: int,
         policy: ToolPolicy,
-        model_id: int | None = None,
+        project_id: int | None = None,
     ) -> TenantAuthorization:
-        """Authorize Tenant policy and, for Model operations, retained source access."""
+        """Authorize Tenant policy and, for Project operations, retained source access."""
         authorization = await self._authorize_tenant(
             transaction, request_principal, tenant_id=tenant_id, policy=policy
         )
-        if model_id is None:
+        if project_id is None:
             return authorization
-        if policy is ToolPolicy.TENANT_MODEL_WRITE:
+        if policy is ToolPolicy.TENANT_PROJECT_WRITE:
             await transaction.fetch_one(
-                "SELECT model.assert_writable(model_id) FROM model.model "
-                "WHERE model_id = %s AND tenant_id = %s",
-                (model_id, tenant_id),
+                "SELECT project.assert_writable(project_id) FROM project.project "
+                "WHERE project_id = %s AND tenant_id = %s",
+                (project_id, tenant_id),
             )
-        from gds_etl_workbench.application.model_read import authorize_model_sources
+        from gds_etl_workbench.application.project_read import authorize_project_sources
 
-        readable = await authorize_model_sources(transaction, authorization, model_id)
+        readable = await authorize_project_sources(transaction, authorization, project_id)
         return replace(authorization, readable_source_tenant_ids=readable)
 
     async def _authorize_tenant(
@@ -207,7 +207,7 @@ class AuthorizationService:
         if request_principal.actor_kind is ActorKind.DEVELOPMENT:
             if policy in (
                 ToolPolicy.TENANT_METADATA_WRITE,
-                ToolPolicy.TENANT_MODEL_WRITE,
+                ToolPolicy.TENANT_PROJECT_WRITE,
             ):
                 raise TenantLockRequiredError()
             return TenantAuthorization(

@@ -14,8 +14,7 @@ from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
 from gds_workbench_api.features.conceptual import (
-    AssertionRecordReference,
-    ConceptualAssertionSupport,
+    ConceptualContextSupport,
     ConceptualFilters,
     ConceptualObjectDetail,
     ConceptualObjectPage,
@@ -25,6 +24,7 @@ from gds_workbench_api.features.conceptual import (
     ConceptualRelationshipPage,
     ConceptualRelationshipSummary,
     ConceptualSupportLimitExceededError,
+    ContextRecordReference,
     DatabaseConceptualService,
     PhysicalObjectReference,
     create_conceptual_router,
@@ -39,17 +39,17 @@ class StaticConceptualService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: ConceptualFilters,
         page_size: int,
         cursor: str | None,
     ) -> ConceptualObjectPage:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, page_size, cursor) == (7, 18, 25, None)
+        assert (tenant_id, project_id, page_size, cursor) == (7, 18, 25, None)
         self.object_filters = filters
         return ConceptualObjectPage(
-            model_id=18,
-            model_revision=4,
+            project_id=18,
+            project_revision=4,
             items=(
                 ConceptualObjectSummary(
                     conceptual_object_id=101,
@@ -70,11 +70,11 @@ class StaticConceptualService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         conceptual_object_id: int,
     ) -> ConceptualObjectDetail:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, conceptual_object_id) == (7, 18, 101)
+        assert (tenant_id, project_id, conceptual_object_id) == (7, 18, 101)
         return ConceptualObjectDetail(
             conceptual_object_id=101,
             workflow_run_id=None,
@@ -110,18 +110,17 @@ class StaticConceptualService:
                     created_at=datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
                     updated_at=datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
                 ),
-                ConceptualAssertionSupport(
+                ConceptualContextSupport(
                     conceptual_support_id=302,
                     workflow_run_id=81,
-                    support_source_type="assertion",
-                    assertion_record=AssertionRecordReference(
-                        modeling_assertion_record_id=701,
-                        modeling_assertion_record_key="customer.one_per_party",
-                        modeling_assertion_document_name="customer_domain_rules",
-                        modeling_assertion_record_type="grain_rule",
-                        modeling_assertion_text="A Customer is one governed party.",
-                        modeling_assertion_confidence="high",
-                        modeling_assertion_record_status="active",
+                    support_source_type="context_record",
+                    context_record=ContextRecordReference(
+                        context_record_id="eef651a9-e258-57fe-8ed9-fafb67cdbdb4",
+                        context_group_name="customer_domain_rules",
+                        context_type_name="Business Rules",
+                        context_text="A Customer is one governed party.",
+                        source_reference=None,
+                        status="active",
                     ),
                     support_role="business_rule",
                     support_reason="Confirms the grain.",
@@ -140,21 +139,21 @@ class StaticConceptualService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: ConceptualFilters,
         page_size: int,
         cursor: str | None,
     ) -> ConceptualRelationshipPage:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, page_size, cursor) == (7, 18, 25, None)
+        assert (tenant_id, project_id, page_size, cursor) == (7, 18, 25, None)
         assert filters == ConceptualFilters(
             status="active",
             locked=True,
             name_exact="customer places order",
         )
         return ConceptualRelationshipPage(
-            model_id=18,
-            model_revision=4,
+            project_id=18,
+            project_revision=4,
             items=(
                 ConceptualRelationshipSummary(
                     conceptual_relationship_id=201,
@@ -180,11 +179,11 @@ class StaticConceptualService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         conceptual_relationship_id: int,
     ) -> ConceptualRelationshipDetail:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, conceptual_relationship_id) == (7, 18, 201)
+        assert (tenant_id, project_id, conceptual_relationship_id) == (7, 18, 201)
         return ConceptualRelationshipDetail(
             conceptual_relationship_id=201,
             workflow_run_id=None,
@@ -204,18 +203,17 @@ class StaticConceptualService:
             created_at=datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
             updated_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
             supports=(
-                ConceptualAssertionSupport(
+                ConceptualContextSupport(
                     conceptual_support_id=303,
                     workflow_run_id=None,
-                    support_source_type="assertion",
-                    assertion_record=AssertionRecordReference(
-                        modeling_assertion_record_id=702,
-                        modeling_assertion_record_key="order.customer",
-                        modeling_assertion_document_name="order_rules",
-                        modeling_assertion_record_type="relationship_rule",
-                        modeling_assertion_text="Each Order belongs to a Customer.",
-                        modeling_assertion_confidence="high",
-                        modeling_assertion_record_status="active",
+                    support_source_type="context_record",
+                    context_record=ContextRecordReference(
+                        context_record_id="00000000-0000-4000-8000-000000000001",
+                        context_group_name="order_rules",
+                        context_type_name="Business Rules",
+                        context_text="Each Order belongs to a Customer.",
+                        source_reference=None,
+                        status="active",
                     ),
                     support_role="cardinality",
                     support_reason="Defines the relationship.",
@@ -250,7 +248,7 @@ def test_conceptual_object_ledger_normalizes_review_filters() -> None:
 
     with TestClient(app) as client:
         response = client.get(
-            "/api/v1/tenants/7/models/18/conceptual/objects",
+            "/api/v1/tenants/7/projects/18/conceptual/objects",
             params={
                 "status": "INACTIVE",
                 "locked": "false",
@@ -261,8 +259,8 @@ def test_conceptual_object_ledger_normalizes_review_filters() -> None:
 
     assert response.status_code == 200
     assert response.json() == {
-        "model_id": 18,
-        "model_revision": 4,
+        "project_id": 18,
+        "project_revision": 4,
         "items": [
             {
                 "conceptual_object_id": 101,
@@ -295,7 +293,7 @@ def test_conceptual_ledger_rejects_ambiguous_name_filters() -> None:
 
     with TestClient(app) as client:
         response = client.get(
-            "/api/v1/tenants/7/models/18/conceptual/objects",
+            "/api/v1/tenants/7/projects/18/conceptual/objects",
             params={"name_exact": "Customer", "name_prefix": "Cust"},
         )
 
@@ -312,20 +310,25 @@ def test_conceptual_object_detail_returns_typed_normalized_support_rows() -> Non
     )
 
     with TestClient(app) as client:
-        response = client.get("/api/v1/tenants/7/models/18/conceptual/objects/101")
+        response = client.get("/api/v1/tenants/7/projects/18/conceptual/objects/101")
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["conceptual_object_definition"] == ("A governed party receiving services.")
+    assert payload["conceptual_object_definition"] == (
+        "A governed party receiving services."
+    )
     assert payload["workflow_run_id"] is None
     assert payload["supports"][0]["support_source_type"] == "object"
     assert payload["supports"][0]["source_object"]["object_name"] == "customer_raw"
-    assert payload["supports"][1]["support_source_type"] == "assertion"
-    assert (
-        payload["supports"][1]["assertion_record"]["modeling_assertion_record_key"]
-        == "customer.one_per_party"
-    )
-    assert "modeling_assertion_details" not in response.text
+    assert payload["supports"][1]["support_source_type"] == "context_record"
+    assert payload["supports"][1]["context_record"] == {
+        "context_record_id": "eef651a9-e258-57fe-8ed9-fafb67cdbdb4",
+        "context_group_name": "customer_domain_rules",
+        "context_type_name": "Business Rules",
+        "context_text": "A Customer is one governed party.",
+        "source_reference": None,
+        "status": "active",
+    }
 
 
 def test_conceptual_relationship_ledger_normalizes_review_filters() -> None:
@@ -339,7 +342,7 @@ def test_conceptual_relationship_ledger_normalizes_review_filters() -> None:
 
     with TestClient(app) as client:
         response = client.get(
-            "/api/v1/tenants/7/models/18/conceptual/relationships",
+            "/api/v1/tenants/7/projects/18/conceptual/relationships",
             params={
                 "status": "ACTIVE",
                 "locked": "true",
@@ -350,7 +353,7 @@ def test_conceptual_relationship_ledger_normalizes_review_filters() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["model_revision"] == 4
+    assert payload["project_revision"] == 4
     assert payload["items"][0]["workflow_run_id"] is None
     assert payload["items"][0]["from_conceptual_object_name"] == "Customer"
     assert payload["items"][0]["to_conceptual_object_name"] == "Order"
@@ -367,14 +370,20 @@ def test_conceptual_relationship_detail_returns_full_basis_and_typed_support() -
     )
 
     with TestClient(app) as client:
-        response = client.get("/api/v1/tenants/7/models/18/conceptual/relationships/201")
+        response = client.get(
+            "/api/v1/tenants/7/projects/18/conceptual/relationships/201"
+        )
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["conceptual_relationship_definition"] == ("A Customer may place Orders.")
+    assert payload["conceptual_relationship_definition"] == (
+        "A Customer may place Orders."
+    )
     assert payload["conceptual_relationship_basis"] == ("Customer and Order metadata.")
-    assert payload["conceptual_relationship_cardinality_basis"] == ("Observed Customer keys.")
-    assert payload["supports"][0]["support_source_type"] == "assertion"
+    assert payload["conceptual_relationship_cardinality_basis"] == (
+        "Observed Customer keys."
+    )
+    assert payload["supports"][0]["support_source_type"] == "context_record"
     assert payload["supports"][0]["workflow_run_id"] is None
 
 
@@ -387,10 +396,10 @@ class ConceptualTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
-        if "SELECT target_model.model_revision" in query:
-            assert "target_model.tenant_id = %s" in query
+        if "SELECT target_project.project_revision" in query:
+            assert "target_project.tenant_id = %s" in query
             assert parameters == (7, 18)
-            return {"model_revision": 4}
+            return {"project_revision": 4}
         assert "security.entra_principal_identity" in query
         assert parameters[-1] == 7
         return {
@@ -414,8 +423,8 @@ class ConceptualTransaction:
             return []
         if "core.tenant AS tenant" in query and "effective_role" in query:
             return []
-        assert "JOIN model.model AS target_model" in query
-        assert "target_model.tenant_id = %s" in query
+        assert "JOIN project.project AS target_project" in query
+        assert "target_project.tenant_id = %s" in query
         assert parameters[:10] == (
             7,
             18,
@@ -492,7 +501,7 @@ async def test_database_conceptual_objects_are_authorized_and_cursor_bound() -> 
     first = await service.list_objects(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         filters=filters,
         page_size=1,
         cursor=None,
@@ -500,15 +509,17 @@ async def test_database_conceptual_objects_are_authorized_and_cursor_bound() -> 
     second = await service.list_objects(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         filters=filters,
         page_size=1,
         cursor=first.next_cursor,
     )
 
-    assert first.model_revision == 4
+    assert first.project_revision == 4
     assert [item.conceptual_object_name for item in first.items] == ["Customer"]
-    assert [item.conceptual_object_name for item in second.items] == ["Customer Account"]
+    assert [item.conceptual_object_name for item in second.items] == [
+        "Customer Account"
+    ]
     assert second.items[0].workflow_run_id == 81
     assert second.next_cursor is None
     assert database.transaction.offsets == [0, 1]
@@ -517,7 +528,7 @@ async def test_database_conceptual_objects_are_authorized_and_cursor_bound() -> 
         await service.list_objects(
             principal,
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             filters=ConceptualFilters(name_prefix="customer account"),
             page_size=1,
             cursor=first.next_cursor,
@@ -531,14 +542,16 @@ class ConceptualDetailTransaction:
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
         if "object.conceptual_object_definition" in query:
-            assert "JOIN model.model AS target_model" in query
-            assert "target_model.tenant_id = %s" in query
+            assert "JOIN project.project AS target_project" in query
+            assert "target_project.tenant_id = %s" in query
             assert parameters == (7, 18, 101)
             return {
                 "conceptual_object_id": 101,
                 "workflow_run_id": None,
                 "conceptual_object_name": "Customer",
-                "conceptual_object_definition": ("A governed party receiving services."),
+                "conceptual_object_definition": (
+                    "A governed party receiving services."
+                ),
                 "conceptual_object_type": "business_entity",
                 "conceptual_object_grain": "One governed party",
                 "conceptual_object_aliases": ["Client"],
@@ -572,7 +585,7 @@ class ConceptualDetailTransaction:
         if "core.tenant AS tenant" in query and "effective_role" in query:
             return []
         assert "FROM workflow.conceptual_support AS support" in query
-        assert "JOIN model.model AS target_model" in query
+        assert "JOIN project.project AS target_project" in query
         assert "jsonb_agg" not in query
         assert parameters == (7, 18, 101, 2001)
         common = {
@@ -597,21 +610,20 @@ class ConceptualDetailTransaction:
                 "source_connection_code": "crm_prod",
                 "source_object_schema": "bronze_crm",
                 "source_object_name": "customer_raw",
-                "modeling_assertion_record_id": None,
+                "context_record_id": None,
             },
             {
                 **common,
                 "conceptual_support_id": 302,
                 "workflow_run_id": 81,
-                "support_source_type": "assertion",
+                "support_source_type": "context_record",
                 "source_object_id": None,
-                "modeling_assertion_record_id": 701,
-                "modeling_assertion_record_key": "customer.one_per_party",
-                "modeling_assertion_document_name": "customer_domain_rules",
-                "modeling_assertion_record_type": "grain_rule",
-                "modeling_assertion_text": "A Customer is one governed party.",
-                "modeling_assertion_confidence": "high",
-                "modeling_assertion_record_status": "active",
+                "context_record_id": "eef651a9-e258-57fe-8ed9-fafb67cdbdb4",
+                "context_group_name": "customer_domain_rules",
+                "context_type_name": "Business Rules",
+                "context_text": "A Customer is one governed party.",
+                "status": "active",
+                "source_reference": None,
             },
         ]
 
@@ -631,7 +643,9 @@ class ConceptualDetailDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_conceptual_object_detail_reads_every_normalized_support() -> None:
+async def test_database_conceptual_object_detail_reads_every_normalized_support() -> (
+    None
+):
     service = DatabaseConceptualService(
         database=ConceptualDetailDatabase(),
         authorizer=AuthorizationService(),
@@ -646,7 +660,7 @@ async def test_database_conceptual_object_detail_reads_every_normalized_support(
     detail = await service.read_object(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         conceptual_object_id=101,
     )
 
@@ -654,10 +668,10 @@ async def test_database_conceptual_object_detail_reads_every_normalized_support(
     assert len(detail.supports) == 2
     assert isinstance(detail.supports[0], ConceptualObjectSupport)
     assert detail.supports[0].source_object.object_name == "customer_raw"
-    assert isinstance(detail.supports[1], ConceptualAssertionSupport)
+    assert isinstance(detail.supports[1], ConceptualContextSupport)
     assert (
-        detail.supports[1].assertion_record.modeling_assertion_record_key
-        == "customer.one_per_party"
+        detail.supports[1].context_record.context_record_id
+        == "eef651a9-e258-57fe-8ed9-fafb67cdbdb4"
     )
 
 
@@ -705,7 +719,7 @@ async def test_conceptual_detail_fails_closed_above_the_support_bound() -> None:
         await service.read_object(
             principal,
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             conceptual_object_id=101,
         )
 
@@ -719,9 +733,9 @@ class ConceptualRelationshipTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
-        if "SELECT target_model.model_revision" in query:
+        if "SELECT target_project.project_revision" in query:
             assert parameters == (7, 18)
-            return {"model_revision": 4}
+            return {"project_revision": 4}
         assert "security.entra_principal_identity" in query
         assert parameters[-1] == 7
         return {
@@ -746,9 +760,9 @@ class ConceptualRelationshipTransaction:
         if "core.tenant AS tenant" in query and "effective_role" in query:
             return []
         assert "FROM workflow.conceptual_relationship AS relationship" in query
-        assert "JOIN model.model AS target_model" in query
-        assert "from_object.model_id = relationship.model_id" in query
-        assert "to_object.model_id = relationship.model_id" in query
+        assert "JOIN project.project AS target_project" in query
+        assert "from_object.project_id = relationship.project_id" in query
+        assert "to_object.project_id = relationship.project_id" in query
         assert parameters[:10] == (
             7,
             18,
@@ -814,7 +828,9 @@ class ConceptualRelationshipDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_conceptual_relationships_are_authorized_and_cursor_bound() -> None:
+async def test_database_conceptual_relationships_are_authorized_and_cursor_bound() -> (
+    None
+):
     database = ConceptualRelationshipDatabase()
     service = DatabaseConceptualService(
         database=database,
@@ -835,7 +851,7 @@ async def test_database_conceptual_relationships_are_authorized_and_cursor_bound
     first = await service.list_relationships(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         filters=filters,
         page_size=1,
         cursor=None,
@@ -843,13 +859,13 @@ async def test_database_conceptual_relationships_are_authorized_and_cursor_bound
     second = await service.list_relationships(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         filters=filters,
         page_size=1,
         cursor=first.next_cursor,
     )
 
-    assert first.model_revision == 4
+    assert first.project_revision == 4
     assert [item.conceptual_relationship_id for item in first.items] == [201]
     assert [item.conceptual_relationship_id for item in second.items] == [202]
     assert second.items[0].workflow_run_id == 82
@@ -864,9 +880,9 @@ class ConceptualRelationshipDetailTransaction:
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
         if "relationship.conceptual_relationship_definition" in query:
-            assert "JOIN model.model AS target_model" in query
-            assert "from_object.model_id = relationship.model_id" in query
-            assert "to_object.model_id = relationship.model_id" in query
+            assert "JOIN project.project AS target_project" in query
+            assert "from_object.project_id = relationship.project_id" in query
+            assert "to_object.project_id = relationship.project_id" in query
             assert parameters == (7, 18, 201)
             return {
                 "conceptual_relationship_id": 201,
@@ -880,7 +896,9 @@ class ConceptualRelationshipDetailTransaction:
                 "conceptual_relationship_definition": ("A Customer may place Orders."),
                 "conceptual_relationship_cardinality": "one_to_many",
                 "conceptual_relationship_basis": "Customer and Order metadata.",
-                "conceptual_relationship_cardinality_basis": ("Observed Customer keys."),
+                "conceptual_relationship_cardinality_basis": (
+                    "Observed Customer keys."
+                ),
                 "conceptual_relationship_confidence": "high",
                 "conceptual_relationship_status": "active",
                 "conceptual_relationship_is_locked": True,
@@ -918,7 +936,7 @@ class ConceptualRelationshipDetailTransaction:
             {
                 "conceptual_support_id": 303,
                 "workflow_run_id": None,
-                "support_source_type": "assertion",
+                "support_source_type": "context_record",
                 "support_role": "cardinality",
                 "support_reason": "Defines the relationship.",
                 "support_reason_detail": None,
@@ -928,13 +946,12 @@ class ConceptualRelationshipDetailTransaction:
                 "created_at": datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
                 "updated_at": datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
                 "source_object_id": None,
-                "modeling_assertion_record_id": 702,
-                "modeling_assertion_record_key": "order.customer",
-                "modeling_assertion_document_name": "order_rules",
-                "modeling_assertion_record_type": "relationship_rule",
-                "modeling_assertion_text": "Each Order belongs to a Customer.",
-                "modeling_assertion_confidence": "high",
-                "modeling_assertion_record_status": "active",
+                "context_record_id": "00000000-0000-4000-8000-000000000001",
+                "context_group_name": "order_rules",
+                "context_type_name": "Business Rules",
+                "context_text": "Each Order belongs to a Customer.",
+                "status": "active",
+                "source_reference": None,
             }
         ]
 
@@ -954,7 +971,9 @@ class ConceptualRelationshipDetailDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_conceptual_relationship_detail_reads_normalized_support() -> None:
+async def test_database_conceptual_relationship_detail_reads_normalized_support() -> (
+    None
+):
     service = DatabaseConceptualService(
         database=ConceptualRelationshipDetailDatabase(),
         authorizer=AuthorizationService(),
@@ -969,12 +988,12 @@ async def test_database_conceptual_relationship_detail_reads_normalized_support(
     detail = await service.read_relationship(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         conceptual_relationship_id=201,
     )
 
     assert detail.workflow_run_id is None
     assert detail.conceptual_relationship_basis == "Customer and Order metadata."
     assert len(detail.supports) == 1
-    assert isinstance(detail.supports[0], ConceptualAssertionSupport)
+    assert isinstance(detail.supports[0], ConceptualContextSupport)
     assert detail.supports[0].workflow_run_id is None

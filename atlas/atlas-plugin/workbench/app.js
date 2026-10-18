@@ -19,8 +19,8 @@
     selected: new Set(),
     filters: {},
     counts: new Map(),
-    reports: { metadata: null, model: null },
-    operations: { metadata: null, model: null },
+    reports: { metadata: null, project: null },
+    operations: { metadata: null, project: null },
     validationArea: "metadata",
     validationFilters: { severity: [], dataset: [] },
     detail: null,
@@ -114,7 +114,7 @@
     const policy = context?.subagent_policy;
     const policyLabel = policy ? {current: "Current model only", auto: "Agent selects the model", custom: "Specified model only"}[policy.mode] +
       (policy.mode === "custom" ? ` · ${policy.model}` : "") : "Not set";
-    return `<header class="topbar"><div class="brand" aria-label="Atlas Local Workbench"><img class="brand-mark" src="atlas.svg" width="32" height="32" alt=""><span class="brand-name">ATLAS</span></div><div class="session-line"><span class="eyebrow">Local Workbench · Working directory</span><strong>${escapeHtml(state.workspace?.handle?.name || "Not connected")}</strong>${context ? `<span>${escapeHtml(context.tenant.code)}${context.model ? ` · ${escapeHtml(context.model.name)}` : ""}</span><span class="context-detail">${escapeHtml(context.sql?.policy || "SQL policy unset")}${context.sql?.environment ? ` · ${escapeHtml(context.sql.environment)}` : ""}</span><span class="context-detail subagent-policy">Sub-agents: ${escapeHtml(policyLabel)}</span>` : ""}</div><div class="top-actions"><button id="connect-button" type="button" class="button" ${state.busy ? "disabled" : ""}>Open working directory</button><button id="refresh-button" type="button" class="button" ${!connected || state.busy ? "disabled" : ""}>Reload local files</button><button id="validate-button" type="button" class="button" ${!connected || !canValidate(state.screen === "validation" ? state.validationArea : state.area) || state.busy ? "disabled" : ""}>Validate locally</button><button id="dbml-button" type="button" class="button" ${!connected || !areaSnapshot("model")?.manifest || state.workspace?.isStale("model") || state.busy ? "disabled" : ""}>Generate DBML</button></div></header>${context ? `<div class="workspace-context"><span>${task ? escapeHtml(task.outcome) : "No active task · initialize work through Atlas"}</span>${owners.length > 1 ? `<label>Metadata owner <select id="metadata-owner">${owners.map(owner => `<option value="${owner.id}" ${String(owner.id) === state.workspace.ownerId ? "selected" : ""}>${escapeHtml(owner.code)}</option>`).join("")}</select></label>` : ""}<span>Remote freshness unknown</span></div>` : ""}`;
+    return `<header class="topbar"><div class="brand" aria-label="Atlas Local Workbench"><img class="brand-mark" src="atlas.svg" width="32" height="32" alt=""><span class="brand-name">ATLAS</span></div><div class="session-line"><span class="eyebrow">Local Workbench · Working directory</span><strong>${escapeHtml(state.workspace?.handle?.name || "Not connected")}</strong>${context ? `<span>${escapeHtml(context.tenant.code)}${context.project ? ` · ${escapeHtml(context.project.name)}` : ""}</span><span class="context-detail">${escapeHtml(context.sql?.policy || "SQL policy unset")}${context.sql?.environment ? ` · ${escapeHtml(context.sql.environment)}` : ""}</span><span class="context-detail subagent-policy">Sub-agents: ${escapeHtml(policyLabel)}</span>` : ""}</div><div class="top-actions"><button id="connect-button" type="button" class="button" ${state.busy ? "disabled" : ""}>Open working directory</button><button id="refresh-button" type="button" class="button" ${!connected || state.busy ? "disabled" : ""}>Reload local files</button><button id="validate-button" type="button" class="button" ${!connected || !canValidate(state.screen === "validation" ? state.validationArea : state.area) || state.busy ? "disabled" : ""}>Validate locally</button><button id="dbml-button" type="button" class="button" ${!connected || !areaSnapshot("project")?.manifest || state.workspace?.isStale("project") || state.busy ? "disabled" : ""}>Generate DBML</button></div></header>${context ? `<div class="workspace-context"><span>${task ? escapeHtml(task.outcome) : "No active task · initialize work through Atlas"}</span>${owners.length > 1 ? `<label>Metadata owner <select id="metadata-owner">${owners.map(owner => `<option value="${owner.id}" ${String(owner.id) === state.workspace.ownerId ? "selected" : ""}>${escapeHtml(owner.code)}</option>`).join("")}</select></label>` : ""}<span>Remote freshness unknown</span></div>` : ""}`;
   }
 
   function areaTabs() {
@@ -125,9 +125,9 @@
     const status = active === "validation"
       ? report ? `${label(state.validationArea)} report · ${report.stale ? "stale" : report.valid ? "passed" : `${report.issue_count} issues`}` : "No local validation report yet"
       : snapshot?.manifest
-        ? `${label(active)} Snapshot${snapshot.manifest.model_revision == null ? "" : ` · revision ${snapshot.manifest.model_revision}`} · ${[...state.counts.values()].reduce((sum, item) => sum + item.pending, 0)} Change Set records`
+        ? `${label(active)} Snapshot${snapshot.manifest.project_revision == null ? "" : ` · revision ${snapshot.manifest.project_revision}`} · ${[...state.counts.values()].reduce((sum, item) => sum + item.pending, 0)} Change Set records`
         : "Snapshot unavailable";
-    return `<nav class="area-tabs" aria-label="Atlas Local Workbench area" role="tablist">${[["metadata", "Metadata"], ["model", "Model"], ["validation", "Validation results"]].map(([value, text]) => `<button type="button" class="area-tab ${active === value ? "is-active" : ""}" data-area="${value}" role="tab" aria-selected="${active === value}" ${!state.workspace || (value !== "validation" && !areaSnapshot(value)?.manifest) ? "disabled" : ""}>${text}${value === "validation" && report?.issue_count ? `<span class="tab-count">${report.issue_count}</span>` : ""}</button>`).join("")}<span class="snapshot-state">${escapeHtml(status)}</span></nav>${operation ? `<div class="operation-state ${operation.uncertain ? "is-error" : ""}" role="status">${escapeHtml(operation.status)}${operation.revision == null ? "" : ` · revision ${operation.revision}`}${operation.historical ? " · historical batch; current saved inputs differ" : ""}</div>` : ""}`;
+    return `<nav class="area-tabs" aria-label="Atlas Local Workbench area" role="tablist">${[["metadata", "Metadata"], ["project", "Project"], ["validation", "Validation results"]].map(([value, text]) => `<button type="button" class="area-tab ${active === value ? "is-active" : ""}" data-area="${value}" role="tab" aria-selected="${active === value}" ${!state.workspace || (value !== "validation" && !areaSnapshot(value)?.manifest) ? "disabled" : ""}>${text}${value === "validation" && report?.issue_count ? `<span class="tab-count">${report.issue_count}</span>` : ""}</button>`).join("")}<span class="snapshot-state">${escapeHtml(status)}</span></nav>${operation ? `<div class="operation-state ${operation.uncertain ? "is-error" : ""}" role="status">${escapeHtml(operation.status)}${operation.revision == null ? "" : ` · revision ${operation.revision}`}${operation.historical ? " · historical batch; current saved inputs differ" : ""}</div>` : ""}`;
   }
 
 
@@ -148,7 +148,7 @@
 
   async function loadReports() {
     if (!state.workspace?.loadValidationReport) return;
-    for (const area of ["metadata", "model"]) {
+    for (const area of ["metadata", "project"]) {
       state.reports[area] = areaSnapshot(area)?.manifest ? await state.workspace.loadValidationReport(area) : null;
       state.operations[area] = await state.workspace.loadOperation(area);
     }
@@ -204,7 +204,7 @@
       }
       state.workspace = await root.GDSWorkspace.connect(handle);
       await loadReports();
-      const area = areaSnapshot("metadata")?.manifest ? "metadata" : "model";
+      const area = areaSnapshot("metadata")?.manifest ? "metadata" : "project";
       await switchArea(area);
       setMessage(state.workspace.areaErrors.size ? [...state.workspace.areaErrors.values()].join(" ") : `Opened ${state.workspace.handle.name}. All changes remain local.`, state.workspace.areaErrors.size > 0);
     } catch (error) {
@@ -231,7 +231,7 @@
       render();
       await state.workspace.refresh();
       await loadReports();
-      await switchArea(areaSnapshot(area)?.manifest ? area : areaSnapshot("metadata")?.manifest ? "metadata" : "model", dataset);
+      await switchArea(areaSnapshot(area)?.manifest ? area : areaSnapshot("metadata")?.manifest ? "metadata" : "project", dataset);
       setMessage("Refreshed Snapshot, Change Set, and shared local validation reports from disk.");
     } catch (error) { showError(error); }
     finally { state.busy = false; render(); }
@@ -301,14 +301,14 @@
   async function validateSaved(area, includeQuality = true) {
     const binding = await state.workspace.captureInputs(area);
     const loaded = await state.workspace.loadArea(area);
-    const metadataContext = area === "model" ? await state.workspace.loadModelMetadata() : null;
+    const metadataContext = area === "project" ? await state.workspace.loadProjectMetadata() : null;
     const metadata = metadataContext?.loaded || null;
     if (metadataContext) for (const input of metadataContext.inputs) {
       if (!binding.inputs.some(existing => existing.manifest_path === input.manifest_path)) binding.inputs.push(input);
     }
-    const evidence = area === "model" && includeQuality ? await state.workspace.loadQualityEvidence() : { decisions: null, noteFiles: new Map(), files: [] };
+    const evidence = area === "project" && includeQuality ? await state.workspace.loadQualityEvidence() : { decisions: null, noteFiles: new Map(), files: [] };
     const validation = root.AtlasValidation.run(area, loaded, metadata, {
-      tenantCode: state.workspace.owner(area).code, model: areaSnapshot("model")?.catalog?.model || null,
+      tenantCode: state.workspace.owner(area).code, project: areaSnapshot("project")?.catalog?.project || null,
       includeQuality, decisions: evidence.decisions, noteFiles: evidence.noteFiles, missingMetadataOwners: metadataContext?.missing || [],
     });
     await state.workspace.assertInputsUnchanged(binding);
@@ -330,13 +330,13 @@
   async function generateDbml() {
     try {
       state.busy = true; render();
-      const { loaded, validation } = await validateSaved("model", false);
+      const { loaded, validation } = await validateSaved("project", false);
       if (!validation.valid) {
-        state.validationArea = "model"; state.reports.model = await state.workspace.saveValidationReport("model", validation);
+        state.validationArea = "project"; state.reports.project = await state.workspace.saveValidationReport("project", validation);
         state.screen = "validation";
-        throw new Error("Correct the blocking Model findings before generating DBML.");
+        throw new Error("Correct the blocking Project findings before generating DBML.");
       }
-      const documents = root.GDSDbml.render(loaded, areaSnapshot("model").catalog.model, { modelType: "full", includeSubmodels: true });
+      const documents = root.GDSDbml.render(loaded, areaSnapshot("project").catalog.project, { modelType: "full", includeSubmodels: true });
       const result = await state.workspace.saveDbmlDocuments(documents, { modelType: "full", includeSubmodels: true, binding: validation.binding });
       state.dbml = { documents, result, selected: documents[0].path };
       state.screen = "dbml";
@@ -349,7 +349,7 @@
     const preview = state.dbml;
     if (!preview) return recordsWorkspace();
     const current = preview.documents.find(item => item.path === preview.selected);
-    return `<main class="dbml-workspace"><div class="work-heading"><div><span class="eyebrow">Snapshot + local changes</span><h1>DBML preview</h1><p>Saved in model-dbml. Regenerate after changing saved inputs.</p></div><button type="button" class="button" data-action="back-to-ledger">Back to records</button></div><div class="dbml-toolbar"><label>Generated file <select id="dbml-file">${preview.documents.map(item => `<option value="${escapeHtml(item.path)}" ${item.path === preview.selected ? "selected" : ""}>${escapeHtml(item.path)}</option>`).join("")}</select></label><button type="button" id="copy-dbml" class="button">Copy</button><button type="button" id="download-dbml" class="button">Download</button></div><pre class="dbml-text" tabindex="0">${escapeHtml(current.content)}</pre></main>`;
+    return `<main class="dbml-workspace"><div class="work-heading"><div><span class="eyebrow">Snapshot + local changes</span><h1>DBML preview</h1><p>Saved in project-dbml. Regenerate after changing saved inputs.</p></div><button type="button" class="button" data-action="back-to-ledger">Back to records</button></div><div class="dbml-toolbar"><label>Generated file <select id="dbml-file">${preview.documents.map(item => `<option value="${escapeHtml(item.path)}" ${item.path === preview.selected ? "selected" : ""}>${escapeHtml(item.path)}</option>`).join("")}</select></label><button type="button" id="copy-dbml" class="button">Copy</button><button type="button" id="download-dbml" class="button">Download</button></div><pre class="dbml-text" tabindex="0">${escapeHtml(current.content)}</pre></main>`;
   }
 
   async function openValidationIssue(index) {

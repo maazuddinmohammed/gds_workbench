@@ -19,7 +19,7 @@ from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
 from gds_workbench_api.prompt_rendering import PromptVariableDefinition
 from jsonschema import Draft202012Validator
 
-from tests.mcp.model_test_fixtures import complete_model_graph, snapshot_from_graph
+from tests.mcp.project_test_fixtures import complete_project_graph, snapshot_from_graph
 from tests.web_backend.test_dimensional_executor import _context_bundle, _plan
 
 
@@ -29,9 +29,9 @@ def test_dimensional_inputs_match_real_history_policy_and_dataset_shapes(
 ) -> None:
     names = (
         (
-            "model_brief",
+            "project_brief",
             "selected_logical_entities",
-            "modeling_assertions",
+            "context_records",
             "applied_logical",
             "applied_dimensional",
             "applied_mapping",
@@ -39,9 +39,9 @@ def test_dimensional_inputs_match_real_history_policy_and_dataset_shapes(
             "gold_audit_policy",
         )
         if mode == "one_shot"
-        else ("model_identity", "evidence_datasets")
+        else ("project_identity", "evidence_datasets")
     )
-    snapshot = snapshot_from_graph(complete_model_graph())
+    snapshot = snapshot_from_graph(complete_project_graph())
     base = _context_bundle(mode=mode).context
     base = base.model_copy(
         update={
@@ -91,7 +91,7 @@ def test_dimensional_inputs_match_real_history_policy_and_dataset_shapes(
     assert before == context and values["legacy"] is context
     for name in names:
         contract = get_prompt_input_contract(
-            model_workflow="dimensional",
+            project_workflow="dimensional",
             workflow_execution_mode=mode,
             stage_code="candidate_authoring",
             resolver_key=prefix + name,
@@ -115,10 +115,12 @@ def test_dimensional_inputs_match_real_history_policy_and_dataset_shapes(
             mode="json"
         )
         assert values[prefix + "gold_technical_policy"] == (
-            base.model_details.gold_model_technical_columns_template
+            base.project_details.gold_model_technical_columns_template
         )
         broken = cast(dict[str, Any], deepcopy(context))
-        broken["model_details"]["gold_model_technical_columns_template"] = {"schema_version": "invalid"}
+        broken["project_details"]["gold_model_technical_columns_template"] = {
+            "schema_version": "invalid"
+        }
         with pytest.raises(InvalidRequestError):
             project_prompt_input_values(
                 plan=plan, stage=stage, context=broken, resolver_values={}

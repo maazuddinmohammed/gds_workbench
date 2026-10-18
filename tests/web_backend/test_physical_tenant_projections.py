@@ -3,8 +3,8 @@
 from gds_etl_workbench.tools.catalog.get_objects import _OBJECTS_SQL
 from gds_etl_workbench.tools.catalog.list_objects import _LIST_OBJECTS_SQL
 from gds_workbench_api.features.mapping.preparation_repository import (
-    MAPPING_SOURCE_CONTEXT_SQL,
     _MAPPING_ENTITY_CONTEXT_SQL,
+    MAPPING_SOURCE_CONTEXT_SQL,
 )
 from gds_workbench_api.features.metadata.repository import (
     _ATTRIBUTE_ROWS_SQL,

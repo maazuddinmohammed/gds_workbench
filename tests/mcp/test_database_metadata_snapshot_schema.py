@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 
 PHYSICAL_NATURAL_KEYS = {
-    "core.project": ("project_code",),
+    "core.lane": ("lane_code",),
     "core.tenant": ("tenant_code",),
     "core.system": ("system_code",),
     "core.connection": ("tenant_id", "system_id", "connection_code"),

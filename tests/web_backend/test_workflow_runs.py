@@ -8,7 +8,7 @@ from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_workbench_api.features.workflows.runs import (
-    ModelWorkflow,
+    ProjectWorkflow,
     RunEventCollection,
     RunEventRecord,
     RunState,
@@ -30,14 +30,14 @@ class StaticWorkflowRunService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
-        workflow: ModelWorkflow | None,
+        project_id: int,
+        workflow: ProjectWorkflow | None,
         run_state: RunState | None,
         page_size: int,
         cursor: str | None,
     ) -> WorkflowRunCollection:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, workflow, run_state, page_size, cursor) == (
+        assert (tenant_id, project_id, workflow, run_state, page_size, cursor) == (
             7,
             18,
             "profiling",
@@ -49,7 +49,7 @@ class StaticWorkflowRunService:
             items=(
                 WorkflowRunLedgerRecord(
                     workflow_run_id=1048,
-                    model_workflow="profiling",
+                    project_workflow="profiling",
                     workflow_execution_mode=None,
                     modeled_entity_type=None,
                     selected_scope_count=8,
@@ -69,14 +69,14 @@ class StaticWorkflowRunService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
     ) -> WorkflowRunDetail:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, workflow_run_id) == (7, 18, 1048)
+        assert (tenant_id, project_id, workflow_run_id) == (7, 18, 1048)
         return WorkflowRunDetail(
             workflow_run_id=1048,
-            model_workflow="profiling",
+            project_workflow="profiling",
             workflow_execution_mode=None,
             modeled_entity_type=None,
             selected_scope_count=8,
@@ -95,8 +95,8 @@ class StaticWorkflowRunService:
             validation_retry_count=None,
             failure_code=None,
             failure_message=None,
-            model_change_set_id=UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
-            model_change_set_status="validated",
+            project_change_set_id=UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+            project_change_set_status="validated",
             draft_revision=2,
             candidate_digest="c" * 64,
             validated_at=datetime(2026, 8, 24, 14, 0, 30, tzinfo=UTC),
@@ -107,13 +107,13 @@ class StaticWorkflowRunService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         after_sequence: int,
         page_size: int,
     ) -> RunEventCollection:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, workflow_run_id, after_sequence, page_size) == (
+        assert (tenant_id, project_id, workflow_run_id, after_sequence, page_size) == (
             7,
             18,
             1048,
@@ -155,7 +155,9 @@ def _app(state: RunState = "completed") -> TestClient:
 
 def test_run_ledger_is_filtered_by_workflow() -> None:
     with _app() as client:
-        response = client.get("/api/v1/tenants/7/models/18/runs?workflow=profiling&page_size=25")
+        response = client.get(
+            "/api/v1/tenants/7/projects/18/runs?workflow=profiling&page_size=25"
+        )
 
     assert response.status_code == 200
     assert response.json()["items"][0]["workflow_run_id"] == 1048
@@ -164,17 +166,21 @@ def test_run_ledger_is_filtered_by_workflow() -> None:
 
 def test_run_detail_and_incremental_events_are_separate_bounded_reads() -> None:
     with _app() as client:
-        detail = client.get("/api/v1/tenants/7/models/18/runs/1048")
+        detail = client.get("/api/v1/tenants/7/projects/18/runs/1048")
         events = client.get(
-            "/api/v1/tenants/7/models/18/runs/1048/events?after_sequence=0&page_size=200"
+            "/api/v1/tenants/7/projects/18/runs/1048/events?after_sequence=0&page_size=200"
         )
 
     assert detail.status_code == 200
     assert detail.json()["correlation_id"] == "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-    assert detail.json()["model_change_set_id"] == ("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
-    assert detail.json()["model_change_set_status"] == "validated"
+    assert detail.json()["project_change_set_id"] == (
+        "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    )
+    assert detail.json()["project_change_set_status"] == "validated"
     assert detail.json()["draft_revision"] == 2
-    assert detail.json()["token_usage"] == WorkflowTokenUsageSummary().model_dump(mode="json")
+    assert detail.json()["token_usage"] == WorkflowTokenUsageSummary().model_dump(
+        mode="json"
+    )
     assert events.status_code == 200
     assert events.json() == {
         "items": [
@@ -203,7 +209,7 @@ def test_event_stream_supports_ordered_reconnect_and_stops_for_terminal_run(
         _app(state) as client,
         client.stream(
             "GET",
-            "/api/v1/tenants/7/models/18/runs/1048/events/stream",
+            "/api/v1/tenants/7/projects/18/runs/1048/events/stream",
             headers={"Last-Event-ID": "0"},
         ) as response,
     ):

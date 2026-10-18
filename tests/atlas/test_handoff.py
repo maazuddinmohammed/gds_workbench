@@ -41,12 +41,12 @@ def draft_files(root: Path, area: str) -> tuple[Path, Path, dict[str, Any]]:
         )
     )
     response: dict[str, Any] = {
-        "schema_version": "1.0",
+        "schema_version": "2.0" if area == "project" else "1.0",
         f"{area}_change_set_id": str(uuid4()),
         "draft_revision": 1,
         "status": "active",
         "created": True,
-        **({"tenant_id": 1} if area == "metadata" else {"model_id": 41}),
+        **({"tenant_id": 1} if area == "metadata" else {"project_id": 41}),
     }
     draft = root / ".atlas/temp/draft.json"
     draft.write_text(
@@ -68,7 +68,7 @@ def copy_input(run: Runner, root: Path, area: str) -> str:
         "--area",
         area,
         "--dataset",
-        "source_object" if area == "metadata" else "model_details",
+        "source_object" if area == "metadata" else "project_details",
         "--where",
         "{}",
         "--expected-digest",
@@ -77,7 +77,7 @@ def copy_input(run: Runner, root: Path, area: str) -> str:
     return str(result["digest"])
 
 
-@pytest.mark.parametrize("area", ["metadata", "model"])
+@pytest.mark.parametrize("area", ["metadata", "project"])
 def test_direct_response_handoff_and_fileless_apply_approval(
     tmp_path: Path,
     runner: Runner,
@@ -163,7 +163,7 @@ def test_direct_response_handoff_and_fileless_apply_approval(
         "--digest-from-operation",
         "true",
     )
-    response.update(status="applied", applied=True, action_count=1, model_revision=2)
+    response.update(status="applied", applied=True, action_count=1, project_revision=2)
     result_file.write_text(json.dumps(response))
     applied = runner("operation-record", *args, "--checkpoint", "apply", "--file", str(result_file))
     assert applied["refresh_required"]
@@ -224,7 +224,7 @@ def test_accept_rejects_invalid_draft_or_output_before_acknowledgement(
         {"structuredContent": [response]},
         {**response, "metadata_change_set_id": [response["metadata_change_set_id"]]},
         {**response, "change_set_id": str(uuid4())},
-        {**response, "model_change_set_id": response["metadata_change_set_id"]},
+        {**response, "project_change_set_id": response["metadata_change_set_id"]},
         {**response, "status": "applied"},
         {"isError": True, "structuredContent": response},
         {"structuredContent": response, "content": [{"type": "text", "text": "{}"}]},

@@ -5,17 +5,19 @@ import pytest
 from gds_workbench_api.features.metadata_enrichment.workbook import (
     build_enrichment_workbook,
 )
-from gds_workbench_api.features.model_input_scope.contracts import (
-    ModelInputScopeAttribute,
-    ModelInputScopeObject,
+from gds_workbench_api.features.project_input_scope.contracts import (
+    ProjectInputScopeAttribute,
+    ProjectInputScopeObject,
 )
 from openpyxl import load_workbook
 
 
 @pytest.fixture
-def dictionary_rows() -> list[tuple[ModelInputScopeObject, ModelInputScopeAttribute]]:
-    obj = ModelInputScopeObject(
-        model_input_scope_id=1,
+def dictionary_rows() -> list[
+    tuple[ProjectInputScopeObject, ProjectInputScopeAttribute]
+]:
+    obj = ProjectInputScopeObject(
+        project_input_scope_id=1,
         object_id=1,
         connection_id=1,
         system_id=1,
@@ -28,11 +30,11 @@ def dictionary_rows() -> list[tuple[ModelInputScopeObject, ModelInputScopeAttrib
         object_name="Customer",
         zone_code="source",
         attribute_count=1,
-        is_model_input_eligible=True,
+        is_project_input_eligible=True,
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )
-    attr = ModelInputScopeAttribute(
+    attr = ProjectInputScopeAttribute(
         attribute_id=1,
         review_revision="a" * 64,
         attribute_name="Id",
@@ -52,19 +54,23 @@ def dictionary_rows() -> list[tuple[ModelInputScopeObject, ModelInputScopeAttrib
     return [(obj, attr)]
 
 
-@pytest.mark.parametrize("value", ["x" * 32768, "😀" * 16384, "invalid\x01text", "bad\ud800"])
+@pytest.mark.parametrize(
+    "value", ["x" * 32768, "😀" * 16384, "invalid\x01text", "bad\ud800"]
+)
 def test_export_rejects_unsupported_cells_before_writer_truncation(
-    dictionary_rows: list[tuple[ModelInputScopeObject, ModelInputScopeAttribute]],
+    dictionary_rows: list[tuple[ProjectInputScopeObject, ProjectInputScopeAttribute]],
     value: str,
 ) -> None:
     obj, attr = dictionary_rows[0]
     with pytest.raises(ValueError, match="unsupported cell text") as error:
-        build_enrichment_workbook([(obj.model_copy(update={"object_description": value}), attr)])
+        build_enrichment_workbook(
+            [(obj.model_copy(update={"object_description": value}), attr)]
+        )
     assert value not in str(error.value)
 
 
 def test_unknowns_remain_blank_and_large_counts_remain_exact(
-    dictionary_rows: list[tuple[ModelInputScopeObject, ModelInputScopeAttribute]],
+    dictionary_rows: list[tuple[ProjectInputScopeObject, ProjectInputScopeAttribute]],
 ) -> None:
     obj, attr = dictionary_rows[0]
     content = build_enrichment_workbook(

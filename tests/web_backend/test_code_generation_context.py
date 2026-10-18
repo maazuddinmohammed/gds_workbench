@@ -19,19 +19,19 @@ from gds_workbench_api.prompt_rendering import PromptComponentTemplates
 
 @pytest.fixture(autouse=True)
 def frozen_validation_graph(monkeypatch: pytest.MonkeyPatch) -> None:
-    from tests.mcp.model_test_fixtures import (
+    from tests.mcp.project_test_fixtures import (
         complete_physical_scope,
-        empty_model_snapshot,
+        empty_project_snapshot,
     )
 
     async def load_graph(*_: object, tenant_id: int, plan: AgentRunPlan):
-        assert tenant_id == 7 and plan.model_id == 18
-        return empty_model_snapshot().model_copy(
-            update={"model_id": 18, "model_revision": 7}
+        assert tenant_id == 7 and plan.project_id == 18
+        return empty_project_snapshot().model_copy(
+            update={"project_id": 18, "project_revision": 7}
         ), complete_physical_scope()
 
     monkeypatch.setattr(
-        "gds_workbench_api.features.code_generation.context.load_frozen_model_graph",
+        "gds_workbench_api.features.code_generation.context.load_frozen_project_graph",
         load_graph,
     )
 
@@ -39,10 +39,10 @@ def frozen_validation_graph(monkeypatch: pytest.MonkeyPatch) -> None:
 def _plan(*, selected_object_ids: tuple[int, ...] = (501, 502)) -> AgentRunPlan:
     return AgentRunPlan(
         workflow_run_id=1048,
-        model_id=18,
+        project_id=18,
         correlation_id=UUID("33333333-3333-3333-3333-333333333333"),
-        model_revision=7,
-        model_workflow="code_generation",
+        project_revision=7,
+        project_workflow="code_generation",
         workflow_execution_mode=None,
         modeled_entity_type="logical_entity",
         code_generation_coverage_mode="selected_targets",
@@ -196,7 +196,9 @@ async def test_context_rejects_inconsistent_mapping_counts() -> None:
 
 
 @pytest.mark.asyncio
-async def test_context_allows_complete_object_mapping_without_attribute_mappings() -> None:
+async def test_context_allows_complete_object_mapping_without_attribute_mappings() -> (
+    None
+):
     first = _row(501)
     second = _row(502)
     first["attribute_mapping_count"] = 0
@@ -214,7 +216,9 @@ async def test_context_allows_complete_object_mapping_without_attribute_mappings
 
 
 @pytest.mark.asyncio
-async def test_selected_system_scope_preserves_locks_and_replaces_only_eligible_files() -> None:
+async def test_selected_system_scope_preserves_locks_and_replaces_only_eligible_files() -> (
+    None
+):
     row = _row(501)
     source = row["source_context"]
     source["source_systems"][0]["source_system_id"] = 11
@@ -300,20 +304,27 @@ async def test_selected_system_scope_preserves_locks_and_replaces_only_eligible_
     target = context.targets[0]
     assert target.source_system_codes == ("CRM",)
     assert target.preserved_artifact_names == ()
-    assert [artifact.artifact_name for artifact in target.applied_generated_code] == ["erp.sql"]
+    assert [artifact.artifact_name for artifact in target.applied_generated_code] == [
+        "erp.sql"
+    ]
     assert {
-        assignment.source_system_code for assignment in target.applied_generated_code_source_systems
+        assignment.source_system_code
+        for assignment in target.applied_generated_code_source_systems
     } == {"CRM", "ERP"}
 
     artifact = cast(dict[str, Any], row["applied_artifacts"][0])
     artifact["generated_code_is_locked"] = True
-    with pytest.raises(InvalidRequestError, match="locked or partially selected SQL file"):
+    with pytest.raises(
+        InvalidRequestError, match="locked or partially selected SQL file"
+    ):
         await PostgresCodeGenerationContextRepository().load(
             ContextTransaction([row]), tenant_id=7, plan=plan
         )
     artifact["generated_code_is_locked"] = False
     artifact["source_systems"][0]["generated_code_source_system_is_locked"] = True
-    with pytest.raises(InvalidRequestError, match="locked or partially selected SQL file"):
+    with pytest.raises(
+        InvalidRequestError, match="locked or partially selected SQL file"
+    ):
         await PostgresCodeGenerationContextRepository().load(
             ContextTransaction([row]), tenant_id=7, plan=plan
         )

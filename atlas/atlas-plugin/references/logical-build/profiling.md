@@ -1,14 +1,14 @@
 # Profiling
 
-Measure selected active, applied Model Input Scope Objects through backend runs.
+Measure selected active, applied Project Input Scope Objects through backend runs.
 Python builds aggregate SQL, executes it through the registered GDS Connection values,
 validates results, and saves Attribute Profiles directly. The agent selects scope,
-starts/monitors the run, and refreshes the Model Snapshot.
+starts/monitors the run, and refreshes the Project Snapshot.
 
 ## Resolve inputs
 
-1. Bind the Model and current Snapshot revision. Resolve selected numeric Object IDs using
-   `get_model_input_scope`; preserve the user's subset. Pending Input Scope must Apply first.
+1. Bind the Project and current Snapshot revision. Resolve selected numeric Object IDs using
+   `get_project_input_scope`; preserve the user's subset. Pending Input Scope must Apply first.
 2. Reuse applicable profiles when their measurement scope is known. Missing profiles during
    an authorized profiling task can trigger a run; missing rows alone are not permission to
    run unrelated work. Respect the user's saved SQL execution policy and selected environment.
@@ -16,14 +16,14 @@ starts/monitors the run, and refreshes the Model Snapshot.
    for all batched Objects in this run. Use separate runs for different batch selections.
    Unbatched Objects receive no filter. Never infer the latest batch or use an empty list
    to mean all batches. Ask the user for missing batch choices.
-4. Hold the owning Tenant Lock. A locked Model cannot be profiled; an agent cannot unlock it.
+4. Hold the owning Tenant Lock. A locked Project cannot be profiled; an agent cannot unlock it.
 
 ## Start and monitor
 
 Call `start_profiling_run` with:
 
-- `model_id` and `selected_object_ids` (1–500 IDs).
-- `expected_model_revision` from current Model context.
+- `project_id` and `selected_object_ids` (1–500 IDs).
+- `expected_project_revision` from current Project context.
 - `request_id`: a newly generated UUID, retained for identical transport retries.
 - `batch_ids`: optional list of strings; required if any selected Object has a batch Attribute.
 - `environment_code`: the selected environment; default `dev`.
@@ -42,7 +42,7 @@ Snapshot and reassessment; do not automatically merge pending changes.
 
 Poll `get_profiling_run_status(run_id)` with reasonable spacing. Report completed/selected
 Objects and state. `completed` means all results were validated and saved atomically;
-`failed` or `cancelled` does not replace existing profiles. Model writes remain fenced
+`failed` or `cancelled` does not replace existing profiles. Project writes remain fenced
 against concurrent edits and changed physical metadata. Runs are persisted and recoverable
 after an MCP restart; do not create a second run merely because one request timed out.
 
@@ -53,8 +53,8 @@ Workbench run state, not a guarantee that Databricks has already stopped its sta
 
 ## Refresh and reuse
 
-After completion, create and install a fresh Model Snapshot using the existing
-[Snapshot workflow](../snapshots/model.md). Preserve unrelated local proposals. If the
+After completion, create and install a fresh Project Snapshot using the existing
+[Snapshot workflow](../snapshots/project.md). Preserve unrelated local proposals. If the
 installer detects a baseline conflict, reconcile explicitly; never discard pending work.
 The refreshed `profiling_profile` records are the measured results used by downstream modeling.
 
@@ -64,4 +64,4 @@ there is no agent SQL fallback. Analysis and other evidence queries keep their e
 
 Reprofiling replaces the selected Attributes' current measurements, not a per-batch history.
 Multiple IDs measure their combined stored population; they do not deduplicate repeated loads.
-Read [Profile metrics](../model/profiling-profile.md) for field meanings.
+Read [Profile metrics](../project/profiling-profile.md) for field meanings.

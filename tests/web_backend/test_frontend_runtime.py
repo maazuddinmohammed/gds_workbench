@@ -32,7 +32,7 @@ def test_react_is_same_origin_with_spa_and_immutable_asset_caching(
 
     with TestClient(app) as client:
         api = client.get("/api/example")
-        page = client.get("/tenants/7/models/18")
+        page = client.get("/tenants/7/projects/18")
         asset = client.get("/assets/index-abc123.js")
         missing_api = client.get("/api/not-present")
 
@@ -72,10 +72,12 @@ def test_request_body_limit_rejects_declared_and_streamed_oversize_bodies() -> N
     (
         "/api/v1/tenants/7/prompts/templates/1/versions",
         "/api/v1/tenants/7/prompts/render",
-        "/api/v1/tenants/7/models/18/runs",
+        "/api/v1/tenants/7/projects/18/runs",
     ),
 )
-def test_agent_authoring_request_bodies_have_no_middleware_size_ceiling(path: str) -> None:
+def test_agent_authoring_request_bodies_have_no_middleware_size_ceiling(
+    path: str,
+) -> None:
     app = FastAPI()
 
     async def inspect_body(request: Request) -> dict[str, int]:

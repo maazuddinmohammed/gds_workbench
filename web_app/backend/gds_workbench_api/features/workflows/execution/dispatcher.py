@@ -34,27 +34,27 @@ class WorkflowExecutionDispatcher:
         self._services = services
 
     async def execute(self, claim: WorkflowExecutionClaim) -> object:
-        if claim.model_workflow == "profiling":
+        if claim.project_workflow == "profiling":
             executor = self._services.profiling
-        elif claim.model_workflow == "analysis":
+        elif claim.project_workflow == "analysis":
             executor = (
                 self._services.analysis_validation
                 if claim.workflow_execution_mode is None
                 else self._services.analysis_inference
             )
-        elif claim.model_workflow == "conceptual":
+        elif claim.project_workflow == "conceptual":
             executor = self._services.conceptual
-        elif claim.model_workflow == "logical":
+        elif claim.project_workflow == "logical":
             executor = self._services.logical
-        elif claim.model_workflow == "dimensional":
+        elif claim.project_workflow == "dimensional":
             executor = self._services.dimensional
-        elif claim.model_workflow == "mapping":
+        elif claim.project_workflow == "mapping":
             executor = self._services.mapping
-        elif claim.model_workflow == "code_generation":
+        elif claim.project_workflow == "code_generation":
             executor = self._services.code_generation
-        elif claim.model_workflow == "validation":
+        elif claim.project_workflow == "validation":
             executor = self._services.validation
-        elif claim.model_workflow == "metadata_enrichment":
+        elif claim.project_workflow == "metadata_enrichment":
             executor = self._services.metadata_enrichment
         else:
             raise InvalidRequestError("The requested workflow executor is unavailable.")
@@ -68,9 +68,9 @@ class WorkflowExecutionDispatcher:
             return await executor.execute_started(
                 claim.principal,
                 tenant_id=claim.tenant_id,
-                model_id=claim.model_id,
+                project_id=claim.project_id,
                 workflow_run_id=claim.workflow_run_id,
-                expected_model_revision=claim.model_revision,
+                expected_project_revision=claim.project_revision,
                 workflow_run_claim_token=claim.workflow_run_claim_token,
             )
 

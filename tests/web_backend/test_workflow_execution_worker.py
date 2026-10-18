@@ -17,9 +17,9 @@ def _claim() -> WorkflowExecutionClaim:
     return WorkflowExecutionClaim(
         workflow_run_id=701,
         tenant_id=7,
-        model_id=18,
-        model_revision=4,
-        model_workflow="logical",
+        project_id=18,
+        project_revision=4,
+        project_workflow="logical",
         workflow_execution_mode="one_shot",
         correlation_id=UUID("11111111-1111-1111-1111-111111111111"),
         actor_principal_type="user",
@@ -72,7 +72,8 @@ class FakeClaimRepository:
         return WorkflowClaimLease(
             workflow_run_id=workflow_run_id,
             workflow_run_claim_heartbeat_time=now,
-            workflow_run_claim_expires_time=now + timedelta(seconds=lease_duration_seconds),
+            workflow_run_claim_expires_time=now
+            + timedelta(seconds=lease_duration_seconds),
         )
 
     async def release(
@@ -130,7 +131,9 @@ def test_worker_does_not_expose_direct_exact_claim_execution() -> None:
 
 
 @pytest.mark.asyncio
-async def test_claim_runner_executes_a_supplied_claim_without_global_acquisition() -> None:
+async def test_claim_runner_executes_a_supplied_claim_without_global_acquisition() -> (
+    None
+):
     claim = _claim()
     repository = FakeClaimRepository(claim)
     dispatcher = BlockingDispatcher()
@@ -238,7 +241,9 @@ async def test_worker_keeps_renewing_through_two_hours_of_execution(
 
 
 @pytest.mark.asyncio
-async def test_worker_leaves_an_unexpected_failure_claimed_for_bounded_recovery() -> None:
+async def test_worker_leaves_an_unexpected_failure_claimed_for_bounded_recovery() -> (
+    None
+):
     repository = FakeClaimRepository(_claim())
     dispatcher = BlockingDispatcher()
     dispatcher.failure = RuntimeError("safe test failure")
@@ -272,7 +277,9 @@ async def test_worker_leaves_an_unexpected_failure_claimed_for_bounded_recovery(
     ],
 )
 async def test_worker_cancels_execution_when_the_claim_is_lost(workflow: str) -> None:
-    repository = FakeClaimRepository(_claim().model_copy(update={"model_workflow": workflow}))
+    repository = FakeClaimRepository(
+        _claim().model_copy(update={"project_workflow": workflow})
+    )
     repository.renew_fails = True
     dispatcher = BlockingDispatcher()
     worker = WorkflowExecutionWorker(

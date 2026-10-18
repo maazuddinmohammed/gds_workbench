@@ -43,13 +43,13 @@ def create_dimensional_router(
     """Create the Dimensional review router for later runtime composition."""
     authenticate = principal_dependency(identity_provider)
     router = APIRouter(
-        prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/dimensional",
+        prefix="/api/v1/tenants/{tenant_id}/projects/{project_id}/dimensional",
         tags=["dimensional"],
     )
 
     async def list_objects(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         query: Annotated[ModeledListQuery, Query()],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -57,7 +57,7 @@ def create_dimensional_router(
         return await service.list_objects(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=_filters_from_query(query),
             page_size=query.page_size,
             cursor=query.cursor,
@@ -72,7 +72,7 @@ def create_dimensional_router(
 
     async def read_object(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         dimensional_entity_id: Annotated[int, Path(gt=0)],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -80,7 +80,7 @@ def create_dimensional_router(
         return await service.read_object(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             dimensional_entity_id=dimensional_entity_id,
         )
 
@@ -93,7 +93,7 @@ def create_dimensional_router(
 
     async def list_attributes(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         query: Annotated[DimensionalAttributeListQuery, Query()],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -111,7 +111,7 @@ def create_dimensional_router(
         return await service.list_attributes(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=filters,
             page_size=query.page_size,
             cursor=query.cursor,
@@ -126,7 +126,7 @@ def create_dimensional_router(
 
     async def read_attribute(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         dimensional_attribute_id: Annotated[int, Path(gt=0)],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -134,7 +134,7 @@ def create_dimensional_router(
         return await service.read_attribute(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             dimensional_attribute_id=dimensional_attribute_id,
         )
 
@@ -147,7 +147,7 @@ def create_dimensional_router(
 
     async def list_relationships(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         query: Annotated[DimensionalRelationshipListQuery, Query()],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -165,7 +165,7 @@ def create_dimensional_router(
         return await service.list_relationships(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=filters,
             page_size=query.page_size,
             cursor=query.cursor,
@@ -180,7 +180,7 @@ def create_dimensional_router(
 
     async def read_relationship(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         dimensional_relationship_id: Annotated[int, Path(gt=0)],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -188,7 +188,7 @@ def create_dimensional_router(
         return await service.read_relationship(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             dimensional_relationship_id=dimensional_relationship_id,
         )
 

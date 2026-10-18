@@ -54,7 +54,7 @@ It reuses saved choices when you resume.
 |---|---|
 | Tenant | Your team's Tenant name or code. If unsure, ask Atlas to list your available Tenants. |
 | Task | Describe what you want to create, change, or inspect. |
-| Model | The Model name, if the task needs one. Ask Atlas to list available Models if needed. |
+| Project | The Project name, if the task needs one. Ask Atlas to list available Projects if needed. |
 | Working folder | Confirm the current folder, or give the full path to a folder inside it. |
 | Sub-agent policy, only before authorized delegation | Choose **Current model only**, **Agent selects the model**, or **Specified model only**. For the last choice, give the exact AI model name or ID. |
 | SQL permission | **Never**: no SQL execution. **Essential**: run SQL only for evidence needed to continue. **Proactive**: also run useful checks. |
@@ -67,7 +67,7 @@ For example:
 ```text
 Start atlas.
 Tenant: [your Tenant code]
-Model: [your Model name]
+Project: [your Project name]
 Task: Improve missing descriptions for the selected customer tables.
 Keep existing descriptions. Use the current working folder.
 SQL policy: Never.
@@ -84,7 +84,7 @@ A sub-agent is a helper agent assigned part of the work. Choose its model rule:
 | **Agent selects the model** | Select a suitable available model for each sub-agent's task. |
 | **Specified model only** | Use only the exact model you name for every sub-agent. |
 
-This choice does not change your main chat model or your Atlas data Model.
+This choice does not change your main chat model or your Atlas Project.
 It applies to all workflows and nested sub-agents in this working folder.
 Atlas saves the choice and reuses it when you return. Older folders without a
 saved choice prompt you only before authorized delegation.
@@ -98,7 +98,7 @@ require Atlas to use sub-agents.
 
 ## 3. Let Atlas prepare the local work
 
-Atlas checks the selected Tenant, Model, and existing work. It gets the required
+Atlas checks the selected Tenant, Project, and existing work. It gets the required
 Snapshot: a local copy of the saved Atlas records. It puts proposed changes in
 separate local files, then checks them.
 
@@ -122,7 +122,7 @@ has no saved delegation preference. Independent work can continue. Use
 | **Save changes** | Saves an edit to local files. |
 | **Reload local files** | Reads the latest local files after agent edits. It does not download new server records. |
 | **Validate locally** | Checks the local changes and shows findings. |
-| **Generate DBML** | Exports a diagram description of the complete local Model. This is an optional user action. |
+| **Generate DBML** | Exports a diagram description of the complete local Project. This is an optional user action. |
 
 If the page did not open, ask Atlas to open Atlas Local Workbench again.
 If it reports a file conflict, review that conflict before saving.
@@ -145,7 +145,7 @@ it again. Atlas Local Workbench has no Stage or Apply button in this release.
 ## 5. Review and approve Apply
 
 1. Atlas checks the staged draft on the server and shows the result.
-2. Review the proposed actions for the selected Tenant and Model.
+2. Review the proposed actions for the selected Tenant and Project.
 3. If the result is correct, approve Atlas's separate **Apply** request.
 4. Wait for Atlas to confirm success and refresh the affected local Snapshots.
 
@@ -164,8 +164,8 @@ Resume atlas. Show the unfinished work in this folder.
 Select the same folder in Atlas Local Workbench if asked. Use
 **Reload local files** after the agent changes files.
 
-One working folder holds one active Model. Use another folder for a different
-Model. Starting a new task preserves existing drafts.
+One working folder holds one active Project. Use another folder for a different
+Project. Starting a new task preserves existing drafts.
 
 ## Choose a task
 
@@ -173,15 +173,15 @@ You can describe your request in plain English or name a workflow:
 
 | Workflow | Use it to |
 |---|---|
-| Investigate | Explain Atlas, existing models, lineage or recorded rationale. |
+| Investigate | Explain Atlas, existing projects, lineage or recorded rationale. |
 | Source analysis | Profile/analyze selected sources, grain, candidate keys and relationships. |
 | Conceptual model | Define business concepts and relationships. |
 | Logical model | Develop normalized Entities, Attributes and Submodels. |
 | Dimensional model | Design dimensions, facts, measures and history. |
-| Mapping | Define transformations into an applied target model. |
+| Mapping | Define transformations into an applied target project. |
 | Code generation | Generate SQL from applied Mapping. |
 | Verify | Check artifacts or author SQL Validation definitions; distinguish checks from execution. |
-| Model change | Assess impact and update the affected existing design. |
+| Project change | Assess impact and update the affected existing design. |
 | Metadata | Correct physical Metadata, descriptions or ingestion settings. |
 | Registration | Register modeled targets or generated files; optionally prepare local creation DDL. |
 
@@ -192,13 +192,13 @@ artifacts and enters the needed stage instead of restarting the whole SDLC.
 Examples:
 
 - “Analyze these source tables and build a logical model. SQL Never.”
-- “Map these objects to the existing model.”
+- “Map these objects to the existing project.”
 - “Explain why this entity exists, then update its grain.”
 - “Validate this logical model without generating SQL checks.”
 
-Physical description correction and Model-owned enrichment are different operations.
-The current plugin cannot read/write the web workflow's Model-owned enrichment
-through its governed Model contracts; it reports that gap instead of modifying
+Physical description correction and Project-owned enrichment are different operations.
+The current plugin cannot read/write the web workflow's Project-owned enrichment
+through its governed Project contracts; it reports that gap instead of modifying
 physical Metadata as a substitute. See [capability boundaries](../references/platform/capabilities.md).
 
 ## If work stops
@@ -215,4 +215,4 @@ Do not put passwords, tokens, or raw source data in chat. The
 [technical runtime reference](../references/local-runtime.md) is for agents and
 maintainers; normal use does not require its commands.
 
-For Model-specific source meaning, follow [enrichment](../references/model/enrichment.md). For schemas, naming, SCD, templates or default source System, follow [settings](../references/model/settings.md). Both use local drafts and the existing Change Set lifecycle; Model names and web-agent defaults are not editable through the plugin.
+For Project-specific source meaning, follow [enrichment](../references/project/enrichment.md). For schemas, naming, SCD, templates or default source System, follow [settings](../references/project/settings.md). Both use local drafts and the existing Change Set lifecycle; Project names and web-agent defaults are not editable through the plugin.

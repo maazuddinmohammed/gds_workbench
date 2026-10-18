@@ -6,7 +6,7 @@ from dataclasses import replace
 from typing import Any, Literal, cast
 
 import pytest
-from gds_etl_workbench.application.change_sets.model_validation import (
+from gds_etl_workbench.application.change_sets.project_validation import (
     validate_future_graph,
 )
 from gds_workbench_api.features.dimensional.service import (
@@ -23,9 +23,9 @@ from gds_workbench_api.features.workflows.authoring.repair import (
 )
 from pydantic import JsonValue
 
-from tests.mcp.model_test_fixtures import (
-    complete_model_graph,
+from tests.mcp.project_test_fixtures import (
     complete_physical_scope,
+    complete_project_graph,
     snapshot_from_graph,
 )
 from tests.web_backend.test_dimensional_executor import (
@@ -45,47 +45,78 @@ async def test_sixty_percent_coverage_hands_off_without_retrying_remaining_gaps(
 ) -> None:
     bundle = _context_bundle(mode=mode)
     first = bundle.context.selected_logical_entities[0]
-    second = first.model_copy(update={
-        "entity": first.entity.model_copy(update={"logical_entity_name": "Other Entity"}),
-        "attributes": tuple(attribute.model_copy(update={
-            "logical_entity_name": "Other Entity"
-        }) for attribute in first.attributes),
-    })
-    third = first.model_copy(update={
-        "entity": first.entity.model_copy(update={"logical_entity_name": "Third Entity"}),
-        "attributes": (),
-    })
-    context = bundle.context.model_copy(update={"selected_logical_entities": (first, second, third)})
-    catalog = InMemoryAgentContextToolCatalog(
-        context=context, max_result_bytes=128 * 1024,
-        max_catalog_bytes=128 * 1024, max_page_records=20,
-    ) if mode == "tool_assisted" else None
-    bundle = replace(bundle, context=context, tool_catalog=catalog,
-                     embedded_context=catalog.manifest if catalog else cast(JsonValue, context.model_dump(mode="json")))
+    second = first.model_copy(
+        update={
+            "entity": first.entity.model_copy(
+                update={"logical_entity_name": "Other Entity"}
+            ),
+            "attributes": tuple(
+                attribute.model_copy(update={"logical_entity_name": "Other Entity"})
+                for attribute in first.attributes
+            ),
+        }
+    )
+    third = first.model_copy(
+        update={
+            "entity": first.entity.model_copy(
+                update={"logical_entity_name": "Third Entity"}
+            ),
+            "attributes": (),
+        }
+    )
+    context = bundle.context.model_copy(
+        update={"selected_logical_entities": (first, second, third)}
+    )
+    catalog = (
+        InMemoryAgentContextToolCatalog(
+            context=context,
+            max_result_bytes=128 * 1024,
+            max_catalog_bytes=128 * 1024,
+            max_page_records=20,
+        )
+        if mode == "tool_assisted"
+        else None
+    )
+    bundle = replace(
+        bundle,
+        context=context,
+        tool_catalog=catalog,
+        embedded_context=catalog.manifest
+        if catalog
+        else cast(JsonValue, context.model_dump(mode="json")),
+    )
     candidate = cast(dict[str, Any], _candidate())
     sources = candidate["entities"][0]["sources"]
-    sources.append({
-        **deepcopy(sources[0]),
-        "source_logical_entity": {
-            "logical_entity_schema_name": second.entity.logical_entity_schema_name,
-            "logical_entity_name": second.entity.logical_entity_name,
-        },
-        "source_order": 2,
-    })
+    sources.append(
+        {
+            **deepcopy(sources[0]),
+            "source_logical_entity": {
+                "logical_entity_schema_name": second.entity.logical_entity_schema_name,
+                "logical_entity_name": second.entity.logical_entity_name,
+            },
+            "source_order": 2,
+        }
+    )
     agent = _AgentExecutor(responses=[cast(JsonValue, candidate)])
     service, _, _, handoff, _ = _service(
-        agent=agent, plan=_plan(mode=mode), context=bundle,
+        agent=agent,
+        plan=_plan(mode=mode),
+        context=bundle,
     )
     await service.execute_started(
-        _principal(), tenant_id=7, model_id=18, workflow_run_id=1048,
-        expected_model_revision=7, workflow_run_claim_token=_CLAIM_TOKEN,
+        _principal(),
+        tenant_id=7,
+        project_id=18,
+        workflow_run_id=1048,
+        expected_project_revision=7,
+        workflow_run_claim_token=_CLAIM_TOKEN,
     )
     assert len(agent.requests) == 1
     assert len(handoff.calls) == 1 and handoff.retained == []
     assert handoff.final_events[-1].status == "running"
 
 
-def _complete_model_candidate() -> dict[str, JsonValue]:
+def _complete_project_candidate() -> dict[str, JsonValue]:
     full = cast(dict[str, JsonValue], deepcopy(_candidate()))
     submodel = cast(list[JsonValue], full["submodels"])[0]
     entity = cast(list[JsonValue], full["entities"])[0]
@@ -115,12 +146,12 @@ def _complete_model_candidate() -> dict[str, JsonValue]:
             "dimensional_attribute_change_behavior": "overwrite",
             "sources": [
                 {
-                    "support_source_type": "assertion",
-                    "assertion_record": {
-                        "modeling_assertion_record_key": "assertion.customer_segment"
+                    "support_source_type": "context_record",
+                    "context_record": {
+                        "context_record_id": "1cdbab8d-73b2-5b3f-a650-6d5579728c83"
                     },
                     "source_order": 1,
-                    "rationale": "Governed customer-segmentation assertion.",
+                    "rationale": "Governed customer-segmentation Context record.",
                     "status": "active",
                     "is_locked": False,
                 }
@@ -160,7 +191,7 @@ def _bundle(*, mapped: bool) -> tuple[AgentContextBundle, dict[str, Any]]:
     context = initial.context.model_validate(
         _logical_sources(initial.context.model_dump(mode="json")), strict=False
     )
-    graph = complete_model_graph()
+    graph = complete_project_graph()
     for dataset in tuple(graph):
         if dataset.startswith(("dimensional_", "generated_code", "validation_")):
             graph[dataset] = []
@@ -170,19 +201,19 @@ def _bundle(*, mapped: bool) -> tuple[AgentContextBundle, dict[str, Any]]:
                 for record in graph[dataset]
                 if record.get("modeled_entity_type") != "dimensional_entity"
             ]
-    graph["model_details"] = [context.model_details.model_dump(mode="json")]
-    graph["modeling_assertion_document"].extend(
-        item.model_dump(mode="json") for item in context.assertion.documents
+    graph["project_details"] = [context.project_details.model_dump(mode="json")]
+    graph["context_group"].extend(
+        item.model_dump(mode="json") for item in context.context.groups
     )
-    graph["modeling_assertion_record"].extend(
-        item.model_dump(mode="json") for item in context.assertion.records
+    graph["context_record"].extend(
+        item.model_dump(mode="json") for item in context.context.records
     )
     scope = complete_physical_scope()
     snapshot = snapshot_from_graph(graph)
     assert validate_future_graph(
         snapshot=snapshot, staged_documents={}, physical_scope=scope
     ).valid
-    candidate = cast(dict[str, Any], _logical_sources(_complete_model_candidate()))
+    candidate = cast(dict[str, Any], _logical_sources(_complete_project_candidate()))
     bundle = replace(initial, context=context, snapshot=snapshot, physical_scope=scope)
     validator = _candidate_validator(bundle)
     projected = _project_dimensional_changes(
@@ -366,7 +397,8 @@ async def test_dimensional_projection_and_graph_failures_enter_bounded_repair(
         # reference an inactive modeled Attribute. This is a full-graph constraint.
         assert bundle.snapshot is not None and bundle.physical_scope is not None
         projected = _project_dimensional_changes(
-            validator=_candidate_validator(bundle), candidate=cast(JsonValue, invalid),
+            validator=_candidate_validator(bundle),
+            candidate=cast(JsonValue, invalid),
             context=bundle,
         )
         checked = validate_future_graph(
@@ -411,9 +443,9 @@ async def test_dimensional_projection_and_graph_failures_enter_bounded_repair(
         await service.execute_started(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
         )
 

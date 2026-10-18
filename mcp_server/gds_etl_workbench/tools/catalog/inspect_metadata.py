@@ -300,7 +300,7 @@ async def _read_view(
                 offset,
             ),
         )
-        return _model_payload("objects", ObjectSummary, rows[:page_size]), len(rows) > page_size
+        return _project_payload("objects", ObjectSummary, rows[:page_size]), len(rows) > page_size
 
     if view == "object_details":
         requested = object_ids or []
@@ -363,7 +363,7 @@ async def _read_view(
                 offset,
             ),
         )
-        return _model_payload("copy_groups", CopyGroupSummary, rows[:page_size]), len(
+        return _project_payload("copy_groups", CopyGroupSummary, rows[:page_size]), len(
             rows
         ) > page_size
 
@@ -405,7 +405,7 @@ async def _read_view(
                 offset,
             ),
         )
-        return _model_payload(
+        return _project_payload(
             "process_groups",
             ProcessGroupSummary,
             rows[:page_size],
@@ -424,12 +424,12 @@ async def _read_view(
     }, False
 
 
-def _model_payload(
+def _project_payload(
     name: str,
-    model: type[BaseModel],
+    project: type[BaseModel],
     rows: list[Mapping[str, Any]],
 ) -> dict[str, object]:
-    return {name: [model(**row).model_dump(mode="json") for row in rows]}
+    return {name: [project(**row).model_dump(mode="json") for row in rows]}
 
 
 def _audit_input(arguments: Mapping[str, Any]) -> dict[str, str | int | bool]:

@@ -2,7 +2,7 @@
 
 CREATE TABLE workflow.dimensional_submodel (
     dimensional_submodel_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     workflow_run_id BIGINT,
     dimensional_submodel_name VARCHAR(255) NOT NULL,
@@ -13,10 +13,10 @@ CREATE TABLE workflow.dimensional_submodel (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_dimensional_submodel_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
-    CONSTRAINT uq_dimensional_submodel_id_model
-        UNIQUE (dimensional_submodel_id, model_id),
+    CONSTRAINT fk_dimensional_submodel_project FOREIGN KEY (project_id)
+        REFERENCES project.project (project_id) ON DELETE NO ACTION,
+    CONSTRAINT uq_dimensional_submodel_id_project
+        UNIQUE (dimensional_submodel_id, project_id),
     CONSTRAINT ck_dimensional_submodel_name CHECK (
         reference.is_nonblank(dimensional_submodel_name)
     ),
@@ -32,13 +32,13 @@ CREATE TABLE workflow.dimensional_submodel (
 
 CREATE UNIQUE INDEX ux_dimensional_submodel_effective_name
     ON workflow.dimensional_submodel (
-        model_id,
+        project_id,
         lower(btrim(dimensional_submodel_name))
     ) WHERE dimensional_submodel_status = 'active';
 
 CREATE TABLE workflow.dimensional_entity (
     dimensional_entity_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     workflow_run_id BIGINT,
     dimensional_entity_schema_name VARCHAR(400) NOT NULL,
@@ -55,10 +55,10 @@ CREATE TABLE workflow.dimensional_entity (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_dimensional_entity_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
-    CONSTRAINT uq_dimensional_entity_id_model
-        UNIQUE (dimensional_entity_id, model_id),
+    CONSTRAINT fk_dimensional_entity_project FOREIGN KEY (project_id)
+        REFERENCES project.project (project_id) ON DELETE NO ACTION,
+    CONSTRAINT uq_dimensional_entity_id_project
+        UNIQUE (dimensional_entity_id, project_id),
     CONSTRAINT ck_dimensional_entity_schema_name CHECK (
         reference.is_nonblank(dimensional_entity_schema_name)
     ),
@@ -110,14 +110,14 @@ CREATE TABLE workflow.dimensional_entity (
 
 CREATE UNIQUE INDEX ux_dimensional_entity_effective_name
     ON workflow.dimensional_entity (
-        model_id,
+        project_id,
         lower(btrim(dimensional_entity_schema_name)),
         lower(btrim(dimensional_entity_name))
     ) WHERE dimensional_entity_status = 'active';
 
 CREATE TABLE workflow.dimensional_entity_submodel (
     dimensional_entity_submodel_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     workflow_run_id BIGINT,
     dimensional_entity_id BIGINT NOT NULL,
@@ -128,17 +128,17 @@ CREATE TABLE workflow.dimensional_entity_submodel (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_dimensional_entity_submodel_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_dimensional_entity_submodel_project FOREIGN KEY (project_id)
+        REFERENCES project.project (project_id) ON DELETE NO ACTION,
     CONSTRAINT fk_dimensional_entity_submodel_entity FOREIGN KEY (
         dimensional_entity_id,
-        model_id
-    ) REFERENCES workflow.dimensional_entity (dimensional_entity_id, model_id)
+        project_id
+    ) REFERENCES workflow.dimensional_entity (dimensional_entity_id, project_id)
         ON DELETE NO ACTION,
     CONSTRAINT fk_dimensional_entity_submodel_submodel FOREIGN KEY (
         dimensional_submodel_id,
-        model_id
-    ) REFERENCES workflow.dimensional_submodel (dimensional_submodel_id, model_id)
+        project_id
+    ) REFERENCES workflow.dimensional_submodel (dimensional_submodel_id, project_id)
         ON DELETE NO ACTION,
     CONSTRAINT ck_dimensional_entity_submodel_status CHECK (
         dimensional_entity_submodel_status IN (
@@ -149,14 +149,14 @@ CREATE TABLE workflow.dimensional_entity_submodel (
 
 CREATE UNIQUE INDEX ux_dimensional_entity_submodel_effective
     ON workflow.dimensional_entity_submodel (
-        model_id,
+        project_id,
         dimensional_entity_id,
         dimensional_submodel_id
     ) WHERE dimensional_entity_submodel_status = 'active';
 
 CREATE TABLE workflow.dimensional_attribute (
     dimensional_attribute_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     workflow_run_id BIGINT,
     dimensional_entity_id BIGINT NOT NULL,
@@ -180,17 +180,17 @@ CREATE TABLE workflow.dimensional_attribute (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_dimensional_attribute_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_dimensional_attribute_project FOREIGN KEY (project_id)
+        REFERENCES project.project (project_id) ON DELETE NO ACTION,
     CONSTRAINT fk_dimensional_attribute_entity FOREIGN KEY (
         dimensional_entity_id,
-        model_id
-    ) REFERENCES workflow.dimensional_entity (dimensional_entity_id, model_id)
+        project_id
+    ) REFERENCES workflow.dimensional_entity (dimensional_entity_id, project_id)
         ON DELETE NO ACTION,
-    CONSTRAINT uq_dimensional_attribute_id_model
-        UNIQUE (dimensional_attribute_id, model_id),
+    CONSTRAINT uq_dimensional_attribute_id_project
+        UNIQUE (dimensional_attribute_id, project_id),
     CONSTRAINT uq_dimensional_attribute_witness
-        UNIQUE (dimensional_attribute_id, dimensional_entity_id, model_id),
+        UNIQUE (dimensional_attribute_id, dimensional_entity_id, project_id),
     CONSTRAINT ck_dimensional_attribute_name CHECK (
         reference.is_nonblank(dimensional_attribute_name)
     ),
@@ -256,20 +256,20 @@ CREATE TABLE workflow.dimensional_attribute (
 
 CREATE UNIQUE INDEX ux_dimensional_attribute_effective_name
     ON workflow.dimensional_attribute (
-        model_id,
+        project_id,
         dimensional_entity_id,
         lower(btrim(dimensional_attribute_name))
     ) WHERE dimensional_attribute_status = 'active';
 
 CREATE TABLE workflow.dimensional_entity_source_mapping (
     dimensional_entity_source_mapping_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     workflow_run_id BIGINT,
     dimensional_entity_id BIGINT NOT NULL,
     support_source_type VARCHAR(20) NOT NULL,
     source_logical_entity_id BIGINT,
-    modeling_assertion_record_id BIGINT,
+    context_record_id UUID,
     dimensional_entity_source_role VARCHAR(255) NOT NULL,
     dimensional_entity_source_mapping_order INTEGER,
     dimensional_entity_source_mapping_rationale TEXT NOT NULL,
@@ -279,37 +279,37 @@ CREATE TABLE workflow.dimensional_entity_source_mapping (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_dimensional_entity_source_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_dimensional_entity_source_project FOREIGN KEY (project_id)
+        REFERENCES project.project (project_id) ON DELETE NO ACTION,
     CONSTRAINT fk_dimensional_entity_source_entity FOREIGN KEY (
         dimensional_entity_id,
-        model_id
-    ) REFERENCES workflow.dimensional_entity (dimensional_entity_id, model_id)
+        project_id
+    ) REFERENCES workflow.dimensional_entity (dimensional_entity_id, project_id)
         ON DELETE NO ACTION,
     CONSTRAINT fk_dimensional_entity_source_logical FOREIGN KEY (
-        source_logical_entity_id, model_id
-    ) REFERENCES workflow.logical_entity (logical_entity_id, model_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_dimensional_entity_source_assertion_record FOREIGN KEY (
-        modeling_assertion_record_id,
-        model_id
-    ) REFERENCES model.modeling_assertion_record (
-        modeling_assertion_record_id,
-        model_id
+        source_logical_entity_id, project_id
+    ) REFERENCES workflow.logical_entity (logical_entity_id, project_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_dimensional_entity_source_context_record FOREIGN KEY (
+        context_record_id,
+        project_id
+    ) REFERENCES project.context_record (
+        context_record_id,
+        project_id
     ) ON DELETE NO ACTION,
     CONSTRAINT uq_dimensional_entity_source_witness UNIQUE (
         dimensional_entity_source_mapping_id,
         dimensional_entity_id,
         source_logical_entity_id,
-        model_id
+        project_id
     ),
     CONSTRAINT ck_dimensional_entity_source_typed_source CHECK (
         (
             support_source_type = 'logical_entity'
             AND source_logical_entity_id IS NOT NULL
-            AND modeling_assertion_record_id IS NULL
+            AND context_record_id IS NULL
         ) OR (
-            support_source_type = 'assertion'
-            AND modeling_assertion_record_id IS NOT NULL
+            support_source_type = 'context_record'
+            AND context_record_id IS NOT NULL
             AND source_logical_entity_id IS NULL
         )
     ),
@@ -332,22 +332,22 @@ CREATE TABLE workflow.dimensional_entity_source_mapping (
 
 CREATE UNIQUE INDEX ux_dimensional_entity_source_logical_entity_effective
     ON workflow.dimensional_entity_source_mapping (
-        model_id,
+        project_id,
         dimensional_entity_id,
         source_logical_entity_id
     ) WHERE support_source_type = 'logical_entity'
         AND dimensional_entity_source_mapping_status = 'active';
-CREATE UNIQUE INDEX ux_dimensional_entity_source_assertion_effective
+CREATE UNIQUE INDEX ux_dimensional_entity_source_context_effective
     ON workflow.dimensional_entity_source_mapping (
-        model_id,
+        project_id,
         dimensional_entity_id,
-        modeling_assertion_record_id
-    ) WHERE support_source_type = 'assertion'
+        context_record_id
+    ) WHERE support_source_type = 'context_record'
         AND dimensional_entity_source_mapping_status = 'active';
 
 CREATE TABLE workflow.dimensional_attribute_source_mapping (
     dimensional_attribute_source_mapping_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     workflow_run_id BIGINT,
     dimensional_entity_source_mapping_id BIGINT,
@@ -356,7 +356,7 @@ CREATE TABLE workflow.dimensional_attribute_source_mapping (
     support_source_type VARCHAR(20) NOT NULL,
     source_logical_entity_id BIGINT,
     source_logical_attribute_id BIGINT,
-    modeling_assertion_record_id BIGINT,
+    context_record_id UUID,
     dimensional_attribute_source_mapping_order INTEGER,
     dimensional_attribute_source_mapping_rationale TEXT NOT NULL,
     dimensional_attribute_source_mapping_status VARCHAR(20) NOT NULL DEFAULT 'active',
@@ -365,39 +365,39 @@ CREATE TABLE workflow.dimensional_attribute_source_mapping (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_dimensional_attribute_source_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_dimensional_attribute_source_project FOREIGN KEY (project_id)
+        REFERENCES project.project (project_id) ON DELETE NO ACTION,
     CONSTRAINT fk_dimensional_attribute_source_parent FOREIGN KEY (
         dimensional_entity_source_mapping_id,
         dimensional_entity_id,
         source_logical_entity_id,
-        model_id
+        project_id
     ) REFERENCES workflow.dimensional_entity_source_mapping (
         dimensional_entity_source_mapping_id,
         dimensional_entity_id,
         source_logical_entity_id,
-        model_id
+        project_id
     ) ON DELETE NO ACTION,
     CONSTRAINT fk_dimensional_attribute_source_attribute FOREIGN KEY (
         dimensional_attribute_id,
         dimensional_entity_id,
-        model_id
+        project_id
     ) REFERENCES workflow.dimensional_attribute (
         dimensional_attribute_id,
         dimensional_entity_id,
-        model_id
+        project_id
     ) ON DELETE NO ACTION,
     CONSTRAINT fk_dimensional_attribute_source_logical FOREIGN KEY (
-        source_logical_attribute_id, source_logical_entity_id, model_id
+        source_logical_attribute_id, source_logical_entity_id, project_id
     ) REFERENCES workflow.logical_attribute (
-        logical_attribute_id, logical_entity_id, model_id
+        logical_attribute_id, logical_entity_id, project_id
     ) ON DELETE NO ACTION,
-    CONSTRAINT fk_dimensional_attribute_source_assertion_record FOREIGN KEY (
-        modeling_assertion_record_id,
-        model_id
-    ) REFERENCES model.modeling_assertion_record (
-        modeling_assertion_record_id,
-        model_id
+    CONSTRAINT fk_dimensional_attribute_source_context_record FOREIGN KEY (
+        context_record_id,
+        project_id
+    ) REFERENCES project.context_record (
+        context_record_id,
+        project_id
     ) ON DELETE NO ACTION,
     CONSTRAINT ck_dimensional_attribute_source_typed_source CHECK (
         (
@@ -405,10 +405,10 @@ CREATE TABLE workflow.dimensional_attribute_source_mapping (
             AND dimensional_entity_source_mapping_id IS NOT NULL
             AND source_logical_entity_id IS NOT NULL
             AND source_logical_attribute_id IS NOT NULL
-            AND modeling_assertion_record_id IS NULL
+            AND context_record_id IS NULL
         ) OR (
-            support_source_type = 'assertion'
-            AND modeling_assertion_record_id IS NOT NULL
+            support_source_type = 'context_record'
+            AND context_record_id IS NOT NULL
             AND dimensional_entity_source_mapping_id IS NULL
             AND source_logical_entity_id IS NULL
             AND source_logical_attribute_id IS NULL
@@ -430,23 +430,23 @@ CREATE TABLE workflow.dimensional_attribute_source_mapping (
 
 CREATE UNIQUE INDEX ux_dimensional_attribute_source_logical_attribute_effective
     ON workflow.dimensional_attribute_source_mapping (
-        model_id,
+        project_id,
         dimensional_entity_source_mapping_id,
         dimensional_attribute_id,
         source_logical_attribute_id
     ) WHERE support_source_type = 'logical_attribute'
         AND dimensional_attribute_source_mapping_status = 'active';
-CREATE UNIQUE INDEX ux_dimensional_attribute_source_assertion_effective
+CREATE UNIQUE INDEX ux_dimensional_attribute_source_context_effective
     ON workflow.dimensional_attribute_source_mapping (
-        model_id,
+        project_id,
         dimensional_attribute_id,
-        modeling_assertion_record_id
-    ) WHERE support_source_type = 'assertion'
+        context_record_id
+    ) WHERE support_source_type = 'context_record'
         AND dimensional_attribute_source_mapping_status = 'active';
 
 CREATE TABLE workflow.dimensional_relationship (
     dimensional_relationship_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     workflow_run_id BIGINT,
     dimensional_relationship_name VARCHAR(255) NOT NULL,
@@ -468,35 +468,35 @@ CREATE TABLE workflow.dimensional_relationship (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_dimensional_relationship_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_dimensional_relationship_project FOREIGN KEY (project_id)
+        REFERENCES project.project (project_id) ON DELETE NO ACTION,
     CONSTRAINT fk_dimensional_relationship_from_entity FOREIGN KEY (
         dimensional_relationship_from_entity_id,
-        model_id
-    ) REFERENCES workflow.dimensional_entity (dimensional_entity_id, model_id)
+        project_id
+    ) REFERENCES workflow.dimensional_entity (dimensional_entity_id, project_id)
         ON DELETE NO ACTION,
     CONSTRAINT fk_dimensional_relationship_to_entity FOREIGN KEY (
         dimensional_relationship_to_entity_id,
-        model_id
-    ) REFERENCES workflow.dimensional_entity (dimensional_entity_id, model_id)
+        project_id
+    ) REFERENCES workflow.dimensional_entity (dimensional_entity_id, project_id)
         ON DELETE NO ACTION,
     CONSTRAINT fk_dimensional_relationship_from_attribute FOREIGN KEY (
         dimensional_relationship_from_attribute_id,
         dimensional_relationship_from_entity_id,
-        model_id
+        project_id
     ) REFERENCES workflow.dimensional_attribute (
         dimensional_attribute_id,
         dimensional_entity_id,
-        model_id
+        project_id
     ) ON DELETE NO ACTION,
     CONSTRAINT fk_dimensional_relationship_to_attribute FOREIGN KEY (
         dimensional_relationship_to_attribute_id,
         dimensional_relationship_to_entity_id,
-        model_id
+        project_id
     ) REFERENCES workflow.dimensional_attribute (
         dimensional_attribute_id,
         dimensional_entity_id,
-        model_id
+        project_id
     ) ON DELETE NO ACTION,
     CONSTRAINT ck_dimensional_relationship_distinct_endpoints CHECK (
         (
@@ -541,7 +541,7 @@ CREATE TABLE workflow.dimensional_relationship (
 
 CREATE UNIQUE INDEX ux_dimensional_relationship_effective_identity
     ON workflow.dimensional_relationship (
-        model_id,
+        project_id,
         dimensional_relationship_from_entity_id,
         dimensional_relationship_from_attribute_id,
         dimensional_relationship_to_entity_id,
@@ -553,36 +553,36 @@ CREATE UNIQUE INDEX ux_dimensional_relationship_effective_identity
 -- Every Dimensional mutation participates in the one-revision transaction guard.
 
 -- Supporting read, impact, and parent indexes.
-CREATE INDEX ix_dimensional_submodel_status ON workflow.dimensional_submodel (model_id, dimensional_submodel_status);
-CREATE INDEX ix_dimensional_entity_status_order ON workflow.dimensional_entity (model_id, dimensional_entity_status, dimensional_entity_dependency_order);
-CREATE INDEX ix_dimensional_entity_submodel_entity ON workflow.dimensional_entity_submodel (model_id, dimensional_entity_id);
-CREATE INDEX ix_dimensional_entity_submodel_submodel ON workflow.dimensional_entity_submodel (model_id, dimensional_submodel_id);
-CREATE INDEX ix_dimensional_attribute_entity_status ON workflow.dimensional_attribute (model_id, dimensional_entity_id, dimensional_attribute_status);
+CREATE INDEX ix_dimensional_submodel_status ON workflow.dimensional_submodel (project_id, dimensional_submodel_status);
+CREATE INDEX ix_dimensional_entity_status_order ON workflow.dimensional_entity (project_id, dimensional_entity_status, dimensional_entity_dependency_order);
+CREATE INDEX ix_dimensional_entity_submodel_entity ON workflow.dimensional_entity_submodel (project_id, dimensional_entity_id);
+CREATE INDEX ix_dimensional_entity_submodel_submodel ON workflow.dimensional_entity_submodel (project_id, dimensional_submodel_id);
+CREATE INDEX ix_dimensional_attribute_entity_status ON workflow.dimensional_attribute (project_id, dimensional_entity_id, dimensional_attribute_status);
 CREATE INDEX ix_dimensional_entity_source_logical_entity
-    ON workflow.dimensional_entity_source_mapping (model_id, source_logical_entity_id)
+    ON workflow.dimensional_entity_source_mapping (project_id, source_logical_entity_id)
     WHERE support_source_type = 'logical_entity';
-CREATE INDEX ix_dimensional_entity_source_assertion
+CREATE INDEX ix_dimensional_entity_source_context
     ON workflow.dimensional_entity_source_mapping (
-        model_id,
-        modeling_assertion_record_id
-    ) WHERE support_source_type = 'assertion';
+        project_id,
+        context_record_id
+    ) WHERE support_source_type = 'context_record';
 CREATE INDEX ix_dimensional_attribute_source_logical_attribute
     ON workflow.dimensional_attribute_source_mapping (
-        model_id,
+        project_id,
         source_logical_entity_id,
         source_logical_attribute_id
     ) WHERE support_source_type = 'logical_attribute';
-CREATE INDEX ix_dimensional_attribute_source_assertion
+CREATE INDEX ix_dimensional_attribute_source_context
     ON workflow.dimensional_attribute_source_mapping (
-        model_id,
-        modeling_assertion_record_id
-    ) WHERE support_source_type = 'assertion';
-CREATE INDEX ix_dimensional_attribute_source_target ON workflow.dimensional_attribute_source_mapping (model_id, dimensional_attribute_id);
-CREATE INDEX ix_dimensional_relationship_from ON workflow.dimensional_relationship (model_id, dimensional_relationship_from_entity_id, dimensional_relationship_from_attribute_id);
-CREATE INDEX ix_dimensional_relationship_to ON workflow.dimensional_relationship (model_id, dimensional_relationship_to_entity_id, dimensional_relationship_to_attribute_id);
+        project_id,
+        context_record_id
+    ) WHERE support_source_type = 'context_record';
+CREATE INDEX ix_dimensional_attribute_source_target ON workflow.dimensional_attribute_source_mapping (project_id, dimensional_attribute_id);
+CREATE INDEX ix_dimensional_relationship_from ON workflow.dimensional_relationship (project_id, dimensional_relationship_from_entity_id, dimensional_relationship_from_attribute_id);
+CREATE INDEX ix_dimensional_relationship_to ON workflow.dimensional_relationship (project_id, dimensional_relationship_to_entity_id, dimensional_relationship_to_attribute_id);
 
--- Serialize schema membership and configuration changes through the Model row.
--- Revision increments remain owned by governed Model commands and Apply.
+-- Serialize schema membership and configuration changes through the Project row.
+-- Revision increments remain owned by governed Project commands and Apply.
 CREATE FUNCTION workflow.guard_entity_schema_membership()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -594,12 +594,12 @@ DECLARE
 BEGIN
     IF TG_TABLE_NAME = 'logical_entity' THEN
         SELECT target.logical_schemas INTO schemas
-          FROM model.model AS target WHERE target.model_id = NEW.model_id
+          FROM project.project AS target WHERE target.project_id = NEW.project_id
           FOR UPDATE;
         schema_name := NEW.logical_entity_schema_name;
     ELSE
         SELECT target.dimensional_schemas INTO schemas
-          FROM model.model AS target WHERE target.model_id = NEW.model_id
+          FROM project.project AS target WHERE target.project_id = NEW.project_id
           FOR UPDATE;
         schema_name := NEW.dimensional_entity_schema_name;
     END IF;
@@ -607,32 +607,32 @@ BEGIN
         SELECT 1 FROM jsonb_array_elements(schemas) AS configured(value)
          WHERE lower(btrim(configured.value ->> 'schema_name')) = lower(btrim(schema_name))
     ) THEN
-        RAISE EXCEPTION 'Entity schema is not configured on its Model';
+        RAISE EXCEPTION 'Entity schema is not configured on its Project';
     END IF;
     RETURN NEW;
 END;
 $guard_entity_schema_membership$;
 
 CREATE TRIGGER guard_entity_schema_membership
-BEFORE INSERT OR UPDATE OF model_id, logical_entity_schema_name ON workflow.logical_entity
+BEFORE INSERT OR UPDATE OF project_id, logical_entity_schema_name ON workflow.logical_entity
 FOR EACH ROW EXECUTE FUNCTION workflow.guard_entity_schema_membership();
 CREATE TRIGGER guard_entity_schema_membership
-BEFORE INSERT OR UPDATE OF model_id, dimensional_entity_schema_name ON workflow.dimensional_entity
+BEFORE INSERT OR UPDATE OF project_id, dimensional_entity_schema_name ON workflow.dimensional_entity
 FOR EACH ROW EXECUTE FUNCTION workflow.guard_entity_schema_membership();
 
-CREATE FUNCTION model.guard_schema_list_references()
+CREATE FUNCTION project.guard_schema_list_references()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SET search_path = pg_catalog
 AS $guard_schema_list_references$
 BEGIN
-    IF NOT model.valid_schema_list(NEW.logical_schemas)
-       OR NOT model.valid_schema_list(NEW.dimensional_schemas) THEN
-        RAISE EXCEPTION 'Model schema lists are invalid';
+    IF NOT project.valid_schema_list(NEW.logical_schemas)
+       OR NOT project.valid_schema_list(NEW.dimensional_schemas) THEN
+        RAISE EXCEPTION 'Project schema lists are invalid';
     END IF;
     IF EXISTS (
         SELECT 1 FROM workflow.logical_entity AS entity
-         WHERE entity.model_id = NEW.model_id
+         WHERE entity.project_id = NEW.project_id
            AND NOT EXISTS (
                SELECT 1 FROM jsonb_array_elements(NEW.logical_schemas) AS configured(value)
                 WHERE lower(btrim(configured.value ->> 'schema_name')) =
@@ -640,26 +640,26 @@ BEGIN
            )
     ) OR EXISTS (
         SELECT 1 FROM workflow.dimensional_entity AS entity
-         WHERE entity.model_id = NEW.model_id
+         WHERE entity.project_id = NEW.project_id
            AND NOT EXISTS (
                SELECT 1 FROM jsonb_array_elements(NEW.dimensional_schemas) AS configured(value)
                 WHERE lower(btrim(configured.value ->> 'schema_name')) =
                       lower(btrim(entity.dimensional_entity_schema_name))
            )
     ) THEN
-        RAISE EXCEPTION 'A referenced Model schema cannot be removed or renamed';
+        RAISE EXCEPTION 'A referenced Project schema cannot be removed or renamed';
     END IF;
     RETURN NEW;
 END;
 $guard_schema_list_references$;
 
 CREATE TRIGGER guard_schema_list_references
-BEFORE UPDATE OF logical_schemas, dimensional_schemas ON model.model
-FOR EACH ROW EXECUTE FUNCTION model.guard_schema_list_references();
+BEFORE UPDATE OF logical_schemas, dimensional_schemas ON project.project
+FOR EACH ROW EXECUTE FUNCTION project.guard_schema_list_references();
 
 -- Read boundary for modeled layers; all writes retain typed table foreign keys.
 CREATE VIEW workflow.modeled_entity AS
-SELECT model_id, 'logical_entity'::VARCHAR(30) AS modeled_entity_type,
+SELECT project_id, 'logical_entity'::VARCHAR(30) AS modeled_entity_type,
        logical_entity_id AS modeled_entity_id,
        logical_entity_schema_name AS modeled_entity_schema_name,
        logical_entity_name AS modeled_entity_name,
@@ -668,7 +668,7 @@ SELECT model_id, 'logical_entity'::VARCHAR(30) AS modeled_entity_type,
        logical_entity_status AS status, logical_entity_is_locked AS is_locked
   FROM workflow.logical_entity
 UNION ALL
-SELECT model_id, 'dimensional_entity'::VARCHAR(30), dimensional_entity_id,
+SELECT project_id, 'dimensional_entity'::VARCHAR(30), dimensional_entity_id,
        dimensional_entity_schema_name, dimensional_entity_name,
        dimensional_entity_definition, dimensional_entity_type::TEXT,
        dimensional_entity_grain_definition, dimensional_entity_dependency_order,
@@ -676,7 +676,7 @@ SELECT model_id, 'dimensional_entity'::VARCHAR(30), dimensional_entity_id,
   FROM workflow.dimensional_entity;
 
 CREATE VIEW workflow.modeled_attribute AS
-SELECT model_id, 'logical_entity'::VARCHAR(30) AS modeled_entity_type,
+SELECT project_id, 'logical_entity'::VARCHAR(30) AS modeled_entity_type,
        logical_entity_id AS modeled_entity_id, logical_attribute_id AS modeled_attribute_id,
        logical_attribute_name AS modeled_attribute_name,
        logical_attribute_name AS attribute_name, logical_attribute_definition AS definition,
@@ -688,7 +688,7 @@ SELECT model_id, 'logical_entity'::VARCHAR(30) AS modeled_entity_type,
        logical_attribute_status AS status, logical_attribute_is_locked AS is_locked
   FROM workflow.logical_attribute
 UNION ALL
-SELECT model_id, 'dimensional_entity'::VARCHAR(30), dimensional_entity_id,
+SELECT project_id, 'dimensional_entity'::VARCHAR(30), dimensional_entity_id,
        dimensional_attribute_id, dimensional_attribute_name, dimensional_attribute_name, dimensional_attribute_definition,
        dimensional_attribute_data_type, dimensional_attribute_is_nullable,
        dimensional_attribute_ordinal_position, dimensional_attribute_key_role = 'business',

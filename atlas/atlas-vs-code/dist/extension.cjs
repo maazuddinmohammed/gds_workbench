@@ -7369,7 +7369,7 @@ var require_core3 = __commonJS({
       function normalize(area, field, value) {
         if (typeof value !== "string") return value;
         const trimmed = value.replace(/^ +| +$/g, "");
-        if (area === "model") {
+        if (area === "project") {
           return unicode2?.casefold ? unicode2.casefold(trimmed) : trimmed.toLowerCase();
         }
         if (/(_code|_name|_schema)$/.test(field)) {
@@ -7388,12 +7388,12 @@ var require_core3 = __commonJS({
           return normalize(area, field, record2[field]);
         });
       }
-      function isEntityOwnedModelCatalog2(catalog) {
+      function isEntityOwnedProjectCatalog2(catalog) {
         if (!Array.isArray(catalog?.sections)) return false;
         for (const section of catalog.sections) {
-          if (section?.name === "model_binding" || !Array.isArray(section?.datasets)) return false;
+          if (section?.name === "project_binding" || !Array.isArray(section?.datasets)) return false;
           for (const dataset of section.datasets) {
-            if (["model_object_binding", "model_attribute_binding", "mapping_dependency"].includes(dataset?.name)) return false;
+            if (["project_object_binding", "project_attribute_binding", "mapping_dependency"].includes(dataset?.name)) return false;
             let required2 = [];
             if (["mapping_object", "mapping_attribute", "generated_code", "generated_code_source_system"].includes(dataset?.name)) required2 = ["modeled_entity_schema_name"];
             for (const layer of ["logical", "dimensional"]) {
@@ -7450,7 +7450,7 @@ var require_core3 = __commonJS({
           };
         });
       }
-      return { active, isEntityOwnedModelCatalog: isEntityOwnedModelCatalog2, key, normalize, overlay, reviewActions, stableStringify: stableStringify2, validateSubagentPolicy };
+      return { active, isEntityOwnedProjectCatalog: isEntityOwnedProjectCatalog2, key, normalize, overlay, reviewActions, stableStringify: stableStringify2, validateSubagentPolicy };
     });
   }
 });
@@ -18817,7 +18817,7 @@ function safeToolErrorCode(content) {
   return "MCP_OPERATION_REJECTED";
 }
 function couldHaveWritten(toolName) {
-  return /^(stage|begin|put|commit)_(metadata|model)_/.test(toolName) || /^(create|validate|apply|archive)_(metadata|model)_change_set$/.test(toolName) || /^(acquire|renew|release|override)_tenant_lock$/.test(toolName);
+  return /^(stage|begin|put|commit)_(metadata|project)_/.test(toolName) || /^(create|validate|apply|archive)_(metadata|project)_change_set$/.test(toolName) || /^(acquire|renew|release|override)_tenant_lock$/.test(toolName);
 }
 var ManagedStageMcpClient = class {
   constructor(profile, tokenSupplier, connector) {
@@ -19089,7 +19089,7 @@ var unicodeLower = unicode.lower;
 // src/stage-contract.ts
 var import_core8 = __toESM(require_core3(), 1);
 var stableStringify = import_core8.default.stableStringify;
-var isEntityOwnedModelCatalog = import_core8.default.isEntityOwnedModelCatalog;
+var isEntityOwnedProjectCatalog = import_core8.default.isEntityOwnedProjectCatalog;
 var SHA256 = /^[0-9a-f]{64}$/;
 var UUID2 = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 var MAX_MANIFEST_BYTES = 128 * 1024;
@@ -19098,10 +19098,10 @@ var DIRECT_STAGE_MAX_BYTES = 64 * 1024;
 var MAX_STAGE_CHUNKS = 64;
 var MAX_STAGE_CHUNK_RECORDS = 5e3;
 var METADATA_STAGE_CHUNK_MAX_BYTES = 450 * 1024;
-var MODEL_STAGE_CHUNK_MAX_BYTES = 1024 * 1024;
+var PROJECT_STAGE_CHUNK_MAX_BYTES = 1024 * 1024;
 var MAX_LOCAL_PAYLOAD_BYTES = {
   metadata: MAX_STAGE_CHUNKS * METADATA_STAGE_CHUNK_MAX_BYTES + 1024,
-  model: MAX_STAGE_CHUNKS * MODEL_STAGE_CHUNK_MAX_BYTES + 1024
+  project: MAX_STAGE_CHUNKS * PROJECT_STAGE_CHUNK_MAX_BYTES + 1024
 };
 var ALLOWED_DATASETS = {
   metadata: /* @__PURE__ */ new Set([
@@ -19122,15 +19122,15 @@ var ALLOWED_DATASETS = {
     "process_group",
     "process"
   ]),
-  model: /* @__PURE__ */ new Set([
-    "model_details",
-    "model_input_scope",
+  project: /* @__PURE__ */ new Set([
+    "project_details",
+    "project_input_scope",
     "profiling_profile",
     "object_enrichment",
     "attribute_enrichment",
     "analysis_result",
-    "modeling_assertion_document",
-    "modeling_assertion_record",
+    "context_group",
+    "context_record",
     "conceptual_object",
     "conceptual_relationship",
     "logical_submodel",
@@ -19173,7 +19173,7 @@ function canonicalRecordsSha256(records) {
 }
 function normalizedKeyValue(area, field, value) {
   if (typeof value !== "string") return value;
-  if (area === "model") return unicodeCasefold(value.replace(/^ +| +$/g, ""));
+  if (area === "project") return unicodeCasefold(value.replace(/^ +| +$/g, ""));
   return /(_code|_name|_schema)$/.test(field) ? unicodeLower(value.replace(/^ +| +$/g, "")) : value;
 }
 function normalizedTenantCode(value) {
@@ -19199,7 +19199,7 @@ var import_node_crypto2 = require("node:crypto");
 var import_node_fs = require("node:fs");
 var import_promises = require("node:fs/promises");
 var import_node_path = require("node:path");
-async function workspaceDigest(directory, maximumPayloadBytes = MAX_LOCAL_PAYLOAD_BYTES.model) {
+async function workspaceDigest(directory, maximumPayloadBytes = MAX_LOCAL_PAYLOAD_BYTES.project) {
   const entries = await (0, import_promises.readdir)(directory, { withFileTypes: true });
   const hash = (0, import_node_crypto2.createHash)("sha256");
   for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
@@ -19280,19 +19280,19 @@ async function readRequest(input, workspaceRoots2, backend) {
     fail2("MANIFEST_INVALID", "Stage request manifest is invalid.");
   }
   const request = parsed;
-  if (request.schema_version !== "1.0" || request.kind !== "atlas-stage-request" || !["metadata", "model"].includes(request.area) || typeof request.task !== "string" || !UUID2.test(request.task) || !SHA256.test(request.accepted_digest) || typeof request.failed_retry !== "boolean" || !isObject4(request.snapshot) || !hasExactKeys(request.snapshot, ["manifest_path", "snapshot_id", "manifest_sha256"]) || typeof request.snapshot.snapshot_id !== "string" || !UUID2.test(request.snapshot.snapshot_id) || typeof request.snapshot.manifest_sha256 !== "string" || !SHA256.test(request.snapshot.manifest_sha256) || !isObject4(request.target) || !hasExactKeys(
+  if (request.schema_version !== "2.0" || request.kind !== "atlas-stage-request" || !["metadata", "project"].includes(request.area) || typeof request.task !== "string" || !UUID2.test(request.task) || !SHA256.test(request.accepted_digest) || typeof request.failed_retry !== "boolean" || !isObject4(request.snapshot) || !hasExactKeys(request.snapshot, ["manifest_path", "snapshot_id", "manifest_sha256"]) || typeof request.snapshot.snapshot_id !== "string" || !UUID2.test(request.snapshot.snapshot_id) || typeof request.snapshot.manifest_sha256 !== "string" || !SHA256.test(request.snapshot.manifest_sha256) || !isObject4(request.target) || !hasExactKeys(
     request.target,
     request.area === "metadata" ? ["tenant_code", "change_set_id", "starting_revision"] : [
-      "model_id",
-      "model_name",
-      "model_revision",
+      "project_id",
+      "project_name",
+      "project_revision",
       "change_set_id",
       "starting_revision"
     ]
   ) || typeof request.target.change_set_id !== "string" || !UUID2.test(request.target.change_set_id) || !Number.isSafeInteger(request.target.starting_revision) || request.target.starting_revision < 1 || !Array.isArray(request.datasets) || request.datasets.length < 1 || request.datasets.length > (request.area === "metadata" ? 16 : 25)) {
     fail2("MANIFEST_INVALID", "Stage request manifest is invalid.");
   }
-  if (request.area === "metadata" && (typeof request.target.tenant_code !== "string" || request.target.tenant_code.trim().length < 1 || request.target.tenant_code.length > 100) || request.area === "model" && (!Number.isSafeInteger(request.target.model_id) || Number(request.target.model_id) < 1 || typeof request.target.model_name !== "string" || request.target.model_name.trim().length < 1 || request.target.model_name.length > 200 || !Number.isSafeInteger(request.target.model_revision) || Number(request.target.model_revision) < 1)) {
+  if (request.area === "metadata" && (typeof request.target.tenant_code !== "string" || request.target.tenant_code.trim().length < 1 || request.target.tenant_code.length > 100) || request.area === "project" && (!Number.isSafeInteger(request.target.project_id) || Number(request.target.project_id) < 1 || typeof request.target.project_name !== "string" || request.target.project_name.trim().length < 1 || request.target.project_name.length > 200 || !Number.isSafeInteger(request.target.project_revision) || Number(request.target.project_revision) < 1)) {
     fail2("MANIFEST_INVALID", "Stage request target is invalid.");
   }
   if (input.expectedDigest !== void 0 && request.accepted_digest !== input.expectedDigest) {
@@ -19318,11 +19318,11 @@ async function readRequest(input, workspaceRoots2, backend) {
     "LOCAL_STATE_MISMATCH",
     "Atlas task is invalid."
   );
-  if (!isObject4(state) || state.schema_version !== "1.0" || !isObject4(state.tenant) || !Number.isSafeInteger(state.tenant.id) || Number(state.tenant.id) < 1 || typeof state.tenant.code !== "string" || !isObject4(task) || task.schema_version !== "1.0" || typeof task.outcome !== "string" || !task.outcome.trim()) {
+  if (!isObject4(state) || state.schema_version !== "2.0" || !isObject4(state.tenant) || !Number.isSafeInteger(state.tenant.id) || Number(state.tenant.id) < 1 || typeof state.tenant.code !== "string" || !isObject4(task) || task.schema_version !== "2.0" || typeof task.outcome !== "string" || !task.outcome.trim()) {
     fail2("LOCAL_STATE_MISMATCH", "Atlas session or task binding is invalid.");
   }
   const ownerRoot = request.owner.id === state.tenant.id ? "." : `metadata-owners/tenant-${request.owner.id}`;
-  if (request.owner.root !== ownerRoot || request.area === "model" && (ownerRoot !== "." || normalizedTenantCode(request.owner.code) !== normalizedTenantCode(state.tenant.code)) || request.area === "metadata" && normalizedTenantCode(request.owner.code) !== normalizedTenantCode(request.target.tenant_code)) {
+  if (request.owner.root !== ownerRoot || request.area === "project" && (ownerRoot !== "." || normalizedTenantCode(request.owner.code) !== normalizedTenantCode(state.tenant.code)) || request.area === "metadata" && normalizedTenantCode(request.owner.code) !== normalizedTenantCode(request.target.tenant_code)) {
     fail2("TARGET_MISMATCH", "The request owner does not match its workspace placement.");
   }
   if (request.area === "metadata") {
@@ -19330,10 +19330,10 @@ async function readRequest(input, workspaceRoots2, backend) {
     if (!isObject4(registered) || registered.id !== request.owner.id || registered.root !== ownerRoot || normalizedTenantCode(registered.code) !== normalizedTenantCode(request.owner.code)) {
       fail2("LOCAL_STATE_MISMATCH", "Metadata owner is not registered in this workspace.");
     }
-  } else if (!isObject4(state.model) || state.model.id !== request.target.model_id || state.model.name !== request.target.model_name) {
-    fail2("LOCAL_STATE_MISMATCH", "The workspace is bound to a different Model.");
+  } else if (!isObject4(state.project) || state.project.id !== request.target.project_id || state.project.name !== request.target.project_name) {
+    fail2("LOCAL_STATE_MISMATCH", "The workspace is bound to a different Project.");
   }
-  const current = isObject4(state.operations) ? request.area === "model" ? state.operations.model : isObject4(state.operations.metadata) ? state.operations.metadata[String(request.owner.id)] : void 0 : void 0;
+  const current = isObject4(state.operations) ? request.area === "project" ? state.operations.project : isObject4(state.operations.metadata) ? state.operations.metadata[String(request.owner.id)] : void 0 : void 0;
   if (current !== operationPath) fail2("LOCAL_STATE_MISMATCH", "The operation is no longer current for this owner.");
   const operationFile = await safePath(session, operationPath, "LOCAL_STATE_MISMATCH");
   const operationBytes = await readBounded(operationFile, "LOCAL_STATE_MISMATCH");
@@ -19343,7 +19343,7 @@ async function readRequest(input, workspaceRoots2, backend) {
   } catch {
     fail2("LOCAL_STATE_MISMATCH", "The operation record is invalid.");
   }
-  if (!isObject4(operation) || operation.schema_version !== "1.0" || operation.id !== request.operation.id || operation.task_id !== request.task || operation.area !== request.area || stableStringify(operation.owner) !== stableStringify(request.owner) || stableStringify(operation.backend) !== stableStringify(request.backend) || operation.local_digest !== request.accepted_digest || !Array.isArray(operation.inputs) || !isObject4(operation.validation) || operation.validation.outcome !== "valid" || !isObject4(operation.acknowledgement) || operation.acknowledgement.source !== "conversation" || typeof operation.acknowledgement.at !== "string" || !Number.isFinite(Date.parse(operation.acknowledgement.at)) || operation.acknowledgement.digest !== request.accepted_digest || operation.acknowledgement.report_sha256 !== operation.validation.report_sha256 || !isObject4(operation.draft) || String(operation.draft.id).toLowerCase() !== request.target.change_set_id.toLowerCase() || operation.draft.revision !== request.target.starting_revision || operation.draft.status !== "active") {
+  if (!isObject4(operation) || operation.schema_version !== "2.0" || operation.id !== request.operation.id || operation.task_id !== request.task || operation.area !== request.area || stableStringify(operation.owner) !== stableStringify(request.owner) || stableStringify(operation.backend) !== stableStringify(request.backend) || operation.local_digest !== request.accepted_digest || !Array.isArray(operation.inputs) || !isObject4(operation.validation) || operation.validation.outcome !== "valid" || !isObject4(operation.acknowledgement) || operation.acknowledgement.source !== "conversation" || typeof operation.acknowledgement.at !== "string" || !Number.isFinite(Date.parse(operation.acknowledgement.at)) || operation.acknowledgement.digest !== request.accepted_digest || operation.acknowledgement.report_sha256 !== operation.validation.report_sha256 || !isObject4(operation.draft) || String(operation.draft.id).toLowerCase() !== request.target.change_set_id.toLowerCase() || operation.draft.revision !== request.target.starting_revision || operation.draft.status !== "active") {
     fail2("LOCAL_STATE_MISMATCH", "Approval, validation or draft binding no longer matches this request.");
   }
   const digestMatches = operation.draft.digest === request.accepted_digest;
@@ -19368,7 +19368,7 @@ async function readRequest(input, workspaceRoots2, backend) {
     "MODELING_EVIDENCE_CHANGED",
     "The reviewed validation report is invalid."
   );
-  if (!isObject4(report) || report.schema_version !== "1.0" || report.valid !== true || report.digest !== request.accepted_digest || report.area !== request.area || report.owner_tenant_id !== request.owner.id || !Array.isArray(report.evidence_files) || stableStringify(report.inputs) !== stableStringify(operation.inputs)) {
+  if (!isObject4(report) || report.schema_version !== "2.0" || report.valid !== true || report.digest !== request.accepted_digest || report.area !== request.area || report.owner_tenant_id !== request.owner.id || !Array.isArray(report.evidence_files) || stableStringify(report.inputs) !== stableStringify(operation.inputs)) {
     fail2("MODELING_EVIDENCE_CHANGED", "Validation does not cover the acknowledged owner, inputs and content.");
   }
   for (const evidence of report.evidence_files) {
@@ -19390,13 +19390,13 @@ async function readRequest(input, workspaceRoots2, backend) {
   if (request.snapshot.manifest_path !== expectedSnapshotPath) fail2("SNAPSHOT_MISMATCH", "Snapshot belongs to a different owner root.");
   let primaryInput = false;
   for (const binding of operation.inputs) {
-    if (!isObject4(binding) || !["metadata", "model"].includes(String(binding.area)) || !Number.isSafeInteger(binding.owner_tenant_id) || Number(binding.owner_tenant_id) < 1 || typeof binding.manifest_path !== "string" || typeof binding.snapshot_id !== "string" || !UUID2.test(binding.snapshot_id) || typeof binding.manifest_sha256 !== "string" || !SHA256.test(binding.manifest_sha256)) {
+    if (!isObject4(binding) || !["metadata", "project"].includes(String(binding.area)) || !Number.isSafeInteger(binding.owner_tenant_id) || Number(binding.owner_tenant_id) < 1 || typeof binding.manifest_path !== "string" || typeof binding.snapshot_id !== "string" || !UUID2.test(binding.snapshot_id) || typeof binding.manifest_sha256 !== "string" || !SHA256.test(binding.manifest_sha256)) {
       fail2("SNAPSHOT_MISMATCH", "An operation Snapshot binding is invalid.");
     }
-    const inputOwner = binding.area === "model" ? state.tenant : isObject4(state.metadata_owners) ? state.metadata_owners[String(binding.owner_tenant_id)] : void 0;
+    const inputOwner = binding.area === "project" ? state.tenant : isObject4(state.metadata_owners) ? state.metadata_owners[String(binding.owner_tenant_id)] : void 0;
     const inputRoot = binding.owner_tenant_id === state.tenant.id ? "." : `metadata-owners/tenant-${binding.owner_tenant_id}`;
     const inputPath = `${inputRoot === "." ? "" : inputRoot + "/"}${binding.area}/${binding.area}-snapshot/manifest.json`;
-    if (!isObject4(inputOwner) || inputOwner.id !== binding.owner_tenant_id || binding.manifest_path !== inputPath || binding.area === "metadata" && inputOwner.root !== inputRoot || binding.area === "model" && (binding.owner_tenant_id !== state.tenant.id || !isObject4(state.model) || !Number.isSafeInteger(binding.model_revision) || Number(binding.model_revision) < 1)) {
+    if (!isObject4(inputOwner) || inputOwner.id !== binding.owner_tenant_id || binding.manifest_path !== inputPath || binding.area === "metadata" && inputOwner.root !== inputRoot || binding.area === "project" && (binding.owner_tenant_id !== state.tenant.id || !isObject4(state.project) || !Number.isSafeInteger(binding.project_revision) || Number(binding.project_revision) < 1)) {
       fail2("SNAPSHOT_MISMATCH", "An input Snapshot owner or path is not registered in this workspace.");
     }
     if (Array.isArray(state.refresh_required) && state.refresh_required.some((item) => isObject4(item) && item.area === binding.area && item.owner_tenant_id === binding.owner_tenant_id)) {
@@ -19409,10 +19409,10 @@ async function readRequest(input, workspaceRoots2, backend) {
     } catch {
       fail2("SNAPSHOT_MISMATCH", "An input Snapshot is invalid.");
     }
-    if (sha256(bytes) !== binding.manifest_sha256 || !isObject4(inputManifest) || inputManifest.snapshot_id !== binding.snapshot_id || inputManifest.snapshot_kind !== binding.area || binding.area === "model" && (inputManifest.schema_version !== "2.0" || inputManifest.model_revision !== binding.model_revision || !isObject4(state.model) || inputManifest.model_id !== state.model.id || inputManifest.model_name !== state.model.name) || binding.area === "metadata" && normalizedTenantCode(inputManifest.tenant_code) !== normalizedTenantCode(inputOwner.code)) {
+    if (sha256(bytes) !== binding.manifest_sha256 || !isObject4(inputManifest) || inputManifest.snapshot_id !== binding.snapshot_id || inputManifest.snapshot_kind !== binding.area || inputManifest.schema_version !== "3.0" || binding.area === "project" && (inputManifest.schema_version !== "3.0" || inputManifest.project_revision !== binding.project_revision || !isObject4(state.project) || inputManifest.project_id !== state.project.id || inputManifest.project_name !== state.project.name) || binding.area === "metadata" && normalizedTenantCode(inputManifest.tenant_code) !== normalizedTenantCode(inputOwner.code)) {
       fail2("SNAPSHOT_MISMATCH", "An input Snapshot changed after acknowledgement.");
     }
-    if (binding.area === request.area && binding.owner_tenant_id === request.owner.id && binding.manifest_path === request.snapshot.manifest_path && binding.snapshot_id === request.snapshot.snapshot_id && binding.manifest_sha256 === request.snapshot.manifest_sha256 && (request.area !== "model" || binding.model_revision === request.target.model_revision)) primaryInput = true;
+    if (binding.area === request.area && binding.owner_tenant_id === request.owner.id && binding.manifest_path === request.snapshot.manifest_path && binding.snapshot_id === request.snapshot.snapshot_id && binding.manifest_sha256 === request.snapshot.manifest_sha256 && (request.area !== "project" || binding.project_revision === request.target.project_revision)) primaryInput = true;
   }
   if (!primaryInput) fail2("SNAPSHOT_MISMATCH", "The operation does not bind the Stage Snapshot.");
   const changeSetDirectory = await safePath(session, `${ownerRoot === "." ? "" : ownerRoot + "/"}${request.area}-change-set`, "LOCAL_CHANGE_SET_INVALID", true);
@@ -19491,7 +19491,7 @@ async function verifySnapshotBinding(request, session) {
   } catch {
     fail2("SNAPSHOT_MISMATCH", "The bound Snapshot manifest is invalid.");
   }
-  if (!isObject4(manifest) || manifest.snapshot_kind !== request.area || request.area === "model" && manifest.schema_version !== "2.0" || manifest.snapshot_id !== request.snapshot.snapshot_id) {
+  if (!isObject4(manifest) || manifest.snapshot_kind !== request.area || manifest.schema_version !== "3.0" || manifest.snapshot_id !== request.snapshot.snapshot_id) {
     fail2("SNAPSHOT_MISMATCH", "The Stage request does not match its bound Snapshot.");
   }
   if (!isObject4(manifest.catalog) || manifest.catalog.path !== "catalog.json" || typeof manifest.catalog.sha256 !== "string" || !SHA256.test(manifest.catalog.sha256) || !Array.isArray(manifest.members)) {
@@ -19511,10 +19511,10 @@ async function verifySnapshotBinding(request, session) {
   } catch {
     fail2("SNAPSHOT_MISMATCH", "The bound Snapshot catalog is invalid.");
   }
-  if (!isObject4(catalog) || catalog.snapshot_kind !== request.area || request.area === "model" && catalog.schema_version !== "2.0" || !Array.isArray(catalog.sections)) {
+  if (!isObject4(catalog) || catalog.snapshot_kind !== request.area || catalog.schema_version !== "3.0" || !Array.isArray(catalog.sections)) {
     fail2("SNAPSHOT_MISMATCH", "The bound Snapshot catalog identity is invalid.");
   }
-  if (request.area === "model" && !isEntityOwnedModelCatalog(catalog)) fail2("SNAPSHOT_MISMATCH", "Legacy Model Snapshot contract; fetch a new Entity-owned Model Snapshot.");
+  if (request.area === "project" && !isEntityOwnedProjectCatalog(catalog)) fail2("SNAPSHOT_MISMATCH", "Legacy Project Snapshot contract; fetch a new Entity-owned Project Snapshot.");
   const catalogDatasets = /* @__PURE__ */ new Map();
   for (const section of catalog.sections) {
     if (!isObject4(section) || !Array.isArray(section.datasets)) {
@@ -19536,8 +19536,8 @@ async function verifySnapshotBinding(request, session) {
     if (typeof request.target.tenant_code !== "string" || normalizedTenantCode(manifest.tenant_code) !== normalizedTenantCode(request.target.tenant_code)) {
       fail2("TARGET_MISMATCH", "Metadata Stage target does not match its Snapshot and session.");
     }
-  } else if (manifest.model_id !== request.target.model_id || manifest.model_name !== request.target.model_name || manifest.model_revision !== request.target.model_revision || !isObject4(catalog.model) || catalog.model.model_id !== request.target.model_id || catalog.model.model_name !== request.target.model_name || catalog.model.model_revision !== request.target.model_revision) {
-    fail2("TARGET_MISMATCH", "Model Stage target does not match its Snapshot.");
+  } else if (manifest.project_id !== request.target.project_id || manifest.project_name !== request.target.project_name || manifest.project_revision !== request.target.project_revision || !isObject4(catalog.project) || catalog.project.project_id !== request.target.project_id || catalog.project.project_name !== request.target.project_name || catalog.project.project_revision !== request.target.project_revision) {
+    fail2("TARGET_MISMATCH", "Project Stage target does not match its Snapshot.");
   }
 }
 async function readLocalDatasets(request, changeSetDirectory, workspace3) {
@@ -19551,7 +19551,7 @@ async function readLocalDatasets(request, changeSetDirectory, workspace3) {
       "record_count",
       "payload_file",
       "sha256"
-    ]) || typeof definition.dataset !== "string" || !/^[a-z][a-z0-9_]{0,99}$/.test(definition.dataset) || !ALLOWED_DATASETS[request.area].has(definition.dataset) || !Array.isArray(definition.canonical_key) || definition.canonical_key.length < 1 && !(request.area === "model" && definition.dataset === "model_details") || definition.canonical_key.length > 16 || definition.canonical_key.some(
+    ]) || typeof definition.dataset !== "string" || !/^[a-z][a-z0-9_]{0,99}$/.test(definition.dataset) || !ALLOWED_DATASETS[request.area].has(definition.dataset) || !Array.isArray(definition.canonical_key) || definition.canonical_key.length < 1 && !(request.area === "project" && definition.dataset === "project_details") || definition.canonical_key.length > 16 || definition.canonical_key.some(
       (field) => typeof field !== "string" || !/^[a-z][a-z0-9_]{0,99}$/.test(field)
     ) || new Set(definition.canonical_key).size !== definition.canonical_key.length || !Number.isSafeInteger(definition.record_count) || definition.record_count < 0 || definition.record_count > maximumRecords || typeof definition.payload_file !== "string" || definition.payload_file.length > MAX_PATH_CHARACTERS || (0, import_node_path.isAbsolute)(definition.payload_file) || typeof definition.sha256 !== "string" || !SHA256.test(definition.sha256) || result2.has(definition.dataset) || definition.dataset.localeCompare(previousDataset) <= 0) {
       fail2("MANIFEST_INVALID", "Stage request contains an invalid dataset descriptor.");
@@ -19640,17 +19640,17 @@ function stageTarget(request, scopeId) {
     tenant_id: scopeId,
     metadata_change_set_id: request.target.change_set_id
   } : {
-    model_id: scopeId,
-    model_change_set_id: request.target.change_set_id
+    project_id: scopeId,
+    project_change_set_id: request.target.change_set_id
   };
 }
 function responseMatchesTarget(request, target, response) {
-  const scopeKey = request.area === "metadata" ? "tenant_id" : "model_id";
-  const changeSetKey = request.area === "metadata" ? "metadata_change_set_id" : "model_change_set_id";
+  const scopeKey = request.area === "metadata" ? "tenant_id" : "project_id";
+  const changeSetKey = request.area === "metadata" ? "metadata_change_set_id" : "project_change_set_id";
   return response[scopeKey] === target[scopeKey] && typeof response[changeSetKey] === "string" && typeof target[changeSetKey] === "string" && response[changeSetKey].toLowerCase() === target[changeSetKey].toLowerCase();
 }
 function verifyDirectStageResponse(request, target, expectedRevision, changes, response) {
-  if (response.schema_version !== "1.0" || !responseMatchesTarget(request, target, response) || response.staged !== true || response.status !== "active" || response.draft_revision !== expectedRevision + 1 || !Array.isArray(response.datasets) || response.datasets.length !== changes.length) {
+  if (response.schema_version !== (request.area === "project" ? "2.0" : "1.0") || !responseMatchesTarget(request, target, response) || response.staged !== true || response.status !== "active" || response.draft_revision !== expectedRevision + 1 || !Array.isArray(response.datasets) || response.datasets.length !== changes.length) {
     fail2("MCP_RESPONSE_INVALID", "Direct Stage response does not match its request.");
   }
   const expected = new Map(changes.map((change) => [change.dataset, change.records.length]));
@@ -19666,7 +19666,7 @@ function sameUuid(value, expected) {
   return typeof value === "string" && value.toLowerCase() === expected.toLowerCase();
 }
 function verifyBeginStageResponse(request, target, revision, change, chunkCount, fragmentMode, payloadBytes, response) {
-  if (response.schema_version !== "1.0" || !responseMatchesTarget(request, target, response) || typeof response.stage_batch_id !== "string" || !UUID2.test(response.stage_batch_id) || response.dataset !== change.dataset || typeof response.created !== "boolean" || response.total_record_count !== change.records.length || response.total_chunk_count !== chunkCount || !Number.isSafeInteger(response.received_chunk_count) || Number(response.received_chunk_count) < 0 || Number(response.received_chunk_count) > chunkCount || response.created === true && response.received_chunk_count !== 0 || response.expected_draft_revision !== revision || request.area === "model" && (response.payload_mode !== (fragmentMode ? "json_fragments" : "records") || response.total_payload_bytes !== (fragmentMode ? payloadBytes : null))) {
+  if (response.schema_version !== (request.area === "project" ? "2.0" : "1.0") || !responseMatchesTarget(request, target, response) || typeof response.stage_batch_id !== "string" || !UUID2.test(response.stage_batch_id) || response.dataset !== change.dataset || typeof response.created !== "boolean" || response.total_record_count !== change.records.length || response.total_chunk_count !== chunkCount || !Number.isSafeInteger(response.received_chunk_count) || Number(response.received_chunk_count) < 0 || Number(response.received_chunk_count) > chunkCount || response.created === true && response.received_chunk_count !== 0 || response.expected_draft_revision !== revision || request.area === "project" && (response.payload_mode !== (fragmentMode ? "json_fragments" : "records") || response.total_payload_bytes !== (fragmentMode ? payloadBytes : null))) {
     fail2("MCP_RESPONSE_INVALID", "Begin Stage response does not match its request.");
   }
   return {
@@ -19676,17 +19676,17 @@ function verifyBeginStageResponse(request, target, revision, change, chunkCount,
 }
 function verifyPutStageResponse(request, target, stageBatchId, change, chunkIndex, chunkCount, recordCount, fragmentByteCount, response) {
   const fragmentMode = fragmentByteCount !== null;
-  if (response.schema_version !== "1.0" || !responseMatchesTarget(request, target, response) || !sameUuid(response.stage_batch_id, stageBatchId) || response.dataset !== change.dataset || response.accepted !== true || typeof response.duplicate !== "boolean" || response.chunk_index !== chunkIndex || response.record_count !== recordCount || response.received_chunk_count !== chunkIndex || response.total_chunk_count !== chunkCount || request.area === "model" && (response.payload_mode !== (fragmentMode ? "json_fragments" : "records") || response.payload_byte_count !== fragmentByteCount)) {
+  if (response.schema_version !== (request.area === "project" ? "2.0" : "1.0") || !responseMatchesTarget(request, target, response) || !sameUuid(response.stage_batch_id, stageBatchId) || response.dataset !== change.dataset || response.accepted !== true || typeof response.duplicate !== "boolean" || response.chunk_index !== chunkIndex || response.record_count !== recordCount || response.received_chunk_count !== chunkIndex || response.total_chunk_count !== chunkCount || request.area === "project" && (response.payload_mode !== (fragmentMode ? "json_fragments" : "records") || response.payload_byte_count !== fragmentByteCount)) {
     fail2("MCP_RESPONSE_INVALID", "Put Stage response does not match its request.");
   }
 }
 function verifyCommitStageResponse(request, target, stageBatchId, change, revision, response) {
-  if (response.schema_version !== "1.0" || !responseMatchesTarget(request, target, response) || !sameUuid(response.stage_batch_id, stageBatchId) || response.dataset !== change.dataset || response.committed !== true || typeof response.replayed !== "boolean" || response.record_count !== change.records.length || response.draft_revision !== revision + 1 || response.status !== "active") {
+  if (response.schema_version !== (request.area === "project" ? "2.0" : "1.0") || !responseMatchesTarget(request, target, response) || !sameUuid(response.stage_batch_id, stageBatchId) || response.dataset !== change.dataset || response.committed !== true || typeof response.replayed !== "boolean" || response.record_count !== change.records.length || response.draft_revision !== revision + 1 || response.status !== "active") {
     fail2("MCP_RESPONSE_INVALID", "Commit Stage response does not match its request.");
   }
 }
 function verifyChangeSetReadResponse(request, target, expectedRevision, dataset, response) {
-  if (response.schema_version !== "1.0" || !responseMatchesTarget(request, target, response) || !Array.isArray(response.dataset_counts) || response.dataset !== dataset || (dataset === null ? response.records !== null : !Array.isArray(response.records) || response.records.some((record2) => !isObject4(record2)))) {
+  if (response.schema_version !== (request.area === "project" ? "2.0" : "1.0") || !responseMatchesTarget(request, target, response) || !Array.isArray(response.dataset_counts) || response.dataset !== dataset || (dataset === null ? response.records !== null : !Array.isArray(response.records) || response.records.some((record2) => !isObject4(record2)))) {
     fail2("MCP_RESPONSE_INVALID", "Change Set read response does not match its request.");
   }
   if (response.status !== "active" || response.draft_revision !== expectedRevision) {
@@ -19696,13 +19696,13 @@ function verifyChangeSetReadResponse(request, target, expectedRevision, dataset,
 }
 function verifyStageFingerprint(request, scopeId, resultingRevision, changes, value) {
   const fingerprint = requireObject(value, "MCP_RESPONSE_INVALID");
-  if (fingerprint.schema_version !== "1.0" || fingerprint.fingerprint_version !== "1.0" || fingerprint.area !== request.area || fingerprint.status !== "active" || fingerprint.draft_revision !== resultingRevision || typeof fingerprint.fingerprint !== "string" || !SHA256.test(fingerprint.fingerprint) || fingerprint.dataset_count !== ALLOWED_DATASETS[request.area].size || !Number.isSafeInteger(fingerprint.record_count) || Number(fingerprint.record_count) < 0 || !Array.isArray(fingerprint.datasets) || fingerprint.datasets.length !== ALLOWED_DATASETS[request.area].size || request.area === "metadata" && (fingerprint.tenant_id !== scopeId || String(fingerprint.metadata_change_set_id).toLowerCase() !== request.target.change_set_id.toLowerCase()) || request.area === "model" && (fingerprint.model_id !== scopeId || String(fingerprint.model_change_set_id).toLowerCase() !== request.target.change_set_id.toLowerCase())) {
+  if (fingerprint.schema_version !== (request.area === "project" ? "2.0" : "1.0") || fingerprint.fingerprint_version !== "1.0" || fingerprint.area !== request.area || fingerprint.status !== "active" || fingerprint.draft_revision !== resultingRevision || typeof fingerprint.fingerprint !== "string" || !SHA256.test(fingerprint.fingerprint) || fingerprint.dataset_count !== ALLOWED_DATASETS[request.area].size || !Number.isSafeInteger(fingerprint.record_count) || Number(fingerprint.record_count) < 0 || !Array.isArray(fingerprint.datasets) || fingerprint.datasets.length !== ALLOWED_DATASETS[request.area].size || request.area === "metadata" && (fingerprint.tenant_id !== scopeId || String(fingerprint.metadata_change_set_id).toLowerCase() !== request.target.change_set_id.toLowerCase()) || request.area === "project" && (fingerprint.project_id !== scopeId || String(fingerprint.project_change_set_id).toLowerCase() !== request.target.change_set_id.toLowerCase())) {
     fail2("FINGERPRINT_MISMATCH", "Server Stage fingerprint response is invalid.");
   }
   const datasets = [];
   const names = /* @__PURE__ */ new Set();
   const expectedOrder = [...ALLOWED_DATASETS[request.area]];
-  if (request.area === "model") expectedOrder.sort();
+  if (request.area === "project") expectedOrder.sort();
   let recordCount = 0;
   for (const [index, item] of fingerprint.datasets.entries()) {
     if (!isObject4(item) || !hasExactKeys(item, ["dataset", "record_count", "sha256"]) || typeof item.dataset !== "string" || !ALLOWED_DATASETS[request.area].has(item.dataset) || item.dataset !== expectedOrder[index] || names.has(item.dataset) || !Number.isSafeInteger(item.record_count) || Number(item.record_count) < 0 || typeof item.sha256 !== "string" || !SHA256.test(item.sha256)) {
@@ -19767,15 +19767,15 @@ async function executeStage(request, mcp, target, changes, isCancellationRequest
     }
     const recordChunkSet = transportSafeRecordChunks(
       change.records,
-      request.area === "metadata" ? METADATA_STAGE_CHUNK_MAX_BYTES : MODEL_STAGE_CHUNK_MAX_BYTES
+      request.area === "metadata" ? METADATA_STAGE_CHUNK_MAX_BYTES : PROJECT_STAGE_CHUNK_MAX_BYTES
     );
-    const fragmentMode = recordChunkSet === null && request.area === "model" && change.dataset === "generated_code";
+    const fragmentMode = recordChunkSet === null && request.area === "project" && change.dataset === "generated_code";
     if (recordChunkSet === null && !fragmentMode) {
       fail2("PAYLOAD_LIMIT", `${change.dataset} cannot fit the Stage chunk limits.`);
     }
     const canonicalPayload = fragmentMode ? Buffer.from(stableStringify(change.records), "utf8") : Buffer.alloc(0);
     const fragmentBytes = fragmentMode ? Math.max(DIRECT_STAGE_MAX_BYTES, Math.ceil(canonicalPayload.length / MAX_STAGE_CHUNKS)) : 0;
-    if (fragmentBytes > MODEL_STAGE_CHUNK_MAX_BYTES) {
+    if (fragmentBytes > PROJECT_STAGE_CHUNK_MAX_BYTES) {
       fail2("PAYLOAD_LIMIT", "generated_code exceeds the bounded fragment limit.");
     }
     const fragments = [];
@@ -19814,7 +19814,7 @@ async function executeStage(request, mcp, target, changes, isCancellationRequest
         total_record_count: change.records.length,
         total_chunk_count: chunks.length,
         batch_sha256: batchSha256,
-        ...request.area === "model" ? {
+        ...request.area === "project" ? {
           payload_mode: fragmentMode ? "json_fragments" : "records",
           ...fragmentMode ? { total_payload_bytes: payloadBytes } : {}
         } : {}
@@ -19845,7 +19845,7 @@ async function executeStage(request, mcp, target, changes, isCancellationRequest
             payload_fragment_base64: chunk.toString("base64")
           } : {
             records: chunk,
-            ...request.area === "model" ? { payload_mode: "records" } : {}
+            ...request.area === "project" ? { payload_mode: "records" } : {}
           }
         }),
         "MCP_RESPONSE_INVALID"
@@ -19962,10 +19962,10 @@ async function stageApprovedManifest(input, dependencies) {
     scopeId = await resolveMetadataTenant(dependencies.mcp, request.target.tenant_code);
     if (scopeId !== request.owner.id) fail2("TARGET_MISMATCH", "Resolved Tenant differs from the approved owner.");
   } else {
-    if (typeof request.target.model_id !== "number" || !Number.isSafeInteger(request.target.model_id) || request.target.model_id < 1) {
-      fail2("MANIFEST_INVALID", "Model Stage request has no valid Model ID.");
+    if (typeof request.target.project_id !== "number" || !Number.isSafeInteger(request.target.project_id) || request.target.project_id < 1) {
+      fail2("MANIFEST_INVALID", "Project Stage request has no valid Project ID.");
     }
-    scopeId = request.target.model_id;
+    scopeId = request.target.project_id;
   }
   const target = stageTarget(request, scopeId);
   const summary = requireObject(
@@ -20005,7 +20005,7 @@ async function stageApprovedManifest(input, dependencies) {
     const refreshed2 = await readRequest(input, dependencies.workspaceRoots, dependencies.backend);
     if (refreshed2.operationSha256 !== approved.operationSha256 || stableStringify(refreshed2.request) !== stableStringify(request)) fail2("MANIFEST_CHANGED", "Approval changed during recovery.");
     const receipt2 = {
-      schema_version: "1.0",
+      schema_version: "2.0",
       status: "staged",
       task_id: request.task,
       operation_id: request.operation.id,
@@ -20097,7 +20097,7 @@ async function stageApprovedManifest(input, dependencies) {
     await dependencies.mcp.callTool(`get_${request.area}_change_set_fingerprint`, target)
   );
   const receipt = {
-    schema_version: "1.0",
+    schema_version: "2.0",
     status: "staged",
     task_id: request.task,
     operation_id: request.operation.id,
@@ -20980,8 +20980,8 @@ var Server = class extends Protocol {
 var REMOTE_TOOLS = /* @__PURE__ */ new Set([
   "list_tenants",
   "get_tenant_details",
-  "list_models",
-  "get_model_input_scope",
+  "list_projects",
+  "get_project_input_scope",
   "check_tenant_lock",
   "acquire_tenant_lock",
   "renew_tenant_lock",
@@ -20993,21 +20993,21 @@ var REMOTE_TOOLS = /* @__PURE__ */ new Set([
   "validate_metadata_change_set",
   "apply_metadata_change_set",
   "archive_metadata_change_set",
-  "create_model_change_set",
-  "get_model_change_set",
-  "get_model_change_set_fingerprint",
-  "validate_model_change_set",
-  "apply_model_change_set",
-  "archive_model_change_set",
+  "create_project_change_set",
+  "get_project_change_set",
+  "get_project_change_set_fingerprint",
+  "validate_project_change_set",
+  "apply_project_change_set",
+  "archive_project_change_set",
   "start_profiling_run",
   "get_profiling_run_status",
   "cancel_profiling_run",
   "inspect_metadata",
-  "read_model_section",
+  "read_project_section",
   "read_mapping_context",
   "execute_databricks_sql",
-  "describe_model_dataset",
-  "create_model_snapshot",
+  "describe_project_dataset",
+  "create_project_snapshot",
   "describe_metadata_dataset",
   "create_metadata_snapshot"
 ]);

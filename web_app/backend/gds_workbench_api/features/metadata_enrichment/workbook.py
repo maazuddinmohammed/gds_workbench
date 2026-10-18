@@ -1,4 +1,4 @@
-"""Two-sheet Model enrichment dictionary, with explicit export column mappings."""
+"""Two-sheet Project enrichment dictionary, with explicit export column mappings."""
 
 import re
 from collections.abc import Sequence
@@ -12,9 +12,9 @@ from openpyxl.cell.cell import Cell
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from gds_workbench_api.features.model_input_scope.contracts import (
-    ModelInputScopeAttribute,
-    ModelInputScopeObject,
+from gds_workbench_api.features.project_input_scope.contracts import (
+    ProjectInputScopeAttribute,
+    ProjectInputScopeObject,
 )
 
 DATA_DICTIONARY_COLUMNS = (
@@ -76,7 +76,7 @@ MAX_DICTIONARY_ROWS = 50_000
 
 
 def build_enrichment_workbook(
-    rows: Sequence[tuple[ModelInputScopeObject, ModelInputScopeAttribute | None]],
+    rows: Sequence[tuple[ProjectInputScopeObject, ProjectInputScopeAttribute | None]],
 ) -> bytes:
     if len(rows) > MAX_DICTIONARY_ROWS:
         raise ValueError("Enrichment export exceeds its row limit.")

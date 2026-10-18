@@ -58,22 +58,22 @@ class TenantLockedError(WorkbenchError):
         )
 
 
-class ModelLockedError(WorkbenchError):
+class ProjectLockedError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(
-            code="model_locked",
+            code="project_locked",
             message=(
-                "This Model is locked. A human must unlock it in the web application "
+                "This Project is locked. A human must unlock it in the web application "
                 "before changes."
             ),
         )
 
 
-class ModelWorkflowConflictError(WorkbenchError):
+class ProjectWorkflowConflictError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(
-            code="model_workflow_conflict",
-            message="Cancel or finish queued and running workflows before locking this Model.",
+            code="project_workflow_conflict",
+            message="Cancel or finish queued and running workflows before locking this Project.",
         )
 
 
@@ -133,27 +133,27 @@ class CandidateDigestConflictError(WorkbenchError):
         )
 
 
-class ModelChangeSetNotFoundError(WorkbenchError):
+class ProjectChangeSetNotFoundError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(
-            code="model_change_set_not_found",
-            message="Model Change Set was not found for the current Principal and Model.",
+            code="project_change_set_not_found",
+            message="Project Change Set was not found for the current Principal and Project.",
         )
 
 
-class ModelChangeSetNotActiveError(WorkbenchError):
+class ProjectChangeSetNotActiveError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(
-            code="model_change_set_not_active",
-            message="Model Change Set is no longer active.",
+            code="project_change_set_not_active",
+            message="Project Change Set is no longer active.",
         )
 
 
-class ModelChangeSetNotValidatedError(WorkbenchError):
+class ProjectChangeSetNotValidatedError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(
-            code="model_change_set_not_validated",
-            message="Model Change Set must pass validation before it can be applied.",
+            code="project_change_set_not_validated",
+            message="Project Change Set must pass validation before it can be applied.",
         )
 
 

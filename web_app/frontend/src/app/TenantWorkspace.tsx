@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 
-import type { ModelDetail } from "../features/models/api";
+import type { ProjectDetail } from "../features/projects/api";
 import type { TenantHomeRecord } from "../features/tenants/api";
 import { roleLabel } from "../features/tenants/presentation";
 import {
@@ -9,7 +9,7 @@ import {
   Brand,
   DatabaseIcon,
   HomeIcon,
-  ModelIcon,
+  ProjectIcon,
   PanelToggleIcon,
   PromptsIcon,
 } from "../shared/ui";
@@ -18,7 +18,7 @@ import { useStoredBoolean } from "../shared/useStoredBoolean";
 export type WorkspaceNavigation =
   | "home"
   | "metadata"
-  | "models"
+  | "projects"
   | "mapping"
   | "code-generation"
   | "validation"
@@ -27,12 +27,12 @@ export type WorkspaceNavigation =
 export function TenantWorkspace({
   home,
   activeNav,
-  model,
+  project,
   children,
 }: {
   home: TenantHomeRecord;
   activeNav: WorkspaceNavigation;
-  model?: ModelDetail;
+  project?: ProjectDetail;
   children: ReactNode;
 }) {
   const tenantId = String(home.tenant.tenant_id);
@@ -52,12 +52,12 @@ export function TenantWorkspace({
             <dt>Tenant</dt>
             <dd><strong className="tenant-context-name" title={home.tenant.tenant_name}>{home.tenant.tenant_name}</strong></dd>
           </div>
-          {model ? (
-            <div className="tenant-context-item model-context">
-              <dt>Model</dt>
+          {project ? (
+            <div className="tenant-context-item project-context">
+              <dt>Project</dt>
               <dd>
-                <strong className="model-context-name" title={model.model_name}>{model.model_name}</strong>
-                <span className="tenant-code-badge" aria-label={`Revision ${model.model_revision}`}>r{model.model_revision}</span>
+                <strong className="project-context-name" title={project.project_name}>{project.project_name}</strong>
+                <span className="tenant-code-badge" aria-label={`Revision ${project.project_revision}`}>r{project.project_revision}</span>
               </dd>
             </div>
           ) : null}
@@ -124,14 +124,14 @@ export function TenantWorkspace({
             <DatabaseIcon /><span className="nav-item-label">Metadata</span>
           </Link>
           <Link
-            aria-label="Models"
-            className={`nav-item${["models", "mapping", "code-generation", "validation"].includes(activeNav) ? " is-active" : ""}`}
-            data-short-label="Models"
-            to="/tenants/$tenantId/models"
+            aria-label="Projects"
+            className={`nav-item${["projects", "mapping", "code-generation", "validation"].includes(activeNav) ? " is-active" : ""}`}
+            data-short-label="Projects"
+            to="/tenants/$tenantId/projects"
             params={{ tenantId }}
-            title="Models"
+            title="Projects"
           >
-            <ModelIcon /><span className="nav-item-label">Models</span>
+            <ProjectIcon /><span className="nav-item-label">Projects</span>
           </Link>
           <Link
             aria-label="Prompts"
@@ -144,16 +144,16 @@ export function TenantWorkspace({
             <PromptsIcon /><span className="nav-item-label">Prompts</span>
           </Link>
         </nav>
-        {model ? (
-          <div className="open-model">
-            <small>Open Model</small>
-            <strong>{model.model_name}</strong>
+        {project ? (
+          <div className="open-project">
+            <small>Open Project</small>
+            <strong>{project.project_name}</strong>
             <Link
-              to="/tenants/$tenantId/models/$modelId"
-              params={{ tenantId, modelId: String(model.model_id) }}
+              to="/tenants/$tenantId/projects/$projectId"
+              params={{ tenantId, projectId: String(project.project_id) }}
               activeOptions={{ exact: true }}
             >
-              Model overview →
+              Project overview →
             </Link>
           </div>
         ) : null}

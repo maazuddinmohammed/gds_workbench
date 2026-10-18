@@ -87,11 +87,11 @@ function Assert-SubagentPolicy($Value) {
 function Read-SessionDocument([string]$Root) {
     $document = Read-WorkspaceJson $Root '.atlas/session.json'
     $state = $document.value
-    if (-not (Test-AtlasObject $state) -or (Get-Property $state 'schema_version') -cne '1.0') { Fail 'Invalid Atlas session version.' }
+    if (-not (Test-AtlasObject $state) -or (Get-Property $state 'schema_version') -cne '2.0') { Fail 'Invalid Atlas session version.' }
     Assert-AtlasIdentity (Get-Property $state 'tenant') 'Tenant'
-    $model = Get-Property $state 'model'
-    if ($null -ne $model -and (-not (Test-AtlasObject $model) -or -not (Test-SafeJsonInteger (Get-Property $model 'id') $false) -or
-        (Get-Property $model 'name') -isnot [string] -or [string]::IsNullOrWhiteSpace($model.name))) { Fail 'Invalid active Model identity.' }
+    $project = Get-Property $state 'project'
+    if ($null -ne $project -and (-not (Test-AtlasObject $project) -or -not (Test-SafeJsonInteger (Get-Property $project 'id') $false) -or
+        (Get-Property $project 'name') -isnot [string] -or [string]::IsNullOrWhiteSpace($project.name))) { Fail 'Invalid active Project identity.' }
     $active = Get-Property $state 'active_task'
     if ($null -ne $active -and [string]$active -cnotmatch $script:AtlasUuid) { Fail 'Invalid active task ID.' }
     if (Test-Property $state 'sql') {
@@ -112,7 +112,7 @@ function Read-SessionDocument([string]$Root) {
     if (Test-Property $state 'refresh_required') {
         if ($state.refresh_required -isnot [Array]) { Fail 'Invalid Snapshot refresh markers.' }
         foreach ($entry in $state.refresh_required) {
-            if (-not (Test-AtlasObject $entry) -or @('metadata', 'model') -cnotcontains (Get-Property $entry 'area') -or
+            if (-not (Test-AtlasObject $entry) -or @('metadata', 'project') -cnotcontains (Get-Property $entry 'area') -or
                 -not (Test-SafeJsonInteger (Get-Property $entry 'owner_tenant_id') $false)) { Fail 'Invalid Snapshot refresh markers.' }
         }
     }
@@ -127,20 +127,20 @@ function Resolve-Session([hashtable]$Options) {
 }
 
 function Get-AtlasOwner($State, [string]$Area, $Selected = $null) {
-    if (@('metadata', 'model') -cnotcontains $Area) { Fail '--area must be metadata or model.' }
+    if (@('metadata', 'project') -cnotcontains $Area) { Fail '--area must be metadata or project.' }
     $id = $State.tenant.id
     if ($null -ne $Selected) { [double]$id = 0; if (-not [double]::TryParse([string]$Selected, [ref]$id)) { Fail '--owner must be a positive Tenant ID.' } }
     if (-not (Test-SafeJsonInteger $id $false)) { Fail '--owner must be a positive Tenant ID.' }
-    if ($Area -ceq 'model' -and $id -ne $State.tenant.id) { Fail 'Model ownership must match the primary Tenant.' }
+    if ($Area -ceq 'project' -and $id -ne $State.tenant.id) { Fail 'Project ownership must match the primary Tenant.' }
     if ($id -eq $State.tenant.id) { return [ordered]@{ id = $State.tenant.id; code = $State.tenant.code; root = '.' } }
     $owner = Get-Property (Get-Property $State 'metadata_owners') ([string]$id)
-    if ($null -eq $owner -or $null -eq (Get-Property $State 'model')) { Fail 'Additional Metadata owner requires a selected Model and registered owner.' }
+    if ($null -eq $owner -or $null -eq (Get-Property $State 'project')) { Fail 'Additional Metadata owner requires a selected Project and registered owner.' }
     return [ordered]@{ id = $owner.id; code = $owner.code; root = $owner.root }
 }
 function Get-OwnerPrefix($Owner) { if ($Owner.root -ceq '.') { return '' }; return [string]$Owner.root + '/' }
 
 function Assert-AtlasTask($Value) {
-    if (-not (Test-AtlasObject $Value) -or (Get-Property $Value 'schema_version') -cne '1.0' -or
+    if (-not (Test-AtlasObject $Value) -or (Get-Property $Value 'schema_version') -cne '2.0' -or
         (Get-Property $Value 'outcome') -isnot [string] -or [string]::IsNullOrWhiteSpace($Value.outcome) -or
         ((Test-Property $Value 'progress') -and $Value.progress -isnot [string]) -or
         ((Test-Property $Value 'inputs') -and -not (Test-AtlasObject $Value.inputs))) { Fail 'Invalid Atlas task; outcome is required and progress stays free-form.' }
@@ -161,12 +161,12 @@ function Read-AtlasTask([string]$Root, [string]$Id) {
 }
 function Read-AtlasOperation([string]$Root, $State, [string]$Area, $Owner) {
     $operations = Get-Property $State 'operations'
-    $relative = if ($Area -ceq 'model') { Get-Property $operations 'model' } else { Get-Property (Get-Property $operations 'metadata') ([string]$Owner.id) }
+    $relative = if ($Area -ceq 'project') { Get-Property $operations 'project' } else { Get-Property (Get-Property $operations 'metadata') ([string]$Owner.id) }
     if (-not $relative) { Fail 'A digest-bound acknowledgement is required first.' }
     $document = Read-WorkspaceJson $Root $relative
     $value = $document.value
     $identity = Get-Property $value 'owner'
-    if (-not (Test-AtlasObject $value) -or (Get-Property $value 'schema_version') -cne '1.0' -or
+    if (-not (Test-AtlasObject $value) -or (Get-Property $value 'schema_version') -cne '2.0' -or
         [string](Get-Property $value 'id') -cnotmatch $script:AtlasUuid -or [string](Get-Property $value 'task_id') -cnotmatch $script:AtlasUuid -or
         $relative -cne ('.atlas/tasks/' + $value.task_id + '.evidence/' + $value.id + '.json') -or $value.area -cne $Area -or
         (Get-Property $identity 'id') -ne $Owner.id -or (Get-Property $identity 'code') -cne $Owner.code -or
@@ -182,21 +182,21 @@ function Initialize-Session([hashtable]$Options) {
     $root = [IO.Path]::GetFullPath($root)
     $tenant = [ordered]@{ id = [double](Require-Option $Options 'tenant-id'); code = Require-Option $Options 'tenant' }
     Assert-AtlasIdentity $tenant 'Tenant'
-    $model = $null
-    if ($Options.ContainsKey('model-id')) {
-        $model = [ordered]@{ id = [double]$Options['model-id']; name = Require-Option $Options 'model-name' }
-        if (-not (Test-SafeJsonInteger $model.id $false)) { Fail 'Model requires verified --model-id and --model-name.' }
+    $project = $null
+    if ($Options.ContainsKey('project-id')) {
+        $project = [ordered]@{ id = [double]$Options['project-id']; name = Require-Option $Options 'project-name' }
+        if (-not (Test-SafeJsonInteger $project.id $false)) { Fail 'Project requires verified --project-id and --project-name.' }
     }
     [void][IO.Directory]::CreateDirectory($root)
     $file = Resolve-WorkspacePath $root '.atlas/session.json' $true
     if (Test-Path -LiteralPath $file) {
         $existing = Read-SessionState $root
         if ($existing.tenant.id -ne $tenant.id -or $existing.tenant.code -cne $tenant.code -or
-            ($null -ne $model -and (Get-Property (Get-Property $existing 'model') 'id') -ne $model.id)) { Fail 'Existing workspace identity differs; use another directory.' }
+            ($null -ne $project -and (Get-Property (Get-Property $existing 'project') 'id') -ne $project.id)) { Fail 'Existing workspace identity differs; use another directory.' }
         return [ordered]@{ workspace = $root; reused = $true; session = $existing }
     }
     $owners = @{}; $owners[[string]$tenant.id] = [ordered]@{ id = $tenant.id; code = $tenant.code; root = '.' }
-    $value = [ordered]@{ schema_version = '1.0'; tenant = $tenant; model = $model; active_task = $null; metadata_owners = $owners }
+    $value = [ordered]@{ schema_version = '2.0'; tenant = $tenant; project = $project; active_task = $null; metadata_owners = $owners }
     if ($Options.ContainsKey('policy')) {
         if (@('never', 'essential', 'proactive') -cnotcontains $Options.policy) { Fail 'Invalid SQL choices.' }
         $value.sql = [ordered]@{ policy = $Options.policy }
@@ -214,7 +214,7 @@ function Register-Owner([hashtable]$Options) {
     $root = Resolve-Session $Options; $document = Read-SessionDocument $root; $state = $document.value
     $owner = [ordered]@{ id = [double](Require-Option $Options 'tenant-id'); code = Require-Option $Options 'tenant' }
     Assert-AtlasIdentity $owner 'Metadata owner'
-    if ($owner.id -ne $state.tenant.id -and $null -eq $state.model) { Fail 'Additional owners require Model-derived work.' }
+    if ($owner.id -ne $state.tenant.id -and $null -eq $state.project) { Fail 'Additional owners require Project-derived work.' }
     $owner.root = if ($owner.id -eq $state.tenant.id) { '.' } else { 'metadata-owners/tenant-' + $owner.id }
     $owners = Get-Property $state 'metadata_owners'
     if ($null -eq $owners) { $owners = @{}; Set-Property $state 'metadata_owners' $owners }
@@ -227,7 +227,7 @@ function Register-Owner([hashtable]$Options) {
 function Add-Task([hashtable]$Options) {
     $root = Resolve-Session $Options; $document = Read-SessionDocument $root
     $id = [Guid]::NewGuid().ToString()
-    $value = [ordered]@{ schema_version = '1.0'; outcome = Require-Option $Options 'outcome' }
+    $value = [ordered]@{ schema_version = '2.0'; outcome = Require-Option $Options 'outcome' }
     if ($Options.ContainsKey('workflow')) { $value.inputs = [ordered]@{ workflow = $Options.workflow } }
     $relative = '.atlas/tasks/' + $id + '.json'
     [void](Write-WorkspaceJson $root $relative $value)
@@ -379,21 +379,21 @@ function Read-SnapshotRoot([string]$SnapshotRoot, [string]$Session, $State, $Own
     if ($manifest.snapshot_kind -ne $area -or $catalog.snapshot_kind -ne $area) {
         Fail "Snapshot kind must match $area."
     }
-    if ($area -ceq 'model' -and ((Get-Property $manifest 'schema_version') -cne '2.0' -or (Get-Property $catalog 'schema_version') -cne '2.0')) { Fail 'Model Snapshot schema version 2.0 is required.' }
+    if ((Get-Property $manifest 'schema_version') -cne '3.0' -or (Get-Property $catalog 'schema_version') -cne '3.0') { Fail 'Snapshot schema version 3.0 is required; download a fresh Snapshot.' }
     $datasets = New-Object System.Collections.ArrayList
     $names = @{}
     foreach ($section in @($catalog.sections)) {
-        if ($area -ceq 'model' -and (Get-Property $section 'name') -ceq 'model_binding') { Fail 'Legacy Model Snapshot contract; fetch a new Entity-owned Model Snapshot.' }
+        if ($area -ceq 'project' -and (Get-Property $section 'name') -ceq 'project_binding') { Fail 'Legacy Project Snapshot contract; fetch a new Entity-owned Project Snapshot.' }
         foreach ($dataset in @($section.datasets)) {
-            if ($area -ceq 'model') {
-                if (@('model_object_binding', 'model_attribute_binding', 'mapping_dependency') -ccontains $dataset.name) { Fail 'Legacy Model Snapshot contract; fetch a new Entity-owned Model Snapshot.' }
+            if ($area -ceq 'project') {
+                if (@('project_object_binding', 'project_attribute_binding', 'mapping_dependency') -ccontains $dataset.name) { Fail 'Legacy Project Snapshot contract; fetch a new Entity-owned Project Snapshot.' }
                 $required = @()
                 if (@('mapping_object', 'mapping_attribute', 'generated_code', 'generated_code_source_system') -ccontains $dataset.name) { $required = @('modeled_entity_schema_name') }
                 foreach ($layer in @('logical', 'dimensional')) {
                     if (@(($layer + '_entity'), ($layer + '_attribute')) -ccontains $dataset.name) { $required = @($layer + '_entity_schema_name') }
                     if ($dataset.name -ceq ($layer + '_relationship')) { $required = @(('from_' + $layer + '_entity_schema_name'), ('to_' + $layer + '_entity_schema_name')) }
                 }
-                foreach ($field in $required) { if (@($dataset.canonical_key) -cnotcontains $field) { Fail 'Legacy Model Snapshot contract; fetch a new Entity-owned Model Snapshot.' } }
+                foreach ($field in $required) { if (@($dataset.canonical_key) -cnotcontains $field) { Fail 'Legacy Project Snapshot contract; fetch a new Entity-owned Project Snapshot.' } }
             }
             if ([string]::IsNullOrWhiteSpace([string]$dataset.name) -or $names.ContainsKey([string]$dataset.name)) {
                 Fail 'Snapshot catalog contains an invalid or duplicate dataset.'
@@ -424,14 +424,14 @@ function Assert-SessionSnapshotIdentity($State, $Owner, [string]$Area, $Manifest
             ((Test-Property $Manifest 'tenant_id') -and $Manifest.tenant_id -ne $Owner.id)) { Fail 'Metadata Snapshot owner does not match workspace owner.' }
         return
     }
-    $model = Get-Property $Catalog 'model'
-    if ($null -eq $State.model -or -not (Test-SafeJsonInteger (Get-Property $Manifest 'model_id') $false) -or
-        $Manifest.model_id -ne $State.model.id -or (Get-Property $model 'model_id') -ne $Manifest.model_id -or
-        (Get-Property $Manifest 'model_name') -isnot [string] -or [string]::IsNullOrWhiteSpace($Manifest.model_name) -or
-        $model.model_name -cne $Manifest.model_name -or -not (Test-SafeJsonInteger (Get-Property $Manifest 'model_revision')) -or
-        (Get-Property $model 'model_revision') -ne $Manifest.model_revision) { Fail 'Model identity/revision does not match workspace and Snapshot catalog.' }
-    if ((Test-Property $model 'tenant_code') -and
-        (Normalize-Value 'model' 'tenant_code' $model.tenant_code) -cne (Normalize-Value 'model' 'tenant_code' $State.tenant.code)) { Fail 'Model Snapshot belongs to another Tenant.' }
+    $project = Get-Property $Catalog 'project'
+    if ($null -eq $State.project -or -not (Test-SafeJsonInteger (Get-Property $Manifest 'project_id') $false) -or
+        $Manifest.project_id -ne $State.project.id -or (Get-Property $project 'project_id') -ne $Manifest.project_id -or
+        (Get-Property $Manifest 'project_name') -isnot [string] -or [string]::IsNullOrWhiteSpace($Manifest.project_name) -or
+        $project.project_name -cne $Manifest.project_name -or -not (Test-SafeJsonInteger (Get-Property $Manifest 'project_revision')) -or
+        (Get-Property $project 'project_revision') -ne $Manifest.project_revision) { Fail 'Project identity/revision does not match workspace and Snapshot catalog.' }
+    if ((Test-Property $project 'tenant_code') -and
+        (Normalize-Value 'project' 'tenant_code' $project.tenant_code) -cne (Normalize-Value 'project' 'tenant_code' $State.tenant.code)) { Fail 'Project Snapshot belongs to another Tenant.' }
 }
 
 function Get-ChangeContext([hashtable]$Options) {
@@ -456,7 +456,7 @@ function Get-SnapshotBinding($Context) {
     $relative = (Join-Path $Context.Root 'manifest.json').Substring($Context.Session.Length + 1).Replace('\', '/')
     $binding = [ordered]@{ area = $Context.Area; owner_tenant_id = $Context.Owner.id; manifest_path = $relative;
         snapshot_id = $Context.Manifest.snapshot_id; manifest_sha256 = Get-FileDigest (Join-Path $Context.Root 'manifest.json') }
-    if ($Context.Area -ceq 'model') { $binding.model_revision = $Context.Manifest.model_revision }
+    if ($Context.Area -ceq 'project') { $binding.project_revision = $Context.Manifest.project_revision }
     return $binding
 }
 function Get-ValidationReportRelative($Context) {
@@ -509,7 +509,7 @@ function Validate-Changes([hashtable]$Options) {
         $merged = @{}
         foreach ($owner in $owners.Values) {
             foreach ($marker in (Get-Property $context.State 'refresh_required')) {
-                if ($null -ne $marker -and $marker.area -ceq 'metadata' -and $marker.owner_tenant_id -eq $owner.id) { Fail 'Model validation needs refreshed Metadata inputs.' }
+                if ($null -ne $marker -and $marker.area -ceq 'metadata' -and $marker.owner_tenant_id -eq $owner.id) { Fail 'Project validation needs refreshed Metadata inputs.' }
             }
             try { $snapshot = Find-Snapshot @{session = $context.Session; area = 'metadata'; owner = [string]$owner.id} }
             catch {
@@ -543,9 +543,9 @@ function Validate-Changes([hashtable]$Options) {
             $state = [pscustomobject]@{Area = 'metadata'; Dataset = $entry.Dataset; Schema = $entry.Schema; RecordType = Get-ValidationRecordType $entry.Dataset $entry.Schema; Baseline = $records; Pending = @(); Effective = $records; OverlayError = $null}
             [void]$referenceStates.Add($state); [void]$metadataStates.Add($state)
         }
-        Add-ModelValidationIssues @($states) $issues @($referenceStates) $context.Owner.code
+        Add-ProjectValidationIssues @($states) $issues @($referenceStates) $context.Owner.code
     }
-    # A Metadata task can derive its scope from a Model. Bind every declared input,
+    # A Metadata task can derive its scope from a Project. Bind every declared input,
     # even when that Snapshot is not needed by the Metadata record validator itself.
     $task = Read-AtlasTask $context.Session $context.TaskId
     $declared = Get-Property (Get-Property $task.value 'inputs') 'snapshots'
@@ -554,7 +554,7 @@ function Validate-Changes([hashtable]$Options) {
     $declaredDigest = ConvertTo-StableJson $declared
     foreach ($inputBinding in $declared) {
         if (-not (Test-AtlasObject $inputBinding) -or
-            @('metadata', 'model') -cnotcontains (Get-Property $inputBinding 'area')) {
+            @('metadata', 'project') -cnotcontains (Get-Property $inputBinding 'area')) {
             Fail 'Invalid task Snapshot binding.'
         }
         $optionsForInput = @{session = $context.Session; area = $inputBinding.area}
@@ -599,29 +599,29 @@ function Validate-Changes([hashtable]$Options) {
     foreach ($repair in @($repairs)) {
         [void]$reportIssues.Add([ordered]@{ severity = 'error'; dataset = $repair.dataset; record = $repair.record; code = $repair.code; fields = @($repair.fields); message = $repair.message })
     }
-    $substantiveModelEdits = @($states | Where-Object {
-        $_.Dataset.name -cne 'model_details' -and @($_.Pending).Count -gt 0
+    $substantiveProjectEdits = @($states | Where-Object {
+        $_.Dataset.name -cne 'project_details' -and @($_.Pending).Count -gt 0
     }).Count -gt 0
     foreach ($ownerId in $missingMetadataOwners) {
         [void]$reportIssues.Add([ordered]@{
-            severity = $(if ($substantiveModelEdits) { 'error' } else { 'warning' })
-            dataset = 'model'; record = $null; code = 'metadata_owner_snapshot_missing'; fields = @()
+            severity = $(if ($substantiveProjectEdits) { 'error' } else { 'warning' })
+            dataset = 'project'; record = $null; code = 'metadata_owner_snapshot_missing'; fields = @()
             message = "Applied Metadata for owner $ownerId is unavailable; physical context completeness needs review."
         })
     }
     $checks = New-Object Collections.ArrayList
     foreach ($id in @('local.schema', 'local.identity', 'local.state', 'local.scope', 'local.references')) { [void]$checks.Add([ordered]@{ id = $id; status = 'ran' }) }
-    if ($context.Area -ceq 'model') {
+    if ($context.Area -ceq 'project') {
         $structural = @($issues | Where-Object { @('schema', 'canonical_key', 'effective_overlay') -ccontains $_.Code }).Count -gt 0
         if (-not $structural) {
-            foreach ($issue in @(Get-AtlasModelPolicy @($states) @($metadataStates) (Get-Property $context.Catalog 'model'))) { [void]$reportIssues.Add($issue) }
+            foreach ($issue in @(Get-AtlasProjectPolicy @($states) @($metadataStates) (Get-Property $context.Catalog 'project'))) { [void]$reportIssues.Add($issue) }
             foreach ($issue in @(Get-AtlasGeneratedCodeIssues @($states))) { [void]$reportIssues.Add($issue) }
-            [void]$checks.Add([ordered]@{id = 'model.authoring-policy'; status = 'ran'})
+            [void]$checks.Add([ordered]@{id = 'project.authoring-policy'; status = 'ran'})
         }
-        else { [void]$checks.Add([ordered]@{id = 'model.authoring-policy'; status = 'not_run'; reason = 'Repair structural errors first.'}) }
+        else { [void]$checks.Add([ordered]@{id = 'project.authoring-policy'; status = 'not_run'; reason = 'Repair structural errors first.'}) }
     }
     $quality = $null; $evidenceFiles = @()
-    if ($context.Area -ceq 'model') {
+    if ($context.Area -ceq 'project') {
         $decisions = $null; $noteFiles = @{}
         if (@($pending.Keys | Where-Object { $script:ModelingQualityDatasets -ccontains $_ }).Count -gt 0) {
             $evidence = Read-ModelingDecisions $context.Session $context.TaskId
@@ -650,9 +650,9 @@ function Validate-Changes([hashtable]$Options) {
     $binding = $inputs[0]
     $issueCount = $issues.Count - $boundedIssues.Count + $reportIssues.Count
     $valid = $issues.Count -eq 0 -and @($reportIssues | Where-Object { $_.severity -ceq 'error' }).Count -eq 0
-    $report = [ordered]@{schema_version = '1.0'; run_by = 'agent'; area = $context.Area; owner_tenant_id = $context.Owner.id;
+    $report = [ordered]@{schema_version = '2.0'; run_by = 'agent'; area = $context.Area; owner_tenant_id = $context.Owner.id;
         generated_at = [DateTimeOffset]::UtcNow.ToString('o'); digest = $inputDigest; inputs = @($inputs);
-        snapshot = [ordered]@{id = $binding.snapshot_id; revision = Get-Property $context.Manifest 'model_revision'; manifest_digest = $binding.manifest_sha256};
+        snapshot = [ordered]@{id = $binding.snapshot_id; revision = Get-Property $context.Manifest 'project_revision'; manifest_digest = $binding.manifest_sha256};
         valid = $valid; checks = @($checks); issue_count = $issueCount; truncated = $issueCount -gt 200;
         issues = @($reportIssues | Select-Object -First 200); quality = $quality; evidence_files = $evidenceFiles}
     $relative = Get-ValidationReportRelative $context
@@ -693,7 +693,7 @@ function Accept-Changes([hashtable]$Options) {
     $savedReport = '.atlas/tasks/' + $context.TaskId + '.evidence/' + $id + '.validation.json'
     $report = Read-WorkspaceJson $context.Session $validation.report
     $reportHash = Write-WorkspaceJson $context.Session $savedReport $report.value
-    $operation = [ordered]@{schema_version = '1.0'; id = $id; task_id = $context.TaskId; area = $context.Area; owner = $context.Owner;
+    $operation = [ordered]@{schema_version = '2.0'; id = $id; task_id = $context.TaskId; area = $context.Area; owner = $context.Owner;
         backend = $backend; inputs = $validation.inputs;
         local_digest = $Options.digest; validation = [ordered]@{outcome = 'valid'; report_path = $savedReport; report_sha256 = $reportHash; checks = $validation.checks};
         acknowledgement = [ordered]@{source = 'conversation'; at = [DateTimeOffset]::UtcNow.ToString('o'); digest = $Options.digest; report_sha256 = $reportHash}}
@@ -701,7 +701,7 @@ function Accept-Changes([hashtable]$Options) {
     [void](Write-WorkspaceJson $context.Session $relative $operation)
     $operations = Get-Property $stateDocument.value 'operations'
     if ($null -eq $operations) { $operations = @{}; Set-Property $stateDocument.value 'operations' $operations }
-    if ($context.Area -ceq 'model') { Set-Property $operations 'model' $relative }
+    if ($context.Area -ceq 'project') { Set-Property $operations 'project' $relative }
     else {
         $metadata = Get-Property $operations 'metadata'
         if ($null -eq $metadata) { $metadata = @{}; Set-Property $operations 'metadata' $metadata }
@@ -723,7 +723,7 @@ function Resolve-AtlasServerDraft([hashtable]$Options, $Owner, $State, $Previous
             if ($Options.ContainsKey($name)) { Fail 'Use a draft response file or explicit draft flags, not both.' }
         }
         $file = if ($Options['draft-file']) { $Options['draft-file'] } else { $Options['file'] }
-        $response = ConvertTo-AtlasServerResponse (Read-AtlasResponse $file) $Options.area $Owner (Get-Property (Get-Property $State 'model') 'id')
+        $response = ConvertTo-AtlasServerResponse (Read-AtlasResponse $file) $Options.area $Owner (Get-Property (Get-Property $State 'project') 'id')
         $id = $response.change_set_id; $revision = $response.draft_revision; $status = Get-Property $response 'status'
         if ($revision -lt 1) { Fail 'Server draft responses require a positive revision.' }
     }
@@ -785,7 +785,7 @@ function Prepare-StageRequest([hashtable]$Options) {
     $binding = Get-SnapshotBinding $context
     $target = [ordered]@{}
     if ($context.Area -ceq 'metadata') { $target.tenant_code = $context.Owner.code }
-    else { $target.model_id = $context.Manifest.model_id; $target.model_name = $context.Manifest.model_name; $target.model_revision = $context.Manifest.model_revision }
+    else { $target.project_id = $context.Manifest.project_id; $target.project_name = $context.Manifest.project_name; $target.project_revision = $context.Manifest.project_revision }
     $target.change_set_id = $draft.id; $target.starting_revision = $draft.revision
     $datasets = New-Object Collections.ArrayList
     foreach ($name in $names) {
@@ -793,7 +793,7 @@ function Prepare-StageRequest([hashtable]$Options) {
         [void]$datasets.Add([ordered]@{dataset = $name; canonical_key = @($context.ByName[$name].canonical_key); record_count = @($pending[$name]).Count;
             payload_file = $payload; sha256 = Get-FileDigest (Resolve-WorkspacePath $context.Session $payload)})
     }
-    $manifest = [ordered]@{schema_version = '1.0'; kind = 'atlas-stage-request'; area = $context.Area; task = $operation.task_id;
+    $manifest = [ordered]@{schema_version = '2.0'; kind = 'atlas-stage-request'; area = $context.Area; task = $operation.task_id;
         accepted_digest = $operation.local_digest; failed_retry = ((Get-Property $draft 'validation_failed') -eq $true -and $draft.digest -cne $operation.local_digest);
         operation = [ordered]@{id = $operation.id; path = $document.relative}; owner = $context.Owner; backend = $operation.backend;
         snapshot = [ordered]@{snapshot_id = $binding.snapshot_id; manifest_sha256 = $binding.manifest_sha256; manifest_path = $binding.manifest_path}; target = $target; datasets = @($datasets)}
@@ -811,17 +811,17 @@ function Record-Operation([hashtable]$Options) {
     $document = Read-AtlasOperation $root $state $Options.area $owner; $operation = $document.value; $draft = Get-Property $operation 'draft'
     if (-not $draft) { Fail 'Operation has no bound server draft.' }
     if ($Options.ContainsKey('digest-from-operation') -and ($Options['digest-from-operation'] -cne 'true' -or $Options.checkpoint -cne 'apply-approval' -or $Options.ContainsKey('review-digest'))) { Fail 'Use --digest-from-operation true only for Apply approval, instead of --review-digest.' }
-    $modelId = Get-Property (Get-Property $state 'model') 'id'
-    if ($Options['file']) { $response = ConvertTo-AtlasServerResponse (Read-AtlasResponse $Options['file']) $Options.area $owner $modelId }
+    $projectId = Get-Property (Get-Property $state 'project') 'id'
+    if ($Options['file']) { $response = ConvertTo-AtlasServerResponse (Read-AtlasResponse $Options['file']) $Options.area $owner $projectId }
     elseif ($Options.checkpoint -ceq 'apply-approval' -and (Get-Property $operation 'server_validation')) {
         $saved = Read-WorkspaceJson $root $operation.server_validation.path
         if ($saved.digest -cne $operation.server_validation.sha256 -or (Get-Property $saved.value 'area') -cne $Options.area -or (Get-Property $saved.value 'owner_tenant_id') -ne $owner.id) { Fail 'Server review changed or belongs to another owner.' }
-        if ($Options.area -ceq 'model' -and -not (Test-Property $saved.value 'model_id')) { Set-Property $saved.value 'model_id' $modelId }
-        $response = ConvertTo-AtlasServerResponse $saved.value $Options.area $owner $modelId
+        if ($Options.area -ceq 'project' -and -not (Test-Property $saved.value 'project_id')) { Set-Property $saved.value 'project_id' $projectId }
+        $response = ConvertTo-AtlasServerResponse $saved.value $Options.area $owner $projectId
     }
     else { Fail '--file is required for a server validation or Apply result.' }
     $changeId = $response.change_set_id
-    $correctOwner = if ($Options.area -ceq 'metadata') { (Get-Property $response 'tenant_id') -eq $owner.id } else { (Get-Property $response 'model_id') -eq $state.model.id }
+    $correctOwner = if ($Options.area -ceq 'metadata') { (Get-Property $response 'tenant_id') -eq $owner.id } else { (Get-Property $response 'project_id') -eq $state.project.id }
     if ($changeId -cne $draft.id -or (Get-Property $response 'draft_revision') -ne $draft.revision -or -not $correctOwner) { Fail 'Server result does not match the bound owner/draft/revision.' }
     $stage = ConvertTo-AtlasStageReceipt (Get-Property $operation 'stage')
     if (-not $stage -or (Get-Property $stage 'status') -cne 'staged' -or ((Get-Property $stage 'fingerprint_verified') -isnot [bool] -or (Get-Property $stage 'fingerprint_verified') -ne $true) -or (Get-Property $stage 'accepted_digest') -cne $operation.local_digest -or
@@ -840,7 +840,7 @@ function Record-Operation([hashtable]$Options) {
                 @('active', 'validated') -cnotcontains (Get-Property $response 'status') -or -not (Test-SafeJsonInteger (Get-Property $response 'error_count')) -or (Get-Property $response 'action_review') -isnot [Array]) { Fail 'Invalid server validation result.' }
             $relative = '.atlas/tasks/' + $operation.task_id + '.evidence/' + $operation.id + '.server-validation.json'
             $saved = [ordered]@{area = $Options.area; owner_tenant_id = $owner.id; change_set_id = $changeId}
-            if ($Options.area -ceq 'metadata') { $saved.tenant_id = $owner.id } else { $saved.model_id = $modelId }
+            if ($Options.area -ceq 'metadata') { $saved.tenant_id = $owner.id } else { $saved.project_id = $projectId }
             foreach ($key in @('schema_version', 'draft_revision', 'valid', 'status', 'candidate_digest', 'error_count', 'action_review', 'validated_at', 'expires_at')) {
                 if (Test-Property $response $key) { $saved[$key] = Get-Property $response $key }
             }
@@ -866,7 +866,7 @@ function Record-Operation([hashtable]$Options) {
                 (Get-Property $response 'candidate_digest') -cne $approval.candidate_digest) { Fail 'Apply result does not match a separately approved validated candidate.' }
             $applied = [ordered]@{applied = $true; status = 'applied'; draft_revision = $response.draft_revision; candidate_digest = $response.candidate_digest;
                 applied_at = Get-Property $response 'applied_at'; action_count = Get-Property $response 'action_count'}
-            if (Test-Property $response 'model_revision') { $applied.model_revision = $response.model_revision }
+            if (Test-Property $response 'project_revision') { $applied.project_revision = $response.project_revision }
             Set-Property $operation 'apply' $applied
         }
         default { Fail 'Checkpoint must be validation, apply-approval or apply.' }
@@ -976,11 +976,11 @@ function Install-Snapshot([hashtable]$Options) {
 
     $candidate = Read-SnapshotRoot $candidateRoots[0] $session $state $owner $area
     if ($candidate.Manifest.snapshot_id -cne $Options['snapshot-id']) { Fail 'Extracted Snapshot ID mismatch.' }
-    if ($area -ceq 'model') {
-        $previousManifest = Join-Path $session 'model/model-snapshot/manifest.json'
-        $previousRevision = if (Test-Path -LiteralPath $previousManifest) { (Read-WorkspaceJson $session 'model/model-snapshot/manifest.json').value.model_revision } else { 0 }
-        $appliedRevision = if ($null -ne $applied) { Get-Property (Get-Property $applied.value 'apply') 'model_revision' } else { 0 }
-        if ($candidate.Manifest.model_revision -lt [Math]::Max([double]$previousRevision, [double]$appliedRevision)) { Fail 'Refreshed Model Snapshot is older than the known Model revision.' }
+    if ($area -ceq 'project') {
+        $previousManifest = Join-Path $session 'project/project-snapshot/manifest.json'
+        $previousRevision = if (Test-Path -LiteralPath $previousManifest) { (Read-WorkspaceJson $session 'project/project-snapshot/manifest.json').value.project_revision } else { 0 }
+        $appliedRevision = if ($null -ne $applied) { Get-Property (Get-Property $applied.value 'apply') 'project_revision' } else { 0 }
+        if ($candidate.Manifest.project_revision -lt [Math]::Max([double]$previousRevision, [double]$appliedRevision)) { Fail 'Refreshed Project Snapshot is older than the known Project revision.' }
     }
     foreach ($member in $candidate.Members.Keys) { [void](Resolve-Member $candidate.Root $member $candidate.Members) }
     $retire = New-Object Collections.ArrayList
@@ -1015,7 +1015,7 @@ function Install-Snapshot([hashtable]$Options) {
     Set-Property $document.value 'refresh_required' $markers
     [void](Write-WorkspaceJson $session '.atlas/session.json' $document.value $document.digest)
     return [ordered]@{snapshot_id = $candidate.Manifest.snapshot_id; area = $area; owner_tenant_id = $owner.id;
-        model_revision = Get-Property $candidate.Manifest 'model_revision'; dataset_count = @($candidate.Datasets).Count;
+        project_revision = Get-Property $candidate.Manifest 'project_revision'; dataset_count = @($candidate.Datasets).Count;
         backup = $(if ($existed) { $backup.Substring($session.Length + 1).Replace('\', '/') } else { $null })}
 }
 
@@ -1026,12 +1026,12 @@ function Select-AtlasTask([hashtable]$Options) {
     [void](Write-WorkspaceJson $root '.atlas/session.json' $document.value $document.digest)
     return [ordered]@{task = $Options.task}
 }
-function Select-AtlasModel([hashtable]$Options) {
+function Select-AtlasProject([hashtable]$Options) {
     $root = Resolve-Session $Options; $document = Read-SessionDocument $root
-    $model = [ordered]@{id = [double](Require-Option $Options 'model-id'); name = Require-Option $Options 'model-name'}
-    if (-not (Test-SafeJsonInteger $model.id $false)) { Fail 'Model requires a verified ID and name.' }
-    if ($document.value.model -and $document.value.model.id -ne $model.id) { Fail 'One Model per directory; use a different directory for another Model.' }
-    Set-Property $document.value 'model' $model
+    $project = [ordered]@{id = [double](Require-Option $Options 'project-id'); name = Require-Option $Options 'project-name'}
+    if (-not (Test-SafeJsonInteger $project.id $false)) { Fail 'Project requires a verified ID and name.' }
+    if ($document.value.project -and $document.value.project.id -ne $project.id) { Fail 'One Project per directory; use a different directory for another Project.' }
+    Set-Property $document.value 'project' $project
     [void](Write-WorkspaceJson $root '.atlas/session.json' $document.value $document.digest)
-    return [ordered]@{model = $model}
+    return [ordered]@{project = $project}
 }

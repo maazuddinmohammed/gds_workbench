@@ -1,4 +1,4 @@
-"""Validated Mapping preparation models and repository seams.
+"""Validated Mapping preparation projects and repository seams.
 
 Mapping authoring freezes one target/System pair and emits only flexible
 transformation documents. Profile, package, artifact, and digest metadata are
@@ -11,10 +11,10 @@ from typing import Literal, Protocol, Self
 from uuid import UUID
 
 from gds_etl_workbench.application.authorization import TenantAuthorization
-from gds_etl_workbench.application.change_sets.model_validation import PhysicalModelCatalog
+from gds_etl_workbench.application.change_sets.project_validation import PhysicalProjectCatalog
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_etl_workbench.domain.snapshots.model import ModelSnapshot
+from gds_etl_workbench.domain.snapshots.project import ProjectSnapshot
 from gds_etl_workbench.infrastructure.postgres import (
     ReadTransaction,
 )
@@ -30,26 +30,26 @@ type ReadinessAction = Literal["author", "extend", "preserve", "blocked"]
 type JsonObject = dict[str, JsonValue]
 
 
-class _FrozenModel(BaseModel):
+class _FrozenProject(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
-class MappingPairIdentity(_FrozenModel):
+class MappingPairIdentity(_FrozenProject):
     modeled_entity_id: int = Field(gt=0)
     source_system_id: int = Field(gt=0)
 
 
-class MappingOutputTemplateSelection(_FrozenModel):
+class MappingOutputTemplateSelection(_FrozenProject):
     output_template_id: int = Field(gt=0)
     schema_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
-class MappingOutputTemplateSelections(_FrozenModel):
+class MappingOutputTemplateSelections(_FrozenProject):
     mapping_object: MappingOutputTemplateSelection | None
     mapping_attribute: MappingOutputTemplateSelection | None
 
 
-class MappingRunPlan(_FrozenModel):
+class MappingRunPlan(_FrozenProject):
     """Mapping-specific request frozen beside the common agent plan."""
 
     agent_plan: AgentRunPlan = Field(repr=False)
@@ -70,7 +70,7 @@ class MappingRunPlan(_FrozenModel):
         elif self.agent_plan.modeled_entity_type == "dimensional_entity":
             expected_route = "dimensional_to_gold"
         if (
-            self.agent_plan.model_workflow != "mapping"
+            self.agent_plan.project_workflow != "mapping"
             or self.agent_plan.workflow_execution_mode is None
             or self.agent_plan.selected_entity_ids != (self.pair.modeled_entity_id,)
             or expected_route != self.route
@@ -83,12 +83,12 @@ class MappingRunPlan(_FrozenModel):
         return self.agent_plan.workflow_run_id
 
     @property
-    def model_id(self) -> int:
-        return self.agent_plan.model_id
+    def project_id(self) -> int:
+        return self.agent_plan.project_id
 
     @property
-    def model_revision(self) -> int:
-        return self.agent_plan.model_revision
+    def project_revision(self) -> int:
+        return self.agent_plan.project_revision
 
     @property
     def correlation_id(self) -> UUID:
@@ -102,7 +102,7 @@ class MappingRunPlan(_FrozenModel):
         return value
 
 
-class MappingPhysicalAttribute(_FrozenModel):
+class MappingPhysicalAttribute(_FrozenProject):
     is_natural_key: bool | None = None
     is_primary_key: bool | None = None
     is_nullable: bool | None = None
@@ -117,7 +117,7 @@ class MappingPhysicalAttribute(_FrozenModel):
     is_active: bool
 
 
-class MappingPhysicalObject(_FrozenModel):
+class MappingPhysicalObject(_FrozenProject):
     object_id: int = Field(gt=0)
     tenant_id: int = Field(gt=0)
     source_tenant_id: int = Field(gt=0)
@@ -151,7 +151,7 @@ class MappingPhysicalObject(_FrozenModel):
         return self
 
 
-class MappingSourceSystem(_FrozenModel):
+class MappingSourceSystem(_FrozenProject):
     system_id: int = Field(gt=0)
     system_code: str = Field(min_length=1, max_length=100)
     system_name: str = Field(min_length=1, max_length=200)
@@ -160,7 +160,7 @@ class MappingSourceSystem(_FrozenModel):
     is_default: bool = False
 
 
-class MappingTargetDependencyNode(_FrozenModel):
+class MappingTargetDependencyNode(_FrozenProject):
     modeled_entity_id: int = Field(gt=0)
     dependency_order: int = Field(ge=0)
     status: LifecycleStatus
@@ -168,19 +168,19 @@ class MappingTargetDependencyNode(_FrozenModel):
     has_unlocked_headers: bool
 
 
-class MappingTargetDependencyEdge(_FrozenModel):
+class MappingTargetDependencyEdge(_FrozenProject):
     predecessor_modeled_entity_id: int = Field(gt=0)
     successor_modeled_entity_id: int = Field(gt=0)
 
 
-class MappingTargetDependencyGraph(_FrozenModel):
+class MappingTargetDependencyGraph(_FrozenProject):
     nodes: tuple[MappingTargetDependencyNode, ...]
     edges: tuple[MappingTargetDependencyEdge, ...]
     malformed_reference_count: int = Field(ge=0)
     mixed_order_target_count: int = Field(ge=0)
 
 
-class MappingOutputTemplateField(_FrozenModel):
+class MappingOutputTemplateField(_FrozenProject):
     name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,99}$")
     description: str = Field(min_length=1, max_length=2_000)
     data_type: Literal["string", "integer", "number", "boolean", "object", "array"]
@@ -196,7 +196,7 @@ class MappingOutputTemplateField(_FrozenModel):
         return self
 
 
-class MappingOutputTemplate(_FrozenModel):
+class MappingOutputTemplate(_FrozenProject):
     output_template_id: int = Field(gt=0)
     code: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,99}$")
     name: str = Field(min_length=1, max_length=200)
@@ -209,12 +209,12 @@ class MappingOutputTemplate(_FrozenModel):
     fields: tuple[MappingOutputTemplateField, ...] = Field(min_length=1, max_length=500)
 
 
-class MappingOutputTemplateInventory(_FrozenModel):
+class MappingOutputTemplateInventory(_FrozenProject):
     ids: tuple[int, ...]
     definitions: tuple[MappingOutputTemplate, ...]
 
 
-class MappingModeledAttribute(_FrozenModel):
+class MappingModeledAttribute(_FrozenProject):
     is_surrogate_key: bool = False
     attribute_id: int = Field(gt=0)
     attribute_name: str = Field(min_length=1, max_length=255)
@@ -227,7 +227,7 @@ class MappingModeledAttribute(_FrozenModel):
     is_locked: bool
 
 
-class MappingModeledEntity(_FrozenModel):
+class MappingModeledEntity(_FrozenProject):
     entity_type: ModeledEntityType
     entity_schema_name: str = Field(min_length=1, max_length=400)
     entity_id: int = Field(gt=0)
@@ -241,7 +241,7 @@ class MappingModeledEntity(_FrozenModel):
     attributes: tuple[MappingModeledAttribute, ...]
 
 
-class ExistingMappingAttribute(_FrozenModel):
+class ExistingMappingAttribute(_FrozenProject):
     mapping_attribute_id: int | None = Field(default=None, gt=0)
     modeled_attribute_id: int = Field(gt=0)
     transformation_document: JsonObject | None = Field(default=None, repr=False)
@@ -252,7 +252,7 @@ class ExistingMappingAttribute(_FrozenModel):
     output_template_id: int | None = Field(default=None, gt=0)
 
 
-class ExistingMappingHeader(_FrozenModel):
+class ExistingMappingHeader(_FrozenProject):
     modeled_entity_id: int = Field(gt=0)
     mapping_object_id: int | None = Field(default=None, gt=0)
     modeled_entity: MappingModeledEntity
@@ -270,7 +270,7 @@ class ExistingMappingHeader(_FrozenModel):
         return self.mapping_object_id is not None and self.transformation_document is not None
 
 
-class MappingSource(_FrozenModel):
+class MappingSource(_FrozenProject):
     source_mapping_id: int | None = Field(gt=0)
     modeled_entity_id: int = Field(gt=0)
     role: str = Field(min_length=1, max_length=2_000)
@@ -280,8 +280,8 @@ class MappingSource(_FrozenModel):
     object: MappingPhysicalObject | MappingModeledEntity
 
 
-class MappingAuthoringPolicy(_FrozenModel):
-    model_name: str = Field(min_length=1, max_length=255)
+class MappingAuthoringPolicy(_FrozenProject):
+    project_name: str = Field(min_length=1, max_length=255)
     logical_entity_scd_type: Literal["type_1", "type_2"] | None = None
     dimensional_entity_scd_type: Literal["type_1", "type_2"] | None = None
     naming_instructions: str | None = Field(default=None, repr=False)
@@ -289,10 +289,10 @@ class MappingAuthoringPolicy(_FrozenModel):
     technical_columns_template: JsonObject | None = Field(default=None, repr=False)
 
 
-class MappingRunContext(_FrozenModel):
+class MappingRunContext(_FrozenProject):
     workflow_run_id: int = Field(gt=0)
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     correlation_id: UUID
     pair: MappingPairIdentity
     modeled_entity_type: ModeledEntityType
@@ -338,39 +338,39 @@ class MappingRunContext(_FrozenModel):
         return self
 
 
-class MappingReadinessIssue(_FrozenModel):
+class MappingReadinessIssue(_FrozenProject):
     code: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,99}$")
     message: str = Field(min_length=1, max_length=500)
     mapping_object_id: int | None = Field(default=None, gt=0)
     mapping_attribute_id: int | None = Field(default=None, gt=0)
 
 
-class MappingAttributeReadiness(_FrozenModel):
+class MappingAttributeReadiness(_FrozenProject):
     modeled_attribute_id: int = Field(gt=0)
     mapping_attribute_id: int | None = Field(default=None, gt=0)
     action: ReadinessAction
 
 
-class MappingHeaderReadiness(_FrozenModel):
+class MappingHeaderReadiness(_FrozenProject):
     modeled_entity_id: int = Field(gt=0)
     mapping_object_id: int | None = Field(default=None, gt=0)
     action: ReadinessAction
     attribute_actions: tuple[MappingAttributeReadiness, ...]
 
 
-class MappingReadiness(_FrozenModel):
+class MappingReadiness(_FrozenProject):
     ready: bool
     operation: MappingOperation
     headers: tuple[MappingHeaderReadiness, ...]
     issues: tuple[MappingReadinessIssue, ...]
 
 
-class MappingPreparation(_FrozenModel):
+class MappingPreparation(_FrozenProject):
     plan: MappingRunPlan
     context: MappingRunContext = Field(repr=False)
     readiness: MappingReadiness
-    snapshot: ModelSnapshot | None = Field(default=None, repr=False, exclude=True)
-    physical_scope: PhysicalModelCatalog | None = Field(default=None, repr=False, exclude=True)
+    snapshot: ProjectSnapshot | None = Field(default=None, repr=False, exclude=True)
+    physical_scope: PhysicalProjectCatalog | None = Field(default=None, repr=False, exclude=True)
 
 
 class MappingAuthorizer(Protocol):
@@ -381,7 +381,7 @@ class MappingAuthorizer(Protocol):
         *,
         tenant_id: int,
         policy: ToolPolicy,
-        model_id: int | None = None,
+        project_id: int | None = None,
     ) -> TenantAuthorization: ...
 
 
@@ -392,9 +392,9 @@ class MappingRunPlanRepository(Protocol):
         *,
         actor_principal_id: int,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> tuple[MappingRunPlan, ...]: ...
 
 

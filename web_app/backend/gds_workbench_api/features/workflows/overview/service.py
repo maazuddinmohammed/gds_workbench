@@ -1,4 +1,4 @@
-"""Read-only, Tenant-scoped Model Workflow Overview persistence."""
+"""Read-only, Tenant-scoped Project Workflow Overview persistence."""
 
 from contextlib import AbstractAsyncContextManager
 from typing import Protocol
@@ -7,12 +7,12 @@ from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation, ReadTransaction
 
-from gds_workbench_api.features.models import ModelNotFoundError
+from gds_workbench_api.features.projects import ProjectNotFoundError
 from gds_workbench_api.features.workflows.overview.contracts import (
-    ModelSectionState,
-    ModelSectionStatus,
-    ModelWorkflowOverview,
     OverviewWorkflow,
+    ProjectSectionState,
+    ProjectSectionStatus,
+    ProjectWorkflowOverview,
     QualityWarningCode,
     WorkflowLedgerEntry,
     WorkflowLedgerState,
@@ -22,24 +22,24 @@ from gds_workbench_api.features.workflows.runs.contracts import MappingRunOutcom
 from gds_workbench_api.features.workflows.runs.service import read_mapping_run_outcomes
 
 _WORKFLOW_OVERVIEW_SQL = """
-WITH target_model AS (
-    SELECT model.model_id,
-           model.model_revision
-      FROM model.model AS model
-     WHERE model.tenant_id = %s
-       AND model.model_id = %s
-       AND model.is_active
+WITH target_project AS (
+    SELECT project.project_id,
+           project.project_revision
+      FROM project.project AS project
+     WHERE project.tenant_id = %s
+       AND project.project_id = %s
+       AND project.is_active
 ), metrics AS (
     SELECT 1 AS workflow_order,
            'scope'::TEXT AS workflow,
-           count(scope.model_input_scope_id)::INTEGER AS result_count,
-           count(scope.model_input_scope_id) FILTER (
-               WHERE scope.model_input_scope_is_locked
+           count(scope.project_input_scope_id)::INTEGER AS result_count,
+           count(scope.project_input_scope_id) FILTER (
+               WHERE scope.project_input_scope_is_locked
            )::INTEGER AS locked_count,
            max(scope.updated_time) AS latest_result_updated_at
-      FROM target_model
-      LEFT JOIN model.model_input_scope AS scope
-        ON scope.model_id = target_model.model_id
+      FROM target_project
+      LEFT JOIN project.project_input_scope AS scope
+        ON scope.project_id = target_project.project_id
        AND scope.is_active
     UNION ALL
     SELECT 2,
@@ -47,9 +47,9 @@ WITH target_model AS (
            count(DISTINCT profile.object_id)::INTEGER,
            0::INTEGER,
            max(profile.updated_time)
-      FROM target_model
+      FROM target_project
       LEFT JOIN workflow.attribute_profile AS profile
-        ON profile.model_id = target_model.model_id
+        ON profile.project_id = target_project.project_id
     UNION ALL
     SELECT 3,
            'analysis',
@@ -63,27 +63,27 @@ WITH target_model AS (
            max(result.updated_time) FILTER (
                WHERE result.analysis_result_status = 'active'
            )
-      FROM target_model
+      FROM target_project
       LEFT JOIN workflow.analysis_result AS result
-        ON result.model_id = target_model.model_id
+        ON result.project_id = target_project.project_id
     UNION ALL
     SELECT 4,
-           'assertions',
-           count(assertion.modeling_assertion_record_id) FILTER (
-               WHERE assertion.modeling_assertion_record_status
+           'context',
+           count(context_record.context_record_id) FILTER (
+               WHERE context_record.status
                      = 'active'
            )::INTEGER,
-           count(assertion.modeling_assertion_record_id) FILTER (
-               WHERE assertion.modeling_assertion_record_status
+           count(context_record.context_record_id) FILTER (
+               WHERE context_record.status
                      = 'active'
-                 AND assertion.modeling_assertion_record_is_locked
+                 AND context_record.is_locked
            )::INTEGER,
-           max(assertion.updated_time) FILTER (
-               WHERE assertion.modeling_assertion_record_status = 'active'
+           max(context_record.updated_time) FILTER (
+               WHERE context_record.status = 'active'
            )
-      FROM target_model
-      LEFT JOIN model.modeling_assertion_record AS assertion
-        ON assertion.model_id = target_model.model_id
+      FROM target_project
+      LEFT JOIN project.context_record AS context_record
+        ON context_record.project_id = target_project.project_id
     UNION ALL
     SELECT 5,
            'conceptual',
@@ -97,9 +97,9 @@ WITH target_model AS (
            max(conceptual.updated_time) FILTER (
                WHERE conceptual.conceptual_object_status = 'active'
            )
-      FROM target_model
+      FROM target_project
       LEFT JOIN workflow.conceptual_object AS conceptual
-        ON conceptual.model_id = target_model.model_id
+        ON conceptual.project_id = target_project.project_id
     UNION ALL
     SELECT 6,
            'logical',
@@ -113,9 +113,9 @@ WITH target_model AS (
            max(logical.updated_time) FILTER (
                WHERE logical.logical_entity_status = 'active'
            )
-      FROM target_model
+      FROM target_project
       LEFT JOIN workflow.logical_entity AS logical
-        ON logical.model_id = target_model.model_id
+        ON logical.project_id = target_project.project_id
     UNION ALL
     SELECT 7,
            'dimensional',
@@ -129,9 +129,9 @@ WITH target_model AS (
            max(dimensional.updated_time) FILTER (
                WHERE dimensional.dimensional_entity_status = 'active'
            )
-      FROM target_model
+      FROM target_project
       LEFT JOIN workflow.dimensional_entity AS dimensional
-        ON dimensional.model_id = target_model.model_id
+        ON dimensional.project_id = target_project.project_id
     UNION ALL
     SELECT 8,
            'metadata_enrichment',
@@ -156,18 +156,18 @@ WITH target_model AS (
                       attribute_enrichment.is_pii) > 0
                     THEN attribute_enrichment.updated_time END
            ))
-      FROM target_model
-      LEFT JOIN model.model_input_scope AS scope
-        ON scope.model_id = target_model.model_id AND scope.is_active
+      FROM target_project
+      LEFT JOIN project.project_input_scope AS scope
+        ON scope.project_id = target_project.project_id AND scope.is_active
       LEFT JOIN core.object AS object
         ON object.object_id = scope.object_id AND object.is_active
       LEFT JOIN core.attribute AS attribute
         ON attribute.object_id = object.object_id AND attribute.is_active
       LEFT JOIN workflow.object_enrichment AS object_enrichment
-        ON object_enrichment.model_id = target_model.model_id
+        ON object_enrichment.project_id = target_project.project_id
        AND object_enrichment.object_id = object.object_id
       LEFT JOIN workflow.attribute_enrichment AS attribute_enrichment
-        ON attribute_enrichment.model_id = target_model.model_id
+        ON attribute_enrichment.project_id = target_project.project_id
        AND attribute_enrichment.attribute_id = attribute.attribute_id
     UNION ALL
     SELECT 9,
@@ -177,9 +177,9 @@ WITH target_model AS (
                WHERE mapping.object_mapping_is_locked
            )::INTEGER,
            max(mapping.updated_time)
-      FROM target_model
+      FROM target_project
       LEFT JOIN workflow.mapping_object AS mapping
-        ON mapping.model_id = target_model.model_id
+        ON mapping.project_id = target_project.project_id
        AND mapping.object_mapping_status = 'active'
     UNION ALL
     SELECT 10,
@@ -189,9 +189,9 @@ WITH target_model AS (
                WHERE code.generated_code_is_locked
            )::INTEGER,
            max(code.updated_time)
-      FROM target_model
+      FROM target_project
       LEFT JOIN workflow.generated_code AS code
-        ON code.model_id = target_model.model_id
+        ON code.project_id = target_project.project_id
        AND code.generated_code_status = 'active'
     UNION ALL
     SELECT 11,
@@ -201,33 +201,33 @@ WITH target_model AS (
                WHERE validation.is_locked
            )::INTEGER,
            max(validation.updated_time)
-      FROM target_model
+      FROM target_project
       LEFT JOIN workflow.validation_group AS validation
-        ON validation.model_id = target_model.model_id AND validation.is_active
+        ON validation.project_id = target_project.project_id AND validation.is_active
 ), latest_run AS (
-    SELECT ranked.model_workflow,
+    SELECT ranked.project_workflow,
            ranked.workflow_run_id,
            ranked.workflow_run_state,
            ranked.created_time,
            ranked.completed_time
       FROM (
-          SELECT run.model_workflow,
+          SELECT run.project_workflow,
                  run.workflow_run_id,
                  run.workflow_run_state,
                  run.created_time,
                  run.completed_time,
                  row_number() OVER (
-                     PARTITION BY run.model_workflow
+                     PARTITION BY run.project_workflow
                      ORDER BY run.created_time DESC, run.workflow_run_id DESC
                  ) AS run_order
             FROM application.workflow_run AS run
-            JOIN target_model
-              ON target_model.model_id = run.model_id
+            JOIN target_project
+              ON target_project.project_id = run.project_id
       ) AS ranked
      WHERE ranked.run_order = 1
 )
-SELECT target_model.model_id,
-       target_model.model_revision,
+SELECT target_project.project_id,
+       target_project.project_revision,
        metrics.workflow,
        metrics.result_count,
        metrics.locked_count,
@@ -236,10 +236,10 @@ SELECT target_model.model_id,
        latest_run.created_time AS latest_run_created_at,
        latest_run.completed_time AS latest_run_completed_at,
        metrics.latest_result_updated_at
-  FROM target_model
+  FROM target_project
  CROSS JOIN metrics
   LEFT JOIN latest_run
-    ON latest_run.model_workflow = metrics.workflow
+    ON latest_run.project_workflow = metrics.workflow
  ORDER BY metrics.workflow_order
 """
 
@@ -250,8 +250,8 @@ class WorkflowOverviewService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
-    ) -> ModelWorkflowOverview: ...
+        project_id: int,
+    ) -> ProjectWorkflowOverview: ...
 
 
 class WorkflowOverviewDatabase(Protocol):
@@ -278,7 +278,7 @@ def _section_state(
     metric: WorkflowMetric,
     *,
     mapping_outcome: MappingRunOutcome | None = None,
-) -> ModelSectionState:
+) -> ProjectSectionState:
     if metric.workflow == "scope":
         return "ready" if metric.result_count else "empty"
     if metric.latest_run_state in ("queued", "running", "failed", "cancelled"):
@@ -312,8 +312,6 @@ def _quality_warnings(
         return ("scope_empty",)
     if metric.workflow == "analysis" and not result_counts["profiling"]:
         return ("profiling_results_unavailable",)
-    if metric.workflow == "logical" and not result_counts["conceptual"]:
-        return ("conceptual_results_unavailable",)
     if metric.workflow == "dimensional" and not result_counts["logical"]:
         return ("logical_results_unavailable",)
     return ()
@@ -334,8 +332,8 @@ class DatabaseWorkflowOverviewService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
-    ) -> ModelWorkflowOverview:
+        project_id: int,
+    ) -> ProjectWorkflowOverview:
         async with self._database.read_transaction(
             isolation=ReadIsolation.REPEATABLE_READ
         ) as transaction:
@@ -344,20 +342,20 @@ class DatabaseWorkflowOverviewService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
             rows = await transaction.fetch_all(
                 _WORKFLOW_OVERVIEW_SQL,
-                (tenant_id, model_id),
+                (tenant_id, project_id),
             )
             if not rows:
-                raise ModelNotFoundError()
+                raise ProjectNotFoundError()
 
             metrics = tuple(WorkflowMetric.model_validate(row) for row in rows)
             mapping_outcomes = await read_mapping_run_outcomes(
                 transaction,
                 tenant_id=tenant_id,
-                model_id=model_id,
+                project_id=project_id,
                 workflow_run_ids=tuple(
                     metric.latest_run_id
                     for metric in metrics
@@ -384,7 +382,7 @@ class DatabaseWorkflowOverviewService:
                 "scope",
                 "profiling",
                 "analysis",
-                "assertions",
+                "context",
                 "conceptual",
                 "logical",
                 "dimensional",
@@ -392,14 +390,14 @@ class DatabaseWorkflowOverviewService:
         )
         by_workflow = {metric.workflow: metric for metric in metrics}
         section_states = [
-            ModelSectionStatus(section="overview", state="available"),
-            ModelSectionStatus(section="settings", state="available"),
+            ProjectSectionStatus(section="overview", state="available"),
+            ProjectSectionStatus(section="settings", state="available"),
         ]
         for workflow in (
             "scope",
             "metadata_enrichment",
             "profiling",
-            "assertions",
+            "context",
             "analysis",
             "conceptual",
             "logical",
@@ -412,7 +410,7 @@ class DatabaseWorkflowOverviewService:
             if metric is None:
                 continue
             section_states.append(
-                ModelSectionStatus.model_validate(
+                ProjectSectionStatus.model_validate(
                     {
                         "section": workflow.replace("_", "-"),
                         "state": _section_state(
@@ -424,9 +422,9 @@ class DatabaseWorkflowOverviewService:
                     }
                 )
             )
-        return ModelWorkflowOverview(
-            model_id=metrics[0].model_id,
-            model_revision=metrics[0].model_revision,
+        return ProjectWorkflowOverview(
+            project_id=metrics[0].project_id,
+            project_revision=metrics[0].project_revision,
             items=items,
             section_states=tuple(section_states),
         )

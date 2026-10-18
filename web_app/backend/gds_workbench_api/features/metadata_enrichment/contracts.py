@@ -106,8 +106,8 @@ class EnrichmentObject(EnrichmentContract):
 
 class MetadataEnrichmentContext(EnrichmentContract):
     workflow_run_id: int = Field(gt=0)
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     baseline_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     description_targets: tuple[EnrichmentDescriptionTarget, ...] | None = Field(
         default=None, min_length=1
@@ -166,8 +166,8 @@ class EnrichmentFieldResult(EnrichmentContract):
 
 class MetadataEnrichmentCompletion(EnrichmentContract):
     workflow_run_id: int = Field(gt=0)
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     workflow_run_state: Literal["completed", "completed_with_repair"]
     warning_count: int = Field(ge=0)
     result_count: int = Field(ge=0, le=30_200)

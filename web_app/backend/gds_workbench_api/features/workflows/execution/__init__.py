@@ -1,7 +1,7 @@
 """Durable database-backed Workflow Run execution."""
 
 from .contracts import (
-    ModelWorkflow,
+    ProjectWorkflow,
     WorkflowExecutionClaim,
     WorkflowExecutionMode,
     WorkflowExecutor,
@@ -22,7 +22,7 @@ from .worker import (
 )
 
 __all__ = [
-    "ModelWorkflow",
+    "ProjectWorkflow",
     "WorkflowExecutionClaim",
     "WorkflowExecutionDispatcher",
     "WorkflowExecutionMode",

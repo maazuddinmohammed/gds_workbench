@@ -22,7 +22,7 @@ function resolveEndpoint(metadata, scope, endpoint, masked) {
       names.some((name) => typeof name !== "string" || !name.trim()) ||
       new Set(names.map(norm)).size !== names.length) throw Error("Select 1–8 distinct registered Attributes.");
   const identity = key(endpoint.object);
-  if (!scope.some((row) => active(row) && key(row) === identity)) throw Error("Object is outside active Model Input Scope.");
+  if (!scope.some((row) => active(row) && key(row) === identity)) throw Error("Object is outside active Project Input Scope.");
   const objects = [...(metadata.source_object ?? []), ...(metadata.bronze_object ?? [])].filter(active);
   const matches = objects.filter((row) => key(row) === identity);
   if (matches.length !== 1) throw Error("Object is missing or ambiguous in Source/Bronze Metadata.");

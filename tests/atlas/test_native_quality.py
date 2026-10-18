@@ -23,17 +23,17 @@ def test_native_quality_evaluator_matches_all_javascript_scenarios(
     if powershell is None:
         pytest.skip("PowerShell is not installed")
     captured = tmp_path / "cases.json"
-    module = HELPER.parent.parent / "workbench" / "model-quality.js"
+    module = HELPER.parent.parent / "workbench" / "project-quality.js"
     suite = REPOSITORY_ROOT / "tests" / "atlas" / "workbench-quality.test.mjs"
     capture = tmp_path / "capture.cjs"
     capture.write_text("""
 const fs = require('node:fs');
 const {pathToFileURL} = require('node:url');
 const api = require(process.argv[2]), evaluate = api.evaluateQuality, cases = [];
-api.evaluateQuality = (model, decisions, options = {}) => {
-  const expected = evaluate(model, decisions, options);
+api.evaluateQuality = (project, decisions, options = {}) => {
+  const expected = evaluate(project, decisions, options);
   cases.push(JSON.parse(JSON.stringify({
-    model: model instanceof Map ? [...model] : null, decisions, expected,
+    project: project instanceof Map ? [...project] : null, decisions, expected,
     notes: options.noteFiles instanceof Map ? Object.fromEntries(options.noteFiles)
       : options.noteFiles || {},
     metadata: options.metadataMap instanceof Map ? [...options.metadataMap] : [],
@@ -79,7 +79,7 @@ function Convert-States($Pairs) {
 $results = New-Object Collections.ArrayList
 $cases = ConvertFrom-GdsJson ([IO.File]::ReadAllText($CasesPath))
 foreach ($case in $cases) {
-    $states = if ($null -eq $case.model) { $null } else { @(Convert-States $case.model) }
+    $states = if ($null -eq $case.project) { $null } else { @(Convert-States $case.project) }
     $metadata = @(Convert-States $case.metadata)
     $notes = @{}
     foreach ($name in @(Get-PropertyNames $case.notes)) {

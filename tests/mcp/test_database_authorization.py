@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from gds_etl_workbench.application.authorization import (
@@ -20,7 +20,7 @@ from gds_etl_workbench.domain.errors import (
     TenantNotFoundError,
 )
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from psycopg.errors import InvalidParameterValue
+from psycopg.errors import ForeignKeyViolation, InvalidParameterValue, UniqueViolation
 
 if TYPE_CHECKING:
     from conftest import DisposablePostgres
@@ -79,26 +79,39 @@ def test_authorization_rejects_a_null_expected_principal_type(
         )
 
 
-def test_modeling_assertion_tables_replace_modeling_evidence_tables(
+def test_context_tables_replace_legacy_assertion_and_evidence_tables(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
         row = connection.execute(
             """
-            SELECT to_regclass('model.modeling_assertion_document')
-                       AS assertion_document,
-                   to_regclass('model.modeling_assertion_record')
-                       AS assertion_record,
-                   to_regclass('model.modeling_evidence_document')
+            SELECT to_regclass('reference.context_type')
+                       AS context_type,
+                   to_regclass('project.context_group')
+                       AS context_group,
+                   to_regclass('project.context_record')
+                       AS context_record,
+                   to_regnamespace('model') AS legacy_model_schema,
+                   to_regclass('core.project') AS legacy_core_project,
+                   to_regclass('project.modeling_assertion_document')
+                       AS legacy_assertion_document,
+                   to_regclass('project.modeling_assertion_record')
+                       AS legacy_assertion_record,
+                   to_regclass('project.modeling_evidence_document')
                        AS evidence_document,
-                   to_regclass('model.modeling_evidence_record')
+                   to_regclass('project.modeling_evidence_record')
                        AS evidence_record
             """
         ).fetchone()
 
     assert row == {
-        "assertion_document": "model.modeling_assertion_document",
-        "assertion_record": "model.modeling_assertion_record",
+        "context_type": "reference.context_type",
+        "context_group": "project.context_group",
+        "context_record": "project.context_record",
+        "legacy_model_schema": None,
+        "legacy_core_project": None,
+        "legacy_assertion_document": None,
+        "legacy_assertion_record": None,
         "evidence_document": None,
         "evidence_record": None,
     }
@@ -322,16 +335,16 @@ def test_mcp_schema_owns_change_sets_and_tool_call_log(
     with postgres_database.connect_owner() as connection:
         row = connection.execute(
             """
-            SELECT to_regclass('mcp.model_change_set') AS model_change_set,
-                   to_regclass('mcp.model_change_set_event')
-                       AS model_change_set_event,
+            SELECT to_regclass('mcp.project_change_set') AS project_change_set,
+                   to_regclass('mcp.project_change_set_event')
+                       AS project_change_set_event,
                    to_regclass('mcp.metadata_change_set')
                        AS metadata_change_set,
                    to_regclass('mcp.metadata_change_set_event')
                        AS metadata_change_set_event,
                    to_regclass('mcp.tool_call_log') AS tool_call_log,
-                   to_regclass('workflow.model_change_set')
-                       AS old_model_change_set,
+                   to_regclass('workflow.project_change_set')
+                       AS old_project_change_set,
                    to_regclass('workflow.metadata_change_set')
                        AS old_metadata_change_set,
                    to_regclass('security.mcp_tool_call_log')
@@ -340,12 +353,12 @@ def test_mcp_schema_owns_change_sets_and_tool_call_log(
         ).fetchone()
 
     assert row == {
-        "model_change_set": "mcp.model_change_set",
-        "model_change_set_event": "mcp.model_change_set_event",
+        "project_change_set": "mcp.project_change_set",
+        "project_change_set_event": "mcp.project_change_set_event",
         "metadata_change_set": "mcp.metadata_change_set",
         "metadata_change_set_event": "mcp.metadata_change_set_event",
         "tool_call_log": "mcp.tool_call_log",
-        "old_model_change_set": None,
+        "old_project_change_set": None,
         "old_metadata_change_set": None,
         "old_tool_call_log": None,
     }
@@ -370,7 +383,7 @@ def test_artifact_lock_event_tables_are_absent(
     }
 
 
-def test_model_change_set_uses_assertion_contract_names(
+def test_project_change_set_uses_context_contract_names(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
@@ -379,25 +392,25 @@ def test_model_change_set_uses_assertion_contract_names(
             SELECT EXISTS (
                        SELECT 1 FROM information_schema.columns
                         WHERE table_schema = 'mcp'
-                          AND table_name = 'model_change_set'
-                          AND column_name = 'base_assertion_digest'
-                   ) AS base_assertion_digest,
+                          AND table_name = 'project_change_set'
+                          AND column_name = 'base_context_digest'
+                   ) AS base_context_digest,
                    EXISTS (
                        SELECT 1 FROM information_schema.columns
                         WHERE table_schema = 'mcp'
-                          AND table_name = 'model_change_set'
-                          AND column_name = 'assertion_document'
-                   ) AS assertion_document,
+                          AND table_name = 'project_change_set'
+                          AND column_name = 'context_document'
+                   ) AS context_document,
                    EXISTS (
                        SELECT 1 FROM information_schema.columns
                         WHERE table_schema = 'mcp'
-                          AND table_name = 'model_change_set'
+                          AND table_name = 'project_change_set'
                           AND column_name = 'base_evidence_digest'
                    ) AS base_evidence_digest,
                    EXISTS (
                        SELECT 1 FROM information_schema.columns
                         WHERE table_schema = 'mcp'
-                          AND table_name = 'model_change_set'
+                          AND table_name = 'project_change_set'
                           AND column_name = 'evidence_document'
                    ) AS evidence_document
             """
@@ -414,33 +427,32 @@ def test_model_change_set_uses_assertion_contract_names(
         ).fetchall()
 
     assert columns == {
-        "base_assertion_digest": True,
-        "assertion_document": True,
+        "base_context_digest": True,
+        "context_document": True,
         "base_evidence_digest": False,
         "evidence_document": False,
     }
     assert len(constraints) == 1
     for constraint in constraints:
-        assert "assertion" in constraint["definition"]
+        assert "context" in constraint["definition"]
         assert "evidence" not in constraint["definition"]
 
 
-def test_conceptual_support_accepts_an_assertion_record_source(
+def test_conceptual_support_accepts_a_context_record_source(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
-        model_id, assertion_record_id = _seed_model_assertion(
+        project_id, context_record_id = _seed_project_context(
             connection,
-            tenant_code="ASSERTION_SUPPORT",
-            model_name="Assertion Support Model",
-            document_name="Architecture Notes",
-            assertion_text="Orders belong to customers.",
-            applicable_layer="conceptual",
+            tenant_code="CONTEXT_SUPPORT",
+            project_name="Context Support Project",
+            group_name="Architecture Notes",
+            context_text="Orders belong to customers.",
         )
         conceptual_object = connection.execute(
             """
             INSERT INTO workflow.conceptual_object (
-                model_id,
+                project_id,
                 conceptual_object_name,
                 conceptual_object_definition,
                 conceptual_object_type,
@@ -449,55 +461,54 @@ def test_conceptual_support_accepts_an_assertion_record_source(
             VALUES (%s, 'Order', 'A customer order.', 'business_object', 'One order')
             RETURNING conceptual_object_id
             """,
-            (model_id,),
+            (project_id,),
         ).fetchone()
         assert conceptual_object is not None
         support = connection.execute(
             """
             INSERT INTO workflow.conceptual_support (
-                model_id,
+                project_id,
                 supported_artifact_type,
                 conceptual_object_id,
                 support_source_type,
-                modeling_assertion_record_id,
+                context_record_id,
                 conceptual_support_reason
             )
-            VALUES (%s, 'conceptual_object', %s, 'assertion', %s,
-                    'The assertion establishes the business concept.')
+            VALUES (%s, 'conceptual_object', %s, 'context_record', %s,
+                    'The Context Record establishes the business concept.')
             RETURNING support_source_type,
                       source_object_id,
-                      modeling_assertion_record_id
+                      context_record_id
             """,
             (
-                model_id,
+                project_id,
                 conceptual_object["conceptual_object_id"],
-                assertion_record_id,
+                context_record_id,
             ),
         ).fetchone()
 
     assert support == {
-        "support_source_type": "assertion",
+        "support_source_type": "context_record",
         "source_object_id": None,
-        "modeling_assertion_record_id": assertion_record_id,
+        "context_record_id": context_record_id,
     }
 
 
-def test_logical_entity_source_accepts_an_assertion_record(
+def test_logical_entity_source_accepts_a_context_record(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
-        model_id, assertion_record_id = _seed_model_assertion(
+        project_id, context_record_id = _seed_project_context(
             connection,
-            tenant_code="LOGICAL_ASSERTION",
-            model_name="Logical Assertion Model",
-            document_name="Logical Design Notes",
-            assertion_text="Orders have an independent lifecycle.",
-            applicable_layer="logical",
+            tenant_code="LOGICAL_CONTEXT",
+            project_name="Logical Context Project",
+            group_name="Logical Design Notes",
+            context_text="Orders have an independent lifecycle.",
         )
         logical_entity = connection.execute(
             """
             INSERT INTO workflow.logical_entity (
-                model_id,
+                project_id,
                 logical_entity_schema_name,
                 logical_entity_name,
                 logical_entity_definition,
@@ -507,54 +518,53 @@ def test_logical_entity_source_accepts_an_assertion_record(
             VALUES (%s, 'silver', 'Order', 'A customer order.', 'transaction', 'One order')
             RETURNING logical_entity_id
             """,
-            (model_id,),
+            (project_id,),
         ).fetchone()
         assert logical_entity is not None
         source = connection.execute(
             """
             INSERT INTO workflow.logical_entity_source_mapping (
-                model_id,
+                project_id,
                 logical_entity_id,
                 support_source_type,
-                modeling_assertion_record_id,
+                context_record_id,
                 logical_entity_source_mapping_rationale
             )
-            VALUES (%s, %s, 'assertion', %s,
-                    'The assertion establishes the entity boundary.')
+            VALUES (%s, %s, 'context_record', %s,
+                    'The Context Record establishes the entity boundary.')
             RETURNING support_source_type,
                       source_object_id,
-                      modeling_assertion_record_id
+                      context_record_id
             """,
             (
-                model_id,
+                project_id,
                 logical_entity["logical_entity_id"],
-                assertion_record_id,
+                context_record_id,
             ),
         ).fetchone()
 
     assert source == {
-        "support_source_type": "assertion",
+        "support_source_type": "context_record",
         "source_object_id": None,
-        "modeling_assertion_record_id": assertion_record_id,
+        "context_record_id": context_record_id,
     }
 
 
-def test_logical_attribute_source_accepts_an_assertion_record(
+def test_logical_attribute_source_accepts_a_context_record(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
-        model_id, assertion_record_id = _seed_model_assertion(
+        project_id, context_record_id = _seed_project_context(
             connection,
-            tenant_code="LOGICAL_ATTRIBUTE_ASSERTION",
-            model_name="Logical Attribute Assertion Model",
-            document_name="Logical Attribute Notes",
-            assertion_text="Every order has a business order number.",
-            applicable_layer="logical",
+            tenant_code="LOGICAL_ATTRIBUTE_CONTEXT",
+            project_name="Logical Attribute Context Project",
+            group_name="Logical Attribute Notes",
+            context_text="Every order has a business order number.",
         )
         logical_entity = connection.execute(
             """
             INSERT INTO workflow.logical_entity (
-                model_id,
+                project_id,
                 logical_entity_schema_name,
                 logical_entity_name,
                 logical_entity_definition,
@@ -564,13 +574,13 @@ def test_logical_attribute_source_accepts_an_assertion_record(
             VALUES (%s, 'silver', 'Order', 'A customer order.', 'transaction', 'One order')
             RETURNING logical_entity_id
             """,
-            (model_id,),
+            (project_id,),
         ).fetchone()
         assert logical_entity is not None
         logical_attribute = connection.execute(
             """
             INSERT INTO workflow.logical_attribute (
-                model_id,
+                project_id,
                 logical_entity_id,
                 logical_attribute_name,
                 logical_attribute_definition,
@@ -581,60 +591,59 @@ def test_logical_attribute_source_accepts_an_assertion_record(
                     'varchar(50)', 1)
             RETURNING logical_attribute_id
             """,
-            (model_id, logical_entity["logical_entity_id"]),
+            (project_id, logical_entity["logical_entity_id"]),
         ).fetchone()
         assert logical_attribute is not None
         source = connection.execute(
             """
             INSERT INTO workflow.logical_attribute_source_mapping (
-                model_id,
+                project_id,
                 logical_entity_id,
                 logical_attribute_id,
                 support_source_type,
-                modeling_assertion_record_id,
+                context_record_id,
                 logical_attribute_source_mapping_rationale
             )
-            VALUES (%s, %s, %s, 'assertion', %s,
-                    'The assertion establishes the business Attribute.')
+            VALUES (%s, %s, %s, 'context_record', %s,
+                    'The Context Record establishes the business Attribute.')
             RETURNING support_source_type,
                       logical_entity_source_mapping_id,
                       source_object_id,
                       source_attribute_id,
-                      modeling_assertion_record_id
+                      context_record_id
             """,
             (
-                model_id,
+                project_id,
                 logical_entity["logical_entity_id"],
                 logical_attribute["logical_attribute_id"],
-                assertion_record_id,
+                context_record_id,
             ),
         ).fetchone()
 
     assert source == {
-        "support_source_type": "assertion",
+        "support_source_type": "context_record",
         "logical_entity_source_mapping_id": None,
         "source_object_id": None,
         "source_attribute_id": None,
-        "modeling_assertion_record_id": assertion_record_id,
+        "context_record_id": context_record_id,
     }
 
 
-def test_dimensional_entity_source_accepts_an_assertion_record(
+def test_dimensional_entity_source_accepts_a_context_record(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
-        model_id, assertion_record_id = _seed_model_assertion(
+        project_id, context_record_id = _seed_project_context(
             connection,
-            tenant_code="DIMENSIONAL_ASSERTION",
-            model_name="Dimensional Assertion Model",
-            document_name="Dimensional Design Notes",
-            assertion_text="Customers require a reusable analytical dimension.",
-            applicable_layer="dimensional",
+            tenant_code="DIMENSIONAL_CONTEXT",
+            project_name="Dimensional Context Project",
+            group_name="Dimensional Design Notes",
+            context_text="Customers require a reusable analytical dimension.",
         )
         dimensional_entity = connection.execute(
             """
             INSERT INTO workflow.dimensional_entity (
-                model_id,
+                project_id,
                 dimensional_entity_schema_name,
                 dimensional_entity_name,
                 dimensional_entity_definition,
@@ -643,55 +652,54 @@ def test_dimensional_entity_source_accepts_an_assertion_record(
             VALUES (%s, 'gold', 'Customer', 'Reusable customer dimension.', 'dimension')
             RETURNING dimensional_entity_id
             """,
-            (model_id,),
+            (project_id,),
         ).fetchone()
         assert dimensional_entity is not None
         source = connection.execute(
             """
             INSERT INTO workflow.dimensional_entity_source_mapping (
-                model_id,
+                project_id,
                 dimensional_entity_id,
                 support_source_type,
-                modeling_assertion_record_id,
+                context_record_id,
                 dimensional_entity_source_role,
                 dimensional_entity_source_mapping_rationale
             )
-            VALUES (%s, %s, 'assertion', %s, 'business_basis',
-                    'The assertion establishes the reusable Dimension.')
+            VALUES (%s, %s, 'context_record', %s, 'business_basis',
+                    'The Context Record establishes the reusable Dimension.')
             RETURNING support_source_type,
                       source_logical_entity_id,
-                      modeling_assertion_record_id
+                      context_record_id
             """,
             (
-                model_id,
+                project_id,
                 dimensional_entity["dimensional_entity_id"],
-                assertion_record_id,
+                context_record_id,
             ),
         ).fetchone()
 
     assert source == {
-        "support_source_type": "assertion",
+        "support_source_type": "context_record",
         "source_logical_entity_id": None,
-        "modeling_assertion_record_id": assertion_record_id,
+        "context_record_id": context_record_id,
     }
 
 
-def test_dimensional_attribute_source_accepts_an_assertion_record(
+def test_dimensional_attribute_source_accepts_a_context_record(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
-        model_id, assertion_record_id = _seed_model_assertion(
+        project_id, context_record_id = _seed_project_context(
             connection,
-            tenant_code="DIMENSIONAL_ATTRIBUTE_ASSERTION",
-            model_name="Dimensional Attribute Assertion Model",
-            document_name="Dimensional Attribute Notes",
-            assertion_text="Customer segment is required for reporting.",
-            applicable_layer="dimensional",
+            tenant_code="DIMENSIONAL_ATTRIBUTE_CONTEXT",
+            project_name="Dimensional Attribute Context Project",
+            group_name="Dimensional Attribute Notes",
+            context_text="Customer segment is required for reporting.",
         )
         dimensional_entity = connection.execute(
             """
             INSERT INTO workflow.dimensional_entity (
-                model_id,
+                project_id,
                 dimensional_entity_schema_name,
                 dimensional_entity_name,
                 dimensional_entity_definition,
@@ -700,13 +708,13 @@ def test_dimensional_attribute_source_accepts_an_assertion_record(
             VALUES (%s, 'gold', 'Customer', 'Reusable customer dimension.', 'dimension')
             RETURNING dimensional_entity_id
             """,
-            (model_id,),
+            (project_id,),
         ).fetchone()
         assert dimensional_entity is not None
         dimensional_attribute = connection.execute(
             """
             INSERT INTO workflow.dimensional_attribute (
-                model_id,
+                project_id,
                 dimensional_entity_id,
                 dimensional_attribute_name,
                 dimensional_attribute_definition,
@@ -718,41 +726,41 @@ def test_dimensional_attribute_source_accepts_an_assertion_record(
                     'varchar(100)', 1, 'descriptor')
             RETURNING dimensional_attribute_id
             """,
-            (model_id, dimensional_entity["dimensional_entity_id"]),
+            (project_id, dimensional_entity["dimensional_entity_id"]),
         ).fetchone()
         assert dimensional_attribute is not None
         source = connection.execute(
             """
             INSERT INTO workflow.dimensional_attribute_source_mapping (
-                model_id,
+                project_id,
                 dimensional_entity_id,
                 dimensional_attribute_id,
                 support_source_type,
-                modeling_assertion_record_id,
+                context_record_id,
                 dimensional_attribute_source_mapping_rationale
             )
-            VALUES (%s, %s, %s, 'assertion', %s,
-                    'The assertion establishes the analytical Attribute.')
+            VALUES (%s, %s, %s, 'context_record', %s,
+                    'The Context Record establishes the analytical Attribute.')
             RETURNING support_source_type,
                       dimensional_entity_source_mapping_id,
                       source_logical_entity_id,
                       source_logical_attribute_id,
-                      modeling_assertion_record_id
+                      context_record_id
             """,
             (
-                model_id,
+                project_id,
                 dimensional_entity["dimensional_entity_id"],
                 dimensional_attribute["dimensional_attribute_id"],
-                assertion_record_id,
+                context_record_id,
             ),
         ).fetchone()
 
     assert source == {
-        "support_source_type": "assertion",
+        "support_source_type": "context_record",
         "dimensional_entity_source_mapping_id": None,
         "source_logical_entity_id": None,
         "source_logical_attribute_id": None,
-        "modeling_assertion_record_id": assertion_record_id,
+        "context_record_id": context_record_id,
     }
 
 
@@ -776,16 +784,16 @@ async def test_list_tenants_sql_enforces_visibility_with_one_bound_actor(
         )
         project = connection.execute(
             """
-            INSERT INTO core.project (project_code, project_name)
+            INSERT INTO core.lane (lane_code, lane_name)
             VALUES ('LIST_SQL_GLOBAL', 'List SQL Global Project')
-            RETURNING project_id
+            RETURNING lane_id
             """
         ).fetchone()
         assert project is not None
         connection.execute(
             """
             INSERT INTO core.tenant (
-                project_id,
+                lane_id,
                 tenant_code,
                 tenant_name,
                 tenant_catalog,
@@ -795,7 +803,7 @@ async def test_list_tenants_sql_enforces_visibility_with_one_bound_actor(
             VALUES (%s, 'LIST_SQL_GLOBAL', 'List SQL Global Tenant',
                     'list_sql_global', 'list_sql_global_admin', 'global')
             """,
-            (project["project_id"],),
+            (project["lane_id"],),
         )
 
     database = postgres_database.create_runtime_adapter()
@@ -830,16 +838,16 @@ def test_global_tenant_read_grants_implicit_viewer_access(
     with postgres_database.connect_owner() as connection:
         project = connection.execute(
             """
-            INSERT INTO core.project (project_code, project_name)
+            INSERT INTO core.lane (lane_code, lane_name)
             VALUES ('AUTH_GLOBAL', 'Authorization Global Project')
-            RETURNING project_id
+            RETURNING lane_id
             """
         ).fetchone()
         assert project is not None
         tenant = connection.execute(
             """
             INSERT INTO core.tenant (
-                project_id,
+                lane_id,
                 tenant_code,
                 tenant_name,
                 tenant_catalog,
@@ -850,7 +858,7 @@ def test_global_tenant_read_grants_implicit_viewer_access(
                     'global_catalog', 'global_admin', 'global')
             RETURNING tenant_id
             """,
-            (project["project_id"],),
+            (project["lane_id"],),
         ).fetchone()
         assert tenant is not None
         principal = connection.execute(
@@ -907,16 +915,16 @@ def test_metadata_write_requires_an_owned_active_tenant_lock(
     with postgres_database.connect_owner() as connection:
         project = connection.execute(
             """
-            INSERT INTO core.project (project_code, project_name)
+            INSERT INTO core.lane (lane_code, lane_name)
             VALUES ('AUTH_WRITE', 'Authorization Write Project')
-            RETURNING project_id
+            RETURNING lane_id
             """
         ).fetchone()
         assert project is not None
         tenant = connection.execute(
             """
             INSERT INTO core.tenant (
-                project_id,
+                lane_id,
                 tenant_code,
                 tenant_name,
                 tenant_catalog,
@@ -927,7 +935,7 @@ def test_metadata_write_requires_an_owned_active_tenant_lock(
                     'write_catalog', 'write_admin', 'private')
             RETURNING tenant_id
             """,
-            (project["project_id"],),
+            (project["lane_id"],),
         ).fetchone()
         assert tenant is not None
         principal = connection.execute(
@@ -1032,16 +1040,16 @@ def test_registered_workload_without_super_admin_authority_is_denied(
     with postgres_database.connect_owner() as connection:
         project = connection.execute(
             """
-            INSERT INTO core.project (project_code, project_name)
+            INSERT INTO core.lane (lane_code, lane_name)
             VALUES ('AUTH_WORKLOAD', 'Authorization Workload Project')
-            RETURNING project_id
+            RETURNING lane_id
             """
         ).fetchone()
         assert project is not None
         tenant = connection.execute(
             """
             INSERT INTO core.tenant (
-                project_id,
+                lane_id,
                 tenant_code,
                 tenant_name,
                 tenant_catalog,
@@ -1052,7 +1060,7 @@ def test_registered_workload_without_super_admin_authority_is_denied(
                     'workload_catalog', 'workload_admin', 'global')
             RETURNING tenant_id
             """,
-            (project["project_id"],),
+            (project["lane_id"],),
         ).fetchone()
         assert tenant is not None
         principal = connection.execute(
@@ -1117,16 +1125,16 @@ def test_developer_acquires_a_default_tenant_lock_with_an_audit_event(
     with postgres_database.connect_owner() as connection:
         project = connection.execute(
             """
-            INSERT INTO core.project (project_code, project_name)
+            INSERT INTO core.lane (lane_code, lane_name)
             VALUES ('AUTH_LOCK', 'Authorization Lock Project')
-            RETURNING project_id
+            RETURNING lane_id
             """
         ).fetchone()
         assert project is not None
         tenant = connection.execute(
             """
             INSERT INTO core.tenant (
-                project_id,
+                lane_id,
                 tenant_code,
                 tenant_name,
                 tenant_catalog,
@@ -1137,7 +1145,7 @@ def test_developer_acquires_a_default_tenant_lock_with_an_audit_event(
                     'lock_catalog', 'lock_admin', 'private')
             RETURNING tenant_id
             """,
-            (project["project_id"],),
+            (project["lane_id"],),
         ).fetchone()
         assert tenant is not None
         principal = connection.execute(
@@ -1823,9 +1831,9 @@ def _seed_private_tenant(
 ) -> int:
     project = connection.execute(
         """
-        INSERT INTO core.project (project_code, project_name)
+        INSERT INTO core.lane (lane_code, lane_name)
         VALUES (%s, %s)
-        RETURNING project_id
+        RETURNING lane_id
         """,
         (code, f"{code} Project"),
     ).fetchone()
@@ -1833,7 +1841,7 @@ def _seed_private_tenant(
     tenant = connection.execute(
         """
         INSERT INTO core.tenant (
-            project_id,
+            lane_id,
             tenant_code,
             tenant_name,
             tenant_catalog,
@@ -1844,7 +1852,7 @@ def _seed_private_tenant(
         RETURNING tenant_id
         """,
         (
-            project["project_id"],
+            project["lane_id"],
             code,
             f"{code} Tenant",
             f"{code.lower()}_catalog",
@@ -1855,62 +1863,101 @@ def _seed_private_tenant(
     return cast(int, tenant["tenant_id"])
 
 
-def _seed_model_assertion(
+def test_context_uuid_and_group_ownership_cannot_cross_projects(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_owner() as connection:
+        first_project, first_record = _seed_project_context(
+            connection,
+            tenant_code="CONTEXT_OWNER_A",
+            project_name="Context owner A",
+            group_name="Rules",
+            context_text="Owner A rule",
+        )
+        second_project, _ = _seed_project_context(
+            connection,
+            tenant_code="CONTEXT_OWNER_B",
+            project_name="Context owner B",
+            group_name="Rules",
+            context_text="Owner B rule",
+        )
+        first_group = connection.execute(
+            "SELECT context_group_id FROM project.context_group WHERE project_id=%s",
+            (first_project,),
+        ).fetchone()
+        second_group = connection.execute(
+            "SELECT context_group_id FROM project.context_group WHERE project_id=%s",
+            (second_project,),
+        ).fetchone()
+        assert first_group is not None and second_group is not None
+    with pytest.raises(ForeignKeyViolation):
+        with postgres_database.connect_owner() as connection:
+            connection.execute(
+                "INSERT INTO project.context_record "
+                "(context_record_id, project_id, context_group_id, context_text) VALUES (%s,%s,%s,'Wrong owner')",
+                (uuid4(), second_project, first_group["context_group_id"]),
+            )
+    with pytest.raises(UniqueViolation):
+        with postgres_database.connect_owner() as connection:
+            connection.execute(
+                "INSERT INTO project.context_record "
+                "(context_record_id, project_id, context_group_id, context_text) VALUES (%s,%s,%s,'Reused identity')",
+                (first_record, second_project, second_group["context_group_id"]),
+            )
+
+
+def _seed_project_context(
     connection: Connection[dict[str, object]],
     *,
     tenant_code: str,
-    model_name: str,
-    document_name: str,
-    assertion_text: str,
-    applicable_layer: str,
-) -> tuple[int, int]:
+    project_name: str,
+    group_name: str,
+    context_text: str,
+) -> tuple[int, UUID]:
     tenant_id = _seed_private_tenant(connection, tenant_code)
-    model = connection.execute(
+    project = connection.execute(
         """
-        INSERT INTO model.model (tenant_id, model_name, logical_schemas, dimensional_schemas)
+        INSERT INTO project.project (tenant_id, project_name, logical_schemas, dimensional_schemas)
         VALUES (%s, %s, '[{"schema_name":"silver","description":null}]'::JSONB,
                 '[{"schema_name":"gold","description":null}]'::JSONB)
-        RETURNING model_id
+        RETURNING project_id
         """,
-        (tenant_id, model_name),
+        (tenant_id, project_name),
     ).fetchone()
-    assert model is not None
-    model_id = cast(int, model["model_id"])
-    document = connection.execute(
+    assert project is not None
+    project_id = cast(int, project["project_id"])
+    group = connection.execute(
         """
-        INSERT INTO model.modeling_assertion_document (
-            model_id,
-            modeling_assertion_document_name
+        INSERT INTO project.context_group (
+            project_id,
+            name, context_type_id
         )
-        VALUES (%s, %s)
-        RETURNING modeling_assertion_document_id
+        VALUES (%s, %s, (SELECT context_type_id FROM reference.context_type WHERE name='Business Requirement'))
+        RETURNING context_group_id
         """,
-        (model_id, document_name),
+        (project_id, group_name),
     ).fetchone()
-    assert document is not None
-    assertion = connection.execute(
+    assert group is not None
+    record = connection.execute(
         """
-        INSERT INTO model.modeling_assertion_record (
-            model_id,
-            modeling_assertion_document_id,
-            modeling_assertion_record_key,
-            modeling_assertion_record_type,
-            modeling_assertion_text,
-            modeling_assertion_applicable_layers
+        INSERT INTO project.context_record (
+            project_id,
+            context_group_id,
+            context_record_id,
+            context_text
         )
-        VALUES (%s, %s, %s, 'business_rule', %s, %s)
-        RETURNING modeling_assertion_record_id
+        VALUES (%s, %s, %s, %s)
+        RETURNING context_record_id
         """,
         (
-            model_id,
-            document["modeling_assertion_document_id"],
-            f"assertion-{tenant_code}",
-            assertion_text,
-            [applicable_layer],
+            project_id,
+            group["context_group_id"],
+            uuid4(),
+            context_text,
         ),
     ).fetchone()
-    assert assertion is not None
-    return model_id, cast(int, assertion["modeling_assertion_record_id"])
+    assert record is not None
+    return project_id, cast(UUID, record["context_record_id"])
 
 
 def _seed_user_actor(

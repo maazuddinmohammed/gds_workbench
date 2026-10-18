@@ -182,41 +182,41 @@ describe("Workbench API client", () => {
     );
   });
 
-  it("keeps Model and Scope reads tenant nested and normalizes Scope filters", async () => {
+  it("keeps Project and Scope reads tenant nested and normalizes Scope filters", async () => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse({ items: [], next_cursor: null }))
-      .mockResolvedValueOnce(jsonResponse({ model_id: 18 }))
-      .mockResolvedValueOnce(jsonResponse({ model_id: 18, model_revision: 4, items: [], next_cursor: null }))
+      .mockResolvedValueOnce(jsonResponse({ project_id: 18 }))
+      .mockResolvedValueOnce(jsonResponse({ project_id: 18, project_revision: 4, items: [], next_cursor: null }))
       .mockResolvedValueOnce(jsonResponse({ object_id: 501, attributes: [] }));
     const api = createApiClient(fetcher);
 
-    await api.listModels(7, "active");
-    await api.readModel(7, 18);
-    await api.listModelInputScope(7, 18, {
+    await api.listProjects(7, "active");
+    await api.readProject(7, 18);
+    await api.listProjectInputScope(7, 18, {
       zone: " Bronze ",
       systemCode: " CRM ",
       sourceTenantCode: " GRDM ",
       objectName: " Customer_Raw ",
     });
-    await api.readModelInputScopeObject(7, 18, 501);
+    await api.readProjectInputScopeObject(7, 18, 501);
 
     expect(fetcher.mock.calls.map(([input]) => input)).toEqual([
-      "/api/v1/tenants/7/models?status=active&page_size=200",
-      "/api/v1/tenants/7/models/18",
-      "/api/v1/tenants/7/models/18/input-scope?zone=bronze&system_code=crm&source_tenant_code=grdm&object_name=customer_raw&page_size=200",
-      "/api/v1/tenants/7/models/18/input-scope/501",
+      "/api/v1/tenants/7/projects?status=active&page_size=200",
+      "/api/v1/tenants/7/projects/18",
+      "/api/v1/tenants/7/projects/18/input-scope?zone=bronze&system_code=crm&source_tenant_code=grdm&object_name=customer_raw&page_size=200",
+      "/api/v1/tenants/7/projects/18/input-scope/501",
     ]);
   });
 
-  it("reads the authoritative workflow overview inside the Model route", async () => {
+  it("reads the authoritative workflow overview inside the Project route", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
-      jsonResponse({ model_id: 18, model_revision: 18, items: [] }),
+      jsonResponse({ project_id: 18, project_revision: 18, items: [] }),
     );
 
-    await createApiClient(fetcher).readModelOverview(7, 18);
+    await createApiClient(fetcher).readProjectOverview(7, 18);
 
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/overview",
+      "/api/v1/tenants/7/projects/18/overview",
       expect.objectContaining({ credentials: "same-origin" }),
     );
   });
@@ -237,21 +237,21 @@ describe("Workbench API client", () => {
     await api.readWorkflowRun(7, 18, 1048);
     await api.listWorkflowRunEvents(7, 18, 1048, 7);
     await api.createProfilingRun(7, 18, {
-      expected_model_revision: 4,
-      model_workflow: "profiling",
+      expected_project_revision: 4,
+      project_workflow: "profiling",
       selected_object_ids: [501],
       requested_batch_id: null,
     }, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     await api.executeProfilingRun(7, 18, 1048, 4);
 
     expect(fetcher.mock.calls.map(([input]) => input)).toEqual([
-      "/api/v1/tenants/7/models/18/profiling?object_id=501&source_tenant_code=grdm&system_code=crm&object_schema=bronze_crm&object_name=customer_raw&page_size=200",
-      "/api/v1/tenants/7/models/18/profiling/501",
-      "/api/v1/tenants/7/models/18/runs?workflow=profiling&page_size=200&state=running",
-      "/api/v1/tenants/7/models/18/runs/1048",
-      "/api/v1/tenants/7/models/18/runs/1048/events?after_sequence=7&page_size=200",
-      "/api/v1/tenants/7/models/18/runs",
-      "/api/v1/tenants/7/models/18/profiling/runs/1048/execute",
+      "/api/v1/tenants/7/projects/18/profiling?object_id=501&source_tenant_code=grdm&system_code=crm&object_schema=bronze_crm&object_name=customer_raw&page_size=200",
+      "/api/v1/tenants/7/projects/18/profiling/501",
+      "/api/v1/tenants/7/projects/18/runs?workflow=profiling&page_size=200&state=running",
+      "/api/v1/tenants/7/projects/18/runs/1048",
+      "/api/v1/tenants/7/projects/18/runs/1048/events?after_sequence=7&page_size=200",
+      "/api/v1/tenants/7/projects/18/runs",
+      "/api/v1/tenants/7/projects/18/profiling/runs/1048/execute",
     ]);
     expect(fetcher.mock.calls[5]?.[1]).toEqual(expect.objectContaining({
       method: "POST",
@@ -260,7 +260,7 @@ describe("Workbench API client", () => {
       }),
     }));
     expect(fetcher.mock.calls[6]?.[1]?.body).toBe(JSON.stringify({
-      expected_model_revision: 4,
+      expected_project_revision: 4,
     }));
   });
 
@@ -276,8 +276,8 @@ describe("Workbench API client", () => {
     await api.readAnalysisFinding(7, 18, 81);
     await api.readAgentCapabilities();
     await api.createWorkflowRun(7, 18, {
-      expected_model_revision: 18,
-      model_workflow: "analysis",
+      expected_project_revision: 18,
+      project_workflow: "analysis",
       workflow_execution_mode: "tool_assisted",
       selected_object_ids: [501],
       requested_batch_id: null,
@@ -293,10 +293,10 @@ describe("Workbench API client", () => {
     }, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
 
     expect(fetcher.mock.calls.map(([input]) => input)).toEqual([
-      "/api/v1/tenants/7/models/18/analysis?object_id=501&validation_state=unvalidated&show_inactive=true&page_size=200",
-      "/api/v1/tenants/7/models/18/analysis/81",
+      "/api/v1/tenants/7/projects/18/analysis?object_id=501&validation_state=unvalidated&show_inactive=true&page_size=200",
+      "/api/v1/tenants/7/projects/18/analysis/81",
       "/api/v1/config/agent-capabilities",
-      "/api/v1/tenants/7/models/18/runs",
+      "/api/v1/tenants/7/projects/18/runs",
     ]);
     expect(fetcher.mock.calls[3]?.[1]).toEqual(expect.objectContaining({
       method: "POST",
@@ -306,34 +306,20 @@ describe("Workbench API client", () => {
     }));
   });
 
-  it("uses normalized Assertion Document and Record read routes", async () => {
+  it("uses Context group and UUID record routes", async () => {
     const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => jsonResponse({ items: [] }));
     const api = createApiClient(fetcher);
-
-    await api.listAssertionDocuments(7, 18, {
-      sourceSystemId: 2,
-      sourceSystemCode: " CRM ",
-      active: true,
-      namePrefix: " Customer ",
-    });
-    await api.readAssertionDocument(7, 18, 31);
-    await api.listAssertionRecords(7, 18, {
-      documentId: 31,
-      documentName: " Customer Rules ",
-      sourceSystemId: 2,
-      sourceSystemCode: " CRM ",
-      status: "inactive",
-      locked: false,
-      applicableLayer: "logical",
-      keyPrefix: " Customer. ",
-    });
-    await api.readAssertionRecord(7, 18, 91);
-
+    await api.listContextTypes(7, 18);
+    await api.listContextGroups(7, 18, { contextTypeId: 2, sourceSystemId: 11, active: true, namePrefix: " Customer " });
+    await api.readContextGroup(7, 18, 31);
+    await api.listContextRecords(7, 18, { groupId: 31, status: "inactive", locked: false, textSearch: " Customer " });
+    await api.readContextRecord(7, 18, "00000000-0000-4000-8000-000000000091");
     expect(fetcher.mock.calls.map(([input]) => input)).toEqual([
-      "/api/v1/tenants/7/models/18/assertions/documents?source_system_id=2&source_system_code=crm&active=true&name_prefix=customer&page_size=200",
-      "/api/v1/tenants/7/models/18/assertions/documents/31",
-      "/api/v1/tenants/7/models/18/assertions/records?document_id=31&document_name=customer+rules&source_system_id=2&source_system_code=crm&status=inactive&locked=false&applicable_layer=logical&key_prefix=customer.&page_size=200",
-      "/api/v1/tenants/7/models/18/assertions/records/91",
+      "/api/v1/tenants/7/projects/18/context/types",
+      "/api/v1/tenants/7/projects/18/context/groups?context_type_id=2&source_system_id=11&active=true&name_prefix=customer&page_size=200",
+      "/api/v1/tenants/7/projects/18/context/groups/31",
+      "/api/v1/tenants/7/projects/18/context/records?group_id=31&status=inactive&locked=false&text_search=Customer&page_size=200",
+      "/api/v1/tenants/7/projects/18/context/records/00000000-0000-4000-8000-000000000091",
     ]);
   });
 
@@ -428,10 +414,10 @@ describe("Workbench API client", () => {
     await api.readConceptualRelationship(7, 18, 51);
 
     expect(fetcher.mock.calls.map(([input]) => input)).toEqual([
-      "/api/v1/tenants/7/models/18/conceptual/objects?status=inactive&locked=true&name_prefix=customer&page_size=200",
-      "/api/v1/tenants/7/models/18/conceptual/objects/41",
-      "/api/v1/tenants/7/models/18/conceptual/relationships?status=active&locked=false&name_exact=places+order&page_size=200",
-      "/api/v1/tenants/7/models/18/conceptual/relationships/51",
+      "/api/v1/tenants/7/projects/18/conceptual/objects?status=inactive&locked=true&name_prefix=customer&page_size=200",
+      "/api/v1/tenants/7/projects/18/conceptual/objects/41",
+      "/api/v1/tenants/7/projects/18/conceptual/relationships?status=active&locked=false&name_exact=places+order&page_size=200",
+      "/api/v1/tenants/7/projects/18/conceptual/relationships/51",
     ]);
   });
 });

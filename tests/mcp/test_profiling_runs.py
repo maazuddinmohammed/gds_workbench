@@ -45,8 +45,8 @@ def start(
             (
                 context.entra_tenant_id,
                 context.entra_object_id,
-                context.model_id,
-                context.model_revision,
+                context.project_id,
+                context.project_revision,
                 list(context.selected_object_ids),
                 batches,
                 seed.environment_code,
@@ -179,7 +179,7 @@ async def test_worker_saves_profiles_atomically_and_status_reports_saved(
         assert status.state == "completed"
         assert status.saved_profile_count == len(seed.attributes)
         assert status.completed_object_count == len(seed.context.selected_object_ids)
-        assert status.model_revision == seed.context.model_revision + 1
+        assert status.project_revision == seed.context.project_revision + 1
     finally:
         await database.close()
 
@@ -288,7 +288,7 @@ async def test_unbatched_source_and_bronze_use_registered_relations(
         await database.close()
 
 
-def test_locked_model_and_protected_scope_reject_before_queries(
+def test_locked_project_and_protected_scope_reject_before_queries(
     postgres_database: Any,
 ) -> None:
     seed = _seed_profiling_execution(postgres_database, start=False)
@@ -299,17 +299,17 @@ def test_locked_model_and_protected_scope_reject_before_queries(
                 seed.context.entra_tenant_id,
                 seed.context.entra_object_id,
                 seed.context.tenant_id,
-                seed.context.model_id,
+                seed.context.project_id,
                 seed.workflow_run_id,
             ),
         )
         connection.execute(
-            "UPDATE model.model SET is_locked = TRUE WHERE model_id = %s",
-            (seed.context.model_id,),
+            "UPDATE project.project SET is_locked = TRUE WHERE project_id = %s",
+            (seed.context.project_id,),
         )
-    with pytest.raises(ObjectNotInPrerequisiteState, match="model_locked"):
+    with pytest.raises(ObjectNotInPrerequisiteState, match="project_locked"):
         start(postgres_database, seed, batches=["1"])
-    # A separate fixture Model verifies masking; an agent never unlocks the first Model.
+    # A separate fixture Project verifies masking; an agent never unlocks the first Project.
     protected = _seed_profiling_execution(postgres_database, start=False)
     with postgres_database.connect_owner() as connection:
         connection.execute(

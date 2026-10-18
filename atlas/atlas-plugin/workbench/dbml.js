@@ -33,7 +33,7 @@
   }
 
   function normalize(value) {
-    return core.normalize("model", "name", oneLine(value));
+    return core.normalize("project", "name", oneLine(value));
   }
 
   function token(value, fallback = "item", limit = 128) {
@@ -71,13 +71,13 @@
       .join(" | ")}`;
   }
 
-  function projectLines(model, suffix, description) {
+  function projectLines(project, suffix, description) {
     return [
-      `Project ${token(`${model.model_name}_${suffix}`, "model")} {`,
+      `Project ${token(`${project.project_name}_${suffix}`, "project")} {`,
       ...noteLines([
-        ["Model", model.model_name],
-        ["Model ID", model.model_id],
-        ["Model revision", model.model_revision],
+        ["Project", project.project_name],
+        ["Project ID", project.project_id],
+        ["Project revision", project.project_revision],
         ["View", description],
       ]),
       "}",
@@ -122,7 +122,7 @@
     };
   }
 
-  function renderConceptual(loaded, model) {
+  function renderConceptual(loaded, project) {
     const objects = rows(loaded, "conceptual_object")
       .filter((record) => record.conceptual_object_status === "active")
       .sort((left, right) => normalize(left.conceptual_object_name).localeCompare(normalize(right.conceptual_object_name)));
@@ -131,7 +131,7 @@
     const relationships = rows(loaded, "conceptual_relationship")
       .filter((record) => record.conceptual_relationship_status === "active")
       .sort((left, right) => [left.from_conceptual_object_name, left.to_conceptual_object_name, left.conceptual_relationship_name].map(normalize).join("\0").localeCompare([right.from_conceptual_object_name, right.to_conceptual_object_name, right.conceptual_relationship_name].map(normalize).join("\0")));
-    const lines = projectLines(model, "conceptual", "Complete conceptual model");
+    const lines = projectLines(project, "conceptual", "Complete conceptual model");
     for (const record of objects) {
       lines.push(
         `Table ${identifier(record.conceptual_object_name)} [headercolor: ${colors.get(normalize(record.conceptual_object_name))}] {`,
@@ -187,7 +187,7 @@
 
   function prepareLayer(loaded, layer) {
     const spec = layerSpecification(layer);
-    const logicalHistory = layer === "logical" && rows(loaded, "model_details")
+    const logicalHistory = layer === "logical" && rows(loaded, "project_details")
       .some((record) => record.logical_entity_scd_type === "type_2");
     const submodels = rows(loaded, spec.submodelDataset)
       .filter((record) => record[spec.submodelStatus] === "active")
@@ -290,10 +290,10 @@
     return { inline, indexes };
   }
 
-  function renderModeled(model, data, included, path, view, submodelName, description) {
+  function renderModeled(project, data, included, path, view, submodelName, description) {
     const include = included || new Set(data.entities.map((entity) => entity.key));
     const colors = colorMap(new Map(data.entities.map((entity) => [entity.key, entity.colorGroup])));
-    const lines = projectLines(model, token(description), description);
+    const lines = projectLines(project, token(description), description);
     let tableCount = 0;
     for (const entity of data.entities) {
       const entityKey = entity.key;
@@ -332,9 +332,9 @@
     return document(path, data.layer, view, submodelName, lines, tableCount, relationshipCount);
   }
 
-  function modeledDocuments(loaded, model, layer, includeSubmodels) {
+  function modeledDocuments(loaded, project, layer, includeSubmodels) {
     const data = prepareLayer(loaded, layer);
-    const documents = [renderModeled(model, data, null, `${layer}_complete.dbml`, "complete", null, `Complete ${layer} model`)];
+    const documents = [renderModeled(project, data, null, `${layer}_complete.dbml`, "complete", null, `Complete ${layer} model`)];
     if (!includeSubmodels) return documents;
     const usedNames = new Set([`${layer}_complete.dbml`, `${layer}_default.dbml`]);
     const assigned = new Set();
@@ -347,25 +347,25 @@
       let suffix = 2;
       while (usedNames.has(path.toLowerCase())) path = `${base}_${suffix++}.dbml`;
       usedNames.add(path.toLowerCase());
-      documents.push(renderModeled(model, data, members, path, "submodel", submodel.name, `${layer[0].toUpperCase()}${layer.slice(1)} Submodel: ${submodel.name}. ${submodel.definition || ""}`));
+      documents.push(renderModeled(project, data, members, path, "submodel", submodel.name, `${layer[0].toUpperCase()}${layer.slice(1)} Submodel: ${submodel.name}. ${submodel.definition || ""}`));
     }
     const unassigned = new Set(data.entities.map((entity) => entity.key).filter((key) => !assigned.has(key)));
-    if (unassigned.size) documents.push(renderModeled(model, data, unassigned, `${layer}_default.dbml`, "default", null, `${layer[0].toUpperCase()}${layer.slice(1)} Entities without an active Submodel membership`));
+    if (unassigned.size) documents.push(renderModeled(project, data, unassigned, `${layer}_default.dbml`, "default", null, `${layer[0].toUpperCase()}${layer.slice(1)} Entities without an active Submodel membership`));
     return documents;
   }
 
-  function render(loaded, model, options = {}) {
-    if (!(loaded instanceof Map)) throw new Error("Effective Model datasets are required for DBML generation.");
-    if (!model || !Number.isSafeInteger(model.model_id) || typeof model.model_name !== "string" || !Number.isSafeInteger(model.model_revision)) {
-      throw new Error("Model identity is required for DBML generation.");
+  function render(loaded, project, options = {}) {
+    if (!(loaded instanceof Map)) throw new Error("Effective Project datasets are required for DBML generation.");
+    if (!project || !Number.isSafeInteger(project.project_id) || typeof project.project_name !== "string" || !Number.isSafeInteger(project.project_revision)) {
+      throw new Error("Project identity is required for DBML generation.");
     }
     const modelType = options.modelType || "full";
     const includeSubmodels = options.includeSubmodels !== false;
     if (!new Set(["full", "conceptual", "logical", "dimensional"]).has(modelType)) throw new Error("DBML model type is invalid.");
     const documents = [];
-    if (modelType === "full" || modelType === "conceptual") documents.push(renderConceptual(loaded, model));
-    if (modelType === "full" || modelType === "logical") documents.push(...modeledDocuments(loaded, model, "logical", includeSubmodels));
-    if (modelType === "full" || modelType === "dimensional") documents.push(...modeledDocuments(loaded, model, "dimensional", includeSubmodels));
+    if (modelType === "full" || modelType === "conceptual") documents.push(renderConceptual(loaded, project));
+    if (modelType === "full" || modelType === "logical") documents.push(...modeledDocuments(loaded, project, "logical", includeSubmodels));
+    if (modelType === "full" || modelType === "dimensional") documents.push(...modeledDocuments(loaded, project, "dimensional", includeSubmodels));
     documents.sort((left, right) => left.path.localeCompare(right.path));
     const paths = documents.map((item) => item.path.toLowerCase());
     const sizes = documents.map((item) => encoder.encode(item.content).length);

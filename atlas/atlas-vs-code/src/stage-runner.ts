@@ -124,13 +124,13 @@ export async function stageApprovedManifest(
     if (scopeId !== request.owner.id) fail("TARGET_MISMATCH", "Resolved Tenant differs from the approved owner.");
   } else {
     if (
-      typeof request.target.model_id !== "number" ||
-      !Number.isSafeInteger(request.target.model_id) ||
-      request.target.model_id < 1
+      typeof request.target.project_id !== "number" ||
+      !Number.isSafeInteger(request.target.project_id) ||
+      request.target.project_id < 1
     ) {
-      fail("MANIFEST_INVALID", "Model Stage request has no valid Model ID.");
+      fail("MANIFEST_INVALID", "Project Stage request has no valid Project ID.");
     }
-    scopeId = request.target.model_id;
+    scopeId = request.target.project_id;
   }
   const target = stageTarget(request, scopeId);
   const summary = requireObject(
@@ -172,7 +172,7 @@ export async function stageApprovedManifest(
     }
     const refreshed = await readRequest(input, dependencies.workspaceRoots, dependencies.backend);
     if (refreshed.operationSha256 !== approved.operationSha256 || stableStringify(refreshed.request) !== stableStringify(request)) fail("MANIFEST_CHANGED", "Approval changed during recovery.");
-    const receipt: StageReceipt = {schema_version:"1.0",status:"staged",task_id:request.task,operation_id:request.operation.id,
+    const receipt: StageReceipt = {schema_version:"2.0",status:"staged",task_id:request.task,operation_id:request.operation.id,
       owner_tenant_id:request.owner.id,owner_root:request.owner.root,backend:request.backend,area:request.area,
       change_set_id:request.target.change_set_id,starting_revision:request.target.starting_revision,draft_revision:revision,
       accepted_digest:request.accepted_digest,stage_fingerprint:fingerprint,fingerprint_verified:true,
@@ -245,7 +245,7 @@ export async function stageApprovedManifest(
     await dependencies.mcp.callTool(`get_${request.area}_change_set_fingerprint`, target),
   );
   const receipt: StageReceipt = {
-    schema_version: "1.0",
+    schema_version: "2.0",
     status: "staged",
     task_id: request.task,
     operation_id: request.operation.id,

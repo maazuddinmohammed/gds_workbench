@@ -30,8 +30,8 @@ class ProfilingStatus(BaseModel):
 
     schema_version: Literal["1.0"] = "1.0"
     run_id: int = Field(gt=0)
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     state: Literal["queued", "running", "completed", "cancelled", "failed"]
     selected_object_count: int = Field(ge=1)
     completed_object_count: int = Field(ge=0)
@@ -118,8 +118,8 @@ class ProfilingService:
         self,
         principal: RequestPrincipal,
         *,
-        model_id: int,
-        expected_model_revision: int,
+        project_id: int,
+        expected_project_revision: int,
         selected_object_ids: list[int],
         batch_ids: list[str] | None,
         environment_code: str,
@@ -130,8 +130,8 @@ class ProfilingService:
                 "SELECT mcp.start_mcp_profiling_run(%s,%s,%s,%s,%s,%s,%s,%s,%s) AS result",
                 (
                     *identity_arguments(principal),
-                    model_id,
-                    expected_model_revision,
+                    project_id,
+                    expected_project_revision,
                     selected_object_ids,
                     batch_ids,
                     environment_code,

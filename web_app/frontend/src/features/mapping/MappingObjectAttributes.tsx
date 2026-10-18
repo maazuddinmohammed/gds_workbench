@@ -2,18 +2,18 @@ import { useId, useRef, useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError } from "../../core/http";
-import { ModelRecordReview } from "../model_record_review/ModelRecordReview";
+import { ProjectRecordReview } from "../project_record_review/ProjectRecordReview";
 import { MappingAttributesLedger } from "./MappingLedgers";
 import { mappingQueryKeys, type MappingApi, type MappingFilters } from "./api";
 
 export function MappingObjectAttributes({
-  api, tenantId, modelId, mappingObjectId, modelRevision, hasTenantLock,
+  api, tenantId, projectId, mappingObjectId, projectRevision, hasTenantLock,
 }: {
   api: MappingApi;
   tenantId: number;
-  modelId: number;
+  projectId: number;
   mappingObjectId: number;
-  modelRevision: number;
+  projectRevision: number;
   hasTenantLock: boolean;
 }) {
   const client = useQueryClient();
@@ -26,12 +26,12 @@ export function MappingObjectAttributes({
   const filterCount = Number(Boolean(filters.status)) + Number(filters.locked !== undefined);
   const scopedFilters = { ...filters, mappingObjectId };
   const query = useInfiniteQuery({
-    queryKey: mappingQueryKeys.attributes(tenantId, modelId, scopedFilters),
+    queryKey: mappingQueryKeys.attributes(tenantId, projectId, scopedFilters),
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) => api.listMappingAttributes(tenantId, modelId, scopedFilters, 200, pageParam),
+    queryFn: ({ pageParam }) => api.listMappingAttributes(tenantId, projectId, scopedFilters, 200, pageParam),
     getNextPageParam: (page) => page.next_cursor ?? undefined,
   });
-  const revisionMismatch = query.data?.pages.some((page) => page.model_revision !== modelRevision) === true;
+  const revisionMismatch = query.data?.pages.some((page) => page.project_revision !== projectRevision) === true;
   return (
     <section className={`detail-section mapping-object-attributes${selectedIds.size ? " has-selection" : ""}`} aria-labelledby={headingId}>
       <header>
@@ -46,16 +46,16 @@ export function MappingObjectAttributes({
             setSelectedIds(new Set());
             void Promise.all([
               query.refetch(),
-              client.invalidateQueries({ queryKey: ["mapping-attribute", tenantId, modelId] }),
-              client.invalidateQueries({ queryKey: ["mapping-objects", tenantId, modelId] }),
-              client.invalidateQueries({ queryKey: ["model", tenantId, modelId] }),
-              client.invalidateQueries({ queryKey: mappingQueryKeys.object(tenantId, modelId, mappingObjectId) }),
+              client.invalidateQueries({ queryKey: ["mapping-attribute", tenantId, projectId] }),
+              client.invalidateQueries({ queryKey: ["mapping-objects", tenantId, projectId] }),
+              client.invalidateQueries({ queryKey: ["project", tenantId, projectId] }),
+              client.invalidateQueries({ queryKey: mappingQueryKeys.object(tenantId, projectId, mappingObjectId) }),
               client.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
             ]);
           }}>Refresh Attributes</button>
         </div>
       </header>
-      <ModelRecordReview api={api} tenantId={tenantId} modelId={modelId} modelRevision={modelRevision}
+      <ProjectRecordReview api={api} tenantId={tenantId} projectId={projectId} projectRevision={projectRevision}
         dataset="mapping_attribute" selectedIds={selectedIds} hasTenantLock={hasTenantLock}
         disabled={query.isPending || query.isError || query.isFetching || revisionMismatch}
         onApplied={async () => {
@@ -64,7 +64,7 @@ export function MappingObjectAttributes({
           requestAnimationFrame(() => refreshButton.current?.focus());
         }}
       />
-      <MappingAttributesLedger api={api} tenantId={tenantId} modelId={modelId}
+      <MappingAttributesLedger api={api} tenantId={tenantId} projectId={projectId}
         filtersOpen={filtersOpen} filterId={filterId}
         selectedIds={selectedIds} onSelectionChange={setSelectedIds}
         items={query.data?.pages.flatMap((page) => page.items) ?? []}

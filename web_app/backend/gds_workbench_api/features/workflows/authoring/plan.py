@@ -18,7 +18,7 @@ from gds_workbench_api.prompt_rendering import (
 
 from .agent_execution import AgentToolName
 
-type ModelWorkflow = Literal[
+type ProjectWorkflow = Literal[
     "analysis",
     "conceptual",
     "logical",
@@ -46,10 +46,10 @@ class AgentRunPlanTransaction(Protocol):
 
 _RUN_PLAN_SQL: LiteralString = """
 SELECT run.workflow_run_id,
-       run.model_id,
+       run.project_id,
        run.correlation_id,
-       run.model_revision,
-       run.model_workflow,
+       run.project_revision,
+       run.project_workflow,
        run.workflow_execution_mode,
        run.modeled_entity_type,
        run.code_generation_coverage_mode,
@@ -64,7 +64,7 @@ SELECT run.workflow_run_id,
        run.max_turns,
        run.validation_retry_count,
        stage.workflow_stage_id,
-       stage.model_workflow AS prompt_workflow,
+       stage.project_workflow AS prompt_workflow,
        stage.workflow_stage_code,
        stage.workflow_stage_order,
        version.prompt_template_version_id,
@@ -85,22 +85,22 @@ SELECT run.workflow_run_id,
        variable.workflow_stage_variable_is_required,
        variable.workflow_stage_variable_order
   FROM application.workflow_run AS run
-  JOIN model.model AS target_model
-    ON target_model.model_id = run.model_id
-   AND target_model.tenant_id = %s
-   AND target_model.is_active
-   AND target_model.model_revision = run.model_revision
+  JOIN project.project AS target_project
+    ON target_project.project_id = run.project_id
+   AND target_project.tenant_id = %s
+   AND target_project.is_active
+   AND target_project.project_revision = run.project_revision
   JOIN application.workflow_run_prompt_snapshot AS snapshot
     ON snapshot.workflow_run_id = run.workflow_run_id
-   AND snapshot.model_id = run.model_id
+   AND snapshot.project_id = run.project_id
   JOIN application.prompt_template_version AS version
     ON version.prompt_template_version_id = snapshot.prompt_template_version_id
    AND version.workflow_stage_id = snapshot.workflow_stage_id
    AND version.prompt_template_digest = snapshot.prompt_template_digest
   JOIN application.workflow_stage AS stage
     ON stage.workflow_stage_id = snapshot.workflow_stage_id
-   AND (stage.model_workflow = run.model_workflow OR (
-       run.model_workflow = 'metadata_enrichment' AND stage.model_workflow IN
+   AND (stage.project_workflow = run.project_workflow OR (
+       run.project_workflow = 'metadata_enrichment' AND stage.project_workflow IN
        ('metadata_enrichment_object', 'metadata_enrichment_attribute')
    ))
    AND stage.workflow_stage_is_agentic
@@ -114,7 +114,7 @@ SELECT run.workflow_run_id,
   LEFT JOIN application.workflow_stage_variable AS variable
     ON variable.workflow_stage_id = stage.workflow_stage_id
    AND variable.is_active
- WHERE run.model_id = %s
+ WHERE run.project_id = %s
    AND run.workflow_run_id = %s
    AND run.workflow_run_state = 'running'
  ORDER BY stage.workflow_stage_order,
@@ -129,12 +129,12 @@ SELECT selection.object_id,
   FROM application.workflow_run_object_selection AS selection
   JOIN application.workflow_run AS run
     ON run.workflow_run_id = selection.workflow_run_id
-   AND run.model_id = selection.model_id
-  JOIN model.model AS target_model
-    ON target_model.model_id = run.model_id
-   AND target_model.tenant_id = %s
-   AND target_model.is_active
- WHERE selection.model_id = %s
+   AND run.project_id = selection.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = run.project_id
+   AND target_project.tenant_id = %s
+   AND target_project.is_active
+ WHERE selection.project_id = %s
    AND selection.workflow_run_id = %s
    AND run.workflow_run_state = 'running'
  ORDER BY selection.selection_order,
@@ -145,10 +145,11 @@ _RUN_ENTITY_SELECTION_SQL: LiteralString = """
 SELECT selection.modeled_entity_id, selection.selection_order
  FROM application.workflow_run_entity_selection AS selection
  JOIN application.workflow_run AS run ON run.workflow_run_id = selection.workflow_run_id AND
-     run.model_id = selection.model_id
- JOIN model.model AS target_model ON target_model.model_id = run.model_id
- WHERE target_model.tenant_id = %s AND selection.model_id = %s AND selection.workflow_run_id = %s
-  AND target_model.is_active AND run.workflow_run_state = 'running'
+     run.project_id = selection.project_id
+ JOIN project.project AS target_project ON target_project.project_id = run.project_id
+ WHERE target_project.tenant_id = %s AND selection.project_id = %s
+   AND selection.workflow_run_id = %s
+  AND target_project.is_active AND run.workflow_run_state = 'running'
  ORDER BY selection.selection_order
 """
 
@@ -158,14 +159,14 @@ SELECT selection.system_code,
   FROM application.workflow_run_system_selection AS selection
   JOIN application.workflow_run AS run
     ON run.workflow_run_id = selection.workflow_run_id
-   AND run.model_id = selection.model_id
-  JOIN model.model AS target_model
-    ON target_model.model_id = run.model_id
-   AND target_model.tenant_id = %s
-   AND target_model.is_active
- WHERE selection.model_id = %s
+   AND run.project_id = selection.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = run.project_id
+   AND target_project.tenant_id = %s
+   AND target_project.is_active
+ WHERE selection.project_id = %s
    AND selection.workflow_run_id = %s
-   AND run.model_workflow = 'validation'
+   AND run.project_workflow = 'validation'
    AND run.workflow_run_state = 'running'
  ORDER BY selection.selection_order,
           selection.workflow_run_system_selection_id
@@ -206,10 +207,10 @@ class AgentRunPlan(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     workflow_run_id: int = Field(gt=0)
-    model_id: int = Field(gt=0)
+    project_id: int = Field(gt=0)
     correlation_id: UUID
-    model_revision: int = Field(ge=0)
-    model_workflow: ModelWorkflow
+    project_revision: int = Field(ge=0)
+    project_workflow: ProjectWorkflow
     workflow_execution_mode: WorkflowExecutionMode | None
     modeled_entity_type: ModeledEntityType | None
     code_generation_coverage_mode: (
@@ -229,11 +230,11 @@ class AgentRunPlan(BaseModel):
 
     @model_validator(mode="after")
     def validate_plan(self) -> AgentRunPlan:
-        if self.model_workflow == "metadata_enrichment" and (
+        if self.project_workflow == "metadata_enrichment" and (
             self.workflow_execution_mode != "one_shot"
         ):
             raise ValueError("Metadata enrichment requires one-shot execution")
-        if self.model_workflow == "code_generation":
+        if self.project_workflow == "code_generation":
             if self.code_generation_coverage_mode is None:
                 raise ValueError("Code Generation plan snapshot is incomplete")
             if self.code_generation_file_layout is None:
@@ -243,7 +244,7 @@ class AgentRunPlan(BaseModel):
             or self.code_generation_file_layout is not None
         ):
             raise ValueError("Code Generation plan snapshot is unavailable")
-        entity_workflow = self.model_workflow in {"dimensional", "mapping", "code_generation"}
+        entity_workflow = self.project_workflow in {"dimensional", "mapping", "code_generation"}
         selected_ids = self.selected_entity_ids if entity_workflow else self.selected_object_ids
         if (entity_workflow and self.selected_object_ids) or (
             not entity_workflow and self.selected_entity_ids
@@ -258,11 +259,11 @@ class AgentRunPlan(BaseModel):
             normalized_system_codes
         ) != len(set(normalized_system_codes)):
             raise ValueError("Selected Systems must be nonblank and unique")
-        if self.model_workflow == "validation":
+        if self.project_workflow == "validation":
             if self.selected_object_ids or not self.selected_system_codes:
                 raise ValueError("Validation requires only an explicit System selection")
         elif (
-            self.selected_system_codes and self.model_workflow != "code_generation"
+            self.selected_system_codes and self.project_workflow != "code_generation"
         ) or not selected_ids:
             raise ValueError("Only Validation may use a System selection")
         stage_ids = [stage.workflow_stage_id for stage in self.stages]
@@ -278,7 +279,7 @@ class AgentRunPlanRepository(Protocol):
         transaction: ReadTransaction,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
     ) -> AgentRunPlan: ...
 
@@ -291,20 +292,21 @@ class PostgresAgentRunPlanRepository:
         transaction: AgentRunPlanTransaction,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
     ) -> AgentRunPlan:
-        parameters = (tenant_id, model_id, workflow_run_id)
+        parameters = (tenant_id, project_id, workflow_run_id)
         rows = await transaction.fetch_all(_RUN_PLAN_SQL, parameters)
         entity_workflow = bool(
-            rows and rows[0].get("model_workflow") in {"dimensional", "mapping", "code_generation"}
+            rows
+            and rows[0].get("project_workflow") in {"dimensional", "mapping", "code_generation"}
         )
         selection_rows = await transaction.fetch_all(
             _RUN_ENTITY_SELECTION_SQL if entity_workflow else _RUN_SELECTION_SQL, parameters
         )
         system_selection_rows = (
             await transaction.fetch_all(_RUN_SYSTEM_SELECTION_SQL, parameters)
-            if rows and rows[0].get("model_workflow") == "validation"
+            if rows and rows[0].get("project_workflow") == "validation"
             else []
         )
         try:
@@ -329,10 +331,10 @@ def _assemble_plan(
         raise AgentRunPlanUnavailableError()
 
     first = rows[0]
-    model_workflow = _required_str(first, "model_workflow")
-    if (model_workflow == "validation") == bool(selection_rows):
+    project_workflow = _required_str(first, "project_workflow")
+    if (project_workflow == "validation") == bool(selection_rows):
         raise AgentRunPlanUnavailableError()
-    if model_workflow != "validation" and system_selection_rows:
+    if project_workflow != "validation" and system_selection_rows:
         raise AgentRunPlanUnavailableError()
     expected_stage_count = _required_int(first, "expected_stage_count")
     selected_scope_count = _required_int(first, "selected_scope_count")
@@ -347,11 +349,11 @@ def _assemble_plan(
             _required_int(
                 row,
                 "modeled_entity_id"
-                if model_workflow in {"dimensional", "mapping", "code_generation"}
+                if project_workflow in {"dimensional", "mapping", "code_generation"}
                 else "object_id",
             )
         )
-    if model_workflow != "validation" and (
+    if project_workflow != "validation" and (
         len(selected_object_ids) != selected_scope_count
         or len(selected_object_ids) != len(set(selected_object_ids))
     ):
@@ -362,7 +364,7 @@ def _assemble_plan(
             raise AgentRunPlanUnavailableError()
         selected_system_codes.append(_required_str(row, "system_code"))
     normalized_system_codes = [value.strip().casefold() for value in selected_system_codes]
-    if model_workflow == "validation" and (
+    if project_workflow == "validation" and (
         len(selected_system_codes) != selected_scope_count
         or not selected_system_codes
         or len(normalized_system_codes) != len(set(normalized_system_codes))
@@ -372,10 +374,10 @@ def _assemble_plan(
     grouped: dict[int, list[dict[str, Any]]] = {}
     identity_keys = (
         "workflow_run_id",
-        "model_id",
+        "project_id",
         "correlation_id",
-        "model_revision",
-        "model_workflow",
+        "project_revision",
+        "project_workflow",
         "workflow_execution_mode",
         "modeled_entity_type",
         "code_generation_coverage_mode",
@@ -494,10 +496,10 @@ def _assemble_plan(
 
     return AgentRunPlan(
         workflow_run_id=_required_int(first, "workflow_run_id"),
-        model_id=_required_int(first, "model_id"),
+        project_id=_required_int(first, "project_id"),
         correlation_id=_required_uuid(first, "correlation_id"),
-        model_revision=_required_int(first, "model_revision"),
-        model_workflow=cast(ModelWorkflow, model_workflow),
+        project_revision=_required_int(first, "project_revision"),
+        project_workflow=cast(ProjectWorkflow, project_workflow),
         workflow_execution_mode=cast(
             WorkflowExecutionMode | None,
             _optional_str(first, "workflow_execution_mode"),
@@ -512,13 +514,13 @@ def _assemble_plan(
         ),
         selected_scope_digest=_required_str(first, "selected_scope_digest"),
         selected_object_ids=()
-        if model_workflow in {"dimensional", "mapping", "code_generation"}
+        if project_workflow in {"dimensional", "mapping", "code_generation"}
         else tuple(selected_object_ids),
         selected_entity_ids=tuple(selected_object_ids)
-        if model_workflow in {"dimensional", "mapping", "code_generation"}
+        if project_workflow in {"dimensional", "mapping", "code_generation"}
         else (),
         selected_system_codes=tuple(first.get("code_generation_system_codes") or ())
-        if model_workflow == "code_generation"
+        if project_workflow == "code_generation"
         else tuple(selected_system_codes),
         code_generation_file_layout=first.get("code_generation_file_layout"),
         selection=AgentRunSelection(

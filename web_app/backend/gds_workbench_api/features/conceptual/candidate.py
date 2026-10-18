@@ -6,8 +6,8 @@ from collections.abc import Sequence
 from copy import deepcopy
 from typing import cast
 
-from gds_etl_workbench.application.change_sets.model import StageModelChange
-from gds_etl_workbench.application.change_sets.model_validation import (
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
+from gds_etl_workbench.application.change_sets.project_validation import (
     validate_staged_records,
 )
 from gds_etl_workbench.domain.errors import InvalidRequestError
@@ -17,17 +17,17 @@ from gds_etl_workbench.domain.modeling_records import (
     ObjectSupportRecord,
     PhysicalObjectKey,
     SupportRecord,
-    normalize_model_key_value,
+    normalize_project_key_value,
 )
-from gds_etl_workbench.domain.snapshots.model import ConceptualSection
+from gds_etl_workbench.domain.snapshots.project import ConceptualSection
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from gds_workbench_api.features.workflows.authoring.repair import (
     AgentCandidateValidation,
     AgentValidationIssue,
-    enrich_agent_output_model_definitions,
-    model_validation_issues,
+    enrich_agent_output_project_definitions,
     parse_pydantic_candidate,
+    project_validation_issues,
 )
 
 
@@ -60,19 +60,19 @@ class ConceptualCandidateValidator:
         self,
         *,
         selected_object_keys: tuple[PhysicalObjectKey, ...],
-        assertion_record_keys: tuple[str, ...],
+        context_record_ids: tuple[str, ...],
         applied: ConceptualSection | None,
     ) -> None:
         if not selected_object_keys or len(selected_object_keys) > 50_000:
             raise ValueError("Conceptual selection must be bounded and nonempty")
         selected = {_physical_key(item) for item in selected_object_keys}
-        assertions = {normalize_model_key_value(item) for item in assertion_record_keys}
-        if len(selected) != len(selected_object_keys) or len(assertions) != len(
-            assertion_record_keys
+        context_records = {normalize_project_key_value(item) for item in context_record_ids}
+        if len(selected) != len(selected_object_keys) or len(context_records) != len(
+            context_record_ids
         ):
             raise ValueError("Conceptual candidate evidence keys must be unique")
         self._selected_object_keys = selected
-        self._assertion_record_keys = assertions
+        self._context_record_ids = context_records
         self._applied = applied or ConceptualSection(objects=(), relationships=())
         self._applied_objects = {_object_key(record): record for record in self._applied.objects}
         self._applied_relationships = {
@@ -86,13 +86,13 @@ class ConceptualCandidateValidator:
     def output_schema(self) -> dict[str, JsonValue]:
         schema = cast(dict[str, JsonValue], deepcopy(_ConceptualCandidate.model_json_schema()))
         _set_lock_fields_false(schema)
-        enrich_agent_output_model_definitions(schema)
+        enrich_agent_output_project_definitions(schema)
         return schema
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
         return AgentCandidateValidation(issues=self._normalize(candidate).issues)
 
-    def parse_validated(self, candidate: JsonValue) -> tuple[StageModelChange, ...]:
+    def parse_validated(self, candidate: JsonValue) -> tuple[StageProjectChange, ...]:
         normalized = self._normalize(candidate)
         if normalized.issues:
             raise InvalidRequestError("The Conceptual candidate is invalid.")
@@ -107,17 +107,17 @@ class ConceptualCandidateValidator:
             for record in normalized.relationships
             if self._applied_relationships.get(_relationship_key(record)) != record
         ]
-        changes: list[StageModelChange] = []
+        changes: list[StageProjectChange] = []
         if changed_objects:
             changes.append(
-                StageModelChange(
+                StageProjectChange(
                     dataset="conceptual_object",
                     records=changed_objects,
                 )
             )
         if changed_relationships:
             changes.append(
-                StageModelChange(
+                StageProjectChange(
                     dataset="conceptual_relationship",
                     records=changed_relationships,
                 )
@@ -180,7 +180,7 @@ class ConceptualCandidateValidator:
             "conceptual_relationship",
             raw_relationships,
         )
-        issues.extend(model_validation_issues(object_issues + relationship_issues))
+        issues.extend(project_validation_issues(object_issues + relationship_issues))
         objects = cast(tuple[ConceptualObjectRecord, ...], object_records)
         relationships = cast(
             tuple[ConceptualRelationshipRecord, ...],
@@ -192,9 +192,9 @@ class ConceptualCandidateValidator:
         effective_object_keys.update(_object_key(record) for record in objects)
         for index, relationship in enumerate(relationships):
             if (
-                normalize_model_key_value(relationship.from_conceptual_object_name)
+                normalize_project_key_value(relationship.from_conceptual_object_name)
                 not in effective_object_keys
-                or normalize_model_key_value(relationship.to_conceptual_object_name)
+                or normalize_project_key_value(relationship.to_conceptual_object_name)
                 not in effective_object_keys
             ):
                 issues.append(
@@ -259,13 +259,11 @@ class ConceptualCandidateValidator:
                 message = "Physical support must belong to this immutable run selection."
             else:
                 valid = (
-                    normalize_model_key_value(
-                        support.assertion_record.modeling_assertion_record_key
-                    )
-                    in self._assertion_record_keys
+                    normalize_project_key_value(support.context_record.context_record_id)
+                    in self._context_record_ids
                 )
-                code = "candidate.assertion_unavailable"
-                message = "Assertion support must exist in this immutable run context."
+                code = "candidate.context_unavailable"
+                message = "Context support must exist in this immutable run context."
             if not valid:
                 issues.append(
                     AgentValidationIssue(
@@ -395,14 +393,14 @@ def _append_locked_change_issues(
 
 
 def _object_key(record: ConceptualObjectRecord) -> str:
-    return normalize_model_key_value(record.conceptual_object_name)
+    return normalize_project_key_value(record.conceptual_object_name)
 
 
 def _relationship_key(record: ConceptualRelationshipRecord) -> tuple[str, str, str]:
     return (
-        normalize_model_key_value(record.from_conceptual_object_name),
-        normalize_model_key_value(record.to_conceptual_object_name),
-        normalize_model_key_value(record.conceptual_relationship_name),
+        normalize_project_key_value(record.from_conceptual_object_name),
+        normalize_project_key_value(record.to_conceptual_object_name),
+        normalize_project_key_value(record.conceptual_relationship_name),
     )
 
 
@@ -410,14 +408,14 @@ def _support_key(record: SupportRecord) -> tuple[str, ...]:
     if isinstance(record, ObjectSupportRecord):
         return ("object", *_physical_key(record.source_object))
     return (
-        "assertion",
-        normalize_model_key_value(record.assertion_record.modeling_assertion_record_key),
+        "context_record",
+        normalize_project_key_value(record.context_record.context_record_id),
     )
 
 
 def _physical_key(record: PhysicalObjectKey) -> tuple[str, str, str, str, str]:
     return tuple(
-        normalize_model_key_value(getattr(record, field))
+        normalize_project_key_value(getattr(record, field))
         for field in (
             "tenant_code",
             "system_code",

@@ -70,7 +70,7 @@ def test_authoring_no_op_is_atomic_revision_stable_and_exactly_replayable(
                 context.entra_tenant_id,
                 context.entra_object_id,
                 workflow_run_id,
-                context.model_revision,
+                context.project_revision,
             ),
         )
         connection.execute(
@@ -88,19 +88,19 @@ def test_authoring_no_op_is_atomic_revision_stable_and_exactly_replayable(
                 context.entra_tenant_id,
                 context.entra_object_id,
                 workflow_run_id,
-                context.model_revision,
+                context.project_revision,
             ),
         )
         parameters = (
             context.entra_tenant_id,
             context.entra_object_id,
             context.tenant_id,
-            context.model_id,
+            context.project_id,
             workflow_run_id,
             "conceptual",
             "one_shot",
             correlation_id,
-            context.model_revision,
+            context.project_revision,
             candidate_digest,
             3,
             1,
@@ -174,11 +174,11 @@ def test_authoring_no_op_is_atomic_revision_stable_and_exactly_replayable(
         mismatches: list[tuple[object, ...]] = []
         for index, value in (
             (2, context.tenant_id + 10_000),
-            (3, context.model_id + 10_000),
+            (3, context.project_id + 10_000),
             (5, "logical"),
             (6, "tool_assisted"),
             (7, uuid4()),
-            (8, context.model_revision + 1),
+            (8, context.project_revision + 1),
             (9, "d" * 64),
             (10, 4),
             (11, 2),
@@ -226,7 +226,7 @@ def test_authoring_no_op_is_atomic_revision_stable_and_exactly_replayable(
                     context.entra_tenant_id,
                     context.entra_object_id,
                     workflow_run_id,
-                    context.model_revision,
+                    context.project_revision,
                 ),
             )
 
@@ -234,22 +234,22 @@ def test_authoring_no_op_is_atomic_revision_stable_and_exactly_replayable(
             connection.execute(
                 """
                 SELECT run.workflow_run_state,
-                       run.authoring_no_op_base_model_revision,
+                       run.authoring_no_op_base_project_revision,
                        run.authoring_no_op_candidate_digest,
-                       run.authoring_no_op_model_event_log_id,
-                       target_model.model_revision,
-                       count(change_set.model_change_set_id) AS change_set_count
+                       run.authoring_no_op_project_event_log_id,
+                       target_project.project_revision,
+                       count(change_set.project_change_set_id) AS change_set_count
                   FROM application.workflow_run AS run
-                  JOIN model.model AS target_model
-                    ON target_model.model_id = run.model_id
-                  LEFT JOIN mcp.model_change_set AS change_set
+                  JOIN project.project AS target_project
+                    ON target_project.project_id = run.project_id
+                  LEFT JOIN mcp.project_change_set AS change_set
                     ON change_set.workflow_run_id = run.workflow_run_id
                  WHERE run.workflow_run_id = %s
                  GROUP BY run.workflow_run_state,
-                          run.authoring_no_op_base_model_revision,
+                          run.authoring_no_op_base_project_revision,
                           run.authoring_no_op_candidate_digest,
-                          run.authoring_no_op_model_event_log_id,
-                          target_model.model_revision
+                          run.authoring_no_op_project_event_log_id,
+                          target_project.project_revision
                 """,
                 (workflow_run_id,),
             ).fetchone()
@@ -257,19 +257,19 @@ def test_authoring_no_op_is_atomic_revision_stable_and_exactly_replayable(
         final_event = require_row(
             connection.execute(
                 """
-                SELECT model_event_log_sequence AS final_event_sequence,
-                       model_event_log_attempt AS final_event_attempt,
-                       model_event_log_stage AS final_event_stage,
-                       model_event_log_status AS final_event_status,
-                       model_event_log_message AS final_event_message,
-                       model_event_log_current AS final_event_current,
-                       model_event_log_total AS final_event_total,
-                       model_event_log_percent AS final_event_percent,
+                SELECT project_event_log_sequence AS final_event_sequence,
+                       project_event_log_attempt AS final_event_attempt,
+                       project_event_log_stage AS final_event_stage,
+                       project_event_log_status AS final_event_status,
+                       project_event_log_message AS final_event_message,
+                       project_event_log_current AS final_event_current,
+                       project_event_log_total AS final_event_total,
+                       project_event_log_percent AS final_event_percent,
                        finding_count AS final_finding_count
-                  FROM model.model_event_log
-                 WHERE model_event_log_id = %s
+                  FROM project.project_event_log
+                 WHERE project_event_log_id = %s
                 """,
-                (stored["authoring_no_op_model_event_log_id"],),
+                (stored["authoring_no_op_project_event_log_id"],),
             ).fetchone()
         )
 
@@ -277,23 +277,27 @@ def test_authoring_no_op_is_atomic_revision_stable_and_exactly_replayable(
     assert replay["changed"] is False
     assert replay == receipt | {"changed": False}
     assert receipt["workflow_run_state"] == "completed"
-    assert receipt["model_revision"] == context.model_revision
+    assert receipt["project_revision"] == context.project_revision
     assert receipt["candidate_digest"] == candidate_digest
     assert stored == {
         "workflow_run_state": "completed",
-        "authoring_no_op_base_model_revision": context.model_revision,
+        "authoring_no_op_base_project_revision": context.project_revision,
         "authoring_no_op_candidate_digest": candidate_digest,
-        "authoring_no_op_model_event_log_id": stored["authoring_no_op_model_event_log_id"],
-        "model_revision": context.model_revision,
+        "authoring_no_op_project_event_log_id": stored[
+            "authoring_no_op_project_event_log_id"
+        ],
+        "project_revision": context.project_revision,
         "change_set_count": 0,
     }
-    assert isinstance(stored["authoring_no_op_model_event_log_id"], int)
+    assert isinstance(stored["authoring_no_op_project_event_log_id"], int)
     assert final_event == {
         "final_event_sequence": 3,
         "final_event_attempt": 1,
         "final_event_stage": "conceptual.backend_validation",
         "final_event_status": "running",
-        "final_event_message": ("Conceptual authoring completed with no effective change."),
+        "final_event_message": (
+            "Conceptual authoring completed with no effective change."
+        ),
         "final_event_current": 1,
         "final_event_total": 1,
         "final_event_percent": 100,
@@ -326,7 +330,7 @@ def test_authoring_no_op_persists_repaired_backend_event_and_derives_state(
                 context.entra_tenant_id,
                 context.entra_object_id,
                 workflow_run_id,
-                context.model_revision,
+                context.project_revision,
             ),
         )
         connection.execute(
@@ -344,7 +348,7 @@ def test_authoring_no_op_persists_repaired_backend_event_and_derives_state(
                 context.entra_tenant_id,
                 context.entra_object_id,
                 workflow_run_id,
-                context.model_revision,
+                context.project_revision,
             ),
         )
         receipt = require_row(
@@ -354,12 +358,12 @@ def test_authoring_no_op_persists_repaired_backend_event_and_derives_state(
                     context.entra_tenant_id,
                     context.entra_object_id,
                     context.tenant_id,
-                    context.model_id,
+                    context.project_id,
                     workflow_run_id,
                     "conceptual",
                     "one_shot",
                     correlation_id,
-                    context.model_revision,
+                    context.project_revision,
                     "e" * 64,
                     3,
                     2,
@@ -375,18 +379,18 @@ def test_authoring_no_op_persists_repaired_backend_event_and_derives_state(
         stored_event = require_row(
             connection.execute(
                 """
-                SELECT event.model_event_log_sequence,
-                       event.model_event_log_attempt,
-                       event.model_event_log_stage,
-                       event.model_event_log_status,
-                       event.model_event_log_message,
-                       event.model_event_log_current,
-                       event.model_event_log_total,
+                SELECT event.project_event_log_sequence,
+                       event.project_event_log_attempt,
+                       event.project_event_log_stage,
+                       event.project_event_log_status,
+                       event.project_event_log_message,
+                       event.project_event_log_current,
+                       event.project_event_log_total,
                        event.finding_count
                   FROM application.workflow_run AS run
-                  JOIN model.model_event_log AS event
-                    ON event.model_event_log_id =
-                       run.authoring_no_op_model_event_log_id
+                  JOIN project.project_event_log AS event
+                    ON event.project_event_log_id =
+                       run.authoring_no_op_project_event_log_id
                  WHERE run.workflow_run_id = %s
                 """,
                 (workflow_run_id,),
@@ -397,13 +401,15 @@ def test_authoring_no_op_persists_repaired_backend_event_and_derives_state(
     assert receipt["final_event_attempt"] == 2
     assert receipt["final_event_status"] == "warning"
     assert stored_event == {
-        "model_event_log_sequence": 3,
-        "model_event_log_attempt": 2,
-        "model_event_log_stage": "conceptual.backend_validation",
-        "model_event_log_status": "warning",
-        "model_event_log_message": ("Conceptual repair completed with no effective change."),
-        "model_event_log_current": 1,
-        "model_event_log_total": 1,
+        "project_event_log_sequence": 3,
+        "project_event_log_attempt": 2,
+        "project_event_log_stage": "conceptual.backend_validation",
+        "project_event_log_status": "warning",
+        "project_event_log_message": (
+            "Conceptual repair completed with no effective change."
+        ),
+        "project_event_log_current": 1,
+        "project_event_log_total": 1,
         "finding_count": 0,
     }
 
@@ -433,19 +439,19 @@ def test_existing_draft_blocks_no_op_and_durable_draft_blocks_failure(
                 context.entra_tenant_id,
                 context.entra_object_id,
                 workflow_run_id,
-                context.model_revision,
+                context.project_revision,
             ),
         )
         change_set_id = uuid4()
         connection.execute(
             """
-            INSERT INTO mcp.model_change_set (
-                model_change_set_id,
-                model_id,
+            INSERT INTO mcp.project_change_set (
+                project_change_set_id,
+                project_id,
                 workflow_run_id,
-                base_model_revision,
+                base_project_revision,
                 base_source_context_digest,
-                base_assertion_digest,
+                base_context_digest,
                 base_policy_digest,
                 created_by_principal_id,
                 correlation_id
@@ -455,9 +461,9 @@ def test_existing_draft_blocks_no_op_and_durable_draft_blocks_failure(
             """,
             (
                 change_set_id,
-                context.model_id,
+                context.project_id,
                 workflow_run_id,
-                context.model_revision,
+                context.project_revision,
                 "1" * 64,
                 "2" * 64,
                 "3" * 64,
@@ -469,12 +475,12 @@ def test_existing_draft_blocks_no_op_and_durable_draft_blocks_failure(
             context.entra_tenant_id,
             context.entra_object_id,
             context.tenant_id,
-            context.model_id,
+            context.project_id,
             workflow_run_id,
             "conceptual",
             "one_shot",
             correlation_id,
-            context.model_revision,
+            context.project_revision,
             "f" * 64,
             2,
             1,
@@ -486,19 +492,19 @@ def test_existing_draft_blocks_no_op_and_durable_draft_blocks_failure(
             0,
         )
         with (
-            pytest.raises(RaiseException, match="requires no Model Change Set"),
+            pytest.raises(RaiseException, match="requires no Project Change Set"),
             connection.transaction(),
         ):
             connection.execute(COMPLETE_AUTHORING_NO_OP_SQL, no_op_parameters)
 
         connection.execute(
             """
-            UPDATE mcp.model_change_set
-               SET model_change_set_status = 'validated',
+            UPDATE mcp.project_change_set
+               SET project_change_set_status = 'validated',
                    candidate_digest = %s,
                    validation_outcome = '{}'::JSONB,
                    validated_time = CURRENT_TIMESTAMP
-             WHERE model_change_set_id = %s
+             WHERE project_change_set_id = %s
             """,
             ("a" * 64, change_set_id),
         )
@@ -514,17 +520,17 @@ def test_existing_draft_blocks_no_op_and_durable_draft_blocks_failure(
             context.entra_tenant_id,
             context.entra_object_id,
             workflow_run_id,
-            context.model_revision,
+            context.project_revision,
         )
         for status in ("validated", "applied"):
             if status == "applied":
                 connection.execute(
                     """
-                    UPDATE mcp.model_change_set
-                       SET model_change_set_status = 'applied',
+                    UPDATE mcp.project_change_set
+                       SET project_change_set_status = 'applied',
                            applied_time = CURRENT_TIMESTAMP,
                            terminal_time = CURRENT_TIMESTAMP
-                     WHERE model_change_set_id = %s
+                     WHERE project_change_set_id = %s
                     """,
                     (change_set_id,),
                 )
@@ -540,18 +546,18 @@ def test_existing_draft_blocks_no_op_and_durable_draft_blocks_failure(
                 SELECT run.workflow_run_state,
                        run.failure_code,
                        run.authoring_no_op_candidate_digest,
-                       target_model.model_revision,
-                       count(event.model_event_log_id) AS event_count
+                       target_project.project_revision,
+                       count(event.project_event_log_id) AS event_count
                   FROM application.workflow_run AS run
-                  JOIN model.model AS target_model
-                    ON target_model.model_id = run.model_id
-                  JOIN model.model_event_log AS event
+                  JOIN project.project AS target_project
+                    ON target_project.project_id = run.project_id
+                  JOIN project.project_event_log AS event
                     ON event.workflow_run_id = run.workflow_run_id
                  WHERE run.workflow_run_id = %s
                  GROUP BY run.workflow_run_state,
                           run.failure_code,
                           run.authoring_no_op_candidate_digest,
-                          target_model.model_revision
+                          target_project.project_revision
                 """,
                 (workflow_run_id,),
             ).fetchone()
@@ -561,6 +567,6 @@ def test_existing_draft_blocks_no_op_and_durable_draft_blocks_failure(
         "workflow_run_state": "running",
         "failure_code": None,
         "authoring_no_op_candidate_digest": None,
-        "model_revision": context.model_revision,
+        "project_revision": context.project_revision,
         "event_count": 1,
     }

@@ -17,7 +17,7 @@ psql "<admin-dsn-without-password>" -X -v ON_ERROR_STOP=1 -f database/00_preflig
 Stop on failure. Install `01`–`19` once, in lexical order and one transaction per file:
 
 ```bash
-for file in database/{01_reference,02_core,03_security,04_model,05_workflow_analysis,06_workflow_conceptual,07_workflow_logical,08_workflow_dimensional,09_workflow_mapping,10_workflow_code_validation,11_workflow_eligibility,12_application_configuration,13_application_workflow_runs,14_application_workflow_execution,15_mcp_change_sets,16_mcp_metadata_apply,17_mcp_tool_call_log,18_runtime_account,19_runtime_integrity}.sql
+for file in database/{01_reference,02_core,03_security,04_project,05_workflow_analysis,06_workflow_conceptual,07_workflow_logical,08_workflow_dimensional,09_workflow_mapping,10_workflow_code_validation,11_workflow_eligibility,12_application_configuration,13_application_workflow_runs,14_application_workflow_execution,15_mcp_change_sets,16_mcp_metadata_apply,17_mcp_tool_call_log,18_runtime_account,19_runtime_integrity}.sql
 do
   psql "<admin-dsn-without-password>" -X -v ON_ERROR_STOP=1 \
     --single-transaction -f "$file" || exit 1

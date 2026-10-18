@@ -28,6 +28,7 @@ from gds_workbench_api.features.code_generation import (
     StoredSqlArtifactSummary,
     create_code_generation_router,
 )
+from gds_workbench_api.features.code_generation.contracts import ExportSqlArtifactsRequest
 from gds_workbench_api.features.mapping import (
     ModeledEntityReference,
     SourceSystemReference,
@@ -37,22 +38,38 @@ from gds_workbench_api.features.mapping import (
 class StaticCodeGenerationService:
     target_filters: CodeGenerationTargetFilters | None = None
 
+    async def read_all_artifacts_for_download(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        project_id: int,
+        command: ExportSqlArtifactsRequest,
+    ) -> tuple[SqlArtifactDownload, ...]:
+        assert command.entity_type == "logical_entity" and command.expected_project_revision == 4
+        return await self.read_artifacts_for_download(
+            principal,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            generated_sql_artifact_ids=(901, 902),
+        )
+
     async def list_targets(
         self,
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: CodeGenerationTargetFilters,
         page_size: int,
         cursor: str | None,
     ) -> CodeGenerationTargetPage:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, page_size, cursor) == (7, 18, 25, None)
+        assert (tenant_id, project_id, page_size, cursor) == (7, 18, 25, None)
         self.target_filters = filters
         return CodeGenerationTargetPage(
-            model_id=18,
-            model_revision=4,
+            project_id=18,
+            project_revision=4,
             items=(
                 CodeGenerationTargetSummary(
                     target=ModeledEntityReference(
@@ -117,16 +134,16 @@ class StaticCodeGenerationService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         generated_sql_artifact_id: int,
     ) -> GeneratedSqlArtifactDetail:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, generated_sql_artifact_id) == (7, 18, 901)
+        assert (tenant_id, project_id, generated_sql_artifact_id) == (7, 18, 901)
         target = (
             await self.list_targets(
                 principal,
                 tenant_id=tenant_id,
-                model_id=model_id,
+                project_id=project_id,
                 filters=CodeGenerationTargetFilters(),
                 page_size=25,
                 cursor=None,
@@ -137,7 +154,7 @@ class StaticCodeGenerationService:
             generated_code_is_locked=False,
             generated_sql_artifact_id=901,
             artifact_name="customer.sql",
-            model_id=18,
+            project_id=18,
             target=target.target,
             entity_type=target.entity_type,
             source_systems=target.source_systems,
@@ -163,11 +180,11 @@ class StaticCodeGenerationService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         generated_sql_artifact_ids: tuple[int, ...],
     ) -> tuple[SqlArtifactDownload, ...]:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, generated_sql_artifact_ids) == (
+        assert (tenant_id, project_id, generated_sql_artifact_ids) == (
             7,
             18,
             (901, 902),
@@ -175,7 +192,7 @@ class StaticCodeGenerationService:
         detail = await self.read_artifact(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             generated_sql_artifact_id=901,
         )
         second_target = detail.target.model_copy(update={"entity_id": 502, "entity_name": "order"})
@@ -220,7 +237,7 @@ def test_code_generation_targets_are_target_object_first_and_filterable() -> Non
 
     with TestClient(app) as client:
         response = client.get(
-            "/api/v1/tenants/7/models/18/code-generation/targets",
+            "/api/v1/tenants/7/projects/18/code-generation/targets",
             params={
                 "entity_type": "LOGICAL_ENTITY",
                 "system_id": "32",
@@ -283,7 +300,7 @@ def test_generated_sql_artifact_detail_returns_only_stored_sql_and_safe_provenan
     )
 
     with TestClient(app) as client:
-        response = client.get("/api/v1/tenants/7/models/18/code-generation/artifacts/901")
+        response = client.get("/api/v1/tenants/7/projects/18/code-generation/artifacts/901")
 
     assert response.status_code == 200
     payload = response.json()
@@ -313,13 +330,13 @@ class UnprovenancedStaticCodeGenerationService(StaticCodeGenerationService):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         generated_sql_artifact_id: int,
     ) -> GeneratedSqlArtifactDetail:
         detail = await super().read_artifact(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             generated_sql_artifact_id=generated_sql_artifact_id,
         )
         return detail.model_copy(
@@ -340,7 +357,7 @@ def test_generated_sql_artifact_detail_allows_missing_workflow_provenance() -> N
     )
 
     with TestClient(app) as client:
-        response = client.get("/api/v1/tenants/7/models/18/code-generation/artifacts/901")
+        response = client.get("/api/v1/tenants/7/projects/18/code-generation/artifacts/901")
 
     assert response.status_code == 200
     assert response.json()["workflow_run_id"] is None
@@ -358,7 +375,7 @@ def test_individual_sql_download_has_safe_filename_and_content_headers() -> None
 
     with TestClient(app) as client:
         response = client.get(
-            "/api/v1/tenants/7/models/18/code-generation/artifacts/901/download.sql"
+            "/api/v1/tenants/7/projects/18/code-generation/artifacts/901/download.sql"
         )
 
     assert response.status_code == 200
@@ -384,14 +401,14 @@ def test_selected_sql_zip_is_stored_bounded_and_path_safe() -> None:
 
     with TestClient(app) as client:
         response = client.get(
-            "/api/v1/tenants/7/models/18/code-generation/downloads/selected.zip",
+            "/api/v1/tenants/7/projects/18/code-generation/downloads/selected.zip",
             params=[("artifact_id", "901"), ("artifact_id", "902")],
         )
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/zip"
     assert response.headers["content-disposition"] == (
-        'attachment; filename="gds_sql_artifacts__model_18__2.zip"'
+        'attachment; filename="gds_sql_artifacts__project_18__2.zip"'
     )
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["x-content-type-options"] == "nosniff"
@@ -414,13 +431,13 @@ class UnsafeTargetNameCodeGenerationService(StaticCodeGenerationService):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         generated_sql_artifact_ids: tuple[int, ...],
     ) -> tuple[SqlArtifactDownload, ...]:
         artifacts = await super().read_artifacts_for_download(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             generated_sql_artifact_ids=generated_sql_artifact_ids,
         )
         first = artifacts[0]
@@ -450,7 +467,7 @@ def test_selected_sql_zip_sanitizes_hostile_target_names() -> None:
 
     with TestClient(app) as client:
         response = client.get(
-            "/api/v1/tenants/7/models/18/code-generation/downloads/selected.zip",
+            "/api/v1/tenants/7/projects/18/code-generation/downloads/selected.zip",
             params=[("artifact_id", "901"), ("artifact_id", "902")],
         )
 
@@ -474,7 +491,7 @@ def test_selected_sql_zip_rejects_more_than_twenty_five_artifacts() -> None:
 
     with TestClient(app) as client:
         response = client.get(
-            "/api/v1/tenants/7/models/18/code-generation/downloads/selected.zip",
+            "/api/v1/tenants/7/projects/18/code-generation/downloads/selected.zip",
             params=[("artifact_id", str(identifier)) for identifier in range(1, 27)],
         )
 
@@ -492,16 +509,18 @@ def test_stored_sql_routes_expose_no_generation_or_execution_mutation() -> None:
 
     paths = app.openapi()["paths"]
     for path in (
-        "/api/v1/tenants/{tenant_id}/models/{model_id}/code-generation/targets",
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/code-generation/targets",
         (
-            "/api/v1/tenants/{tenant_id}/models/{model_id}/code-generation/"
+            "/api/v1/tenants/{tenant_id}/projects/{project_id}/code-generation/"
             "artifacts/{generated_sql_artifact_id}"
         ),
         (
-            "/api/v1/tenants/{tenant_id}/models/{model_id}/code-generation/"
+            "/api/v1/tenants/{tenant_id}/projects/{project_id}/code-generation/"
             "artifacts/{generated_sql_artifact_id}/download.sql"
         ),
-        ("/api/v1/tenants/{tenant_id}/models/{model_id}/code-generation/downloads/selected.zip"),
+        (
+            "/api/v1/tenants/{tenant_id}/projects/{project_id}/code-generation/downloads/selected.zip"
+        ),
     ):
         methods = {method for method in paths[path] if method != "parameters"}
         assert methods == {"get"}
@@ -513,9 +532,9 @@ class CodeTargetTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
-        if "SELECT target_model.model_revision" in query:
+        if "SELECT target_project.project_revision" in query:
             assert parameters == (7, 18)
-            return {"model_revision": 4}
+            return {"project_revision": 4}
         assert "security.entra_principal_identity" in query
         assert parameters[-1] == 7
         return {
@@ -540,13 +559,13 @@ class CodeTargetTransaction:
         if "core.tenant AS tenant" in query and "effective_role" in query:
             return []
         assert "workflow.list_code_generation_target_context" in query
-        assert "workflow.list_model_object_eligibility" not in query
+        assert "workflow.list_project_object_eligibility" not in query
         assert "workflow.generated_code" in query
         assert "application.generated_sql_artifact" not in query
         assert "generated.artifact_type = 'sql_file'" in query
         assert "generated.code_storage_type = 'table'" in query
         assert "generated.code_input_digest = context.code_input_digest" in query
-        assert "artifact.model_revision" not in query
+        assert "artifact.project_revision" not in query
         assert "artifact.source_system_id" not in query
         assert "jsonb_array_elements" in query
         assert "EXISTS" in query
@@ -651,7 +670,7 @@ async def test_database_code_targets_require_complete_active_sql_mapping() -> No
     page = await service.list_targets(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         filters=CodeGenerationTargetFilters(
             entity_type="logical_entity",
             system_id=32,
@@ -663,7 +682,7 @@ async def test_database_code_targets_require_complete_active_sql_mapping() -> No
         cursor=None,
     )
 
-    assert page.model_revision == 4
+    assert page.project_revision == 4
     assert page.items[0].target.entity_id == 501
     assert page.items[0].target.entity_schema_name == "silver"
     assert page.items[0].target.entity_schema_name == "silver"
@@ -685,8 +704,8 @@ class SqlArtifactTransaction:
             assert "application.store_generated_sql_artifact" not in query
             assert "LEFT JOIN application.workflow_run AS generating_run" in query
             assert "LEFT JOIN LATERAL workflow.list_code_generation_target_context" in query
-            assert "target_model.is_active" not in query
-            assert "artifact.model_revision" not in query
+            assert "target_project.is_active" not in query
+            assert "artifact.project_revision" not in query
             assert "current_context.code_input_digest" in query
             assert "artifact.code_input_digest" in query
             assert "artifact.generated_code_content AS generated_sql" in query
@@ -701,7 +720,7 @@ class SqlArtifactTransaction:
                 "generated_code_is_locked": False,
                 "generated_sql_artifact_id": 901,
                 "artifact_name": "customer.sql",
-                "model_id": 18,
+                "project_id": 18,
                 "target": {
                     "entity_id": 501,
                     "entity_type": "logical_entity",
@@ -806,7 +825,7 @@ async def test_database_sql_artifact_is_authorized_and_read_from_persistence() -
     detail = await service.read_artifact(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         generated_sql_artifact_id=901,
     )
 
@@ -866,7 +885,7 @@ async def test_database_sql_artifact_allows_missing_workflow_provenance() -> Non
     detail = await service.read_artifact(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         generated_sql_artifact_id=901,
     )
 
@@ -915,7 +934,7 @@ async def test_database_inactive_sql_artifact_is_readable_but_not_current() -> N
     detail = await service.read_artifact(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         generated_sql_artifact_id=901,
     )
 
@@ -973,7 +992,7 @@ async def test_database_sql_artifact_remains_readable_when_context_is_stale() ->
     detail = await service.read_artifact(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         generated_sql_artifact_id=901,
     )
 
@@ -1031,7 +1050,7 @@ class SqlDownloadTransaction:
         assert "artifact.code_storage_type = 'table'" in query
         assert "generated_code_status" not in query
         assert "artifact.source_system_id" not in query
-        assert "target_model.is_active" not in query
+        assert "target_project.is_active" not in query
         assert parameters == (7, 18, [901, 902], [901, 902])
         rows: list[dict[str, Any]] = []
         for artifact_id, object_id, object_name, sql in (
@@ -1083,7 +1102,7 @@ async def test_database_selected_sql_download_reads_exact_persisted_artifacts() 
     artifacts = await service.read_artifacts_for_download(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         generated_sql_artifact_ids=(901, 902),
     )
 
@@ -1109,7 +1128,7 @@ async def test_database_selected_sql_download_rejects_duplicate_ids_before_query
         await service.read_artifacts_for_download(
             principal,
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             generated_sql_artifact_ids=(901, 901),
         )
 
@@ -1166,6 +1185,6 @@ async def test_database_selected_sql_download_rejects_total_before_loading_sql()
         await service.read_artifacts_for_download(
             principal,
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             generated_sql_artifact_ids=(901, 902),
         )

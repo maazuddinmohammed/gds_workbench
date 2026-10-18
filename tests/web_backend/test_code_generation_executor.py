@@ -12,9 +12,9 @@ from uuid import UUID
 
 import pytest
 from gds_etl_workbench.application.change_sets.contracts import (
-    MAX_MODEL_STAGE_PAYLOAD_BYTES,
+    MAX_PROJECT_STAGE_PAYLOAD_BYTES,
 )
-from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
 from gds_etl_workbench.domain.authorization import (
     ActorKind,
     RequestPrincipal,
@@ -95,7 +95,9 @@ def _source_context(
     target_name: str = "Customer",
 ) -> dict[str, Any]:
     fixture = json.loads(
-        (Path(__file__).parent / "fixtures" / "downstream_prompt_contexts.json").read_text()
+        (
+            Path(__file__).parent / "fixtures" / "downstream_prompt_contexts.json"
+        ).read_text()
     )
     context = deepcopy(fixture["code_generation"]["targets"][0]["context"])
     context["target"]["object_name"] = target_name
@@ -118,10 +120,10 @@ def _principal() -> RequestPrincipal:
 def _plan(*, retry_count: int = 1) -> AgentRunPlan:
     return AgentRunPlan(
         workflow_run_id=1048,
-        model_id=18,
+        project_id=18,
         correlation_id=UUID("33333333-3333-3333-3333-333333333333"),
-        model_revision=7,
-        model_workflow="code_generation",
+        project_revision=7,
+        project_workflow="code_generation",
         workflow_execution_mode=None,
         modeled_entity_type="logical_entity",
         code_generation_coverage_mode="selected_targets",
@@ -145,12 +147,16 @@ def _plan(*, retry_count: int = 1) -> AgentRunPlan:
                 prompt_template_digest="b" * 64,
                 templates=PromptComponentTemplates(
                     system="Generate SQL only.",
-                    instruction=("Use {{stage_context}} with {{artifact_requirements}}."),
+                    instruction=(
+                        "Use {{stage_context}} with {{artifact_requirements}}."
+                    ),
                 ),
                 variables=(
                     PromptVariableDefinition(
                         name="stage_context",
-                        resolver_key=("workflow.code_generation.common.sql_generation.context"),
+                        resolver_key=(
+                            "workflow.code_generation.common.sql_generation.context"
+                        ),
                         data_type="json",
                         is_required=True,
                     ),
@@ -326,7 +332,7 @@ class _Authorizer:
         *,
         tenant_id: int,
         policy: ToolPolicy,
-        model_id: int | None = None,
+        project_id: int | None = None,
     ) -> object:
         del transaction
         assert principal == _principal()
@@ -337,7 +343,9 @@ class _Authorizer:
 @dataclass
 class _Database:
     transaction: object = field(default_factory=object)
-    write_isolations: list[ReadIsolation] = field(default_factory=lambda: list[ReadIsolation]())
+    write_isolations: list[ReadIsolation] = field(
+        default_factory=lambda: list[ReadIsolation]()
+    )
 
     @asynccontextmanager
     async def write_transaction(
@@ -352,25 +360,29 @@ class _Database:
 @dataclass
 class _PlanRepository:
     plan: AgentRunPlan = field(default_factory=_plan)
-    calls: list[tuple[int, int, int]] = field(default_factory=lambda: list[tuple[int, int, int]]())
+    calls: list[tuple[int, int, int]] = field(
+        default_factory=lambda: list[tuple[int, int, int]]()
+    )
 
     async def load(
         self,
         transaction: object,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
     ) -> AgentRunPlan:
         del transaction
-        self.calls.append((tenant_id, model_id, workflow_run_id))
+        self.calls.append((tenant_id, project_id, workflow_run_id))
         return self.plan
 
 
 @dataclass
 class _ContextRepository:
     context: CodeGenerationExecutionContext = field(default_factory=_execution_context)
-    calls: list[tuple[int, int]] = field(default_factory=lambda: list[tuple[int, int]]())
+    calls: list[tuple[int, int]] = field(
+        default_factory=lambda: list[tuple[int, int]]()
+    )
 
     async def load(
         self,
@@ -428,8 +440,8 @@ class _AgentExecutor:
 
 @dataclass
 class _Handoff(RetainingHandoff):
-    calls: list[tuple[StageModelChange, ...]] = field(
-        default_factory=lambda: list[tuple[StageModelChange, ...]]()
+    calls: list[tuple[StageProjectChange, ...]] = field(
+        default_factory=lambda: list[tuple[StageProjectChange, ...]]()
     )
     final_events: list[AgentWorkflowEvent] = field(
         default_factory=lambda: list[AgentWorkflowEvent]()
@@ -440,7 +452,7 @@ class _Handoff(RetainingHandoff):
         self,
         principal: RequestPrincipal,
         *,
-        changes: tuple[StageModelChange, ...],
+        changes: tuple[StageProjectChange, ...],
         final_event: AgentWorkflowEvent,
         workflow_run_claim_token: UUID,
         **_: object,
@@ -453,9 +465,9 @@ class _Handoff(RetainingHandoff):
             raise self.finalization_error
         return WorkflowChangeSetFinalizationResult(
             handoff=WorkflowChangeSetHandoffResult(
-                model_id=18,
+                project_id=18,
                 workflow_run_id=1048,
-                model_change_set_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+                project_change_set_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
                 replayed=False,
                 draft_revision=2,
                 candidate_digest="c" * 64,
@@ -485,25 +497,27 @@ class _NoOp:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         workflow_run_claim_token: UUID,
         request: AuthoringNoOpRequest,
     ) -> AuthoringNoOpReceipt:
         assert principal == _principal()
-        assert (tenant_id, model_id, workflow_run_id) == (7, 18, 1048)
+        assert (tenant_id, project_id, workflow_run_id) == (7, 18, 1048)
         assert workflow_run_claim_token == _CLAIM_TOKEN
         self.requests.append(request)
         if self.completion_error is not None:
             raise self.completion_error
         return AuthoringNoOpReceipt(
-            model_id=model_id,
-            model_revision=request.expected_model_revision,
+            project_id=project_id,
+            project_revision=request.expected_project_revision,
             workflow_run_id=workflow_run_id,
             workflow_run_state=(
-                "completed_with_repair" if request.final_event.attempt > 1 else "completed"
+                "completed_with_repair"
+                if request.final_event.attempt > 1
+                else "completed"
             ),
-            model_workflow=request.expected_workflow,
+            project_workflow=request.expected_workflow,
             workflow_execution_mode=request.expected_execution_mode,
             correlation_id=request.expected_correlation_id,
             candidate_digest=request.candidate_digest,
@@ -516,7 +530,9 @@ class _NoOp:
 @dataclass
 class _Lifecycle:
     starts: list[tuple[RequestPrincipal, int, int, int, str, str | None, int]] = field(
-        default_factory=lambda: list[tuple[RequestPrincipal, int, int, int, str, str | None, int]]()
+        default_factory=lambda: list[
+            tuple[RequestPrincipal, int, int, int, str, str | None, int]
+        ]()
     )
 
     async def start(
@@ -524,21 +540,21 @@ class _Lifecycle:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         expected_workflow: str,
         expected_execution_mode: str | None,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart:
         self.starts.append(
             (
                 principal,
                 tenant_id,
-                model_id,
+                project_id,
                 workflow_run_id,
                 expected_workflow,
                 expected_execution_mode,
-                expected_model_revision,
+                expected_project_revision,
             )
         )
         return AgentWorkflowRunStart(
@@ -546,10 +562,12 @@ class _Lifecycle:
             workflow_run_id=workflow_run_id,
             workflow_run_state="running",
             started_at=datetime(2026, 8, 24, 10, tzinfo=UTC),
-            model_revision=expected_model_revision,
+            project_revision=expected_project_revision,
         )
 
-    events: list[AgentWorkflowEvent] = field(default_factory=lambda: list[AgentWorkflowEvent]())
+    events: list[AgentWorkflowEvent] = field(
+        default_factory=lambda: list[AgentWorkflowEvent]()
+    )
     failed: tuple[str, str] | None = None
     claim_tokens: list[UUID] = field(default_factory=lambda: list[UUID]())
     fail_error: Exception | None = None
@@ -559,12 +577,12 @@ class _Lifecycle:
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         event: AgentWorkflowEvent,
     ) -> None:
         assert principal == _principal()
-        assert (workflow_run_id, expected_model_revision) == (1048, 7)
+        assert (workflow_run_id, expected_project_revision) == (1048, 7)
         self.claim_tokens.append(workflow_run_claim_token)
         self.events.append(event)
 
@@ -573,13 +591,13 @@ class _Lifecycle:
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         failure_code: str,
         safe_failure_message: str,
     ) -> AgentWorkflowTerminalResult:
         assert principal == _principal()
-        assert (workflow_run_id, expected_model_revision) == (1048, 7)
+        assert (workflow_run_id, expected_project_revision) == (1048, 7)
         self.claim_tokens.append(workflow_run_claim_token)
         self.failed = (failure_code, safe_failure_message)
         if self.fail_error is not None:
@@ -652,14 +670,14 @@ async def test_start_binds_code_generation_workflow_without_executing(
     result = await service.start(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
     )
 
     assert lifecycle.starts == [(principal, 7, 18, 1048, "code_generation", None, 7)]
     assert result.workflow_run_id == 1048
-    assert result.model_revision == 7
+    assert result.project_revision == 7
     assert database.write_isolations == []
     assert authorizer.calls == []
     assert handoff.calls == []
@@ -671,7 +689,9 @@ async def test_start_binds_code_generation_workflow_without_executing(
 
 
 @pytest.mark.asyncio
-async def test_executor_renders_artifact_requirements_and_keeps_frozen_system_prompt() -> None:
+async def test_executor_renders_artifact_requirements_and_keeps_frozen_system_prompt() -> (
+    None
+):
     plan = _plan()
     stage = plan.stages[0]
     seeded_stage = stage.model_copy(
@@ -703,15 +723,17 @@ async def test_executor_renders_artifact_requirements_and_keeps_frozen_system_pr
     )
     service, *_ = _service(
         executor=agent,
-        plan_repository=_PlanRepository(plan=plan.model_copy(update={"stages": (seeded_stage,)})),
+        plan_repository=_PlanRepository(
+            plan=plan.model_copy(update={"stages": (seeded_stage,)})
+        ),
     )
 
     await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -726,12 +748,12 @@ async def test_executor_renders_artifact_requirements_and_keeps_frozen_system_pr
 async def test_executor_keeps_partial_mapping_systems_and_marks_sql_for_review(
     reported_missing: bool,
 ) -> None:
-    from gds_etl_workbench.domain.snapshots.model import (
-        ModelChangeSetDataset,
-        model_snapshot_records,
+    from gds_etl_workbench.domain.snapshots.project import (
+        ProjectChangeSetDataset,
+        project_snapshot_records,
     )
 
-    from tests.mcp.model_test_fixtures import snapshot_from_graph
+    from tests.mcp.project_test_fixtures import snapshot_from_graph
 
     source = _source_context(mapping_expression="42")
     source["artifact_requirements"] = {
@@ -755,22 +777,30 @@ async def test_executor_keeps_partial_mapping_systems_and_marks_sql_for_review(
         context.model_copy(
             update={
                 "targets": (
-                    context.targets[0].model_copy(update={"source_system_codes": ("CRM", "ERP")}),
+                    context.targets[0].model_copy(
+                        update={"source_system_codes": ("CRM", "ERP")}
+                    ),
                 ),
-                "agent_context": {"targets": [{"target_ref": "target_1", "context": source}]},
+                "agent_context": {
+                    "targets": [{"target_ref": "target_1", "context": source}]
+                },
             }
         )
     )
     assert context.snapshot is not None
-    graph: dict[ModelChangeSetDataset, list[dict[str, object]]] = {
-        cast(ModelChangeSetDataset, dataset): [record.model_dump(mode="json") for record in records]
-        for dataset, records in model_snapshot_records(context.snapshot).items()
+    graph: dict[ProjectChangeSetDataset, list[dict[str, object]]] = {
+        cast(ProjectChangeSetDataset, dataset): [
+            record.model_dump(mode="json") for record in records
+        ]
+        for dataset, records in project_snapshot_records(context.snapshot).items()
     }
     for mapping in graph["mapping_object"]:
         if mapping["source_system_code"] == "ERP":
             mapping["mapping_transformation_document"] = None
     graph["mapping_attribute"] = [
-        mapping for mapping in graph["mapping_attribute"] if mapping["source_system_code"] != "ERP"
+        mapping
+        for mapping in graph["mapping_attribute"]
+        if mapping["source_system_code"] != "ERP"
     ]
     context = context.model_copy(update={"snapshot": snapshot_from_graph(graph)})
     artifacts = [
@@ -793,21 +823,31 @@ async def test_executor_keeps_partial_mapping_systems_and_marks_sql_for_review(
                 JsonValue,
                 {
                     "artifacts": artifacts,
-                    "issues": ["missing_requirement_evidence"] if reported_missing else [],
+                    "issues": ["missing_requirement_evidence"]
+                    if reported_missing
+                    else [],
                 },
             )
         ]
     )
     plan = _plan().model_copy(
-        update={"selected_entity_ids": (501,), "code_generation_file_layout": "per_system"}
+        update={
+            "selected_entity_ids": (501,),
+            "code_generation_file_layout": "per_system",
+        }
     )
     defaults = json.loads(
-        (Path(__file__).parents[2] / "database/seed/05_global_prompt_defaults.template.sql")
+        (
+            Path(__file__).parents[2]
+            / "database/seed/05_global_prompt_defaults.template.sql"
+        )
         .read_text()
         .split("$workflow_defaults$")[1]
     )
     original_system = next(
-        row["system_prompt"] for row in defaults if row["model_workflow"] == "code_generation"
+        row["system_prompt"]
+        for row in defaults
+        if row["project_workflow"] == "code_generation"
     )
     plan = plan.model_copy(
         update={
@@ -829,16 +869,18 @@ async def test_executor_keeps_partial_mapping_systems_and_marks_sql_for_review(
     result = await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
     assert isinstance(result, WorkflowChangeSetHandoffResult)
     assert lifecycle.failed is None and len(agent.requests) == 1
     staged = {change.dataset: change.records for change in handoff.calls[0]}
-    assert {row["source_system_code"] for row in staged["generated_code_source_system"]} == {
+    assert {
+        row["source_system_code"] for row in staged["generated_code_source_system"]
+    } == {
         "CRM",
         "ERP",
     }
@@ -850,8 +892,13 @@ async def test_executor_keeps_partial_mapping_systems_and_marks_sql_for_review(
     assert handoff.final_events[0].status == "warning"
     assert "needs review" in handoff.final_events[0].message
     assert "repair" not in handoff.final_events[0].message
-    assert any("1 have incomplete Mapping" in event.message for event in lifecycle.events)
-    assert any("1 contain typed NULL placeholders" in event.message for event in lifecycle.events)
+    assert any(
+        "1 have incomplete Mapping" in event.message for event in lifecycle.events
+    )
+    assert any(
+        "1 contain typed NULL placeholders" in event.message
+        for event in lifecycle.events
+    )
 
 
 @pytest.mark.asyncio
@@ -878,11 +925,19 @@ async def test_configured_code_generation_profile_accepts_internal_bounded_stage
         responses=[
             cast(
                 JsonValue,
-                {"artifacts": [{"target_ref": "target_1", "generated_sql": "SELECT 1;"}]},
+                {
+                    "artifacts": [
+                        {"target_ref": "target_1", "generated_sql": "SELECT 1;"}
+                    ]
+                },
             ),
             cast(
                 JsonValue,
-                {"artifacts": [{"target_ref": "target_2", "generated_sql": "SELECT 2;"}]},
+                {
+                    "artifacts": [
+                        {"target_ref": "target_2", "generated_sql": "SELECT 2;"}
+                    ]
+                },
             ),
         ]
     )
@@ -895,9 +950,9 @@ async def test_configured_code_generation_profile_accepts_internal_bounded_stage
     result = await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -916,11 +971,19 @@ async def test_executor_uses_frozen_plan_and_hands_off_one_atomic_draft() -> Non
         responses=[
             cast(
                 JsonValue,
-                {"artifacts": [{"target_ref": "target_1", "generated_sql": "SELECT 1;"}]},
+                {
+                    "artifacts": [
+                        {"target_ref": "target_1", "generated_sql": "SELECT 1;"}
+                    ]
+                },
             ),
             cast(
                 JsonValue,
-                {"artifacts": [{"target_ref": "target_2", "generated_sql": "SELECT 2;"}]},
+                {
+                    "artifacts": [
+                        {"target_ref": "target_2", "generated_sql": "SELECT 2;"}
+                    ]
+                },
             ),
         ]
     )
@@ -929,14 +992,14 @@ async def test_executor_uses_frozen_plan_and_hands_off_one_atomic_draft() -> Non
     result = await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
     assert database.write_isolations == [ReadIsolation.REPEATABLE_READ]
-    assert authorizer.calls == [(7, ToolPolicy.TENANT_MODEL_WRITE)]
+    assert authorizer.calls == [(7, ToolPolicy.TENANT_PROJECT_WRITE)]
     assert len(agent.requests) == 2
     request = agent.requests[0]
     assert request.workflow == "code_generation"
@@ -989,7 +1052,9 @@ async def test_executor_uses_frozen_plan_and_hands_off_one_atomic_draft() -> Non
     assert result.staged_record_count == 4
     assert "SELECT" not in repr(result)
     assert lifecycle.failed is None
-    assert [(event.sequence, event.attempt, event.stage) for event in lifecycle.events] == [
+    assert [
+        (event.sequence, event.attempt, event.stage) for event in lifecycle.events
+    ] == [
         (2, 1, "code_generation.sql_generation"),
         (3, 1, "code_generation.sql_generation"),
     ]
@@ -1024,7 +1089,7 @@ async def test_executor_allows_candidate_up_to_stage_batch_payload_envelope() ->
     )
     default_policy = load_default_agent_context_policy()
     assert default_policy.max_candidate_bytes < candidate_bytes
-    assert candidate_bytes < MAX_MODEL_STAGE_PAYLOAD_BYTES
+    assert candidate_bytes < MAX_PROJECT_STAGE_PAYLOAD_BYTES
 
     agent = _AgentExecutor(responses=[candidate])
     service, _database, _authorizer, handoff, _no_op, lifecycle = _service(
@@ -1036,9 +1101,9 @@ async def test_executor_allows_candidate_up_to_stage_batch_payload_envelope() ->
     result = await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -1078,19 +1143,31 @@ async def test_executor_completes_no_op_when_generated_code_is_unchanged(
                     target.model_copy(
                         update={
                             "applied_generated_code": tuple(
-                                record.model_copy(update={
-                                    "generated_code_is_locked": locked,
-                                    **({"code_repository_url": "any repo",
-                                        "code_commit_path": "any reference",
-                                        "code_entry_point": "entry",
-                                        "code_parameters": [False, {"batch": 42}]}
-                                       if storage_metadata else {}),
-                                })
+                                record.model_copy(
+                                    update={
+                                        "generated_code_is_locked": locked,
+                                        **(
+                                            {
+                                                "code_repository_url": "any repo",
+                                                "code_commit_path": "any reference",
+                                                "code_entry_point": "entry",
+                                                "code_parameters": [
+                                                    False,
+                                                    {"batch": 42},
+                                                ],
+                                            }
+                                            if storage_metadata
+                                            else {}
+                                        ),
+                                    }
+                                )
                                 for record in target.applied_generated_code
                             ),
                             "applied_generated_code_source_systems": tuple(
                                 record.model_copy(
-                                    update={"generated_code_source_system_is_locked": locked}
+                                    update={
+                                        "generated_code_source_system_is_locked": locked
+                                    }
                                 )
                                 for record in target.applied_generated_code_source_systems
                             ),
@@ -1112,9 +1189,9 @@ async def test_executor_completes_no_op_when_generated_code_is_unchanged(
     result = await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -1155,9 +1232,9 @@ async def test_executor_does_not_mark_run_failed_after_uncertain_finalization() 
         await service.execute_started(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
         )
 
@@ -1170,7 +1247,9 @@ async def test_executor_does_not_mark_run_failed_after_uncertain_finalization() 
 async def test_executor_bounds_progress_events_for_large_target_sets() -> None:
     target_count = 80
     context = _execution_context_for_target_count(target_count)
-    plan = _plan().model_copy(update={"selected_entity_ids": tuple(range(501, 501 + target_count))})
+    plan = _plan().model_copy(
+        update={"selected_entity_ids": tuple(range(501, 501 + target_count))}
+    )
     agent = _AgentExecutor(
         responses=[
             cast(
@@ -1196,9 +1275,9 @@ async def test_executor_bounds_progress_events_for_large_target_sets() -> None:
     await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -1240,11 +1319,19 @@ async def test_executor_keeps_multibyte_mapping_in_bounded_requests() -> None:
             wrong_target,
             cast(
                 JsonValue,
-                {"artifacts": [{"target_ref": "target_1", "generated_sql": "SELECT 1;"}]},
+                {
+                    "artifacts": [
+                        {"target_ref": "target_1", "generated_sql": "SELECT 1;"}
+                    ]
+                },
             ),
             cast(
                 JsonValue,
-                {"artifacts": [{"target_ref": "target_2", "generated_sql": "SELECT 2;"}]},
+                {
+                    "artifacts": [
+                        {"target_ref": "target_2", "generated_sql": "SELECT 2;"}
+                    ]
+                },
             ),
         ]
     )
@@ -1260,9 +1347,9 @@ async def test_executor_keeps_multibyte_mapping_in_bounded_requests() -> None:
     result = await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -1296,7 +1383,9 @@ async def test_executor_keeps_multibyte_mapping_in_bounded_requests() -> None:
 
 
 @pytest.mark.asyncio
-async def test_executor_rejects_unrepresentable_target_before_provider_without_truncation() -> None:
+async def test_executor_rejects_unrepresentable_target_before_provider_without_truncation() -> (
+    None
+):
     context = _multibyte_execution_context(
         mapping_expression="é" * 150_000,
     )
@@ -1350,9 +1439,9 @@ async def test_executor_rejects_unrepresentable_target_before_provider_without_t
         await service.execute_started(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
         )
 
@@ -1361,12 +1450,16 @@ async def test_executor_rejects_unrepresentable_target_before_provider_without_t
     assert no_op.requests == []
     assert lifecycle.failed == (
         "agent_context_too_large",
-        ("The selected execution mode cannot accept this context. Choose another mode explicitly."),
+        (
+            "The selected execution mode cannot accept this context. Choose another mode explicitly."
+        ),
     )
 
 
 @pytest.mark.asyncio
-async def test_executor_uses_common_validation_repair_before_one_atomic_handoff() -> None:
+async def test_executor_uses_common_validation_repair_before_one_atomic_handoff() -> (
+    None
+):
     wrong_target = cast(
         JsonValue,
         {"artifacts": [{"target_ref": "target_2", "generated_sql": "SELECT 1;"}]},
@@ -1382,7 +1475,9 @@ async def test_executor_uses_common_validation_repair_before_one_atomic_handoff(
     handoff = _Handoff()
     lifecycle = _Lifecycle()
     service, _database, _authorizer, handoff, _no_op, lifecycle = _service(
-        executor=_AgentExecutor(responses=[wrong_target, first_complete, second_complete]),
+        executor=_AgentExecutor(
+            responses=[wrong_target, first_complete, second_complete]
+        ),
         handoff=handoff,
         lifecycle=lifecycle,
     )
@@ -1390,9 +1485,9 @@ async def test_executor_uses_common_validation_repair_before_one_atomic_handoff(
     result = await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -1401,11 +1496,15 @@ async def test_executor_uses_common_validation_repair_before_one_atomic_handoff(
     assert len(handoff.calls) == 1
     assert handoff.final_events[-1].attempt == 2
     assert handoff.final_events[-1].status == "warning"
-    assert any(event.attempt == 2 and event.status == "warning" for event in lifecycle.events)
+    assert any(
+        event.attempt == 2 and event.status == "warning" for event in lifecycle.events
+    )
 
 
 @pytest.mark.asyncio
-async def test_executor_records_only_safe_failure_and_never_stores_partial_output() -> None:
+async def test_executor_records_only_safe_failure_and_never_stores_partial_output() -> (
+    None
+):
     diagnostic = "token=secret; prompt=raw; SQL=DROP TABLE x; provider trace"
     lifecycle = _Lifecycle()
     handoff = _Handoff()
@@ -1421,9 +1520,9 @@ async def test_executor_records_only_safe_failure_and_never_stores_partial_outpu
         await service.execute_started(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
         )
 
@@ -1457,9 +1556,9 @@ async def test_executor_rejects_noncanonical_mode_without_provider_fallback() ->
         await service.execute_started(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
         )
 
@@ -1470,7 +1569,9 @@ async def test_executor_rejects_noncanonical_mode_without_provider_fallback() ->
 
 
 @pytest.mark.asyncio
-async def test_executor_propagates_a_bounded_terminal_failure_persistence_error() -> None:
+async def test_executor_propagates_a_bounded_terminal_failure_persistence_error() -> (
+    None
+):
     lifecycle = _Lifecycle(fail_error=DependencyUnavailableError())
     handoff = _Handoff()
     no_op = _NoOp()
@@ -1487,9 +1588,9 @@ async def test_executor_propagates_a_bounded_terminal_failure_persistence_error(
         await service.execute_started(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
         )
 
@@ -1510,26 +1611,28 @@ def code_validation_context(
 
     from gds_etl_workbench.domain.modeling_records import (
         ModelingRecord,
-        normalize_model_key_value,
+        normalize_project_key_value,
     )
-    from gds_etl_workbench.domain.snapshots.model import (
+    from gds_etl_workbench.domain.snapshots.project import (
         DATASETS_BY_NAME,
-        ModelChangeSetDataset,
-        model_snapshot_records,
+        ProjectChangeSetDataset,
+        project_snapshot_records,
     )
 
-    from tests.mcp.model_test_fixtures import snapshot_from_graph
+    from tests.mcp.project_test_fixtures import snapshot_from_graph
     from tests.web_backend.mapping_fixtures import (
         mapping_preparation,
         mapping_validation_preparation,
     )
 
-    records: dict[ModelChangeSetDataset, dict[tuple[object, ...], ModelingRecord]] = {}
-    from gds_etl_workbench.application.change_sets.model_validation import (
-        PhysicalModelCatalog,
+    records: dict[
+        ProjectChangeSetDataset, dict[tuple[object, ...], ModelingRecord]
+    ] = {}
+    from gds_etl_workbench.application.change_sets.project_validation import (
+        PhysicalProjectCatalog,
     )
 
-    scopes: list[PhysicalModelCatalog] = []
+    scopes: list[PhysicalProjectCatalog] = []
     for target in context.targets:
         prepared = mapping_preparation(
             existing=True, modeled_entity_type=target.modeled_entity_type
@@ -1557,8 +1660,8 @@ def code_validation_context(
         )
         assert prepared.snapshot is not None and prepared.physical_scope is not None
         scopes.append(prepared.physical_scope)
-        for dataset_name, values in model_snapshot_records(prepared.snapshot).items():
-            dataset = cast(ModelChangeSetDataset, dataset_name)
+        for dataset_name, values in project_snapshot_records(prepared.snapshot).items():
+            dataset = cast(ProjectChangeSetDataset, dataset_name)
             if dataset in {"generated_code", "generated_code_source_system"}:
                 values = (
                     target.applied_generated_code
@@ -1574,28 +1677,34 @@ def code_validation_context(
             by_key = records.setdefault(dataset, {})
             for record in values:
                 key = tuple(
-                    normalize_model_key_value(getattr(record, name))
+                    normalize_project_key_value(getattr(record, name))
                     for name in DATASETS_BY_NAME[dataset].canonical_key
                 )
                 by_key[key] = record
-    graph: dict[ModelChangeSetDataset, list[dict[str, object]]] = {
+    graph: dict[ProjectChangeSetDataset, list[dict[str, object]]] = {
         dataset: [record.model_dump(mode="json") for record in values.values()]
         for dataset, values in records.items()
     }
-    snapshot = snapshot_from_graph(graph).model_copy(update={"model_id": 18, "model_revision": 7})
+    snapshot = snapshot_from_graph(graph).model_copy(
+        update={"project_id": 18, "project_revision": 7}
+    )
     scope = replace(
         scopes[0],
         **{
-            field.name: frozenset().union(*(getattr(item, field.name) for item in scopes))
+            field.name: frozenset().union(
+                *(getattr(item, field.name) for item in scopes)
+            )
             for field in fields(scopes[0])
-            if field.name != "model_tenant_code"
+            if field.name != "project_tenant_code"
         },
     )
     scope = replace(
         scope,
         active_system_codes=scope.active_system_codes
         | frozenset(
-            code.casefold() for target in context.targets for code in target.source_system_codes
+            code.casefold()
+            for target in context.targets
+            for code in target.source_system_codes
         ),
     )
     return context.model_copy(update={"snapshot": snapshot, "physical_scope": scope})
@@ -1608,17 +1717,29 @@ async def test_executor_honors_saved_optional_reader_selection(
 ) -> None:
     plan = _plan()
     plan = plan.model_copy(
-        update={"stages": (plan.stages[0].model_copy(update={"agent_tool_names": selected_tools}),)}
+        update={
+            "stages": (
+                plan.stages[0].model_copy(update={"agent_tool_names": selected_tools}),
+            )
+        }
     )
     agent = _AgentExecutor(
         responses=[
             cast(
                 JsonValue,
-                {"artifacts": [{"target_ref": "target_1", "generated_sql": "SELECT 1;"}]},
+                {
+                    "artifacts": [
+                        {"target_ref": "target_1", "generated_sql": "SELECT 1;"}
+                    ]
+                },
             ),
             cast(
                 JsonValue,
-                {"artifacts": [{"target_ref": "target_2", "generated_sql": "SELECT 2;"}]},
+                {
+                    "artifacts": [
+                        {"target_ref": "target_2", "generated_sql": "SELECT 2;"}
+                    ]
+                },
             ),
         ]
     )
@@ -1628,9 +1749,9 @@ async def test_executor_honors_saved_optional_reader_selection(
     await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
     assert lifecycle.failed is None

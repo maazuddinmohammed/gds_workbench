@@ -29,7 +29,7 @@ from gds_workbench_api.features.prompts import (
     PromptStageCatalog,
     PromptTemplateFilters,
     SavePromptDraftRequest,
-    SetModelPromptAssignmentRequest,
+    SetProjectPromptAssignmentRequest,
     UpdatePromptTemplateRequest,
     create_prompts_router,
 )
@@ -57,7 +57,7 @@ class StageCatalogTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
-        if "model.assert_writable" in query:
+        if "project.assert_writable" in query:
             return {"assert_writable": None}
         assert "security.entra_principal_identity" in query
         assert parameters[-1] == 7
@@ -87,7 +87,7 @@ class StageCatalogTransaction:
         return [
             {
                 "workflow_stage_id": 12,
-                "model_workflow": "analysis",
+                "project_workflow": "analysis",
                 "workflow_execution_mode": "one_shot",
                 "workflow_stage_code": "analyze_sources",
                 "workflow_stage_name": "Analyze sources",
@@ -103,17 +103,17 @@ class StageCatalogTransaction:
             },
             {
                 "workflow_stage_id": 12,
-                "model_workflow": "analysis",
+                "project_workflow": "analysis",
                 "workflow_execution_mode": "one_shot",
                 "workflow_stage_code": "analyze_sources",
                 "workflow_stage_name": "Analyze sources",
                 "workflow_stage_description": None,
                 "workflow_stage_order": 10,
                 "variable_name": "naming_instructions",
-                "variable_resolver_key": "model.naming_instructions",
+                "variable_resolver_key": "project.naming_instructions",
                 "variable_data_type": "text",
                 "variable_is_required": False,
-                "variable_description": "Optional model naming instructions",
+                "variable_description": "Optional project naming instructions",
                 "variable_example": "Use business language.",
                 "variable_order": 20,
             },
@@ -132,7 +132,9 @@ class StageCatalogDatabase:
 
 
 @pytest.mark.asyncio
-async def test_stage_catalog_returns_only_agentic_stages_with_allowed_variables() -> None:
+async def test_stage_catalog_returns_only_agentic_stages_with_allowed_variables() -> (
+    None
+):
     service = DatabasePromptService(
         database=cast(PromptDatabase, StageCatalogDatabase()),
         authorizer=AuthorizationService(),
@@ -158,7 +160,7 @@ class TemplateListTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
-        if "model.assert_writable" in query:
+        if "project.assert_writable" in query:
             return {"assert_writable": None}
         assert "security.entra_principal_identity" in query
         return {
@@ -228,7 +230,7 @@ def _template_summary_row(
     return {
         "prompt_template_id": template_id,
         "workflow_stage_id": 12,
-        "model_workflow": "analysis",
+        "project_workflow": "analysis",
         "workflow_execution_mode": "one_shot",
         "workflow_stage_code": "analyze_sources",
         "workflow_stage_name": "Analyze sources",
@@ -248,7 +250,9 @@ def _template_summary_row(
 
 
 @pytest.mark.asyncio
-async def test_template_list_is_visible_scope_filtered_and_signed_page_bounded() -> None:
+async def test_template_list_is_visible_scope_filtered_and_signed_page_bounded() -> (
+    None
+):
     database = TemplateListDatabase()
     service = DatabasePromptService(
         database=cast(PromptDatabase, database),
@@ -256,7 +260,7 @@ async def test_template_list_is_visible_scope_filtered_and_signed_page_bounded()
         cursor_signing_key=b"development-only-key-32-bytes-long",
     )
     filters = PromptTemplateFilters(
-        model_workflow="analysis",
+        project_workflow="analysis",
         workflow_execution_mode="one_shot",
         workflow_stage_code=" Analyze_Sources ",
         version_status="published",
@@ -292,7 +296,7 @@ class TemplateDetailTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
-        if "model.assert_writable" in query:
+        if "project.assert_writable" in query:
             return {"assert_writable": None}
         if "security.entra_principal_identity" in query:
             self.calls.append("authorize")
@@ -374,7 +378,9 @@ class TemplateDetailDatabase:
 
 
 @pytest.mark.asyncio
-async def test_template_detail_authorizes_before_returning_bounded_raw_version_history() -> None:
+async def test_template_detail_authorizes_before_returning_bounded_raw_version_history() -> (
+    None
+):
     database = TemplateDetailDatabase()
     service = DatabasePromptService(
         database=cast(PromptDatabase, database),
@@ -408,11 +414,11 @@ class CreateTemplateTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
-        if "model.assert_writable" in query:
+        if "project.assert_writable" in query:
             return {"assert_writable": None}
         if "security.authorize_tenant_operation" in query:
-            self.calls.append("authorize_model_write")
-            assert parameters[-2:] == (7, "tenant_model_write")
+            self.calls.append("authorize_project_write")
+            assert parameters[-2:] == (7, "tenant_project_write")
             return {
                 "principal_id": 41,
                 "principal_display_name": "Prompt Architect",
@@ -476,7 +482,9 @@ class CreateTemplateDatabase:
 
 
 @pytest.mark.asyncio
-async def test_create_tenant_template_binds_owner_server_side_and_calls_governed_function() -> None:
+async def test_create_tenant_template_binds_owner_server_side_and_calls_governed_function() -> (
+    None
+):
     database = CreateTemplateDatabase()
     service = DatabasePromptService(
         database=cast(PromptDatabase, database),
@@ -499,7 +507,7 @@ async def test_create_tenant_template_binds_owner_server_side_and_calls_governed
     assert created.prompt_template_id == 101
     assert created.owner_tenant_id == 7
     assert database.transaction.calls == [
-        "authorize_model_write",
+        "authorize_project_write",
         "save_prompt_template",
     ]
 
@@ -514,7 +522,7 @@ class GlobalCreateTransaction(CreateTemplateTransaction):
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
-        if "model.assert_writable" in query:
+        if "project.assert_writable" in query:
             return {"assert_writable": None}
         if "security.entra_principal_identity" in query:
             self.calls.append("authorize_read")
@@ -555,7 +563,9 @@ class GlobalCreateDatabase:
 
 
 @pytest.mark.asyncio
-async def test_global_template_mutation_requires_super_admin_and_passes_null_owner() -> None:
+async def test_global_template_mutation_requires_super_admin_and_passes_null_owner() -> (
+    None
+):
     body = CreatePromptTemplateRequest(
         workflow_stage_id=12,
         prompt_template_ownership_scope="global",
@@ -596,7 +606,7 @@ class UpdateTemplateTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
-        if "model.assert_writable" in query:
+        if "project.assert_writable" in query:
             return {"assert_writable": None}
         if "security.entra_principal_identity" in query:
             self.calls.append("authorize_read")
@@ -612,8 +622,8 @@ class UpdateTemplateTransaction:
                 "lock_expires_time": None,
             }
         if "security.authorize_tenant_operation" in query:
-            self.calls.append("authorize_model_write")
-            assert parameters[-2:] == (7, "tenant_model_write")
+            self.calls.append("authorize_project_write")
+            assert parameters[-2:] == (7, "tenant_project_write")
             return {
                 "principal_id": 41,
                 "principal_display_name": "Prompt Architect",
@@ -686,7 +696,9 @@ class UpdateTemplateDatabase:
 
 
 @pytest.mark.asyncio
-async def test_update_template_uses_server_loaded_immutable_identity_and_timestamp_fence() -> None:
+async def test_update_template_uses_server_loaded_immutable_identity_and_timestamp_fence() -> (
+    None
+):
     database = UpdateTemplateDatabase()
     service = DatabasePromptService(
         database=cast(PromptDatabase, database),
@@ -710,7 +722,7 @@ async def test_update_template_uses_server_loaded_immutable_identity_and_timesta
     assert database.transaction.calls == [
         "authorize_read",
         "load_context",
-        "authorize_model_write",
+        "authorize_project_write",
         "save_prompt_template",
     ]
 
@@ -721,7 +733,7 @@ class SaveDraftTransaction(UpdateTemplateTransaction):
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
-        if "model.assert_writable" in query:
+        if "project.assert_writable" in query:
             return {"assert_writable": None}
         if "application.save_prompt_template_draft" not in query:
             return await super().fetch_one(query, parameters)
@@ -766,7 +778,9 @@ class SaveDraftDatabase:
 
 
 @pytest.mark.asyncio
-async def test_save_draft_passes_raw_bodies_and_both_stale_fences_to_governed_function() -> None:
+async def test_save_draft_passes_raw_bodies_and_both_stale_fences_to_governed_function() -> (
+    None
+):
     database = SaveDraftDatabase()
     service = DatabasePromptService(
         database=cast(PromptDatabase, database),
@@ -792,7 +806,7 @@ async def test_save_draft_passes_raw_bodies_and_both_stale_fences_to_governed_fu
     assert database.transaction.calls == [
         "authorize_read",
         "load_context",
-        "authorize_model_write",
+        "authorize_project_write",
         "save_prompt_template_draft",
     ]
 
@@ -808,7 +822,7 @@ class TransitionVersionTransaction(UpdateTemplateTransaction):
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
-        if "model.assert_writable" in query:
+        if "project.assert_writable" in query:
             return {"assert_writable": None}
         if "application.transition_prompt_template_version" in query:
             self.calls.append("transition_prompt_template_version")
@@ -897,7 +911,7 @@ async def test_publish_and_retire_bind_version_and_use_fixed_governed_transition
     assert database.transaction.calls == [
         "authorize_read",
         "load_context",
-        "authorize_model_write",
+        "authorize_project_write",
         "bind_version",
         "transition_prompt_template_version",
     ]
@@ -912,7 +926,7 @@ class AssignmentListTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
-        if "model.assert_writable" in query:
+        if "project.assert_writable" in query:
             return {"assert_writable": None}
         if "security.entra_principal_identity" in query:
             self.calls.append("authorize_read")
@@ -927,11 +941,11 @@ class AssignmentListTransaction:
                 "lock_owner_display_name": None,
                 "lock_expires_time": None,
             }
-        self.calls.append("bind_model_owner")
-        assert "FROM model.model AS target_model" in query
+        self.calls.append("bind_project_owner")
+        assert "FROM project.project AS target_project" in query
         assert "connection_id" not in query
         assert parameters == (7, 18)
-        return {"model_id": 18, "tenant_id": 7}
+        return {"project_id": 18, "tenant_id": 7}
 
     async def fetch_all(
         self,
@@ -951,13 +965,13 @@ class AssignmentListTransaction:
             _assignment_state_row(
                 workflow_stage_id=12,
                 stage_code="analyze_sources",
-                model_assignment_id=501,
+                project_assignment_id=501,
                 global_assignment_id=401,
             ),
             _assignment_state_row(
                 workflow_stage_id=13,
                 stage_code="review_analysis",
-                model_assignment_id=None,
+                project_assignment_id=None,
                 global_assignment_id=402,
             ),
         ]
@@ -967,32 +981,40 @@ def _assignment_state_row(
     *,
     workflow_stage_id: int,
     stage_code: str,
-    model_assignment_id: int | None,
+    project_assignment_id: int | None,
     global_assignment_id: int | None,
 ) -> dict[str, Any]:
     row: dict[str, Any] = {
         "workflow_stage_id": workflow_stage_id,
-        "model_workflow": "analysis",
+        "project_workflow": "analysis",
         "workflow_execution_mode": "one_shot",
         "workflow_stage_code": stage_code,
         "workflow_stage_name": stage_code.replace("_", " ").title(),
         "workflow_stage_order": workflow_stage_id,
     }
     for prefix, assignment_id, scope, owner_tenant_id in (
-        ("model", model_assignment_id, "model_default", 7),
+        ("project", project_assignment_id, "project_default", 7),
         ("global", global_assignment_id, "global_default", None),
     ):
         row.update(
             {
                 f"{prefix}_assignment_id": assignment_id,
-                f"{prefix}_version_id": None if assignment_id is None else assignment_id + 1000,
+                f"{prefix}_version_id": None
+                if assignment_id is None
+                else assignment_id + 1000,
                 f"{prefix}_version_number": None if assignment_id is None else 1,
                 f"{prefix}_version_digest": None if assignment_id is None else "c" * 64,
-                f"{prefix}_template_id": None if assignment_id is None else assignment_id + 2000,
+                f"{prefix}_template_id": None
+                if assignment_id is None
+                else assignment_id + 2000,
                 f"{prefix}_template_ownership_scope": (
-                    None if assignment_id is None else ("tenant" if prefix == "model" else "global")
+                    None
+                    if assignment_id is None
+                    else ("tenant" if prefix == "project" else "global")
                 ),
-                f"{prefix}_owner_tenant_id": (None if assignment_id is None else owner_tenant_id),
+                f"{prefix}_owner_tenant_id": (
+                    None if assignment_id is None else owner_tenant_id
+                ),
                 f"{prefix}_template_code": (
                     None if assignment_id is None else f"{prefix}_{stage_code}"
                 ),
@@ -1021,7 +1043,9 @@ class AssignmentListDatabase:
 
 
 @pytest.mark.asyncio
-async def test_model_assignments_bind_model_owner_and_resolve_model_over_global_default() -> None:
+async def test_project_assignments_bind_project_owner_and_resolve_project_over_global_default() -> (
+    None
+):
     database = AssignmentListDatabase()
     service = DatabasePromptService(
         database=cast(PromptDatabase, database),
@@ -1029,14 +1053,14 @@ async def test_model_assignments_bind_model_owner_and_resolve_model_over_global_
         cursor_signing_key=b"development-only-key-32-bytes-long",
     )
 
-    assignments = await service.list_model_assignments(
+    assignments = await service.list_project_assignments(
         PRINCIPAL,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
     )
 
     assert [item.effective_source for item in assignments.items] == [
-        "model_default",
+        "project_default",
         "global_default",
     ]
     assert assignments.items[0].effective_assignment is not None
@@ -1045,7 +1069,7 @@ async def test_model_assignments_bind_model_owner_and_resolve_model_over_global_
     assert assignments.items[1].effective_assignment.prompt_assignment_id == 402
     assert database.transaction.calls == [
         "authorize_read",
-        "bind_model_owner",
+        "bind_project_owner",
         "list_effective",
     ]
 
@@ -1060,11 +1084,11 @@ class SetAssignmentTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
-        if "model.assert_writable" in query:
+        if "project.assert_writable" in query:
             return {"assert_writable": None}
         if "security.authorize_tenant_operation" in query:
-            self.calls.append("authorize_model_write")
-            assert parameters[-2:] == (7, "tenant_model_write")
+            self.calls.append("authorize_project_write")
+            assert parameters[-2:] == (7, "tenant_project_write")
             return {
                 "principal_id": 41,
                 "principal_display_name": "Prompt Architect",
@@ -1075,10 +1099,10 @@ class SetAssignmentTransaction:
                 "lock_owner_display_name": None,
                 "lock_expires_time": NOW,
             }
-        if "FROM model.model AS target_model" in query:
-            self.calls.append("bind_model_owner")
+        if "FROM project.project AS target_project" in query:
+            self.calls.append("bind_project_owner")
             assert parameters == (7, 18)
-            return {"model_id": 18, "tenant_id": 7}
+            return {"project_id": 18, "tenant_id": 7}
         self.calls.append("set_prompt_assignment")
         assert "application.set_prompt_assignment" in query
         assert "INSERT INTO application.prompt_assignment" not in query
@@ -1087,7 +1111,7 @@ class SetAssignmentTransaction:
             PRINCIPAL.entra_object_id,
             "user",
             12,
-            "model_default",
+            "project_default",
             18,
             None if self.clear else 1101,
             501 if self.clear else None,
@@ -1111,7 +1135,7 @@ class SetAssignmentTransaction:
             _assignment_state_row(
                 workflow_stage_id=12,
                 stage_code="analyze_sources",
-                model_assignment_id=None if self.clear else 501,
+                project_assignment_id=None if self.clear else 501,
                 global_assignment_id=401,
             )
         ]
@@ -1128,7 +1152,7 @@ class SetAssignmentDatabase:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("clear", [False, True])
-async def test_set_and_clear_model_assignment_use_owned_lock_and_governed_function(
+async def test_set_and_clear_project_assignment_use_owned_lock_and_governed_function(
     clear: bool,
 ) -> None:
     database = SetAssignmentDatabase(clear=clear)
@@ -1138,21 +1162,21 @@ async def test_set_and_clear_model_assignment_use_owned_lock_and_governed_functi
         cursor_signing_key=b"development-only-key-32-bytes-long",
     )
 
-    state = await service.set_model_assignment(
+    state = await service.set_project_assignment(
         PRINCIPAL,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_stage_id=12,
-        body=SetModelPromptAssignmentRequest(
+        body=SetProjectPromptAssignmentRequest(
             prompt_template_version_id=None if clear else 1101,
             expected_prompt_assignment_id=501 if clear else None,
         ),
     )
 
-    assert state.effective_source == ("global_default" if clear else "model_default")
+    assert state.effective_source == ("global_default" if clear else "project_default")
     assert database.transaction.calls == [
-        "authorize_model_write",
-        "bind_model_owner",
+        "authorize_project_write",
+        "bind_project_owner",
         "set_prompt_assignment",
         "read_effective",
     ]
@@ -1172,7 +1196,7 @@ class StaleDraftTransaction(SaveDraftTransaction):
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
-        if "model.assert_writable" in query:
+        if "project.assert_writable" in query:
             return {"assert_writable": None}
         if "application.save_prompt_template_draft" in query:
             raise _FakeDatabaseError
@@ -1189,7 +1213,9 @@ class StaleDraftDatabase:
 
 
 @pytest.mark.asyncio
-async def test_stale_database_failure_maps_to_stable_conflict_without_raw_text() -> None:
+async def test_stale_database_failure_maps_to_stable_conflict_without_raw_text() -> (
+    None
+):
     service = DatabasePromptService(
         database=cast(PromptDatabase, StaleDraftDatabase()),
         authorizer=AuthorizationService(),
@@ -1213,7 +1239,9 @@ async def test_stale_database_failure_maps_to_stable_conflict_without_raw_text()
     assert "RAW_PROMPT_SENTINEL" not in captured.value.message
 
 
-def test_prompt_write_dtos_forbid_identity_fields_and_preserve_large_utf8_content() -> None:
+def test_prompt_write_dtos_forbid_identity_fields_and_preserve_large_utf8_content() -> (
+    None
+):
     with pytest.raises(ValidationError):
         CreatePromptTemplateRequest.model_validate(
             {
@@ -1262,7 +1290,7 @@ class StageRouterService:
             items=(
                 PromptStage(
                     workflow_stage_id=12,
-                    model_workflow="analysis",
+                    project_workflow="analysis",
                     workflow_execution_mode="one_shot",
                     workflow_stage_code="analyze_sources",
                     workflow_stage_name="Analyze sources",
@@ -1319,11 +1347,11 @@ def test_single_authenticated_router_exposes_bounded_prompt_library_surface() ->
             "POST",
         ),
         (
-            "/api/v1/tenants/{tenant_id}/prompts/models/{model_id}/assignments",
+            "/api/v1/tenants/{tenant_id}/prompts/projects/{project_id}/assignments",
             "GET",
         ),
         (
-            "/api/v1/tenants/{tenant_id}/prompts/models/{model_id}/assignments/{workflow_stage_id}",
+            "/api/v1/tenants/{tenant_id}/prompts/projects/{project_id}/assignments/{workflow_stage_id}",
             "PUT",
         ),
     }
@@ -1351,7 +1379,7 @@ def test_single_authenticated_router_exposes_bounded_prompt_library_surface() ->
 @dataclass(frozen=True, slots=True)
 class _DatabasePromptContext:
     tenant_id: int
-    model_id: int
+    project_id: int
     workflow_stage_id: int
     entra_tenant_id: UUID
     entra_object_id: UUID
@@ -1371,22 +1399,22 @@ def _seed_database_prompt_context(
     entra_tenant_id = uuid4()
     entra_object_id = uuid4()
     with database.connect_owner() as connection:
-        project_id = _required_id(
+        lane_id = _required_id(
             connection.execute(
                 """
-                INSERT INTO core.project (project_code, project_name)
+                INSERT INTO core.lane (lane_code, lane_name)
                 VALUES (%s, %s)
-                RETURNING project_id
+                RETURNING lane_id
                 """,
                 (f"WEB_PROMPT_PROJECT_{suffix}", f"Web Prompt Project {suffix}"),
             ).fetchone(),
-            "project_id",
+            "lane_id",
         )
         tenant_id = _required_id(
             connection.execute(
                 """
                 INSERT INTO core.tenant (
-                    project_id,
+                    lane_id,
                     tenant_code,
                     tenant_name,
                     tenant_catalog,
@@ -1395,7 +1423,7 @@ def _seed_database_prompt_context(
                 RETURNING tenant_id
                 """,
                 (
-                    project_id,
+                    lane_id,
                     f"WEB_PROMPT_TENANT_{suffix}",
                     f"Web Prompt Tenant {suffix}",
                     f"web_prompt_{suffix}",
@@ -1404,22 +1432,22 @@ def _seed_database_prompt_context(
             ).fetchone(),
             "tenant_id",
         )
-        model_id = _required_id(
+        project_id = _required_id(
             connection.execute(
                 """
-                INSERT INTO model.model (tenant_id, model_name)
+                INSERT INTO project.project (tenant_id, project_name)
                 VALUES (%s, %s)
-                RETURNING model_id
+                RETURNING project_id
                 """,
-                (tenant_id, f"Web Prompt Model {suffix}"),
+                (tenant_id, f"Web Prompt Project {suffix}"),
             ).fetchone(),
-            "model_id",
+            "project_id",
         )
         workflow_stage_id = _required_id(
             connection.execute(
                 """
                 INSERT INTO application.workflow_stage (
-                    model_workflow,
+                    project_workflow,
                     workflow_execution_mode,
                     workflow_stage_code,
                     workflow_stage_name,
@@ -1433,7 +1461,7 @@ def _seed_database_prompt_context(
                        coalesce(max(stage.workflow_stage_order), 0) + 1,
                        TRUE
                   FROM application.workflow_stage AS stage
-                 WHERE stage.model_workflow = 'analysis'
+                 WHERE stage.project_workflow = 'analysis'
                    AND stage.workflow_execution_mode = 'one_shot'
                 RETURNING workflow_stage_id
                 """,
@@ -1512,7 +1540,7 @@ def _seed_database_prompt_context(
         )
     return _DatabasePromptContext(
         tenant_id=tenant_id,
-        model_id=model_id,
+        project_id=project_id,
         workflow_stage_id=workflow_stage_id,
         entra_tenant_id=entra_tenant_id,
         entra_object_id=entra_object_id,
@@ -1581,29 +1609,31 @@ async def test_prompt_library_round_trip_uses_disposable_database_web_role(
             tenant_id=context.tenant_id,
             prompt_template_id=created.prompt_template_id,
         )
-        assigned = await service.set_model_assignment(
+        assigned = await service.set_project_assignment(
             principal,
             tenant_id=context.tenant_id,
-            model_id=context.model_id,
+            project_id=context.project_id,
             workflow_stage_id=context.workflow_stage_id,
-            body=SetModelPromptAssignmentRequest(
+            body=SetProjectPromptAssignmentRequest(
                 prompt_template_version_id=published.prompt_template_version_id,
             ),
         )
-        listed_assignments = await service.list_model_assignments(
+        listed_assignments = await service.list_project_assignments(
             principal,
             tenant_id=context.tenant_id,
-            model_id=context.model_id,
+            project_id=context.project_id,
         )
-        assert assigned.model_assignment is not None
-        cleared = await service.set_model_assignment(
+        assert assigned.project_assignment is not None
+        cleared = await service.set_project_assignment(
             principal,
             tenant_id=context.tenant_id,
-            model_id=context.model_id,
+            project_id=context.project_id,
             workflow_stage_id=context.workflow_stage_id,
-            body=SetModelPromptAssignmentRequest(
+            body=SetProjectPromptAssignmentRequest(
                 prompt_template_version_id=None,
-                expected_prompt_assignment_id=(assigned.model_assignment.prompt_assignment_id),
+                expected_prompt_assignment_id=(
+                    assigned.project_assignment.prompt_assignment_id
+                ),
             ),
         )
         retired = await service.retire_version(
@@ -1627,17 +1657,23 @@ async def test_prompt_library_round_trip_uses_disposable_database_web_role(
         await database.close()
 
     matching_stage = next(
-        stage for stage in stages.items if stage.workflow_stage_id == context.workflow_stage_id
+        stage
+        for stage in stages.items
+        if stage.workflow_stage_id == context.workflow_stage_id
     )
-    assert [variable.name for variable in matching_stage.allowed_variables] == ["stage_context"]
-    assert [item.prompt_template_id for item in page.items] == [created.prompt_template_id]
+    assert [variable.name for variable in matching_stage.allowed_variables] == [
+        "stage_context"
+    ]
+    assert [item.prompt_template_id for item in page.items] == [
+        created.prompt_template_id
+    ]
     assert detail.versions[0].system_prompt_template == "System {{future_variable}}"
     matching_assignment = next(
         item
         for item in listed_assignments.items
         if item.workflow_stage_id == context.workflow_stage_id
     )
-    assert matching_assignment.effective_source == "model_default"
+    assert matching_assignment.effective_source == "project_default"
     assert cleared.effective_source == "none"
     assert retired.prompt_template_version_status == "retired"
     assert updated.is_active is False
@@ -1646,7 +1682,9 @@ async def test_prompt_library_round_trip_uses_disposable_database_web_role(
 @pytest.mark.parametrize(
     "system_content", ["Use supplied evidence", "é" * 1_000_001], ids=["small", "large"]
 )
-def test_prompt_preview_uses_synthetic_examples_and_never_saves(system_content: str) -> None:
+def test_prompt_preview_uses_synthetic_examples_and_never_saves(
+    system_content: str,
+) -> None:
     from gds_etl_workbench.domain.errors import WorkbenchError
     from gds_workbench_api.errors import workbench_error_response
 
@@ -1673,14 +1711,21 @@ def test_prompt_preview_uses_synthetic_examples_and_never_saves(system_content: 
             "system_prompt_template": system_content,
             "instruction_prompt_template": "{{stage_context}}",
         }
-        response = client.post("/api/v1/tenants/7/prompts/templates/101/preview", json=body)
+        response = client.post(
+            "/api/v1/tenants/7/prompts/templates/101/preview", json=body
+        )
         assert response.status_code == 200
         assert response.json()["rendered_instruction_prompt"] == "null"
         assert response.json()["rendered_system_prompt"] == system_content
         assert "RAW_SYSTEM_SENTINEL" not in response.text
         body["instruction_prompt_template"] = "{{not_registered}}"
-        invalid = client.post("/api/v1/tenants/7/prompts/templates/101/preview", json=body)
+        invalid = client.post(
+            "/api/v1/tenants/7/prompts/templates/101/preview", json=body
+        )
         assert invalid.status_code == 422
         assert invalid.json()["error"]["code"] == "invalid_request"
         assert "not_registered" not in invalid.text
-    assert database.transaction.calls == ["authorize", "header", "variables", "versions"] * 2
+    assert (
+        database.transaction.calls
+        == ["authorize", "header", "variables", "versions"] * 2
+    )

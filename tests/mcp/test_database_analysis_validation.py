@@ -73,8 +73,8 @@ ANALYSIS_VALIDATION_VALUES_SIGNATURE = (
 
 SAFE_CONTEXT_COLUMNS = {
     "workflow_run_id",
-    "model_id",
-    "model_revision",
+    "project_id",
+    "project_revision",
     "requested_batch_id",
     "analysis_result_id",
     "relationship_kind",
@@ -207,7 +207,7 @@ def _seed_analysis_validation(
                 connection.execute(
                     """
                     INSERT INTO workflow.analysis_result (
-                        model_id,
+                        project_id,
                         from_object_id,
                         from_attribute_id,
                         to_object_id,
@@ -222,7 +222,7 @@ def _seed_analysis_validation(
                     RETURNING analysis_result_id
                     """,
                     (
-                        execution.context.model_id,
+                        execution.context.project_id,
                         source.object_id,
                         source.attribute_id,
                         target.object_id,
@@ -322,7 +322,7 @@ def _persist_validation_parameters(
     seed: AnalysisValidationSeed,
     results: list[dict[str, Any]],
     *,
-    expected_model_revision: int | None = None,
+    expected_project_revision: int | None = None,
     workflow_run_id: int | None = None,
     entra_tenant_id: object | None = None,
     entra_object_id: object | None = None,
@@ -337,9 +337,9 @@ def _persist_validation_parameters(
             else workflow_run_id
         ),
         (
-            context.model_revision
-            if expected_model_revision is None
-            else expected_model_revision
+            context.project_revision
+            if expected_project_revision is None
+            else expected_project_revision
         ),
         seed.execution.environment_code,
         Jsonb(results),
@@ -420,8 +420,8 @@ def test_running_analysis_validation_context_is_safe_exact_and_lock_agnostic(
         assert re.fullmatch(r"[0-9a-f]{64}", row["source_context_digest"])
         assert row == {
             "workflow_run_id": seed.execution.workflow_run_id,
-            "model_id": seed.execution.context.model_id,
-            "model_revision": seed.execution.context.model_revision,
+            "project_id": seed.execution.context.project_id,
+            "project_revision": seed.execution.context.project_revision,
             "requested_batch_id": None,
             "analysis_result_id": result_id,
             "relationship_kind": kind,
@@ -498,7 +498,7 @@ def test_analysis_validation_context_requires_actor_revision_and_owned_lock(
                 other.entra_tenant_id,
                 other.entra_object_id,
                 seed.execution.workflow_run_id,
-                seed.execution.context.model_revision,
+                seed.execution.context.project_revision,
                 seed.execution.environment_code,
             ),
         ).fetchall()
@@ -508,7 +508,7 @@ def test_analysis_validation_context_requires_actor_revision_and_owned_lock(
             postgres_database.web_runtime_dsn(),
             row_factory=dict_row,
         ) as connection,
-        pytest.raises(RaiseException, match="stale_model_revision"),
+        pytest.raises(RaiseException, match="stale_project_revision"),
         connection.transaction(),
     ):
         connection.execute("SET ROLE gds_web_write")
@@ -518,7 +518,7 @@ def test_analysis_validation_context_requires_actor_revision_and_owned_lock(
                 seed.execution.context.entra_tenant_id,
                 seed.execution.context.entra_object_id,
                 seed.execution.workflow_run_id,
-                seed.execution.context.model_revision + 1,
+                seed.execution.context.project_revision + 1,
                 seed.execution.environment_code,
             ),
         ).fetchall()
@@ -592,7 +592,7 @@ def test_analysis_validation_context_requires_exact_run_entra_identity(
                 alternate_entra_tenant_id,
                 alternate_entra_object_id,
                 seed.execution.workflow_run_id,
-                seed.execution.context.model_revision,
+                seed.execution.context.project_revision,
                 seed.execution.environment_code,
             ),
         ).fetchall()
@@ -627,7 +627,7 @@ def test_analysis_validation_context_rejects_one_unselected_endpoint(
                 seed.execution.context.entra_tenant_id,
                 seed.execution.context.entra_object_id,
                 one_object_run_id,
-                seed.execution.context.model_revision,
+                seed.execution.context.project_revision,
                 seed.execution.environment_code,
             ),
         ).fetchall()
@@ -801,8 +801,8 @@ def test_analysis_validation_partial_connection_values_return_no_secrets(
 
     assert failure == {
         "workflow_run_id": seed.execution.workflow_run_id,
-        "model_id": seed.execution.context.model_id,
-        "model_revision": seed.execution.context.model_revision,
+        "project_id": seed.execution.context.project_id,
+        "project_revision": seed.execution.context.project_revision,
         "gds_connection_id": None,
         "environment_code": seed.execution.environment_code,
         "failure_code": "connection_values_missing",
@@ -875,10 +875,10 @@ def test_analysis_validation_results_replace_only_validation_fields_and_replay(
                    analysis_result_is_locked,
                    updated_time
               FROM workflow.analysis_result
-             WHERE model_id = %s
+             WHERE project_id = %s
              ORDER BY analysis_result_id
             """,
-            (context.model_id,),
+            (context.project_id,),
         ).fetchall()
 
     with psycopg.connect(
@@ -892,7 +892,7 @@ def test_analysis_validation_results_replace_only_validation_fields_and_replay(
                 _persist_validation_parameters(
                     seed,
                     results,
-                    expected_model_revision=persisted["model_revision"],
+                    expected_project_revision=persisted["project_revision"],
                 ),
             ).fetchone()
         )
@@ -913,7 +913,7 @@ def test_analysis_validation_results_replace_only_validation_fields_and_replay(
                     context.entra_tenant_id,
                     context.entra_object_id,
                     seed.execution.workflow_run_id,
-                    persisted["model_revision"],
+                    persisted["project_revision"],
                 ),
             ).fetchone()
         )
@@ -923,27 +923,27 @@ def test_analysis_validation_results_replace_only_validation_fields_and_replay(
             """
             SELECT analysis_result_id, updated_time
               FROM workflow.analysis_result
-             WHERE model_id = %s
+             WHERE project_id = %s
              ORDER BY analysis_result_id
             """,
-            (context.model_id,),
+            (context.project_id,),
         ).fetchall()
         revision_kinds = connection.execute(
             """
             SELECT change_kind
-              FROM model.model_revision_transaction
-             WHERE model_id = %s
+              FROM project.project_revision_transaction
+             WHERE project_id = %s
                AND change_kind = 'web_analysis_validation_results_persist'
              ORDER BY changed_time
             """,
-            (context.model_id,),
+            (context.project_id,),
         ).fetchall()
 
     assert persisted == {
         "changed": True,
         "workflow_run_id": seed.execution.workflow_run_id,
-        "model_id": context.model_id,
-        "model_revision": context.model_revision + 1,
+        "project_id": context.project_id,
+        "project_revision": context.project_revision + 1,
         "submitted_result_count": 2,
         "changed_result_count": 2,
     }
@@ -1027,8 +1027,8 @@ def test_analysis_validation_results_allow_empty_exact_context(
     assert result == {
         "changed": False,
         "workflow_run_id": execution.workflow_run_id,
-        "model_id": execution.context.model_id,
-        "model_revision": execution.context.model_revision,
+        "project_id": execution.context.project_id,
+        "project_revision": execution.context.project_revision,
         "submitted_result_count": 0,
         "changed_result_count": 0,
     }
@@ -1086,20 +1086,20 @@ def test_analysis_validation_persistence_rejects_stale_physical_context(
                 SELECT count(*) FILTER (
                            WHERE validation_workflow_run_id IS NOT NULL
                        )::INTEGER AS validated_count,
-                       target_model.model_revision
+                       target_project.project_revision
                   FROM workflow.analysis_result AS result
-                  JOIN model.model AS target_model
-                    ON target_model.model_id = result.model_id
-                 WHERE result.model_id = %s
-                 GROUP BY target_model.model_revision
+                  JOIN project.project AS target_project
+                    ON target_project.project_id = result.project_id
+                 WHERE result.project_id = %s
+                 GROUP BY target_project.project_revision
                 """,
-                (context.model_id,),
+                (context.project_id,),
             ).fetchone()
         )
 
     assert unchanged == {
         "validated_count": 0,
-        "model_revision": context.model_revision,
+        "project_revision": context.project_revision,
     }
 
 
@@ -1160,9 +1160,9 @@ def test_analysis_validation_persistence_rejects_stale_connection_context(
                            WHERE validation_workflow_run_id IS NOT NULL
                        )::INTEGER AS validated_count
                   FROM workflow.analysis_result
-                 WHERE model_id = %s
+                 WHERE project_id = %s
                 """,
-                (seed.execution.context.model_id,),
+                (seed.execution.context.project_id,),
             ).fetchone()
         )["validated_count"]
 
@@ -1207,9 +1207,9 @@ def test_analysis_validation_persistence_requires_running_deterministic_analysis
                 """
                 INSERT INTO application.workflow_run (
                     tenant_id,
-                    model_id,
-                    model_revision,
-                    model_workflow,
+                    project_id,
+                    project_revision,
+                    project_workflow,
                     workflow_execution_mode,
                     actor_principal_id,
                     actor_entra_principal_identity_id,
@@ -1225,25 +1225,25 @@ def test_analysis_validation_persistence_requires_running_deterministic_analysis
                     correlation_id
                 )
                 SELECT source_run.tenant_id,
-                       source_run.model_id,
-                       source_run.model_revision,
+                       source_run.project_id,
+                       source_run.project_revision,
                        'analysis',
                        'one_shot',
                        source_run.actor_principal_id,
                        source_run.actor_entra_principal_identity_id,
-                       target_model.default_agent_sdk_code,
-                       target_model.default_agent_provider_code,
-                       target_model.default_agent_model_code,
-                       target_model.default_reasoning_effort_code,
-                       target_model.default_max_turns,
-                       target_model.default_validation_retry_count,
+                       target_project.default_agent_sdk_code,
+                       target_project.default_agent_provider_code,
+                       target_project.default_agent_model_code,
+                       target_project.default_reasoning_effort_code,
+                       target_project.default_max_turns,
+                       target_project.default_validation_retry_count,
                        source_run.selected_scope_digest,
                        source_run.selected_scope_count,
                        'queued',
                        %s
                   FROM application.workflow_run AS source_run
-                  JOIN model.model AS target_model
-                    ON target_model.model_id = source_run.model_id
+                  JOIN project.project AS target_project
+                    ON target_project.project_id = source_run.project_id
                  WHERE source_run.workflow_run_id = %s
                 RETURNING workflow_run_id
                 """,
@@ -1254,12 +1254,12 @@ def test_analysis_validation_persistence_requires_running_deterministic_analysis
             """
             INSERT INTO application.workflow_run_object_selection (
                 workflow_run_id,
-                model_id,
+                project_id,
                 object_id,
                 selection_order
             )
             SELECT %s,
-                   selection.model_id,
+                   selection.project_id,
                    selection.object_id,
                    selection.selection_order
               FROM application.workflow_run_object_selection AS selection
@@ -1305,7 +1305,7 @@ def test_analysis_validation_persistence_requires_running_deterministic_analysis
                 context.entra_tenant_id,
                 context.entra_object_id,
                 seed.execution.workflow_run_id,
-                context.model_revision,
+                context.project_revision,
             ),
         ).fetchone()
         connection.execute(
@@ -1320,7 +1320,7 @@ def test_analysis_validation_persistence_requires_running_deterministic_analysis
                 context.entra_tenant_id,
                 context.entra_object_id,
                 profiling_run_id,
-                context.model_revision,
+                context.project_revision,
             ),
         ).fetchone()
 
@@ -1339,7 +1339,7 @@ def test_analysis_validation_persistence_requires_running_deterministic_analysis
                 context.entra_tenant_id,
                 context.entra_object_id,
                 profiling_run_id,
-                context.model_revision,
+                context.project_revision,
             ),
         ).fetchone()
         connection.execute(
@@ -1354,7 +1354,7 @@ def test_analysis_validation_persistence_requires_running_deterministic_analysis
                 context.entra_tenant_id,
                 context.entra_object_id,
                 agentic_run_id,
-                context.model_revision,
+                context.project_revision,
             ),
         ).fetchone()
 
@@ -1494,20 +1494,20 @@ def test_analysis_validation_payload_is_exact_strict_and_atomic(
                            WHERE validation_policy_version IS NOT NULL
                               OR validation_workflow_run_id IS NOT NULL
                        )::INTEGER AS validated_count,
-                       target_model.model_revision
+                       target_project.project_revision
                   FROM workflow.analysis_result AS result
-                  JOIN model.model AS target_model
-                    ON target_model.model_id = result.model_id
-                 WHERE result.model_id = %s
-                 GROUP BY target_model.model_revision
+                  JOIN project.project AS target_project
+                    ON target_project.project_id = result.project_id
+                 WHERE result.project_id = %s
+                 GROUP BY target_project.project_revision
                 """,
-                (seed.execution.context.model_id,),
+                (seed.execution.context.project_id,),
             ).fetchone()
         )
 
     assert unchanged == {
         "validated_count": 0,
-        "model_revision": seed.execution.context.model_revision,
+        "project_revision": seed.execution.context.project_revision,
     }
 
 
@@ -1548,11 +1548,11 @@ def test_analysis_validation_persistence_revalidates_actor_lock_and_revision(
             _persist_validation_parameters(
                 seed,
                 results,
-                expected_model_revision=seed.execution.context.model_revision + 1,
+                expected_project_revision=seed.execution.context.project_revision + 1,
             ),
-            "stale_model_revision",
+            "stale_project_revision",
         ),
-        (null_revision_parameters, "stale_model_revision"),
+        (null_revision_parameters, "stale_project_revision"),
     )
     for parameters, message in attempts:
         with (
@@ -1601,20 +1601,20 @@ def test_analysis_validation_persistence_revalidates_actor_lock_and_revision(
                 SELECT count(*) FILTER (
                            WHERE validation_workflow_run_id IS NOT NULL
                        )::INTEGER AS validated_count,
-                       target_model.model_revision
+                       target_project.project_revision
                   FROM workflow.analysis_result AS result
-                  JOIN model.model AS target_model
-                    ON target_model.model_id = result.model_id
-                 WHERE result.model_id = %s
-                 GROUP BY target_model.model_revision
+                  JOIN project.project AS target_project
+                    ON target_project.project_id = result.project_id
+                 WHERE result.project_id = %s
+                 GROUP BY target_project.project_revision
                 """,
-                (seed.execution.context.model_id,),
+                (seed.execution.context.project_id,),
             ).fetchone()
         )
 
     assert unchanged == {
         "validated_count": 0,
-        "model_revision": seed.execution.context.model_revision,
+        "project_revision": seed.execution.context.project_revision,
     }
 
 

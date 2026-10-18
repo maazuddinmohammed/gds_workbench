@@ -61,13 +61,13 @@ def create_logical_router(
     """Create the Logical review router for later runtime composition."""
     authenticate = principal_dependency(identity_provider)
     router = APIRouter(
-        prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/logical",
+        prefix="/api/v1/tenants/{tenant_id}/projects/{project_id}/logical",
         tags=["logical"],
     )
 
     async def list_entities(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         query: Annotated[LogicalEntityListQuery, Query()],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -75,7 +75,7 @@ def create_logical_router(
         return await service.list_entities(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=_entity_filters_from_query(query),
             page_size=query.page_size,
             cursor=query.cursor,
@@ -90,7 +90,7 @@ def create_logical_router(
 
     async def read_entity(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         logical_entity_id: Annotated[int, Path(gt=0)],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -98,7 +98,7 @@ def create_logical_router(
         return await service.read_entity(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             logical_entity_id=logical_entity_id,
         )
 
@@ -111,7 +111,7 @@ def create_logical_router(
 
     async def list_attributes(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         query: Annotated[LogicalAttributeListQuery, Query()],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -129,7 +129,7 @@ def create_logical_router(
         return await service.list_attributes(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=filters,
             page_size=query.page_size,
             cursor=query.cursor,
@@ -144,7 +144,7 @@ def create_logical_router(
 
     async def read_attribute(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         logical_attribute_id: Annotated[int, Path(gt=0)],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -152,7 +152,7 @@ def create_logical_router(
         return await service.read_attribute(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             logical_attribute_id=logical_attribute_id,
         )
 
@@ -165,7 +165,7 @@ def create_logical_router(
 
     async def list_relationships(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         query: Annotated[LogicalRelationshipListQuery, Query()],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -183,7 +183,7 @@ def create_logical_router(
         return await service.list_relationships(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=filters,
             page_size=query.page_size,
             cursor=query.cursor,
@@ -198,7 +198,7 @@ def create_logical_router(
 
     async def read_relationship(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         logical_relationship_id: Annotated[int, Path(gt=0)],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -206,7 +206,7 @@ def create_logical_router(
         return await service.read_relationship(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             logical_relationship_id=logical_relationship_id,
         )
 
@@ -219,7 +219,7 @@ def create_logical_router(
 
     async def list_submodels(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         query: Annotated[ModeledListQuery, Query()],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -227,7 +227,7 @@ def create_logical_router(
         return await service.list_submodels(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=_filters_from_query(query),
             page_size=query.page_size,
             cursor=query.cursor,
@@ -242,7 +242,7 @@ def create_logical_router(
 
     async def read_submodel(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         logical_submodel_id: Annotated[int, Path(gt=0)],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -250,7 +250,7 @@ def create_logical_router(
         return await service.read_submodel(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             logical_submodel_id=logical_submodel_id,
         )
 

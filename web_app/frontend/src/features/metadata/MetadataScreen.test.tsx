@@ -270,7 +270,7 @@ const catalogObject = {
     is_surrogate_key: false, is_natural_key: true, is_meta_data: false, is_masking_required: false, is_mapped: true, is_purge: false, is_locked: false, is_active: true }],
 };
 const registry: MetadataDatasetDescription[] = [
-  ...["project", "tenant", "system", "connection"].map((name) => descriptor(name, title(name), "foundational", [`${name}_code`, `${name}_name`])),
+  ...["lane", "tenant", "system", "connection"].map((name) => descriptor(name, title(name), "foundational", [`${name}_code`, `${name}_name`])),
   descriptor("system_type", "System Types", "reference", ["system_type_code", "system_type_name", "is_active"], ["system_type_code"]),
   ...["connection_type", "object_type", "zone", "chunk_type", "file_type", "data_operation", "process_type"].map((name) => descriptor(name, title(name), "reference", [`${name}_code`, `${name}_name`])),
   descriptor("source_object", "Source Objects", "operational", [...Object.keys(objectKey), "is_active"], Object.keys(objectKey)),

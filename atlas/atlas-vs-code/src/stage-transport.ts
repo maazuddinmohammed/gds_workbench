@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { stableStringify, UUID, SHA256, DIRECT_STAGE_MAX_BYTES, MAX_STAGE_CHUNKS,
- MAX_STAGE_CHUNK_RECORDS, METADATA_STAGE_CHUNK_MAX_BYTES, MODEL_STAGE_CHUNK_MAX_BYTES,
+ MAX_STAGE_CHUNK_RECORDS, METADATA_STAGE_CHUNK_MAX_BYTES, PROJECT_STAGE_CHUNK_MAX_BYTES,
  ALLOWED_DATASETS, fail, isObject, hasExactKeys, requireObject, canonicalRecordsSha256,
  type StageRequest, type JsonRecord, type McpToolClient } from "./stage-contract.js";
 function recordChunks(records: JsonRecord[], maximumBytes: number): JsonRecord[][] | null {
@@ -54,8 +54,8 @@ export function stageTarget(request: StageRequest, scopeId: number): Record<stri
         metadata_change_set_id: request.target.change_set_id,
       }
     : {
-        model_id: scopeId,
-        model_change_set_id: request.target.change_set_id,
+        project_id: scopeId,
+        project_change_set_id: request.target.change_set_id,
     };
 }
 
@@ -64,9 +64,9 @@ function responseMatchesTarget(
   target: Record<string, unknown>,
   response: Record<string, unknown>,
 ): boolean {
-  const scopeKey = request.area === "metadata" ? "tenant_id" : "model_id";
+  const scopeKey = request.area === "metadata" ? "tenant_id" : "project_id";
   const changeSetKey =
-    request.area === "metadata" ? "metadata_change_set_id" : "model_change_set_id";
+    request.area === "metadata" ? "metadata_change_set_id" : "project_change_set_id";
   return (
     response[scopeKey] === target[scopeKey] &&
     typeof response[changeSetKey] === "string" &&
@@ -83,7 +83,7 @@ function verifyDirectStageResponse(
   response: Record<string, unknown>,
 ): void {
   if (
-    response.schema_version !== "1.0" ||
+    response.schema_version !== (request.area === "project" ? "2.0" : "1.0") ||
     !responseMatchesTarget(request, target, response) ||
     response.staged !== true ||
     response.status !== "active" ||
@@ -124,7 +124,7 @@ function verifyBeginStageResponse(
   response: Record<string, unknown>,
 ): { stageBatchId: string; receivedChunkCount: number } {
   if (
-    response.schema_version !== "1.0" ||
+    response.schema_version !== (request.area === "project" ? "2.0" : "1.0") ||
     !responseMatchesTarget(request, target, response) ||
     typeof response.stage_batch_id !== "string" ||
     !UUID.test(response.stage_batch_id) ||
@@ -137,7 +137,7 @@ function verifyBeginStageResponse(
     Number(response.received_chunk_count) > chunkCount ||
     (response.created === true && response.received_chunk_count !== 0) ||
     response.expected_draft_revision !== revision ||
-    (request.area === "model" &&
+    (request.area === "project" &&
       (response.payload_mode !== (fragmentMode ? "json_fragments" : "records") ||
         response.total_payload_bytes !== (fragmentMode ? payloadBytes : null)))
   ) {
@@ -162,7 +162,7 @@ function verifyPutStageResponse(
 ): void {
   const fragmentMode = fragmentByteCount !== null;
   if (
-    response.schema_version !== "1.0" ||
+    response.schema_version !== (request.area === "project" ? "2.0" : "1.0") ||
     !responseMatchesTarget(request, target, response) ||
     !sameUuid(response.stage_batch_id, stageBatchId) ||
     response.dataset !== change.dataset ||
@@ -172,7 +172,7 @@ function verifyPutStageResponse(
     response.record_count !== recordCount ||
     response.received_chunk_count !== chunkIndex ||
     response.total_chunk_count !== chunkCount ||
-    (request.area === "model" &&
+    (request.area === "project" &&
       (response.payload_mode !== (fragmentMode ? "json_fragments" : "records") ||
         response.payload_byte_count !== fragmentByteCount))
   ) {
@@ -189,7 +189,7 @@ function verifyCommitStageResponse(
   response: Record<string, unknown>,
 ): void {
   if (
-    response.schema_version !== "1.0" ||
+    response.schema_version !== (request.area === "project" ? "2.0" : "1.0") ||
     !responseMatchesTarget(request, target, response) ||
     !sameUuid(response.stage_batch_id, stageBatchId) ||
     response.dataset !== change.dataset ||
@@ -211,7 +211,7 @@ export function verifyChangeSetReadResponse(
   response: Record<string, unknown>,
 ): JsonRecord[] | null {
   if (
-    response.schema_version !== "1.0" ||
+    response.schema_version !== (request.area === "project" ? "2.0" : "1.0") ||
     !responseMatchesTarget(request, target, response) ||
     !Array.isArray(response.dataset_counts) ||
     response.dataset !== dataset ||
@@ -237,7 +237,7 @@ export function verifyStageFingerprint(
 ): string {
   const fingerprint = requireObject(value, "MCP_RESPONSE_INVALID");
   if (
-    fingerprint.schema_version !== "1.0" ||
+    fingerprint.schema_version !== (request.area === "project" ? "2.0" : "1.0") ||
     fingerprint.fingerprint_version !== "1.0" ||
     fingerprint.area !== request.area ||
     fingerprint.status !== "active" ||
@@ -253,9 +253,9 @@ export function verifyStageFingerprint(
       (fingerprint.tenant_id !== scopeId ||
         String(fingerprint.metadata_change_set_id).toLowerCase() !==
           request.target.change_set_id.toLowerCase())) ||
-    (request.area === "model" &&
-      (fingerprint.model_id !== scopeId ||
-        String(fingerprint.model_change_set_id).toLowerCase() !==
+    (request.area === "project" &&
+      (fingerprint.project_id !== scopeId ||
+        String(fingerprint.project_change_set_id).toLowerCase() !==
           request.target.change_set_id.toLowerCase()))
   ) {
     fail("FINGERPRINT_MISMATCH", "Server Stage fingerprint response is invalid.");
@@ -263,7 +263,7 @@ export function verifyStageFingerprint(
   const datasets: Array<{ dataset: string; record_count: number; sha256: string }> = [];
   const names = new Set<string>();
   const expectedOrder = [...ALLOWED_DATASETS[request.area]];
-  if (request.area === "model") expectedOrder.sort();
+  if (request.area === "project") expectedOrder.sort();
   let recordCount = 0;
   for (const [index, item] of fingerprint.datasets.entries()) {
     if (
@@ -358,10 +358,10 @@ export async function executeStage(
       change.records,
       request.area === "metadata"
         ? METADATA_STAGE_CHUNK_MAX_BYTES
-        : MODEL_STAGE_CHUNK_MAX_BYTES,
+        : PROJECT_STAGE_CHUNK_MAX_BYTES,
     );
     const fragmentMode =
-      recordChunkSet === null && request.area === "model" && change.dataset === "generated_code";
+      recordChunkSet === null && request.area === "project" && change.dataset === "generated_code";
     if (recordChunkSet === null && !fragmentMode) {
       fail("PAYLOAD_LIMIT", `${change.dataset} cannot fit the Stage chunk limits.`);
     }
@@ -371,7 +371,7 @@ export async function executeStage(
     const fragmentBytes = fragmentMode
       ? Math.max(DIRECT_STAGE_MAX_BYTES, Math.ceil(canonicalPayload.length / MAX_STAGE_CHUNKS))
       : 0;
-    if (fragmentBytes > MODEL_STAGE_CHUNK_MAX_BYTES) {
+    if (fragmentBytes > PROJECT_STAGE_CHUNK_MAX_BYTES) {
       fail("PAYLOAD_LIMIT", "generated_code exceeds the bounded fragment limit.");
     }
     const fragments: Buffer[] = [];
@@ -416,7 +416,7 @@ export async function executeStage(
         total_record_count: change.records.length,
         total_chunk_count: chunks.length,
         batch_sha256: batchSha256,
-        ...(request.area === "model"
+        ...(request.area === "project"
           ? {
               payload_mode: fragmentMode ? "json_fragments" : "records",
               ...(fragmentMode ? { total_payload_bytes: payloadBytes } : {}),
@@ -451,7 +451,7 @@ export async function executeStage(
               }
             : {
                 records: chunk,
-                ...(request.area === "model" ? { payload_mode: "records" } : {}),
+                ...(request.area === "project" ? { payload_mode: "records" } : {}),
               }),
         }),
         "MCP_RESPONSE_INVALID",

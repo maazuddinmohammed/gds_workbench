@@ -101,7 +101,7 @@ def _create_run(
                     context.entra_tenant_id,
                     context.entra_object_id,
                     created["workflow_run_id"],
-                    context.model_revision,
+                    context.project_revision,
                 ),
             ).fetchone()
     return created["workflow_run_id"]
@@ -121,7 +121,9 @@ def _profile(
         "object_id": object_id,
         "attribute_id": attribute_id,
         "source_context_digest": (
-            digest_character * 64 if source_context_digest is None else source_context_digest
+            digest_character * 64
+            if source_context_digest is None
+            else source_context_digest
         ),
         "row_count": row_count,
         "non_null_count": non_null_count,
@@ -159,12 +161,12 @@ def _source_context_digests(
               FROM application.workflow_run AS run
               JOIN application.workflow_run_object_selection AS selection
                 ON selection.workflow_run_id = run.workflow_run_id
-               AND selection.model_id = run.model_id
-              JOIN workflow.list_model_attribute_eligibility(run.model_id)
+               AND selection.project_id = run.project_id
+              JOIN workflow.list_project_attribute_eligibility(run.project_id)
                    AS eligible
-                ON eligible.model_id = selection.model_id
+                ON eligible.project_id = selection.project_id
                AND eligible.object_id = selection.object_id
-               AND eligible.is_model_input_eligible
+               AND eligible.is_project_input_eligible
               JOIN core.attribute AS attribute
                 ON attribute.attribute_id = eligible.attribute_id
                AND attribute.object_id = eligible.object_id
@@ -209,13 +211,17 @@ def _persist_parameters(
     workflow_run_id: int,
     profiles: list[dict[str, Any]],
     *,
-    expected_model_revision: int | None = None,
+    expected_project_revision: int | None = None,
 ) -> tuple[object, ...]:
     return (
         context.entra_tenant_id,
         context.entra_object_id,
         workflow_run_id,
-        (context.model_revision if expected_model_revision is None else expected_model_revision),
+        (
+            context.project_revision
+            if expected_project_revision is None
+            else expected_project_revision
+        ),
         Jsonb(profiles),
     )
 
@@ -253,7 +259,7 @@ def test_running_profiling_results_replace_selected_profiles_and_complete(
         connection.execute(
             """
             INSERT INTO workflow.attribute_profile (
-                model_id,
+                project_id,
                 attribute_id,
                 object_id,
                 agent_run_id,
@@ -268,15 +274,15 @@ def test_running_profiling_results_replace_selected_profiles_and_complete(
                 (%s, %s, %s, 'manual-outside', NULL, %s, 2, 2, 0)
             """,
             (
-                context.model_id,
+                context.project_id,
                 selected_attributes[0][1],
                 selected_attributes[0][0],
                 "b" * 64,
-                context.model_id,
+                context.project_id,
                 inactive_attribute_id,
                 selected_objects[0],
                 "c" * 64,
-                context.model_id,
+                context.project_id,
                 outside_attribute_id,
                 outside_object_id,
                 "d" * 64,
@@ -314,7 +320,7 @@ def test_running_profiling_results_replace_selected_profiles_and_complete(
                     context,
                     workflow_run_id,
                     profiles,
-                    expected_model_revision=result["model_revision"],
+                    expected_project_revision=result["project_revision"],
                 ),
             ).fetchone()
         )
@@ -335,7 +341,7 @@ def test_running_profiling_results_replace_selected_profiles_and_complete(
                     context.entra_tenant_id,
                     context.entra_object_id,
                     workflow_run_id,
-                    result["model_revision"],
+                    result["project_revision"],
                 ),
             ).fetchone()
         )
@@ -350,26 +356,26 @@ def test_running_profiling_results_replace_selected_profiles_and_complete(
                    source_context_digest,
                    row_count
               FROM workflow.attribute_profile
-             WHERE model_id = %s
+             WHERE project_id = %s
              ORDER BY attribute_id
             """,
-            (context.model_id,),
+            (context.project_id,),
         ).fetchall()
         revision_kinds = connection.execute(
             """
             SELECT change_kind
-              FROM model.model_revision_transaction
-             WHERE model_id = %s
+              FROM project.project_revision_transaction
+             WHERE project_id = %s
              ORDER BY changed_time
             """,
-            (context.model_id,),
+            (context.project_id,),
         ).fetchall()
 
     assert result == {
         "changed": True,
         "workflow_run_id": workflow_run_id,
-        "model_id": context.model_id,
-        "model_revision": context.model_revision + 1,
+        "project_id": context.project_id,
+        "project_revision": context.project_revision + 1,
         "submitted_profile_count": 2,
         "changed_profile_count": 3,
     }
@@ -386,7 +392,10 @@ def test_running_profiling_results_replace_selected_profiles_and_complete(
     ]
     assert stored[0]["agent_run_id"] is None
     assert stored[0]["workflow_run_id"] == workflow_run_id
-    assert stored[0]["source_context_digest"] == source_context_digests[selected_attributes[0][1]]
+    assert (
+        stored[0]["source_context_digest"]
+        == source_context_digests[selected_attributes[0][1]]
+    )
     assert stored[0]["row_count"] == 10
     assert stored[1]["workflow_run_id"] == workflow_run_id
     assert stored[2]["agent_run_id"] == "manual-outside"
@@ -404,13 +413,13 @@ def test_gds_persistence_uses_discovery_assigned_tenant_not_connection_owner(
             connection.execute(
                 """
                 INSERT INTO core.tenant (
-                    project_id,
+                    lane_id,
                     tenant_code,
                     tenant_name,
                     tenant_catalog,
                     gds_admin_catalog
                 )
-                SELECT project_id, %s, %s, %s, %s
+                SELECT lane_id, %s, %s, %s, %s
                   FROM core.tenant
                  WHERE tenant_id = %s
                 RETURNING tenant_id
@@ -510,7 +519,7 @@ def test_one_invalid_profile_rolls_back_every_profile_and_revision(
         connection.execute(
             """
             INSERT INTO workflow.attribute_profile (
-                model_id,
+                project_id,
                 attribute_id,
                 object_id,
                 source_context_digest,
@@ -522,11 +531,11 @@ def test_one_invalid_profile_rolls_back_every_profile_and_revision(
                 (%s, %s, %s, %s, 3, 3, 0)
             """,
             (
-                context.model_id,
+                context.project_id,
                 attributes[0][1],
                 attributes[0][0],
                 "1" * 64,
-                context.model_id,
+                context.project_id,
                 inactive_attribute_id,
                 attributes[0][0],
                 "4" * 64,
@@ -562,21 +571,21 @@ def test_one_invalid_profile_rolls_back_every_profile_and_revision(
             """
             SELECT attribute_id, source_context_digest, row_count
               FROM workflow.attribute_profile
-             WHERE model_id = %s
+             WHERE project_id = %s
              ORDER BY attribute_id
             """,
-            (context.model_id,),
+            (context.project_id,),
         ).fetchall()
         revision = require_row(
             connection.execute(
                 """
-                SELECT model_revision
-                  FROM model.model
-                 WHERE model_id = %s
+                SELECT project_revision
+                  FROM project.project
+                 WHERE project_id = %s
                 """,
-                (context.model_id,),
+                (context.project_id,),
             ).fetchone()
-        )["model_revision"]
+        )["project_revision"]
 
     assert stored == [
         {
@@ -590,7 +599,7 @@ def test_one_invalid_profile_rolls_back_every_profile_and_revision(
             "row_count": 3,
         },
     ]
-    assert revision == context.model_revision
+    assert revision == context.project_revision
 
 
 def test_profiling_persistence_rejects_inconsistent_percentages(
@@ -692,9 +701,9 @@ def test_profiling_payload_requires_exact_selected_attribute_coverage(
                 """
                 SELECT count(*)::INTEGER AS profile_count
                   FROM workflow.attribute_profile
-                 WHERE model_id = %s
+                 WHERE project_id = %s
                 """,
-                (context.model_id,),
+                (context.project_id,),
             ).fetchone()
         )["profile_count"]
     assert profile_count == 0
@@ -743,7 +752,7 @@ def test_profiling_persistence_denies_cross_tenant_actor(
                 other_context.entra_tenant_id,
                 other_context.entra_object_id,
                 workflow_run_id,
-                context.model_revision,
+                context.project_revision,
                 Jsonb(profiles),
             ),
         ).fetchone()
@@ -778,7 +787,7 @@ def test_profiling_persistence_requires_running_profiling_workflow(
                 context.entra_tenant_id,
                 context.entra_object_id,
                 queued_run_id,
-                context.model_revision,
+                context.project_revision,
             ),
         ).fetchone()
         connection.execute(
@@ -793,7 +802,7 @@ def test_profiling_persistence_requires_running_profiling_workflow(
                 context.entra_tenant_id,
                 context.entra_object_id,
                 queued_run_id,
-                context.model_revision,
+                context.project_revision,
             ),
         ).fetchone()
         with (
@@ -871,7 +880,7 @@ def test_profiling_persistence_requires_owned_lock_and_current_revision(
                 ),
             ).fetchone()
         with (
-            pytest.raises(RaiseException, match="stale_model_revision"),
+            pytest.raises(RaiseException, match="stale_project_revision"),
             connection.transaction(),
         ):
             connection.execute(
@@ -880,13 +889,15 @@ def test_profiling_persistence_requires_owned_lock_and_current_revision(
                     context,
                     workflow_run_id,
                     profiles,
-                    expected_model_revision=context.model_revision + 1,
+                    expected_project_revision=context.project_revision + 1,
                 ),
             ).fetchone()
-        null_revision_parameters = list(_persist_parameters(context, workflow_run_id, profiles))
+        null_revision_parameters = list(
+            _persist_parameters(context, workflow_run_id, profiles)
+        )
         null_revision_parameters[3] = None
         with (
-            pytest.raises(RaiseException, match="stale_model_revision"),
+            pytest.raises(RaiseException, match="stale_project_revision"),
             connection.transaction(),
         ):
             connection.execute(
@@ -968,7 +979,7 @@ def test_web_role_has_function_only_profiling_write_surface(
         connection.execute(
             """
             INSERT INTO workflow.attribute_profile (
-                model_id,
+                project_id,
                 attribute_id,
                 object_id,
                 source_context_digest,

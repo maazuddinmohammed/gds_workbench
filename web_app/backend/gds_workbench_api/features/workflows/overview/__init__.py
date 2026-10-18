@@ -1,11 +1,11 @@
-"""Read-only, Tenant-scoped Model Workflow Overview feature."""
+"""Read-only, Tenant-scoped Project Workflow Overview feature."""
 
 from gds_workbench_api.features.workflows.overview.contracts import (
     LedgerWorkflow,
-    ModelSection,
-    ModelSectionState,
-    ModelSectionStatus,
-    ModelWorkflowOverview,
+    ProjectSection,
+    ProjectSectionState,
+    ProjectSectionStatus,
+    ProjectWorkflowOverview,
     QualityWarningCode,
     WorkflowLedgerEntry,
     WorkflowLedgerState,
@@ -23,10 +23,10 @@ from gds_workbench_api.features.workflows.overview.service import (
 __all__ = [
     "DatabaseWorkflowOverviewService",
     "LedgerWorkflow",
-    "ModelSection",
-    "ModelSectionState",
-    "ModelSectionStatus",
-    "ModelWorkflowOverview",
+    "ProjectSection",
+    "ProjectSectionState",
+    "ProjectSectionStatus",
+    "ProjectWorkflowOverview",
     "QualityWarningCode",
     "WorkflowLedgerEntry",
     "WorkflowLedgerState",

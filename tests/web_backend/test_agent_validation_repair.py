@@ -46,7 +46,9 @@ class _LeakyCrossFieldCandidate(BaseModel):
         return self
 
 
-def _request(*, retries: int = 2, context: JsonValue | None = None) -> AgentExecutionRequest:
+def _request(
+    *, retries: int = 2, context: JsonValue | None = None
+) -> AgentExecutionRequest:
     return AgentExecutionRequest(
         workflow_run_id=1048,
         workflow="conceptual",
@@ -198,7 +200,9 @@ def test_default_agent_context_policy_has_no_input_size_ceiling() -> None:
 
 
 @pytest.mark.asyncio
-async def test_default_policy_preserves_large_input_and_complete_repair_feedback() -> None:
+async def test_default_policy_preserves_large_input_and_complete_repair_feedback() -> (
+    None
+):
     evidence = "Synthetic evidence. " * 60_000
     previous: JsonValue = {"entities": [{"name": "x" * 1_100_000}]}
     accepted: JsonValue = {"entities": []}
@@ -294,7 +298,9 @@ async def test_exhaustion_keeps_only_private_complete_candidate(
             validator=validator,
             final_validation=final_validation,
         )
-    assert raised.value.candidate == (candidate if failure_phase == "complete" else None)
+    assert raised.value.candidate == (
+        candidate if failure_phase == "complete" else None
+    )
     assert raised.value.issues == ((issue,) if failure_phase == "complete" else ())
     assert len(final_calls) == int(failure_phase == "complete")
     assert "private-candidate-name" not in repr(raised.value)
@@ -308,7 +314,9 @@ async def test_repair_keeps_original_context_and_exact_run_configuration() -> No
         path=("entities", 0, "name"),
         message="Every entity requires a name.",
     )
-    executor = FakeExecutor(candidates=[{"entities": [{}]}, {"entities": [{"name": "customer"}]}])
+    executor = FakeExecutor(
+        candidates=[{"entities": [{}]}, {"entities": [{"name": "customer"}]}]
+    )
     validator = FakeValidator(outcomes=[(issue,), ()])
     request = _request(retries=1)
 
@@ -403,7 +411,9 @@ async def test_output_schema_issues_give_exact_safe_paths_to_the_repair_turn() -
 
 
 @pytest.mark.asyncio
-async def test_invalid_output_schema_pattern_fails_without_executing_the_agent() -> None:
+async def test_invalid_output_schema_pattern_fails_without_executing_the_agent() -> (
+    None
+):
     executor = FakeExecutor(candidates=[{"unexpected": "candidate-value"}])
     request = _request().model_copy(
         update={
@@ -489,7 +499,9 @@ async def test_output_schema_bound_issues_are_value_free() -> None:
         assert candidate_value not in serialized_issues
 
 
-def test_agent_envelope_budget_counts_output_instruction_schema_and_json_format() -> None:
+def test_agent_envelope_budget_counts_output_instruction_schema_and_json_format() -> (
+    None
+):
     request = _request()
     envelope = cast(
         JsonValue,
@@ -535,7 +547,9 @@ async def test_context_limit_applies_to_the_complete_outbound_envelope() -> None
         path=("entities", 0, "name"),
         message="Every entity requires a name.",
     )
-    executor = FakeExecutor(candidates=[{"entities": [{}]}, {"entities": [{"name": "customer"}]}])
+    executor = FakeExecutor(
+        candidates=[{"entities": [{}]}, {"entities": [{"name": "customer"}]}]
+    )
 
     with pytest.raises(AgentContextTooLargeError):
         await ValidationRepairRunner(
@@ -577,7 +591,9 @@ async def test_prompt_and_output_schema_count_toward_the_provider_limit() -> Non
 @pytest.mark.asyncio
 async def test_large_previous_candidate_uses_a_bounded_repair_summary() -> None:
     request = _request(retries=1)
-    budget = agent_request_envelope_bytes(request.model_copy(update={"context": None})) + 450
+    budget = (
+        agent_request_envelope_bytes(request.model_copy(update={"context": None})) + 450
+    )
     issue = AgentValidationIssue(
         code="missing_entity_name",
         path=("entities", 0, "name"),
@@ -605,24 +621,32 @@ async def test_large_previous_candidate_uses_a_bounded_repair_summary() -> None:
     assert repair["previous_candidate_omitted"] is True
     assert len(cast(str, repair["previous_candidate_digest"])) == 64
     assert repair["validation_issues"] == [issue.model_dump(mode="json")]
-    assert all(agent_request_envelope_bytes(item) <= budget for item in executor.requests)
+    assert all(
+        agent_request_envelope_bytes(item) <= budget for item in executor.requests
+    )
 
 
-async def test_missing_source_refs_fit_repair_budget_without_mutating_diagnostics() -> None:
+async def test_missing_source_refs_fit_repair_budget_without_mutating_diagnostics() -> (
+    None
+):
     request = _request(retries=1)
-    budget = agent_request_envelope_bytes(request.model_copy(update={"context": None})) + 900
+    budget = (
+        agent_request_envelope_bytes(request.model_copy(update={"context": None})) + 900
+    )
     refs = tuple(
         {"logical_entity_schema_name": "silver", "logical_entity_name": f"entity_{i}"}
         for i in range(50)
     )
     issue = AgentValidationIssue(
-        code="candidate.entity_coverage_incomplete", path=("dimensional_entity",),
+        code="candidate.entity_coverage_incomplete",
+        path=("dimensional_entity",),
         message="Coverage 1/51 is below 60%; at least 31 selected Entities are required.",
         source_refs=refs,
     )
     executor = FakeExecutor(candidates=[{}, {}])
     result = await ValidationRepairRunner(
-        executor=executor, policy=_policy(one_shot_bytes=budget),
+        executor=executor,
+        policy=_policy(one_shot_bytes=budget),
     ).run(request=request, validator=FakeValidator(outcomes=[(issue,), ()]))
     assert result.attempt_count == 2
     context = cast(dict[str, JsonValue], executor.requests[1].context)
@@ -632,7 +656,9 @@ async def test_missing_source_refs_fit_repair_budget_without_mutating_diagnostic
     assert 0 < len(cast(list[JsonValue], feedback["source_refs"])) < 50
     assert feedback["source_refs_truncated"] is True
     assert issue.source_refs == refs
-    assert all(agent_request_envelope_bytes(item) <= budget for item in executor.requests)
+    assert all(
+        agent_request_envelope_bytes(item) <= budget for item in executor.requests
+    )
 
 
 @pytest.mark.asyncio
@@ -654,7 +680,10 @@ async def test_repair_gives_each_adapter_attempt_a_fresh_original_context() -> N
     )
 
     assert result.attempt_count == 2
-    assert [cast(dict[str, JsonValue], item)["original_context"] for item in executor.requests] == [
+    assert [
+        cast(dict[str, JsonValue], item)["original_context"]
+        for item in executor.requests
+    ] == [
         {"scope": [1, 2]},
         {"scope": [1, 2]},
     ]
@@ -682,7 +711,9 @@ async def test_validation_exhaustion_fails_loudly_without_returning_candidate() 
 
 
 @pytest.mark.asyncio
-async def test_oversized_one_shot_context_fails_without_implicit_mode_fallback() -> None:
+async def test_oversized_one_shot_context_fails_without_implicit_mode_fallback() -> (
+    None
+):
     executor = FakeExecutor(candidates=[{}])
     validator = FakeValidator(outcomes=[()])
 
@@ -725,4 +756,6 @@ async def test_large_validation_feedback_is_bounded_and_repaired(
     assert len(validator.candidates) == 2
     repair = cast(dict[str, JsonValue], executor.requests[1].context)["repair"]
     assert isinstance(repair, dict)
-    assert repair["validation_issues"] == [issue.model_dump(mode="json") for issue in issues[:20]]
+    assert repair["validation_issues"] == [
+        issue.model_dump(mode="json") for issue in issues[:20]
+    ]

@@ -10,11 +10,11 @@ import type {
   ProfilingObject,
 } from "./api";
 import { WorkflowTable } from "./shared";
-import { SourceCodeFilter, SourceFilterNotice, type ScopeFilterChoices } from "../model_input_scope/scopeFilterChoices";
+import { SourceCodeFilter, SourceFilterNotice, type ScopeFilterChoices } from "../project_input_scope/scopeFilterChoices";
 
 export function ProfilingResults({
   tenantId,
-  modelId,
+  projectId,
   filters,
   sourceChoices,
   items,
@@ -24,7 +24,7 @@ export function ProfilingResults({
   onApplyFilters,
 }: {
   tenantId: number;
-  modelId: number;
+  projectId: number;
   filters: ProfilingFilters;
   sourceChoices: ScopeFilterChoices;
   items: ProfilingObject[];
@@ -72,10 +72,10 @@ export function ProfilingResults({
           id={`profiling-detail-trigger-${row.original.object_id}`}
           className="text-action"
           aria-label={`Open profiling details for ${row.original.object_name}`}
-          to="/tenants/$tenantId/models/$modelId/profiling/$objectId"
+          to="/tenants/$tenantId/projects/$projectId/profiling/$objectId"
           params={{
             tenantId: String(tenantId),
-            modelId: String(modelId),
+            projectId: String(projectId),
             objectId: String(row.original.object_id),
           }}
           search={{ ...filters, returnObjectId: row.original.object_id }}
@@ -84,7 +84,7 @@ export function ProfilingResults({
         </Link>
       ),
     },
-  ], [filters, modelId, tenantId]);
+  ], [filters, projectId, tenantId]);
   const table = useReactTable({ data: items, columns, getCoreRowModel: getCoreRowModel() });
 
   return (
@@ -99,7 +99,7 @@ export function ProfilingResults({
         <div className="surface-state" aria-busy="true">Loading profiling results…</div>
       ) : revisionMismatch ? (
         <div className="surface-state is-error" role="alert">
-          The Model changed while profiling results were loading. Refresh before review.
+          The Project changed while profiling results were loading. Refresh before review.
         </div>
       ) : isError ? (
         <div className="surface-state is-error" role="alert">

@@ -4,16 +4,16 @@ import { ApiError } from "../../core/http";
 import type { WorkflowRunRecord, WorkflowsApi } from "./api";
 import { isActiveRun } from "./presentation";
 
-export function CancelWorkflowRun({ api, tenantId, modelId, run, hasTenantLock, onCancelled }: {
+export function CancelWorkflowRun({ api, tenantId, projectId, run, hasTenantLock, onCancelled }: {
   api: Pick<WorkflowsApi, "cancelWorkflowRun">;
   tenantId: number;
-  modelId: number;
+  projectId: number;
   run: WorkflowRunRecord;
   hasTenantLock: boolean;
   onCancelled: () => Promise<unknown>;
 }) {
   const cancellation = useMutation({
-    mutationFn: () => api.cancelWorkflowRun(tenantId, modelId, run.workflow_run_id),
+    mutationFn: () => api.cancelWorkflowRun(tenantId, projectId, run.workflow_run_id),
     onSuccess: onCancelled,
   });
   if (!isActiveRun(run)) return null;

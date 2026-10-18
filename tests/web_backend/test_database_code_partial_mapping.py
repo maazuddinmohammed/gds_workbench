@@ -6,15 +6,19 @@
 from typing import Any
 
 import pytest
-from gds_workbench_api.features.code_generation.contracts import CodeGenerationTargetSummary
-from gds_workbench_api.features.code_generation.read_service import _CODE_GENERATION_TARGETS_SQL
+from gds_workbench_api.features.code_generation.contracts import (
+    CodeGenerationTargetSummary,
+)
+from gds_workbench_api.features.code_generation.read_service import (
+    _CODE_GENERATION_TARGETS_SQL,
+)
 from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.database_test_support import require_row
 from tests.web_backend.test_database_mapping_source_context import (
-    _seed_assertion_mapping_target,
+    _seed_context_mapping_target,
     _seed_mapping_scope,
 )
 
@@ -38,15 +42,17 @@ def test_code_keeps_partial_system_pairs_and_all_active_target_attributes(
     dimensional: bool,
     shape: str,
 ) -> None:
-    scope = _seed_mapping_scope(web_postgres_database, dimensional=False, create_run=False)
-    entity_id, _ = _seed_assertion_mapping_target(
+    scope = _seed_mapping_scope(
+        web_postgres_database, dimensional=False, create_run=False
+    )
+    entity_id, _ = _seed_context_mapping_target(
         web_postgres_database, scope, dimensional=dimensional
     )
     layer = "dimensional" if dimensional else "logical"
     entity_type = f"{layer}_entity"
     with web_postgres_database.connect_owner() as connection:
         columns = [
-            "model_id",
+            "project_id",
             f"{layer}_entity_id",
             f"{layer}_attribute_name",
             f"{layer}_attribute_definition",
@@ -65,33 +71,40 @@ def test_code_keeps_partial_system_pairs_and_all_active_target_attributes(
                 sql.SQL(",").join(map(sql.Identifier, columns)),
                 sql.SQL(values),
             ),
-            (scope.plan.model_id, entity_id),
+            (scope.plan.project_id, entity_id),
         )
         attributes = connection.execute(
             "SELECT modeled_attribute_id, attribute_name FROM workflow.modeled_attribute "
-            "WHERE model_id=%s AND modeled_entity_type=%s AND modeled_entity_id=%s "
+            "WHERE project_id=%s AND modeled_entity_type=%s AND modeled_entity_id=%s "
             "ORDER BY ordinal_position",
-            (scope.plan.model_id, entity_type, entity_id),
+            (scope.plan.project_id, entity_type, entity_id),
         ).fetchall()
         assert len(attributes) == 10
         mapping_ids: list[int] = []
-        for index, system_id in enumerate([scope.source_system_id, scope.other_system_id]):
+        for index, system_id in enumerate(
+            [scope.source_system_id, scope.other_system_id]
+        ):
             object_document = (
                 None
                 if index == 1
                 and shape
-                in {"attribute_only", "empty", "inactive_attribute", "inactive_target_attribute"}
+                in {
+                    "attribute_only",
+                    "empty",
+                    "inactive_attribute",
+                    "inactive_target_attribute",
+                }
                 else Jsonb({"steps": ["Generate the reference row."]})
             )
             mapping = require_row(
                 connection.execute(
                     sql.SQL(
-                        "INSERT INTO workflow.mapping_object (model_id,modeled_entity_type,{},"
+                        "INSERT INTO workflow.mapping_object (project_id,modeled_entity_type,{},"
                         "source_system_id,mapping_transformation_document,object_mapping_status) "
                         "VALUES (%s,%s,%s,%s,%s,%s) RETURNING mapping_object_id"
                     ).format(sql.Identifier(f"{layer}_entity_id")),
                     (
-                        scope.plan.model_id,
+                        scope.plan.project_id,
                         entity_type,
                         entity_id,
                         system_id,
@@ -120,7 +133,7 @@ def test_code_keeps_partial_system_pairs_and_all_active_target_attributes(
                 )
                 connection.execute(
                     sql.SQL(
-                        "INSERT INTO workflow.mapping_attribute (mapping_object_id,model_id,"
+                        "INSERT INTO workflow.mapping_attribute (mapping_object_id,project_id,"
                         "modeled_entity_type,{},{},attribute_mapping_transformation_document,"
                         "attribute_mapping_status) VALUES (%s,%s,%s,%s,%s,%s,%s)"
                     ).format(
@@ -129,12 +142,14 @@ def test_code_keeps_partial_system_pairs_and_all_active_target_attributes(
                     ),
                     (
                         mapping["mapping_object_id"],
-                        scope.plan.model_id,
+                        scope.plan.project_id,
                         entity_type,
                         entity_id,
                         attribute["modeled_attribute_id"],
                         Jsonb({"transformation": str(ordinal)}) if present else None,
-                        "inactive" if index == 1 and shape == "inactive_attribute" else "active",
+                        "inactive"
+                        if index == 1 and shape == "inactive_attribute"
+                        else "active",
                     ),
                 )
         if shape == "inactive_target_attribute":
@@ -154,11 +169,11 @@ def test_code_keeps_partial_system_pairs_and_all_active_target_attributes(
         )
         code = require_row(
             connection.execute(
-                query, (scope.plan.model_id, entity_type, "sql_file", entity_id)
+                query, (scope.plan.project_id, entity_type, "sql_file", entity_id)
             ).fetchone()
         )
         strict = connection.execute(
-            query, (scope.plan.model_id, entity_type, None, entity_id)
+            query, (scope.plan.project_id, entity_type, None, entity_id)
         ).fetchone()
         retained_partial = shape not in {
             "empty",
@@ -175,7 +190,15 @@ def test_code_keeps_partial_system_pairs_and_all_active_target_attributes(
         )
         picker_rows = connection.execute(
             _CODE_GENERATION_TARGETS_SQL,
-            (scope.tenant_id, scope.plan.model_id, entity_type, entity_type, *([None] * 8), 200, 0),
+            (
+                scope.tenant_id,
+                scope.plan.project_id,
+                entity_type,
+                entity_type,
+                *([None] * 8),
+                200,
+                0,
+            ),
         ).fetchall()
         picker = CodeGenerationTargetSummary.model_validate(
             next(row for row in picker_rows if row["target"]["entity_id"] == entity_id),
@@ -205,7 +228,9 @@ def test_code_keeps_partial_system_pairs_and_all_active_target_attributes(
             )
         for system_id in [scope.source_system_id, scope.other_system_id]:
             mapped = [
-                row for row in context["attribute_mappings"] if row["source_system_id"] == system_id
+                row
+                for row in context["attribute_mappings"]
+                if row["source_system_id"] == system_id
             ]
             if system_id == scope.other_system_id and not retained_partial:
                 assert mapped == []
@@ -220,7 +245,10 @@ def test_code_keeps_partial_system_pairs_and_all_active_target_attributes(
                 if shape == "object_only"
                 else 5
             )
-            assert sum(row["transformation"] is not None for row in mapped) == expected_count
+            assert (
+                sum(row["transformation"] is not None for row in mapped)
+                == expected_count
+            )
             if system_id == scope.other_system_id and shape != "complete":
                 assert all(row["mapping_attribute_id"] is None for row in mapped[-2:])
         if shape == "attribute_only":
@@ -244,6 +272,6 @@ def test_code_keeps_partial_system_pairs_and_all_active_target_attributes(
             (mapping_ids[0],),
         )
         remaining = connection.execute(
-            query, (scope.plan.model_id, entity_type, "sql_file", entity_id)
+            query, (scope.plan.project_id, entity_type, "sql_file", entity_id)
         ).fetchone()
         assert (remaining is not None) == retained_partial

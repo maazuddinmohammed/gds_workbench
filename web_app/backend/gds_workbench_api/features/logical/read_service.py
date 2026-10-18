@@ -12,8 +12,7 @@ from gds_etl_workbench.infrastructure.postgres import ReadIsolation, ReadTransac
 
 from gds_workbench_api.features.logical.read_contracts import (
     MAX_DETAIL_ROWS,
-    LogicalAssertionSource,
-    LogicalAttributeAssertionSource,
+    LogicalAttributeContextSource,
     LogicalAttributeDetail,
     LogicalAttributeFilters,
     LogicalAttributeNotFoundError,
@@ -21,6 +20,7 @@ from gds_workbench_api.features.logical.read_contracts import (
     LogicalAttributePhysicalSource,
     LogicalAttributeSource,
     LogicalAttributeSummary,
+    LogicalContextSource,
     LogicalDetailLimitExceededError,
     LogicalEntityDetail,
     LogicalEntityFilters,
@@ -42,14 +42,14 @@ from gds_workbench_api.features.logical.read_contracts import (
     LogicalSubmodelSummary,
     ModeledFilters,
 )
-from gds_workbench_api.features.models import ModelNotFoundError
+from gds_workbench_api.features.projects import ProjectNotFoundError
 
-_MODEL_HEADER_SQL: LiteralString = """
-SELECT target_model.model_revision
-  FROM model.model AS target_model
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+_PROJECT_HEADER_SQL: LiteralString = """
+SELECT target_project.project_revision
+  FROM project.project AS target_project
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
 """
 
 _LOGICAL_ENTITIES_SQL: LiteralString = """
@@ -64,11 +64,11 @@ SELECT entity.logical_entity_id,
        entity.logical_entity_is_locked,
        entity.updated_time AS updated_at
   FROM workflow.logical_entity AS entity
-  JOIN model.model AS target_model
-    ON target_model.model_id = entity.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+  JOIN project.project AS target_project
+    ON target_project.project_id = entity.project_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND (%s::VARCHAR IS NULL OR entity.logical_entity_status = %s)
    AND (%s::BOOLEAN IS NULL OR entity.logical_entity_is_locked = %s)
    AND (
@@ -87,7 +87,7 @@ SELECT entity.logical_entity_id,
        OR EXISTS (
            SELECT 1
              FROM workflow.logical_entity_submodel AS membership
-            WHERE membership.model_id = entity.model_id
+            WHERE membership.project_id = entity.project_id
               AND membership.logical_entity_id = entity.logical_entity_id
               AND membership.logical_submodel_id = %s
               AND membership.logical_entity_submodel_status
@@ -116,11 +116,11 @@ SELECT entity.logical_entity_id,
        entity.created_time AS created_at,
        entity.updated_time AS updated_at
   FROM workflow.logical_entity AS entity
-  JOIN model.model AS target_model
-    ON target_model.model_id = entity.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+  JOIN project.project AS target_project
+    ON target_project.project_id = entity.project_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND entity.logical_entity_id = %s
 """
 
@@ -136,15 +136,15 @@ SELECT membership.logical_entity_submodel_id,
   FROM workflow.logical_entity_submodel AS membership
   JOIN workflow.logical_entity AS entity
     ON entity.logical_entity_id = membership.logical_entity_id
-   AND entity.model_id = membership.model_id
+   AND entity.project_id = membership.project_id
   JOIN workflow.logical_submodel AS submodel
     ON submodel.logical_submodel_id = membership.logical_submodel_id
-   AND submodel.model_id = membership.model_id
-  JOIN model.model AS target_model
-    ON target_model.model_id = membership.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+   AND submodel.project_id = membership.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = membership.project_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND membership.logical_entity_id = %s
  ORDER BY lower(btrim(submodel.logical_submodel_name)),
           membership.logical_entity_submodel_id
@@ -167,43 +167,44 @@ SELECT source.logical_entity_source_mapping_id,
        source_connection.connection_code AS source_connection_code,
        source_object.object_schema AS source_object_schema,
        source_object.object_name AS source_object_name,
-       assertion_record.modeling_assertion_record_id,
-       assertion_record.modeling_assertion_record_key,
-       assertion_document.modeling_assertion_document_name,
-       assertion_record.modeling_assertion_record_type,
-       assertion_record.modeling_assertion_text,
-       assertion_record.modeling_assertion_confidence,
-       assertion_record.modeling_assertion_record_status
+       context_record.context_record_id::TEXT AS context_record_id,
+       context_group.name AS context_group_name,
+       context_type.name AS context_type_name,
+       context_record.context_text,
+       context_record.source_reference,
+       context_record.status AS context_record_status
   FROM workflow.logical_entity_source_mapping AS source
   JOIN workflow.logical_entity AS entity
     ON entity.logical_entity_id = source.logical_entity_id
-   AND entity.model_id = source.model_id
-  JOIN model.model AS target_model
-    ON target_model.model_id = source.model_id
+   AND entity.project_id = source.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = source.project_id
   LEFT JOIN core.object AS source_object
     ON source_object.object_id = source.source_object_id
   LEFT JOIN core.connection AS source_connection
     ON source_connection.connection_id = source_object.connection_id
-  LEFT JOIN LATERAL workflow.list_model_object_eligibility(
-      source.model_id
+  LEFT JOIN LATERAL workflow.list_project_object_eligibility(
+      source.project_id
   ) AS source_eligibility
     ON source_eligibility.object_id = source.source_object_id
-   AND source_eligibility.is_model_input_eligible
+   AND source_eligibility.is_project_input_eligible
   LEFT JOIN core.tenant AS source_placement_tenant
     ON source_placement_tenant.tenant_id = source_connection.tenant_id
   LEFT JOIN core.system AS source_system
     ON source_system.system_id = source_connection.system_id
-  LEFT JOIN model.modeling_assertion_record AS assertion_record
-    ON assertion_record.modeling_assertion_record_id
-       = source.modeling_assertion_record_id
-   AND assertion_record.model_id = source.model_id
-  LEFT JOIN model.modeling_assertion_document AS assertion_document
-    ON assertion_document.modeling_assertion_document_id
-       = assertion_record.modeling_assertion_document_id
-   AND assertion_document.model_id = assertion_record.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+  LEFT JOIN project.context_record AS context_record
+    ON context_record.context_record_id
+       = source.context_record_id
+   AND context_record.project_id = source.project_id
+  LEFT JOIN project.context_group AS context_group
+    ON context_group.context_group_id
+       = context_record.context_group_id
+   AND context_group.project_id = context_record.project_id
+  LEFT JOIN reference.context_type AS context_type
+    ON context_type.context_type_id = context_group.context_type_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND source.logical_entity_id = %s
    AND (
        source.support_source_type <> 'object'
@@ -232,12 +233,12 @@ SELECT attribute.logical_attribute_id,
   FROM workflow.logical_attribute AS attribute
   JOIN workflow.logical_entity AS entity
     ON entity.logical_entity_id = attribute.logical_entity_id
-   AND entity.model_id = attribute.model_id
-  JOIN model.model AS target_model
-    ON target_model.model_id = attribute.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+   AND entity.project_id = attribute.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = attribute.project_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND (%s::VARCHAR IS NULL OR attribute.logical_attribute_status = %s)
    AND (%s::BOOLEAN IS NULL OR attribute.logical_attribute_is_locked = %s)
    AND (
@@ -279,12 +280,12 @@ SELECT attribute.logical_attribute_id,
   FROM workflow.logical_attribute AS attribute
   JOIN workflow.logical_entity AS entity
     ON entity.logical_entity_id = attribute.logical_entity_id
-   AND entity.model_id = attribute.model_id
-  JOIN model.model AS target_model
-    ON target_model.model_id = attribute.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+   AND entity.project_id = attribute.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = attribute.project_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND attribute.logical_attribute_id = %s
 """
 
@@ -307,20 +308,19 @@ SELECT source.logical_attribute_source_mapping_id,
        source_object.object_schema AS source_object_schema,
        source_object.object_name AS source_object_name,
        source_attribute.attribute_name AS source_attribute_name,
-       assertion_record.modeling_assertion_record_id,
-       assertion_record.modeling_assertion_record_key,
-       assertion_document.modeling_assertion_document_name,
-       assertion_record.modeling_assertion_record_type,
-       assertion_record.modeling_assertion_text,
-       assertion_record.modeling_assertion_confidence,
-       assertion_record.modeling_assertion_record_status
+       context_record.context_record_id::TEXT AS context_record_id,
+       context_group.name AS context_group_name,
+       context_type.name AS context_type_name,
+       context_record.context_text,
+       context_record.source_reference,
+       context_record.status AS context_record_status
   FROM workflow.logical_attribute_source_mapping AS source
   JOIN workflow.logical_attribute AS attribute
     ON attribute.logical_attribute_id = source.logical_attribute_id
    AND attribute.logical_entity_id = source.logical_entity_id
-   AND attribute.model_id = source.model_id
-  JOIN model.model AS target_model
-    ON target_model.model_id = source.model_id
+   AND attribute.project_id = source.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = source.project_id
   LEFT JOIN core.object AS source_object
     ON source_object.object_id = source.source_object_id
   LEFT JOIN core.attribute AS source_attribute
@@ -328,27 +328,29 @@ SELECT source.logical_attribute_source_mapping_id,
    AND source_attribute.object_id = source.source_object_id
   LEFT JOIN core.connection AS source_connection
     ON source_connection.connection_id = source_object.connection_id
-  LEFT JOIN LATERAL workflow.list_model_attribute_eligibility(
-      source.model_id
+  LEFT JOIN LATERAL workflow.list_project_attribute_eligibility(
+      source.project_id
   ) AS source_eligibility
     ON source_eligibility.object_id = source.source_object_id
    AND source_eligibility.attribute_id = source.source_attribute_id
-   AND source_eligibility.is_model_input_eligible
+   AND source_eligibility.is_project_input_eligible
   LEFT JOIN core.tenant AS source_placement_tenant
     ON source_placement_tenant.tenant_id = source_connection.tenant_id
   LEFT JOIN core.system AS source_system
     ON source_system.system_id = source_connection.system_id
-  LEFT JOIN model.modeling_assertion_record AS assertion_record
-    ON assertion_record.modeling_assertion_record_id
-       = source.modeling_assertion_record_id
-   AND assertion_record.model_id = source.model_id
-  LEFT JOIN model.modeling_assertion_document AS assertion_document
-    ON assertion_document.modeling_assertion_document_id
-       = assertion_record.modeling_assertion_document_id
-   AND assertion_document.model_id = assertion_record.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+  LEFT JOIN project.context_record AS context_record
+    ON context_record.context_record_id
+       = source.context_record_id
+   AND context_record.project_id = source.project_id
+  LEFT JOIN project.context_group AS context_group
+    ON context_group.context_group_id
+       = context_record.context_group_id
+   AND context_group.project_id = context_record.project_id
+  LEFT JOIN reference.context_type AS context_type
+    ON context_type.context_type_id = context_group.context_type_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND source.logical_attribute_id = %s
    AND (
        source.support_source_type <> 'attribute'
@@ -385,28 +387,28 @@ SELECT relationship.logical_relationship_id,
   JOIN workflow.logical_entity AS from_entity
     ON from_entity.logical_entity_id
        = relationship.logical_relationship_from_entity_id
-   AND from_entity.model_id = relationship.model_id
+   AND from_entity.project_id = relationship.project_id
   JOIN workflow.logical_attribute AS from_attribute
     ON from_attribute.logical_attribute_id
        = relationship.logical_relationship_from_attribute_id
    AND from_attribute.logical_entity_id
        = relationship.logical_relationship_from_entity_id
-   AND from_attribute.model_id = relationship.model_id
+   AND from_attribute.project_id = relationship.project_id
   JOIN workflow.logical_entity AS to_entity
     ON to_entity.logical_entity_id
        = relationship.logical_relationship_to_entity_id
-   AND to_entity.model_id = relationship.model_id
+   AND to_entity.project_id = relationship.project_id
   JOIN workflow.logical_attribute AS to_attribute
     ON to_attribute.logical_attribute_id
        = relationship.logical_relationship_to_attribute_id
    AND to_attribute.logical_entity_id
        = relationship.logical_relationship_to_entity_id
-   AND to_attribute.model_id = relationship.model_id
-  JOIN model.model AS target_model
-    ON target_model.model_id = relationship.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+   AND to_attribute.project_id = relationship.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = relationship.project_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND (%s::VARCHAR IS NULL OR relationship.logical_relationship_status = %s)
    AND (%s::BOOLEAN IS NULL OR relationship.logical_relationship_is_locked = %s)
    AND (
@@ -461,28 +463,28 @@ SELECT relationship.logical_relationship_id,
   JOIN workflow.logical_entity AS from_entity
     ON from_entity.logical_entity_id
        = relationship.logical_relationship_from_entity_id
-   AND from_entity.model_id = relationship.model_id
+   AND from_entity.project_id = relationship.project_id
   JOIN workflow.logical_attribute AS from_attribute
     ON from_attribute.logical_attribute_id
        = relationship.logical_relationship_from_attribute_id
    AND from_attribute.logical_entity_id
        = relationship.logical_relationship_from_entity_id
-   AND from_attribute.model_id = relationship.model_id
+   AND from_attribute.project_id = relationship.project_id
   JOIN workflow.logical_entity AS to_entity
     ON to_entity.logical_entity_id
        = relationship.logical_relationship_to_entity_id
-   AND to_entity.model_id = relationship.model_id
+   AND to_entity.project_id = relationship.project_id
   JOIN workflow.logical_attribute AS to_attribute
     ON to_attribute.logical_attribute_id
        = relationship.logical_relationship_to_attribute_id
    AND to_attribute.logical_entity_id
        = relationship.logical_relationship_to_entity_id
-   AND to_attribute.model_id = relationship.model_id
-  JOIN model.model AS target_model
-    ON target_model.model_id = relationship.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+   AND to_attribute.project_id = relationship.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = relationship.project_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND relationship.logical_relationship_id = %s
 """
 
@@ -498,14 +500,14 @@ SELECT submodel.logical_submodel_id,
        )::INTEGER AS entity_count,
        submodel.updated_time AS updated_at
   FROM workflow.logical_submodel AS submodel
-  JOIN model.model AS target_model
-    ON target_model.model_id = submodel.model_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = submodel.project_id
   LEFT JOIN workflow.logical_entity_submodel AS membership
-    ON membership.model_id = submodel.model_id
+    ON membership.project_id = submodel.project_id
    AND membership.logical_submodel_id = submodel.logical_submodel_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND (%s::VARCHAR IS NULL OR submodel.logical_submodel_status = %s)
    AND (%s::BOOLEAN IS NULL OR submodel.logical_submodel_is_locked = %s)
    AND (
@@ -535,7 +537,7 @@ SELECT submodel.logical_submodel_id,
        (
            SELECT count(DISTINCT membership.logical_entity_id)::INTEGER
              FROM workflow.logical_entity_submodel AS membership
-            WHERE membership.model_id = submodel.model_id
+            WHERE membership.project_id = submodel.project_id
               AND membership.logical_submodel_id = submodel.logical_submodel_id
               AND membership.logical_entity_submodel_status
                   = 'active'
@@ -543,11 +545,11 @@ SELECT submodel.logical_submodel_id,
        submodel.created_time AS created_at,
        submodel.updated_time AS updated_at
   FROM workflow.logical_submodel AS submodel
-  JOIN model.model AS target_model
-    ON target_model.model_id = submodel.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+  JOIN project.project AS target_project
+    ON target_project.project_id = submodel.project_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND submodel.logical_submodel_id = %s
 """
 
@@ -566,15 +568,15 @@ SELECT membership.logical_entity_submodel_id,
   FROM workflow.logical_entity_submodel AS membership
   JOIN workflow.logical_submodel AS submodel
     ON submodel.logical_submodel_id = membership.logical_submodel_id
-   AND submodel.model_id = membership.model_id
+   AND submodel.project_id = membership.project_id
   JOIN workflow.logical_entity AS entity
     ON entity.logical_entity_id = membership.logical_entity_id
-   AND entity.model_id = membership.model_id
-  JOIN model.model AS target_model
-    ON target_model.model_id = membership.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+   AND entity.project_id = membership.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = membership.project_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND membership.logical_submodel_id = %s
  ORDER BY entity.logical_entity_dependency_order,
           lower(btrim(entity.logical_entity_name)),
@@ -589,7 +591,7 @@ class LogicalService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: LogicalEntityFilters,
         page_size: int,
         cursor: str | None,
@@ -600,7 +602,7 @@ class LogicalService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         logical_entity_id: int,
     ) -> LogicalEntityDetail: ...
 
@@ -609,7 +611,7 @@ class LogicalService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: LogicalAttributeFilters,
         page_size: int,
         cursor: str | None,
@@ -620,7 +622,7 @@ class LogicalService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         logical_attribute_id: int,
     ) -> LogicalAttributeDetail: ...
 
@@ -629,7 +631,7 @@ class LogicalService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: LogicalRelationshipFilters,
         page_size: int,
         cursor: str | None,
@@ -640,7 +642,7 @@ class LogicalService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         logical_relationship_id: int,
     ) -> LogicalRelationshipDetail: ...
 
@@ -649,7 +651,7 @@ class LogicalService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: ModeledFilters,
         page_size: int,
         cursor: str | None,
@@ -660,7 +662,7 @@ class LogicalService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         logical_submodel_id: int,
     ) -> LogicalSubmodelDetail: ...
 
@@ -690,13 +692,13 @@ class DatabaseLogicalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: LogicalEntityFilters,
         page_size: int,
         cursor: str | None,
     ) -> LogicalEntityPage:
         filter_digest = sha256(filters.model_dump_json().encode()).hexdigest()
-        collection = f"web_logical_entities:{tenant_id}:{model_id}:{page_size}:{filter_digest}"
+        collection = f"web_logical_entities:{tenant_id}:{project_id}:{page_size}:{filter_digest}"
         offset = self._cursors.decode(cursor, collection=collection)
         async with self._database.read_transaction(
             isolation=ReadIsolation.REPEATABLE_READ
@@ -706,14 +708,14 @@ class DatabaseLogicalService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
-            header = await transaction.fetch_one(_MODEL_HEADER_SQL, (tenant_id, model_id))
+            header = await transaction.fetch_one(_PROJECT_HEADER_SQL, (tenant_id, project_id))
             if header is None:
-                raise ModelNotFoundError()
+                raise ProjectNotFoundError()
             rows = await transaction.fetch_all(
                 _LOGICAL_ENTITIES_SQL,
-                _entity_list_parameters(tenant_id, model_id, filters, page_size, offset),
+                _entity_list_parameters(tenant_id, project_id, filters, page_size, offset),
             )
 
         next_cursor = None
@@ -723,8 +725,8 @@ class DatabaseLogicalService:
                 offset=offset + page_size,
             )
         return LogicalEntityPage(
-            model_id=model_id,
-            model_revision=header["model_revision"],
+            project_id=project_id,
+            project_revision=header["project_revision"],
             items=tuple(LogicalEntitySummary.model_validate(row) for row in rows[:page_size]),
             next_cursor=next_cursor,
         )
@@ -734,7 +736,7 @@ class DatabaseLogicalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         logical_entity_id: int,
     ) -> LogicalEntityDetail:
         async with self._database.read_transaction(
@@ -745,21 +747,21 @@ class DatabaseLogicalService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
             row = await transaction.fetch_one(
                 _LOGICAL_ENTITY_DETAIL_SQL,
-                (tenant_id, model_id, logical_entity_id),
+                (tenant_id, project_id, logical_entity_id),
             )
             if row is None:
                 raise LogicalEntityNotFoundError()
             submodel_rows = await transaction.fetch_all(
                 _LOGICAL_ENTITY_SUBMODELS_SQL,
-                (tenant_id, model_id, logical_entity_id, MAX_DETAIL_ROWS + 1),
+                (tenant_id, project_id, logical_entity_id, MAX_DETAIL_ROWS + 1),
             )
             source_rows = await transaction.fetch_all(
                 LOGICAL_ENTITY_SOURCES_SQL,
-                (tenant_id, model_id, logical_entity_id, MAX_DETAIL_ROWS + 1),
+                (tenant_id, project_id, logical_entity_id, MAX_DETAIL_ROWS + 1),
             )
         if len(submodel_rows) > MAX_DETAIL_ROWS or len(source_rows) > MAX_DETAIL_ROWS:
             raise LogicalDetailLimitExceededError()
@@ -779,13 +781,13 @@ class DatabaseLogicalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: LogicalAttributeFilters,
         page_size: int,
         cursor: str | None,
     ) -> LogicalAttributePage:
         filter_digest = sha256(filters.model_dump_json().encode()).hexdigest()
-        collection = f"web_logical_attributes:{tenant_id}:{model_id}:{page_size}:{filter_digest}"
+        collection = f"web_logical_attributes:{tenant_id}:{project_id}:{page_size}:{filter_digest}"
         offset = self._cursors.decode(cursor, collection=collection)
         async with self._database.read_transaction(
             isolation=ReadIsolation.REPEATABLE_READ
@@ -795,17 +797,17 @@ class DatabaseLogicalService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
-            header = await transaction.fetch_one(_MODEL_HEADER_SQL, (tenant_id, model_id))
+            header = await transaction.fetch_one(_PROJECT_HEADER_SQL, (tenant_id, project_id))
             if header is None:
-                raise ModelNotFoundError()
+                raise ProjectNotFoundError()
             rows = await transaction.fetch_all(
                 _LOGICAL_ATTRIBUTES_SQL,
                 (
                     *_list_parameters(
                         tenant_id,
-                        model_id,
+                        project_id,
                         filters,
                         page_size,
                         offset,
@@ -824,8 +826,8 @@ class DatabaseLogicalService:
                 offset=offset + page_size,
             )
         return LogicalAttributePage(
-            model_id=model_id,
-            model_revision=header["model_revision"],
+            project_id=project_id,
+            project_revision=header["project_revision"],
             items=tuple(LogicalAttributeSummary.model_validate(row) for row in rows[:page_size]),
             next_cursor=next_cursor,
         )
@@ -835,7 +837,7 @@ class DatabaseLogicalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         logical_attribute_id: int,
     ) -> LogicalAttributeDetail:
         async with self._database.read_transaction(
@@ -846,17 +848,17 @@ class DatabaseLogicalService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
             row = await transaction.fetch_one(
                 _LOGICAL_ATTRIBUTE_DETAIL_SQL,
-                (tenant_id, model_id, logical_attribute_id),
+                (tenant_id, project_id, logical_attribute_id),
             )
             if row is None:
                 raise LogicalAttributeNotFoundError()
             source_rows = await transaction.fetch_all(
                 LOGICAL_ATTRIBUTE_SOURCES_SQL,
-                (tenant_id, model_id, logical_attribute_id, MAX_DETAIL_ROWS + 1),
+                (tenant_id, project_id, logical_attribute_id, MAX_DETAIL_ROWS + 1),
             )
         if len(source_rows) > MAX_DETAIL_ROWS:
             raise LogicalDetailLimitExceededError()
@@ -873,13 +875,15 @@ class DatabaseLogicalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: LogicalRelationshipFilters,
         page_size: int,
         cursor: str | None,
     ) -> LogicalRelationshipPage:
         filter_digest = sha256(filters.model_dump_json().encode()).hexdigest()
-        collection = f"web_logical_relationships:{tenant_id}:{model_id}:{page_size}:{filter_digest}"
+        collection = (
+            f"web_logical_relationships:{tenant_id}:{project_id}:{page_size}:{filter_digest}"
+        )
         offset = self._cursors.decode(cursor, collection=collection)
         async with self._database.read_transaction(
             isolation=ReadIsolation.REPEATABLE_READ
@@ -889,17 +893,17 @@ class DatabaseLogicalService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
-            header = await transaction.fetch_one(_MODEL_HEADER_SQL, (tenant_id, model_id))
+            header = await transaction.fetch_one(_PROJECT_HEADER_SQL, (tenant_id, project_id))
             if header is None:
-                raise ModelNotFoundError()
+                raise ProjectNotFoundError()
             rows = await transaction.fetch_all(
                 _LOGICAL_RELATIONSHIPS_SQL,
                 (
                     *_list_parameters(
                         tenant_id,
-                        model_id,
+                        project_id,
                         filters,
                         page_size,
                         offset,
@@ -919,8 +923,8 @@ class DatabaseLogicalService:
                 offset=offset + page_size,
             )
         return LogicalRelationshipPage(
-            model_id=model_id,
-            model_revision=header["model_revision"],
+            project_id=project_id,
+            project_revision=header["project_revision"],
             items=tuple(LogicalRelationshipSummary.model_validate(row) for row in rows[:page_size]),
             next_cursor=next_cursor,
         )
@@ -930,7 +934,7 @@ class DatabaseLogicalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         logical_relationship_id: int,
     ) -> LogicalRelationshipDetail:
         async with self._database.read_transaction(
@@ -941,11 +945,11 @@ class DatabaseLogicalService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
             row = await transaction.fetch_one(
                 _LOGICAL_RELATIONSHIP_DETAIL_SQL,
-                (tenant_id, model_id, logical_relationship_id),
+                (tenant_id, project_id, logical_relationship_id),
             )
         if row is None:
             raise LogicalRelationshipNotFoundError()
@@ -956,13 +960,13 @@ class DatabaseLogicalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: ModeledFilters,
         page_size: int,
         cursor: str | None,
     ) -> LogicalSubmodelPage:
         filter_digest = sha256(filters.model_dump_json().encode()).hexdigest()
-        collection = f"web_logical_submodels:{tenant_id}:{model_id}:{page_size}:{filter_digest}"
+        collection = f"web_logical_submodels:{tenant_id}:{project_id}:{page_size}:{filter_digest}"
         offset = self._cursors.decode(cursor, collection=collection)
         async with self._database.read_transaction(
             isolation=ReadIsolation.REPEATABLE_READ
@@ -972,14 +976,14 @@ class DatabaseLogicalService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
-            header = await transaction.fetch_one(_MODEL_HEADER_SQL, (tenant_id, model_id))
+            header = await transaction.fetch_one(_PROJECT_HEADER_SQL, (tenant_id, project_id))
             if header is None:
-                raise ModelNotFoundError()
+                raise ProjectNotFoundError()
             rows = await transaction.fetch_all(
                 _LOGICAL_SUBMODELS_SQL,
-                _list_parameters(tenant_id, model_id, filters, page_size, offset),
+                _list_parameters(tenant_id, project_id, filters, page_size, offset),
             )
 
         next_cursor = None
@@ -989,8 +993,8 @@ class DatabaseLogicalService:
                 offset=offset + page_size,
             )
         return LogicalSubmodelPage(
-            model_id=model_id,
-            model_revision=header["model_revision"],
+            project_id=project_id,
+            project_revision=header["project_revision"],
             items=tuple(LogicalSubmodelSummary.model_validate(row) for row in rows[:page_size]),
             next_cursor=next_cursor,
         )
@@ -1000,7 +1004,7 @@ class DatabaseLogicalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         logical_submodel_id: int,
     ) -> LogicalSubmodelDetail:
         async with self._database.read_transaction(
@@ -1011,17 +1015,17 @@ class DatabaseLogicalService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
             row = await transaction.fetch_one(
                 _LOGICAL_SUBMODEL_DETAIL_SQL,
-                (tenant_id, model_id, logical_submodel_id),
+                (tenant_id, project_id, logical_submodel_id),
             )
             if row is None:
                 raise LogicalSubmodelNotFoundError()
             entity_rows = await transaction.fetch_all(
                 _LOGICAL_SUBMODEL_ENTITIES_SQL,
-                (tenant_id, model_id, logical_submodel_id, MAX_DETAIL_ROWS + 1),
+                (tenant_id, project_id, logical_submodel_id, MAX_DETAIL_ROWS + 1),
             )
         if len(entity_rows) > MAX_DETAIL_ROWS:
             raise LogicalDetailLimitExceededError()
@@ -1038,14 +1042,14 @@ class DatabaseLogicalService:
 
 def _list_parameters(
     tenant_id: int,
-    model_id: int,
+    project_id: int,
     filters: ModeledFilters,
     page_size: int,
     offset: int,
 ) -> tuple[object, ...]:
     return (
         tenant_id,
-        model_id,
+        project_id,
         filters.status,
         filters.status,
         filters.locked,
@@ -1062,12 +1066,12 @@ def _list_parameters(
 
 def _entity_list_parameters(
     tenant_id: int,
-    model_id: int,
+    project_id: int,
     filters: LogicalEntityFilters,
     page_size: int,
     offset: int,
 ) -> tuple[object, ...]:
-    common = _list_parameters(tenant_id, model_id, filters, page_size, offset)
+    common = _list_parameters(tenant_id, project_id, filters, page_size, offset)
     return (
         *common[:-2],
         filters.logical_submodel_id,
@@ -1103,20 +1107,19 @@ def _normalize_entity_source(row: Mapping[str, object]) -> LogicalEntitySource:
             },
             strict=False,
         )
-    if row["support_source_type"] != "assertion":
+    if row["support_source_type"] != "context_record":
         raise ValueError("Logical Entity Source has an unsupported source type")
-    return LogicalAssertionSource.model_validate(
+    return LogicalContextSource.model_validate(
         {
             **common,
-            "support_source_type": "assertion",
-            "assertion_record": {
-                "modeling_assertion_record_id": row["modeling_assertion_record_id"],
-                "modeling_assertion_record_key": row["modeling_assertion_record_key"],
-                "modeling_assertion_document_name": row["modeling_assertion_document_name"],
-                "modeling_assertion_record_type": row["modeling_assertion_record_type"],
-                "modeling_assertion_text": row["modeling_assertion_text"],
-                "modeling_assertion_confidence": row["modeling_assertion_confidence"],
-                "modeling_assertion_record_status": row["modeling_assertion_record_status"],
+            "support_source_type": "context_record",
+            "context_record": {
+                "context_record_id": row["context_record_id"],
+                "context_group_name": row["context_group_name"],
+                "context_type_name": row["context_type_name"],
+                "context_text": row["context_text"],
+                "source_reference": row["source_reference"],
+                "status": row["context_record_status"],
             },
         },
         strict=False,
@@ -1153,20 +1156,19 @@ def _normalize_attribute_source(row: Mapping[str, object]) -> LogicalAttributeSo
             },
             strict=False,
         )
-    if row["support_source_type"] != "assertion":
+    if row["support_source_type"] != "context_record":
         raise ValueError("Logical Attribute Source has an unsupported source type")
-    return LogicalAttributeAssertionSource.model_validate(
+    return LogicalAttributeContextSource.model_validate(
         {
             **common,
-            "support_source_type": "assertion",
-            "assertion_record": {
-                "modeling_assertion_record_id": row["modeling_assertion_record_id"],
-                "modeling_assertion_record_key": row["modeling_assertion_record_key"],
-                "modeling_assertion_document_name": row["modeling_assertion_document_name"],
-                "modeling_assertion_record_type": row["modeling_assertion_record_type"],
-                "modeling_assertion_text": row["modeling_assertion_text"],
-                "modeling_assertion_confidence": row["modeling_assertion_confidence"],
-                "modeling_assertion_record_status": row["modeling_assertion_record_status"],
+            "support_source_type": "context_record",
+            "context_record": {
+                "context_record_id": row["context_record_id"],
+                "context_group_name": row["context_group_name"],
+                "context_type_name": row["context_type_name"],
+                "context_text": row["context_text"],
+                "source_reference": row["source_reference"],
+                "status": row["context_record_status"],
             },
         },
         strict=False,

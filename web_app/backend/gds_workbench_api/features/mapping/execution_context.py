@@ -12,7 +12,7 @@ from typing import Any, cast
 from gds_etl_workbench.application.mapping_context import without_internal_fields
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from gds_workbench_api.features.assertions.context import project_assertions
+from gds_workbench_api.features.context.context import select_context_records
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentContextToolResultTooLargeError,
     LocalAgentToolDefinition,
@@ -294,8 +294,8 @@ def _mapping_provider_context(preparation: MappingPreparation) -> JsonValue:
             "workflow": "mapping",
             "run": {
                 "workflow_run_id": plan.workflow_run_id,
-                "model_id": plan.model_id,
-                "model_revision": plan.model_revision,
+                "project_id": plan.project_id,
+                "project_revision": plan.project_revision,
                 "correlation_id": str(plan.correlation_id),
                 "modeled_entity_type": plan.modeled_entity_type,
                 "pair": plan.pair.model_dump(mode="json"),
@@ -334,7 +334,7 @@ def _mapping_support(preparation: MappingPreparation) -> dict[str, Any]:
         "modeled_relationships": [],
         "source_relationships": [],
         "profiles": [],
-        "assertions": [],
+        "context_records": [],
     }
     if snapshot is None:
         return result
@@ -365,7 +365,7 @@ def _mapping_support(preparation: MappingPreparation) -> dict[str, Any]:
             if source.status != "active":
                 continue
             if (
-                source.support_source_type == "assertion"
+                source.support_source_type == "context_record"
                 or (
                     source.support_source_type == "attribute"
                     and natural_key(source.source_attribute.model_dump()) in source_keys
@@ -432,11 +432,11 @@ def _mapping_support(preparation: MappingPreparation) -> dict[str, Any]:
         row = profile.model_dump(mode="json")
         if natural_key(row) in source_keys:
             result["profiles"].append(row)
-    result["assertions"] = project_assertions(
-        snapshot.assertion.model_dump(mode="json"),
+    result["context_records"] = select_context_records(
+        snapshot.context.model_dump(mode="json"),
         source_scope=[
             {
-                "tenant_code": snapshot.model_tenant_code,
+                "tenant_code": snapshot.project_tenant_code,
                 "system_code": preparation.context.source_system.system_code,
             },
             *(source.object.model_dump(mode="json") for source in preparation.context.sources),
@@ -454,7 +454,7 @@ def _mapping_support_records(
         "modeled_relationships": "target_relationship",
         "source_relationships": "analysis_relationship",
         "profiles": "profile",
-        "assertions": "assertion",
+        "context_records": "context_record",
     }
     records = [
         {"evidence_type": kinds[name], "record": deepcopy(row)}
@@ -483,7 +483,9 @@ def _mapping_support_records(
         and source.object.connection_is_active
     }
     input_keys = {
-        natural_key(row.model_dump()) for row in snapshot.model_input_scope.objects if row.is_active
+        natural_key(row.model_dump())
+        for row in snapshot.project_input_scope.objects
+        if row.is_active
     }
     physical = {key: obj for key, obj in physical.items() if key in input_keys}
     attribute_keys = {
@@ -495,8 +497,8 @@ def _mapping_support_records(
     lineage_objects: set[tuple[Any, ...]] = set()
     lineage_attributes: set[tuple[Any, ...]] = set()
     selected_attributes: set[tuple[str, str, str]] = set()
-    applicable_assertions = {
-        row["modeling_assertion_record_key"].casefold() for row in support["assertions"]
+    applicable_context_records = {
+        row["context_record_id"].casefold() for row in support["context_records"]
     }
     for entity in snapshot.logical.entities:
         key = (entity.logical_entity_schema_name.casefold(), entity.logical_entity_name.casefold())
@@ -513,8 +515,7 @@ def _mapping_support_records(
                     continue
                 lineage_objects.add(physical_key)
             elif (
-                source.assertion_record.modeling_assertion_record_key.casefold()
-                not in applicable_assertions
+                source.context_record.context_record_id.casefold() not in applicable_context_records
             ):
                 continue
             cast(list[dict[str, Any]], row["sources"]).append(source.model_dump(mode="json"))
@@ -542,8 +543,7 @@ def _mapping_support_records(
                 lineage_attributes.add(physical_key)
                 lineage_objects.add(physical_key[:-1])
             elif (
-                source.assertion_record.modeling_assertion_record_key.casefold()
-                not in applicable_assertions
+                source.context_record.context_record_id.casefold() not in applicable_context_records
             ):
                 continue
             cast(list[dict[str, Any]], row["sources"]).append(source.model_dump(mode="json"))
@@ -752,8 +752,8 @@ def _mapping_context_manifest(
         "schema_version": "1.0",
         "workflow": "mapping",
         "workflow_run_id": plan.workflow_run_id,
-        "model_id": plan.model_id,
-        "model_revision": plan.model_revision,
+        "project_id": plan.project_id,
+        "project_revision": plan.project_revision,
         "pair": plan.pair.model_dump(mode="json"),
         "datasets": [
             {

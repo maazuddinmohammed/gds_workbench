@@ -219,7 +219,7 @@ class AgentCapabilityRegistry(CapabilityModel):
         max_turns: int | None = None,
         validation_retry_count: int | None = None,
     ) -> AgentRunSelection:
-        """Resolve a new Run against available deployments, including retired Model defaults."""
+        """Resolve a supported deployment when a saved Project default is retired."""
         for model in sorted(self.models, key=lambda item: item.code != model_code):
             profile = next(
                 (

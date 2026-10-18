@@ -1,15 +1,15 @@
 -- GDS ETL Workbench Release 1: final privileges after runtime-role creation.
 
 -- Least-privilege runtime roles. Deployment owns DDL; these roles cannot create it.
-REVOKE ALL ON SCHEMA reference, core, security, model, workflow, application, mcp FROM PUBLIC;
-REVOKE ALL ON ALL TABLES IN SCHEMA reference, core, security, model, workflow, application, mcp FROM PUBLIC;
-REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA reference, core, security, model, workflow, application, mcp FROM PUBLIC;
+REVOKE ALL ON SCHEMA reference, core, security, project, workflow, application, mcp FROM PUBLIC;
+REVOKE ALL ON ALL TABLES IN SCHEMA reference, core, security, project, workflow, application, mcp FROM PUBLIC;
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA reference, core, security, project, workflow, application, mcp FROM PUBLIC;
 REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA mcp
 FROM gds_app_write, gds_web_write;
 
-GRANT USAGE ON SCHEMA reference, core, security, model, workflow, application, mcp
+GRANT USAGE ON SCHEMA reference, core, security, project, workflow, application, mcp
     TO gds_app_write;
-GRANT USAGE ON SCHEMA reference, core, security, model, workflow, application, mcp
+GRANT USAGE ON SCHEMA reference, core, security, project, workflow, application, mcp
     TO gds_web_write;
 
 -- Reassert the exact transaction-scoped memberships used by MCP and web.
@@ -21,7 +21,7 @@ GRANT gds_web_write TO gds_web_runtime
 -- Runtime writes need the pure validator referenced by CHECK constraints.
 GRANT EXECUTE ON FUNCTION reference.is_nonblank(TEXT) TO gds_app_write;
 GRANT EXECUTE ON FUNCTION reference.is_nonblank(TEXT) TO gds_web_write;
-GRANT EXECUTE ON FUNCTION model.valid_schema_list(JSONB) TO gds_app_write, gds_web_write;
+GRANT EXECUTE ON FUNCTION project.valid_schema_list(JSONB) TO gds_app_write, gds_web_write;
 
 GRANT EXECUTE ON FUNCTION security.authorize_tenant_operation(
     UUID,
@@ -295,13 +295,13 @@ FROM gds_web_write;
 
 GRANT EXECUTE ON FUNCTION workflow.list_tenant_visible_objects(BIGINT)
 TO gds_app_write, gds_web_write;
-GRANT EXECUTE ON FUNCTION workflow.list_model_object_eligibility(BIGINT)
+GRANT EXECUTE ON FUNCTION workflow.list_project_object_eligibility(BIGINT)
 TO gds_app_write, gds_web_write;
-GRANT EXECUTE ON FUNCTION workflow.list_model_attribute_eligibility(BIGINT)
+GRANT EXECUTE ON FUNCTION workflow.list_project_attribute_eligibility(BIGINT)
 TO gds_app_write, gds_web_write;
-GRANT EXECUTE ON FUNCTION workflow.is_assertion_only_mapping_target(BIGINT, BIGINT, VARCHAR)
+GRANT EXECUTE ON FUNCTION workflow.is_context_only_mapping_target(BIGINT, BIGINT, VARCHAR)
 TO gds_app_write, gds_web_write;
-GRANT EXECUTE ON FUNCTION workflow.list_model_input_sources(BIGINT)
+GRANT EXECUTE ON FUNCTION workflow.list_project_input_sources(BIGINT)
 TO gds_app_write, gds_web_write;
 GRANT EXECUTE ON FUNCTION workflow.list_mapping_source_objects(
     BIGINT, BIGINT, VARCHAR, BIGINT
@@ -338,7 +338,7 @@ BEGIN
     runtime_schema_usage_ok := NOT EXISTS (
         SELECT 1
           FROM unnest(ARRAY[
-                   'reference', 'core', 'security', 'model', 'workflow', 'mcp'
+                   'reference', 'core', 'security', 'project', 'workflow', 'mcp'
                ]) AS required_schema(name)
           LEFT JOIN pg_namespace AS namespace_record
             ON namespace_record.nspname = required_schema.name
@@ -349,7 +349,7 @@ BEGIN
     );
 
     schema_shape_ok := EXISTS (
-        SELECT 1 FROM information_schema.columns WHERE table_schema='model' AND table_name='model'
+        SELECT 1 FROM information_schema.columns WHERE table_schema='project' AND table_name='project'
           AND column_name='is_locked' AND data_type='boolean' AND is_nullable='NO'
     ) AND NOT EXISTS (
         SELECT 1 FROM unnest(ARRAY['object','attribute','copy','process','copy_group','process_group',
@@ -359,11 +359,11 @@ BEGIN
     ) AND NOT EXISTS (
         SELECT 1 FROM pg_class AS relation JOIN pg_namespace AS namespace ON namespace.oid=relation.relnamespace
         JOIN pg_attribute AS column_record ON column_record.attrelid=relation.oid
-        WHERE namespace.nspname IN ('model','workflow','application','mcp') AND relation.relkind='r'
-          AND NOT column_record.attisdropped AND column_record.attname IN ('model_id','workflow_run_id')
-          AND (namespace.nspname, relation.relname) <> ('model','model_lock_event')
+        WHERE namespace.nspname IN ('project','workflow','application','mcp') AND relation.relkind='r'
+          AND NOT column_record.attisdropped AND column_record.attname IN ('project_id','workflow_run_id')
+          AND (namespace.nspname, relation.relname) <> ('project','project_lock_event')
           AND NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid=relation.oid
-              AND tgname='aa_model_write_fence' AND tgenabled='O')
+              AND tgname='aa_project_write_fence' AND tgenabled='O')
     ) AND EXISTS (
         SELECT 1 FROM information_schema.columns
          WHERE table_schema = 'core' AND table_name = 'process_group'
@@ -375,6 +375,7 @@ BEGIN
     ) AND NOT EXISTS (
         SELECT 1
           FROM unnest(ARRAY[
+                   'reference.context_type',
                    'reference.system_type',
                    'reference.connection_type',
                    'reference.object_type',
@@ -383,7 +384,7 @@ BEGIN
                    'reference.file_type',
                    'reference.data_operation',
                    'reference.process_type',
-                   'core.project',
+                   'core.lane',
                    'core.tenant',
                    'core.system',
                    'core.connection',
@@ -404,10 +405,10 @@ BEGIN
                    'security.tenant_principal_access',
                    'security.tenant_lock',
                    'security.tenant_lock_event',
-                   'model.model',
-                   'model.model_input_scope',
-                   'model.modeling_assertion_document',
-                   'model.modeling_assertion_record',
+                   'project.project',
+                   'project.project_input_scope',
+                   'project.context_group',
+                   'project.context_record',
                    'workflow.attribute_profile',
                    'workflow.object_enrichment',
                    'workflow.attribute_enrichment',
@@ -437,11 +438,11 @@ BEGIN
                    'workflow.validation_check',
                    'application.output_template',
                    'application.output_template_field',
-                   'mcp.model_change_set',
-                   'mcp.model_change_set_event',
-                   'mcp.model_stage_batch',
-                   'mcp.model_stage_chunk',
-                   'mcp.model_stage_payload_chunk',
+                   'mcp.project_change_set',
+                   'mcp.project_change_set_event',
+                   'mcp.project_stage_batch',
+                   'mcp.project_stage_chunk',
+                   'mcp.project_stage_payload_chunk',
                    'mcp.metadata_change_set',
                    'mcp.metadata_change_set_event',
                    'mcp.metadata_stage_batch',
@@ -470,23 +471,23 @@ BEGIN
                        ('core.object', 'object_schema'),
                        ('core.object', 'object_name'),
                        ('core.object', 'is_locked'),
-                       ('model.model', 'logical_schemas'),
-                       ('model.model', 'dimensional_schemas'),
-                       ('model.model', 'default_mapping_source_system_id'),
-                       ('model.model', 'logical_entity_scd_type'),
-                       ('model.model', 'dimensional_entity_scd_type'),
-                       ('model.model', 'logical_coverage_threshold_percent'),
-                       ('model.model', 'dimensional_coverage_threshold_percent'),
-                       ('model.model', 'logical_enforce_coverage_threshold'),
-                       ('model.model', 'dimensional_enforce_coverage_threshold'),
+                       ('project.project', 'logical_schemas'),
+                       ('project.project', 'dimensional_schemas'),
+                       ('project.project', 'default_mapping_source_system_id'),
+                       ('project.project', 'logical_entity_scd_type'),
+                       ('project.project', 'dimensional_entity_scd_type'),
+                       ('project.project', 'logical_coverage_threshold_percent'),
+                       ('project.project', 'dimensional_coverage_threshold_percent'),
+                       ('project.project', 'logical_enforce_coverage_threshold'),
+                       ('project.project', 'dimensional_enforce_coverage_threshold'),
                        ('workflow.logical_entity', 'logical_entity_schema_name'),
                        ('workflow.dimensional_entity', 'dimensional_entity_schema_name'),
-                       ('model.model', 'silver_model_naming_instructions'),
-                       ('model.model', 'silver_model_audit_columns_template'),
-                       ('model.model', 'gold_model_naming_instructions'),
-                       ('model.model', 'gold_model_technical_columns_template'),
-                       ('model.model', 'gold_model_audit_columns_template'),
-                       ('model.model_input_scope', 'is_active'),
+                       ('project.project', 'silver_model_naming_instructions'),
+                       ('project.project', 'silver_model_audit_columns_template'),
+                       ('project.project', 'gold_model_naming_instructions'),
+                       ('project.project', 'gold_model_technical_columns_template'),
+                       ('project.project', 'gold_model_audit_columns_template'),
+                       ('project.project_input_scope', 'is_active'),
                        ('workflow.object_enrichment', 'object_description'),
                        ('workflow.object_enrichment', 'is_locked'),
                        ('workflow.attribute_enrichment', 'attribute_description'),
@@ -512,9 +513,9 @@ BEGIN
                        ('workflow.validation_check', 'is_locked'),
                        ('workflow.validation_group', 'mapping_context_digest'),
                        ('workflow.validation_check', 'validation_query_sql'),
-                       ('mcp.model_change_set', 'enrichment_document'),
-                       ('mcp.model_change_set', 'code_generation_document'),
-                       ('mcp.model_change_set', 'validation_document'),
+                       ('mcp.project_change_set', 'enrichment_document'),
+                       ('mcp.project_change_set', 'code_generation_document'),
+                       ('mcp.project_change_set', 'validation_document'),
                        ('core.attribute', 'object_id'),
                        ('core.attribute', 'attribute_name'),
                        ('core.attribute', 'attribute_inferred_data_type'),
@@ -639,12 +640,12 @@ BEGIN
                    ),
                    (
                        'workflow',
-                       'list_model_object_eligibility',
+                       'list_project_object_eligibility',
                        'bigint'
                    ),
                    (
                        'workflow',
-                       'list_model_attribute_eligibility',
+                       'list_project_attribute_eligibility',
                        'bigint'
                    ),
                    (
@@ -657,8 +658,8 @@ BEGIN
                        'list_mapping_source_objects',
                        'bigint, bigint, character varying, bigint'
                    ),
-                   ('workflow', 'list_model_input_sources', 'bigint'),
-                   ('workflow', 'is_assertion_only_mapping_target', 'bigint, bigint, character varying'),
+                   ('workflow', 'list_project_input_sources', 'bigint'),
+                   ('workflow', 'is_context_only_mapping_target', 'bigint, bigint, character varying'),
                    ('mcp', 'get_databricks_sql_connection_values', 'bigint, text')
                ) AS required_function(
                    schema_name,
@@ -748,6 +749,7 @@ BEGIN
         runtime_privileges_ok := NOT EXISTS (
         SELECT 1
           FROM unnest(ARRAY[
+                   'reference.context_type',
                    'reference.system_type',
                    'reference.connection_type',
                    'reference.object_type',
@@ -756,7 +758,7 @@ BEGIN
                    'reference.file_type',
                    'reference.data_operation',
                    'reference.process_type',
-                   'core.project',
+                   'core.lane',
                    'core.tenant',
                    'core.system',
                    'core.connection',
@@ -774,10 +776,10 @@ BEGIN
                    'security.principal',
                    'security.entra_principal_identity',
                    'security.tenant_principal_access',
-                   'model.model',
-                   'model.model_input_scope',
-                   'model.modeling_assertion_document',
-                   'model.modeling_assertion_record',
+                   'project.project',
+                   'project.project_input_scope',
+                   'project.context_group',
+                   'project.context_record',
                    'workflow.attribute_profile',
                    'workflow.object_enrichment',
                    'workflow.attribute_enrichment',
@@ -807,11 +809,11 @@ BEGIN
                    'workflow.validation_check',
                    'application.output_template',
                    'application.output_template_field',
-                   'mcp.model_change_set',
-                   'mcp.model_change_set_event',
-                   'mcp.model_stage_batch',
-                   'mcp.model_stage_chunk',
-                   'mcp.model_stage_payload_chunk'
+                   'mcp.project_change_set',
+                   'mcp.project_change_set_event',
+                   'mcp.project_stage_batch',
+                   'mcp.project_stage_chunk',
+                   'mcp.project_stage_payload_chunk'
                ]) AS readable_relation(name)
          WHERE NOT has_table_privilege(
                    'gds_app_write', readable_relation.name, 'SELECT'
@@ -832,10 +834,10 @@ BEGIN
                    'workflow.generated_code_source_system',
                    'workflow.validation_group',
                    'workflow.validation_check'
-               ]) AS model_section_relation(name)
+               ]) AS project_section_relation(name)
          WHERE NOT has_table_privilege(
                    'gds_app_write',
-                   model_section_relation.name,
+                   project_section_relation.name,
                    'SELECT,INSERT,UPDATE'
                )
             OR EXISTS (
@@ -846,7 +848,7 @@ BEGIN
                           ]) AS forbidden_privilege(name)
                     WHERE has_table_privilege(
                               'gds_app_write',
-                              model_section_relation.name,
+                              project_section_relation.name,
                               forbidden_privilege.name
                           )
                )
@@ -890,17 +892,17 @@ BEGIN
                    'mcp.apply_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character,uuid)',
                    'mcp.archive_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,uuid)',
                    'workflow.list_tenant_visible_objects(bigint)',
-                   'workflow.list_model_object_eligibility(bigint)',
-                   'workflow.list_model_attribute_eligibility(bigint)',
-                   'workflow.list_model_input_sources(bigint)',
-                   'workflow.is_assertion_only_mapping_target(bigint,bigint,character varying)',
+                   'workflow.list_project_object_eligibility(bigint)',
+                   'workflow.list_project_attribute_eligibility(bigint)',
+                   'workflow.list_project_input_sources(bigint)',
+                   'workflow.is_context_only_mapping_target(bigint,bigint,character varying)',
                    'workflow.list_mapping_source_objects(bigint,bigint,character varying,bigint)',
                    'workflow.list_code_generation_target_context(bigint,character varying,character varying)',
                    'mcp.start_mcp_profiling_run(uuid,uuid,character varying,bigint,bigint,bigint[],text[],character varying,uuid)',
                    'mcp.get_mcp_profiling_status(uuid,uuid,character varying,bigint)',
                    'mcp.cancel_mcp_profiling_run(uuid,uuid,character varying,bigint)',
                    'mcp.mcp_profiling_worker(text,bigint,uuid,jsonb)',
-                   'mcp.apply_model_enrichment_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character varying)',
+                   'mcp.apply_project_enrichment_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character varying)',
                    'mcp.get_databricks_sql_connection_values(bigint,text)'
                ]) AS executable_function(signature)
          WHERE NOT has_function_privilege(
@@ -933,7 +935,7 @@ BEGIN
                               'mcp.get_mcp_profiling_status(uuid,uuid,character varying,bigint)',
                               'mcp.cancel_mcp_profiling_run(uuid,uuid,character varying,bigint)',
                               'mcp.mcp_profiling_worker(text,bigint,uuid,jsonb)',
-                              'mcp.apply_model_enrichment_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character varying)',
+                              'mcp.apply_project_enrichment_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character varying)',
                               'mcp.get_databricks_sql_connection_values(bigint,text)',
                               'mcp.runtime_readiness()'
                           ]) AS allowed_mcp_function(signature)
@@ -944,17 +946,17 @@ BEGIN
     ) AND has_table_privilege(
         'gds_app_write', 'mcp.tool_call_log', 'INSERT'
     ) AND has_table_privilege(
-        'gds_app_write', 'mcp.model_stage_batch', 'SELECT,INSERT,UPDATE'
+        'gds_app_write', 'mcp.project_stage_batch', 'SELECT,INSERT,UPDATE'
     ) AND has_table_privilege(
-        'gds_app_write', 'mcp.model_stage_chunk', 'SELECT,INSERT'
+        'gds_app_write', 'mcp.project_stage_chunk', 'SELECT,INSERT'
     ) AND has_table_privilege(
-        'gds_app_write', 'mcp.model_stage_payload_chunk', 'SELECT,INSERT'
+        'gds_app_write', 'mcp.project_stage_payload_chunk', 'SELECT,INSERT'
     ) AND NOT has_table_privilege(
-        'gds_app_write', 'mcp.model_stage_batch', 'DELETE,TRUNCATE'
+        'gds_app_write', 'mcp.project_stage_batch', 'DELETE,TRUNCATE'
     ) AND NOT has_table_privilege(
-        'gds_app_write', 'mcp.model_stage_chunk', 'UPDATE,DELETE,TRUNCATE'
+        'gds_app_write', 'mcp.project_stage_chunk', 'UPDATE,DELETE,TRUNCATE'
     ) AND NOT has_table_privilege(
-        'gds_app_write', 'mcp.model_stage_payload_chunk', 'UPDATE,DELETE,TRUNCATE'
+        'gds_app_write', 'mcp.project_stage_payload_chunk', 'UPDATE,DELETE,TRUNCATE'
     ) AND NOT has_table_privilege(
         'gds_app_write', 'core.connection_value', 'SELECT'
     ) AND NOT (
@@ -985,6 +987,7 @@ BEGIN
     ) AND NOT EXISTS (
         SELECT 1
           FROM unnest(ARRAY[
+                   'reference.context_type',
                    'reference.system_type',
                    'reference.connection_type',
                    'reference.object_type',
@@ -993,7 +996,7 @@ BEGIN
                    'reference.file_type',
                    'reference.data_operation',
                    'reference.process_type',
-                   'core.project',
+                   'core.lane',
                    'core.tenant',
                    'core.system',
                    'core.connection',
@@ -1014,7 +1017,7 @@ BEGIN
                    'security.tenant_principal_access',
                    'security.tenant_lock',
                    'security.tenant_lock_event',
-                   'model.model',
+                   'project.project',
                    'mcp.metadata_change_set',
                    'mcp.metadata_change_set_event',
                    'mcp.metadata_stage_batch',
@@ -1038,12 +1041,12 @@ BEGIN
                    'default_reasoning_effort_code',
                    'default_max_turns',
                    'default_validation_retry_count',
-                   'model_name'
-               ]) AS web_only_model_column(name)
+                   'project_name'
+               ]) AS web_only_project_column(name)
          WHERE has_column_privilege(
                    'gds_app_write',
-                   'model.model',
-                   web_only_model_column.name,
+                   'project.project',
+                   web_only_project_column.name,
                    'UPDATE'
                )
     ) AND NOT (
@@ -1092,12 +1095,12 @@ BEGIN
               );
 
             PERFORM 1
-              FROM workflow.list_model_object_eligibility(
+              FROM workflow.list_project_object_eligibility(
                   9223372036854775807
               );
 
             PERFORM 1
-              FROM workflow.list_model_attribute_eligibility(
+              FROM workflow.list_project_attribute_eligibility(
                   9223372036854775807
               );
 
@@ -1128,21 +1131,21 @@ $runtime_readiness$;
 REVOKE ALL ON FUNCTION mcp.runtime_readiness() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION mcp.runtime_readiness() TO gds_app_write;
 
-GRANT SELECT ON ALL TABLES IN SCHEMA reference, core, model, workflow
+GRANT SELECT ON ALL TABLES IN SCHEMA reference, core, project, workflow
     TO gds_app_write;
 REVOKE SELECT ON core.connection_value FROM gds_app_write;
-GRANT SELECT ON ALL TABLES IN SCHEMA reference, core, model, workflow
+GRANT SELECT ON ALL TABLES IN SCHEMA reference, core, project, workflow
     TO gds_web_write;
 REVOKE SELECT ON core.connection_value FROM gds_web_write;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN
-ON model.model_revision_transaction
+ON project.project_revision_transaction
 FROM gds_app_write, gds_web_write;
 GRANT SELECT ON
-    mcp.model_change_set,
-    mcp.model_change_set_event,
-    mcp.model_stage_batch,
-    mcp.model_stage_chunk,
-    mcp.model_stage_payload_chunk
+    mcp.project_change_set,
+    mcp.project_change_set_event,
+    mcp.project_stage_batch,
+    mcp.project_stage_chunk,
+    mcp.project_stage_payload_chunk
 TO gds_app_write;
 GRANT SELECT ON
     security.principal,
@@ -1159,12 +1162,12 @@ TO gds_web_write;
 GRANT INSERT ON mcp.tool_call_log TO gds_app_write;
 
 -- MCP mutates only normalized artifacts and workflow state through governed
--- Model Change Sets. Foundational target rows, Model revision audit, web-only Model
+-- Project Change Sets. Foundational target rows, Project revision audit, web-only Project
 -- defaults, audit rows, and every DELETE remain outside its write surface.
 GRANT INSERT, UPDATE ON
-    model.model_input_scope,
-    model.modeling_assertion_document,
-    model.modeling_assertion_record,
+    project.project_input_scope,
+    project.context_group,
+    project.context_record,
     workflow.analysis_result,
     workflow.generated_code,
     workflow.generated_code_source_system,
@@ -1189,11 +1192,11 @@ GRANT INSERT, UPDATE ON
     workflow.logical_submodel,
     workflow.validation_check,
     workflow.validation_group,
-    mcp.model_change_set,
-    mcp.model_stage_batch,
+    mcp.project_change_set,
+    mcp.project_stage_batch,
     workflow.mapping_object
 TO gds_app_write;
-GRANT INSERT ON mcp.model_stage_chunk, mcp.model_stage_payload_chunk TO gds_app_write;
+GRANT INSERT ON mcp.project_stage_chunk, mcp.project_stage_payload_chunk TO gds_app_write;
 GRANT UPDATE (
     default_mapping_source_system_id,
     logical_entity_scd_type,
@@ -1202,10 +1205,10 @@ GRANT UPDATE (
     dimensional_coverage_threshold_percent,
     logical_enforce_coverage_threshold,
     dimensional_enforce_coverage_threshold,
-    model_description,
+    project_description,
     logical_schemas,
     dimensional_schemas,
-    model_revision,
+    project_revision,
     silver_model_naming_instructions,
     silver_model_audit_columns_template,
     gold_model_naming_instructions,
@@ -1214,7 +1217,7 @@ GRANT UPDATE (
     updated_time,
     updated_by
 )
-    ON model.model TO gds_app_write;
+    ON project.project TO gds_app_write;
 REVOKE UPDATE (
     default_agent_sdk_code,
     default_agent_provider_code,
@@ -1222,25 +1225,25 @@ REVOKE UPDATE (
     default_reasoning_effort_code,
     default_max_turns,
     default_validation_retry_count,
-    model_name
-) ON model.model FROM gds_app_write;
+    project_name
+) ON project.project FROM gds_app_write;
 GRANT INSERT ON
-    mcp.model_change_set_event
+    mcp.project_change_set_event
 TO gds_app_write;
 
--- The web runtime shares only the governed Model Change Set transport and its
+-- The web runtime shares only the governed Project Change Set transport and its
 -- canonical materializer target surface. Attribute Profile persistence and
 -- other web writes remain function-only.
 GRANT SELECT ON
-    mcp.model_change_set,
-    mcp.model_change_set_event,
-    mcp.model_stage_batch,
-    mcp.model_stage_chunk,
-    mcp.model_stage_payload_chunk
+    mcp.project_change_set,
+    mcp.project_change_set_event,
+    mcp.project_stage_batch,
+    mcp.project_stage_chunk,
+    mcp.project_stage_payload_chunk
 TO gds_web_write;
 GRANT INSERT, UPDATE ON
-    model.modeling_assertion_document,
-    model.modeling_assertion_record,
+    project.context_group,
+    project.context_record,
     workflow.analysis_result,
     workflow.generated_code,
     workflow.generated_code_source_system,
@@ -1264,8 +1267,8 @@ GRANT INSERT, UPDATE ON
     workflow.logical_submodel,
     workflow.validation_check,
     workflow.validation_group,
-    mcp.model_change_set,
-    mcp.model_stage_batch,
+    mcp.project_change_set,
+    mcp.project_stage_batch,
     workflow.mapping_object
 TO gds_web_write;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN
@@ -1275,9 +1278,9 @@ REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN
 ON workflow.object_enrichment, workflow.attribute_enrichment
 FROM gds_app_write, gds_web_write;
 GRANT INSERT ON
-    mcp.model_stage_chunk,
-    mcp.model_stage_payload_chunk,
-    mcp.model_change_set_event
+    mcp.project_stage_chunk,
+    mcp.project_stage_payload_chunk,
+    mcp.project_change_set_event
 TO gds_web_write;
 GRANT UPDATE (
     default_mapping_source_system_id,
@@ -1287,10 +1290,10 @@ GRANT UPDATE (
     dimensional_coverage_threshold_percent,
     logical_enforce_coverage_threshold,
     dimensional_enforce_coverage_threshold,
-    model_description,
+    project_description,
     logical_schemas,
     dimensional_schemas,
-    model_revision,
+    project_revision,
     silver_model_naming_instructions,
     silver_model_audit_columns_template,
     gold_model_naming_instructions,
@@ -1299,7 +1302,7 @@ GRANT UPDATE (
     updated_time,
     updated_by
 )
-    ON model.model TO gds_web_write;
+    ON project.project TO gds_web_write;
 REVOKE UPDATE (
     default_agent_sdk_code,
     default_agent_provider_code,
@@ -1307,8 +1310,8 @@ REVOKE UPDATE (
     default_reasoning_effort_code,
     default_max_turns,
     default_validation_retry_count,
-    model_name
-) ON model.model FROM gds_web_write;
+    project_name
+) ON project.project FROM gds_web_write;
 REVOKE ALL ON ALL TABLES IN SCHEMA application
 FROM gds_app_write, gds_web_write;
 GRANT SELECT ON application.output_template, application.output_template_field TO gds_app_write;
@@ -1317,13 +1320,13 @@ REVOKE SELECT ON application.metadata_enrichment_result FROM gds_web_write;
 REVOKE SELECT ON application.metadata_review_event FROM gds_web_write;
 REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA application
 FROM PUBLIC, gds_app_write, gds_web_write;
-GRANT EXECUTE ON FUNCTION application.add_model_input_scope_objects(
+GRANT EXECUTE ON FUNCTION application.add_project_input_scope_objects(
     UUID, UUID, BIGINT, BIGINT, BIGINT, BIGINT[]) TO gds_web_write;
 
-GRANT EXECUTE ON FUNCTION application.delete_model_records(
+GRANT EXECUTE ON FUNCTION application.delete_project_records(
     UUID, UUID, BIGINT, BIGINT, BIGINT, UUID, JSONB) TO gds_web_write;
 
-GRANT EXECUTE ON FUNCTION application.authorize_model_record_review(
+GRANT EXECUTE ON FUNCTION application.authorize_project_record_review(
     UUID, UUID, VARCHAR, BIGINT, BIGINT
 ) TO gds_web_write;
 GRANT EXECUTE ON FUNCTION application.set_principal_last_tenant(
@@ -1332,7 +1335,7 @@ GRANT EXECUTE ON FUNCTION application.set_principal_last_tenant(
     VARCHAR,
     BIGINT
 ) TO gds_web_write;
-GRANT EXECUTE ON FUNCTION application.create_model(
+GRANT EXECUTE ON FUNCTION application.create_project(
     UUID,
     UUID,
     VARCHAR,
@@ -1360,7 +1363,7 @@ GRANT EXECUTE ON FUNCTION application.create_model(
     BOOLEAN,
     BOOLEAN
 ) TO gds_web_write;
-GRANT EXECUTE ON FUNCTION application.update_model(
+GRANT EXECUTE ON FUNCTION application.update_project(
     UUID,
     UUID,
     VARCHAR,
@@ -1389,7 +1392,7 @@ GRANT EXECUTE ON FUNCTION application.update_model(
     BOOLEAN,
     BOOLEAN
 ) TO gds_web_write;
-GRANT EXECUTE ON FUNCTION application.archive_model(
+GRANT EXECUTE ON FUNCTION application.archive_project(
     UUID,
     UUID,
     VARCHAR,
@@ -1673,7 +1676,7 @@ BEGIN
          WHERE dependency.classid = 'pg_class'::REGCLASS
            AND dependency.refclassid = 'pg_class'::REGCLASS
            AND dependency.deptype IN ('a', 'i')
-           AND table_namespace.nspname IN ('model', 'workflow', 'mcp')
+           AND table_namespace.nspname IN ('project', 'workflow', 'mcp')
            AND (
                has_table_privilege(
                    'gds_app_write',
@@ -1717,7 +1720,7 @@ BEGIN
          WHERE dependency.classid = 'pg_class'::REGCLASS
            AND dependency.refclassid = 'pg_class'::REGCLASS
            AND dependency.deptype IN ('a', 'i')
-           AND table_namespace.nspname IN ('model', 'workflow', 'mcp')
+           AND table_namespace.nspname IN ('project', 'workflow', 'mcp')
            AND (
                has_table_privilege(
                    'gds_web_write',
@@ -1743,66 +1746,66 @@ $grant_web_change_set_sequences$;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA application
 FROM gds_app_write, gds_web_write;
 
-GRANT USAGE, CREATE ON SCHEMA reference, core, security, model, workflow, application, mcp TO gds_migration;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA reference, core, security, model, workflow, application, mcp
+GRANT USAGE, CREATE ON SCHEMA reference, core, security, project, workflow, application, mcp TO gds_migration;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA reference, core, security, project, workflow, application, mcp
     TO gds_migration;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA reference, core, security, model, workflow, application, mcp
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA reference, core, security, project, workflow, application, mcp
     TO gds_migration;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA reference, core, security, model, workflow, application, mcp
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA reference, core, security, project, workflow, application, mcp
     TO gds_migration;
 
 GRANT EXECUTE ON FUNCTION workflow.enrichment_review_revision(BIGINT, BIGINT, BIGINT)
 TO gds_app_write, gds_web_write;
 
-GRANT EXECUTE ON FUNCTION application.review_model_enrichment(UUID, UUID, BIGINT, BIGINT, BIGINT, VARCHAR, VARCHAR, JSONB, UUID) TO gds_web_write;
--- Model-wide write fence. Metadata has independent Tenant governance.
-CREATE OR REPLACE FUNCTION model.assert_writable(p_model_id BIGINT)
+GRANT EXECUTE ON FUNCTION application.review_project_enrichment(UUID, UUID, BIGINT, BIGINT, BIGINT, VARCHAR, VARCHAR, JSONB, UUID) TO gds_web_write;
+-- Project-wide write fence. Metadata has independent Tenant governance.
+CREATE OR REPLACE FUNCTION project.assert_writable(p_project_id BIGINT)
 RETURNS VOID LANGUAGE plpgsql VOLATILE SECURITY DEFINER
 SET search_path = pg_catalog
-AS $assert_model_writable$
+AS $assert_project_writable$
 DECLARE v_locked BOOLEAN;
 BEGIN
     IF current_setting('transaction_read_only') = 'on' THEN
-        SELECT is_locked INTO v_locked FROM model.model WHERE model_id = p_model_id;
+        SELECT is_locked INTO v_locked FROM project.project WHERE project_id = p_project_id;
     ELSE
-        SELECT is_locked INTO v_locked FROM model.model WHERE model_id = p_model_id FOR SHARE;
+        SELECT is_locked INTO v_locked FROM project.project WHERE project_id = p_project_id FOR SHARE;
     END IF;
     IF v_locked THEN
-        RAISE EXCEPTION 'model_locked' USING ERRCODE = '55000';
+        RAISE EXCEPTION 'project_locked' USING ERRCODE = '55000';
     END IF;
 END;
-$assert_model_writable$;
-REVOKE ALL ON FUNCTION model.assert_writable(BIGINT) FROM PUBLIC;
+$assert_project_writable$;
+REVOKE ALL ON FUNCTION project.assert_writable(BIGINT) FROM PUBLIC;
 
-CREATE OR REPLACE FUNCTION model.guard_model_write()
+CREATE OR REPLACE FUNCTION project.guard_project_write()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = pg_catalog
-AS $guard_model_write$
+AS $guard_project_write$
 DECLARE
     v_row JSONB;
-    v_model_id BIGINT;
+    v_project_id BIGINT;
 BEGIN
-    IF TG_TABLE_SCHEMA = 'model' AND TG_TABLE_NAME = 'model' THEN
+    IF TG_TABLE_SCHEMA = 'project' AND TG_TABLE_NAME = 'project' THEN
         IF TG_OP = 'UPDATE' AND NEW.is_locked IS DISTINCT FROM OLD.is_locked THEN
-            IF (to_jsonb(NEW) - ARRAY['is_locked','model_revision','updated_time','updated_by'])
+            IF (to_jsonb(NEW) - ARRAY['is_locked','project_revision','updated_time','updated_by'])
                 IS DISTINCT FROM
-               (to_jsonb(OLD) - ARRAY['is_locked','model_revision','updated_time','updated_by']) THEN
-                RAISE EXCEPTION 'model_locked' USING ERRCODE = '55000';
+               (to_jsonb(OLD) - ARRAY['is_locked','project_revision','updated_time','updated_by']) THEN
+                RAISE EXCEPTION 'project_locked' USING ERRCODE = '55000';
             END IF;
             IF NEW.is_locked AND EXISTS (
                 SELECT 1 FROM application.workflow_run
-                 WHERE model_id = OLD.model_id AND workflow_run_state IN ('queued','running')
+                 WHERE project_id = OLD.project_id AND workflow_run_state IN ('queued','running')
             ) THEN
-                RAISE EXCEPTION 'model_workflow_conflict' USING ERRCODE = '55000';
+                RAISE EXCEPTION 'project_workflow_conflict' USING ERRCODE = '55000';
             END IF;
-            NEW.model_revision := OLD.model_revision + 1;
+            NEW.project_revision := OLD.project_revision + 1;
             NEW.updated_time := clock_timestamp();
-            INSERT INTO model.model_lock_event(model_id, is_locked, model_revision, changed_by)
-            VALUES (NEW.model_id, NEW.is_locked, NEW.model_revision, NEW.updated_by);
+            INSERT INTO project.project_lock_event(project_id, is_locked, project_revision, changed_by)
+            VALUES (NEW.project_id, NEW.is_locked, NEW.project_revision, NEW.updated_by);
             RETURN NEW;
         END IF;
         IF TG_OP <> 'INSERT' AND OLD.is_locked THEN
-            RAISE EXCEPTION 'model_locked' USING ERRCODE = '55000';
+            RAISE EXCEPTION 'project_locked' USING ERRCODE = '55000';
         END IF;
     ELSE
         -- Check both owners on updates, so re-parenting cannot escape a lock.
@@ -1811,32 +1814,32 @@ BEGIN
                        WHEN 'DELETE' THEN jsonb_build_array(to_jsonb(OLD))
                        ELSE jsonb_build_array(to_jsonb(OLD), to_jsonb(NEW)) END
         ) LOOP
-            v_model_id := (v_row ->> 'model_id')::BIGINT;
-            IF v_model_id IS NULL THEN
+            v_project_id := (v_row ->> 'project_id')::BIGINT;
+            IF v_project_id IS NULL THEN
                 IF TG_TABLE_SCHEMA = 'workflow' AND TG_TABLE_NAME = 'generated_code_source_system' THEN
-                    SELECT model_id INTO v_model_id FROM workflow.generated_code
+                    SELECT project_id INTO v_project_id FROM workflow.generated_code
                      WHERE generated_code_id = (v_row ->> 'generated_code_id')::BIGINT;
                 ELSIF TG_TABLE_SCHEMA = 'workflow' AND TG_TABLE_NAME = 'validation_check' THEN
-                    SELECT model_id INTO v_model_id FROM workflow.validation_group
+                    SELECT project_id INTO v_project_id FROM workflow.validation_group
                      WHERE validation_group_id = (v_row ->> 'validation_group_id')::BIGINT;
-                ELSIF TG_TABLE_SCHEMA = 'mcp' AND TG_TABLE_NAME IN ('model_stage_chunk','model_stage_payload_chunk') THEN
-                    SELECT model_id INTO v_model_id FROM mcp.model_stage_batch
+                ELSIF TG_TABLE_SCHEMA = 'mcp' AND TG_TABLE_NAME IN ('project_stage_chunk','project_stage_payload_chunk') THEN
+                    SELECT project_id INTO v_project_id FROM mcp.project_stage_batch
                      WHERE stage_batch_id = (v_row ->> 'stage_batch_id')::UUID;
                 ELSIF v_row ? 'workflow_run_id' THEN
-                    SELECT model_id INTO v_model_id FROM application.workflow_run
+                    SELECT project_id INTO v_project_id FROM application.workflow_run
                      WHERE workflow_run_id = (v_row ->> 'workflow_run_id')::BIGINT;
                 END IF;
             END IF;
-            IF v_model_id IS NOT NULL THEN PERFORM model.assert_writable(v_model_id); END IF;
+            IF v_project_id IS NOT NULL THEN PERFORM project.assert_writable(v_project_id); END IF;
         END LOOP;
     END IF;
     IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
     RETURN NEW;
 END;
-$guard_model_write$;
-REVOKE ALL ON FUNCTION model.guard_model_write() FROM PUBLIC;
+$guard_project_write$;
+REVOKE ALL ON FUNCTION project.guard_project_write() FROM PUBLIC;
 
-DO $install_model_write_fences$
+DO $install_project_write_fences$
 DECLARE v_table RECORD;
 BEGIN
     FOR v_table IN
@@ -1844,56 +1847,56 @@ BEGIN
           FROM pg_class AS relation
           JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
           JOIN pg_attribute AS column_record ON column_record.attrelid = relation.oid
-         WHERE namespace.nspname IN ('model','workflow','application','mcp')
+         WHERE namespace.nspname IN ('project','workflow','application','mcp')
            AND relation.relkind = 'r' AND NOT column_record.attisdropped
-           AND (column_record.attname IN ('model_id','workflow_run_id')
+           AND (column_record.attname IN ('project_id','workflow_run_id')
                 OR (namespace.nspname, relation.relname) IN (
-                    ('workflow','validation_check'), ('mcp','model_stage_chunk'),
-                    ('mcp','model_stage_payload_chunk')))
-           AND (namespace.nspname, relation.relname) <> ('model','model_lock_event')
+                    ('workflow','validation_check'), ('mcp','project_stage_chunk'),
+                    ('mcp','project_stage_payload_chunk')))
+           AND (namespace.nspname, relation.relname) <> ('project','project_lock_event')
     LOOP
-        EXECUTE format('CREATE OR REPLACE TRIGGER aa_model_write_fence BEFORE INSERT OR UPDATE OR DELETE ON %I.%I '
-                       'FOR EACH ROW EXECUTE FUNCTION model.guard_model_write()',
+        EXECUTE format('CREATE OR REPLACE TRIGGER aa_project_write_fence BEFORE INSERT OR UPDATE OR DELETE ON %I.%I '
+                       'FOR EACH ROW EXECUTE FUNCTION project.guard_project_write()',
                        v_table.nspname, v_table.relname);
     END LOOP;
 END;
-$install_model_write_fences$;
+$install_project_write_fences$;
 
-CREATE OR REPLACE FUNCTION application.set_model_lock(
+CREATE OR REPLACE FUNCTION application.set_project_lock(
     p_entra_tenant_id UUID, p_entra_object_id UUID, p_tenant_id BIGINT,
-    p_model_id BIGINT, p_expected_model_revision BIGINT, p_is_locked BOOLEAN
+    p_project_id BIGINT, p_expected_project_revision BIGINT, p_is_locked BOOLEAN
 )
-RETURNS SETOF model.model LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+RETURNS SETOF project.project LANGUAGE plpgsql VOLATILE SECURITY DEFINER
 SET search_path = pg_catalog
-AS $set_model_lock$
-DECLARE v_model model.model%ROWTYPE; v_decision RECORD;
+AS $set_project_lock$
+DECLARE v_project project.project%ROWTYPE; v_decision RECORD;
 BEGIN
-    IF p_expected_model_revision IS NULL OR p_is_locked IS NULL THEN
-        RAISE EXCEPTION 'stale_model_revision';
+    IF p_expected_project_revision IS NULL OR p_is_locked IS NULL THEN
+        RAISE EXCEPTION 'stale_project_revision';
     END IF;
-    SELECT * INTO v_model FROM model.model
-     WHERE model_id = p_model_id AND tenant_id = p_tenant_id AND is_active FOR UPDATE;
-    IF NOT FOUND THEN RAISE EXCEPTION 'Model is unavailable'; END IF;
+    SELECT * INTO v_project FROM project.project
+     WHERE project_id = p_project_id AND tenant_id = p_tenant_id AND is_active FOR UPDATE;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Project is unavailable'; END IF;
     SELECT * INTO v_decision FROM security.authorize_tenant_operation(
-        p_entra_tenant_id, p_entra_object_id, 'user', p_tenant_id, 'tenant_model_write');
+        p_entra_tenant_id, p_entra_object_id, 'user', p_tenant_id, 'tenant_project_write');
     IF NOT FOUND OR NOT v_decision.authorized THEN
-        RAISE EXCEPTION 'Model lock denied: %', coalesce(v_decision.denial_code, 'authorization_denied');
+        RAISE EXCEPTION 'Project lock denied: %', coalesce(v_decision.denial_code, 'authorization_denied');
     END IF;
-    IF v_model.model_revision <> p_expected_model_revision THEN
-        RAISE EXCEPTION 'stale_model_revision';
+    IF v_project.project_revision <> p_expected_project_revision THEN
+        RAISE EXCEPTION 'stale_project_revision';
     END IF;
-    IF v_model.is_locked = p_is_locked THEN RETURN NEXT v_model; RETURN; END IF;
-    RETURN QUERY UPDATE model.model SET is_locked = p_is_locked,
+    IF v_project.is_locked = p_is_locked THEN RETURN NEXT v_project; RETURN; END IF;
+    RETURN QUERY UPDATE project.project SET is_locked = p_is_locked,
         updated_by = 'principal:' || v_decision.principal_id::TEXT
-     WHERE model_id = p_model_id RETURNING *;
+     WHERE project_id = p_project_id RETURNING *;
 END;
-$set_model_lock$;
-REVOKE ALL ON FUNCTION application.set_model_lock(UUID, UUID, BIGINT, BIGINT, BIGINT, BOOLEAN) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION application.set_model_lock(UUID, UUID, BIGINT, BIGINT, BIGINT, BOOLEAN) TO gds_web_write;
-GRANT EXECUTE ON FUNCTION model.assert_writable(BIGINT) TO gds_app_write, gds_web_write;
+$set_project_lock$;
+REVOKE ALL ON FUNCTION application.set_project_lock(UUID, UUID, BIGINT, BIGINT, BIGINT, BOOLEAN) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION application.set_project_lock(UUID, UUID, BIGINT, BIGINT, BIGINT, BOOLEAN) TO gds_web_write;
+GRANT EXECUTE ON FUNCTION project.assert_writable(BIGINT) TO gds_app_write, gds_web_write;
 
-GRANT EXECUTE ON FUNCTION model.assert_writable(BIGINT), model.guard_model_write(),
-    application.set_model_lock(UUID, UUID, BIGINT, BIGINT, BIGINT, BOOLEAN) TO gds_migration;
+GRANT EXECUTE ON FUNCTION project.assert_writable(BIGINT), project.guard_project_write(),
+    application.set_project_lock(UUID, UUID, BIGINT, BIGINT, BIGINT, BOOLEAN) TO gds_migration;
 
 -- Narrow MCP profiling commands; generic web workflow functions stay web-only.
 GRANT EXECUTE ON FUNCTION mcp.start_mcp_profiling_run(
@@ -1903,5 +1906,5 @@ GRANT EXECUTE ON FUNCTION mcp.start_mcp_profiling_run(
    mcp.mcp_profiling_worker(TEXT, BIGINT, UUID, JSONB)
 TO gds_app_write;
 
-GRANT EXECUTE ON FUNCTION mcp.apply_model_enrichment_change_set(UUID, UUID, VARCHAR, BIGINT, UUID, BIGINT, VARCHAR)
+GRANT EXECUTE ON FUNCTION mcp.apply_project_enrichment_change_set(UUID, UUID, VARCHAR, BIGINT, UUID, BIGINT, VARCHAR)
 TO gds_app_write, gds_web_write;

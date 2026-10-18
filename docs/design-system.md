@@ -13,7 +13,7 @@ spacing and implementations. This document records decisions worth preserving.
 | Shared controls and typography | `shared/ui.tsx`, `styles/metadata.css` |
 | Formatting | `shared/presentation.ts` |
 | Tenant shell/navigation | `styles/tenant-workspace.css` |
-| Model workspace and navigation | `styles/models-scope.css`, `styles/model-workspace-overrides.css` |
+| Project workspace and navigation | `styles/projects-scope.css`, `styles/project-workspace-overrides.css` |
 | Workflow commands and run monitor | `styles/profiling.css`, `styles/workflow-runs.css` |
 | Feature behavior | Matching `features/` package and its tests |
 
@@ -43,9 +43,13 @@ uppercase **ATLAS** wordmark. Use KPMG-inspired colors without the official KPMG
 - `--ink: #0C233C`, white working surfaces and `--paper: #F5F6FA` canvas.
   Amber warnings, green success and red failures remain distinct from brand colors.
 - Bundle Open Sans Regular/SemiBold locally for UI, and Open Sans Condensed Bold
-  for blue page titles. Normal-weight working text, navigation, tables and dialogs
-  remain centrally controlled. Tenant entry (26px), selected Model identity (22px)
-  and Tenant Lock (20px) use normal-width Open Sans SemiBold in ink; entry and Model
+  for blue section titles. Record identities use normal-width Open Sans SemiBold
+  in ink, with readable line height; do not repeat type/ID eyebrows above the name.
+  Detail section headings use 16px Open Sans SemiBold in ink so they remain distinct
+  from working text. Back links have clear space above and below them.
+  Normal-weight working text, navigation, tables and dialogs
+  remain centrally controlled. Tenant entry (26px), selected Project identity (22px)
+  and Tenant Lock (20px) use normal-width Open Sans SemiBold in ink; entry and Project
   identity reduce to 24px and 20px on mobile.
 - Shared lockup: 32px Meridian symbol, 11px gap, 23px Open Sans SemiBold **ATLAS**
   with 1.8px tracking. Use identical proportions on tenant entry, web and Workbench.
@@ -60,11 +64,11 @@ uppercase **ATLAS** wordmark. Use KPMG-inspired colors without the official KPMG
   regenerate with `python3 atlas/build_workbench_fonts.py` after changing fonts.
   Keep plugin builder, Connector setup/updater and web upload allowlists in sync.
 - Preserve desktop navigation collapse and mobile bottom navigation. Mobile web
-  keeps the wordmark above Tenant/Model context. Workbench dataset navigation stays
+  keeps the wordmark above Tenant/Project context. Workbench dataset navigation stays
   vertical on desktop and horizontal at 58rem and below.
   Tenant entry keeps clear space around the logo; sign-in details and long Tenant
   names wrap within their available width at small sizes.
-  On mobile web, the Model ribbon stays in document flow so the taller masthead
+  On mobile web, the Project ribbon stays in document flow so the taller masthead
   cannot cover its workflow links.
 
 Rebuild the plugin ZIP, Connector ZIP and extension VSIX when their packaged sources
@@ -72,34 +76,47 @@ change. Brand assets do not change transport, authorization or workflow contract
 
 ## Navigation and hierarchy
 
-Keep Tenant/Model, revision, lock and current run state visible. Workspace navigation
-contains Home, Metadata, Models and Prompts; workflow navigation belongs inside the
-Model. Preserve Logical/Dimensional layer and addressable detail routes. The active
+Keep Tenant/Project, revision, lock and current run state visible. Workspace navigation
+contains Home, Metadata, Projects and Prompts; workflow navigation belongs inside the
+Project. Preserve Logical/Dimensional layer and addressable detail routes. The active
 tab supplies the visible section heading; avoid another oversized heading below it.
 Navigation labels use the same normal font weight as Prompts and Metadata, including
 active items; color, surface and underline show selection.
 
-Model navigation remains a keyboard-accessible, scrollable ribbon, including narrow
+Project navigation remains a keyboard-accessible, scrollable ribbon, including narrow
 screens. Manual sections have neutral indicators. Workflow statuses come from explicit
 backend section states, not record counts or guesses. Distinguish Completed from
 Results available; loading/conflicts never imply Not run. Keep every section clickable.
+Separate neutral setup sections from three navigation groups:
+Profiling / Enrichment / Analysis; Conceptual / Logical / Dimensional;
+Mapping / Code generation / Validation. These groups organize navigation, not workflow
+prerequisites: Conceptual is standalone; Dimensional consumes Logical. Gaps between
+groups interrupt the connector line without interrupting keyboard navigation.
+Profiling stays before Enrichment.
 
 Use one compact command bar, recent runs, filters, then the results ledger. Drawers
 inspect without losing context; dialogs make bounded decisions. Keep one primary
 command per decision area. Preserve unsaved input after errors and request explicit
 discard before refreshing dirty forms.
+Record details keep identity and actions in one compact header. Edit stays visible;
+lifecycle actions belong in More, with applicable state-specific choices when known.
+Selection actions appear only after records are selected. Keep supporting facts aligned
+in tables or definition grids instead of scattered labels and separate action rows.
 
 Metadata uses Reference → Foundational → Objects → Operational tabs, full-width
 tables, and normal-weight text. The selected sheet tab supplies its heading.
 Catalogs are read-only; users edit through Excel export/import. Attributes live
 inside Object details, while Excel retains all canonical sheets. Import opens the
 governed Change Set drawer for workbook validation and apply.
-Models use normal-weight typography for values and controls; section page titles
-use the shared condensed heading treatment. The selected Model name uses the
-smaller, normal-width identity treatment.
-The Models ledger shows Model, revision, lock status and updated time. Select one
-Model with its radio control; Lock/Unlock sits beside Create Model. Model workspaces
-show the lock status, with lock actions kept on the Models ledger.
+Projects use normal-weight typography for values and controls; section page titles
+use the shared condensed heading treatment. Project and record names use the
+smaller, normal-width identity treatment. Stored descriptions, where needed, follow
+the identity once; Profiling detail omits this repeated description. Enrichment puts
+the Object name first, with schema below. Schema, System and other supporting
+identity facts use a compact wrapping row on the white surface.
+The Projects ledger shows Project, revision, lock status and updated time. Select one
+Project with its radio control; Lock/Unlock sits beside Create Project. Project workspaces
+show the lock status, with lock actions kept on the Projects ledger.
 Object identity columns and catalog sorting follow Tenant code → System code →
 Connection code → Zone → Schema → Object name. Object details and Attributes use
 complete business-field grids; descriptions and key flags stay in their own columns,
@@ -108,7 +125,7 @@ resolving relationships to natural codes/names and omitting raw IDs and audit co
 Objects use View attributes to open the nested attribute grid; other rows need no
 redundant details action. Column headings use PascalCase;
 canonical workbook/import field names remain unchanged. Revisions stay internal.
-Model export actions live under More: Export Metadata followed by Export DDL,
+Project export actions live under More: Export Metadata followed by Export DDL,
 where supported. Mapping offers Export for either layer, selecting one System per
 workbook; standard saved Mapping definitions and complete active Attributes form
 the sheets. Export remains read-only and revision-fenced.
@@ -117,7 +134,7 @@ and Edit Attribute Mapping dialogs. Both reuse the shared dialog, focus, discard
 and retry behavior. Source pickers start collapsed, support search and selection,
 and keep selected sources visible. Object edits save before Attribute edits; the
 Attribute picker only offers columns from the saved Object sources. Logical source
-choices cover the Model Input Scope for that System; Dimensional choices retain
+choices cover the Project Input Scope for that System; Dimensional choices retain
 Logical/Silver sources. Filter criteria and sample query belong to Object Mapping;
 transformation logic and default record belong to Attribute Mapping.
 
@@ -125,7 +142,7 @@ Tenant Home uses a compact white Tenant Lock panel, with a thin blue top rule,
 neutral border and 6px corners. Keep owner/expiry/purpose together, a 40px owner
 avatar and compact action controls. Acquire/Extend use deep brand blue; secondary
 actions are neutral and confirmed destructive actions remain red. Open/locked
-states retain green/amber badges, including the Model dialog. History opens on
+states retain green/amber badges, including the Project dialog. History opens on
 demand and displays only the latest three events; no older-page control.
 
 Prompts follows the same normal-weight, full-width ledger layout with collapsible
@@ -168,7 +185,8 @@ tests verify collapsed filters and state retention. Run
 
 Workflow lists, details, events, results and section statuses refresh manually.
 Fetch on navigation/selection or explicit Refresh. A successful mutation may invalidate
-once. Never introduce hidden polling, `setInterval` or recurring query refetch.
+once. Window focus and network reconnect do not refresh cached screens or replace
+open forms. Never introduce hidden polling, `setInterval` or recurring query refetch.
 An active Run can remain visually stale until Refresh by design.
 Run activity shows saved start/end timestamps and execution duration above its tabs.
 Unstarted runs say Not started; missing end timestamps never imply completion.
@@ -182,14 +200,14 @@ correlation reference; never expose raw provider diagnostics or model payloads.
 
 ## Important workflow semantics
 
-- Model schema/settings forms preserve saved values and unsaved changes. Display
+- Project schema/settings forms preserve saved values and unsaved changes. Display
   readable prompt names/version; internal identifiers/digests belong in Details.
 - Selection survives search and nested Attribute selection. Complete selection data
   must load before a Run starts; failed loading must not create a partial selection.
   Multi-select run pickers provide select-all/clear controls. Header checkboxes show
   partial selection, affect eligible records only, and preserve nested Attribute choices.
-- Profiling precedes Enrichment. Enrichment opens on current Model-owned results; keep
-  history separate. Parent Model enrichment locks protect children. Object details allow
+- Profiling precedes Enrichment. Enrichment opens on current Project-owned results; keep
+  history separate. Parent Project enrichment locks protect children. Object details allow
   description edits; Attribute details allow description/type and nullable key/PII flag edits.
   Unknown is distinct from No. Show saved Profiles in a technical table and export both
   dictionaries; retain unsaved edits on errors.
@@ -198,6 +216,8 @@ correlation reference; never expose raw provider diagnostics or model payloads.
   are review warnings. Percentages use their actual measured denominators.
 - Logical/Dimensional ledgers separate schema and Entity name. Provenance uses shared
   structured source/rationale/status views. Export is an optional Metadata handoff.
+  Both layers use Entities, Relationships and Submodels. Attributes belong inside
+  Entity details; retain addressable Attribute routes for references and back navigation.
 - Mapping has Entity/System detail pages: Object logic once above a spreadsheet of
   all active modeled Attributes. Missing transformations stay blank. Preserve custom
   fields/nested values and whole source identifiers. Missing records have no selectable
@@ -207,10 +227,14 @@ correlation reference; never expose raw provider diagnostics or model payloads.
   separately from failed-pair diagnostics. Pair ordinals are identities, not progress.
 - Code uses Entities for generation selection and SQL files for saved-file review,
   including inactive versions. SQL detail puts the file first, with compact context
-  and source mappings on demand. Reuse `workspace-sql` for read-only query panes.
+  and source mappings on demand. Keep stale guidance visible beside the file identity;
+  supporting metadata belongs in SQL details. Reuse `workspace-sql` for read-only query panes.
 - Code supports partial Mapping with warnings. Show exact Entity/System/file counts,
   preserve selection, and explain combined-file System coverage. Currentness is not
   execution readiness. Validation retains complete Mapping eligibility.
+  More → Download all SQL exports all active saved files for the selected layer,
+  including stale files, across pages and filters. The ZIP manifest records identity
+  and currentness. Inactive versions retain their individual downloads.
 - Validation uses addressable Group and Check pages with explicit back links; keep
   Group and Check review scopes separate. Group columns begin System, Group, Group
   description; Check and Description remain separate. Check details lead with purpose,
@@ -220,10 +244,21 @@ correlation reference; never expose raw provider diagnostics or model payloads.
   widths, scroll on both axes within a bounded height, and keep Actions visible.
   Supporting Group/Check definition context opens on demand; descriptions need no
   repeated explanatory heading or shared-layer annotation.
-- Assertions use Document → Record navigation. Stable key, type and statement are
-  required; extra context is optional. Preserve legacy structured detail. Active
-  Assertions are downstream context; relevance is assessed by each workflow.
-- Destructive Model operations retain bounded preview, dependency issues, permanent
+  More → Export all validations exports active groups/checks for the selected layer,
+  including shared groups. ZIPs include SQL plus saved comparison criteria and
+  currentness in a manifest; exports are read-only and revision-fenced.
+- Context groups select a shared Context Type and list records in an editable table.
+  Show selection, context text, source reference, status, lock, update time and Edit
+  together. Edit opens the full stored content in a dialog without leaving the group;
+  never save a bounded preview as the full record. Selected records use the governed
+  review actions. Retain addressable detail routes for references and reading long
+  values, but do not require a detail-page visit for ordinary editing. Generate
+  record UUIDs once when creating drafts; never ask users to invent or edit them.
+  Keep status and lock behavior visible. Relevance is assessed by each workflow.
+  Use Context Group Name, Context Group Description and Context Record Text as the
+  visible field labels. One group can contain many entries; show each as a separate
+  table row. Source references remain plain text and bounded previews indicate truncation.
+- Destructive Project operations retain bounded preview, dependency issues, permanent
   confirmation and revision/digest protection. Avoid duplicating implementation details.
 
 For any change, exercise loading, empty, success, failure and revision-conflict states;

@@ -58,7 +58,7 @@ async def test_run_summary_distinguishes_reported_zero_unknown_and_partial_usage
         legacy = await runs.read_run(
             claim.principal,
             tenant_id=context.tenant_id,
-            model_id=context.model_id,
+            project_id=context.project_id,
             workflow_run_id=claim.workflow_run_id,
         )
         assert legacy.token_usage == WorkflowTokenUsageSummary()
@@ -76,9 +76,15 @@ async def test_run_summary_distinguishes_reported_zero_unknown_and_partial_usage
                     (claim.workflow_run_id,),
                 )
             claim = WorkflowExecutionClaim.model_validate(
-                _claim_specific_workflow_run(web_postgres_database, claim.workflow_run_id)
+                _claim_specific_workflow_run(
+                    web_postgres_database, claim.workflow_run_id
+                )
             )
-        async with nullcontext() if scenario == "untracked_recovery" else recorder.track_run(claim):
+        async with (
+            nullcontext()
+            if scenario == "untracked_recovery"
+            else recorder.track_run(claim)
+        ):
             if scenario not in {"zero", "gap", "untracked_recovery"}:
                 first = _invocation(recorder, claim)
                 request_id = await first.begin_request(1)
@@ -120,14 +126,14 @@ async def test_run_summary_distinguishes_reported_zero_unknown_and_partial_usage
         active = await runs.read_run(
             claim.principal,
             tenant_id=context.tenant_id,
-            model_id=context.model_id,
+            project_id=context.project_id,
             workflow_run_id=claim.workflow_run_id,
         )
         assert active.token_usage.status == "recording"
         await DatabaseAgentWorkflowLifecycle(database=runtime).fail(
             claim.principal,
             workflow_run_id=claim.workflow_run_id,
-            expected_model_revision=claim.model_revision,
+            expected_project_revision=claim.project_revision,
             workflow_run_claim_token=claim.workflow_run_claim_token,
             failure_code="fixture_failure",
             safe_failure_message="Fixture execution stopped.",
@@ -135,7 +141,7 @@ async def test_run_summary_distinguishes_reported_zero_unknown_and_partial_usage
         terminal = await runs.read_run(
             claim.principal,
             tenant_id=context.tenant_id,
-            model_id=context.model_id,
+            project_id=context.project_id,
             workflow_run_id=claim.workflow_run_id,
         )
         summary = terminal.token_usage
@@ -143,7 +149,8 @@ async def test_run_summary_distinguishes_reported_zero_unknown_and_partial_usage
         assert summary.history_incomplete is (scenario in {"gap", "untracked_recovery"})
         assert summary.status == (
             "partial"
-            if scenario in {"core_partial", "missing", "pending", "gap", "untracked_recovery"}
+            if scenario
+            in {"core_partial", "missing", "pending", "gap", "untracked_recovery"}
             else "complete"
         )
         assert summary.model_dump(exclude={"status"}) == active.token_usage.model_dump(
@@ -168,7 +175,9 @@ async def test_run_summary_distinguishes_reported_zero_unknown_and_partial_usage
                 summary.cache_write_input_tokens,
                 summary.reasoning_output_tokens,
             ) == (
-                (0, 0, 0, 0, 0, 0) if scenario == "zero" else (None, None, None, None, None, None)
+                (0, 0, 0, 0, 0, 0)
+                if scenario == "zero"
+                else (None, None, None, None, None, None)
             )
         else:
             assert summary.request_count == 2
@@ -206,7 +215,7 @@ async def test_run_summary_distinguishes_reported_zero_unknown_and_partial_usage
                 await read_run_token_usage(
                     transaction,
                     tenant_id=context.tenant_id + 99999,
-                    model_id=context.model_id,
+                    project_id=context.project_id,
                     workflow_run_id=claim.workflow_run_id,
                 )
                 is None
@@ -215,7 +224,7 @@ async def test_run_summary_distinguishes_reported_zero_unknown_and_partial_usage
                 await read_run_token_usage(
                     transaction,
                     tenant_id=context.tenant_id,
-                    model_id=context.model_id + 99999,
+                    project_id=context.project_id + 99999,
                     workflow_run_id=claim.workflow_run_id,
                 )
                 is None
@@ -224,7 +233,7 @@ async def test_run_summary_distinguishes_reported_zero_unknown_and_partial_usage
             await runs.read_run(
                 claim.principal,
                 tenant_id=context.tenant_id,
-                model_id=context.model_id + 99999,
+                project_id=context.project_id + 99999,
                 workflow_run_id=claim.workflow_run_id,
             )
     finally:

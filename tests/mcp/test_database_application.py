@@ -39,9 +39,7 @@ APPLICATION_TABLES = {
 }
 
 WEB_PROVENANCE_COLUMNS = {
-    ("model", "model_event_log", "workflow_run_id"),
-    ("model", "modeling_assertion_document", "workflow_run_id"),
-    ("model", "modeling_assertion_record", "workflow_run_id"),
+    ("project", "project_event_log", "workflow_run_id"),
     ("workflow", "attribute_profile", "workflow_run_id"),
     ("workflow", "object_enrichment", "workflow_run_id"),
     ("workflow", "attribute_enrichment", "workflow_run_id"),
@@ -86,26 +84,26 @@ ANALYSIS_VALIDATION_COLUMNS = {
 }
 
 
-def _create_model_and_principal(
+def _create_project_and_principal(
     postgres_database: DisposablePostgres,
 ) -> tuple[int, int]:
     suffix = uuid4().hex
     with postgres_database.connect_owner() as connection:
-        project_id = require_row(
+        lane_id = require_row(
             connection.execute(
                 """
-            INSERT INTO core.project (project_code, project_name)
+            INSERT INTO core.lane (lane_code, lane_name)
             VALUES (%s, %s)
-            RETURNING project_id
+            RETURNING lane_id
             """,
                 (f"project_{suffix}", f"Project {suffix}"),
             ).fetchone()
-        )["project_id"]
+        )["lane_id"]
         tenant_id = require_row(
             connection.execute(
                 """
             INSERT INTO core.tenant (
-                project_id,
+                lane_id,
                 tenant_code,
                 tenant_name,
                 tenant_catalog,
@@ -114,7 +112,7 @@ def _create_model_and_principal(
             RETURNING tenant_id
             """,
                 (
-                    project_id,
+                    lane_id,
                     f"tenant_{suffix}",
                     f"Tenant {suffix}",
                     f"catalog_{suffix}",
@@ -122,16 +120,16 @@ def _create_model_and_principal(
                 ),
             ).fetchone()
         )["tenant_id"]
-        model_id = require_row(
+        project_id = require_row(
             connection.execute(
                 """
-            INSERT INTO model.model (tenant_id, model_name)
+            INSERT INTO project.project (tenant_id, project_name)
             VALUES (%s, %s)
-            RETURNING model_id
+            RETURNING project_id
             """,
-                (tenant_id, f"Model {suffix}"),
+                (tenant_id, f"Project {suffix}"),
             ).fetchone()
-        )["model_id"]
+        )["project_id"]
         principal_id = require_row(
             connection.execute(
                 """
@@ -146,7 +144,7 @@ def _create_model_and_principal(
             ).fetchone()
         )["principal_id"]
 
-    return model_id, principal_id
+    return project_id, principal_id
 
 
 def _create_prompt_version(
@@ -252,16 +250,16 @@ def _create_prompt_version(
 def _create_agentic_workflow_run(
     postgres_database: DisposablePostgres,
     *,
-    model_id: int,
+    project_id: int,
     principal_id: int,
-    model_workflow: str,
+    project_workflow: str,
     workflow_execution_mode: str,
 ) -> int:
     with postgres_database.connect_owner() as connection:
-        model = require_row(
+        project = require_row(
             connection.execute(
-                "SELECT tenant_id, model_revision FROM model.model WHERE model_id = %s",
-                (model_id,),
+                "SELECT tenant_id, project_revision FROM project.project WHERE project_id = %s",
+                (project_id,),
             ).fetchone()
         )
         return require_row(
@@ -269,9 +267,9 @@ def _create_agentic_workflow_run(
                 """
             INSERT INTO application.workflow_run (
                 tenant_id,
-                model_id,
-                model_revision,
-                model_workflow,
+                project_id,
+                project_revision,
+                project_workflow,
                 modeled_entity_type,
                 workflow_execution_mode,
                 actor_principal_id,
@@ -286,17 +284,17 @@ def _create_agentic_workflow_run(
                 correlation_id
             ) VALUES (
                 %s, %s, %s, %s, %s, %s, %s, 'openai_agents_sdk',
-                'microsoft_foundry', 'model-1', 'medium', 12, 2,
+                'microsoft_foundry', 'project-1', 'medium', 12, 2,
                 %s, 1, %s
             )
             RETURNING workflow_run_id
             """,
                 (
-                    model["tenant_id"],
-                    model_id,
-                    model["model_revision"],
-                    model_workflow,
-                    "logical_entity" if model_workflow == "dimensional" else None,
+                    project["tenant_id"],
+                    project_id,
+                    project["project_revision"],
+                    project_workflow,
+                    "logical_entity" if project_workflow == "dimensional" else None,
                     workflow_execution_mode,
                     principal_id,
                     "d" * 64,
@@ -336,9 +334,7 @@ def test_web_workflow_provenance_is_nullable_on_every_common_artifact(
                               expected.table_name,
                               expected.column_name
                          FROM (VALUES
-                             ('model', 'model_event_log', 'workflow_run_id'),
-                             ('model', 'modeling_assertion_document', 'workflow_run_id'),
-                             ('model', 'modeling_assertion_record', 'workflow_run_id'),
+                             ('project', 'project_event_log', 'workflow_run_id'),
                              ('workflow', 'attribute_profile', 'workflow_run_id'),
                              ('workflow', 'object_enrichment', 'workflow_run_id'),
                              ('workflow', 'attribute_enrichment', 'workflow_run_id'),
@@ -377,7 +373,7 @@ def test_web_workflow_provenance_is_nullable_on_every_common_artifact(
     assert all(row["is_nullable"] == "YES" for row in rows)
 
 
-def test_web_workflow_provenance_is_fenced_to_run_or_same_model(
+def test_web_workflow_provenance_is_fenced_to_run_or_same_project(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
@@ -418,7 +414,7 @@ def test_web_workflow_provenance_is_fenced_to_run_or_same_model(
              WHERE constraint_row.contype = 'f'
                AND parent_namespace.nspname = 'application'
                AND parent.relname = 'workflow_run'
-               AND child_namespace.nspname IN ('model', 'workflow')
+               AND child_namespace.nspname IN ('project', 'workflow')
             """
         ).fetchall()
 
@@ -430,7 +426,7 @@ def test_web_workflow_provenance_is_fenced_to_run_or_same_model(
         )
         for row in rows
     }
-    parent_derived_model = {
+    parent_derived_project = {
         "generated_code",
         "generated_code_source_system",
         "mapping_attribute",
@@ -441,8 +437,8 @@ def test_web_workflow_provenance_is_fenced_to_run_or_same_model(
             table_name,
             (
                 (column_name,)
-                if table_name in parent_derived_model
-                else (column_name, "model_id")
+                if table_name in parent_derived_project
+                else (column_name, "project_id")
             ),
         )
         for table_schema, table_name, column_name in WEB_PROVENANCE_COLUMNS
@@ -455,8 +451,8 @@ def test_web_workflow_provenance_is_fenced_to_run_or_same_model(
         tuple(row["parent_columns"])
         == (
             ("workflow_run_id",)
-            if row["table_name"] in parent_derived_model
-            else ("workflow_run_id", "model_id")
+            if row["table_name"] in parent_derived_project
+            else ("workflow_run_id", "project_id")
         )
         for row in rows
     )
@@ -497,53 +493,53 @@ def test_analysis_inference_can_exist_before_validation(
     assert "num_nonnulls" in constraint_definition["definition"].lower()
 
 
-def test_model_event_stream_is_ordered_attempt_aware_and_append_only(
+def test_project_event_stream_is_ordered_attempt_aware_and_append_only(
     postgres_database: DisposablePostgres,
 ) -> None:
-    model_id, _ = _create_model_and_principal(postgres_database)
+    project_id, _ = _create_project_and_principal(postgres_database)
     correlation_id = uuid4()
 
     with postgres_database.connect_owner() as connection:
         event_id = require_row(
             connection.execute(
                 """
-            INSERT INTO model.model_event_log (
-                model_id,
+            INSERT INTO project.project_event_log (
+                project_id,
                 correlation_id,
-                model_event_log_sequence,
-                model_event_log_attempt,
-                model_workflow,
-                model_event_log_stage,
-                model_event_log_status,
-                model_event_log_message
+                project_event_log_sequence,
+                project_event_log_attempt,
+                project_workflow,
+                project_event_log_stage,
+                project_event_log_status,
+                project_event_log_message
             ) VALUES (%s, %s, 1, 1, 'code_generation', 'prepare', 'started', 'Started')
-            RETURNING model_event_log_id
+            RETURNING project_event_log_id
             """,
-                (model_id, correlation_id),
+                (project_id, correlation_id),
             ).fetchone()
-        )["model_event_log_id"]
+        )["project_event_log_id"]
 
     with pytest.raises(UniqueViolation):
         with postgres_database.connect_owner() as connection:
             connection.execute(
                 """
-                INSERT INTO model.model_event_log (
-                    model_id,
+                INSERT INTO project.project_event_log (
+                    project_id,
                     correlation_id,
-                    model_event_log_sequence,
-                    model_event_log_attempt,
-                    model_workflow,
-                    model_event_log_stage,
-                    model_event_log_status,
-                    model_event_log_message
+                    project_event_log_sequence,
+                    project_event_log_attempt,
+                    project_workflow,
+                    project_event_log_stage,
+                    project_event_log_status,
+                    project_event_log_message
                 ) VALUES (%s, %s, 1, 1, 'code_generation', 'prepare', 'running', 'Running')
                 """,
-                (model_id, correlation_id),
+                (project_id, correlation_id),
             )
 
     for statement in (
-        "UPDATE model.model_event_log SET model_event_log_message = 'Changed' WHERE model_event_log_id = %s",
-        "DELETE FROM model.model_event_log WHERE model_event_log_id = %s",
+        "UPDATE project.project_event_log SET project_event_log_message = 'Changed' WHERE project_event_log_id = %s",
+        "DELETE FROM project.project_event_log WHERE project_event_log_id = %s",
     ):
         with pytest.raises(ObjectNotInPrerequisiteState, match="append-only"):
             with postgres_database.connect_owner() as connection:
@@ -553,12 +549,12 @@ def test_model_event_stream_is_ordered_attempt_aware_and_append_only(
 def test_workflow_run_uses_one_forward_only_state_machine(
     postgres_database: DisposablePostgres,
 ) -> None:
-    model_id, principal_id = _create_model_and_principal(postgres_database)
+    project_id, principal_id = _create_project_and_principal(postgres_database)
     workflow_run_id = _create_agentic_workflow_run(
         postgres_database,
-        model_id=model_id,
+        project_id=project_id,
         principal_id=principal_id,
-        model_workflow="conceptual",
+        project_workflow="conceptual",
         workflow_execution_mode="one_shot",
     )
 
@@ -604,33 +600,35 @@ def test_workflow_run_uses_one_forward_only_state_machine(
                 connection.execute(statement, (workflow_run_id,))
 
 
-def test_model_change_set_workflow_provenance_is_nullable_unique_and_model_fenced(
+def test_project_change_set_workflow_provenance_is_nullable_unique_and_project_fenced(
     postgres_database: DisposablePostgres,
 ) -> None:
-    model_id, principal_id = _create_model_and_principal(postgres_database)
-    other_model_id, other_principal_id = _create_model_and_principal(postgres_database)
+    project_id, principal_id = _create_project_and_principal(postgres_database)
+    other_project_id, other_principal_id = _create_project_and_principal(
+        postgres_database
+    )
     workflow_run_id = _create_agentic_workflow_run(
         postgres_database,
-        model_id=model_id,
+        project_id=project_id,
         principal_id=principal_id,
-        model_workflow="conceptual",
+        project_workflow="conceptual",
         workflow_execution_mode="one_shot",
     )
     other_workflow_run_id = _create_agentic_workflow_run(
         postgres_database,
-        model_id=model_id,
+        project_id=project_id,
         principal_id=principal_id,
-        model_workflow="conceptual",
+        project_workflow="conceptual",
         workflow_execution_mode="one_shot",
     )
     insert_change_set = """
-        INSERT INTO mcp.model_change_set (
-            model_change_set_id,
-            model_id,
+        INSERT INTO mcp.project_change_set (
+            project_change_set_id,
+            project_id,
             workflow_run_id,
-            base_model_revision,
+            base_project_revision,
             base_source_context_digest,
-            base_assertion_digest,
+            base_context_digest,
             base_policy_digest,
             created_by_principal_id,
             correlation_id
@@ -644,7 +642,7 @@ def test_model_change_set_workflow_provenance_is_nullable_unique_and_model_fence
             SELECT is_nullable
               FROM information_schema.columns
              WHERE table_schema = 'mcp'
-               AND table_name = 'model_change_set'
+               AND table_name = 'project_change_set'
                AND column_name = 'workflow_run_id'
             """
         ).fetchone()
@@ -653,7 +651,7 @@ def test_model_change_set_workflow_provenance_is_nullable_unique_and_model_fence
                 insert_change_set,
                 (
                     uuid4(),
-                    model_id,
+                    project_id,
                     None,
                     "a" * 64,
                     "b" * 64,
@@ -668,7 +666,7 @@ def test_model_change_set_workflow_provenance_is_nullable_unique_and_model_fence
                 insert_change_set,
                 (
                     uuid4(),
-                    model_id,
+                    project_id,
                     None,
                     "7" * 64,
                     "8" * 64,
@@ -683,7 +681,7 @@ def test_model_change_set_workflow_provenance_is_nullable_unique_and_model_fence
                 insert_change_set,
                 (
                     uuid4(),
-                    model_id,
+                    project_id,
                     workflow_run_id,
                     "d" * 64,
                     "e" * 64,
@@ -707,7 +705,7 @@ def test_model_change_set_workflow_provenance_is_nullable_unique_and_model_fence
         with postgres_database.connect_owner() as connection:
             connection.execute(
                 """
-                UPDATE mcp.model_change_set
+                UPDATE mcp.project_change_set
                    SET workflow_run_id = NULL
                  WHERE workflow_run_id = %s
                 """,
@@ -720,7 +718,7 @@ def test_model_change_set_workflow_provenance_is_nullable_unique_and_model_fence
                 insert_change_set,
                 (
                     uuid4(),
-                    model_id,
+                    project_id,
                     workflow_run_id,
                     "1" * 64,
                     "2" * 64,
@@ -736,7 +734,7 @@ def test_model_change_set_workflow_provenance_is_nullable_unique_and_model_fence
                 insert_change_set,
                 (
                     uuid4(),
-                    other_model_id,
+                    other_project_id,
                     other_workflow_run_id,
                     "4" * 64,
                     "5" * 64,
@@ -752,7 +750,7 @@ def test_model_change_set_workflow_provenance_is_nullable_unique_and_model_fence
                 insert_change_set,
                 (
                     uuid4(),
-                    model_id,
+                    project_id,
                     9_999_999_999,
                     "0" * 64,
                     "a" * 64,
@@ -853,26 +851,26 @@ def test_application_schema_is_available_only_to_the_web_runtime(
 def test_workflow_run_requires_only_agentic_runs_to_have_agent_configuration(
     postgres_database: DisposablePostgres,
 ) -> None:
-    model_id, principal_id = _create_model_and_principal(postgres_database)
+    project_id, principal_id = _create_project_and_principal(postgres_database)
     digest = "a" * 64
 
     with postgres_database.connect_owner() as connection:
-        model = require_row(
+        project = require_row(
             connection.execute(
-                "SELECT tenant_id, model_revision FROM model.model WHERE model_id = %s",
-                (model_id,),
+                "SELECT tenant_id, project_revision FROM project.project WHERE project_id = %s",
+                (project_id,),
             ).fetchone()
         )
-        tenant_id = model["tenant_id"]
-        model_revision = model["model_revision"]
+        tenant_id = project["tenant_id"]
+        project_revision = project["project_revision"]
         deterministic_id = require_row(
             connection.execute(
                 """
             INSERT INTO application.workflow_run (
                 tenant_id,
-                model_id,
-                model_revision,
-                model_workflow,
+                project_id,
+                project_revision,
+                project_workflow,
                 workflow_execution_mode,
                 actor_principal_id,
                 selected_scope_digest,
@@ -881,7 +879,14 @@ def test_workflow_run_requires_only_agentic_runs_to_have_agent_configuration(
             ) VALUES (%s, %s, %s, 'profiling', NULL, %s, %s, 1, %s)
             RETURNING workflow_run_id
             """,
-                (tenant_id, model_id, model_revision, principal_id, digest, uuid4()),
+                (
+                    tenant_id,
+                    project_id,
+                    project_revision,
+                    principal_id,
+                    digest,
+                    uuid4(),
+                ),
             ).fetchone()
         )["workflow_run_id"]
         agentic_id = require_row(
@@ -889,9 +894,9 @@ def test_workflow_run_requires_only_agentic_runs_to_have_agent_configuration(
                 """
             INSERT INTO application.workflow_run (
                 tenant_id,
-                model_id,
-                model_revision,
-                model_workflow,
+                project_id,
+                project_revision,
+                project_workflow,
                 workflow_execution_mode,
                 actor_principal_id,
                 agent_sdk_code,
@@ -905,12 +910,19 @@ def test_workflow_run_requires_only_agentic_runs_to_have_agent_configuration(
                 correlation_id
             ) VALUES (
                 %s, %s, %s, 'conceptual', 'one_shot', %s,
-                'openai_agents_sdk', 'microsoft_foundry', 'model-1',
+                'openai_agents_sdk', 'microsoft_foundry', 'project-1',
                 'medium', 50, 5, %s, 1, %s
             )
             RETURNING workflow_run_id
             """,
-                (tenant_id, model_id, model_revision, principal_id, digest, uuid4()),
+                (
+                    tenant_id,
+                    project_id,
+                    project_revision,
+                    principal_id,
+                    digest,
+                    uuid4(),
+                ),
             ).fetchone()
         )["workflow_run_id"]
 
@@ -926,9 +938,9 @@ def test_workflow_run_requires_only_agentic_runs_to_have_agent_configuration(
             """
             INSERT INTO application.workflow_run (
                 tenant_id,
-                model_id,
-                model_revision,
-                model_workflow,
+                project_id,
+                project_revision,
+                project_workflow,
                 workflow_execution_mode,
                 actor_principal_id,
                 selected_scope_digest,
@@ -936,7 +948,7 @@ def test_workflow_run_requires_only_agentic_runs_to_have_agent_configuration(
                 correlation_id
             ) VALUES (%s, %s, %s, 'logical', 'automatic', %s, %s, 1, %s)
             """,
-            (tenant_id, model_id, model_revision, principal_id, digest, uuid4()),
+            (tenant_id, project_id, project_revision, principal_id, digest, uuid4()),
         )
 
     with (
@@ -948,9 +960,9 @@ def test_workflow_run_requires_only_agentic_runs_to_have_agent_configuration(
             """
             INSERT INTO application.workflow_run (
                 tenant_id,
-                model_id,
-                model_revision,
-                model_workflow,
+                project_id,
+                project_revision,
+                project_workflow,
                 workflow_execution_mode,
                 actor_principal_id,
                 selected_scope_digest,
@@ -958,7 +970,7 @@ def test_workflow_run_requires_only_agentic_runs_to_have_agent_configuration(
                 correlation_id
             ) VALUES (%s, %s, %s, 'mapping', 'tool_assisted', %s, %s, 1, %s)
             """,
-            (tenant_id, model_id, model_revision, principal_id, digest, uuid4()),
+            (tenant_id, project_id, project_revision, principal_id, digest, uuid4()),
         )
 
 
@@ -970,7 +982,7 @@ def test_workflow_stage_has_bounded_modes_and_unique_order(
             connection.execute(
                 """
             INSERT INTO application.workflow_stage (
-                model_workflow,
+                project_workflow,
                 workflow_execution_mode,
                 workflow_stage_code,
                 workflow_stage_name,
@@ -994,7 +1006,7 @@ def test_workflow_stage_has_bounded_modes_and_unique_order(
         connection.execute(
             """
             INSERT INTO application.workflow_stage (
-                model_workflow,
+                project_workflow,
                 workflow_execution_mode,
                 workflow_stage_code,
                 workflow_stage_name,
@@ -1015,7 +1027,7 @@ def test_workflow_stage_has_bounded_modes_and_unique_order(
         connection.execute(
             """
             INSERT INTO application.workflow_stage (
-                model_workflow,
+                project_workflow,
                 workflow_execution_mode,
                 workflow_stage_code,
                 workflow_stage_name,
@@ -1037,7 +1049,7 @@ def test_workflow_stage_variables_use_safe_prompt_types_and_unique_resolvers(
             connection.execute(
                 """
             INSERT INTO application.workflow_stage (
-                model_workflow,
+                project_workflow,
                 workflow_execution_mode,
                 workflow_stage_code,
                 workflow_stage_name,
@@ -1085,8 +1097,8 @@ def test_workflow_stage_variables_use_safe_prompt_types_and_unique_resolvers(
                 workflow_stage_variable_example,
                 workflow_stage_variable_order
             ) VALUES (
-                %s, 'naming_instructions', 'model.naming_instructions',
-                'text', 'Model naming instructions.', '""'::JSONB, 20
+                %s, 'naming_instructions', 'project.naming_instructions',
+                'text', 'Project naming instructions.', '""'::JSONB, 20
             )
             RETURNING workflow_stage_variable_id
             """,
@@ -1112,7 +1124,7 @@ def test_workflow_stage_variables_use_safe_prompt_types_and_unique_resolvers(
                 workflow_stage_variable_description,
                 workflow_stage_variable_order
             ) VALUES (
-                %s, 'duplicate_resolver', 'model.naming_instructions',
+                %s, 'duplicate_resolver', 'project.naming_instructions',
                 'text', 'Duplicate resolver.', 30
             )
             """,
@@ -1123,7 +1135,7 @@ def test_workflow_stage_variables_use_safe_prompt_types_and_unique_resolvers(
 def test_published_prompt_versions_are_immutable_and_can_only_be_retired(
     postgres_database: DisposablePostgres,
 ) -> None:
-    _, principal_id = _create_model_and_principal(postgres_database)
+    _, principal_id = _create_project_and_principal(postgres_database)
     with postgres_database.connect_owner() as connection:
         digest = require_row(
             connection.execute(
@@ -1151,7 +1163,7 @@ def test_published_prompt_versions_are_immutable_and_can_only_be_retired(
             connection.execute(
                 """
             INSERT INTO application.workflow_stage (
-                model_workflow,
+                project_workflow,
                 workflow_execution_mode,
                 workflow_stage_code,
                 workflow_stage_name,
@@ -1289,23 +1301,25 @@ def test_prompt_versions_record_creator_and_updater_principals(
 def test_prompt_assignments_require_published_usable_owned_prompts(
     postgres_database: DisposablePostgres,
 ) -> None:
-    model_id, principal_id = _create_model_and_principal(postgres_database)
-    other_model_id, other_principal_id = _create_model_and_principal(postgres_database)
+    project_id, principal_id = _create_project_and_principal(postgres_database)
+    other_project_id, other_principal_id = _create_project_and_principal(
+        postgres_database
+    )
     with postgres_database.connect_owner() as connection:
         tenants = connection.execute(
             """
-            SELECT model_id, tenant_id
-              FROM model.model
-             WHERE model_id IN (%s, %s)
+            SELECT project_id, tenant_id
+              FROM project.project
+             WHERE project_id IN (%s, %s)
             """,
-            (model_id, other_model_id),
+            (project_id, other_project_id),
         ).fetchall()
-        tenant_by_model = {row["model_id"]: row["tenant_id"] for row in tenants}
+        tenant_by_project = {row["project_id"]: row["tenant_id"] for row in tenants}
         stage_id = require_row(
             connection.execute(
                 """
             INSERT INTO application.workflow_stage (
-                model_workflow,
+                project_workflow,
                 workflow_execution_mode,
                 workflow_stage_code,
                 workflow_stage_name,
@@ -1328,7 +1342,7 @@ def test_prompt_assignments_require_published_usable_owned_prompts(
                 granted_by_principal_id
             ) VALUES (%s, %s, 'architect', %s)
             """,
-            (tenant_by_model[model_id], principal_id, principal_id),
+            (tenant_by_project[project_id], principal_id, principal_id),
         )
         connection.execute(
             """
@@ -1342,7 +1356,7 @@ def test_prompt_assignments_require_published_usable_owned_prompts(
                 CURRENT_TIMESTAMP + INTERVAL '30 minutes'
             )
             """,
-            (tenant_by_model[model_id], principal_id),
+            (tenant_by_project[project_id], principal_id),
         )
 
     draft_global = _create_prompt_version(
@@ -1366,7 +1380,7 @@ def test_prompt_assignments_require_published_usable_owned_prompts(
         workflow_stage_id=stage_id,
         principal_id=principal_id,
         ownership_scope="tenant",
-        owner_tenant_id=tenant_by_model[model_id],
+        owner_tenant_id=tenant_by_project[project_id],
         published=True,
     )
     published_other = _create_prompt_version(
@@ -1374,7 +1388,7 @@ def test_prompt_assignments_require_published_usable_owned_prompts(
         workflow_stage_id=stage_id,
         principal_id=other_principal_id,
         ownership_scope="tenant",
-        owner_tenant_id=tenant_by_model[other_model_id],
+        owner_tenant_id=tenant_by_project[other_project_id],
         published=True,
     )
 
@@ -1389,11 +1403,11 @@ def test_prompt_assignments_require_published_usable_owned_prompts(
                 workflow_stage_id,
                 prompt_template_version_id,
                 prompt_assignment_scope,
-                model_id,
+                project_id,
                 assigned_by_principal_id
-            ) VALUES (%s, %s, 'model_default', %s, %s)
+            ) VALUES (%s, %s, 'project_default', %s, %s)
             """,
-            (stage_id, draft_global, model_id, principal_id),
+            (stage_id, draft_global, project_id, principal_id),
         )
 
     with (
@@ -1407,11 +1421,11 @@ def test_prompt_assignments_require_published_usable_owned_prompts(
                 workflow_stage_id,
                 prompt_template_version_id,
                 prompt_assignment_scope,
-                model_id,
+                project_id,
                 assigned_by_principal_id
-            ) VALUES (%s, %s, 'model_default', %s, %s)
+            ) VALUES (%s, %s, 'project_default', %s, %s)
             """,
-            (stage_id, published_other, model_id, principal_id),
+            (stage_id, published_other, project_id, principal_id),
         )
 
     with (
@@ -1449,19 +1463,19 @@ def test_prompt_assignments_require_published_usable_owned_prompts(
         )
 
     with postgres_database.connect_owner() as connection:
-        model_assignment_id = require_row(
+        project_assignment_id = require_row(
             connection.execute(
                 """
             INSERT INTO application.prompt_assignment (
                 workflow_stage_id,
                 prompt_template_version_id,
                 prompt_assignment_scope,
-                model_id,
+                project_id,
                 assigned_by_principal_id
-            ) VALUES (%s, %s, 'model_default', %s, %s)
+            ) VALUES (%s, %s, 'project_default', %s, %s)
             RETURNING prompt_assignment_id
             """,
-                (stage_id, published_owned, model_id, principal_id),
+                (stage_id, published_owned, project_id, principal_id),
             ).fetchone()
         )["prompt_assignment_id"]
         connection.execute(
@@ -1488,26 +1502,26 @@ def test_prompt_assignments_require_published_usable_owned_prompts(
             ).fetchone()
         )["prompt_assignment_id"]
 
-    assert model_assignment_id > 0
+    assert project_assignment_id > 0
     assert global_assignment_id > 0
 
 
-def test_prompt_resolution_snapshots_override_then_model_then_global(
+def test_prompt_resolution_snapshots_override_then_project_then_global(
     postgres_database: DisposablePostgres,
 ) -> None:
-    model_id, principal_id = _create_model_and_principal(postgres_database)
+    project_id, principal_id = _create_project_and_principal(postgres_database)
     with postgres_database.connect_owner() as connection:
         tenant_id = require_row(
             connection.execute(
-                "SELECT tenant_id FROM model.model WHERE model_id = %s",
-                (model_id,),
+                "SELECT tenant_id FROM project.project WHERE project_id = %s",
+                (project_id,),
             ).fetchone()
         )["tenant_id"]
         stage_id = require_row(
             connection.execute(
                 """
             INSERT INTO application.workflow_stage (
-                model_workflow,
+                project_workflow,
                 workflow_execution_mode,
                 workflow_stage_code,
                 workflow_stage_name,
@@ -1555,7 +1569,7 @@ def test_prompt_resolution_snapshots_override_then_model_then_global(
         owner_tenant_id=None,
         published=True,
     )
-    model_version_id = _create_prompt_version(
+    project_version_id = _create_prompt_version(
         postgres_database,
         workflow_stage_id=stage_id,
         principal_id=principal_id,
@@ -1579,11 +1593,11 @@ def test_prompt_resolution_snapshots_override_then_model_then_global(
                 workflow_stage_id,
                 prompt_template_version_id,
                 prompt_assignment_scope,
-                model_id,
+                project_id,
                 assigned_by_principal_id
-            ) VALUES (%s, %s, 'model_default', %s, %s)
+            ) VALUES (%s, %s, 'project_default', %s, %s)
             """,
-            (stage_id, model_version_id, model_id, principal_id),
+            (stage_id, project_version_id, project_id, principal_id),
         )
         connection.execute(
             """
@@ -1608,16 +1622,16 @@ def test_prompt_resolution_snapshots_override_then_model_then_global(
 
     override_run_id = _create_agentic_workflow_run(
         postgres_database,
-        model_id=model_id,
+        project_id=project_id,
         principal_id=principal_id,
-        model_workflow="dimensional",
+        project_workflow="dimensional",
         workflow_execution_mode="one_shot",
     )
-    model_run_id = _create_agentic_workflow_run(
+    project_run_id = _create_agentic_workflow_run(
         postgres_database,
-        model_id=model_id,
+        project_id=project_id,
         principal_id=principal_id,
-        model_workflow="dimensional",
+        project_workflow="dimensional",
         workflow_execution_mode="one_shot",
     )
 
@@ -1633,7 +1647,7 @@ def test_prompt_resolution_snapshots_override_then_model_then_global(
                 (override_run_id, stage_id, override_version_id),
             ).fetchone()
         )["snapshot_count"]
-        model_count = require_row(
+        project_count = require_row(
             connection.execute(
                 """
             SELECT application.snapshot_workflow_run_prompts(
@@ -1641,10 +1655,10 @@ def test_prompt_resolution_snapshots_override_then_model_then_global(
                 '{}'::JSONB
             ) AS snapshot_count
             """,
-                (model_run_id,),
+                (project_run_id,),
             ).fetchone()
         )["snapshot_count"]
-        model_assignment_id = require_row(
+        project_assignment_id = require_row(
             connection.execute(
                 """
             UPDATE application.prompt_assignment
@@ -1652,20 +1666,20 @@ def test_prompt_resolution_snapshots_override_then_model_then_global(
                    deactivated_by_principal_id = %s,
                    deactivated_time = CURRENT_TIMESTAMP,
                    updated_time = CURRENT_TIMESTAMP
-             WHERE model_id = %s
+             WHERE project_id = %s
                AND workflow_stage_id = %s
                AND is_active
             RETURNING prompt_assignment_id
             """,
-                (principal_id, model_id, stage_id),
+                (principal_id, project_id, stage_id),
             ).fetchone()
         )["prompt_assignment_id"]
 
     global_run_id = _create_agentic_workflow_run(
         postgres_database,
-        model_id=model_id,
+        project_id=project_id,
         principal_id=principal_id,
-        model_workflow="dimensional",
+        project_workflow="dimensional",
         workflow_execution_mode="one_shot",
     )
     with postgres_database.connect_owner() as connection:
@@ -1689,13 +1703,13 @@ def test_prompt_resolution_snapshots_override_then_model_then_global(
              WHERE workflow_run_id IN (%s, %s, %s)
              ORDER BY workflow_run_id
             """,
-            (override_run_id, model_run_id, global_run_id),
+            (override_run_id, project_run_id, global_run_id),
         ).fetchall()
 
     assert override_count == 1
-    assert model_count == 1
+    assert project_count == 1
     assert global_count == 1
-    assert model_assignment_id > 0
+    assert project_assignment_id > 0
     assert rows == [
         {
             "workflow_run_id": override_run_id,
@@ -1703,9 +1717,9 @@ def test_prompt_resolution_snapshots_override_then_model_then_global(
             "prompt_resolution_source": "run_override",
         },
         {
-            "workflow_run_id": model_run_id,
-            "prompt_template_version_id": model_version_id,
-            "prompt_resolution_source": "model_default",
+            "workflow_run_id": project_run_id,
+            "prompt_template_version_id": project_version_id,
+            "prompt_resolution_source": "project_default",
         },
         {
             "workflow_run_id": global_run_id,
@@ -1716,9 +1730,9 @@ def test_prompt_resolution_snapshots_override_then_model_then_global(
 
     lie_run_id = _create_agentic_workflow_run(
         postgres_database,
-        model_id=model_id,
+        project_id=project_id,
         principal_id=principal_id,
-        model_workflow="dimensional",
+        project_workflow="dimensional",
         workflow_execution_mode="one_shot",
     )
 
@@ -1731,7 +1745,7 @@ def test_prompt_resolution_snapshots_override_then_model_then_global(
             """
             INSERT INTO application.workflow_run_prompt_snapshot (
                 workflow_run_id,
-                model_id,
+                project_id,
                 workflow_stage_id,
                 prompt_template_version_id,
                 prompt_resolution_source,
@@ -1740,7 +1754,7 @@ def test_prompt_resolution_snapshots_override_then_model_then_global(
             """,
             (
                 lie_run_id,
-                model_id,
+                project_id,
                 stage_id,
                 override_version_id,
                 "f" * 64,
@@ -1748,32 +1762,32 @@ def test_prompt_resolution_snapshots_override_then_model_then_global(
         )
 
 
-def test_model_agent_defaults_are_optional_and_naming_is_not_coupled_to_audit(
+def test_project_agent_defaults_are_optional_and_naming_is_not_coupled_to_audit(
     postgres_database: DisposablePostgres,
 ) -> None:
-    model_id, _ = _create_model_and_principal(postgres_database)
+    project_id, _ = _create_project_and_principal(postgres_database)
 
     with postgres_database.connect_owner() as connection:
         row = connection.execute(
             """
-            UPDATE model.model
+            UPDATE project.project
                SET silver_model_naming_instructions = 'Use clear business names.',
                    gold_model_audit_columns_template =
                        '[{"name":"created_time","type":"timestamp"}]'::JSONB,
                    default_agent_sdk_code = 'openai_agents_sdk',
                    default_agent_provider_code = 'microsoft_foundry',
-                   default_agent_model_code = 'model-1',
+                   default_agent_model_code = 'project-1',
                    default_reasoning_effort_code = 'medium',
                    default_max_turns = 100,
                    default_validation_retry_count = 25
-             WHERE model_id = %s
+             WHERE project_id = %s
             RETURNING silver_model_naming_instructions,
                       silver_model_audit_columns_template,
                       gold_model_audit_columns_template,
                       default_max_turns,
                       default_validation_retry_count
             """,
-            (model_id,),
+            (project_id,),
         ).fetchone()
 
     assert row == {
@@ -1793,9 +1807,9 @@ def test_model_agent_defaults_are_optional_and_naming_is_not_coupled_to_audit(
             connection.transaction(),
         ):
             connection.execute(
-                "UPDATE model.model SET default_max_turns = %s, "
-                "default_validation_retry_count = %s WHERE model_id = %s",
-                (turns, retries, model_id),
+                "UPDATE project.project SET default_max_turns = %s, "
+                "default_validation_retry_count = %s WHERE project_id = %s",
+                (turns, retries, project_id),
             )
 
     with (
@@ -1805,9 +1819,9 @@ def test_model_agent_defaults_are_optional_and_naming_is_not_coupled_to_audit(
     ):
         connection.execute(
             """
-            UPDATE model.model
+            UPDATE project.project
                SET default_agent_model_code = NULL
-             WHERE model_id = %s
+             WHERE project_id = %s
             """,
-            (model_id,),
+            (project_id,),
         )

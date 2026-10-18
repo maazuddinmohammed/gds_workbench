@@ -7,7 +7,33 @@ import { createApiClient } from "../../api";
 import { WorkbenchApp, createWorkbenchRouter } from "../../app";
 import deployedCapabilities from "../../../../backend/gds_workbench_api/config/agent_capabilities.json";
 
-describe("Model Conceptual", () => {
+describe("Project Conceptual", () => {
+  it.each([
+    ["objects/41", "customer"],
+    ["relationships/51", "customer places order"],
+  ])("keeps %s record actions beside its heading with lifecycle commands under More", async (detail, title) => {
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({
+      api: createApiClient(conceptualFetchStub()),
+      history: createMemoryHistory({ initialEntries: [`/tenants/7/projects/18/conceptual/${detail}`] }),
+    })} />);
+    const heading = await screen.findByRole("heading", { level: 1, name: title });
+    const header = heading.closest("header")!;
+    expect(within(header).queryByText(/^Conceptual (Object|Relationship) \d+$/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^(Object|Relationship) definition$/ })).not.toBeInTheDocument();
+    expect(screen.getByText("Definition")).toBeVisible();
+    expect(within(header).getByRole("button", { name: "Edit definition" })).toBeVisible();
+    expect(within(header).getByRole("button", { name: "Lock" })).not.toBeVisible();
+    const more = within(header).getByText("More", { selector: "summary" });
+    await user.click(more);
+    expect(within(header).getByRole("button", { name: "Lock" })).toBeVisible();
+    expect(within(header).getByRole("button", { name: "Deactivate" })).toBeVisible();
+    within(header).getByRole("button", { name: "Lock" }).focus();
+    await user.keyboard("{Escape}");
+    expect(more).toHaveFocus();
+    expect(within(header).getByRole("button", { name: "Lock" })).not.toBeVisible();
+  });
+
   it("offers and submits deployed reasoning choices in tool-assisted and one-shot modes", async () => {
     const fetcher = conceptualFetchStub({ deployedCapabilities: true });
     const user = userEvent.setup();
@@ -30,7 +56,7 @@ describe("Model Conceptual", () => {
     }
     await user.click(within(dialog).getByRole("button", { name: "Create and run Conceptual" }));
     await waitFor(() => expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/runs",
+      "/api/v1/tenants/7/projects/18/runs",
       expect.objectContaining({ body: expect.stringContaining('"reasoning_effort_code":"high"') }),
     ));
   });
@@ -49,9 +75,9 @@ describe("Model Conceptual", () => {
     expect(await screen.findByRole("dialog", { name: "Review unlock" })).toBeVisible();
     await screen.findByRole("button", { name: "Apply this change" });
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/change-sets/review/preview?page=1",
+      "/api/v1/tenants/7/projects/18/change-sets/review/preview?page=1",
       expect.objectContaining({ body: JSON.stringify({
-        dataset: "conceptual_object", record_ids: [41], action: "unlock", expected_model_revision: 18,
+        dataset: "conceptual_object", record_ids: [41], action: "unlock", expected_project_revision: 18,
       }) }),
     );
     await user.click(screen.getByRole("button", { name: "Cancel" }));
@@ -62,9 +88,9 @@ describe("Model Conceptual", () => {
     await user.click(screen.getByRole("button", { name: "Lock selected" }));
     await screen.findByRole("button", { name: "Apply this change" });
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/change-sets/review/preview?page=1",
+      "/api/v1/tenants/7/projects/18/change-sets/review/preview?page=1",
       expect.objectContaining({ body: JSON.stringify({
-        dataset: "conceptual_relationship", record_ids: [51], action: "lock", expected_model_revision: 18,
+        dataset: "conceptual_relationship", record_ids: [51], action: "lock", expected_project_revision: 18,
       }) }),
     );
     await user.click(screen.getByRole("button", { name: "Cancel" }));
@@ -88,7 +114,7 @@ describe("Model Conceptual", () => {
     await user.click(screen.getByRole("button", { name: "Apply Object filters" }));
 
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/conceptual/objects?status=inactive&locked=true&name_prefix=customer&page_size=200",
+      "/api/v1/tenants/7/projects/18/conceptual/objects?status=inactive&locked=true&name_prefix=customer&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
 
@@ -98,7 +124,7 @@ describe("Model Conceptual", () => {
     expect(screen.getByText("One recognized customer identity.")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Support evidence" })).toBeVisible();
     const supports = screen.getByRole("table", { name: "Support evidence" });
-    expect(within(supports).getAllByRole("columnheader").slice(0, 4).map((cell) => cell.textContent)).toEqual(["Schema", "Object / assertion", "Rationale", "Role"]);
+    expect(within(supports).getAllByRole("columnheader").slice(0, 4).map((cell) => cell.textContent)).toEqual(["Schema", "Object / context", "Rationale", "Role"]);
     expect(within(supports).getByRole("cell", { name: "bronze" })).toBeVisible();
     expect(within(supports).getByText("customer_raw")).toBeVisible();
     const physical = screen.getByRole("row", { name: "Support 61" });
@@ -110,15 +136,15 @@ describe("Model Conceptual", () => {
     for (const value of ["GRDM", "CRM", "crm-prod", "Natural customer grain and stable identifier."]) {
       expect(within(physicalDetails).getByText(value)).toBeVisible();
     }
-    const assertion = screen.getByRole("row", { name: "Support 62" });
-    expect(within(assertion).queryByText("Assertion 91")).not.toBeInTheDocument();
-    await user.click(within(assertion).getByLabelText("Show details for customer.identity.stable"));
+    const context = screen.getByRole("row", { name: "Support 62" });
+    expect(within(context).queryByText("Context 91")).not.toBeInTheDocument();
+    await user.click(within(context).getByLabelText("Show details for Customer governance rules"));
     expect(physicalDetails).not.toBeVisible();
-    const assertionDetails = screen.getByRole("row", { name: "Details for customer.identity.stable" });
-    expect(within(assertionDetails).getByText("Customer identity remains stable across CRM and ERP.")).toBeVisible();
-    expect(within(assertionDetails).getByText("Customer governance rules")).toBeVisible();
-    await user.click(within(assertion).getByLabelText("Hide details for customer.identity.stable"));
-    expect(assertionDetails).not.toBeVisible();
+    const contextDetails = screen.getByRole("row", { name: "Details for Customer governance rules" });
+    expect(within(contextDetails).getByText("Customer identity remains stable across CRM and ERP.")).toBeVisible();
+    expect(within(contextDetails).getByText("Customer governance rules")).toBeVisible();
+    await user.click(within(context).getByLabelText("Hide details for Customer governance rules"));
+    expect(contextDetails).not.toBeVisible();
     expect(screen.queryByRole("heading", { name: "Provenance" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: "Back to Conceptual" }));
@@ -151,7 +177,7 @@ describe("Model Conceptual", () => {
 
     await user.click(screen.getByRole("button", { name: "Load more Conceptual Objects" }));
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/conceptual/objects?status=active&page_size=200&cursor=objects-next",
+      "/api/v1/tenants/7/projects/18/conceptual/objects?status=active&page_size=200&cursor=objects-next",
       expect.objectContaining({ credentials: "same-origin" }),
     );
 
@@ -159,7 +185,7 @@ describe("Model Conceptual", () => {
     await screen.findByRole("table", { name: "Conceptual Relationships" });
     await user.click(screen.getByRole("button", { name: "Load more Conceptual Relationships" }));
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/conceptual/relationships?status=active&page_size=200&cursor=relationships-next",
+      "/api/v1/tenants/7/projects/18/conceptual/relationships?status=active&page_size=200&cursor=relationships-next",
       expect.objectContaining({ credentials: "same-origin" }),
     );
   });
@@ -175,10 +201,10 @@ describe("Model Conceptual", () => {
     emptyRender.unmount();
 
     const mismatchRender = render(
-      <WorkbenchApp router={conceptualRouter(conceptualFetchStub({ modelRevision: 19 }))} />,
+      <WorkbenchApp router={conceptualRouter(conceptualFetchStub({ projectRevision: 19 }))} />,
     );
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The Model changed while Conceptual Objects were loading.",
+      "The Project changed while Conceptual Objects were loading.",
     );
     mismatchRender.unmount();
 
@@ -227,17 +253,17 @@ describe("Model Conceptual", () => {
     await user.click(submit);
 
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/runs",
+      "/api/v1/tenants/7/projects/18/runs",
       expect.objectContaining({
         method: "POST",
-        body: expect.stringContaining('"model_workflow":"conceptual"'),
+        body: expect.stringContaining('"project_workflow":"conceptual"'),
       }),
     );
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/conceptual/runs/1150/execute",
+      "/api/v1/tenants/7/projects/18/conceptual/runs/1150/execute",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ execution_mode: "tool_assisted", expected_model_revision: 18 }),
+        body: JSON.stringify({ execution_mode: "tool_assisted", expected_project_revision: 18 }),
       }),
     );
   });
@@ -262,10 +288,10 @@ describe("Model Conceptual", () => {
 
     await waitFor(() => {
       expect(fetcher.mock.calls.filter(([input, init]) => (
-        String(input) === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST"
+        String(input) === "/api/v1/tenants/7/projects/18/runs" && init?.method === "POST"
       ))).toHaveLength(1);
       expect(fetcher.mock.calls.filter(([input, init]) => (
-        String(input) === "/api/v1/tenants/7/models/18/conceptual/runs/1150/execute"
+        String(input) === "/api/v1/tenants/7/projects/18/conceptual/runs/1150/execute"
         && init?.method === "POST"
       ))).toHaveLength(2);
     });
@@ -305,7 +331,7 @@ function conceptualRouter(fetcher: ReturnType<typeof conceptualFetchStub>) {
   return createWorkbenchRouter({
     api: createApiClient(fetcher),
     history: createMemoryHistory({
-      initialEntries: ["/tenants/7/models/18/conceptual"],
+      initialEntries: ["/tenants/7/projects/18/conceptual"],
     }),
   });
 }
@@ -314,7 +340,7 @@ function conceptualFetchStub(options: {
   deployedCapabilities?: boolean;
   empty?: boolean;
   error?: boolean;
-  modelRevision?: number;
+  projectRevision?: number;
   hasLock?: boolean;
   denied?: boolean;
   detailDenied?: boolean;
@@ -328,7 +354,7 @@ function conceptualFetchStub(options: {
     if (url.includes("/change-sets/review/preview?")) {
       const command = JSON.parse(String(init?.body));
       return jsonResponse({
-        model_id: 18, model_revision: 18, plan_digest: "a".repeat(64), can_apply: true,
+        project_id: 18, project_revision: 18, plan_digest: "a".repeat(64), can_apply: true,
         action_count: 1, additional_change_count: 0, total_record_count: 1,
         items: [{ dataset: command.dataset, record_id: command.record_ids[0], label: "Selected record",
           selected: true, reason: "Selected record.", status: "active", desired_status: "active",
@@ -344,14 +370,14 @@ function conceptualFetchStub(options: {
         owned_by_current_principal: options.hasLock ?? true,
       },
     });
-    if (url === "/api/v1/tenants/7/models/18") return jsonResponse(modelPayload);
-    if (url.startsWith("/api/v1/tenants/7/models/18/conceptual/objects?")) {
+    if (url === "/api/v1/tenants/7/projects/18") return jsonResponse(projectPayload);
+    if (url.startsWith("/api/v1/tenants/7/projects/18/conceptual/objects?")) {
       if (options.denied) return jsonResponse({ error: { code: "forbidden" } }, 403);
       if (options.error) return jsonResponse({ error: { code: "unavailable" } }, 503);
       const isNextPage = url.includes("cursor=objects-next");
       return jsonResponse({
-        model_id: 18,
-        model_revision: options.modelRevision ?? 18,
+        project_id: 18,
+        project_revision: options.projectRevision ?? 18,
         items: options.empty ? [] : [{
           ...conceptualObjectPayload,
           ...(isNextPage ? { conceptual_object_id: 42, conceptual_object_name: "order" } : {}),
@@ -359,15 +385,15 @@ function conceptualFetchStub(options: {
         next_cursor: options.hasNextPage && !isNextPage ? "objects-next" : null,
       });
     }
-    if (url === "/api/v1/tenants/7/models/18/conceptual/objects/41") {
+    if (url === "/api/v1/tenants/7/projects/18/conceptual/objects/41") {
       if (options.detailDenied) return jsonResponse({ error: { code: "forbidden" } }, 403);
       return jsonResponse(conceptualObjectDetailPayload);
     }
-    if (url.startsWith("/api/v1/tenants/7/models/18/conceptual/relationships?")) {
+    if (url.startsWith("/api/v1/tenants/7/projects/18/conceptual/relationships?")) {
       const isNextPage = url.includes("cursor=relationships-next");
       return jsonResponse({
-        model_id: 18,
-        model_revision: options.modelRevision ?? 18,
+        project_id: 18,
+        project_revision: options.projectRevision ?? 18,
         items: options.empty ? [] : [{
           ...conceptualRelationshipPayload,
           ...(isNextPage
@@ -377,13 +403,13 @@ function conceptualFetchStub(options: {
         next_cursor: options.hasNextPage && !isNextPage ? "relationships-next" : null,
       });
     }
-    if (url === "/api/v1/tenants/7/models/18/conceptual/relationships/51") {
+    if (url === "/api/v1/tenants/7/projects/18/conceptual/relationships/51") {
       return jsonResponse(conceptualRelationshipDetailPayload);
     }
-    if (url === "/api/v1/tenants/7/models/18/input-scope?zone=bronze&page_size=200") {
+    if (url === "/api/v1/tenants/7/projects/18/input-scope?zone=bronze&page_size=200") {
       return jsonResponse({
-        model_id: 18,
-        model_revision: 18,
+        project_id: 18,
+        project_revision: 18,
         items: [conceptualScopeObjectPayload],
         next_cursor: null,
       });
@@ -391,10 +417,10 @@ function conceptualFetchStub(options: {
     if (url === "/api/v1/config/agent-capabilities") {
       return jsonResponse(options.deployedCapabilities ? deployedCapabilities : agentCapabilitiesPayload);
     }
-    if (url === "/api/v1/tenants/7/models/18/runs?workflow=conceptual&page_size=5") {
+    if (url === "/api/v1/tenants/7/projects/18/runs?workflow=conceptual&page_size=5") {
       return jsonResponse({ items: [], next_cursor: null });
     }
-    if (url === "/api/v1/tenants/7/models/18/runs") {
+    if (url === "/api/v1/tenants/7/projects/18/runs") {
       return jsonResponse({
         created: true,
         workflow_run_id: 1150,
@@ -404,7 +430,7 @@ function conceptualFetchStub(options: {
         created_at: "2026-08-24T16:00:00Z",
       }, 201);
     }
-    if (url === "/api/v1/tenants/7/models/18/conceptual/runs/1150/execute") {
+    if (url === "/api/v1/tenants/7/projects/18/conceptual/runs/1150/execute") {
       executeAttempts += 1;
       await options.executeGate;
       if (options.executeConflictOnce && executeAttempts === 1) {
@@ -414,7 +440,7 @@ function conceptualFetchStub(options: {
         changed: true,
         workflow_run_id: 1150,
         workflow_run_state: "running",
-        model_revision: 18,
+        project_revision: 18,
       }, 202);
     }
     return jsonResponse({ error: { code: "not_found" } }, 404);
@@ -441,7 +467,7 @@ const tenantHomePayload = {
     is_locked: true,
     owner_display_name: "Maaz",
     owned_by_current_principal: true,
-    purpose: "Model authoring",
+    purpose: "Project authoring",
     acquired_at: "2026-08-24T14:12:00Z",
     expires_at: "2026-08-24T16:12:00Z",
   },
@@ -449,13 +475,13 @@ const tenantHomePayload = {
   systems: [],
 };
 
-const modelPayload = {
-  model_id: 18,
+const projectPayload = {
+  project_id: 18,
   tenant_id: 7,
-  model_name: "Customer 360",
-  model_description: "Cross-system customer domain",
-  model_revision: 18,
-  model_input_scope_object_count: 25,
+  project_name: "Customer 360",
+  project_description: "Cross-system customer domain",
+  project_revision: 18,
+  project_input_scope_object_count: 25,
   logical_schemas: [], dimensional_schemas: [], silver_model_naming_instructions: null,
   silver_model_audit_columns_template: null,
   gold_model_naming_instructions: null,
@@ -504,26 +530,25 @@ const physicalSupport = {
   },
 };
 
-const assertionSupport = {
+const contextSupport = {
   conceptual_support_id: 62,
   workflow_run_id: 1048,
-  support_source_type: "assertion",
+  support_source_type: "context_record",
   support_role: "governance",
-  support_reason: "A reviewed assertion confirms identity semantics.",
+  support_reason: "A reviewed context confirms identity semantics.",
   support_reason_detail: null,
   support_confidence: "high",
   support_status: "active",
   support_is_locked: false,
   created_at: "2026-08-24T14:05:00Z",
   updated_at: "2026-08-24T14:35:00Z",
-  assertion_record: {
-    modeling_assertion_record_id: 91,
-    modeling_assertion_record_key: "customer.identity.stable",
-    modeling_assertion_document_name: "Customer governance rules",
-    modeling_assertion_record_type: "identity_rule",
-    modeling_assertion_text: "Customer identity remains stable across CRM and ERP.",
-    modeling_assertion_confidence: "high",
-    modeling_assertion_record_status: "active",
+  context_record: {
+    context_record_id: "00000000-0000-4000-8000-000000000091",
+    context_group_name: "Customer governance rules",
+    context_type_name: "Business Requirements",
+        source_reference: null,
+    context_text: "Customer identity remains stable across CRM and ERP.",
+    status: "active",
   },
 };
 
@@ -533,7 +558,7 @@ const conceptualObjectDetailPayload = {
   conceptual_object_grain: "One row per recognized customer.",
   conceptual_object_aliases: ["consumer", "account holder"],
   created_at: "2026-08-24T14:00:00Z",
-  supports: [physicalSupport, assertionSupport],
+  supports: [physicalSupport, contextSupport],
 };
 
 const conceptualRelationshipPayload = {
@@ -562,7 +587,7 @@ const conceptualRelationshipDetailPayload = {
 };
 
 const conceptualScopeObjectPayload = {
-  model_input_scope_id: 201,
+  project_input_scope_id: 201,
   object_id: 501,
   connection_id: 301,
   system_id: 401,
@@ -576,7 +601,7 @@ const conceptualScopeObjectPayload = {
   zone_code: "bronze",
   batch_attribute_name: "batch_id",
   attribute_count: 14,
-  is_model_input_eligible: true,
+  is_project_input_eligible: true,
   created_at: "2026-08-24T14:00:00Z",
   updated_at: "2026-08-24T14:00:00Z",
 };

@@ -26,7 +26,7 @@
 }
 
 .tenant-entry-heading h1,
-.app-shell .workspace .model-identity-name,
+.app-shell .workspace .project-identity-name,
 .app-shell .workspace .lock-heading h1 {
   color: var(--ink);
   font-family: "Atlas Open Sans", Arial, sans-serif;
@@ -36,12 +36,12 @@
 }
 
 .tenant-entry-heading h1 { font-size: 1.625rem; }
-.app-shell .workspace .model-identity-name { font-size: 1.375rem; }
+.app-shell .workspace .project-identity-name { font-size: 1.375rem; }
 .app-shell .workspace .lock-heading h1 { font-size: 1.25rem; }
 
 @media (max-width: 42rem) {
   .tenant-entry-heading h1 { font-size: 1.5rem; }
-  .app-shell .workspace .model-identity-name { font-size: 1.25rem; }
+  .app-shell .workspace .project-identity-name { font-size: 1.25rem; }
 }
 
 .app-shell .button.button-small,
@@ -52,7 +52,7 @@
 }
 
 .workspace-toolbar,
-.model-workspace .model-section-toolbar,
+.project-workspace .project-section-toolbar,
 .workflow-command-center > .workflow-commandbar {
   display: flex;
   flex-wrap: wrap;
@@ -70,10 +70,10 @@
 .workspace-toolbar > .workflow-command-context { min-width: 0; gap: 0.75rem; }
 .workspace-toolbar > .workflow-command-context > span { color: var(--muted); font-size: var(--workspace-text-size); }
 .workspace-toolbar > .workflow-command-actions { flex-wrap: wrap; margin-left: auto; gap: 0.5rem; }
-.model-workspace > :is(.workflow-command-center, .model-overview, .model-settings-page, .model-prompt-settings) { padding-top: var(--workspace-content-gap); }
+.project-workspace > :is(.workflow-command-center, .project-overview, .project-settings-page, .project-prompt-settings, .context-page, .metadata-enrichment-screen) { padding-top: var(--workspace-content-gap); }
 
 /* One segmented navigation treatment for page views and Settings. */
-:is(.workflow-command-center, .model-workspace, .models-page, .workflow-activity-panel) :is(.workspace-tabs, .workflow-tabs, .target-layer-switch) {
+:is(.workflow-command-center, .project-workspace, .projects-page, .workflow-activity-panel) :is(.workspace-tabs, .workflow-tabs, .target-layer-switch) {
   display: inline-flex;
   flex: 0 1 auto;
   align-items: center;
@@ -89,7 +89,7 @@
   background: var(--soft);
 }
 
-:is(.workflow-command-center, .model-workspace, .models-page, .workflow-activity-panel) :is(.workspace-tabs, .workflow-tabs, .target-layer-switch) > :is(a, button) {
+:is(.workflow-command-center, .project-workspace, .projects-page, .workflow-activity-panel) :is(.workspace-tabs, .workflow-tabs, .target-layer-switch) > :is(a, button) {
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
@@ -107,7 +107,7 @@
   box-shadow: none;
 }
 
-:is(.workflow-command-center, .model-workspace, .models-page, .workflow-activity-panel) :is(.workspace-tabs, .workflow-tabs, .target-layer-switch) > :is(a, button):is(.is-active, [aria-current="page"], [aria-pressed="true"]) {
+:is(.workflow-command-center, .project-workspace, .projects-page, .workflow-activity-panel) :is(.workspace-tabs, .workflow-tabs, .target-layer-switch) > :is(a, button):is(.is-active, [aria-current="page"], [aria-pressed="true"]) {
   border-color: var(--line-strong);
   color: var(--accent-dark);
   background: var(--surface);
@@ -161,18 +161,18 @@
 .workflow-filter-panel :is(input:not([type="checkbox"]), select, .button) { min-height: var(--workspace-control-height); font-size: var(--workspace-text-size); }
 
 /* Overview, list grids, and editable Settings share the workspace rhythm. */
-.model-overview-header { padding: 0 0 var(--workspace-content-gap); }
-.model-overview .workflow-ledger { margin-top: var(--workspace-content-gap); }
-.models-page > .models-commandbar { min-height: 5.35rem; padding-block: 1.5rem; }
-.models-page > .models-commandbar h1 { margin: 0; font-size: 1.5rem; }
-.models-page > .models-table-scroll { margin-top: var(--workspace-content-gap); }
-.model-settings-page > form { max-width: none; }
-.model-settings-page .model-definition-form { padding-top: 0.5rem; }
-.model-settings-page > .lock-context { margin: 0 0 1rem; font-size: var(--workspace-label-size); }
-.model-definition-form .create-model-settings > summary { padding-block: 0.85rem; }
-.model-definition-form .model-schema-row.is-saved { background: var(--surface); }
-.model-definition-form .dialog-actions { align-items: center; padding-block: 1rem; }
-.model-definition-form .dialog-actions > p { color: var(--muted); font-size: var(--workspace-label-size); }
+.project-overview-header { padding: 0 0 var(--workspace-content-gap); }
+.project-overview .workflow-ledger { margin-top: var(--workspace-content-gap); }
+.projects-page > .projects-commandbar { min-height: 5.35rem; padding-block: 1.5rem; }
+.projects-page > .projects-commandbar h1 { margin: 0; font-size: 1.5rem; }
+.projects-page > .projects-table-scroll { margin-top: var(--workspace-content-gap); }
+.project-settings-page > form { max-width: none; }
+.project-settings-page .project-definition-form { padding-top: 0.5rem; }
+.project-settings-page > .lock-context { margin: 0 0 1rem; font-size: var(--workspace-label-size); }
+.project-definition-form .create-project-settings > summary { padding-block: 0.85rem; }
+.project-definition-form .project-schema-row.is-saved { background: var(--surface); }
+.project-definition-form .dialog-actions { align-items: center; padding-block: 1rem; }
+.project-definition-form .dialog-actions > p { color: var(--muted); font-size: var(--workspace-label-size); }
 
 @media (max-width: 42rem) {
   .workspace-toolbar > .workflow-command-context,
@@ -194,9 +194,73 @@
 .workspace-detail-disclosure > summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; cursor: pointer; }
 .workspace-detail-disclosure > summary h2 { margin: 0; font-size: .85rem; }
 .workspace-detail-disclosure > summary span { color: var(--muted); font-size: var(--workspace-label-size); }
+.workspace-detail-disclosure > summary::after { content: ""; width: .4rem; height: .4rem; margin-right: .2rem; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(45deg); }
+.workspace-detail-disclosure[open] > summary::after { transform: rotate(225deg); }
+.workspace-detail-disclosure > summary > span { margin-left: auto; }
 .workspace-detail-disclosure[open] > summary { margin-bottom: 1rem; }
 .code-generation-detail-page { width: 100%; padding-top: var(--workspace-content-gap); }
 .code-generation-detail-header { align-items: start; padding-bottom: 1rem; }
 .code-generation-detail-header h1 { margin: .75rem 0 0; font-size: 1.2rem; overflow-wrap: anywhere; }
 .code-generation-detail-actions { min-width: 0; }
 .code-generation-detail-actions > div:last-child { flex-wrap: wrap; }
+
+/* Record pages share one compact heading/action row and quiet, aligned details. */
+.workflow-detail-page { padding-top: var(--workspace-content-gap); }
+.workflow-detail-header { gap: 1rem; padding: 0 0 var(--workspace-content-gap); }
+.workflow-detail-header h1 { font-size: 1.5rem; line-height: 1.3; }
+.workspace-record-heading > .text-action,
+.workflow-detail-header > div > .text-action { display: block; width: fit-content; margin-bottom: .85rem; padding-block: .25rem; }
+.workflow-detail-header > div > .text-action + h1 { margin-top: 0; }
+.project-detail-tools { display: flex; justify-content: flex-end; padding-top: var(--workspace-content-gap); }
+.project-detail-tools + .workflow-detail-page { padding-top: .5rem; }
+.workflow-detail-header .project-detail-tools { width: auto; margin: 0; padding: 0; }
+.review-selectionbar[hidden] { display: none; }
+.workspace-record-heading { min-width: 0; }
+.workspace-record-heading h1 { margin: 0 0 .25rem; font-size: 1.5rem; line-height: 1.3; }
+.workspace-record-heading p { margin: 0; color: var(--muted); font-size: var(--workspace-text-size); }
+.workspace-record-heading .workspace-record-warning { margin-top: .65rem; color: var(--amber); font-size: var(--workspace-text-size); line-height: 1.6; }
+.app-shell .workspace :is(.workflow-detail-header, .workspace-record-heading, .workspace-entity-heading) :is(h1, h2) {
+  color: var(--ink);
+  font-family: "Atlas Open Sans", Arial, sans-serif;
+  font-size: 1.3rem;
+  font-weight: 600;
+  letter-spacing: normal;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.workspace-identity-context { display: flex; flex-wrap: wrap; gap: .65rem 1.5rem; min-width: 0; margin: .65rem 0 0; }
+.workspace-identity-context > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .6rem; min-width: 0; }
+.workspace-identity-context dt { color: var(--muted); font-size: var(--workspace-label-size); }
+.workspace-identity-context dd { margin: 0; overflow-wrap: anywhere; font-size: var(--workspace-text-size); }
+.enrichment-detail-header { margin-top: .8rem; margin-bottom: 1rem; }
+/* Detail headings must read as section boundaries, including on nested Entity pages. */
+.app-shell .workspace :is(.detail-section, .mapping-transformation-panel, .workspace-sql) > header > :is(h2, h3),
+.app-shell .workspace :is(.detail-disclosure, .workspace-detail-disclosure) > summary > h2 {
+  margin: 0;
+  color: var(--ink);
+  font-family: "Atlas Open Sans", Arial, sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: normal;
+  line-height: 1.5;
+}
+.app-shell .workspace .detail-section > header { align-items: center; flex-wrap: wrap; gap: .75rem 1.25rem; margin-bottom: 1rem; }
+.workflow-detail-header + .mapping-transformation-panel { margin-top: var(--workspace-content-gap); }
+.context-source-reference { min-width: 12rem; max-width: 22rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.context-full-text { display: block; margin-top: .4rem; }
+.context-records-table :is(th, td):last-child { position: sticky; right: 0; z-index: 1; background: var(--surface); box-shadow: -1px 0 var(--line); white-space: nowrap; }
+.context-records-table th:last-child { z-index: 3; background: var(--paper); }
+.context-detail-page { width: 100%; margin: 0; }
+.context-detail-page .workspace-toolbar { align-items: center; }
+.workspace-record-table { min-width: 0; width: 100%; overflow: auto; }
+.workspace-record-table table { min-width: 0; width: 100%; border-collapse: collapse; table-layout: fixed; }
+.workspace-record-table :is(th, td) { padding: .95rem 1rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; font-size: var(--workspace-text-size); line-height: 1.7; }
+.workspace-record-table th { width: 10rem; padding-left: .75rem; color: var(--muted); text-transform: none; letter-spacing: normal; }
+.workspace-record-table td { white-space: pre-wrap; overflow-wrap: anywhere; }
+.workspace-record-table tr:first-child :is(th, td) { padding-top: .35rem; }
+
+@media (max-width: 42rem) {
+  .workspace-record-table th { width: 7rem; }
+  .workspace-record-table td { padding-right: 0; }
+  .workflow-detail-header { flex-wrap: wrap; align-items: start; }
+}

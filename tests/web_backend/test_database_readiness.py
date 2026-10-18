@@ -105,9 +105,9 @@ async def test_readiness_rejects_an_additional_session_login_membership(
     ("function_name", "argument_types"),
     [
         ("list_tenant_visible_objects", ("BIGINT",)),
-        ("list_model_object_eligibility", ("BIGINT",)),
-        ("list_model_attribute_eligibility", ("BIGINT",)),
-        ("is_assertion_only_mapping_target", ("BIGINT", "BIGINT", "VARCHAR")),
+        ("list_project_object_eligibility", ("BIGINT",)),
+        ("list_project_attribute_eligibility", ("BIGINT",)),
+        ("is_context_only_mapping_target", ("BIGINT", "BIGINT", "VARCHAR")),
         (
             "list_code_generation_target_context",
             ("BIGINT", "VARCHAR", "VARCHAR"),
@@ -125,7 +125,9 @@ async def test_readiness_rejects_a_missing_workflow_eligibility_grant(
     )
     with readiness_postgres.connect_owner() as connection:
         connection.execute(
-            sql.SQL("REVOKE EXECUTE ON FUNCTION {} FROM gds_web_write").format(signature)
+            sql.SQL("REVOKE EXECUTE ON FUNCTION {} FROM gds_web_write").format(
+                signature
+            )
         )
 
     try:
@@ -133,20 +135,22 @@ async def test_readiness_rejects_a_missing_workflow_eligibility_grant(
     finally:
         with readiness_postgres.connect_owner() as connection:
             connection.execute(
-                sql.SQL("GRANT EXECUTE ON FUNCTION {} TO gds_web_write").format(signature)
+                sql.SQL("GRANT EXECUTE ON FUNCTION {} TO gds_web_write").format(
+                    signature
+                )
             )
 
     assert readiness == ReadinessRecord(ready=False, code="database_role_invalid")
 
 
 @pytest.mark.asyncio
-async def test_readiness_requires_governed_model_review_function(
+async def test_readiness_requires_governed_project_review_function(
     readiness_postgres: DisposablePostgres,
 ) -> None:
     assert (await _readiness(readiness_postgres)).ready
     with readiness_postgres.connect_owner() as connection:
         connection.execute(
-            "REVOKE EXECUTE ON FUNCTION application.authorize_model_record_review("
+            "REVOKE EXECUTE ON FUNCTION application.authorize_project_record_review("
             "UUID,UUID,VARCHAR,BIGINT,BIGINT) FROM gds_web_write"
         )
     try:
@@ -155,7 +159,7 @@ async def test_readiness_requires_governed_model_review_function(
     finally:
         with readiness_postgres.connect_owner() as connection:
             connection.execute(
-                "GRANT EXECUTE ON FUNCTION application.authorize_model_record_review("
+                "GRANT EXECUTE ON FUNCTION application.authorize_project_record_review("
                 "UUID,UUID,VARCHAR,BIGINT,BIGINT) TO gds_web_write"
             )
     assert (await _readiness(readiness_postgres)).ready
@@ -296,14 +300,14 @@ async def test_readiness_rejects_a_nullable_workflow_run_tenant_witness(
 
 
 @pytest.mark.asyncio
-async def test_readiness_rejects_a_stale_workflow_run_model_foreign_key(
+async def test_readiness_rejects_a_stale_workflow_run_project_foreign_key(
     readiness_postgres: DisposablePostgres,
 ) -> None:
     with readiness_postgres.connect_owner() as connection:
         connection.execute(
             "ALTER TABLE application.workflow_run "
-            "RENAME CONSTRAINT fk_workflow_run_model "
-            "TO stale_fk_workflow_run_model"
+            "RENAME CONSTRAINT fk_workflow_run_project "
+            "TO stale_fk_workflow_run_project"
         )
 
     try:
@@ -312,8 +316,8 @@ async def test_readiness_rejects_a_stale_workflow_run_model_foreign_key(
         with readiness_postgres.connect_owner() as connection:
             connection.execute(
                 "ALTER TABLE application.workflow_run "
-                "RENAME CONSTRAINT stale_fk_workflow_run_model "
-                "TO fk_workflow_run_model"
+                "RENAME CONSTRAINT stale_fk_workflow_run_project "
+                "TO fk_workflow_run_project"
             )
 
     assert readiness == ReadinessRecord(

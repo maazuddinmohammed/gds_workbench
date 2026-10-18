@@ -12,14 +12,14 @@ from gds_workbench_api.features.metadata import (
     ObjectCatalogFilters,
     PostgresMetadataRepository,
 )
-from gds_workbench_api.features.model_input_scope import (
-    DatabaseModelInputScopeService,
-    ModelInputScopeObjectNotFoundError,
+from gds_workbench_api.features.project_input_scope import (
+    DatabaseProjectInputScopeService,
+    ProjectInputScopeObjectNotFoundError,
 )
 
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.database_test_support import require_row
-from tests.web_backend.test_database_model_change_sets import _seed_profile_model
+from tests.web_backend.test_database_project_change_sets import _seed_profile_project
 
 
 @pytest.mark.parametrize(
@@ -29,8 +29,8 @@ async def test_catalog_retains_inactive_records_but_scope_keeps_current_eligibil
     web_postgres_database: DisposablePostgres,
     change: str,
 ) -> None:
-    model_id, tenant_id, attribute_id, entra_tenant_id, entra_object_id, _ = (
-        _seed_profile_model(web_postgres_database)
+    project_id, tenant_id, attribute_id, entra_tenant_id, entra_object_id, _ = (
+        _seed_profile_project(web_postgres_database)
     )
     principal = RequestPrincipal(
         actor_kind=ActorKind.HUMAN,
@@ -56,7 +56,7 @@ async def test_catalog_retains_inactive_records_but_scope_keeps_current_eligibil
         authorizer=AuthorizationService(),
         cursor_signing_key=b"fixture-catalog-review-key-32-bytes",
     )
-    scope = DatabaseModelInputScopeService(
+    scope = DatabaseProjectInputScopeService(
         database=database,
         authorizer=AuthorizationService(),
         cursor_signing_key=b"fixture-scope-review-key-32-bytes",
@@ -65,7 +65,7 @@ async def test_catalog_retains_inactive_records_but_scope_keeps_current_eligibil
     try:
         await catalog.get_object(principal, tenant_id=tenant_id, object_id=object_id)
         if change == "source_tenant":
-            _, foreign_tenant, *_ = _seed_profile_model(web_postgres_database)
+            _, foreign_tenant, *_ = _seed_profile_project(web_postgres_database)
             with web_postgres_database.connect_owner() as connection:
                 connection.execute(
                     "UPDATE core.object SET source_tenant_id=%s WHERE object_id=%s",
@@ -122,18 +122,21 @@ async def test_catalog_retains_inactive_records_but_scope_keeps_current_eligibil
             expected_error = (
                 InvalidRequestError
                 if change == "source_tenant"
-                else ModelInputScopeObjectNotFoundError
+                else ProjectInputScopeObjectNotFoundError
             )
             with pytest.raises(expected_error):
                 await scope.read_input_scope_object(
                     principal,
                     tenant_id=tenant_id,
-                    model_id=model_id,
+                    project_id=project_id,
                     object_id=object_id,
                 )
         else:
             scoped = await scope.read_input_scope_object(
-                principal, tenant_id=tenant_id, model_id=model_id, object_id=object_id
+                principal,
+                tenant_id=tenant_id,
+                project_id=project_id,
+                object_id=object_id,
             )
             assert scoped.attribute_count == (0 if change == "child_inactive" else 1)
     finally:

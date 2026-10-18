@@ -320,20 +320,20 @@
   color: var(--brand);
 }
 
-.sidebar .open-model {
+.sidebar .open-project {
   border-color: var(--line);
 }
 
-.sidebar .open-model small,
-.sidebar .open-model span {
+.sidebar .open-project small,
+.sidebar .open-project span {
   color: var(--muted);
 }
 
-.sidebar .open-model strong {
+.sidebar .open-project strong {
   color: var(--ink);
 }
 
-.sidebar .open-model a {
+.sidebar .open-project a {
   color: var(--brand);
 }
 
@@ -358,7 +358,7 @@
 
   .is-global-nav-collapsed .topbar .brand > :not(.brand-mark),
   .is-global-nav-collapsed .nav-item-label,
-  .is-global-nav-collapsed .sidebar .open-model,
+  .is-global-nav-collapsed .sidebar .open-project,
   .is-global-nav-collapsed .sidebar-toggle > span {
     display: none;
   }
@@ -1081,7 +1081,7 @@ tbody tr:hover {
   }
 
   .sidebar-header,
-  .sidebar .open-model {
+  .sidebar .open-project {
     display: none;
   }
 

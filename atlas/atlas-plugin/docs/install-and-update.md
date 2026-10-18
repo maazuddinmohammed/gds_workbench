@@ -4,8 +4,8 @@ Use one permanent installation for Copilot and Codex. Keep project work elsewher
 
 | System | Installation | Example working folder |
 |---|---|---|
-| Windows | `%USERPROFILE%\Tools\Atlas` | `%USERPROFILE%\Work\SalesModel` |
-| macOS / Linux | `~/Tools/Atlas` | `~/Work/SalesModel` |
+| Windows | `%USERPROFILE%\Tools\Atlas` | `%USERPROFILE%\Work\SalesProject` |
+| macOS / Linux | `~/Tools/Atlas` | `~/Work/SalesProject` |
 
 ```text
 Tools/Atlas/
@@ -113,4 +113,4 @@ The generated Codex copy contains no credentials. If it is damaged, move only
 
 ## Backend compatibility
 
-Install the matching plugin and VSIX for Model-owned enrichment. The deployed MCP/backend and database install contract must also include the enrichment datasets and Change Set section; replacing laptop files alone does not update a server or database. Refresh the Model Snapshot after the compatible backend is available. If `object_enrichment` or `attribute_enrichment` is missing from the advertised contracts, retain local work and request the compatible server release. Never substitute physical Metadata updates. Web audit-prompt changes require the updated published prompt versions as well.
+Install the matching plugin and VSIX for Project-owned enrichment. The deployed MCP/backend and database install contract must also include the enrichment datasets and Change Set section; replacing laptop files alone does not update a server or database. Refresh the Project Snapshot after the compatible backend is available. If `object_enrichment` or `attribute_enrichment` is missing from the advertised contracts, retain local work and request the compatible server release. Never substitute physical Metadata updates. Web audit-prompt changes require the updated published prompt versions as well.

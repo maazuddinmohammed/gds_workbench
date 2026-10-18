@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createRequire } from 'node:module';
 const require=createRequire(import.meta.url);
-const {validate,AUDIT}=require('../../atlas/atlas-plugin/workbench/validation/model-policy.js');
+const {validate,AUDIT}=require('../../atlas/atlas-plugin/workbench/validation/project-policy.js');
 const run=require('../../atlas/atlas-plugin/workbench/validation/run.js').run;
 const loaded=(name,keys,pending=[],baseline=[])=>[name,{definition:{name,canonical_key:keys},schema:{type:'object','x-gds-change-set-eligible':true,properties:{}},pending,baseline,effective:[...baseline,...pending]}];
 const phys={tenant_code:'T',system_code:'CRM',connection_code:'C',object_schema:'bronze',object_name:'Customer'};
@@ -14,30 +14,30 @@ function graph(layer='logical'){
  return new Map([loaded(`${layer}_entity`,[`${layer}_entity_schema_name`,`${layer}_entity_name`],[entity]),loaded(`${layer}_attribute`,[`${layer}_entity_schema_name`,`${layer}_entity_name`,`${layer}_attribute_name`],attributes)]);
 }
 const codes=result=>result.filter(issue=>issue.severity!=='warning').map(issue=>issue.code);
-test('Model Change Sets allow Logical SCD settings in the governed draft', () => {
+test('Project Change Sets allow Logical SCD settings in the governed draft', () => {
   for (const original of [null, 'type_1', 'type_2']) {
     for (const proposed of [null, 'type_1', 'type_2']) {
-      const baseline = {model_name: 'Sales', logical_entity_scd_type: original};
-      const pending = {...baseline, model_purpose: 'Updated purpose', logical_entity_scd_type: proposed};
-      const value = new Map([loaded('model_details', [], [pending], [baseline])]);
+      const baseline = {project_name: 'Sales', logical_entity_scd_type: original};
+      const pending = {...baseline, project_purpose: 'Updated purpose', logical_entity_scd_type: proposed};
+      const value = new Map([loaded('project_details', [], [pending], [baseline])]);
       assert.deepEqual(codes(validate(value)), []);
     }
   }
-  const baseline = {model_name: 'Sales'};
-  const value = new Map([loaded('model_details', [], [{...baseline, logical_entity_scd_type: null}], [baseline])]);
+  const baseline = {project_name: 'Sales'};
+  const value = new Map([loaded('project_details', [], [{...baseline, logical_entity_scd_type: null}], [baseline])]);
   assert.deepEqual(codes(validate(value)), []);
 });
 test('new Logical and Dimensional entities share first generated surrogate and audit policy',()=>{
- for(const layer of ['logical','dimensional']){const value=graph(layer);assert.deepEqual(codes(validate(value)),[]);value.get(`${layer}_attribute`).pending[0][`${layer}_attribute_ordinal_position`]=3;assert.ok(codes(validate(value)).includes('model.own-surrogate'));}
+ for(const layer of ['logical','dimensional']){const value=graph(layer);assert.deepEqual(codes(validate(value)),[]);value.get(`${layer}_attribute`).pending[0][`${layer}_attribute_ordinal_position`]=3;assert.ok(codes(validate(value)).includes('project.own-surrogate'));}
 });
 test('audit completeness and framework-owned lineage have separate explicit findings',()=>{
  const value=graph();value.get('logical_attribute').effective.pop();value.get('logical_attribute').pending[2].sources=[{support_source_type:'attribute',source_attribute:{...phys,attribute_name:'Flag'},status:'active'}];
- const result=codes(validate(value));assert.ok(result.includes('model.audit-order'));assert.ok(result.includes('model.framework-source'));assert.ok(result.includes('model.parent-source'));
+ const result=codes(validate(value));assert.ok(result.includes('project.audit-order'));assert.ok(result.includes('project.framework-source'));assert.ok(result.includes('project.parent-source'));
 });
 test('new names honor default and retain explicit override for review',()=>{
- const value=graph();value.get('logical_attribute').pending[0].logical_attribute_name='customer_id';assert.ok(codes(validate(value)).includes('model.naming-policy'));
- value.set(...loaded('model_details',['model_name'],[{model_name:'Sales',silver_model_naming_instructions:'Use snake_case for this approved model.'}]));
- const result=validate(value);assert.equal(codes(result).includes('model.naming-policy'),false);assert.ok(result.some(issue=>issue.code==='model.naming-review'));
+ const value=graph();value.get('logical_attribute').pending[0].logical_attribute_name='customer_id';assert.ok(codes(validate(value)).includes('project.naming-policy'));
+ value.set(...loaded('project_details',['project_name'],[{project_name:'Sales',silver_model_naming_instructions:'Use snake_case for this approved project.'}]));
+ const result=validate(value);assert.equal(codes(result).includes('project.naming-policy'),false);assert.ok(result.some(issue=>issue.code==='project.naming-review'));
 });
 test('unchanged historical layout is not rewritten to the new table defaults',()=>{
  const entity={logical_entity_schema_name: "silver", logical_entity_name:'legacy_table',logical_entity_status:'active',sources:[],submodels:[]};
@@ -46,7 +46,7 @@ test('unchanged historical layout is not rewritten to the new table defaults',()
 test('inactive submodel and missing parent Object source have distinct checks',()=>{
  const value=graph();value.get('logical_entity').pending[0].submodels=[{submodel_name:'Sales',membership_status:'active'}];
  value.set(...loaded('logical_submodel',['logical_submodel_name'],[{logical_submodel_name:'Sales',logical_submodel_status:'inactive'}]));
- assert.ok(codes(validate(value)).includes('model.membership-state'));
+ assert.ok(codes(validate(value)).includes('project.membership-state'));
 });
 
 test('default Mapping documents require real inputs, aliases, steps and field rules',()=>{
@@ -72,7 +72,7 @@ test('partial Mapping policy accepts explicit blanks and validates returned Attr
   assert.deepEqual(codes(validate(value,metadata)),[]);
 });
 test('shared run reports skipped evidence and server-only checks without claiming business proof',()=>{
- const result=run('model',new Map(),null,{includeQuality:false});assert.equal(result.valid,true);
+ const result=run('project',new Map(),null,{includeQuality:false});assert.equal(result.valid,true);
  assert.ok(result.checks.some(check=>check.id==='local.evidence'&&check.status==='not_run'));
  assert.ok(result.checks.some(check=>check.id==='local.meaning'&&check.status==='review_required'));
  assert.ok(result.checks.some(check=>check.id==='server.authorization'&&check.status==='server_only'));
@@ -105,16 +105,16 @@ test('Logical Mapping combines physical input and schema-qualified Logical looku
 
 test('all retained Entity schemas and unchanged Attribute support remain validated', () => {
   const value = new Map([
-    loaded('model_details',['model_name'],[],[{model_name:'Model',logical_schemas:[],dimensional_schemas:[]}]),
+    loaded('project_details',['project_name'],[],[{project_name:'Project',logical_schemas:[],dimensional_schemas:[]}]),
     loaded('logical_entity',['logical_entity_schema_name','logical_entity_name'],[],[{logical_entity_schema_name:'retired',logical_entity_name:'Customer',logical_entity_status:'inactive'}]),
   ]);
-  assert.ok(codes(validate(value)).includes('model.entity-schema'));
-  delete value.get('model_details').effective[0].logical_schemas;
-  assert.ok(codes(validate(value)).includes('model.entity-schema'));
+  assert.ok(codes(validate(value)).includes('project.entity-schema'));
+  delete value.get('project_details').effective[0].logical_schemas;
+  assert.ok(codes(validate(value)).includes('project.entity-schema'));
   const source = {logical_entity_schema_name:'retired',logical_entity_name:'Customer'};
   value.set(...loaded('dimensional_entity',['dimensional_entity_schema_name','dimensional_entity_name'],[],[{dimensional_entity_schema_name:'gold',dimensional_entity_name:'Customer',dimensional_entity_status:'active',sources:[{support_source_type:'logical_entity',source_logical_entity:source,status:'inactive'}]}]));
   value.set(...loaded('dimensional_attribute',['dimensional_entity_schema_name','dimensional_entity_name','dimensional_attribute_name'],[],[{dimensional_entity_schema_name:'gold',dimensional_entity_name:'Customer',dimensional_attribute_name:'CustomerKey',dimensional_attribute_status:'active',sources:[{support_source_type:'logical_attribute',source_logical_attribute:{...source,logical_attribute_name:'CustomerID'},status:'active'}]}]));
-  assert.ok(codes(validate(value)).includes('model.parent-source'));
+  assert.ok(codes(validate(value)).includes('project.parent-source'));
 });
 
 test('Dimensional Mapping resolves peer Dimensional key lookups without physical IDs', () => {
@@ -137,24 +137,24 @@ test('Dimensional Mapping resolves peer Dimensional key lookups without physical
   assert.ok(codes(validate(value)).includes('mapping.source-kind'));
 });
 
-test('Model Change Sets allow Dimensional SCD settings in the governed draft', () => {
+test('Project Change Sets allow Dimensional SCD settings in the governed draft', () => {
   for (const original of [null, 'type_1', 'type_2']) {
     for (const proposed of [null, 'type_1', 'type_2']) {
-      const baseline = {model_name: 'Sales', dimensional_entity_scd_type: original};
-      const pending = {...baseline, model_purpose: 'Updated purpose', dimensional_entity_scd_type: proposed};
-      const value = new Map([loaded('model_details', [], [pending], [baseline])]);
+      const baseline = {project_name: 'Sales', dimensional_entity_scd_type: original};
+      const pending = {...baseline, project_purpose: 'Updated purpose', dimensional_entity_scd_type: proposed};
+      const value = new Map([loaded('project_details', [], [pending], [baseline])]);
       assert.deepEqual(codes(validate(value)), []);
     }
   }
-  const baseline = {model_name: 'Sales'};
-  const value = new Map([loaded('model_details', [], [{...baseline, dimensional_entity_scd_type: null}], [baseline])]);
+  const baseline = {project_name: 'Sales'};
+  const value = new Map([loaded('project_details', [], [{...baseline, dimensional_entity_scd_type: null}], [baseline])]);
   assert.deepEqual(codes(validate(value)), []);
 });
 
-test('Model identity cannot be renamed in a local draft', () => {
-  const baseline = {model_name: 'Sales'};
-  const value = new Map([loaded('model_details', [], [{model_name: 'Other'}], [baseline])]);
-  assert.ok(codes(validate(value)).includes('model_identity_read_only'));
+test('Project identity cannot be renamed in a local draft', () => {
+  const baseline = {project_name: 'Sales'};
+  const value = new Map([loaded('project_details', [], [{project_name: 'Other'}], [baseline])]);
+  assert.ok(codes(validate(value)).includes('project_identity_read_only'));
 });
 
 test('enrichment preserves lock ownership and parent protection', () => {
@@ -171,10 +171,10 @@ test('enrichment preserves lock ownership and parent protection', () => {
 });
 test('business columns cannot claim a reserved custom audit name', () => {
   const value = graph();
-  const details = {model_name:'Sales',silver_model_audit_columns_template:{schema_version:'1.0',columns:[{semantic_name:'LoadTime',data_type:'TIMESTAMP',nullable:true,definition:null}]}};
-  value.set(...loaded('model_details',[],[details]));
+  const details = {project_name:'Sales',silver_model_audit_columns_template:{schema_version:'1.0',columns:[{semantic_name:'LoadTime',data_type:'TIMESTAMP',nullable:true,definition:null}]}};
+  value.set(...loaded('project_details',[],[details]));
   value.get('logical_attribute').effective.push({logical_entity_schema_name:'silver',logical_entity_name:'Customer',logical_attribute_name:'LoadTime',logical_attribute_data_type:'TIMESTAMP',logical_attribute_is_nullable:true,logical_attribute_ordinal_position:12,logical_attribute_status:'active',logical_attribute_is_audit_column:false,sources:[]});
-  assert.ok(codes(validate(value)).includes('model.audit-role'));
+  assert.ok(codes(validate(value)).includes('project.audit-role'));
 });
 
 

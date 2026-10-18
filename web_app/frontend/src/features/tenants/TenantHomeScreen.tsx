@@ -57,7 +57,7 @@ const systemColumns: ColumnDef<SystemRecord>[] = [
   { accessorKey: "system_type_name", header: "Type" },
   { accessorKey: "connection_count", header: "Connections" },
   { accessorKey: "registered_object_count", header: "Registered objects" },
-  { accessorKey: "active_model_count", header: "Used by Models" },
+  { accessorKey: "active_project_count", header: "Used by Projects" },
   {
     accessorKey: "last_metadata_update_time",
     header: "Last metadata update",

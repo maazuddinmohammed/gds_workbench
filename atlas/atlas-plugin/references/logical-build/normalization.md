@@ -8,7 +8,7 @@ Use while choosing Logical Entity boundaries. Start from business meaning, grain
 2. Ask what determines each Attribute: the complete occurrence, part of its business key, or another subject. Separate mixed grains and independently repeating occurrences; consider independent subjects when their own facts/lifecycle need consistent management.
 3. Compare retain, split and association designs using the relevant factors. Prefer the simplest design that preserves meaning, identity and required integrity. Neither a table-count target nor blanket 3NF compliance decides the result.
 4. Check required relationships and business questions after the proposed split/consolidation. Confirm that full keys preserve occurrences and that joins do not introduce unintended fan-out or loss. Use metadata and domain evidence; SQL is optional under [query scope](../query-scope.md).
-5. Record a material decision as **retain/split/link → business reason → grain/key implications → unresolved issue**, if any. Preserve the affected input lineage through [Logical sources](../model/logical.md). Revisit the decision when conflicting evidence changes its basis.
+5. Record a material decision as **retain/split/link → business reason → grain/key implications → unresolved issue**, if any. Preserve the affected input lineage through [Logical sources](../project/logical.md). Revisit the decision when conflicting evidence changes its basis.
 
 ## Twelve decision factors
 
@@ -32,7 +32,7 @@ These factors come from the user's proposed framework, refined for Atlas. They d
 ## Cases that change the decision
 
 - **Repeating occurrences:** represent Order and Order Line separately when one order contains several lines. If a product can appear twice, `Order + Product` is not the line's unique business key; consider evidenced `Order + LineNumber`.
-- **Many-to-many:** use an association Entity when the model must represent each membership/event. Give it the required own surrogate and identify its actual business occurrence. Endpoint pairs need not be unique when memberships repeat over time. Association Attributes describe that occurrence.
+- **Many-to-many:** use an association Entity when the project must represent each membership/event. Give it the required own surrogate and identify its actual business occurrence. Endpoint pairs need not be unique when memberships repeat over time. Association Attributes describe that occurrence.
 - **Reference values:** repeated `Status` or `Color` does not automatically require a lookup Entity. A managed classification with meanings, hierarchy, validity or shared references may justify one. Strings are legitimate identifiers; numeric keys do not determine business importance.
 - **Historical facts:** Product's current price and Order Line's agreed price have different meanings. Retain the transaction price; do not replace it with a join to today's Product price. Apply the same reasoning to shipment-time addresses and versioned agreements.
 - **Equivalent sources:** consolidate only when meanings, grain and Attribute semantics agree. Retain source-qualified business keys or verified crosswalks when identifiers overlap. Matching values across Systems do not establish a shared identity.
@@ -42,6 +42,6 @@ Preserve identifier formatting, units, decimal precision and time semantics when
 
 ## Design checks
 
-Review one coherent grain per Entity, Attribute dependencies, full business-key tuples, unnecessary splits, missed independent subjects, historical meaning and relationship joinability. Compare plausible alternatives only where they could change quality. Use [local validation](../local-validation.md) for structural checks; use the actual business requirements to judge the model.
+Review one coherent grain per Entity, Attribute dependencies, full business-key tuples, unnecessary splits, missed independent subjects, historical meaning and relationship joinability. Compare plausible alternatives only where they could change quality. Use [local validation](../local-validation.md) for structural checks; use the actual business requirements to judge the project.
 
 The distinction between subject boundaries and implementation choices is supported by [Oracle's logical-model guidance](https://docs.oracle.com/en/database/oracle/sql-developer-data-modeler/19.2/dmdug/data-modeler-concepts-usage.html). [Microsoft's design examples](https://support.microsoft.com/en-us/access/database-design-basics) illustrate separate subjects, classifications with their own descriptions and association records. These inform the procedure; Atlas's twelve-factor framework and conventions are not an industry-mandated algorithm.

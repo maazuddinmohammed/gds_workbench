@@ -17,7 +17,7 @@ DATABASE_ROOT = Path(__file__).resolve().parents[2] / "database"
 def _seed_demo_if_needed(connection: Any) -> None:
     if (
         connection.execute(
-            "SELECT 1 FROM core.project WHERE project_code = 'DEMO_PROJECT'"
+            "SELECT 1 FROM core.lane WHERE lane_code = 'DEMO_LANE'"
         ).fetchone()
         is None
     ):
@@ -35,11 +35,38 @@ def test_rework_tables_expose_only_the_approved_columns(
     postgres_database: DisposablePostgres,
 ) -> None:
     expected = {
-        ("model", "model_input_scope"): (
-            "model_input_scope_id",
-            "model_id",
+        ("reference", "context_type"): ("context_type_id", "name", "description"),
+        ("project", "context_group"): (
+            "context_group_id",
+            "project_id",
+            "context_type_id",
+            "name",
+            "description",
+            "source_system_id",
+            "is_active",
+            "created_time",
+            "created_by",
+            "updated_time",
+            "updated_by",
+        ),
+        ("project", "context_record"): (
+            "context_record_id",
+            "project_id",
+            "context_group_id",
+            "context_text",
+            "source_reference",
+            "status",
+            "is_locked",
+            "created_time",
+            "created_by",
+            "updated_time",
+            "updated_by",
+        ),
+        ("project", "project_input_scope"): (
+            "project_input_scope_id",
+            "project_id",
             "object_id",
-            "model_input_scope_is_locked",
+            "project_input_scope_is_locked",
             "is_active",
             "created_time",
             "created_by",
@@ -47,7 +74,7 @@ def test_rework_tables_expose_only_the_approved_columns(
             "updated_by",
         ),
         ("workflow", "object_enrichment"): (
-            "model_id",
+            "project_id",
             "object_id",
             "object_description",
             "workflow_run_id",
@@ -58,7 +85,7 @@ def test_rework_tables_expose_only_the_approved_columns(
             "updated_by",
         ),
         ("workflow", "attribute_enrichment"): (
-            "model_id",
+            "project_id",
             "attribute_id",
             "object_id",
             "attribute_description",
@@ -76,7 +103,7 @@ def test_rework_tables_expose_only_the_approved_columns(
         ),
         ("workflow", "mapping_object"): (
             "mapping_object_id",
-            "model_id",
+            "project_id",
             "modeled_entity_type",
             "logical_entity_id",
             "dimensional_entity_id",
@@ -96,7 +123,7 @@ def test_rework_tables_expose_only_the_approved_columns(
         ("workflow", "mapping_attribute"): (
             "mapping_attribute_id",
             "mapping_object_id",
-            "model_id",
+            "project_id",
             "modeled_entity_type",
             "logical_entity_id",
             "dimensional_entity_id",
@@ -115,7 +142,7 @@ def test_rework_tables_expose_only_the_approved_columns(
         ),
         ("workflow", "generated_code"): (
             "generated_code_id",
-            "model_id",
+            "project_id",
             "modeled_entity_type",
             "logical_entity_id",
             "dimensional_entity_id",
@@ -168,16 +195,16 @@ def test_rework_tables_expose_only_the_approved_columns(
 
         removed = connection.execute(
             """
-            SELECT to_regclass('workflow.model_object_binding') AS model_object_binding,
-                   to_regclass('workflow.model_attribute_binding') AS model_attribute_binding,
-                   to_regclass('model.model_scope') AS model_scope,
+            SELECT to_regclass('workflow.project_object_binding') AS project_object_binding,
+                   to_regclass('workflow.project_attribute_binding') AS project_attribute_binding,
+                   to_regclass('project.project_scope') AS project_scope,
                    to_regclass('core.tenant_metadata_discovery_scope')
                        AS discovery_scope,
                    to_regclass('application.generated_sql_artifact')
                        AS generated_sql_artifact,
                    to_regprocedure(
-                       'application.replace_model_scope(uuid,uuid,character varying,bigint,bigint,bigint[])'
-                   ) AS replace_model_scope,
+                       'application.replace_project_scope(uuid,uuid,character varying,bigint,bigint,bigint[])'
+                   ) AS replace_project_scope,
                    to_regprocedure(
                        'application.store_generated_sql_artifact(uuid,uuid,character varying,bigint,bigint,bigint,character varying,character varying,text,character,character,character,bigint,uuid)'
                    ) AS store_generated_sql_artifact
@@ -185,12 +212,12 @@ def test_rework_tables_expose_only_the_approved_columns(
         ).fetchone()
 
     assert removed == {
-        "model_object_binding": None,
-        "model_attribute_binding": None,
-        "model_scope": None,
+        "project_object_binding": None,
+        "project_attribute_binding": None,
+        "project_scope": None,
         "discovery_scope": None,
         "generated_sql_artifact": None,
-        "replace_model_scope": None,
+        "replace_project_scope": None,
         "store_generated_sql_artifact": None,
     }
 
@@ -209,7 +236,7 @@ def test_applied_schema_has_no_needs_review_status(
                 ON relation.oid = constraint_record.conrelid
               JOIN pg_catalog.pg_namespace AS namespace_record
                 ON namespace_record.oid = relation.relnamespace
-             WHERE namespace_record.nspname IN ('model', 'workflow')
+             WHERE namespace_record.nspname IN ('project', 'workflow')
                AND constraint_record.contype = 'c'
                AND pg_get_constraintdef(constraint_record.oid) ILIKE
                    '%needs_review%'
@@ -226,27 +253,27 @@ def test_generated_code_digest_is_server_derived_and_has_no_review_flags(
         _seed_demo_if_needed(connection)
         context = connection.execute(
             """
-            WITH inserted_model AS (
-                INSERT INTO model.model (tenant_id, model_name, logical_schemas)
+            WITH inserted_project AS (
+                INSERT INTO project.project (tenant_id, project_name, logical_schemas)
                 SELECT tenant_id, 'Generated Code Contract',
                        '[{"schema_name":"silver","description":null}]'::JSONB
                   FROM core.tenant
                  WHERE tenant_code = 'DEMO_TENANT'
-                RETURNING model_id
+                RETURNING project_id
             ), inserted_entity AS (
                 INSERT INTO workflow.logical_entity (
-                    model_id,
+                    project_id,
                     logical_entity_schema_name,
                     logical_entity_name,
                     logical_entity_definition,
                     logical_entity_type,
                     logical_entity_grain
                 )
-                SELECT model_id, 'silver', 'Customer', 'Customer', 'core', 'One customer'
-                  FROM inserted_model
-                RETURNING model_id, logical_entity_id
+                SELECT project_id, 'silver', 'Customer', 'Customer', 'core', 'One customer'
+                  FROM inserted_project
+                RETURNING project_id, logical_entity_id
             )
-            SELECT model_id, logical_entity_id FROM inserted_entity
+            SELECT project_id, logical_entity_id FROM inserted_entity
             """
         ).fetchone()
         assert context is not None
@@ -254,7 +281,7 @@ def test_generated_code_digest_is_server_derived_and_has_no_review_flags(
         stored = connection.execute(
             """
             INSERT INTO workflow.generated_code (
-                model_id, modeled_entity_type, logical_entity_id,
+                project_id, modeled_entity_type, logical_entity_id,
                 artifact_name,
                 artifact_type,
                 generated_code_content,
@@ -262,7 +289,7 @@ def test_generated_code_digest_is_server_derived_and_has_no_review_flags(
             ) VALUES (%s, 'logical_entity', %s, 'Customer.sql', 'sql_file', %s, %s)
             RETURNING generated_code_digest
             """,
-            (context["model_id"], context["logical_entity_id"], content, "a" * 64),
+            (context["project_id"], context["logical_entity_id"], content, "a" * 64),
         ).fetchone()
 
     assert stored == {"generated_code_digest": sha256(content.encode()).hexdigest()}
@@ -277,38 +304,38 @@ def test_code_context_returns_one_server_derived_input_digest(
             "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
         ).fetchone()
         assert tenant is not None
-        model = connection.execute(
+        project = connection.execute(
             """
-            INSERT INTO model.model (tenant_id, model_name, logical_schemas)
+            INSERT INTO project.project (tenant_id, project_name, logical_schemas)
             VALUES (%s, 'Code Context Contract',
                     '[{"schema_name":"silver","description":null}]'::JSONB)
-            RETURNING model_id
+            RETURNING project_id
             """,
             (tenant["tenant_id"],),
         ).fetchone()
-        assert model is not None
+        assert project is not None
         entity = connection.execute(
             """
             INSERT INTO workflow.logical_entity (
-                model_id, logical_entity_schema_name, logical_entity_name,
+                project_id, logical_entity_schema_name, logical_entity_name,
                 logical_entity_definition,
                 logical_entity_type, logical_entity_grain
             ) VALUES (%s, 'silver', 'Customer', 'Customer', 'core', 'One customer')
             RETURNING logical_entity_id
             """,
-            (model["model_id"],),
+            (project["project_id"],),
         ).fetchone()
         assert entity is not None
         logical_attribute = connection.execute(
             """
             INSERT INTO workflow.logical_attribute (
-                model_id, logical_entity_id, logical_attribute_name,
+                project_id, logical_entity_id, logical_attribute_name,
                 logical_attribute_definition, logical_attribute_data_type,
                 logical_attribute_ordinal_position
             ) VALUES (%s, %s, 'CustomerID', 'Customer ID', 'bigint', 1)
             RETURNING logical_attribute_id
             """,
-            (model["model_id"], entity["logical_entity_id"]),
+            (project["project_id"], entity["logical_entity_id"]),
         ).fetchone()
         assert logical_attribute is not None
         source_system = connection.execute(
@@ -318,13 +345,13 @@ def test_code_context_returns_one_server_derived_input_digest(
         mapping = connection.execute(
             """
             INSERT INTO workflow.mapping_object (
-                model_id, modeled_entity_type, logical_entity_id, source_system_id,
+                project_id, modeled_entity_type, logical_entity_id, source_system_id,
                 mapping_transformation_document
             ) VALUES (%s, 'logical_entity', %s, %s, '{"kind":"direct"}'::JSONB)
             RETURNING mapping_object_id
             """,
             (
-                model["model_id"],
+                project["project_id"],
                 entity["logical_entity_id"],
                 source_system["system_id"],
             ),
@@ -333,35 +360,33 @@ def test_code_context_returns_one_server_derived_input_digest(
         connection.execute(
             """
             INSERT INTO workflow.mapping_attribute (
-                mapping_object_id, model_id, modeled_entity_type, logical_entity_id,
+                mapping_object_id, project_id, modeled_entity_type, logical_entity_id,
                 logical_attribute_id,
                 attribute_mapping_transformation_document
             ) VALUES (%s, %s, 'logical_entity', %s, %s, '{"expression":"CustomerID"}'::JSONB)
             """,
             (
                 mapping["mapping_object_id"],
-                model["model_id"],
+                project["project_id"],
                 entity["logical_entity_id"],
                 logical_attribute["logical_attribute_id"],
             ),
         )
         document = connection.execute(
-            "INSERT INTO model.modeling_assertion_document (model_id, modeling_assertion_document_name) "
-            "VALUES (%s, 'Customer reporting') RETURNING modeling_assertion_document_id",
-            (model["model_id"],),
+            "INSERT INTO project.context_group (project_id, context_type_id, name) "
+            "VALUES (%s, (SELECT context_type_id FROM reference.context_type WHERE name='Reporting Requirement'), 'Customer reporting') RETURNING context_group_id",
+            (project["project_id"],),
         ).fetchone()
         assert document is not None
         requirement = connection.execute(
-            "INSERT INTO model.modeling_assertion_record "
-            "(model_id, modeling_assertion_document_id, modeling_assertion_record_key, "
-            "modeling_assertion_record_type, modeling_assertion_text, modeling_assertion_applicable_layers) "
-            "VALUES (%s, %s, 'customer.reporting', 'reporting_requirement', "
-            "'Report customers by current segment.', ARRAY['conceptual']) "
-            "RETURNING modeling_assertion_record_id",
-            (model["model_id"], document["modeling_assertion_document_id"]),
+            "INSERT INTO project.context_record "
+            "(project_id, context_group_id, context_record_id, context_text) "
+            "VALUES (%s, %s, '00000000-0000-4000-8000-000000000001', "
+            "'Report customers by current segment.') RETURNING context_record_id",
+            (project["project_id"], document["context_group_id"]),
         ).fetchone()
         assert requirement is not None
-        # Scoped Assertions reach SQL/Validation without a source-mapping link or layer match.
+        # Scoped Context reach SQL/Validation without a source-mapping link or layer match.
         first = connection.execute(
             """
             SELECT *
@@ -369,7 +394,7 @@ def test_code_context_returns_one_server_derived_input_digest(
                   %s, 'logical_entity', 'sql_file'
               )
             """,
-            (model["model_id"],),
+            (project["project_id"],),
         ).fetchone()
         assert first is not None
         connection.execute(
@@ -388,26 +413,26 @@ def test_code_context_returns_one_server_derived_input_digest(
                   %s, 'logical_entity', 'sql_file'
               )
             """,
-            (model["model_id"],),
+            (project["project_id"],),
         ).fetchone()
 
         connection.execute(
-            "UPDATE model.modeling_assertion_record SET modeling_assertion_details = "
-            '\'{"history":"Segment at event time"}\'::JSONB WHERE modeling_assertion_record_id=%s',
-            (requirement["modeling_assertion_record_id"],),
+            "UPDATE project.context_record SET context_text = "
+            "'Segment at event time' WHERE context_record_id=%s",
+            (requirement["context_record_id"],),
         )
         third = connection.execute(
             "SELECT * FROM workflow.list_code_generation_target_context(%s,'logical_entity','sql_file')",
-            (model["model_id"],),
+            (project["project_id"],),
         ).fetchone()
         connection.execute(
-            "UPDATE model.modeling_assertion_document SET is_active=FALSE "
-            "WHERE modeling_assertion_document_id=%s",
-            (document["modeling_assertion_document_id"],),
+            "UPDATE project.context_group SET is_active=FALSE "
+            "WHERE context_group_id=%s",
+            (document["context_group_id"],),
         )
         inactive = connection.execute(
             "SELECT * FROM workflow.list_code_generation_target_context(%s,'logical_entity','sql_file')",
-            (model["model_id"],),
+            (project["project_id"],),
         ).fetchone()
 
     assert second is not None
@@ -415,8 +440,11 @@ def test_code_context_returns_one_server_derived_input_digest(
     assert first["source_system_count"] == 1
     assert len(first["code_input_digest"].strip()) == 64
     assert first["modeled_entity_schema_name"] == "silver"
-    assert first["source_context"]["consumer_context_version"] == "entity-3"
-    assert first["source_context"]["target"]["modeled_entity_id"] == entity["logical_entity_id"]
+    assert first["source_context"]["consumer_context_version"] == "entity-4"
+    assert (
+        first["source_context"]["target"]["modeled_entity_id"]
+        == entity["logical_entity_id"]
+    )
     assert first["source_context"]["target"]["object_schema"] == "silver"
     assert "object_id" not in first["source_context"]["target"]
     assert first["source_context"]["target"]["source_tenant_id"] == tenant["tenant_id"]
@@ -426,16 +454,19 @@ def test_code_context_returns_one_server_derived_input_digest(
 
     assert third is not None and inactive is not None
     assert second["code_input_digest"] != third["code_input_digest"]
-    assertions = third["source_context"]["object_mappings"][0]["entity"]["assertions"]
-    assert len(assertions) == 1
-    assert assertions[0]["modeling_assertion_record_key"] == "customer.reporting"
+    context_records = third["source_context"]["object_mappings"][0]["entity"][
+        "context_records"
+    ]
+    assert len(context_records) == 1
     assert (
-        assertions[0]["modeling_assertion_details"]["history"]
-        == "Segment at event time"
+        context_records[0]["context_record_id"]
+        == "00000000-0000-4000-8000-000000000001"
     )
-    assert "modeling_assertion_record_id" not in assertions[0]
+    assert context_records[0]["context_text"] == "Segment at event time"
+    assert "context_group_id" not in context_records[0]
     assert (
-        inactive["source_context"]["object_mappings"][0]["entity"]["assertions"] == []
+        inactive["source_context"]["object_mappings"][0]["entity"]["context_records"]
+        == []
     )
 
 
@@ -477,7 +508,7 @@ def test_index_set_omits_speculative_workflow_run_indexes(
             """
             SELECT schemaname, indexname
               FROM pg_catalog.pg_indexes
-             WHERE schemaname IN ('model', 'workflow', 'application')
+             WHERE schemaname IN ('project', 'workflow', 'application')
                AND indexname LIKE '%\\_workflow\\_run' ESCAPE '\\'
              ORDER BY schemaname, indexname
             """
@@ -491,7 +522,7 @@ def test_index_set_omits_speculative_workflow_run_indexes(
             """,
             (
                 [
-                    "ix_mapping_object_model_wave",
+                    "ix_mapping_object_project_wave",
                     "ix_object_source_tenant_zone_active",
                     "ix_workflow_run_claim_eligibility",
                 ],
@@ -500,7 +531,7 @@ def test_index_set_omits_speculative_workflow_run_indexes(
 
     assert speculative == []
     assert [row["indexname"] for row in retained] == [
-        "ix_mapping_object_model_wave",
+        "ix_mapping_object_project_wave",
         "ix_object_source_tenant_zone_active",
         "ix_workflow_run_claim_eligibility",
     ]
@@ -515,25 +546,25 @@ def test_needs_review_is_rejected_by_an_applied_table(
             "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
         ).fetchone()
         assert tenant is not None
-        model = connection.execute(
+        project = connection.execute(
             """
-            INSERT INTO model.model (tenant_id, model_name, logical_schemas)
+            INSERT INTO project.project (tenant_id, project_name, logical_schemas)
             VALUES (%s, 'Status Contract',
                     '[{"schema_name":"silver","description":null}]'::JSONB)
-            RETURNING model_id
+            RETURNING project_id
             """,
             (tenant["tenant_id"],),
         ).fetchone()
-        assert model is not None
+        assert project is not None
         with pytest.raises(CheckViolation), connection.transaction():
             connection.execute(
                 """
                 INSERT INTO workflow.logical_entity (
-                    model_id, logical_entity_schema_name, logical_entity_name,
+                    project_id, logical_entity_schema_name, logical_entity_name,
                 logical_entity_definition,
                     logical_entity_type, logical_entity_grain,
                     logical_entity_status
                 ) VALUES (%s, 'silver', 'Customer', 'Customer', 'core', 'One', 'needs_review')
                 """,
-                (model["model_id"],),
+                (project["project_id"],),
             )

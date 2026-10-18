@@ -17,7 +17,10 @@ from tests.mcp.database_test_support import require_row
 if TYPE_CHECKING:
     from tests.mcp.conftest import DisposablePostgres, TestRow
 
-SEED = Path(__file__).parents[2] / "database/seed/07_global_mapping_output_templates.template.sql"
+SEED = (
+    Path(__file__).parents[2]
+    / "database/seed/07_global_mapping_output_templates.template.sql"
+)
 
 
 def seed_mapping_output_templates(database: DisposablePostgres) -> None:
@@ -102,13 +105,18 @@ def test_seed_persists_canonical_fields_and_exact_replay_changes_nothing(
     assert len(before) == 4
     for row in before:
         template = expected[row["output_template_code"]]
-        assert row["output_template_target_type"] == template["output_template_target_type"]
+        assert (
+            row["output_template_target_type"]
+            == template["output_template_target_type"]
+        )
         assert (
             row["output_template_modeled_entity_type"]
             == template["output_template_modeled_entity_type"]
         )
         assert len(row["fields"]) == len(template["fields"])
-        for actual, expected_field in zip(row["fields"], template["fields"], strict=True):
+        for actual, expected_field in zip(
+            row["fields"], template["fields"], strict=True
+        ):
             assert {key: actual[key] for key in expected_field} == expected_field
         assert row["is_active"] is True
         assert len(row["output_template_schema_digest"]) == 64
@@ -145,7 +153,9 @@ def test_changed_seed_refuses_to_overwrite_existing_templates(
     before = _snapshot(database)
     changed_seed = tmp_path / "changed_mapping_seed.sql"
     changed_seed.write_text(
-        SEED.read_text().replace("Default Logical Object Mapping", "Changed Object Mapping")
+        SEED.read_text().replace(
+            "Default Logical Object Mapping", "Changed Object Mapping"
+        )
     )
     monkeypatch.setattr(f"{__name__}.SEED", changed_seed)
     with pytest.raises(RaiseException, match="Output Template code conflict"):
@@ -193,7 +203,9 @@ def test_new_mapping_runs_freeze_global_defaults_with_independent_custom_overrid
                     context,
                     correlation_id=uuid4(),
                     object_template_id=object_override[0] if object_override else None,
-                    attribute_template_id=attribute_override[0] if attribute_override else None,
+                    attribute_template_id=attribute_override[0]
+                    if attribute_override
+                    else None,
                 ),
             ).fetchone()
         )
@@ -214,7 +226,9 @@ def test_new_mapping_runs_freeze_global_defaults_with_independent_custom_overrid
             override[0] if override else defaults[target_type]["output_template_id"]
         )
         assert frozen[f"{target_type}_output_template_schema_digest"] == (
-            override[1] if override else defaults[target_type]["output_template_schema_digest"]
+            override[1]
+            if override
+            else defaults[target_type]["output_template_schema_digest"]
         )
 
 
@@ -233,7 +247,9 @@ def test_replay_keeps_frozen_defaults_when_current_default_is_unavailable(
     context = _seed_mapping_context(database)
     parameters = _parameters(context, correlation_id=uuid4())
     with database.connect_owner() as connection:
-        created = require_row(connection.execute(CREATE_MAPPING_RUN_SQL, parameters).fetchone())
+        created = require_row(
+            connection.execute(CREATE_MAPPING_RUN_SQL, parameters).fetchone()
+        )
         frozen = require_row(
             connection.execute(
                 "SELECT * FROM application.workflow_run WHERE workflow_run_id = %s",
@@ -251,7 +267,9 @@ def test_replay_keeps_frozen_defaults_when_current_default_is_unavailable(
             """,
             (f"mapping_logical_{target.lower()}_default",),
         )
-        replay = require_row(connection.execute(CREATE_MAPPING_RUN_SQL, parameters).fetchone())
+        replay = require_row(
+            connection.execute(CREATE_MAPPING_RUN_SQL, parameters).fetchone()
+        )
         assert replay["created"] is False
         assert replay["workflow_run_id"] == created["workflow_run_id"]
         assert (
@@ -265,7 +283,9 @@ def test_replay_keeps_frozen_defaults_when_current_default_is_unavailable(
             pytest.raises(RaiseException, match=f"Global default Mapping {target}"),
             connection.transaction(),
         ):
-            connection.execute(CREATE_MAPPING_RUN_SQL, _parameters(context, correlation_id=uuid4()))
+            connection.execute(
+                CREATE_MAPPING_RUN_SQL, _parameters(context, correlation_id=uuid4())
+            )
 
 
 @pytest.mark.parametrize("dimensional", (False, True), ids=("logical", "dimensional"))
@@ -299,7 +319,9 @@ def test_mapping_run_rejects_opposite_layer_template(
             _parameters(
                 context,
                 correlation_id=uuid4(),
-                object_template_id=template["output_template_id"] if target == "object" else None,
+                object_template_id=template["output_template_id"]
+                if target == "object"
+                else None,
                 attribute_template_id=template["output_template_id"]
                 if target == "attribute"
                 else None,

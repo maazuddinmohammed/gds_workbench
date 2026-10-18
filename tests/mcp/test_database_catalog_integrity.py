@@ -9,7 +9,7 @@ RELEASE_SCHEMAS = (
     "reference",
     "core",
     "security",
-    "model",
+    "project",
     "workflow",
     "application",
     "mcp",
@@ -27,7 +27,9 @@ def test_installed_catalog_matches_the_canonical_install_sql(
     )
     qualified_name = r"((?:" + "|".join(RELEASE_SCHEMAS) + r")\.[a-z][a-z0-9_]*)"
     expected_tables = sorted(
-        re.findall(r"^CREATE TABLE " + qualified_name + r"\s*\(", release_sql, re.MULTILINE)
+        re.findall(
+            r"^CREATE TABLE " + qualified_name + r"\s*\(", release_sql, re.MULTILINE
+        )
     )
     expected_functions = sorted(
         re.findall(
@@ -44,12 +46,21 @@ def test_installed_catalog_matches_the_canonical_install_sql(
             re.MULTILINE,
         )
     )
-    for table, body in re.findall(r"CREATE TABLE ([a-z_]+\.[a-z_]+)\s*\((.*?)\n\);", release_sql, re.DOTALL):
-        if table.split(".")[0] in {"model", "workflow", "application", "mcp"} and table != "model.model_lock_event":
-            if re.search(r"^    (?:model_id|workflow_run_id) ", body, re.MULTILINE) or table in {
-                "workflow.validation_check", "mcp.model_stage_chunk", "mcp.model_stage_payload_chunk"
+    for table, body in re.findall(
+        r"CREATE TABLE ([a-z_]+\.[a-z_]+)\s*\((.*?)\n\);", release_sql, re.DOTALL
+    ):
+        if (
+            table.split(".")[0] in {"project", "workflow", "application", "mcp"}
+            and table != "project.project_lock_event"
+        ):
+            if re.search(
+                r"^    (?:project_id|workflow_run_id) ", body, re.MULTILINE
+            ) or table in {
+                "workflow.validation_check",
+                "mcp.project_stage_chunk",
+                "mcp.project_stage_payload_chunk",
             }:
-                trigger_pairs.append(("aa_model_write_fence", table))
+                trigger_pairs.append(("aa_project_write_fence", table))
     trigger_pairs.sort()
     assert expected_tables and expected_functions and trigger_pairs
 
@@ -104,7 +115,13 @@ def test_installed_catalog_matches_the_canonical_install_sql(
         (trigger["trigger_name"], trigger["relation_name"]) for trigger in triggers
     ] == trigger_pairs
     assert all(
-        trigger["function_name"] == ("guard_model_write" if trigger["trigger_name"] == "aa_model_write_fence" else trigger["trigger_name"]) for trigger in triggers
+        trigger["function_name"]
+        == (
+            "guard_project_write"
+            if trigger["trigger_name"] == "aa_project_write_fence"
+            else trigger["trigger_name"]
+        )
+        for trigger in triggers
     )
 
 

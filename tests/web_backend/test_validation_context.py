@@ -18,19 +18,19 @@ from gds_workbench_api.prompt_rendering import PromptComponentTemplates
 
 @pytest.fixture(autouse=True)
 def frozen_validation_graph(monkeypatch: pytest.MonkeyPatch) -> None:
-    from tests.mcp.model_test_fixtures import (
+    from tests.mcp.project_test_fixtures import (
         complete_physical_scope,
-        empty_model_snapshot,
+        empty_project_snapshot,
     )
 
     async def load_graph(*_: object, tenant_id: int, plan: AgentRunPlan):
-        assert tenant_id == 7 and plan.model_id == 18
-        return empty_model_snapshot().model_copy(
-            update={"model_id": 18, "model_revision": 7}
+        assert tenant_id == 7 and plan.project_id == 18
+        return empty_project_snapshot().model_copy(
+            update={"project_id": 18, "project_revision": 7}
         ), complete_physical_scope()
 
     monkeypatch.setattr(
-        "gds_workbench_api.features.validation.context.load_frozen_model_graph",
+        "gds_workbench_api.features.validation.context.load_frozen_project_graph",
         load_graph,
     )
 
@@ -38,10 +38,10 @@ def frozen_validation_graph(monkeypatch: pytest.MonkeyPatch) -> None:
 def _plan() -> AgentRunPlan:
     return AgentRunPlan(
         workflow_run_id=1048,
-        model_id=18,
+        project_id=18,
         correlation_id=UUID("33333333-3333-3333-3333-333333333333"),
-        model_revision=7,
-        model_workflow="validation",
+        project_revision=7,
+        project_workflow="validation",
         workflow_execution_mode=None,
         modeled_entity_type=None,
         selected_scope_digest="a" * 64,
@@ -50,7 +50,7 @@ def _plan() -> AgentRunPlan:
         selection=AgentRunSelection(
             sdk_code="openai_agents_sdk",
             provider_code="microsoft_foundry",
-            model_code="model-1",
+            model_code="project-1",
             reasoning_effort_code="medium",
             max_turns=8,
             validation_retry_count=2,
@@ -80,7 +80,8 @@ def _target_row(
     row: dict[str, Any] = {
         "modeled_entity_id": 501,
         "modeled_entity_type": "dimensional_entity",
-        "modeled_entity_schema_name": "gold", "modeled_entity_name": "DimCustomer",
+        "modeled_entity_schema_name": "gold",
+        "modeled_entity_name": "DimCustomer",
         "code_input_digest": "c" * 64,
         "source_context": {
             "target": {
@@ -106,7 +107,8 @@ def _target_row(
         row["generated_code"] = [
             {
                 "modeled_entity_type": "dimensional_entity",
-                "modeled_entity_schema_name": "gold", "modeled_entity_name": "DimCustomer",
+                "modeled_entity_schema_name": "gold",
+                "modeled_entity_name": "DimCustomer",
                 "artifact_name": "dim_customer.sql",
                 "artifact_type": "sql_file",
                 "generated_code_content": content,
@@ -275,7 +277,8 @@ async def test_layer_selection_limits_evidence_and_preserves_shared_groups() -> 
     logical.update(
         modeled_entity_id=502,
         modeled_entity_type="logical_entity",
-        modeled_entity_schema_name="silver", modeled_entity_name="Customer",
+        modeled_entity_schema_name="silver",
+        modeled_entity_name="Customer",
     )
     context = await PostgresValidationContextRepository().load(
         ContextTransaction(target_rows=[_target_row(), logical]),

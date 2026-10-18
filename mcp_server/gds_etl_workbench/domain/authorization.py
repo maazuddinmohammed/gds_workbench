@@ -25,7 +25,7 @@ class TenantRole(StrEnum):
 class ToolPolicy(StrEnum):
     TENANT_READ = "tenant_read"
     TENANT_METADATA_WRITE = "tenant_metadata_write"
-    TENANT_MODEL_WRITE = "tenant_model_write"
+    TENANT_PROJECT_WRITE = "tenant_project_write"
     TENANT_LOCK_MANAGE = "tenant_lock_manage"
     SUPER_ADMIN_ONLY = "super_admin_only"
 

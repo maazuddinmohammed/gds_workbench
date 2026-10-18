@@ -6,129 +6,146 @@ from uuid import uuid4
 
 import pytest
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.model import load_model_physical_scope
-from gds_etl_workbench.application.change_sets.model_apply import ModelMaterializer
-from gds_etl_workbench.application.change_sets.model_validation import validate_future_graph
-from gds_etl_workbench.application.model_read import ModelReadContext
-from gds_etl_workbench.application.model_snapshot import (
-    build_model_snapshot,
-    read_model_review_snapshot,
+from gds_etl_workbench.application.change_sets.project import (
+    load_project_physical_scope,
+)
+from gds_etl_workbench.application.change_sets.project_apply import ProjectMaterializer
+from gds_etl_workbench.application.change_sets.project_validation import (
+    validate_future_graph,
+)
+from gds_etl_workbench.application.project_read import ProjectReadContext
+from gds_etl_workbench.application.project_snapshot import (
+    build_project_snapshot,
+    read_project_review_snapshot,
 )
 from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.model_change_sets.contracts import (
-    PreviewModelRecordsRequest,
-    ReviewModelRecordsRequest,
+from gds_workbench_api.features.project_change_sets.contracts import (
+    PreviewProjectRecordsRequest,
+    ReviewProjectRecordsRequest,
 )
-from gds_workbench_api.features.model_change_sets.review import (
+from gds_workbench_api.features.project_change_sets.review import (
     REVIEW_FIELDS,
-    ModelReviewDataset,
+    ProjectReviewDataset,
     review_lifecycle,
 )
-from gds_workbench_api.features.model_change_sets.service import DatabaseModelChangeSetService
+from gds_workbench_api.features.project_change_sets.service import (
+    DatabaseProjectChangeSetService,
+)
 
 from tests.mcp.conftest import DisposablePostgres
-from tests.mcp.model_test_fixtures import complete_model_graph
-from tests.mcp.test_database_model_change_set_round_trip import (
+from tests.mcp.project_test_fixtures import complete_project_graph
+from tests.mcp.test_database_project_change_set_round_trip import (
     StaticIdentityProvider,
     _acquire_tenant_lock,
     _replace_codes,
-    _seed_model_foundation,
+    _seed_project_foundation,
 )
 
 
 @pytest.mark.parametrize("dataset", list(REVIEW_FIELDS))
 async def test_owned_result_lifecycle_round_trip_preserves_authored_content(
     web_postgres_database: DisposablePostgres,
-    dataset: ModelReviewDataset,
+    dataset: ProjectReviewDataset,
 ) -> None:
     fixture = web_postgres_database
     prefix = "RESULT_REVIEW_" + uuid4().hex
-    model_id, tenant_id = _seed_model_foundation(fixture, code_prefix=prefix)
+    project_id, tenant_id = _seed_project_foundation(fixture, code_prefix=prefix)
     _acquire_tenant_lock(fixture, tenant_id)
-    model = ModelReadContext(
-        model_id=model_id, tenant_id=tenant_id, model_name="Model Tool Round Trip", model_revision=1
+    project = ProjectReadContext(
+        project_id=project_id,
+        tenant_id=tenant_id,
+        project_name="Project Tool Round Trip",
+        project_revision=1,
     )
     runtime = fixture.create_runtime_adapter()
     await runtime.open()
     try:
         async with runtime.write_transaction() as transaction:
-            snapshot = await build_model_snapshot(transaction, model)
-            physical = await load_model_physical_scope(transaction, model)
+            snapshot = await build_project_snapshot(transaction, project)
+            physical = await load_project_physical_scope(transaction, project)
             validation = validate_future_graph(
                 snapshot=snapshot,
                 physical_scope=physical,
-                staged_documents=_replace_codes(complete_model_graph(), code_prefix=prefix),
+                staged_documents=_replace_codes(
+                    complete_project_graph(), code_prefix=prefix
+                ),
             )
             assert validation.valid
-            await ModelMaterializer(transaction, model_id, "a" * 64).apply(validation.records)
+            await ProjectMaterializer(transaction, project_id, "a" * 64).apply(
+                validation.records
+            )
     finally:
         await runtime.close()
     database = WebPostgresDatabase(
         dsn=fixture.web_runtime_dsn(), pool_min=1, pool_max=1, pool_timeout_seconds=5
     )
-    service = DatabaseModelChangeSetService(database=database, authorizer=AuthorizationService())
+    service = DatabaseProjectChangeSetService(
+        database=database, authorizer=AuthorizationService()
+    )
     principal = StaticIdentityProvider().request_principal(None)
     await database.open()
     try:
         async with database.read_transaction() as transaction:
-            before = await read_model_review_snapshot(transaction, model)
+            before = await read_project_review_snapshot(transaction, project)
         record_id = next(iter(before.records_by_id[dataset]))
         revision = 1
         for action in ("lock", "unlock", "deactivate", "reactivate"):
             preview = await service.preview_record_review(
                 principal,
                 tenant_id=tenant_id,
-                model_id=model_id,
-                command=PreviewModelRecordsRequest(
+                project_id=project_id,
+                command=PreviewProjectRecordsRequest(
                     dataset=dataset,
                     record_ids=[record_id],
                     action=action,
-                    expected_model_revision=revision,
+                    expected_project_revision=revision,
                 ),
             )
             assert preview.can_apply
-            command = ReviewModelRecordsRequest(
+            command = ReviewProjectRecordsRequest(
                 dataset=dataset,
                 record_ids=[record_id],
                 action=action,
-                expected_model_revision=revision,
+                expected_project_revision=revision,
                 expected_plan_digest=preview.plan_digest,
             )
             request_key = uuid4()
             receipt = await service.review_records(
                 principal,
                 tenant_id=tenant_id,
-                model_id=model_id,
+                project_id=project_id,
                 command=command,
                 idempotency_key=request_key,
             )
-            revision = receipt.model_revision
+            revision = receipt.project_revision
             assert receipt.action_count == preview.action_count
             assert (
                 await service.review_records(
                     principal,
                     tenant_id=tenant_id,
-                    model_id=model_id,
+                    project_id=project_id,
                     command=command,
                     idempotency_key=request_key,
                 )
                 == receipt
             )
             async with database.read_transaction() as transaction:
-                after = await read_model_review_snapshot(
-                    transaction, replace(model, model_revision=revision)
+                after = await read_project_review_snapshot(
+                    transaction, replace(project, project_revision=revision)
                 )
             history = await service.list_review_records(
                 principal,
                 tenant_id=tenant_id,
-                model_id=model_id,
+                project_id=project_id,
                 dataset=dataset,
-                expected_model_revision=revision,
+                expected_project_revision=revision,
             )
-            assert history.model_revision == revision and history.dataset == dataset
+            assert history.project_revision == revision and history.dataset == dataset
             listed = next(row for row in history.items if row.record_id == record_id)
             assert listed.status == ("inactive" if action == "deactivate" else "active")
-            locked, status = review_lifecycle(after.records_by_id[dataset][record_id], dataset)
+            locked, status = review_lifecycle(
+                after.records_by_id[dataset][record_id], dataset
+            )
             assert locked is (action == "lock")
             assert status == ("inactive" if action == "deactivate" else "active")
             for name in REVIEW_FIELDS:

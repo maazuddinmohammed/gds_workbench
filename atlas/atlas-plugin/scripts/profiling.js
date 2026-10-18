@@ -166,7 +166,7 @@ function planProfiling(metadata, scope, plan) {
   })) : null;
   if (selectedKeys && selectedKeys.size !== selected.length) throw Error("Duplicate selected Object.");
   const scoped = scope.filter(active).filter((row) => !selectedKeys || selectedKeys.has(key(row))).sort((a, b) => key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0);
-  if (!scoped.length || scoped.length > 2000 || (selectedKeys && selectedKeys.size !== scoped.length)) throw Error("Selection must match active Model Input Scope.");
+  if (!scoped.length || scoped.length > 2000 || (selectedKeys && selectedKeys.size !== scoped.length)) throw Error("Selection must match active Project Input Scope.");
   const queries = [], coverage = [], masked = maskingKeys(metadata);
   for (const scopedObject of scoped) {
     const object = objects.get(key(scopedObject));

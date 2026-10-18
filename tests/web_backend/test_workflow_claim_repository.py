@@ -30,9 +30,9 @@ class ClaimTransaction:
             return {
                 "workflow_run_id": 701,
                 "tenant_id": 7,
-                "model_id": 18,
-                "model_revision": 4,
-                "model_workflow": "analysis",
+                "project_id": 18,
+                "project_revision": 4,
+                "project_workflow": "analysis",
                 "workflow_execution_mode": "one_shot",
                 "correlation_id": UUID("11111111-1111-1111-1111-111111111111"),
                 "actor_principal_type": "user",
@@ -123,7 +123,10 @@ async def test_repository_renews_and_releases_only_with_the_raw_claim_token() ->
     )
 
     assert lease.workflow_run_id == 701
-    assert lease.workflow_run_claim_expires_time == database.transaction.now + timedelta(seconds=40)
+    assert (
+        lease.workflow_run_claim_expires_time
+        == database.transaction.now + timedelta(seconds=40)
+    )
     assert released is True
     renew_query, renew_parameters = database.transaction.calls[0]
     release_query, release_parameters = database.transaction.calls[1]

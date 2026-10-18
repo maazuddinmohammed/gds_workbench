@@ -75,7 +75,7 @@ def _start_run(
                 context.entra_tenant_id,
                 context.entra_object_id,
                 workflow_run_id,
-                context.model_revision,
+                context.project_revision,
             ),
         ).fetchone()
     )
@@ -103,7 +103,7 @@ def _complete_run(
                 context.entra_tenant_id,
                 context.entra_object_id,
                 workflow_run_id,
-                context.model_revision,
+                context.project_revision,
             ),
         ).fetchone()
     )
@@ -150,8 +150,8 @@ async def test_worker_repository_uses_the_exact_claim_renew_and_release_contract
         assert claim is not None
         assert claim.workflow_run_id == workflow_run_id
         assert claim.tenant_id == context.tenant_id
-        assert claim.model_id == context.model_id
-        assert claim.model_revision == context.model_revision
+        assert claim.project_id == context.project_id
+        assert claim.project_revision == context.project_revision
         assert claim.principal.entra_tenant_id == context.entra_tenant_id
         assert claim.principal.entra_object_id == context.entra_object_id
 
@@ -161,7 +161,10 @@ async def test_worker_repository_uses_the_exact_claim_renew_and_release_contract
             lease_duration_seconds=60,
         )
         assert renewed.workflow_run_id == workflow_run_id
-        assert renewed.workflow_run_claim_expires_time > renewed.workflow_run_claim_heartbeat_time
+        assert (
+            renewed.workflow_run_claim_expires_time
+            > renewed.workflow_run_claim_heartbeat_time
+        )
 
         assert await repository.release(
             workflow_run_id=workflow_run_id,
@@ -191,7 +194,9 @@ def test_web_worker_claims_the_oldest_running_run_without_persisting_raw_token(
     ) as connection:
         connection.execute("SET ROLE gds_web_write")
         with pytest.raises(RaiseException, match="between 1 and 300"):
-            connection.execute("SELECT * FROM application.claim_next_workflow_run(0)").fetchone()
+            connection.execute(
+                "SELECT * FROM application.claim_next_workflow_run(0)"
+            ).fetchone()
         claimed = require_row(
             connection.execute(
                 "SELECT * FROM application.claim_next_workflow_run(%s::INTEGER)",
@@ -201,9 +206,9 @@ def test_web_worker_claims_the_oldest_running_run_without_persisting_raw_token(
 
     assert claimed["workflow_run_id"] == oldest_running_id
     assert claimed["tenant_id"] == context.tenant_id
-    assert claimed["model_id"] == context.model_id
-    assert claimed["model_revision"] == context.model_revision
-    assert claimed["model_workflow"] == "conceptual"
+    assert claimed["project_id"] == context.project_id
+    assert claimed["project_revision"] == context.project_revision
+    assert claimed["project_workflow"] == "conceptual"
     assert claimed["workflow_execution_mode"] == "one_shot"
     assert claimed["actor_principal_type"] == "user"
     assert claimed["actor_entra_tenant_id"] == context.entra_tenant_id
@@ -333,14 +338,14 @@ def test_concurrent_starts_allow_one_running_run_per_tenant(
     context = seed_workflow_context(web_postgres_database)
     with web_postgres_database.connect_owner() as connection:
         first_id = _create_run(connection, context, start=False)
-        second_model = require_row(
+        second_project = require_row(
             connection.execute(
                 """
-                INSERT INTO model.model (tenant_id, model_name)
+                INSERT INTO project.project (tenant_id, project_name)
                 VALUES (%s, %s)
-                RETURNING model_id, model_revision
+                RETURNING project_id, project_revision
                 """,
-                (context.tenant_id, f"Concurrent Model {uuid4().hex}"),
+                (context.tenant_id, f"Concurrent Project {uuid4().hex}"),
             ).fetchone()
         )
         second_id = require_row(
@@ -348,9 +353,9 @@ def test_concurrent_starts_allow_one_running_run_per_tenant(
                 """
                 INSERT INTO application.workflow_run (
                     tenant_id,
-                    model_id,
-                    model_revision,
-                    model_workflow,
+                    project_id,
+                    project_revision,
+                    project_workflow,
                     actor_principal_id,
                     actor_entra_principal_identity_id,
                     selected_scope_digest,
@@ -372,8 +377,8 @@ def test_concurrent_starts_allow_one_running_run_per_tenant(
                 """,
                 (
                     context.tenant_id,
-                    second_model["model_id"],
-                    second_model["model_revision"],
+                    second_project["project_id"],
+                    second_project["project_revision"],
                     context.principal_id,
                     context.principal_id,
                     context.entra_tenant_id,
@@ -466,7 +471,9 @@ def test_claim_terminalizes_inactive_actor_or_exact_identity_once(
     ) as worker:
         worker.execute("SET ROLE gds_web_write")
         assert (
-            worker.execute("SELECT * FROM application.claim_next_workflow_run(30)").fetchone()
+            worker.execute(
+                "SELECT * FROM application.claim_next_workflow_run(30)"
+            ).fetchone()
             is None
         )
 
@@ -491,7 +498,9 @@ def test_claim_terminalizes_inactive_actor_or_exact_identity_once(
                 )
 
         assert (
-            worker.execute("SELECT * FROM application.claim_next_workflow_run(30)").fetchone()
+            worker.execute(
+                "SELECT * FROM application.claim_next_workflow_run(30)"
+            ).fetchone()
             is None
         )
 
@@ -510,10 +519,10 @@ def test_claim_terminalizes_inactive_actor_or_exact_identity_once(
             connection.execute(
                 """
                 SELECT count(*) AS event_count,
-                       min(model_event_log_message) AS event_message
-                  FROM model.model_event_log
+                       min(project_event_log_message) AS event_message
+                  FROM project.project_event_log
                  WHERE workflow_run_id = %s
-                   AND model_event_log_status = 'failed'
+                   AND project_event_log_status = 'failed'
                 """,
                 (workflow_run_id,),
             ).fetchone()
@@ -560,9 +569,9 @@ def test_ambiguous_nullable_actor_identity_terminalizes_once(
                 """
                 INSERT INTO application.workflow_run (
                     tenant_id,
-                    model_id,
-                    model_revision,
-                    model_workflow,
+                    project_id,
+                    project_revision,
+                    project_workflow,
                     actor_principal_id,
                     actor_entra_principal_identity_id,
                     selected_scope_digest,
@@ -587,8 +596,8 @@ def test_ambiguous_nullable_actor_identity_terminalizes_once(
                 """,
                 (
                     context.tenant_id,
-                    context.model_id,
-                    context.model_revision,
+                    context.project_id,
+                    context.project_revision,
                     context.principal_id,
                     uuid4(),
                 ),
@@ -602,7 +611,9 @@ def test_ambiguous_nullable_actor_identity_terminalizes_once(
     ) as worker:
         worker.execute("SET ROLE gds_web_write")
         assert (
-            worker.execute("SELECT * FROM application.claim_next_workflow_run(30)").fetchone()
+            worker.execute(
+                "SELECT * FROM application.claim_next_workflow_run(30)"
+            ).fetchone()
             is None
         )
 
@@ -617,7 +628,9 @@ def test_ambiguous_nullable_actor_identity_terminalizes_once(
             )
 
         assert (
-            worker.execute("SELECT * FROM application.claim_next_workflow_run(30)").fetchone()
+            worker.execute(
+                "SELECT * FROM application.claim_next_workflow_run(30)"
+            ).fetchone()
             is None
         )
 
@@ -636,10 +649,10 @@ def test_ambiguous_nullable_actor_identity_terminalizes_once(
             connection.execute(
                 """
                 SELECT count(*) AS event_count,
-                       min(model_event_log_message) AS event_message
-                  FROM model.model_event_log
+                       min(project_event_log_message) AS event_message
+                  FROM project.project_event_log
                  WHERE workflow_run_id = %s
-                   AND model_event_log_status = 'failed'
+                   AND project_event_log_status = 'failed'
                 """,
                 (workflow_run_id,),
             ).fetchone()
@@ -727,7 +740,9 @@ def test_claim_renewal_and_release_require_the_exact_token(
     ) as connection:
         connection.execute("SET ROLE gds_web_write")
         claimed = require_row(
-            connection.execute("SELECT * FROM application.claim_next_workflow_run(30)").fetchone()
+            connection.execute(
+                "SELECT * FROM application.claim_next_workflow_run(30)"
+            ).fetchone()
         )
         claim_token = claimed["workflow_run_claim_token"]
         assert isinstance(claim_token, UUID)
@@ -844,7 +859,9 @@ def test_expired_claim_recovery_is_bounded_and_fenced_by_the_rotated_token(
     ) as worker:
         worker.execute("SET ROLE gds_web_write")
         first = require_row(
-            worker.execute("SELECT * FROM application.claim_next_workflow_run(30)").fetchone()
+            worker.execute(
+                "SELECT * FROM application.claim_next_workflow_run(30)"
+            ).fetchone()
         )
         current_token = first["workflow_run_claim_token"]
         assert isinstance(current_token, UUID)
@@ -874,7 +891,9 @@ def test_expired_claim_recovery_is_bounded_and_fenced_by_the_rotated_token(
                 ).fetchone()
 
             recovered = require_row(
-                worker.execute("SELECT * FROM application.claim_next_workflow_run(30)").fetchone()
+                worker.execute(
+                    "SELECT * FROM application.claim_next_workflow_run(30)"
+                ).fetchone()
             )
             rotated_token = recovered["workflow_run_claim_token"]
             assert isinstance(rotated_token, UUID)
@@ -904,7 +923,9 @@ def test_expired_claim_recovery_is_bounded_and_fenced_by_the_rotated_token(
             _expire_claim(owner, workflow_run_id)
 
         assert (
-            worker.execute("SELECT * FROM application.claim_next_workflow_run(30)").fetchone()
+            worker.execute(
+                "SELECT * FROM application.claim_next_workflow_run(30)"
+            ).fetchone()
             is None
         )
         with pytest.raises(RaiseException, match="claim is unavailable"):
@@ -929,12 +950,12 @@ def test_expired_claim_recovery_is_bounded_and_fenced_by_the_rotated_token(
                        run.workflow_run_claimed_time,
                        run.workflow_run_claim_heartbeat_time,
                        run.workflow_run_claim_expires_time,
-                       count(event.model_event_log_id)::INTEGER AS failed_events
+                       count(event.project_event_log_id)::INTEGER AS failed_events
                   FROM application.workflow_run AS run
-                  LEFT JOIN model.model_event_log AS event
+                  LEFT JOIN project.project_event_log AS event
                     ON event.workflow_run_id = run.workflow_run_id
-                   AND event.model_event_log_stage = 'workflow_run'
-                   AND event.model_event_log_status = 'failed'
+                   AND event.project_event_log_stage = 'workflow_run'
+                   AND event.project_event_log_status = 'failed'
                  WHERE run.workflow_run_id = %s
                  GROUP BY run.workflow_run_id
                 """,

@@ -9,7 +9,7 @@ from gds_etl_workbench.domain.modeling_records import (
     ConceptualRelationshipRecord,
     PhysicalObjectKey,
 )
-from gds_etl_workbench.domain.snapshots.model import ConceptualSection
+from gds_etl_workbench.domain.snapshots.project import ConceptualSection
 from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.conceptual.candidate import (
     ConceptualCandidateValidator,
@@ -98,8 +98,10 @@ def _validator(
     applied_relationships: tuple[ConceptualRelationshipRecord, ...] = (),
 ) -> ConceptualCandidateValidator:
     return ConceptualCandidateValidator(
-        selected_object_keys=(PhysicalObjectKey.model_validate(_physical_object(), strict=True),),
-        assertion_record_keys=(),
+        selected_object_keys=(
+            PhysicalObjectKey.model_validate(_physical_object(), strict=True),
+        ),
+        context_record_ids=(),
         applied=ConceptualSection(
             objects=applied_objects,
             relationships=applied_relationships,
@@ -177,7 +179,9 @@ async def test_candidate_omits_unchanged_and_unmentioned_applied_records() -> No
 
 
 @pytest.mark.asyncio
-async def test_candidate_rejects_agent_lock_authority_and_locked_record_changes() -> None:
+async def test_candidate_rejects_agent_lock_authority_and_locked_record_changes() -> (
+    None
+):
     locked = ConceptualObjectRecord.model_validate_json(
         json.dumps(_object(locked=True)),
         strict=True,
@@ -235,7 +239,9 @@ def test_parse_accepts_an_explicit_unchanged_candidate() -> None:
 
 
 @pytest.mark.asyncio
-async def test_large_conceptual_candidate_repairs_all_records_after_bounded_feedback() -> None:
+async def test_large_conceptual_candidate_repairs_all_records_after_bounded_feedback() -> (
+    None
+):
     validator = _validator()
     invalid: JsonValue = {
         "objects": [
@@ -245,7 +251,10 @@ async def test_large_conceptual_candidate_repairs_all_records_after_bounded_feed
         "relationships": [],
     }
     corrected: JsonValue = {
-        "objects": [_object(name=f"Concept{index}", supports=[_support()]) for index in range(201)],
+        "objects": [
+            _object(name=f"Concept{index}", supports=[_support()])
+            for index in range(201)
+        ],
         "relationships": [],
     }
     requests: list[AgentExecutionRequest] = []

@@ -1,5 +1,5 @@
 import { WorkflowFilters } from "../workflows/WorkflowCommandCenter";
-import { reviewSelectionColumn } from "../model_record_review/selection";
+import { reviewSelectionColumn } from "../project_record_review/selection";
 import { useMemo, type ReactNode } from "react";
 import { useForm } from "@tanstack/react-form";
 import { Link } from "@tanstack/react-router";
@@ -11,8 +11,6 @@ import {
 } from "@tanstack/react-table";
 
 import type {
-  DimensionalAttribute,
-  DimensionalAttributeFilters,
   DimensionalFilters,
   DimensionalObject,
   DimensionalRelationship,
@@ -29,9 +27,9 @@ export interface DimensionalLedgerState {
   isLoadingMore: boolean;
 }
 
-export function DimensionalObjectsLedger({
+export function DimensionalEntitiesLedger({
   tenantId,
-  modelId,
+  projectId,
   items,
   filters,
   state,
@@ -40,7 +38,7 @@ export function DimensionalObjectsLedger({
   onLoadMore,
 }: {
   tenantId: number;
-  modelId: number;
+  projectId: number;
   items: DimensionalObject[];
   filters: DimensionalFilters;
   state: DimensionalLedgerState;
@@ -50,7 +48,7 @@ export function DimensionalObjectsLedger({
   onLoadMore: () => void;
 }) {
   const columns = useMemo<ColumnDef<DimensionalObject>[]>(() => [
-    reviewSelectionColumn(items, { selectedIds, onSelectionChange }, (item) => item.dimensional_entity_id, "Dimensional Objects"),
+    reviewSelectionColumn(items, { selectedIds, onSelectionChange }, (item) => item.dimensional_entity_id, "Dimensional Entities"),
     { accessorKey: "dimensional_entity_schema_name", header: "Schema" },
     {
       accessorKey: "dimensional_entity_name",
@@ -101,11 +99,11 @@ export function DimensionalObjectsLedger({
       cell: ({ row }) => (
         <Link
           className="text-action"
-          aria-label={`Open Dimensional Object ${row.original.dimensional_entity_id}`}
-          to="/tenants/$tenantId/models/$modelId/dimensional/objects/$entityId"
+          aria-label={`Open Dimensional Entity ${row.original.dimensional_entity_id}`}
+          to="/tenants/$tenantId/projects/$projectId/dimensional/objects/$entityId"
           params={{
             tenantId: String(tenantId),
-            modelId: String(modelId),
+            projectId: String(projectId),
             entityId: String(row.original.dimensional_entity_id),
           }}
         >
@@ -113,31 +111,31 @@ export function DimensionalObjectsLedger({
         </Link>
       ),
     },
-  ], [items, selectedIds, onSelectionChange, modelId, tenantId]);
+  ], [items, selectedIds, onSelectionChange, projectId, tenantId]);
   const table = useReactTable({ data: items, columns, getCoreRowModel: getCoreRowModel() });
 
   return (
-    <section className="workflow-surface" aria-label="Dimensional Objects">
+    <section className="workflow-surface" aria-label="Dimensional Entities">
       <DimensionalFilterBar filters={filters} onApplyFilters={onApplyFilters} />
       {state.isLoading ? (
-        <div className="surface-state" aria-busy="true">Loading Dimensional Objects…</div>
+        <div className="surface-state" aria-busy="true">Loading Dimensional Entities…</div>
       ) : state.isDenied ? (
         <div className="surface-state is-error" role="alert">
-          You do not have permission to view Dimensional Objects.
+          You do not have permission to view Dimensional Entities.
         </div>
       ) : state.isError ? (
         <div className="surface-state is-error" role="alert">
-          Dimensional Objects could not be loaded.
+          Dimensional Entities could not be loaded.
         </div>
       ) : state.revisionMismatch ? (
         <div className="surface-state is-error" role="alert">
-          The Model changed while Dimensional Objects were loading. Refresh to reconcile revisions.
+          The Project changed while Dimensional Entities were loading. Refresh to reconcile revisions.
         </div>
       ) : items.length === 0 ? (
-        <div className="empty-state compact">No Dimensional Objects match these filters.</div>
+        <div className="empty-state compact">No Dimensional Entities match these filters.</div>
       ) : (
         <div className="workflow-table-scroll table-scroll">
-          <table className="modeled-entity-ledger" aria-label="Dimensional Objects">
+          <table className="modeled-entity-ledger" aria-label="Dimensional Entities">
             <thead>
               {table.getHeaderGroups().map((group) => (
                 <tr key={group.id}>
@@ -169,7 +167,7 @@ export function DimensionalObjectsLedger({
                 disabled={state.isLoadingMore}
                 onClick={onLoadMore}
               >
-                {state.isLoadingMore ? "Loading…" : "Load more Dimensional Objects"}
+                {state.isLoadingMore ? "Loading…" : "Load more Dimensional Entities"}
               </button>
             </div>
           ) : null}
@@ -201,7 +199,7 @@ function DimensionalFilterBar({
   return (
     <WorkflowFilters><form
       className="workflow-filterbar dimensional-filterbar"
-      aria-label="Filter Dimensional Objects"
+      aria-label="Filter Dimensional Entities"
       onSubmit={(event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -211,9 +209,9 @@ function DimensionalFilterBar({
       <form.Field name="namePrefix">
         {(field) => (
           <label>
-            <span>Object name prefix</span>
+            <span>Entity name prefix</span>
             <input
-              aria-label="Object name prefix"
+              aria-label="Entity name prefix"
               value={field.state.value}
               onBlur={field.handleBlur}
               onChange={(event) => field.handleChange(event.target.value)}
@@ -224,9 +222,9 @@ function DimensionalFilterBar({
       <form.Field name="status">
         {(field) => (
           <label>
-            <span>Object status</span>
+            <span>Entity status</span>
             <select
-              aria-label="Object status"
+              aria-label="Entity status"
               value={field.state.value}
               onChange={(event) => field.handleChange(event.target.value)}
             >
@@ -241,9 +239,9 @@ function DimensionalFilterBar({
       <form.Field name="locked">
         {(field) => (
           <label>
-            <span>Object lock</span>
+            <span>Entity lock</span>
             <select
-              aria-label="Object lock"
+              aria-label="Entity lock"
               value={field.state.value}
               onChange={(event) => field.handleChange(event.target.value)}
             >
@@ -266,112 +264,16 @@ function DimensionalFilterBar({
           Clear
         </button>
         <button className="button button-secondary button-small" type="submit">
-          Apply Object filters
+          Apply Entity filters
         </button>
       </div>
     </form></WorkflowFilters>
   );
 }
 
-export function DimensionalAttributesLedger({
-  tenantId,
-  modelId,
-  items,
-  filters,
-  state,
-  selectedIds, onSelectionChange,
-  onApplyFilters,
-  onLoadMore,
-}: {
-  tenantId: number;
-  modelId: number;
-  items: DimensionalAttribute[];
-  filters: DimensionalAttributeFilters;
-  state: DimensionalLedgerState;
-  selectedIds: Set<number>;
-  onSelectionChange: (ids: Set<number>) => void;
-  onApplyFilters: (filters: DimensionalAttributeFilters) => void;
-  onLoadMore: () => void;
-}) {
-  const columns = useMemo<ColumnDef<DimensionalAttribute>[]>(() => [
-    reviewSelectionColumn(items, { selectedIds, onSelectionChange }, (item) => item.dimensional_attribute_id, "Dimensional Attributes"),
-    {
-      accessorKey: "dimensional_attribute_name",
-      header: "Dimensional Attribute",
-      cell: ({ row }) => (
-        <span className="endpoint-cell">
-          <strong>{row.original.dimensional_attribute_name}</strong>
-          <span>{row.original.dimensional_attribute_data_type}</span>
-        </span>
-      ),
-    },
-    { accessorKey: "dimensional_entity_name", header: "Object" },
-    {
-      accessorKey: "dimensional_attribute_role",
-      header: "Role",
-      cell: ({ getValue }) => humanize(getValue<string>()),
-    },
-    {
-      accessorKey: "dimensional_attribute_key_role",
-      header: "Key role",
-      cell: ({ getValue }) => getValue<string>() === "business" ? "Natural key" : humanize(getValue<string>()),
-    },
-    {
-      accessorKey: "dimensional_attribute_additivity",
-      header: "Additivity",
-      cell: ({ getValue }) => {
-        const value = getValue<string | null>();
-        return value ? humanize(value) : "—";
-      },
-    },
-    {
-      accessorKey: "dimensional_attribute_default_aggregation",
-      header: "Aggregation",
-      cell: ({ getValue }) => getValue<string | null>() ?? "—",
-    },
-    {
-      accessorKey: "dimensional_attribute_status",
-      header: "Status",
-      cell: ({ getValue }) => humanize(getValue<string>()),
-    },
-    {
-      id: "action",
-      header: "",
-      cell: ({ row }) => (
-        <Link
-          className="text-action"
-          aria-label={`Open Dimensional Attribute ${row.original.dimensional_attribute_id}`}
-          to="/tenants/$tenantId/models/$modelId/dimensional/attributes/$attributeId"
-          params={{
-            tenantId: String(tenantId),
-            modelId: String(modelId),
-            attributeId: String(row.original.dimensional_attribute_id),
-          }}
-        >
-          Show details
-        </Link>
-      ),
-    },
-  ], [items, selectedIds, onSelectionChange, modelId, tenantId]);
-  return (
-    <DimensionalLedgerSurface
-      tableLabel="Dimensional Attributes"
-      items={items}
-      columns={columns}
-      state={state}
-      onLoadMore={onLoadMore}
-      filters={<DimensionalCollectionFilterBar
-        kind="Attribute"
-        filters={filters}
-        onApplyFilters={onApplyFilters}
-      />}
-    />
-  );
-}
-
 export function DimensionalRelationshipsLedger({
   tenantId,
-  modelId,
+  projectId,
   items,
   filters,
   state,
@@ -380,7 +282,7 @@ export function DimensionalRelationshipsLedger({
   onLoadMore,
 }: {
   tenantId: number;
-  modelId: number;
+  projectId: number;
   items: DimensionalRelationship[];
   filters: DimensionalRelationshipFilters;
   state: DimensionalLedgerState;
@@ -434,10 +336,10 @@ export function DimensionalRelationshipsLedger({
         <Link
           className="text-action"
           aria-label={`Open Dimensional Relationship ${row.original.dimensional_relationship_id}`}
-          to="/tenants/$tenantId/models/$modelId/dimensional/relationships/$relationshipId"
+          to="/tenants/$tenantId/projects/$projectId/dimensional/relationships/$relationshipId"
           params={{
             tenantId: String(tenantId),
-            modelId: String(modelId),
+            projectId: String(projectId),
             relationshipId: String(row.original.dimensional_relationship_id),
           }}
         >
@@ -445,7 +347,7 @@ export function DimensionalRelationshipsLedger({
         </Link>
       ),
     },
-  ], [items, selectedIds, onSelectionChange, modelId, tenantId]);
+  ], [items, selectedIds, onSelectionChange, projectId, tenantId]);
   return (
     <DimensionalLedgerSurface
       tableLabel="Dimensional Relationships"
@@ -453,8 +355,7 @@ export function DimensionalRelationshipsLedger({
       columns={columns}
       state={state}
       onLoadMore={onLoadMore}
-      filters={<DimensionalCollectionFilterBar
-        kind="Relationship"
+      filters={<DimensionalRelationshipFilterBar
         filters={filters}
         onApplyFilters={onApplyFilters}
       />}
@@ -462,14 +363,12 @@ export function DimensionalRelationshipsLedger({
   );
 }
 
-function DimensionalCollectionFilterBar<T extends DimensionalAttributeFilters>({
-  kind,
+function DimensionalRelationshipFilterBar({
   filters,
   onApplyFilters,
 }: {
-  kind: "Attribute" | "Relationship";
-  filters: T;
-  onApplyFilters: (filters: T) => void;
+  filters: DimensionalRelationshipFilters;
+  onApplyFilters: (filters: DimensionalRelationshipFilters) => void;
 }) {
   const form = useForm({
     defaultValues: {
@@ -487,12 +386,12 @@ function DimensionalCollectionFilterBar<T extends DimensionalAttributeFilters>({
         : {}),
       ...(value.status ? { status: value.status as NonNullable<DimensionalFilters["status"]> } : {}),
       ...(value.locked ? { locked: value.locked === "true" } : {}),
-    } as T),
+    }),
   });
   return (
     <WorkflowFilters><form
       className="workflow-filterbar dimensional-filterbar has-entity-filter"
-      aria-label={`Filter Dimensional ${kind}s`}
+      aria-label="Filter Dimensional Relationships"
       onSubmit={(event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -502,9 +401,9 @@ function DimensionalCollectionFilterBar<T extends DimensionalAttributeFilters>({
       <form.Field name="namePrefix">
         {(field) => (
           <label>
-            <span>{kind} name prefix</span>
+            <span>Relationship name prefix</span>
             <input
-              aria-label={`${kind} name prefix`}
+              aria-label="Relationship name prefix"
               value={field.state.value}
               onBlur={field.handleBlur}
               onChange={(event) => field.handleChange(event.target.value)}
@@ -515,9 +414,9 @@ function DimensionalCollectionFilterBar<T extends DimensionalAttributeFilters>({
       <form.Field name="dimensionalEntityId">
         {(field) => (
           <label>
-            <span>Object ID</span>
+            <span>Entity ID</span>
             <input
-              aria-label={`${kind} Object ID`}
+              aria-label="Relationship Entity ID"
               type="number"
               min="1"
               step="1"
@@ -531,9 +430,9 @@ function DimensionalCollectionFilterBar<T extends DimensionalAttributeFilters>({
       <form.Field name="status">
         {(field) => (
           <label>
-            <span>{kind} status</span>
+            <span>Relationship status</span>
             <select
-              aria-label={`${kind} status`}
+              aria-label="Relationship status"
               value={field.state.value}
               onChange={(event) => field.handleChange(event.target.value)}
             >
@@ -548,9 +447,9 @@ function DimensionalCollectionFilterBar<T extends DimensionalAttributeFilters>({
       <form.Field name="locked">
         {(field) => (
           <label>
-            <span>{kind} lock</span>
+            <span>Relationship lock</span>
             <select
-              aria-label={`${kind} lock`}
+              aria-label="Relationship lock"
               value={field.state.value}
               onChange={(event) => field.handleChange(event.target.value)}
             >
@@ -567,13 +466,13 @@ function DimensionalCollectionFilterBar<T extends DimensionalAttributeFilters>({
           type="button"
           onClick={() => {
             form.reset({ namePrefix: "", dimensionalEntityId: "", status: "active", locked: "" });
-            onApplyFilters({ status: "active" } as T);
+            onApplyFilters({ status: "active" });
           }}
         >
           Clear
         </button>
         <button className="button button-secondary button-small" type="submit">
-          Apply {kind} filters
+          Apply Relationship filters
         </button>
       </div>
     </form></WorkflowFilters>
@@ -609,7 +508,7 @@ function DimensionalLedgerSurface<T>({
         <div className="surface-state is-error" role="alert">{tableLabel} could not be loaded.</div>
       ) : state.revisionMismatch ? (
         <div className="surface-state is-error" role="alert">
-          The Model changed while {tableLabel} were loading. Refresh to reconcile revisions.
+          The Project changed while {tableLabel} were loading. Refresh to reconcile revisions.
         </div>
       ) : items.length === 0 ? (
         <div className="empty-state compact">No {tableLabel} match these filters.</div>

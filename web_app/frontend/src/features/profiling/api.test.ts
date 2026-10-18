@@ -9,8 +9,8 @@ describe("Profiling HTTP adapter", () => {
     const api = createProfilingApi(createHttpRequest(fetcher));
     const idempotencyKey = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
     const command = {
-      expected_model_revision: 4,
-      model_workflow: "profiling" as const,
+      expected_project_revision: 4,
+      project_workflow: "profiling" as const,
       selected_object_ids: [501],
       requested_batch_id: null,
     };
@@ -27,10 +27,10 @@ describe("Profiling HTTP adapter", () => {
     await api.createProfilingRun(7, 18, command, idempotencyKey);
 
     expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
-      "/api/v1/tenants/7/models/18/profiling?object_id=501&source_tenant_code=grdm&system_code=crm&object_schema=bronze_crm&object_name=customer_raw&page_size=25&cursor=opaque%2B%2F%3D",
-      "/api/v1/tenants/7/models/18/profiling?page_size=200",
-      "/api/v1/tenants/7/models/18/profiling/501",
-      "/api/v1/tenants/7/models/18/runs",
+      "/api/v1/tenants/7/projects/18/profiling?object_id=501&source_tenant_code=grdm&system_code=crm&object_schema=bronze_crm&object_name=customer_raw&page_size=25&cursor=opaque%2B%2F%3D",
+      "/api/v1/tenants/7/projects/18/profiling?page_size=200",
+      "/api/v1/tenants/7/projects/18/profiling/501",
+      "/api/v1/tenants/7/projects/18/runs",
     ]);
     expect(fetcher.mock.calls[3]?.[1]).toEqual({
       method: "POST",

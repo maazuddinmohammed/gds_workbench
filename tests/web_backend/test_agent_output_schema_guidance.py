@@ -1,4 +1,4 @@
-"""Agent output schemas publish the same semantics as canonical Model datasets."""
+"""Agent output schemas publish the same semantics as canonical Project datasets."""
 
 # pyright: reportPrivateUsage=false
 
@@ -8,7 +8,7 @@ from copy import deepcopy
 from typing import cast
 
 import pytest
-from gds_etl_workbench.domain.snapshots.model import (
+from gds_etl_workbench.domain.snapshots.project import (
     CHANGE_SET_DATASETS,
     ModelingDatasetDefinition,
 )
@@ -16,13 +16,13 @@ from gds_workbench_api.features.conceptual.candidate import _ConceptualCandidate
 from gds_workbench_api.features.dimensional.candidate import _DimensionalCandidate
 from gds_workbench_api.features.logical.candidate import _LogicalCandidate
 from gds_workbench_api.features.workflows.authoring.repair import (
-    enrich_agent_output_model_definitions,
+    enrich_agent_output_project_definitions,
 )
 from pydantic import BaseModel, JsonValue
 
 
 @pytest.mark.parametrize(
-    ("model", "record_definitions"),
+    ("project", "record_definitions"),
     [
         (
             _ConceptualCandidate,
@@ -48,14 +48,14 @@ from pydantic import BaseModel, JsonValue
         ),
     ],
 )
-def test_authorable_model_records_and_nested_fields_have_semantic_guidance(
-    model: type[BaseModel],
+def test_authorable_project_records_and_nested_fields_have_semantic_guidance(
+    project: type[BaseModel],
     record_definitions: set[str],
 ) -> None:
-    schema = cast(dict[str, JsonValue], model.model_json_schema())
+    schema = cast(dict[str, JsonValue], project.model_json_schema())
     constraints_before = _without_semantic_guidance(schema)
 
-    enrich_agent_output_model_definitions(schema)
+    enrich_agent_output_project_definitions(schema)
 
     assert _without_semantic_guidance(schema) == constraints_before
     definitions = cast(dict[str, dict[str, object]], schema["$defs"])
@@ -96,7 +96,7 @@ def test_every_change_set_record_definition_can_publish_canonical_field_guidance
         }
     }
 
-    enrich_agent_output_model_definitions(schema)
+    enrich_agent_output_project_definitions(schema)
 
     raw_definitions = schema["$defs"]
     assert isinstance(raw_definitions, dict)
@@ -130,7 +130,12 @@ def _without_semantic_guidance(value: object) -> object:
             "examples",
         ):
             typed_document.pop(key, None)
-        return {key: _without_semantic_guidance(item) for key, item in typed_document.items()}
+        return {
+            key: _without_semantic_guidance(item)
+            for key, item in typed_document.items()
+        }
     if isinstance(document, list):
-        return [_without_semantic_guidance(item) for item in cast(list[object], document)]
+        return [
+            _without_semantic_guidance(item) for item in cast(list[object], document)
+        ]
     return document

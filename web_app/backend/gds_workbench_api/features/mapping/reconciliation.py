@@ -1,11 +1,11 @@
-"""Reconcile flexible Mapping output into Entity-owned Model Change records."""
+"""Reconcile flexible Mapping output into Entity-owned Project Change records."""
 
 from __future__ import annotations
 
 from typing import Literal, cast
 
-from gds_etl_workbench.application.change_sets.model import StageModelChange
-from gds_etl_workbench.application.change_sets.model_validation import validate_staged_records
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
+from gds_etl_workbench.application.change_sets.project_validation import validate_staged_records
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     MappingAttributeRecord,
@@ -34,7 +34,7 @@ class MappingCandidateReconciler:
         self,
         *,
         candidate: CompleteMappingCandidateV1,
-    ) -> tuple[StageModelChange, ...]:
+    ) -> tuple[StageProjectChange, ...]:
         header = self._preparation.context.headers[0]
         readiness = self._preparation.readiness.headers[0]
         object_actionable = readiness.action in {"author", "extend"}
@@ -153,24 +153,24 @@ class MappingCandidateReconciler:
             if authored != current:
                 attribute_records.append(cast(dict[str, object], authored.model_dump(mode="json")))
 
-        changes: list[StageModelChange] = []
+        changes: list[StageProjectChange] = []
         if object_records:
             changes.append(
-                StageModelChange(
+                StageProjectChange(
                     dataset="mapping_object",
                     records=_validate_records("mapping_object", object_records),
                 )
             )
         if attribute_records:
             changes.append(
-                StageModelChange(
+                StageProjectChange(
                     dataset="mapping_attribute",
                     records=_validate_records("mapping_attribute", attribute_records),
                 )
             )
         return tuple(changes)
 
-    def reconcile_preserved(self) -> tuple[StageModelChange, ...]:
+    def reconcile_preserved(self) -> tuple[StageProjectChange, ...]:
         header = self._preparation.readiness.headers[0]
         if header.action != "preserve" or any(
             item.action != "preserve" for item in header.attribute_actions

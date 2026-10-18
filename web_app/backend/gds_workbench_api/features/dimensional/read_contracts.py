@@ -7,9 +7,9 @@ from gds_etl_workbench.domain.errors import WorkbenchError
 from pydantic import Field
 
 from gds_workbench_api.features.logical import (
-    AssertionRecordReference,
     Cardinality,
     Confidence,
+    ContextRecordReference,
     ContractModel,
     ModeledFilters,
     ModeledListQuery,
@@ -45,8 +45,8 @@ class DimensionalObjectSummary(ContractModel):
 
 
 class DimensionalObjectPage(ContractModel):
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     items: tuple[DimensionalObjectSummary, ...] = Field(max_length=200)
     next_cursor: str | None = Field(default=None, max_length=2048)
 
@@ -90,13 +90,13 @@ class DimensionalLogicalEntitySource(DimensionalObjectSourceBase):
     source_logical_entity: LogicalEntityReference
 
 
-class DimensionalAssertionSource(DimensionalObjectSourceBase):
-    support_source_type: Literal["assertion"]
-    assertion_record: AssertionRecordReference
+class DimensionalContextSource(DimensionalObjectSourceBase):
+    support_source_type: Literal["context_record"]
+    context_record: ContextRecordReference
 
 
 type DimensionalObjectSource = Annotated[
-    DimensionalLogicalEntitySource | DimensionalAssertionSource,
+    DimensionalLogicalEntitySource | DimensionalContextSource,
     Field(discriminator="support_source_type"),
 ]
 
@@ -168,8 +168,8 @@ class DimensionalAttributeSummary(ContractModel):
 
 
 class DimensionalAttributePage(ContractModel):
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     items: tuple[DimensionalAttributeSummary, ...] = Field(max_length=200)
     next_cursor: str | None = Field(default=None, max_length=2048)
 
@@ -191,13 +191,13 @@ class DimensionalAttributeLogicalSource(DimensionalAttributeSourceBase):
     source_logical_attribute: LogicalAttributeReference
 
 
-class DimensionalAttributeAssertionSource(DimensionalAttributeSourceBase):
-    support_source_type: Literal["assertion"]
-    assertion_record: AssertionRecordReference
+class DimensionalAttributeContextSource(DimensionalAttributeSourceBase):
+    support_source_type: Literal["context_record"]
+    context_record: ContextRecordReference
 
 
 type DimensionalAttributeSource = Annotated[
-    DimensionalAttributeLogicalSource | DimensionalAttributeAssertionSource,
+    DimensionalAttributeLogicalSource | DimensionalAttributeContextSource,
     Field(discriminator="support_source_type"),
 ]
 
@@ -245,8 +245,8 @@ class DimensionalRelationshipSummary(ContractModel):
 
 
 class DimensionalRelationshipPage(ContractModel):
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     items: tuple[DimensionalRelationshipSummary, ...] = Field(max_length=200)
     next_cursor: str | None = Field(default=None, max_length=2048)
 

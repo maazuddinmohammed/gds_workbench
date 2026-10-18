@@ -198,25 +198,25 @@ def test_native_aggregate_manifest_matches_node_in_never_policy(tmp_path: Path) 
     fixtures.write_snapshot_manifest(
         snapshot, kind="metadata", snapshot_id="metadata-1"
     )
-    model = root / "model/model-snapshot"
-    (model / "data/model_input_scope.jsonl").write_text(json.dumps(obj) + "\n")
-    (model / "schemas/model_input_scope.schema.json").write_text(
+    project = root / "project/project-snapshot"
+    (project / "data/project_input_scope.jsonl").write_text(json.dumps(obj) + "\n")
+    (project / "schemas/project_input_scope.schema.json").write_text(
         json.dumps({"type": "object"})
     )
-    model_catalog = json.loads((model / "catalog.json").read_text())
-    model_catalog["sections"][0]["datasets"].append(
+    project_catalog = json.loads((project / "catalog.json").read_text())
+    project_catalog["sections"][0]["datasets"].append(
         {
-            "name": "model_input_scope",
-            "record_type": "model_input_scope",
+            "name": "project_input_scope",
+            "record_type": "project_input_scope",
             "row_count": 1,
             "canonical_key": keys,
-            "rows_file": "data/model_input_scope.jsonl",
-            "schema_file": "schemas/model_input_scope.schema.json",
+            "rows_file": "data/project_input_scope.jsonl",
+            "schema_file": "schemas/project_input_scope.schema.json",
         }
     )
-    (model / "catalog.json").write_text(json.dumps(model_catalog))
+    (project / "catalog.json").write_text(json.dumps(project_catalog))
     fixtures.write_snapshot_manifest(
-        model, kind="model", snapshot_id="model-1", model_revision=8
+        project, kind="project", snapshot_id="project-1", project_revision=8
     )
     selections = {
         "systems": [

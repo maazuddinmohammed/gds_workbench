@@ -6,9 +6,9 @@ from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from typing import Any
 
-from gds_etl_workbench.domain.modeling_records import normalize_model_key_value
+from gds_etl_workbench.domain.modeling_records import normalize_project_key_value
 
-from gds_workbench_api.features.assertions.context import project_assertions
+from gds_workbench_api.features.context.context import select_context_records
 
 from .audit_policy import effective_audit_template
 from .context_contracts import WORKFLOW_INPUTS
@@ -31,12 +31,12 @@ ATTRIBUTE_FIELDS = (
 
 def natural_key(row: Mapping[str, Any], fields: tuple[str, ...] = OBJECT_FIELDS) -> tuple[Any, ...]:
     return tuple(
-        normalize_model_key_value(row[field]) if isinstance(row[field], str) else row[field]
+        normalize_project_key_value(row[field]) if isinstance(row[field], str) else row[field]
         for field in fields
     )
 
 
-def model_key_fields(family: str, kind: str) -> tuple[str, ...]:
+def project_key_fields(family: str, kind: str) -> tuple[str, ...]:
     if family == "conceptual":
         return (
             ("conceptual_object_name",)
@@ -69,10 +69,10 @@ def model_key_fields(family: str, kind: str) -> tuple[str, ...]:
 
 
 def project_context_inputs(
-    context: Mapping[str, Any], *, assertion_source_scope: Sequence[Mapping[str, Any]] = ()
+    context: Mapping[str, Any], *, context_source_scope: Sequence[Mapping[str, Any]] = ()
 ) -> dict[str, Any]:
     """Selection and applicable sections are already authorized by the context repository."""
-    workflow = context["model_workflow"]
+    workflow = context["project_workflow"]
     values: dict[str, Any] = {
         "source_context": deepcopy(context.get("source_context", [])),
         "gds_context": deepcopy(context.get("gds_context", [])),
@@ -81,14 +81,14 @@ def project_context_inputs(
         "object_context": [],
         "object_attribute_context": [],
         "object_relationship_context": [],
-        "modeling_assertions": [],
+        "context_records": [],
     }
     profiles = {
-        (*natural_key(p), normalize_model_key_value(p["attribute_name"])): p
+        (*natural_key(p), normalize_project_key_value(p["attribute_name"])): p
         for p in context["profiles"]
     }
     provenance = {
-        (*natural_key(p), normalize_model_key_value(p["attribute_name"])): p
+        (*natural_key(p), normalize_project_key_value(p["attribute_name"])): p
         for p in context.get("profile_provenance", [])
     }
     physical_objects = (
@@ -105,7 +105,10 @@ def project_context_inputs(
         )
         attributes: list[dict[str, Any]] = []
         for attr in selected["attributes"]:
-            attribute_key = (*natural_key(attr), normalize_model_key_value(attr["attribute_name"]))
+            attribute_key = (
+                *natural_key(attr),
+                normalize_project_key_value(attr["attribute_name"]),
+            )
             saved_profile = profiles.get(attribute_key)
             profile = None
             if saved_profile is not None:
@@ -164,15 +167,20 @@ def project_context_inputs(
                 if natural_key(endpoints[side]) == natural_key(obj):
                     group[f"{direction}_relationships"].append(evidence)
         values["object_relationship_context"].append(group)
-    values["modeling_assertions"] = project_assertions(
-        context["assertion"],
+    values["context_records"] = select_context_records(
+        context["context"],
         source_scope=[
-            *assertion_source_scope,
+            *context_source_scope,
             *context.get("source_context", []),
             *(item["object"] for item in physical_objects),
         ],
     )
-    for family in ("conceptual", "logical", "dimensional"):
+    families = {
+        "conceptual": ("conceptual",),
+        "logical": ("logical",),
+        "dimensional": ("logical", "dimensional"),
+    }
+    for family in families.get(workflow, ()):
         section = context["applied"].get(family)
         kinds = (
             ("object", "relationship")
@@ -183,11 +191,11 @@ def project_context_inputs(
             plural = "entities" if kind == "entity" else kind + "s"
             rows = None if section is None else deepcopy(section[plural])
             values[f"{family}_{plural}"] = rows
-            fields = model_key_fields(family, kind)
+            fields = project_key_fields(family, kind)
             values[f"{family}_{kind}_list"] = (
                 None if rows is None else [{name: row[name] for name in fields} for row in rows]
             )
-    details = context["model_details"]
+    details = context["project_details"]
     if workflow in {"logical", "dimensional"}:
         layer = "silver" if workflow == "logical" else "gold"
         values["coverage_threshold_percent"] = details.get(

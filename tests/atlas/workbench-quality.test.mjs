@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import test from "node:test";
 
 const require = createRequire(import.meta.url);
-const { evaluateQuality } = require("../../atlas/atlas-plugin/workbench/model-quality.js");
+const { evaluateQuality } = require("../../atlas/atlas-plugin/workbench/project-quality.js");
 const core = require("../../atlas/atlas-plugin/workbench/core.js");
 const physicalFields = ["tenant_code", "system_code", "connection_code", "object_schema", "object_name"];
 const keys = {
@@ -13,8 +13,8 @@ const keys = {
   logical_attribute: ["logical_entity_schema_name", "logical_entity_name", "logical_attribute_name"],
   logical_relationship: ["from_logical_entity_schema_name", "from_logical_entity_name", "from_logical_attribute_name", "to_logical_entity_schema_name", "to_logical_entity_name", "to_logical_attribute_name", "logical_relationship_name"],
   analysis_result: [...["from", "to"].flatMap((prefix) => [...physicalFields, "attribute_name"].map((field) => `${prefix}_${field}`)), "relationship_kind"],
-  modeling_assertion_document: ["modeling_assertion_document_name"],
-  modeling_assertion_record: ["modeling_assertion_record_key"],
+  context_group: ["context_group_name"],
+  context_record: ["context_record_id"],
   profiling_profile: [...physicalFields, "attribute_name"],
   mapping_object: ["object_mapping_name"],
 };
@@ -29,7 +29,7 @@ const attr = (entityName, name, natural = false, surrogate = false) => ({ logica
   logical_attribute_data_type: "BIGINT", sources: surrogate ? [] : [source(entityName, name)] });
 const concept = (name) => ({ conceptual_object_name: name, conceptual_object_status: "active",
   supports: [{ support_source_type: "object", source_object: physical(name), support_status: "active" }] });
-function model(effective, pending = effective, baseline = {}) {
+function project(effective, pending = effective, baseline = {}) {
   return new Map(Object.entries(keys).map(([dataset, canonical_key]) => [dataset, {
     definition: { name: dataset, canonical_key }, baseline: baseline[dataset] || [],
     pending: pending[dataset] || [], effective: effective[dataset] || [],
@@ -63,7 +63,7 @@ function sales() {
   const records = { logical_entity: [entity("Order"), entity("Customer")], logical_attribute: [attr("Order", "OrderCode", true),
     attr("Order", "CustomerCode"), attr("Customer", "CustomerID", false, true), attr("Customer", "CustomerCode", true)],
     logical_relationship: [relationship], analysis_result: [analysis] };
-  const graph = model(records);
+  const graph = project(records);
   const decisions = decisionsFor(graph);
   decisions.relationships[0].evidence = [{ dataset: "analysis_result", key: recordKey("analysis_result", analysis) }];
   return { graph, decisions, records, relationship, analysis };
@@ -71,22 +71,22 @@ function sales() {
 const codes = (result) => result.errors.map((error) => error.code);
 
 test("a normalized source may remain one entity when identity and dependency evidence is present", () => {
-  const graph = model({ logical_entity: [entity("Customer")], logical_attribute: [attr("Customer", "CustomerCode", true)] });
+  const graph = project({ logical_entity: [entity("Customer")], logical_attribute: [attr("Customer", "CustomerCode", true)] });
   const result = evaluateQuality(graph, decisionsFor(graph), options);
   assert.equal(result.status, "evidence_present");
   assert.equal(result.required, true);
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.metrics.entity_source_support_ratio, { numerator: 1, denominator: 1 });
   assert.deepEqual(result.metrics.single_source_attribute_ratio, { numerator: 1, denominator: 1 });
-  assert.ok(result.warnings.some((warning) => warning.code === "source_shaped_model"));
+  assert.ok(result.warnings.some((warning) => warning.code === "source_shaped_project"));
   assert.deepEqual(result.note_paths, [note]);
 });
 
-test("profiling, mapping and byte-identical model edits do not activate modeling handoff", () => {
+test("profiling, mapping and byte-identical project edits do not activate modeling handoff", () => {
   const customer = entity("Customer");
   for (const [dataset, record] of [["profiling_profile", { ...physical("Customer", "CustomerCode"), row_count: 10 }],
     ["mapping_object", { object_mapping_name: "mapping" }], ["logical_entity", customer]]) {
-    const graph = model({ logical_entity: [customer], [dataset]: [record] }, { [dataset]: [record] }, { logical_entity: [customer] });
+    const graph = project({ logical_entity: [customer], [dataset]: [record] }, { [dataset]: [record] }, { logical_entity: [customer] });
     assert.equal(evaluateQuality(graph, null).status, "not_required");
   }
 });
@@ -120,7 +120,7 @@ test("Analysis inference disagrees with observed uniqueness as a warning without
     analysis.validation_result = targetCount === 4 ? "supported" : "unsupported";
     analysis.inferred_cardinality = observed === "one_to_one" ? "many_to_one" : "one_to_one";
     const before = structuredClone(analysis);
-    const graph = model({ analysis_result: [analysis] });
+    const graph = project({ analysis_result: [analysis] });
     const result = evaluateQuality(graph, null);
     assert.deepEqual(result.errors, []);
     assert.equal(result.required, false);
@@ -145,7 +145,7 @@ test("Analysis mismatch review requires known inference and complete nonempty me
     const { analysis } = sales();
     analysis.inferred_cardinality = "one_to_one";
     mutate(analysis);
-    assert.equal(evaluateQuality(model({ analysis_result: [analysis] }), null).warnings.some(issue => issue.code === "analysis_inferred_cardinality_mismatch"), false);
+    assert.equal(evaluateQuality(project({ analysis_result: [analysis] }), null).warnings.some(issue => issue.code === "analysis_inferred_cardinality_mismatch"), false);
   }
 });
 
@@ -167,7 +167,7 @@ test("supported label cannot hide contradictory counts, an empty domain, or wron
 });
 
 test("whole declared identity tuple must match the effective natural-key flags", () => {
-  const graph = model({ logical_entity: [entity("Order")], logical_attribute: [attr("Order", "SystemCode", true), attr("Order", "OrderCode", true)] });
+  const graph = project({ logical_entity: [entity("Order")], logical_attribute: [attr("Order", "SystemCode", true), attr("Order", "OrderCode", true)] });
   const decisions = decisionsFor(graph);
   decisions.entities[0].identity_attributes = ["OrderCode"];
   assert.ok(codes(evaluateQuality(graph, decisions, options)).includes("identity_attributes_mismatch"));
@@ -176,7 +176,7 @@ test("whole declared identity tuple must match the effective natural-key flags",
 });
 
 test("provided malformed, duplicate and unknown decisions cannot be hidden by an authored pass flag", () => {
-  const graph = model({ logical_entity: [entity("Customer")], logical_attribute: [attr("Customer", "CustomerCode", true)] });
+  const graph = project({ logical_entity: [entity("Customer")], logical_attribute: [attr("Customer", "CustomerCode", true)] });
   assert.ok(evaluateQuality(graph, null).warnings.some(issue => issue.code === "decision_review_required"));
   const decisions = decisionsFor(graph);
   decisions.reviewed = true;
@@ -195,19 +195,19 @@ test("notes must exist and relationship notes are explicitly labeled inference",
   assert.ok(codes(evaluateQuality(graph, decisions, options)).includes("note_invalid"));
 });
 
-test("append-only decisions can cite retained business notes or applicable active Assertions", () => {
-  const assertion = { modeling_assertion_record_key: "EventIdentity", modeling_assertion_document_name: "Policy",
-    modeling_assertion_record_status: "active", modeling_assertion_applicable_layers: ["logical"] };
-  const document = { modeling_assertion_document_name: "Policy", is_active: true };
-  const graph = model({ logical_entity: [entity("Event")], logical_attribute: [attr("Event", "EventID", false, true)],
-    modeling_assertion_record: [assertion], modeling_assertion_document: [document] });
+test("append-only decisions can cite retained business notes or applicable active Contexts", () => {
+  const context = { context_record_id: "fc39b0b7-af74-5c2c-99f9-9a5ec1f5461e", context_group_name: "Policy",
+    status: "active" };
+  const document = { context_group_name: "Policy", is_active: true };
+  const graph = project({ logical_entity: [entity("Event")], logical_attribute: [attr("Event", "EventID", false, true)],
+    context_record: [context], context_group: [document] });
   const decisions = decisionsFor(graph);
   assert.ok(codes(evaluateQuality(graph, decisions)).includes("identity_evidence_missing"));
   assert.equal(evaluateQuality(graph, decisions, options).status, "evidence_present");
-  decisions.entities[0].evidence = [{ dataset: "modeling_assertion_record", key: { modeling_assertion_record_key: "EventIdentity" } }];
+  decisions.entities[0].evidence = [{ dataset: "context_record", key: { context_record_id: "fc39b0b7-af74-5c2c-99f9-9a5ec1f5461e" } }];
   assert.equal(evaluateQuality(graph, decisions).status, "evidence_present");
   document.is_active = false;
-  assert.ok(codes(evaluateQuality(graph, decisions)).includes("assertion_not_applicable"));
+  assert.ok(codes(evaluateQuality(graph, decisions)).includes("context_not_applicable"));
 });
 
 test("changed natural-key lineage or Analysis rechecks an otherwise unchanged relationship", () => {
@@ -216,7 +216,7 @@ test("changed natural-key lineage or Analysis rechecks an otherwise unchanged re
     const baseline = structuredClone(records);
     if (dataset === "analysis_result") analysis.validation_result = "inconclusive";
     else records.logical_attribute[3].sources = [source("OtherCustomer", "CustomerCode")];
-    const graph = model(records, { [dataset]: dataset === "analysis_result" ? [analysis] : [records.logical_attribute[3]] }, baseline);
+    const graph = project(records, { [dataset]: dataset === "analysis_result" ? [analysis] : [records.logical_attribute[3]] }, baseline);
     const result = evaluateQuality(graph, decisions, options);
     assert.equal(result.required, true);
     assert.equal(result.template.relationships.length, 1);
@@ -229,12 +229,51 @@ test("Conceptual unknown cardinality still requires supported existence and alig
   records.conceptual_object = [concept("Order"), concept("Customer")];
   records.conceptual_relationship = [{ from_conceptual_object_name: "Order", to_conceptual_object_name: "Customer",
     conceptual_relationship_name: "Places", conceptual_relationship_status: "active", conceptual_relationship_cardinality: "unknown" }];
-  const graph = model(records);
+  const graph = project(records);
   const decisions = decisionsFor(graph);
   for (const entry of decisions.relationships) entry.evidence = [{ dataset: "analysis_result", key: recordKey("analysis_result", analysis) }];
   assert.equal(evaluateQuality(graph, decisions, options).status, "evidence_present");
   records.conceptual_object[0].supports[0].source_object = physical("WrongDomain");
   assert.ok(codes(evaluateQuality(graph, decisions, options)).includes("analysis_endpoint_mismatch"));
+});
+
+test("a standalone Conceptual deliverable does not require a Logical counterpart", () => {
+  const graph = project({
+    conceptual_object: [concept("Order"), concept("Customer")],
+    conceptual_relationship: [{ from_conceptual_object_name: "Order", to_conceptual_object_name: "Customer",
+      conceptual_relationship_name: "Places", conceptual_relationship_status: "active", conceptual_relationship_cardinality: "unknown" }],
+  });
+  const decisions = decisionsFor(graph);
+  decisions.relationships[0].evidence = [{ note }];
+  const result = evaluateQuality(graph, decisions, options);
+  assert.equal(result.status, "evidence_present");
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.warnings.map(warning => warning.code), ["relationship_inferred"]);
+  assert.equal(result.metrics.logical_physical_support_objects, 0);
+  assert.equal(result.metrics.conceptual_physical_support_objects, 2);
+  assert.ok([...result.template.entities, ...result.template.relationships].every(entry => entry.dataset.startsWith("conceptual_")));
+});
+
+test("stored Conceptual output cannot change Logical quality findings or decisions", () => {
+  const { records } = sales();
+  const pending = { logical_entity: records.logical_entity };
+  const graph = project(records, pending, { ...records, logical_entity: [] });
+  const decisions = decisionsFor(graph);
+  decisions.relationships.forEach(entry => { entry.evidence = [{ note }]; });
+  const withoutConceptual = evaluateQuality(graph, decisions, options);
+  const independent = {
+    conceptual_object: [concept("Customer"), concept("IndependentAgreement")],
+    conceptual_relationship: [{ from_conceptual_object_name: "Customer", to_conceptual_object_name: "IndependentAgreement",
+      conceptual_relationship_name: "Agrees", conceptual_relationship_status: "active", conceptual_relationship_cardinality: "unknown" }],
+  };
+  const withConceptual = evaluateQuality(project({ ...records, ...independent }, pending, { ...records, ...independent, logical_entity: [] }), decisions, options);
+  assert.equal(withConceptual.status, withoutConceptual.status);
+  assert.deepEqual(withConceptual.errors, withoutConceptual.errors);
+  assert.deepEqual(withConceptual.warnings, withoutConceptual.warnings);
+  assert.deepEqual(withConceptual.template, withoutConceptual.template);
+  assert.equal(withConceptual.metrics.logical_physical_support_objects, withoutConceptual.metrics.logical_physical_support_objects);
+  assert.equal(withConceptual.metrics.logical_physical_support_objects, 2);
+  assert.equal(withConceptual.metrics.conceptual_physical_support_objects, 2);
 });
 
 test("topology excludes self edges from connectivity and reports framework expansion and unsafe capacity", () => {
@@ -245,7 +284,7 @@ test("topology excludes self edges from connectivity and reports framework expan
     from_logical_entity_schema_name: "silver", from_logical_entity_name: "One", from_logical_attribute_name: "ParentID",
     to_logical_entity_schema_name: "silver", to_logical_entity_name: "One", to_logical_attribute_name: "OneID", logical_relationship_cardinality: "many_to_one" };
   const records = { logical_entity: [one, two], logical_attribute: [attr("One", "OneID", false, true), audit, money], logical_relationship: [relationship] };
-  const result = evaluateQuality(model(records, {}, records), null);
+  const result = evaluateQuality(project(records, {}, records), null);
   assert.equal(result.metrics.self_relationships, 1);
   assert.equal(result.metrics.cross_entity_relationships, 0);
   assert.equal(result.metrics.connected_components, 2);
@@ -255,7 +294,7 @@ test("topology excludes self edges from connectivity and reports framework expan
 });
 
 test("evaluator is pure and reports inferred-type divergence only when Metadata is available", () => {
-  const graph = model({ logical_entity: [entity("Customer")], logical_attribute: [attr("Customer", "CustomerCode", true)] });
+  const graph = project({ logical_entity: [entity("Customer")], logical_attribute: [attr("Customer", "CustomerCode", true)] });
   const decisions = decisionsFor(graph);
   const before = core.stableStringify([...graph]);
   const metadataMap = new Map([["bronze_attribute", { baseline: [{ ...physical("Customer", "CustomerCode"), attribute_inferred_data_type: "STRING" }] }]]);
@@ -265,7 +304,7 @@ test("evaluator is pure and reports inferred-type divergence only when Metadata 
 });
 
 test("template is directly usable and root's hashed note-file object is supported", () => {
-  const graph = model({ logical_entity: [entity("Customer")], logical_attribute: [attr("Customer", "CustomerCode", true)] });
+  const graph = project({ logical_entity: [entity("Customer")], logical_attribute: [attr("Customer", "CustomerCode", true)] });
   const template = evaluateQuality(graph, null).template;
   assert.equal(template.schema_version, "1.0");
   const decisions = decisionsFor(graph);
@@ -276,7 +315,7 @@ test("inverse one-to-many direction uses the same proven foreign-key lookup", ()
   const { records, analysis, relationship } = sales();
   Object.assign(relationship, { from_logical_entity_schema_name: "silver", from_logical_entity_name: "Customer", from_logical_attribute_name: "CustomerID",
     to_logical_entity_schema_name: "silver", to_logical_entity_name: "Order", to_logical_attribute_name: "CustomerCode", logical_relationship_cardinality: "one_to_many" });
-  const graph = model(records);
+  const graph = project(records);
   const decisions = decisionsFor(graph);
   decisions.relationships[0].evidence = [{ dataset: "analysis_result", key: recordKey("analysis_result", analysis) }];
   assert.equal(evaluateQuality(graph, decisions, options).status, "evidence_present");
@@ -291,7 +330,7 @@ test("supported counts must reconcile distinct source values with unused target 
 });
 
 test("diagnostic examples are bounded while total counts remain accurate", () => {
-  const graph = model({ logical_entity: [entity("Customer")], logical_attribute: [attr("Customer", "CustomerCode", true)] });
+  const graph = project({ logical_entity: [entity("Customer")], logical_attribute: [attr("Customer", "CustomerCode", true)] });
   const decisions = decisionsFor(graph);
   for (let index = 0; index < 210; index += 1) decisions.entities.push({ ...structuredClone(decisions.entities[0]), key: { logical_entity_schema_name: "silver", logical_entity_name: `Unknown${index}` } });
   const result = evaluateQuality(graph, decisions, options);
@@ -303,32 +342,32 @@ test("diagnostic examples are bounded while total counts remain accurate", () =>
 test("one-column Analysis cannot prove a surrogate lookup against composite natural identity", () => {
   const { records, analysis } = sales();
   records.logical_attribute.push(attr("Customer", "SystemCode", true));
-  const graph = model(records);
+  const graph = project(records);
   const decisions = decisionsFor(graph);
   decisions.relationships[0].evidence = [{ dataset: "analysis_result", key: recordKey("analysis_result", analysis) }];
   assert.ok(codes(evaluateQuality(graph, decisions, options)).includes("analysis_composite_identity"));
 
-  const assertion = { modeling_assertion_record_key: "CompositeLookup", modeling_assertion_document_name: "Policy",
-    modeling_assertion_record_status: "active", modeling_assertion_applicable_layers: ["logical"] };
-  graph.get("modeling_assertion_document").effective.push({ modeling_assertion_document_name: "Policy", is_active: true });
-  graph.get("modeling_assertion_record").effective.push(assertion);
-  decisions.relationships[0].evidence.push({ dataset: "modeling_assertion_record", key: recordKey("modeling_assertion_record", assertion) });
+  const context = { context_record_id: "fefd4c8b-8bdd-5386-852c-1ba9c3245759", context_group_name: "Policy",
+    status: "active" };
+  graph.get("context_group").effective.push({ context_group_name: "Policy", is_active: true });
+  graph.get("context_record").effective.push(context);
+  decisions.relationships[0].evidence.push({ dataset: "context_record", key: recordKey("context_record", context) });
   assert.equal(evaluateQuality(graph, decisions, options).status, "evidence_present");
-  assertion.modeling_assertion_applicable_layers = ["conceptual"];
+  context.status = "inactive";
   assert.ok(codes(evaluateQuality(graph, decisions, options)).includes("analysis_composite_identity"));
 });
 
 test("incomplete or malformed modeling records return actionable diagnostics instead of crashing", () => {
   for (const record of [null, 7, {}, { logical_entity_schema_name: "silver", logical_entity_name: " " },
     { ...entity("Customer"), sources: {} }, { ...entity("Customer"), sources: [null] }]) {
-    const graph = model({ logical_entity: [record] });
+    const graph = project({ logical_entity: [record] });
     const result = evaluateQuality(graph, null);
     assert.equal(result.status, "needs_evidence");
-    assert.deepEqual(codes(result), ["model_quality_input_invalid"]);
+    assert.deepEqual(codes(result), ["project_quality_input_invalid"]);
     assert.equal(result.errors[0].dataset, "logical_entity");
   }
-  assert.ok(codes(evaluateQuality(null, null)).includes("model_quality_input_invalid"));
-  const graph = model({}, { mapping_object: [null], profiling_profile: [{}] });
+  assert.ok(codes(evaluateQuality(null, null)).includes("project_quality_input_invalid"));
+  const graph = project({}, { mapping_object: [null], profiling_profile: [{}] });
   assert.equal(evaluateQuality(graph, null).status, "not_required");
 });
 
@@ -339,7 +378,7 @@ test("large graph metrics retain full counts while limiting all name examples", 
     from_logical_entity_schema_name: "silver", from_logical_entity_name: names[index], from_logical_attribute_name: "ID",
     to_logical_entity_schema_name: "silver", to_logical_entity_name: name, to_logical_attribute_name: "ParentID", logical_relationship_cardinality: "one_to_many",
   })) };
-  const result = evaluateQuality(model(records), {schema_version: "1.0", entities: [], relationships: [], pass: true});
+  const result = evaluateQuality(project(records), {schema_version: "1.0", entities: [], relationships: [], pass: true});
   assert.equal(result.metrics.logical_entities, 650);
   assert.equal(result.metrics.cross_entity_relationships, 249);
   assert.equal(result.metrics.connected_components, 401);
@@ -353,7 +392,7 @@ test("large graph metrics retain full counts while limiting all name examples", 
   assert.equal(result.template.relationships.length, 249);
   assert.equal(result.error_count, 900);
 
-  const isolated = evaluateQuality(model({ logical_entity: names.map(entity) }, {}, { logical_entity: names.map(entity) }), null);
+  const isolated = evaluateQuality(project({ logical_entity: names.map(entity) }, {}, { logical_entity: names.map(entity) }), null);
   assert.equal(isolated.metrics.connected_components, 650);
   assert.equal(isolated.metrics.components.length, 200);
   assert.equal(isolated.metrics.components.flat().length, 200);
@@ -375,7 +414,7 @@ test("known Conceptual cardinality follows directional Analysis while unknown re
     conceptual_relationship_name: "PlacedBy", conceptual_relationship_status: "active", conceptual_relationship_cardinality: "one_to_one" };
   const records = { conceptual_object: [concept("Order"), concept("Customer")],
     conceptual_relationship: [relationship], analysis_result: [analysis] };
-  const graph = model(records);
+  const graph = project(records);
   const decisions = decisionsFor(graph);
   decisions.relationships[0].evidence = [{ dataset: "analysis_result", key: recordKey("analysis_result", analysis) }];
   assert.ok(codes(evaluateQuality(graph, decisions, options)).includes("analysis_cardinality_mismatch"));
@@ -392,27 +431,27 @@ test("known Conceptual cardinality follows directional Analysis while unknown re
   assert.ok(codes(evaluateQuality(graph, decisions, options)).includes("analysis_cardinality_mismatch"));
 });
 
-test("different Conceptual business grain needs applicable Assertion evidence in either reference order", () => {
+test("different Conceptual business grain needs active Context evidence in either reference order", () => {
   for (const reverse of [false, true]) {
     const { analysis } = sales();
     const relationship = { from_conceptual_object_name: "Order", to_conceptual_object_name: "Customer",
       conceptual_relationship_name: "BusinessAgreement", conceptual_relationship_status: "active", conceptual_relationship_cardinality: "one_to_one" };
-    const assertion = { modeling_assertion_record_key: "BusinessGrain", modeling_assertion_document_name: "Policy",
-      modeling_assertion_record_status: "active", modeling_assertion_applicable_layers: ["conceptual"] };
-    const graph = model({ conceptual_object: [concept("Order"), concept("Customer")],
-      conceptual_relationship: [relationship], analysis_result: [analysis], modeling_assertion_record: [assertion],
-      modeling_assertion_document: [{ modeling_assertion_document_name: "Policy", is_active: true }] });
+    const context = { context_record_id: "d8fa2278-0b2b-5f2c-a178-e012801681a0", context_group_name: "Policy",
+      status: "active" };
+    const graph = project({ conceptual_object: [concept("Order"), concept("Customer")],
+      conceptual_relationship: [relationship], analysis_result: [analysis], context_record: [context],
+      context_group: [{ context_group_name: "Policy", is_active: true }] });
     const decisions = decisionsFor(graph);
     decisions.relationships[0].evidence = [{ dataset: "analysis_result", key: recordKey("analysis_result", analysis) },
-      { dataset: "modeling_assertion_record", key: recordKey("modeling_assertion_record", assertion) }];
+      { dataset: "context_record", key: recordKey("context_record", context) }];
     if (reverse) decisions.relationships[0].evidence.reverse();
     assert.equal(evaluateQuality(graph, decisions, options).status, "evidence_present");
-    assertion.modeling_assertion_applicable_layers = ["logical"];
+    context.status = "inactive";
     assert.ok(codes(evaluateQuality(graph, decisions, options)).includes("analysis_cardinality_mismatch"));
   }
 });
 
-test("modeling decisions can remain in records without a compulsory sidecar or Assertion", () => {
+test("modeling decisions can remain in records without a compulsory sidecar or Context", () => {
   const {graph} = sales();
   const quality = evaluateQuality(graph, null);
   assert.equal(quality.status, "review_required");
@@ -426,20 +465,20 @@ test("shared validation checks Analysis counts and applied scope without a decis
   const measured = structuredClone(analysis);
   for (const field of Object.keys(analysis).filter(field => field.startsWith("validation_"))) analysis[field] = null;
   analysis.relationship_basis = "Orders refer to Customer business identifiers; this is metadata inference, not a measured result.";
-  const graph = model({ conceptual_object: [concept("Customer")], analysis_result: [analysis] });
+  const graph = project({ conceptual_object: [concept("Customer")], analysis_result: [analysis] });
   for (const value of graph.values()) value.schema = { "x-gds-change-set-eligible": true };
   graph.get("analysis_result").schema["x-gds-record-validation"] = { version: "1.0", rules: ["analysis_result"] };
   const objects = ["Order", "Customer"].map(name => ({ ...physical(name), zone_code: "bronze", is_active: true }));
   for (const [name, canonical_key, baseline] of [
-    ["model_details", ["model_name"], [{ model_name: "Sales" }]],
-    ["model_input_scope", physicalFields, objects],
+    ["project_details", ["project_name"], [{ project_name: "Sales" }]],
+    ["project_input_scope", physicalFields, objects],
   ]) graph.set(name, { definition: { name, canonical_key }, schema: {}, baseline, pending: [], effective: baseline });
   const metadata = new Map([
     ["bronze_object", { definition: { name: "bronze_object", record_type: "object" }, schema: {}, baseline: objects }],
     ["bronze_attribute", { definition: { name: "bronze_attribute", record_type: "attribute" }, schema: {},
       baseline: objects.map(object => ({ ...object, attribute_name: "CustomerCode" })) }],
   ]);
-  const validate = () => run("model", graph, metadata, { tenantCode: "Tenant", decisions: null });
+  const validate = () => run("project", graph, metadata, { tenantCode: "Tenant", decisions: null });
   const inferred = validate();
   assert.equal(inferred.valid, true, JSON.stringify(inferred.issues));
   assert.equal(inferred.quality.status, "review_required");
@@ -453,7 +492,7 @@ test("shared validation checks Analysis counts and applied scope without a decis
   Object.assign(analysis, measured, { to_attribute_name: "MissingAttribute" });
   const outsideScope = validate();
   assert.equal(outsideScope.valid, false);
-  assert.ok(outsideScope.issues.some(issue => issue.dataset === "analysis_result" && issue.code === "model_input_reference_invalid"));
+  assert.ok(outsideScope.issues.some(issue => issue.dataset === "analysis_result" && issue.code === "project_input_reference_invalid"));
 });
 
 
@@ -469,7 +508,7 @@ test("disconnected connected pairs prompt review even without isolated Entities"
   const records = { logical_entity: names.map(entity),
     logical_attribute: names.map(name => attr(name, `${name}ID`, true)),
     logical_relationship: [edge("Order", "Customer"), edge("Product", "Category"), bridge] };
-  const graph = model(records);
+  const graph = project(records);
   const before = core.stableStringify([...graph]);
   const disconnected = evaluateQuality(graph, null);
   assert.deepEqual(disconnected.errors, []);
@@ -486,10 +525,10 @@ test("disconnected connected pairs prompt review even without isolated Entities"
   assert.ok(!connected.warnings.some(warning => warning.code === "disconnected_components"));
 });
 
-test("intentional standalone Entities remain warnings and unchanged locked Models need no new evidence", () => {
+test("intentional standalone Entities remain warnings and unchanged locked Projects need no new evidence", () => {
   const records = { logical_entity: [{ ...entity("Calendar"), logical_entity_is_locked: true, sources: [] }],
     logical_attribute: [attr("Calendar", "CalendarID", true)] };
-  const graph = model(records, {}, records);
+  const graph = project(records, {}, records);
   const before = core.stableStringify([...graph]);
   const unchanged = evaluateQuality(graph, null);
   assert.equal(unchanged.required, false);
@@ -501,7 +540,7 @@ test("intentional standalone Entities remain warnings and unchanged locked Model
   assert.ok(!unchanged.warnings.some(warning => warning.code === "disconnected_components"));
   assert.equal(core.stableStringify([...graph]), before);
 
-  const empty = evaluateQuality(model({}), null);
+  const empty = evaluateQuality(project({}), null);
   assert.equal(empty.status, "not_required");
   assert.ok(!empty.warnings.some(warning => ["isolated_entities", "disconnected_components"].includes(warning.code)));
 });

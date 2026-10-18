@@ -17,14 +17,14 @@ describe("Prompts HTTP adapter", () => {
     }, 25, "opaque-next");
     await api.listPromptTemplates(7);
     await api.readPromptTemplate(7, 31);
-    await api.listModelPromptAssignments(7, 18);
+    await api.listProjectPromptAssignments(7, 18);
 
     expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
       "/api/v1/tenants/7/prompts/stages",
       "/api/v1/tenants/7/prompts/templates?workflow=logical&mode=tool_assisted&stage_code=entity_review&status=published&page_size=25&cursor=opaque-next",
       "/api/v1/tenants/7/prompts/templates?page_size=50",
       "/api/v1/tenants/7/prompts/templates/31",
-      "/api/v1/tenants/7/prompts/models/18/assignments",
+      "/api/v1/tenants/7/prompts/projects/18/assignments",
     ]);
     for (const [, init] of fetcher.mock.calls) {
       expect(init).toEqual({
@@ -68,7 +68,7 @@ describe("Prompts HTTP adapter", () => {
     });
     await api.publishPromptVersion(7, 31, 91);
     await api.retirePromptVersion(7, 31, 91);
-    await api.setModelPromptAssignment(7, 18, 4, {
+    await api.setProjectPromptAssignment(7, 18, 4, {
       prompt_template_version_id: 91,
       expected_prompt_assignment_id: null,
     });
@@ -80,7 +80,7 @@ describe("Prompts HTTP adapter", () => {
       "/api/v1/tenants/7/prompts/templates/31/preview",
       "/api/v1/tenants/7/prompts/templates/31/versions/91/publish",
       "/api/v1/tenants/7/prompts/templates/31/versions/91/retire",
-      "/api/v1/tenants/7/prompts/models/18/assignments/4",
+      "/api/v1/tenants/7/prompts/projects/18/assignments/4",
     ]);
     expect(fetcher.mock.calls.map(([, init]) => init?.method)).toEqual([
       "POST",

@@ -6,7 +6,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, cast
 
-from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from pydantic import JsonValue, ValidationError
 
@@ -26,7 +26,7 @@ from .reconciliation import MappingCandidateReconciler
 @dataclass(frozen=True, slots=True)
 class CompleteMappingCandidateResult:
     normalized: CompleteMappingCandidateV1
-    changes: tuple[StageModelChange, ...]
+    changes: tuple[StageProjectChange, ...]
     warnings: tuple[AgentValidationIssue, ...]
     has_transformations: bool
     has_object_transformation: bool
@@ -163,11 +163,11 @@ class CompleteMappingCandidateValidator:
                 + {
                     "missing_join_evidence": (
                         "Required join evidence is missing. "
-                        "Add or correct source relationships or business assertions."
+                        "Add or correct source relationships or business context records."
                     ),
                     "missing_transformation_rule": (
                         "A required transformation rule is missing. "
-                        "Add the relevant attribute lineage or business assertion."
+                        "Add the relevant attribute lineage or business context record."
                     ),
                     "preserved_mapping_conflict": (
                         "The requested mapping conflicts with preserved Object or Attribute logic. "

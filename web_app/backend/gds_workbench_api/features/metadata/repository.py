@@ -158,30 +158,30 @@ visible_system_ids AS (
       JOIN core.process_group AS process_group
         ON process_group.tenant_id = requested_tenant.tenant_id
 ),
-visible_project_ids AS (
-    SELECT DISTINCT tenant.project_id
+visible_lane_ids AS (
+    SELECT DISTINCT tenant.lane_id
       FROM visible_tenant_ids
       JOIN core.tenant AS tenant
         ON tenant.tenant_id = visible_tenant_ids.tenant_id
 )
 """
 
-_PROJECT_ROWS_SQL: LiteralString = f"""
+_LANE_ROWS_SQL: LiteralString = f"""
 {_FOUNDATIONAL_CLOSURE_CTE}
-SELECT project.project_code,
-       project.project_name,
-       project.project_description,
-       project.is_active
-  FROM visible_project_ids
-  JOIN core.project AS project
-    ON project.project_id = visible_project_ids.project_id
+SELECT lane.lane_code,
+       lane.lane_name,
+       lane.lane_description,
+       lane.is_active
+  FROM visible_lane_ids
+  JOIN core.lane AS lane
+    ON lane.lane_id = visible_lane_ids.lane_id
  WHERE TRUE
 """
 
 _TENANT_ROWS_SQL: LiteralString = f"""
 {_FOUNDATIONAL_CLOSURE_CTE}
 SELECT tenant.tenant_code,
-       project.project_code,
+       lane.lane_code,
        tenant.tenant_name,
        tenant.tenant_description,
        tenant.tenant_catalog,
@@ -195,8 +195,8 @@ SELECT tenant.tenant_code,
   FROM visible_tenant_ids
   JOIN core.tenant AS tenant
     ON tenant.tenant_id = visible_tenant_ids.tenant_id
-  JOIN core.project AS project
-    ON project.project_id = tenant.project_id
+  JOIN core.lane AS lane
+    ON lane.lane_id = tenant.lane_id
   LEFT JOIN core.connection AS gds_connection
     ON gds_connection.connection_id = tenant.gds_connection_id
   LEFT JOIN core.tenant AS gds_tenant
@@ -856,10 +856,10 @@ class _DatasetQuery:
 
 _DATASET_QUERIES: Mapping[MetadataDataset, _DatasetQuery] = MappingProxyType(
     {
-        "project": _DatasetQuery(
-            _PROJECT_ROWS_SQL,
-            {"project_code": "lower(btrim(project.project_code))"},
-            "project.project_id",
+        "lane": _DatasetQuery(
+            _LANE_ROWS_SQL,
+            {"lane_code": "lower(btrim(lane.lane_code))"},
+            "lane.lane_id",
         ),
         "tenant": _DatasetQuery(
             _TENANT_ROWS_SQL,

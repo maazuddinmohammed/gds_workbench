@@ -46,7 +46,9 @@ class FakeDatabase:
     audit_records: list[ToolCallLogRecord] = field(
         default_factory=lambda: list[ToolCallLogRecord]()
     )
-    lookups: list[tuple[int, str]] = field(default_factory=lambda: list[tuple[int, str]]())
+    lookups: list[tuple[int, str]] = field(
+        default_factory=lambda: list[tuple[int, str]]()
+    )
 
     async def open(self) -> None:
         return None
@@ -111,10 +113,12 @@ class FakeExecutor:
         cells_truncated=False,
     )
     failure: Exception | None = None
-    calls: list[tuple[DatabricksSqlConnection, ValidatedDatabricksSql, int, int]] = field(
-        default_factory=lambda: list[
-            tuple[DatabricksSqlConnection, ValidatedDatabricksSql, int, int]
-        ]()
+    calls: list[tuple[DatabricksSqlConnection, ValidatedDatabricksSql, int, int]] = (
+        field(
+            default_factory=lambda: list[
+                tuple[DatabricksSqlConnection, ValidatedDatabricksSql, int, int]
+            ]()
+        )
     )
 
     async def execute(
@@ -228,7 +232,9 @@ async def test_tool_executes_governed_batch_and_returns_final_result() -> None:
 
 
 @pytest.mark.asyncio
-async def test_result_text_is_one_compact_document_with_unchanged_structured_schema() -> None:
+async def test_result_text_is_one_compact_document_with_unchanged_structured_schema() -> (
+    None
+):
     columns = tuple(f"metric_{index}" for index in range(14))
     rows = tuple(tuple(index + column for column in range(14)) for index in range(50))
     database = FakeDatabase({"tenant_id": 7}, _values(environment_code="dev"))

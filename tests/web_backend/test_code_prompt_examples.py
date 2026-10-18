@@ -26,14 +26,17 @@ from sqlglot.errors import ErrorLevel, ParseError
 
 ROOT = Path(__file__).resolve().parents[2]
 CODE_DEFAULT = next(
-    row for row in json.loads(
+    row
+    for row in json.loads(
         (ROOT / "database/seed/05_global_prompt_defaults.template.sql")
         .read_text()
         .split("$workflow_defaults$")[1]
     )
-    if row["model_workflow"] == "code_generation"
+    if row["project_workflow"] == "code_generation"
 )
-SQL_EXAMPLES = re.findall(r"```sql\s*(.*?)```", CODE_DEFAULT["system_prompt"], re.DOTALL)
+SQL_EXAMPLES = re.findall(
+    r"```sql\s*(.*?)```", CODE_DEFAULT["system_prompt"], re.DOTALL
+)
 
 
 def test_code_default_contains_all_delivery_examples() -> None:
@@ -42,7 +45,9 @@ def test_code_default_contains_all_delivery_examples() -> None:
 
 @pytest.mark.asyncio
 async def test_review_example_delivers_complete_inputs_and_valid_sql() -> None:
-    example = json.loads((Path(__file__).parent / "fixtures/code_review_example.json").read_text())
+    example = json.loads(
+        (Path(__file__).parent / "fixtures/code_review_example.json").read_text()
+    )
     contracts = downstream_input_contracts("code_generation")
     assert set(example["inputs"]) == set(contracts)
     for name, value in example["inputs"].items():
@@ -51,12 +56,14 @@ async def test_review_example_delivers_complete_inputs_and_valid_sql() -> None:
         )
     requirements = example["inputs"]["artifact_requirements"]
     validator = CodeGenerationCandidateValidator(
-        targets=(CodeGenerationTargetReference(
-            target_ref=example["inputs"]["target_ref"],
-            modeled_entity_id=1,
-            source_system_codes=tuple(requirements["source_system_codes"]),
-            file_layout=requirements["file_layout"],
-        ),),
+        targets=(
+            CodeGenerationTargetReference(
+                target_ref=example["inputs"]["target_ref"],
+                modeled_entity_id=1,
+                source_system_codes=tuple(requirements["source_system_codes"]),
+                file_layout=requirements["file_layout"],
+            ),
+        ),
     )
     result = await validator.validate(example["candidate"])
     assert not result.issues
@@ -188,7 +195,9 @@ async def test_sql_examples_parse_and_pass_real_artifact_validation(
 
 
 def test_context_example_matches_direct_sql_and_preserves_source_identity() -> None:
-    contexts = re.findall(r"```json\s*(.*?)```", CODE_DEFAULT["system_prompt"], re.DOTALL)
+    contexts = re.findall(
+        r"```json\s*(.*?)```", CODE_DEFAULT["system_prompt"], re.DOTALL
+    )
     assert len(contexts) == 1
     context: dict[str, Any] = json.loads(contexts[0])
     object_mapping = context["object_transformations"][0]

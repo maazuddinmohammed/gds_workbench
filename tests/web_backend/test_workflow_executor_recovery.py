@@ -9,8 +9,10 @@ from unittest.mock import AsyncMock
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.application.change_sets.model import StageModelChange
-from gds_etl_workbench.application.change_sets.model_validation import ModelValidationIssue
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
+from gds_etl_workbench.application.change_sets.project_validation import (
+    ProjectValidationIssue,
+)
 from gds_etl_workbench.domain.authorization import RequestPrincipal
 from gds_etl_workbench.domain.errors import DependencyUnavailableError
 from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
@@ -75,14 +77,24 @@ async def test_authoritative_rejection_retains_exact_candidate_without_separate_
         setup = code_generation._service(
             executor=code_generation._AgentExecutor(
                 responses=[
-                    {"artifacts": [{"target_ref": "target_1", "generated_sql": "SELECT 1;"}]},
-                    {"artifacts": [{"target_ref": "target_2", "generated_sql": "SELECT 2;"}]},
+                    {
+                        "artifacts": [
+                            {"target_ref": "target_1", "generated_sql": "SELECT 1;"}
+                        ]
+                    },
+                    {
+                        "artifacts": [
+                            {"target_ref": "target_2", "generated_sql": "SELECT 2;"}
+                        ]
+                    },
                 ]
             )
         )
         service, _, _, handoff, _, lifecycle = setup
     elif workflow == "validation":
-        service, _, _, handoff, _, lifecycle = validation._service(context=validation._context())
+        service, _, _, handoff, _, lifecycle = validation._service(
+            context=validation._context()
+        )
     else:
         fixture: Any = {
             "analysis": analysis,
@@ -96,7 +108,7 @@ async def test_authoritative_rejection_retains_exact_candidate_without_separate_
         claim_token = fixture._CLAIM_TOKEN
 
     issues = (
-        ModelValidationIssue(
+        ProjectValidationIssue(
             code="active_dependency_invalid",
             dataset="logical_entity" if workflow == "logical" else "test_dependency",
             record_number=1,
@@ -105,12 +117,12 @@ async def test_authoritative_rejection_retains_exact_candidate_without_separate_
         ),
     )
     rejection = WorkflowChangeSetValidationError(issues)
-    attempted_changes: list[tuple[StageModelChange, ...]] = []
+    attempted_changes: list[tuple[StageProjectChange, ...]] = []
 
     async def reject_finalization(
         principal: RequestPrincipal,
         *,
-        changes: tuple[StageModelChange, ...],
+        changes: tuple[StageProjectChange, ...],
         **parameters: Any,
     ) -> None:
         del principal, parameters
@@ -124,16 +136,18 @@ async def test_authoritative_rejection_retains_exact_candidate_without_separate_
     retention = AsyncMock(wraps=handoff.retain_failed_candidate)
     monkeypatch.setattr(handoff, "retain_failed_candidate", retention)
     expected_error = (
-        DependencyUnavailableError if retention_fails else WorkflowChangeSetValidationError
+        DependencyUnavailableError
+        if retention_fails
+        else WorkflowChangeSetValidationError
     )
 
     with pytest.raises(expected_error) as caught:
         await service.execute_started(
             analysis._principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=claim_token,
         )
 
@@ -146,9 +160,9 @@ async def test_authoritative_rejection_retains_exact_candidate_without_separate_
     assert retained["issues"] == issues
     assert retained["expected_workflow"] == workflow
     assert retained["tenant_id"] == 7
-    assert retained["model_id"] == 18
+    assert retained["project_id"] == 18
     assert retained["workflow_run_id"] == 1048
-    assert retained["expected_model_revision"] == 7
+    assert retained["expected_project_revision"] == 7
     assert retained["workflow_run_claim_token"] == claim_token
     assert retained["failure_code"] == rejection.code
     assert "draft" in retained["safe_failure_message"].lower()

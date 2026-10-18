@@ -57,8 +57,8 @@ class ProfilingObjectLedgerItem(ReviewContract):
 
 
 class ProfilingObjectPage(ReviewContract):
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     items: tuple[ProfilingObjectLedgerItem, ...] = Field(max_length=200)
     next_cursor: str | None = Field(default=None, max_length=2048)
 
@@ -111,8 +111,8 @@ class AttributeProfile(ReviewContract):
 
 
 class ProfilingObjectDetail(ProfilingObjectLedgerItem):
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     object_description: str | None = Field(default=None, max_length=2000, repr=False)
     attribute_profiles: tuple[AttributeProfile, ...] = Field(max_length=2000)
     profiles_truncated: bool
@@ -131,5 +131,5 @@ class ProfilingObjectNotFoundError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(
             code="profiling_object_not_found",
-            message="The requested profiled Object was not found in the active Model.",
+            message="The requested profiled Object was not found in the active Project.",
         )

@@ -7,7 +7,7 @@ import { createApiClient } from "../../api";
 import { WorkbenchApp, createWorkbenchRouter } from "../../app";
 import type { WorkflowTokenUsage } from "../workflows/api";
 
-describe("Model Profiling", () => {
+describe("Project Profiling", () => {
   it("shows normalized result filters and opens complete Object evidence on its own page", async () => {
     const fetcher = profilingFetchStub();
     const router = profilingRouter(fetcher);
@@ -32,14 +32,14 @@ describe("Model Profiling", () => {
 
     expect(await screen.findByRole("table", { name: "Profiling results" })).toBeVisible();
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/profiling?source_tenant_code=grdm&system_code=crm&object_schema=bronze_crm&object_name=customer_raw&page_size=200",
+      "/api/v1/tenants/7/projects/18/profiling?source_tenant_code=grdm&system_code=crm&object_schema=bronze_crm&object_name=customer_raw&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
 
     const showDetails = screen.getByRole("link", { name: "Open profiling details for customer_raw" });
     await user.click(showDetails);
 
-    expect(router.state.location.pathname).toBe("/tenants/7/models/18/profiling/501");
+    expect(router.state.location.pathname).toBe("/tenants/7/projects/18/profiling/501");
     expect(router.state.location.search).toMatchObject({
       sourceTenantCode: "GRDM",
       systemCode: "CRM",
@@ -48,9 +48,12 @@ describe("Model Profiling", () => {
       returnObjectId: 501,
     });
     expect(await screen.findByRole("heading", { name: "customer_raw" })).toBeVisible();
+    expect(screen.queryByText("Profiled Object")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Object description" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Populated means non-null/)).not.toBeInTheDocument();
     expect(screen.getByText("This response contains 2 of 12 Attribute profiles.")).toBeVisible();
-    expect(screen.getByRole("region", { name: "Object description" }))
-      .toHaveTextContent("Customer records used for identity resolution.");
+    expect(screen.queryByRole("region", { name: "Object description" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Customer records used for identity resolution.")).not.toBeInTheDocument();
 
     const profileTable = screen.getByRole("table", { name: "Attribute profiles" });
     expect(screen.getByRole("region", { name: "Scrollable Attribute profile metrics" }))
@@ -82,7 +85,7 @@ describe("Model Profiling", () => {
 
     await user.click(screen.getByRole("link", { name: "Back to Profiling" }));
     expect(await screen.findByRole("table", { name: "Profiling results" })).toBeVisible();
-    expect(router.state.location.pathname).toBe("/tenants/7/models/18/profiling");
+    expect(router.state.location.pathname).toBe("/tenants/7/projects/18/profiling");
     expect(screen.getByLabelText("Source Tenant code")).toHaveValue("GRDM");
     expect(screen.getByLabelText("System code")).toHaveValue("CRM");
     expect(screen.getByLabelText("Object schema")).toHaveValue(" Bronze_CRM ");
@@ -96,8 +99,8 @@ describe("Model Profiling", () => {
 
     await act(async () => {
       await router.navigate({
-        to: "/tenants/$tenantId/models/$modelId/profiling",
-        params: { tenantId: "7", modelId: "18" },
+        to: "/tenants/$tenantId/projects/$projectId/profiling",
+        params: { tenantId: "7", projectId: "18" },
         search: { systemCode: "ERP" },
       });
     });
@@ -122,7 +125,7 @@ describe("Model Profiling", () => {
 
     expect(await screen.findByRole("list", { name: "Profiling run list" })).toBeVisible();
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/runs?workflow=profiling&page_size=50&state=completed",
+      "/api/v1/tenants/7/projects/18/runs?workflow=profiling&page_size=50&state=completed",
       expect.objectContaining({ credentials: "same-origin" }),
     );
 
@@ -156,7 +159,7 @@ describe("Model Profiling", () => {
     await user.click(await screen.findByRole("button", { name: /PR-1048/ }));
     const usage = await screen.findByRole("region", { name: "Token usage" });
     expect(usage).toHaveTextContent("Unavailable");
-    const runReads = () => fetcher.mock.calls.filter(([url]) => String(url) === "/api/v1/tenants/7/models/18/runs/1048");
+    const runReads = () => fetcher.mock.calls.filter(([url]) => String(url) === "/api/v1/tenants/7/projects/18/runs/1048");
     expect(runReads()).toHaveLength(1);
 
     options.tokenUsage = { status: "complete", request_count: 0, reported_request_count: 0,
@@ -201,15 +204,15 @@ describe("Model Profiling", () => {
     expect(within(drawer).getByRole("button", { name: "Execute queued run" })).toBeVisible();
 
     const createCall = fetcher.mock.calls.find(([, init]) => (
-      init?.method === "POST" && String(init.body).includes('"model_workflow":"profiling"')
+      init?.method === "POST" && String(init.body).includes('"project_workflow":"profiling"')
     ));
-    expect(createCall?.[0]).toBe("/api/v1/tenants/7/models/18/runs");
+    expect(createCall?.[0]).toBe("/api/v1/tenants/7/projects/18/runs");
     expect(createCall?.[1]?.headers).toEqual(expect.objectContaining({
       "Idempotency-Key": expect.stringMatching(/^[0-9a-f-]{36}$/),
     }));
     expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({
-      expected_model_revision: 18,
-      model_workflow: "profiling",
+      expected_project_revision: 18,
+      project_workflow: "profiling",
       selected_object_ids: [501],
       requested_batch_id: "10428",
     });
@@ -224,18 +227,18 @@ describe("Model Profiling", () => {
 
     await waitFor(() => {
       expect(fetcher.mock.calls.filter(([input, init]) => (
-        String(input) === "/api/v1/tenants/7/models/18/runs"
+        String(input) === "/api/v1/tenants/7/projects/18/runs"
         && init?.method === "POST"
       ))).toHaveLength(1);
       expect(fetcher).toHaveBeenCalledWith(
-        "/api/v1/tenants/7/models/18/profiling/runs/1049/execute",
+        "/api/v1/tenants/7/projects/18/profiling/runs/1049/execute",
         expect.objectContaining({
-          body: JSON.stringify({ expected_model_revision: 18 }),
+          body: JSON.stringify({ expected_project_revision: 18 }),
           method: "POST",
         }),
       );
       expect(fetcher.mock.calls.filter(([input, init]) => (
-        String(input) === "/api/v1/tenants/7/models/18/profiling/runs/1049/execute"
+        String(input) === "/api/v1/tenants/7/projects/18/profiling/runs/1049/execute"
         && init?.method === "POST"
       ))).toHaveLength(2);
     });
@@ -243,7 +246,7 @@ describe("Model Profiling", () => {
     await user.click(within(drawer).getByRole("button", { name: "Cancel run" }));
     expect(await within(drawer).findByText("Cancelled")).toBeVisible();
     expect(within(drawer).queryByRole("button", { name: "Cancel run" })).not.toBeInTheDocument();
-    expect(fetcher).toHaveBeenCalledWith("/api/v1/tenants/7/models/18/runs/1049/cancel",
+    expect(fetcher).toHaveBeenCalledWith("/api/v1/tenants/7/projects/18/runs/1049/cancel",
       expect.objectContaining({ method: "POST" }));
   });
 
@@ -270,7 +273,7 @@ function profilingRouter(fetcher: ReturnType<typeof profilingFetchStub>) {
   return createWorkbenchRouter({
     api: createApiClient(fetcher),
     history: createMemoryHistory({
-      initialEntries: ["/tenants/7/models/18/profiling"],
+      initialEntries: ["/tenants/7/projects/18/profiling"],
     }),
   });
 }
@@ -289,12 +292,12 @@ function profilingFetchStub(options: {
   return vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input);
     if (url === "/api/v1/tenants/7/home") return jsonResponse(tenantHomePayload);
-    if (url === "/api/v1/tenants/7/models/18") return jsonResponse(modelDetailPayload);
-    if (url === "/api/v1/tenants/7/models/18/input-scope?zone=bronze&page_size=200"
-      || url === "/api/v1/tenants/7/models/18/input-scope?page_size=200") {
-      return jsonResponse(modelInputScopePayload);
+    if (url === "/api/v1/tenants/7/projects/18") return jsonResponse(projectDetailPayload);
+    if (url === "/api/v1/tenants/7/projects/18/input-scope?zone=bronze&page_size=200"
+      || url === "/api/v1/tenants/7/projects/18/input-scope?page_size=200") {
+      return jsonResponse(projectInputScopePayload);
     }
-    if (url.startsWith("/api/v1/tenants/7/models/18/profiling?") && init?.method !== "POST") {
+    if (url.startsWith("/api/v1/tenants/7/projects/18/profiling?") && init?.method !== "POST") {
       if (options.resultsError) {
         return jsonResponse({ error: { code: "profiling_unavailable" } }, 503);
       }
@@ -303,10 +306,10 @@ function profilingFetchStub(options: {
         items: options.emptyResults ? [] : profilingPagePayload.items,
       });
     }
-    if (url === "/api/v1/tenants/7/models/18/profiling/501") {
+    if (url === "/api/v1/tenants/7/projects/18/profiling/501") {
       return jsonResponse(profilingDetailPayload);
     }
-    if (url.startsWith("/api/v1/tenants/7/models/18/runs?workflow=profiling")) {
+    if (url.startsWith("/api/v1/tenants/7/projects/18/runs?workflow=profiling")) {
       return jsonResponse({
         items: runCreated
           ? [profilingRunPayload(1049, runCancelled ? "cancelled" : runExecuted ? "running" : "queued")]
@@ -314,7 +317,7 @@ function profilingFetchStub(options: {
         next_cursor: null,
       });
     }
-    if (url === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST") {
+    if (url === "/api/v1/tenants/7/projects/18/runs" && init?.method === "POST") {
       runCreated = true;
       return jsonResponse({
         created: true,
@@ -325,11 +328,11 @@ function profilingFetchStub(options: {
         created_at: "2026-08-24T15:00:00Z",
       }, 201);
     }
-    if (url === "/api/v1/tenants/7/models/18/runs/1049/cancel" && init?.method === "POST") {
+    if (url === "/api/v1/tenants/7/projects/18/runs/1049/cancel" && init?.method === "POST") {
       runCancelled = true;
       return jsonResponse({ changed: true, workflow_run_id: 1049, workflow_run_state: "cancelled", completed_at: "2026-10-01T14:00:00Z" });
     }
-    if (url === "/api/v1/tenants/7/models/18/profiling/runs/1049/execute" && init?.method === "POST") {
+    if (url === "/api/v1/tenants/7/projects/18/profiling/runs/1049/execute" && init?.method === "POST") {
       executeAttempts += 1;
       if (options.executeConflictOnce && executeAttempts === 1) {
         return jsonResponse({ error: { code: "tenant_workflow_conflict" } }, 409);
@@ -339,10 +342,10 @@ function profilingFetchStub(options: {
         changed: true,
         workflow_run_id: 1049,
         workflow_run_state: "running",
-        model_revision: 18,
+        project_revision: 18,
       }, 202);
     }
-    const runMatch = url.match(/^\/api\/v1\/tenants\/7\/models\/18\/runs\/(1048|1049)$/);
+    const runMatch = url.match(/^\/api\/v1\/tenants\/7\/projects\/18\/runs\/(1048|1049)$/);
     if (runMatch) {
       const runId = Number(runMatch[1]);
       const state = runId === 1049 ? (runCancelled ? "cancelled" : runExecuted ? "running" : "queued") : "completed";
@@ -370,7 +373,7 @@ function profilingFetchStub(options: {
           history_incomplete: false },
       });
     }
-    if (url.match(/^\/api\/v1\/tenants\/7\/models\/18\/runs\/(1048|1049)\/events\?/)) {
+    if (url.match(/^\/api\/v1\/tenants\/7\/projects\/18\/runs\/(1048|1049)\/events\?/)) {
       return jsonResponse({
         items: runExecuted || url.includes("1048") ? [runEventPayload] : [],
         next_after_sequence: runExecuted || url.includes("1048") ? 1 : 0,
@@ -406,7 +409,7 @@ const tenantHomePayload = {
     is_locked: true,
     owner_display_name: "Maaz",
     owned_by_current_principal: true,
-    purpose: "Model authoring",
+    purpose: "Project authoring",
     acquired_at: "2026-08-24T14:12:00Z",
     expires_at: "2026-08-24T16:12:00Z",
   },
@@ -419,13 +422,13 @@ const tenantHomePayload = {
   systems: [],
 };
 
-const modelDetailPayload = {
-  model_id: 18,
+const projectDetailPayload = {
+  project_id: 18,
   tenant_id: 7,
-  model_name: "Customer 360",
-  model_description: "Cross-system customer domain",
-  model_revision: 18,
-  model_input_scope_object_count: 25,
+  project_name: "Customer 360",
+  project_description: "Cross-system customer domain",
+  project_revision: 18,
+  project_input_scope_object_count: 25,
   logical_schemas: [], dimensional_schemas: [], silver_model_naming_instructions: null,
   silver_model_audit_columns_template: null,
   gold_model_naming_instructions: null,
@@ -441,11 +444,11 @@ const modelDetailPayload = {
   updated_at: "2026-08-24T14:00:00Z",
 };
 
-const modelInputScopePayload = {
-  model_id: 18,
-  model_revision: 18,
+const projectInputScopePayload = {
+  project_id: 18,
+  project_revision: 18,
   items: [{
-    model_input_scope_id: 101,
+    project_input_scope_id: 101,
     object_id: 501,
     connection_id: 21,
     system_id: 31,
@@ -459,7 +462,7 @@ const modelInputScopePayload = {
     zone_code: "bronze",
     batch_attribute_name: "batch_id",
     attribute_count: 12,
-    is_model_input_eligible: true,
+    is_project_input_eligible: true,
     created_at: "2026-08-24T14:00:00Z",
     updated_at: "2026-08-24T14:00:00Z",
   }],
@@ -467,8 +470,8 @@ const modelInputScopePayload = {
 };
 
 const profilingPagePayload = {
-  model_id: 18,
-  model_revision: 18,
+  project_id: 18,
+  project_revision: 18,
   items: [{
     object_id: 501,
     source_tenant_id: 8,
@@ -489,8 +492,8 @@ const profilingPagePayload = {
 
 const profilingDetailPayload = {
   ...profilingPagePayload.items[0],
-  model_id: 18,
-  model_revision: 18,
+  project_id: 18,
+  project_revision: 18,
   object_description: "Customer records used for identity resolution.",
   attribute_profiles: [
     {
@@ -553,7 +556,7 @@ function profilingRunPayload(
 ) {
   return {
     workflow_run_id: workflowRunId,
-    model_workflow: "profiling",
+    project_workflow: "profiling",
     workflow_execution_mode: null,
     modeled_entity_type: null,
     selected_scope_count: 8,

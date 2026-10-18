@@ -9,9 +9,9 @@ from typing import Any, cast
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.application.change_sets.model import StageModelChange
-from gds_etl_workbench.application.change_sets.model_validation import (
-    PhysicalModelCatalog,
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
+from gds_etl_workbench.application.change_sets.project_validation import (
+    PhysicalProjectCatalog,
     validate_future_graph,
 )
 from gds_etl_workbench.domain.authorization import (
@@ -21,7 +21,7 @@ from gds_etl_workbench.domain.authorization import (
 )
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import PhysicalObjectKey
-from gds_etl_workbench.domain.snapshots.model import ModelChangeSetDataset
+from gds_etl_workbench.domain.snapshots.project import ProjectChangeSetDataset
 from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
     ReadTransaction,
@@ -72,7 +72,7 @@ from gds_workbench_api.prompt_rendering import (
 )
 from pydantic import JsonValue
 
-from tests.mcp.model_test_fixtures import snapshot_from_graph
+from tests.mcp.project_test_fixtures import snapshot_from_graph
 from tests.web_backend.workflow_recovery_fixtures import RetainingHandoff
 
 _CLAIM_TOKEN = UUID("44444444-4444-4444-8444-444444444444")
@@ -105,7 +105,7 @@ def _plan(*, mode: str = "one_shot", retry_count: int = 1) -> AgentRunPlan:
             variables.append(
                 PromptVariableDefinition(
                     name="naming_instructions",
-                    resolver_key="model.naming_instructions",
+                    resolver_key="project.naming_instructions",
                     data_type="text",
                     is_required=False,
                 )
@@ -138,10 +138,10 @@ def _plan(*, mode: str = "one_shot", retry_count: int = 1) -> AgentRunPlan:
     return AgentRunPlan.model_validate(
         {
             "workflow_run_id": 1048,
-            "model_id": 18,
+            "project_id": 18,
             "correlation_id": UUID("33333333-3333-3333-3333-333333333333"),
-            "model_revision": 7,
-            "model_workflow": "logical",
+            "project_revision": 7,
+            "project_workflow": "logical",
             "workflow_execution_mode": mode,
             "modeled_entity_type": None,
             "selected_scope_digest": "a" * 64,
@@ -211,21 +211,21 @@ def _selected_object() -> dict[str, object]:
 def _context_bundle(
     *,
     mode: str = "one_shot",
-    assertion: dict[str, object] | None = None,
+    context_section: dict[str, object] | None = None,
 ) -> AgentContextBundle:
     context = AgentAuthoringContext.model_validate(
         {
             "workflow_run_id": 1048,
-            "model_id": 18,
-            "model_name": "Customer Model",
-            "model_revision": 7,
-            "model_workflow": "logical",
+            "project_id": 18,
+            "project_name": "Customer Project",
+            "project_revision": 7,
+            "project_workflow": "logical",
             "workflow_execution_mode": mode,
             "modeled_entity_type": None,
             "selected_scope_digest": "a" * 64,
-            "model_details": {
-                "model_name": "Customer Model",
-                "model_description": None,
+            "project_details": {
+                "project_name": "Customer Project",
+                "project_description": None,
                 "logical_schemas": [{"schema_name": "silver", "description": None}],
                 "dimensional_schemas": [{"schema_name": "gold", "description": None}],
                 "silver_model_naming_instructions": "Use business language.",
@@ -247,7 +247,17 @@ def _context_bundle(
             "selected_objects": (_selected_object(),),
             "profiles": (),
             "analysis_relationships": (),
-            "assertion": assertion or {"documents": (), "records": ()},
+            "context": context_section
+            or {
+                "records": (),
+                "groups": (),
+                "types": [
+                    {
+                        "context_type_name": "Business Requirement",
+                        "context_type_description": "Required business outcomes.",
+                    }
+                ],
+            },
             "applied": {
                 "conceptual": None,
                 "logical": None,
@@ -296,7 +306,8 @@ def _candidate(*, source_name: str = "customer_raw") -> JsonValue:
             ],
             "entities": [
                 {
-                    "logical_entity_schema_name": "silver", "logical_entity_name": "Customer",
+                    "logical_entity_schema_name": "silver",
+                    "logical_entity_name": "Customer",
                     "logical_entity_definition": "One customer.",
                     "logical_entity_type": "core",
                     "logical_entity_type_detail": None,
@@ -326,7 +337,8 @@ def _candidate(*, source_name: str = "customer_raw") -> JsonValue:
             ],
             "attributes": [
                 {
-                    "logical_entity_schema_name": "silver", "logical_entity_name": "Customer",
+                    "logical_entity_schema_name": "silver",
+                    "logical_entity_name": "Customer",
                     "logical_attribute_name": "Customer Id",
                     "logical_attribute_definition": "Customer identifier.",
                     "logical_attribute_data_type": "bigint",
@@ -372,7 +384,7 @@ def _empty_candidate() -> JsonValue:
 def _validation_context(
     bundle: AgentContextBundle,
     *,
-    graph: dict[ModelChangeSetDataset, list[dict[str, object]]] | None = None,
+    graph: dict[ProjectChangeSetDataset, list[dict[str, object]]] | None = None,
 ) -> AgentContextBundle:
     context = bundle.context
     objects = [
@@ -391,77 +403,90 @@ def _validation_context(
         )
         for attribute in selected.attributes
     )
-    records: dict[ModelChangeSetDataset, list[dict[str, object]]] = {
+    records: dict[ProjectChangeSetDataset, list[dict[str, object]]] = {
         **(graph or {}),
-        "model_details": [context.model_details.model_dump(mode="json")],
-        "model_input_scope": [
+        "project_details": [context.project_details.model_dump(mode="json")],
+        "project_input_scope": [
             {
                 **item.model_dump(mode="json"),
-                "model_input_scope_is_locked": False,
+                "project_input_scope_is_locked": False,
                 "is_active": True,
             }
             for item in objects
         ],
-        "modeling_assertion_document": [
-            item.model_dump(mode="json") for item in context.assertion.documents
+        "context_group": [
+            item.model_dump(mode="json") for item in context.context.groups
         ],
-        "modeling_assertion_record": [
-            item.model_dump(mode="json") for item in context.assertion.records
+        "context_record": [
+            item.model_dump(mode="json") for item in context.context.records
         ],
     }
     snapshot = snapshot_from_graph(records).model_copy(
-        update={"model_id": context.model_id, "model_revision": context.model_revision}
+        update={
+            "project_id": context.project_id,
+            "project_revision": context.project_revision,
+        }
     )
-    physical_scope = PhysicalModelCatalog(
-        model_tenant_code="NWA",
+    physical_scope = PhysicalProjectCatalog(
+        project_tenant_code="NWA",
         active_system_codes=frozenset({"crm"}),
         objects=cast(Any, source_objects),
         attributes=cast(Any, source_attributes),
-        model_input_objects=cast(Any, source_objects),
-        model_input_attributes=cast(Any, source_attributes),
-
-
-
-
-
-
+        project_input_objects=cast(Any, source_objects),
+        project_input_attributes=cast(Any, source_attributes),
     )
     return replace(bundle, snapshot=snapshot, physical_scope=physical_scope)
 
 
-def _mapped_context_bundle(mode: str, *, include_audit_columns: bool = True) -> AgentContextBundle:
+def _mapped_context_bundle(
+    mode: str, *, include_audit_columns: bool = True
+) -> AgentContextBundle:
     bundle = _context_bundle(mode=mode)
     bundle = replace(
         bundle,
         context=bundle.context.model_copy(
             update={
-                "model_details": bundle.context.model_details.model_copy(
-                    update={"silver_model_audit_columns_template": None if include_audit_columns
-                            else {"schema_version": "1.0", "columns": []}}
+                "project_details": bundle.context.project_details.model_copy(
+                    update={
+                        "silver_model_audit_columns_template": None
+                        if include_audit_columns
+                        else {"schema_version": "1.0", "columns": []}
+                    }
                 ),
             }
         ),
     )
     candidate = cast(dict[str, list[dict[str, object]]], _candidate())
-    graph: dict[ModelChangeSetDataset, list[dict[str, object]]] = {
+    graph: dict[ProjectChangeSetDataset, list[dict[str, object]]] = {
         "logical_submodel": candidate["submodels"],
         "logical_entity": candidate["entities"],
         "logical_attribute": candidate["attributes"],
-        "mapping_object": [{
-            "modeled_entity_type": "logical_entity",
-            "modeled_entity_schema_name": "silver", "modeled_entity_name": "Customer",
-            "source_system_code": "CRM", "output_template_code": None,
-            "object_dependency_order": 0, "mapping_transformation_document": {"kind": "select"},
-            "object_mapping_status": "active", "object_mapping_is_locked": False,
-        }],
-        "mapping_attribute": [{
-            "modeled_entity_type": "logical_entity",
-            "modeled_entity_schema_name": "silver", "modeled_entity_name": "Customer",
-            "modeled_attribute_name": "Customer Id", "source_system_code": "CRM",
-            "output_template_code": None,
-            "attribute_mapping_transformation_document": {"kind": "direct"},
-            "attribute_mapping_status": "active", "attribute_mapping_is_locked": False,
-        }],
+        "mapping_object": [
+            {
+                "modeled_entity_type": "logical_entity",
+                "modeled_entity_schema_name": "silver",
+                "modeled_entity_name": "Customer",
+                "source_system_code": "CRM",
+                "output_template_code": None,
+                "object_dependency_order": 0,
+                "mapping_transformation_document": {"kind": "select"},
+                "object_mapping_status": "active",
+                "object_mapping_is_locked": False,
+            }
+        ],
+        "mapping_attribute": [
+            {
+                "modeled_entity_type": "logical_entity",
+                "modeled_entity_schema_name": "silver",
+                "modeled_entity_name": "Customer",
+                "modeled_attribute_name": "Customer Id",
+                "source_system_code": "CRM",
+                "output_template_code": None,
+                "attribute_mapping_transformation_document": {"kind": "direct"},
+                "attribute_mapping_status": "active",
+                "attribute_mapping_is_locked": False,
+            }
+        ],
     }
 
     bundle = _validation_context(bundle, graph=graph)
@@ -530,7 +555,7 @@ class _Authorizer:
         *,
         tenant_id: int,
         policy: ToolPolicy,
-        model_id: int | None = None,
+        project_id: int | None = None,
     ) -> object:
         assert principal == _principal()
         self.calls.append((tenant_id, policy))
@@ -546,10 +571,10 @@ class _PlanRepository:
         transaction: ReadTransaction,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
     ) -> AgentRunPlan:
-        del transaction, tenant_id, model_id, workflow_run_id
+        del transaction, tenant_id, project_id, workflow_run_id
         return self.plan
 
 
@@ -593,8 +618,8 @@ class _AgentExecutor:
 
 @dataclass
 class _Handoff(RetainingHandoff):
-    calls: list[tuple[StageModelChange, ...]] = field(
-        default_factory=lambda: list[tuple[StageModelChange, ...]]()
+    calls: list[tuple[StageProjectChange, ...]] = field(
+        default_factory=lambda: list[tuple[StageProjectChange, ...]]()
     )
     final_events: list[AgentWorkflowEvent] = field(
         default_factory=lambda: list[AgentWorkflowEvent]()
@@ -605,7 +630,7 @@ class _Handoff(RetainingHandoff):
         self,
         principal: RequestPrincipal,
         *,
-        changes: tuple[StageModelChange, ...],
+        changes: tuple[StageProjectChange, ...],
         final_event: AgentWorkflowEvent,
         workflow_run_claim_token: UUID,
         **_: object,
@@ -618,9 +643,9 @@ class _Handoff(RetainingHandoff):
             raise self.finalization_error
         return WorkflowChangeSetFinalizationResult(
             handoff=WorkflowChangeSetHandoffResult(
-                model_id=18,
+                project_id=18,
                 workflow_run_id=1048,
-                model_change_set_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+                project_change_set_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
                 replayed=False,
                 draft_revision=2,
                 candidate_digest="c" * 64,
@@ -648,28 +673,28 @@ class _NoOp:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         workflow_run_claim_token: UUID,
         request: AuthoringNoOpRequest,
     ) -> AuthoringNoOpReceipt:
         assert principal == _principal()
         assert tenant_id == 7
-        assert model_id == 18
+        assert project_id == 18
         assert workflow_run_claim_token == _CLAIM_TOKEN
         self.requests.append(request)
         if self.completion_error is not None:
             raise self.completion_error
         return AuthoringNoOpReceipt(
-            model_id=model_id,
-            model_revision=request.expected_model_revision,
+            project_id=project_id,
+            project_revision=request.expected_project_revision,
             workflow_run_id=workflow_run_id,
             workflow_run_state=(
                 "completed_with_repair"
                 if request.final_event.attempt > 1
                 else "completed"
             ),
-            model_workflow=request.expected_workflow,
+            project_workflow=request.expected_workflow,
             workflow_execution_mode=request.expected_execution_mode,
             correlation_id=request.expected_correlation_id,
             candidate_digest=request.candidate_digest,
@@ -692,21 +717,21 @@ class _Lifecycle:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         expected_workflow: str,
         expected_execution_mode: str | None,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart:
         self.starts.append(
             (
                 principal,
                 tenant_id,
-                model_id,
+                project_id,
                 workflow_run_id,
                 expected_workflow,
                 expected_execution_mode,
-                expected_model_revision,
+                expected_project_revision,
             )
         )
         return AgentWorkflowRunStart(
@@ -714,7 +739,7 @@ class _Lifecycle:
             workflow_run_id=workflow_run_id,
             workflow_run_state="running",
             started_at=datetime(2026, 8, 24, 10, tzinfo=UTC),
-            model_revision=expected_model_revision,
+            project_revision=expected_project_revision,
         )
 
     events: list[AgentWorkflowEvent] = field(
@@ -783,7 +808,8 @@ def _service(
                     mode=selected_plan.workflow_execution_mode or "one_shot"
                 )
             ),
-            context_policy=context_policy or AgentContextPolicy(
+            context_policy=context_policy
+            or AgentContextPolicy(
                 one_shot_max_context_bytes=128 * 1024,
                 stage_max_context_bytes=128 * 1024,
                 max_candidate_bytes=128 * 1024,
@@ -809,15 +835,15 @@ async def test_start_binds_logical_workflow_without_executing(
     result = await service.start(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
         expected_execution_mode=mode,
-        expected_model_revision=7,
+        expected_project_revision=7,
     )
 
     assert lifecycle.starts == [(principal, 7, 18, 1048, "logical", mode, 7)]
     assert result.workflow_run_id == 1048
-    assert result.model_revision == 7
+    assert result.project_revision == 7
     assert database.isolations == []
     assert authorizer.calls == []
     assert handoff.calls == []
@@ -834,16 +860,16 @@ async def test_one_shot_projects_audit_columns_then_hands_off_once() -> None:
     result = await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
     assert isinstance(result, WorkflowChangeSetHandoffResult)
     assert result.staged_record_count == 5
     assert database.isolations == [ReadIsolation.REPEATABLE_READ]
-    assert authorizer.calls == [(7, ToolPolicy.TENANT_MODEL_WRITE)]
+    assert authorizer.calls == [(7, ToolPolicy.TENANT_PROJECT_WRITE)]
     request = agent.requests[0]
     assert request.workflow == "logical"
     assert request.stage == "candidate_authoring"
@@ -877,7 +903,9 @@ async def test_one_shot_projects_audit_columns_then_hands_off_once() -> None:
 
 
 @pytest.mark.asyncio
-async def test_empty_candidate_completes_only_when_applied_sources_cover_selection() -> None:
+async def test_empty_candidate_completes_only_when_applied_sources_cover_selection() -> (
+    None
+):
     no_op = _NoOp()
     service, _database, _authorizer, handoff, lifecycle = _service(
         agent=_AgentExecutor(responses=[_empty_candidate()]),
@@ -888,9 +916,9 @@ async def test_empty_candidate_completes_only_when_applied_sources_cover_selecti
     result = await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -926,9 +954,9 @@ async def test_repaired_empty_candidate_preserves_attempt_and_warning() -> None:
     result = await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -959,9 +987,9 @@ async def test_no_op_error_never_marks_the_run_failed(
         await service.execute_started(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
         )
 
@@ -984,9 +1012,9 @@ async def test_tool_assisted_uses_local_catalog_and_same_change_contract() -> No
     await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -1013,9 +1041,9 @@ async def test_validation_repair_keeps_original_context_then_hands_off_once() ->
     await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -1049,9 +1077,9 @@ async def test_full_graph_mapping_failure_is_repaired_before_handoff(mode: str) 
     await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -1123,11 +1151,11 @@ async def test_full_graph_mapping_failure_is_repaired_before_handoff(mode: str) 
 async def test_post_policy_graph_failure_retains_canonical_rejected_draft() -> None:
     bundle = _mapped_context_bundle("one_shot")
     assert bundle.snapshot is not None
-    details = _context_bundle().context.model_details
-    context = bundle.context.model_copy(update={"model_details": details})
+    details = _context_bundle().context.project_details
+    context = bundle.context.model_copy(update={"project_details": details})
     snapshot = bundle.snapshot.model_copy(
         update={
-            "model_input_scope": bundle.snapshot.model_input_scope.model_copy(
+            "project_input_scope": bundle.snapshot.project_input_scope.model_copy(
                 update={"details": details}
             ),
         }
@@ -1142,7 +1170,9 @@ async def test_post_policy_graph_failure_retains_canonical_rejected_draft() -> N
     for candidate in candidates:
         # Partial Mapping is valid; an active Mapping pointing at an inactive
         # modeled Attribute remains a real full-graph integrity violation.
-        cast(dict[str, Any], candidate)["attributes"][0]["logical_attribute_status"] = "inactive"
+        cast(dict[str, Any], candidate)["attributes"][0]["logical_attribute_status"] = (
+            "inactive"
+        )
     agent = _AgentExecutor(responses=cast(list[JsonValue | Exception], candidates))
     service, _, _, handoff, lifecycle = _service(agent=agent, context_bundle=bundle)
 
@@ -1150,9 +1180,9 @@ async def test_post_policy_graph_failure_retains_canonical_rejected_draft() -> N
         await service.execute_started(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
         )
 
@@ -1188,9 +1218,9 @@ async def test_failure_is_safe_and_never_hands_off_partial_output() -> None:
         await service.execute_started(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
         )
 
@@ -1219,9 +1249,9 @@ async def test_finalizer_error_never_marks_the_run_failed(
         await service.execute_started(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
         )
 
@@ -1234,7 +1264,7 @@ async def test_finalizer_error_never_marks_the_run_failed(
 
 @pytest.mark.asyncio
 async def test_fixed_plan_mismatch_is_rejected_before_agent_execution() -> None:
-    bad_plan = _plan().model_copy(update={"model_workflow": "conceptual"})
+    bad_plan = _plan().model_copy(update={"project_workflow": "conceptual"})
     agent = _AgentExecutor(responses=[_candidate()])
     service, _database, _authorizer, handoff, lifecycle = _service(
         agent=agent,
@@ -1245,9 +1275,9 @@ async def test_fixed_plan_mismatch_is_rejected_before_agent_execution() -> None:
         await service.execute_started(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
         )
 

@@ -1,4 +1,4 @@
-import { withRecordReview } from "../../test/modelRecordReview";
+import { withRecordReview } from "../../test/projectRecordReview";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryHistory } from "@tanstack/react-router";
@@ -7,16 +7,50 @@ import { describe, expect, it, vi } from "vitest";
 import { createApiClient } from "../../api";
 import { WorkbenchApp, createWorkbenchRouter } from "../../app";
 
-describe("Model Dimensional", () => {
-  it("opens a Dimensional Object detail page with complete normalized context", async () => {
+describe("Project Dimensional", () => {
+  it.each([
+    ["objects/301", "gold.sales_fact"],
+    ["attributes/401", "sales_amount"],
+    ["relationships/501", "customer to sales"],
+  ])("keeps %s record actions beside its heading with lifecycle commands under More", async (detail, title) => {
     const user = userEvent.setup();
-    render(<WorkbenchApp router={dimensionalRouter(dimensionalFetchStub())} />);
+    render(<WorkbenchApp router={createWorkbenchRouter({
+      api: createApiClient(dimensionalFetchStub()),
+      history: createMemoryHistory({ initialEntries: [`/tenants/7/projects/18/dimensional/${detail}`] }),
+    })} />);
+    const heading = await screen.findByRole("heading", { level: 1, name: title });
+    const header = heading.closest("header")!;
+    const detailPage = heading.closest("article")!;
+    expect(detailPage).toHaveClass("modeled-detail-page");
+    const definition = within(detailPage).getByText("Definition", { selector: "dt" });
+    expect(definition.closest("dl")).toHaveClass("modeled-detail-fields");
+    expect(definition.nextElementSibling).not.toBeEmptyDOMElement();
+    expect(within(header).queryByText(/^Dimensional (Entity|Attribute|Relationship|Submodel) \d+$/)).not.toBeInTheDocument();
+    expect(within(header).getByRole("button", { name: "Edit definition" })).toBeVisible();
+    expect(within(header).getByRole("button", { name: "Lock" })).not.toBeVisible();
+    const more = within(header).getByText("More", { selector: "summary" });
+    await user.click(more);
+    expect(within(header).getByRole("button", { name: "Lock" })).toBeVisible();
+    expect(within(header).getByRole("button", { name: "Deactivate" })).toBeVisible();
+    within(header).getByRole("button", { name: "Lock" }).focus();
+    await user.keyboard("{Escape}");
+    expect(more).toHaveFocus();
+    expect(within(header).getByRole("button", { name: "Lock" })).not.toBeVisible();
+  });
 
-    const ledger = await screen.findByRole("table", { name: "Dimensional Objects" });
+  it("opens a Dimensional Entity detail page with complete normalized context", async () => {
+    const user = userEvent.setup();
+    const fetcher = dimensionalFetchStub();
+    render(<WorkbenchApp router={dimensionalRouter(fetcher)} />);
+
+    const ledger = await screen.findByRole("table", { name: "Dimensional Entities" });
+    const views = within(screen.getByRole("navigation", { name: "Dimensional views" }));
+    expect(views.getAllByRole("button").map((button) => button.textContent?.replace(/\d/g, ""))).toEqual(["Entities", "Relationships", "Submodels"]);
+    expect(fetcher.mock.calls.some(([input]) => String(input).includes("/dimensional/attributes"))).toBe(false);
     expect(within(ledger).getAllByRole("columnheader").slice(1, 3).map((cell) => cell.textContent)).toEqual(["Schema", "Entity name"]);
     expect(within(ledger).getByRole("cell", { name: "gold" })).toBeVisible();
     expect(within(ledger).getByText("sales_fact")).toBeVisible();
-    await user.click(screen.getByRole("link", { name: "Open Dimensional Object 301" }));
+    await user.click(screen.getByRole("link", { name: "Open Dimensional Entity 301" }));
 
     expect(await screen.findByRole("heading", { name: "gold.sales_fact" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Submodel membership" })).toBeVisible();
@@ -25,23 +59,27 @@ describe("Model Dimensional", () => {
     await user.click(screen.getByRole("heading", { name: "Submodel membership" }));
     await user.click(screen.getByRole("heading", { name: "Source mappings" }));
     expect(screen.getByText("Sales Analytics")).toBeVisible();
+    const memberships = screen.getByRole("region", { name: "Scrollable Submodel memberships" });
+    expect(memberships).toHaveAttribute("tabindex", "0");
+    memberships.focus();
+    expect(memberships).toHaveFocus();
     expect(screen.getByRole("heading", { name: "Source mappings" })).toBeVisible();
     expect(within(screen.getByRole("table", { name: "Source mappings" })).getByRole("cell", { name: "silver" })).toBeVisible();
     expect(within(screen.getByRole("table", { name: "Source mappings" })).getByRole("cell", { name: "sales_order" })).toBeVisible();
-    expect(screen.getByText("assertion:sales-grain")).toBeVisible();
+    expect(screen.getAllByText("Sales project guide")[0]!).toBeVisible();
     expect(screen.queryByRole("heading", { name: "Provenance" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: "Back to Dimensional" }));
-    expect(await screen.findByRole("table", { name: "Dimensional Objects" })).toBeVisible();
+    expect(await screen.findByRole("table", { name: "Dimensional Entities" })).toBeVisible();
   });
 
   it("reviews Dimensional Attributes and Relationships on dedicated detail pages", async () => {
     const user = userEvent.setup();
     render(<WorkbenchApp router={dimensionalRouter(dimensionalFetchStub())} />);
-    await screen.findByRole("table", { name: "Dimensional Objects" });
+    await screen.findByRole("table", { name: "Dimensional Entities" });
 
-    await user.click(screen.getByRole("button", { name: "Attributes" }));
-    expect(await screen.findByRole("table", { name: "Dimensional Attributes" })).toBeVisible();
+    await user.click(screen.getByRole("link", { name: "Open Dimensional Entity 301" }));
+    expect(await screen.findByRole("table", { name: "Entity Attributes" })).toBeVisible();
     await user.click(screen.getByRole("link", { name: "Open Dimensional Attribute 401" }));
     expect(await screen.findByRole("heading", { name: "sales_amount" })).toHaveFocus();
     expect(screen.getByRole("heading", { name: "Aggregation" })).toBeVisible();
@@ -54,16 +92,18 @@ describe("Model Dimensional", () => {
     expect(screen.getByRole("heading", { name: "Source mappings" })).toBeVisible();
     const sourceTable = screen.getByRole("table", { name: "Source mappings" });
     for (const name of ["silver", "sales_order", "sales_amount"]) expect(within(sourceTable).getByRole("cell", { name })).toBeVisible();
-    expect(screen.getByText("assertion:additive-sales")).toBeVisible();
+    expect(screen.getAllByText("Sales project guide")[0]!).toBeVisible();
 
+    await user.click(screen.getByRole("link", { name: "Back to Entity" }));
+    expect(await screen.findByRole("heading", { name: "gold.sales_fact" })).toBeVisible();
     await user.click(screen.getByRole("link", { name: "Back to Dimensional" }));
-    await screen.findByRole("table", { name: "Dimensional Objects" });
+    await screen.findByRole("table", { name: "Dimensional Entities" });
     await user.click(screen.getByRole("button", { name: "Relationships" }));
     expect(await screen.findByRole("table", { name: "Dimensional Relationships" })).toBeVisible();
     await user.click(screen.getByRole("link", { name: "Open Dimensional Relationship 501" }));
     expect(await screen.findByRole("heading", { name: "customer to sales" })).toBeVisible();
-    expect(screen.getByText("gold.customer_dimension.customer_key")).toBeVisible();
-    expect(screen.getByText("gold.sales_fact.customer_key")).toBeVisible();
+    expect(screen.getByText("From", { selector: "dt" }).nextElementSibling).toHaveTextContent("gold.customer_dimension.customer_key");
+    expect(screen.getByText("To", { selector: "dt" }).nextElementSibling).toHaveTextContent("gold.sales_fact.customer_key");
     expect(screen.getByText("The customer key establishes the conformed join.")).toBeVisible();
     expect(screen.getByText("Each sale has one customer; a customer has many sales.")).toBeVisible();
   });
@@ -71,7 +111,7 @@ describe("Model Dimensional", () => {
   it("shows recorded change behavior without empty aggregation fields", async () => {
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(dimensionalFetchStub({ descriptiveAttribute: true })),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/dimensional/attributes/401"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/dimensional/attributes/401"] }),
     })} />);
     await screen.findByRole("heading", { name: "sales_amount" });
     expect(screen.queryByRole("heading", { name: "Aggregation" })).not.toBeInTheDocument();
@@ -84,40 +124,30 @@ describe("Model Dimensional", () => {
     const fetcher = dimensionalFetchStub({ hasNextPage: true });
     const user = userEvent.setup();
     render(<WorkbenchApp router={dimensionalRouter(fetcher)} />);
-    await screen.findByRole("table", { name: "Dimensional Objects" });
+    await screen.findByRole("table", { name: "Dimensional Entities" });
 
     if (screen.getByRole("button", { name: /^Filters/ }).getAttribute("aria-expanded") === "false") await user.click(screen.getByRole("button", { name: /^Filters/ }));
-    await user.type(screen.getByLabelText("Object name prefix"), " Sales ");
-    await user.selectOptions(screen.getByLabelText("Object status"), "inactive");
-    await user.selectOptions(screen.getByLabelText("Object lock"), "false");
-    await user.click(screen.getByRole("button", { name: "Apply Object filters" }));
+    await user.type(screen.getByLabelText("Entity name prefix"), " Sales ");
+    await user.selectOptions(screen.getByLabelText("Entity status"), "inactive");
+    await user.selectOptions(screen.getByLabelText("Entity lock"), "false");
+    await user.click(screen.getByRole("button", { name: "Apply Entity filters" }));
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/dimensional/objects?status=inactive&locked=false&name_prefix=sales&page_size=200",
+      "/api/v1/tenants/7/projects/18/dimensional/objects?status=inactive&locked=false&name_prefix=sales&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
-    await user.click(await screen.findByRole("button", { name: "Load more Dimensional Objects" }));
+    await user.click(await screen.findByRole("button", { name: "Load more Dimensional Entities" }));
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/dimensional/objects?status=inactive&locked=false&name_prefix=sales&page_size=200&cursor=objects-next",
-      expect.objectContaining({ credentials: "same-origin" }),
-    );
-
-    await user.click(screen.getByRole("button", { name: "Attributes" }));
-    await screen.findByRole("table", { name: "Dimensional Attributes" });
-    await user.type(screen.getByLabelText("Attribute name prefix"), " Amount ");
-    await user.type(screen.getByLabelText("Attribute Object ID"), "301");
-    await user.click(screen.getByRole("button", { name: "Apply Attribute filters" }));
-    expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/dimensional/attributes?status=active&name_prefix=amount&dimensional_entity_id=301&page_size=200",
+      "/api/v1/tenants/7/projects/18/dimensional/objects?status=inactive&locked=false&name_prefix=sales&page_size=200&cursor=objects-next",
       expect.objectContaining({ credentials: "same-origin" }),
     );
 
     await user.click(screen.getByRole("button", { name: "Relationships" }));
     await screen.findByRole("table", { name: "Dimensional Relationships" });
     await user.type(screen.getByLabelText("Relationship name prefix"), " Customer ");
-    await user.type(screen.getByLabelText("Relationship Object ID"), "302");
+    await user.type(screen.getByLabelText("Relationship Entity ID"), "302");
     await user.click(screen.getByRole("button", { name: "Apply Relationship filters" }));
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/dimensional/relationships?status=active&name_prefix=customer&dimensional_entity_id=302&page_size=200",
+      "/api/v1/tenants/7/projects/18/dimensional/relationships?status=active&name_prefix=customer&dimensional_entity_id=302&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
   });
@@ -126,14 +156,14 @@ describe("Model Dimensional", () => {
     const empty = render(
       <WorkbenchApp router={dimensionalRouter(dimensionalFetchStub({ empty: true }))} />,
     );
-    expect(await screen.findByText("No Dimensional Objects match these filters.")).toBeVisible();
+    expect(await screen.findByText("No Dimensional Entities match these filters.")).toBeVisible();
     empty.unmount();
 
     const mismatch = render(
-      <WorkbenchApp router={dimensionalRouter(dimensionalFetchStub({ modelRevision: 19 }))} />,
+      <WorkbenchApp router={dimensionalRouter(dimensionalFetchStub({ projectRevision: 19 }))} />,
     );
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The Model changed while Dimensional Objects were loading.",
+      "The Project changed while Dimensional Entities were loading.",
     );
     mismatch.unmount();
 
@@ -141,13 +171,13 @@ describe("Model Dimensional", () => {
       <WorkbenchApp router={dimensionalRouter(dimensionalFetchStub({ denied: true }))} />,
     );
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "You do not have permission to view Dimensional Objects.",
+      "You do not have permission to view Dimensional Entities.",
     );
     denied.unmount();
 
     render(<WorkbenchApp router={dimensionalRouter(dimensionalFetchStub({ error: true }))} />);
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Dimensional Objects could not be loaded.",
+      "Dimensional Entities could not be loaded.",
     );
   });
 
@@ -155,7 +185,7 @@ describe("Model Dimensional", () => {
     const unlocked = render(
       <WorkbenchApp router={dimensionalRouter(dimensionalFetchStub({ hasLock: false }))} />,
     );
-    await screen.findByRole("table", { name: "Dimensional Objects" });
+    await screen.findByRole("table", { name: "Dimensional Entities" });
     expect(screen.getByRole("button", { name: "Run Dimensional" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Run Dimensional" })).toHaveAttribute("title", "Tenant Lock required");
     unlocked.unmount();
@@ -163,27 +193,27 @@ describe("Model Dimensional", () => {
     const fetcher = dimensionalFetchStub();
     const user = userEvent.setup();
     render(<WorkbenchApp router={dimensionalRouter(fetcher)} />);
-    await screen.findByRole("table", { name: "Dimensional Objects" });
+    await screen.findByRole("table", { name: "Dimensional Entities" });
     expect(screen.getByText("Tenant Lock held by you")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Run Dimensional" }));
     expect(await screen.findByRole("heading", { name: "Configure Dimensional run" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Create and run Dimensional" }));
 
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/runs",
+      "/api/v1/tenants/7/projects/18/runs",
       expect.objectContaining({
         method: "POST",
-        body: expect.stringContaining('"model_workflow":"dimensional"'),
+        body: expect.stringContaining('"project_workflow":"dimensional"'),
       }),
     );
-    const createCall = fetcher.mock.calls.find(([input, init]) => String(input).endsWith("/models/18/runs") && init?.method === "POST");
+    const createCall = fetcher.mock.calls.find(([input, init]) => String(input).endsWith("/projects/18/runs") && init?.method === "POST");
     expect(JSON.parse(String(createCall?.[1]?.body))).toMatchObject({ selected_object_ids: [], selected_entity_ids: [501], modeled_entity_type: "logical_entity" });
     expect(fetcher.mock.calls.some(([input]) => String(input).includes("input-scope?zone=silver"))).toBe(false);
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/dimensional/runs/1250/execute",
+      "/api/v1/tenants/7/projects/18/dimensional/runs/1250/execute",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ execution_mode: "tool_assisted", expected_model_revision: 18 }),
+        body: JSON.stringify({ execution_mode: "tool_assisted", expected_project_revision: 18 }),
       }),
     );
   });
@@ -193,7 +223,7 @@ function dimensionalRouter(fetcher: ReturnType<typeof dimensionalFetchStub>) {
   return createWorkbenchRouter({
     api: createApiClient(fetcher),
     history: createMemoryHistory({
-      initialEntries: ["/tenants/7/models/18/dimensional"],
+      initialEntries: ["/tenants/7/projects/18/dimensional"],
     }),
   });
 }
@@ -202,7 +232,7 @@ function dimensionalFetchStub(options: {
   empty?: boolean;
   error?: boolean;
   denied?: boolean;
-  modelRevision?: number;
+  projectRevision?: number;
   hasNextPage?: boolean;
   descriptiveAttribute?: boolean;
   hasLock?: boolean;
@@ -217,14 +247,14 @@ function dimensionalFetchStub(options: {
         owned_by_current_principal: options.hasLock ?? true,
       },
     });
-    if (url === "/api/v1/tenants/7/models/18") return jsonResponse(modelPayload);
-    if (url.startsWith("/api/v1/tenants/7/models/18/dimensional/objects?")) {
+    if (url === "/api/v1/tenants/7/projects/18") return jsonResponse(projectPayload);
+    if (url.startsWith("/api/v1/tenants/7/projects/18/dimensional/objects?")) {
       if (options.denied) return jsonResponse({ error: { code: "forbidden" } }, 403);
       if (options.error) return jsonResponse({ error: { code: "unavailable" } }, 503);
       const isNextPage = url.includes("cursor=objects-next");
       return jsonResponse({
-        model_id: 18,
-        model_revision: options.modelRevision ?? 18,
+        project_id: 18,
+        project_revision: options.projectRevision ?? 18,
         items: options.empty
           ? []
           : [{
@@ -236,18 +266,18 @@ function dimensionalFetchStub(options: {
         next_cursor: options.hasNextPage && !isNextPage ? "objects-next" : null,
       });
     }
-    if (url === "/api/v1/tenants/7/models/18/dimensional/objects/301") {
+    if (url === "/api/v1/tenants/7/projects/18/dimensional/objects/301") {
       return jsonResponse(dimensionalObjectDetailPayload);
     }
-    if (url.startsWith("/api/v1/tenants/7/models/18/dimensional/attributes?")) {
+    if (url.startsWith("/api/v1/tenants/7/projects/18/dimensional/attributes?")) {
       return jsonResponse({
-        model_id: 18,
-        model_revision: 18,
+        project_id: 18,
+        project_revision: 18,
         items: [dimensionalAttributePayload],
         next_cursor: null,
       });
     }
-    if (url === "/api/v1/tenants/7/models/18/dimensional/attributes/401") {
+    if (url === "/api/v1/tenants/7/projects/18/dimensional/attributes/401") {
       return jsonResponse(options.descriptiveAttribute ? {
         ...dimensionalAttributeDetailPayload,
         dimensional_attribute_role: "descriptive", dimensional_attribute_additivity: null,
@@ -255,21 +285,21 @@ function dimensionalFetchStub(options: {
         dimensional_attribute_change_behavior: "type_2",
       } : dimensionalAttributeDetailPayload);
     }
-    if (url.startsWith("/api/v1/tenants/7/models/18/dimensional/relationships?")) {
+    if (url.startsWith("/api/v1/tenants/7/projects/18/dimensional/relationships?")) {
       return jsonResponse({
-        model_id: 18,
-        model_revision: 18,
+        project_id: 18,
+        project_revision: 18,
         items: [dimensionalRelationshipPayload],
         next_cursor: null,
       });
     }
-    if (url === "/api/v1/tenants/7/models/18/dimensional/relationships/501") {
+    if (url === "/api/v1/tenants/7/projects/18/dimensional/relationships/501") {
       return jsonResponse(dimensionalRelationshipDetailPayload);
     }
-    if (url === "/api/v1/tenants/7/models/18/logical/entities?status=active&page_size=200") {
+    if (url === "/api/v1/tenants/7/projects/18/logical/entities?status=active&page_size=200") {
       return jsonResponse({
-        model_id: 18,
-        model_revision: 18,
+        project_id: 18,
+        project_revision: 18,
         items: [{ logical_entity_id: 501, logical_entity_schema_name: "silver", logical_entity_name: "sales_order", logical_entity_status: "active", logical_entity_is_locked: false }],
         next_cursor: null,
       });
@@ -277,10 +307,10 @@ function dimensionalFetchStub(options: {
     if (url === "/api/v1/config/agent-capabilities") {
       return jsonResponse(agentCapabilitiesPayload);
     }
-    if (url === "/api/v1/tenants/7/models/18/runs?workflow=dimensional&page_size=5") {
+    if (url === "/api/v1/tenants/7/projects/18/runs?workflow=dimensional&page_size=5") {
       return jsonResponse({ items: [], next_cursor: null });
     }
-    if (url === "/api/v1/tenants/7/models/18/runs") {
+    if (url === "/api/v1/tenants/7/projects/18/runs") {
       return jsonResponse({
         created: true,
         workflow_run_id: 1250,
@@ -290,13 +320,13 @@ function dimensionalFetchStub(options: {
         created_at: "2026-08-24T16:00:00Z",
       }, 201);
     }
-    if (url === "/api/v1/tenants/7/models/18/dimensional/runs/1250/execute") {
+    if (url === "/api/v1/tenants/7/projects/18/dimensional/runs/1250/execute") {
       return jsonResponse({
         changed: true,
         workflow_run_id: 1250,
         workflow_run_state: "running",
         started_at: "2026-08-24T16:00:01Z",
-        model_revision: 18,
+        project_revision: 18,
       }, 202);
     }
     return jsonResponse({ error: { code: "not_found" } }, 404);
@@ -323,7 +353,7 @@ const tenantHomePayload = {
     is_locked: true,
     owner_display_name: "Maaz",
     owned_by_current_principal: true,
-    purpose: "Model authoring",
+    purpose: "Project authoring",
     acquired_at: "2026-08-24T14:12:00Z",
     expires_at: "2026-08-24T16:12:00Z",
   },
@@ -331,13 +361,13 @@ const tenantHomePayload = {
   systems: [],
 };
 
-const modelPayload = {
-  model_id: 18,
+const projectPayload = {
+  project_id: 18,
   tenant_id: 7,
-  model_name: "Customer 360",
-  model_description: "Cross-system customer domain",
-  model_revision: 18,
-  model_input_scope_object_count: 25,
+  project_name: "Customer 360",
+  project_description: "Cross-system customer domain",
+  project_revision: 18,
+  project_input_scope_object_count: 25,
   logical_schemas: [], dimensional_schemas: [], silver_model_naming_instructions: null,
   silver_model_audit_columns_template: null,
   gold_model_naming_instructions: null,
@@ -398,22 +428,21 @@ const dimensionalObjectDetailPayload = {
     {
       dimensional_entity_source_mapping_id: 902,
       workflow_run_id: null,
-      support_source_type: "assertion",
+      support_source_type: "context_record",
       source_role: "supporting",
       source_order: 2,
-      rationale: "The approved assertion confirms analytical grain.",
+      rationale: "The approved context confirms analytical grain.",
       status: "active",
       is_locked: true,
       created_at: "2026-08-24T14:43:00Z",
       updated_at: "2026-08-24T15:00:00Z",
-      assertion_record: {
-        modeling_assertion_record_id: 601,
-        modeling_assertion_record_key: "assertion:sales-grain",
-        modeling_assertion_document_name: "Sales model guide",
-        modeling_assertion_record_type: "grain",
-        modeling_assertion_text: "Sales facts are recorded at completed order-line grain.",
-        modeling_assertion_confidence: "high",
-        modeling_assertion_record_status: "active",
+      context_record: {
+        context_record_id: "00000000-0000-4000-8000-000000000601",
+        context_group_name: "Sales project guide",
+        context_type_name: "Business Requirements",
+        source_reference: null,
+        context_text: "Sales facts are recorded at completed order-line grain.",
+        status: "active",
       },
     },
   ],
@@ -463,21 +492,20 @@ const dimensionalAttributeDetailPayload = {
     {
       dimensional_attribute_source_mapping_id: 1002,
       workflow_run_id: null,
-      support_source_type: "assertion",
+      support_source_type: "context_record",
       source_order: 2,
-      rationale: "The assertion establishes aggregation behavior.",
+      rationale: "The context establishes aggregation behavior.",
       status: "active",
       is_locked: true,
       created_at: "2026-08-24T14:43:00Z",
       updated_at: "2026-08-24T15:00:00Z",
-      assertion_record: {
-        modeling_assertion_record_id: 602,
-        modeling_assertion_record_key: "assertion:additive-sales",
-        modeling_assertion_document_name: "Sales model guide",
-        modeling_assertion_record_type: "aggregation",
-        modeling_assertion_text: "Sales amount is additive across all dimensions.",
-        modeling_assertion_confidence: "high",
-        modeling_assertion_record_status: "active",
+      context_record: {
+        context_record_id: "00000000-0000-4000-8000-000000000602",
+        context_group_name: "Sales project guide",
+        context_type_name: "Business Requirements",
+        source_reference: null,
+        context_text: "Sales amount is additive across all dimensions.",
+        status: "active",
       },
     },
   ],
@@ -536,18 +564,25 @@ const agentCapabilitiesPayload = {
 };
 
 
-it.each([["Objects", "dimensional_entity", 301], ["Attributes", "dimensional_attribute", 401], ["Relationships", "dimensional_relationship", 501]] as const)("reviews selected %s through the governed endpoint", async (view, dataset, recordId) => {
+it.each([["Entities", "dimensional_entity", 301], ["Attributes", "dimensional_attribute", 401], ["Relationships", "dimensional_relationship", 501]] as const)("reviews selected %s through the governed endpoint", async (view, dataset, recordId) => {
   const { fetcher, commands } = withRecordReview(dimensionalFetchStub());
   render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
-    history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/dimensional"] }),
+    history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/dimensional"] }),
   })} />);
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: view }));
+  if (view === "Attributes") {
+    await user.click(await screen.findByRole("link", { name: "Open Dimensional Entity 301" }));
+    await screen.findByRole("table", { name: "Entity Attributes" });
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/v1/tenants/7/projects/18/dimensional/attributes?status=active&dimensional_entity_id=301&page_size=200",
+      expect.objectContaining({ credentials: "same-origin" }),
+    );
+  } else await user.click(await screen.findByRole("button", { name: view }));
   const selection = await screen.findByRole("checkbox", { name: new RegExp(`^Select Dimensional .* ${recordId}$`) });
   await user.click(selection);
   await user.click(screen.getByRole("button", { name: "Lock selected" }));
   const apply = await screen.findByRole("button", { name: "Apply this change" });
-  expect(commands[0]).toEqual({ dataset, record_ids: [recordId], action: "lock", expected_model_revision: 18 });
+  expect(commands[0]).toEqual({ dataset, record_ids: [recordId], action: "lock", expected_project_revision: 18 });
   await user.click(apply);
   expect(commands[1]).toEqual({ ...commands[0], expected_plan_digest: "c".repeat(64) });
 });

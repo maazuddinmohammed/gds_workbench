@@ -4,14 +4,14 @@ Atlas Analysis uses metadata first. Clear Object purpose, Attribute roles and co
 
 ## Read the right context
 
-Use the [Model Snapshot](../snapshots/model.md), [Model record authoring](../model/change-sets.md), [Analysis record](../model/analysis-result.md) and [query-scope](../query-scope.md) guides as needed. They own file/record/tool and batch rules; do not redefine them here.
+Use the [Project Snapshot](../snapshots/project.md), [Project record authoring](../project/change-sets.md), [Analysis record](../project/analysis-result.md) and [query-scope](../query-scope.md) guides as needed. They own file/record/tool and batch rules; do not redefine them here.
 
-1. **Inventory the requested scope.** Resolve requested Objects/Attributes within active applied Model Input Scope. Read Object meaning/grain, Attribute descriptions and physical/inferred types, System context, applicable glossary terms, known keys, profiles, assertions, provenance and existing analysis. Reuse relevant prior findings. Track reviewed Objects so unfamiliar, isolated or unprofiled inputs are not silently omitted. Redo may focus on affected neighborhoods; both endpoints must remain in Model scope.
+1. **Inventory the requested scope.** Resolve requested Objects/Attributes within active applied Project Input Scope. Read Object meaning/grain, Attribute descriptions and physical/inferred types, System context, applicable glossary terms, known keys, profiles, contexts, provenance and existing analysis. Reuse relevant prior findings. Track reviewed Objects so unfamiliar, isolated or unprofiled inputs are not silently omitted. Redo may focus on affected neighborhoods; both endpoints must remain in Project scope.
 2. **Find identity and role references.** Compare names, aliases, role prefixes and documented abbreviations: customer_id, bill_to_customer_id and Customer.ID may identify different roles. Normalize names only for discovery, not stored identity or data values. Clear names and consistent Object meaning can support an inferred reference immediately. Also inspect differently named identifiers, hierarchy links and cross-System candidates. Generic id names or incompatible business domains need more context.
 3. **Make a separate domain-reference pass.** Inspect every Object's type, category, status, classification, country, currency, code and name Attributes against the scoped reference/lookup Objects. Use descriptions, glossary terms and existing profiles when available. String keys are valid: Product.product_type may reference ProductType.type_name even though neither is numeric or ends in ID. Look for semantic equivalents with different names. A matching business domain supports inference; low distinct counts or shared values alone do not. A category without a reference Object in scope stays a domain/concept suggestion; do not invent an endpoint or require normalization.
 4. **State the candidate precisely.** Identify the two exact endpoint keys, business role, direction and complete proposed key tuple. Describe why the meanings should match and what would disprove it. Include Tenant/System/company qualifiers only when they belong to the actual identifier domain. Distinguish a reference, shared category and same business identity; they require different evidence. Preserve billing/shipping roles and self-reference through different Attributes.
 
-Complete both discovery passes across the requested scope. The Grill Me workflow may investigate the current part and its relevant in-scope neighbors, retaining coverage across parts rather than rescanning the whole Model each time. Considering a neighbor does not authorize unrelated changes; a request for the complete Model is finished only after overall coverage review. Include hierarchy links and differently named references. Track meaningful unresolved candidates; no Object must have an edge merely to look connected.
+Complete both discovery passes across the requested scope. The Grill Me workflow may investigate the current part and its relevant in-scope neighbors, retaining coverage across parts rather than rescanning the whole Project each time. Considering a neighbor does not authorize unrelated changes; a request for the complete Project is finished only after overall coverage review. Include hierarchy links and differently named references. Track meaningful unresolved candidates; no Object must have an edge merely to look connected.
 
 ## Resolve uncertainty when needed
 
@@ -24,7 +24,7 @@ Choose only the checks that answer the unresolved question below. First follow s
 
 | Unresolved question | Optional measurement |
 |---|---|
-| Is the proposed parent key usable? | Complete-key rows, distinct complete tuples, duplicate extras, and null-key rows. Explain duplicates from history/repeated loads before changing the model. |
+| Is the proposed parent key usable? | Complete-key rows, distinct complete tuples, duplicate extras, and null-key rows. Explain duplicates from history/repeated loads before changing the project. |
 | Does the child reference the parent? | Distinct missing child keys and unmatched child-row counts, separately; check the selected parent population is appropriate. |
 | What does each relationship occurrence mean? | Distinct child identities per parent at the established child grain, and possible parent matches per child. Do not use inflated join-result row counts as multiplicity. |
 | Is participation optional? | All-null/partially-null child key counts, schema constraints and confirmed business rules. Non-null orphan rows are a different issue. |
@@ -61,7 +61,7 @@ Declared Databricks PK/FK/unique constraints can support intended relationships 
 ## Save findings and review coverage
 
 9. **Save the inference separately from measurements.** Use the shared Analysis record guide's 27 fields. Explicitly populate `inferred_cardinality`, explain the relationship and cardinality in `relationship_basis`, and choose appropriate confidence. For unmeasured inference, leave all nine `validation_*` fields null. Preserve measured counts when present; a disagreement with inferred cardinality is a review warning, not permission to overwrite either. Record physical Attribute pairs only; keep composite tuples, domain suggestions and other unrepresentable findings in task evidence. Lifecycle status remains separate from the conclusion.
-10. **Review coverage and hand off.** Confirm both discovery passes covered scoped Objects, including string classifications, differently named references, role links and hierarchies. Keep meaningful unresolved candidates visible; explain isolated Objects without inventing links. Validate record structure locally through the Model authoring guide; this does not require SQL relationship tests. Preserve locks/unrelated edits and follow the shared Change Set lifecycle when ready.
+10. **Review coverage and hand off.** Confirm both discovery passes covered scoped Objects, including string classifications, differently named references, role links and hierarchies. Keep meaningful unresolved candidates visible; explain isolated Objects without inventing links. Validate record structure locally through the Project authoring guide; this does not require SQL relationship tests. Preserve locks/unrelated edits and follow the shared Change Set lifecycle when ready.
 
 SQL's directional validation verdict and the overall business conclusion remain distinct. A failed lookup on an incomplete parent batch does not by itself disprove the business relationship. A successful lookup does not establish meaning, required participation or future cardinality. Unsupported measurements must affect the conclusion or its limitations rather than being attached and ignored.
 
@@ -77,7 +77,7 @@ SQL's directional validation verdict and the overall business conclusion remain 
 
 | Check | Purpose |
 |---|---|
-| analysis.scope | Both real endpoints belong to active Model input scope; complete physical keys and ownership distinctions are correct. |
+| analysis.scope | Both real endpoints belong to active Project input scope; complete physical keys and ownership distinctions are correct. |
 | analysis.evidence | State metadata inference or actual measurement accurately. SQL is optional; generated descriptions are not independent confirmation of themselves. |
 | analysis.cardinality | Grain, multiplicity and optionality are distinguished; batch duplication is not promoted to a relationship rule. |
 | analysis.payload | Exact schema, lifecycle values, complete validation group, correct metric units and locked-record protection. |
@@ -89,7 +89,7 @@ These checks and the procedure are a design synthesis from the cited definitions
 
 Analysis stores `inferred_cardinality` independently of validation, with its reasoning in `relationship_basis`. Leave unmeasured validation fields null. Later Conceptual/Logical records assess cardinality for their own modeled grains. A category label can be a valid reference key; use `relationship_kind="reference"` for ordinary lookups and describe its category/domain semantics. Matching low-cardinality strings alone do not establish shared meaning or uniqueness.
 
-Analysis findings do not create Logical FKs. During Logical design, map relevant supported associations to the actual modeled grains and keys, then author explicit relationships under the [relationship and graph review](logical-design.md#relationship-and-graph-review). Do not mechanically copy every physical edge or infer a join from matching names alone. Review isolated Entities and disconnected components with the user before completing model work; intentional separation remains valid.
+Analysis findings do not create Logical FKs. During Logical design, map relevant supported associations to the actual modeled grains and keys, then author explicit relationships under the [relationship and graph review](logical-design.md#relationship-and-graph-review). Do not mechanically copy every physical edge or infer a join from matching names alone. Review isolated Entities and disconnected components with the user before completing project work; intentional separation remains valid.
 
 ## Analysis planner input
 

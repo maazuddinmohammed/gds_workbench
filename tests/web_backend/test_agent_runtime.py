@@ -83,10 +83,10 @@ async def test_agent_router_rejects_a_model_profile_for_the_wrong_execution_mode
     None
 ):
     registry = load_default_agent_capabilities()
-    databricks_model = next(
+    primary_model = next(
         model for model in registry.models if model.code == "foundry-primary"
     )
-    restricted = databricks_model.model_copy(
+    restricted = primary_model.model_copy(
         update={
             "execution_profiles": (
                 AgentModelExecutionProfile(
@@ -576,7 +576,7 @@ def _logical_request(*, sdk_code: str) -> AgentExecutionRequest:
         instruction_prompt="private instruction prompt",
         context={
             "original_context": {
-                "model_details": {
+                "project_details": {
                     "logical_schemas": [{"schema_name": "silver", "description": None}]
                 },
                 "selected_objects": [
@@ -627,7 +627,7 @@ def _logical_validator() -> LogicalCandidateValidator:
                 attribute_name="customer_id",
             ),
         ),
-        assertion_record_keys=(),
+        context_record_ids=(),
         applied=None,
     )
 
@@ -687,7 +687,7 @@ def _dimensional_request(*, sdk_code: str) -> AgentExecutionRequest:
         instruction_prompt="private instruction prompt",
         context={
             "original_context": {
-                "model_details": {
+                "project_details": {
                     "dimensional_schemas": [
                         {"schema_name": "gold", "description": None}
                     ]
@@ -719,7 +719,7 @@ def _dimensional_validator(
                 **default_entity.model_dump(), logical_attribute_name="customer_id"
             ),
         ),
-        assertion_record_keys=(),
+        context_record_ids=(),
         applied=None,
     )
 

@@ -3,7 +3,7 @@
 from copy import deepcopy
 from typing import Any, cast
 
-from gds_etl_workbench.domain.snapshots.model import model_snapshot_records
+from gds_etl_workbench.domain.snapshots.project import project_snapshot_records
 from gds_workbench_api.features.mapping.execution_context import (
     MappingExecutionContextLimits,
     build_mapping_execution_context,
@@ -18,8 +18,8 @@ from gds_workbench_api.features.workflows.authoring.downstream_inputs import (
 )
 from jsonschema import Draft202012Validator
 
-from tests.mcp.model_test_fixtures import (
-    complete_model_graph,
+from tests.mcp.project_test_fixtures import (
+    complete_project_graph,
     logical_relationship,
     snapshot_from_graph,
 )
@@ -33,7 +33,7 @@ def test_gold_support_records_keep_upstream_documents_lineage_and_page_completel
     assert preparation.snapshot is not None
     graph = {
         name: [row.model_dump(mode="json") for row in rows]
-        for name, rows in model_snapshot_records(preparation.snapshot).items()
+        for name, rows in project_snapshot_records(preparation.snapshot).items()
     }
     physical_source = mapping_preparation().context.sources[0]
     physical = physical_source.object
@@ -133,7 +133,7 @@ def test_gold_support_records_keep_upstream_documents_lineage_and_page_completel
         }
         for name in ("customer_id", "region_id", "unused")
     ]
-    analysis = deepcopy(complete_model_graph()["analysis_result"][0])
+    analysis = deepcopy(complete_project_graph()["analysis_result"][0])
     for side, attribute in (("from", "customer_id"), ("to", "region_id")):
         analysis.update({f"{side}_{name}": value for name, value in key.items()})
         analysis[f"{side}_attribute_name"] = attribute

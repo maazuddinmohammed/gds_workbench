@@ -51,7 +51,7 @@ SELECT object.object_id,
        visible_objects.is_on_global_connection,
        visible_objects.is_copy_referenced,
        visible_objects.is_process_referenced,
-       visible_objects.is_model_input_scope_referenced,
+       visible_objects.is_project_input_scope_referenced,
        object.is_active
   FROM visible_objects
   JOIN core.object AS object ON object.object_id = visible_objects.object_id
@@ -108,5 +108,5 @@ class ObjectSummary(ContractModel):
     is_on_global_connection: bool
     is_copy_referenced: bool
     is_process_referenced: bool
-    is_model_input_scope_referenced: bool
+    is_project_input_scope_referenced: bool
     is_active: bool

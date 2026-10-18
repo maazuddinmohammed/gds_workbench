@@ -15,7 +15,7 @@ fresh-install schema, not migrations.
 | Azure Database for PostgreSQL Flexible Server 18 | GDS application database |
 | Linux Azure App Service plan and web app | Runs the Python 3.14 MCP server |
 | Azure Key Vault | Holds the database DSN and cursor-signing key |
-| Azure Storage account and private Blob container | Stores temporary Metadata and Model ZIP snapshots |
+| Azure Storage account and private Blob container | Stores temporary Metadata and Project ZIP snapshots |
 | Microsoft Entra app registration and App Service Authentication | Authenticates VS Code and other MCP clients |
 
 Databricks is optional. Deploy/configure it only if you intend to use
@@ -116,7 +116,7 @@ application access. This repository supplies no populated-database upgrade helpe
 3. Disable anonymous Blob access.
 4. Open **Containers** and create `snapshots` with **Private** access.
 5. Under **Lifecycle management**, add deletion rules for `metadata/` and
-   `model/` after at least 24 hours.
+   `project/` after at least 24 hours.
 
 Keep the account network-accessible to the web app. Snapshot download URLs are
 short-lived, read-only user-delegation SAS URLs; the container itself stays

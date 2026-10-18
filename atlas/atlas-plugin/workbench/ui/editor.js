@@ -32,8 +32,8 @@
     text.textContent = label(field);
     const metadata = document.createElement("small");
     const keyField = state.loaded.definition.canonical_key?.includes(field);
-    const modelSetting = state.area === "model" && state.dataset === "model_details" && ["logical_entity_scd_type", "dimensional_entity_scd_type"].includes(field);
-    metadata.textContent = [keyField && "Natural key", state.loaded.schema?.required?.includes(field) && "Required", details.fixed && "Fixed", modelSetting && "Change in Model settings", details.type].filter(Boolean).join(" · ");
+    const projectSetting = state.area === "project" && state.dataset === "project_details" && ["logical_entity_scd_type", "dimensional_entity_scd_type"].includes(field);
+    metadata.textContent = [keyField && "Natural key", state.loaded.schema?.required?.includes(field) && "Required", details.fixed && "Fixed", projectSetting && "Change in Project settings", details.type].filter(Boolean).join(" · ");
     fieldLabel.append(text, metadata);
     let control;
     const enumValues = Array.isArray(details.schema.enum) ? details.schema.enum.filter((item) => item !== null) : null;
@@ -62,14 +62,14 @@
     }
     control.id = `row-field-${index}`;
     control.dataset.rowField = field;
-    control.disabled = details.fixed || modelSetting || (state.editing.mode === "edit" && keyField);
+    control.disabled = details.fixed || projectSetting || (state.editing.mode === "edit" && keyField);
     wrapper.append(fieldLabel, control);
     if (details.nullable && details.type !== "boolean" && !enumValues) {
       const nullLabel = document.createElement("label");
       nullLabel.className = "null-toggle";
       const checkbox = document.createElement("input");
       checkbox.type = "checkbox"; checkbox.dataset.nullField = field; checkbox.checked = initial === null; checkbox.disabled = control.disabled;
-      checkbox.addEventListener("change", () => { control.disabled = checkbox.checked || details.fixed || modelSetting || (state.editing.mode === "edit" && keyField); });
+      checkbox.addEventListener("change", () => { control.disabled = checkbox.checked || details.fixed || projectSetting || (state.editing.mode === "edit" && keyField); });
       if (checkbox.checked) control.disabled = true;
       nullLabel.append(checkbox, " Set null");
       wrapper.append(nullLabel);
@@ -79,7 +79,8 @@
 
   function openEditor(mode, record) {
     if (!state.loaded || !eligible() || (mode === "edit" && recordReadOnlyReason(record)) || (mode === "edit" && !state.loaded.pending.some((item) => recordKey(item) === recordKey(record)))) return;
-    const fields = recordFields([record], true);
+    if (mode === "add" && state.dataset === "context_record") record = { ...record, context_record_id: root.crypto.randomUUID() };
+    const fields = recordFields([record], true).filter(field => state.dataset !== "context_record" || field !== "context_record_id");
     state.editing = { mode, original: record, fields };
     editorFields.replaceChildren();
     editorMessage.textContent = "";
@@ -96,7 +97,7 @@
   }
 
   function readEditorRecord() {
-    const record = {};
+    const record = state.dataset === "context_record" ? { context_record_id: state.editing.original.context_record_id } : {};
     for (const field of state.editing.fields) {
       const control = editorControl(field, "data-row-field");
       const nullControl = editorControl(field, "data-null-field");

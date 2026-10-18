@@ -44,7 +44,7 @@ from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowRunStart,
 )
 from gds_workbench_api.features.workflows.authoring.plan import (
-    ModelWorkflow,
+    ProjectWorkflow,
     WorkflowExecutionMode,
 )
 from gds_workbench_api.main import create_app
@@ -137,7 +137,7 @@ def _policy() -> AnalysisValidationPolicy:
 
 @dataclass
 class _Lifecycle:
-    bindings: list[tuple[ModelWorkflow, WorkflowExecutionMode | None]] = field(
+    bindings: list[tuple[ProjectWorkflow, WorkflowExecutionMode | None]] = field(
         default_factory=lambda: []
     )
     events: list[AgentWorkflowEvent] = field(default_factory=lambda: [])
@@ -149,21 +149,21 @@ class _Lifecycle:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
+        expected_workflow: ProjectWorkflow,
         expected_execution_mode: WorkflowExecutionMode | None,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart:
         del principal
-        assert (tenant_id, model_id, workflow_run_id) == (7, 18, 1048)
+        assert (tenant_id, project_id, workflow_run_id) == (7, 18, 1048)
         self.bindings.append((expected_workflow, expected_execution_mode))
         return AgentWorkflowRunStart(
             changed=True,
             workflow_run_id=workflow_run_id,
             workflow_run_state="running",
             started_at=datetime(2026, 8, 24, 10, tzinfo=UTC),
-            model_revision=expected_model_revision,
+            project_revision=expected_project_revision,
         )
 
     async def append_event(
@@ -171,12 +171,12 @@ class _Lifecycle:
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         event: AgentWorkflowEvent,
     ) -> None:
         del principal
-        assert (workflow_run_id, expected_model_revision) == (1048, 4)
+        assert (workflow_run_id, expected_project_revision) == (1048, 4)
         assert workflow_run_claim_token == _CLAIM_TOKEN
         self.events.append(event)
 
@@ -185,13 +185,13 @@ class _Lifecycle:
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         failure_code: str,
         safe_failure_message: str,
     ) -> object:
         del principal
-        assert (workflow_run_id, expected_model_revision) == (1048, 4)
+        assert (workflow_run_id, expected_project_revision) == (1048, 4)
         assert workflow_run_claim_token == _CLAIM_TOKEN
         if self.fail_persistence:
             raise DependencyUnavailableError()
@@ -209,12 +209,12 @@ class _Repository:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AnalysisValidationExecutionContext:
         assert principal == _principal()
-        assert (tenant_id, model_id, workflow_run_id, expected_model_revision) == (
+        assert (tenant_id, project_id, workflow_run_id, expected_project_revision) == (
             7,
             18,
             1048,
@@ -227,19 +227,19 @@ class _Repository:
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         validation_results: list[dict[str, object]],
     ) -> AnalysisValidationCommitResult:
         assert principal == _principal()
-        assert (workflow_run_id, expected_model_revision) == (1048, 4)
+        assert (workflow_run_id, expected_project_revision) == (1048, 4)
         assert workflow_run_claim_token == _CLAIM_TOKEN
         self.commits.append(validation_results)
         return AnalysisValidationCommitResult(
             changed=True,
             workflow_run_id=1048,
-            model_id=18,
-            model_revision=5,
+            project_id=18,
+            project_revision=5,
             submitted_result_count=len(validation_results),
             changed_result_count=len(validation_results),
             workflow_run_state="completed",
@@ -276,8 +276,8 @@ class _Executor:
 async def test_validation_workflow_is_deterministic_bounded_and_commits_once() -> None:
     context = AnalysisValidationExecutionContext(
         workflow_run_id=1048,
-        model_id=18,
-        model_revision=4,
+        project_id=18,
+        project_revision=4,
         requested_batch_id="10428",
         targets=tuple(_target(result_id) for result_id in range(1, 46)),
     )
@@ -294,16 +294,16 @@ async def test_validation_workflow_is_deterministic_bounded_and_commits_once() -
     await workflow.start(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=4,
+        expected_project_revision=4,
     )
     await workflow.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=4,
+        expected_project_revision=4,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -316,7 +316,8 @@ async def test_validation_workflow_is_deterministic_bounded_and_commits_once() -
     payload = repository.commits[0]
     assert [item["analysis_result_id"] for item in payload] == list(range(1, 46))
     assert all(
-        item["source_context_digest"] == f"{item['analysis_result_id']:064x}" for item in payload
+        item["source_context_digest"] == f"{item['analysis_result_id']:064x}"
+        for item in payload
     )
     assert all(
         item["validation_policy_version"] == _policy().validation_policy_version
@@ -330,8 +331,8 @@ async def test_empty_validation_context_skips_databricks_and_commits_empty() -> 
     repository = _Repository(
         context=AnalysisValidationExecutionContext(
             workflow_run_id=1048,
-            model_id=18,
-            model_revision=4,
+            project_id=18,
+            project_revision=4,
             requested_batch_id=None,
             targets=(),
         )
@@ -347,9 +348,9 @@ async def test_empty_validation_context_skips_databricks_and_commits_empty() -> 
     await workflow.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=4,
+        expected_project_revision=4,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -363,8 +364,8 @@ async def test_validation_failure_is_safe_and_never_commits_partial_results() ->
     repository = _Repository(
         context=AnalysisValidationExecutionContext(
             workflow_run_id=1048,
-            model_id=18,
-            model_revision=4,
+            project_id=18,
+            project_revision=4,
             requested_batch_id=None,
             targets=tuple(_target(result_id) for result_id in range(1, 6)),
         )
@@ -379,9 +380,9 @@ async def test_validation_failure_is_safe_and_never_commits_partial_results() ->
     await workflow.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=4,
+        expected_project_revision=4,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -395,15 +396,17 @@ async def test_validation_failure_is_safe_and_never_commits_partial_results() ->
 
 
 @pytest.mark.asyncio
-async def test_validation_propagates_when_terminal_failure_cannot_be_persisted() -> None:
+async def test_validation_propagates_when_terminal_failure_cannot_be_persisted() -> (
+    None
+):
     lifecycle = _Lifecycle(fail_persistence=True)
     workflow = AnalysisValidationWorkflow(
         lifecycle=lifecycle,
         repository=_Repository(
             context=AnalysisValidationExecutionContext(
                 workflow_run_id=1048,
-                model_id=18,
-                model_revision=4,
+                project_id=18,
+                project_revision=4,
                 requested_batch_id=None,
                 targets=(_target(1),),
             )
@@ -416,9 +419,9 @@ async def test_validation_propagates_when_terminal_failure_cannot_be_persisted()
         await workflow.execute_started(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=4,
+            expected_project_revision=4,
             workflow_run_claim_token=_CLAIM_TOKEN,
         )
 
@@ -429,8 +432,8 @@ def _database_context_row() -> dict[str, object]:
     target = relationship.to_endpoint
     return {
         "workflow_run_id": 1048,
-        "model_id": 18,
-        "model_revision": 4,
+        "project_id": 18,
+        "project_revision": 4,
         "requested_batch_id": "10428",
         "analysis_result_id": relationship.analysis_result_id,
         "relationship_kind": relationship.relationship_kind,
@@ -483,8 +486,8 @@ class _DatabaseTransaction:
             return {
                 "changed": True,
                 "workflow_run_id": 1048,
-                "model_id": 18,
-                "model_revision": 5,
+                "project_id": 18,
+                "project_revision": 5,
                 "submitted_result_count": 1,
                 "changed_result_count": 1,
             }
@@ -498,9 +501,9 @@ class _DatabaseTransaction:
             }
         assert "FROM application.workflow_run AS run" in query
         return {
-            "model_revision": 4,
+            "project_revision": 4,
             "requested_batch_id": "10428",
-            "model_workflow": "analysis",
+            "project_workflow": "analysis",
             "workflow_execution_mode": None,
         }
 
@@ -514,8 +517,8 @@ class _DatabaseTransaction:
             return [
                 {
                     "workflow_run_id": 1048,
-                    "model_id": 18,
-                    "model_revision": 4,
+                    "project_id": 18,
+                    "project_revision": 4,
                     "gds_connection_id": 91,
                     "environment_code": "DEV",
                     "failure_code": None,
@@ -561,9 +564,9 @@ async def test_database_repository_fences_context_credentials_and_environment() 
     context = await repository.load_context(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=4,
+        expected_project_revision=4,
     )
 
     assert database.write_isolations == [ReadIsolation.REPEATABLE_READ]
@@ -574,7 +577,7 @@ async def test_database_repository_fences_context_credentials_and_environment() 
     assert "sensitive-token" not in repr(context)
 
     binding_query, binding_parameters = database.transaction.calls[0]
-    assert "run.model_workflow = 'analysis'" in binding_query
+    assert "run.project_workflow = 'analysis'" in binding_query
     assert "run.workflow_execution_mode IS NULL" in binding_query
     assert binding_parameters == (7, 18, 1048)
     context_call = next(
@@ -602,9 +605,9 @@ async def test_database_repository_empty_context_skips_credential_helper() -> No
     context = await repository.load_context(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=4,
+        expected_project_revision=4,
     )
 
     assert context.targets == ()
@@ -615,7 +618,9 @@ async def test_database_repository_empty_context_skips_credential_helper() -> No
 
 
 @pytest.mark.asyncio
-async def test_database_repository_persists_environment_and_completes_atomically() -> None:
+async def test_database_repository_persists_environment_and_completes_atomically() -> (
+    None
+):
     database = _Database(context_rows=[])
     repository = DatabaseAnalysisValidationRepository(
         database=database,
@@ -634,13 +639,13 @@ async def test_database_repository_persists_environment_and_completes_atomically
     result = await repository.commit(
         _principal(),
         workflow_run_id=1048,
-        expected_model_revision=4,
+        expected_project_revision=4,
         workflow_run_claim_token=_CLAIM_TOKEN,
         validation_results=validation_results,
     )
 
     assert result.workflow_run_state == "completed"
-    assert result.model_revision == 5
+    assert result.project_revision == 5
     assert database.write_transactions == 1
     persistence_call = next(
         call
@@ -648,16 +653,18 @@ async def test_database_repository_persists_environment_and_completes_atomically
         if "persist_analysis_validation_results" in call[0]
     )
     completion_call = next(
-        call for call in database.transaction.calls if "complete_workflow_run" in call[0]
+        call
+        for call in database.transaction.calls
+        if "complete_workflow_run" in call[0]
     )
     assert persistence_call[1][-2] == "DEV"
     assert isinstance(persistence_call[1][-1], Jsonb)
     assert persistence_call[1][-1].obj == validation_results
     assertion_call = database.transaction.calls[0]
     assert "application.assert_workflow_run_claim" in assertion_call[0]
-    assert database.transaction.calls.index(persistence_call) < database.transaction.calls.index(
-        completion_call
-    )
+    assert database.transaction.calls.index(
+        persistence_call
+    ) < database.transaction.calls.index(completion_call)
 
 
 @pytest.mark.asyncio
@@ -673,7 +680,7 @@ async def test_database_repository_fence_rejection_prevents_validation_writes() 
         await repository.commit(
             _principal(),
             workflow_run_id=1048,
-            expected_model_revision=4,
+            expected_project_revision=4,
             workflow_run_claim_token=_CLAIM_TOKEN,
             validation_results=[],
         )
@@ -693,18 +700,20 @@ class _StaticValidationService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart:
         del principal
-        self.starts.append((tenant_id, model_id, workflow_run_id, expected_model_revision))
+        self.starts.append(
+            (tenant_id, project_id, workflow_run_id, expected_project_revision)
+        )
         return AgentWorkflowRunStart(
             changed=self.changed,
             workflow_run_id=workflow_run_id,
             workflow_run_state="running",
             started_at=datetime(2026, 8, 24, 10, tzinfo=UTC),
-            model_revision=expected_model_revision,
+            project_revision=expected_project_revision,
         )
 
     async def execute_started(
@@ -712,14 +721,16 @@ class _StaticValidationService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
     ) -> None:
         del principal
         assert workflow_run_claim_token == _CLAIM_TOKEN
-        self.executions.append((tenant_id, model_id, workflow_run_id, expected_model_revision))
+        self.executions.append(
+            (tenant_id, project_id, workflow_run_id, expected_project_revision)
+        )
 
 
 def _client(service: _StaticValidationService) -> TestClient:
@@ -739,13 +750,13 @@ def test_validation_route_is_explicit_strict_and_replay_safe() -> None:
     service = _StaticValidationService()
     with _client(service) as client:
         started = client.post(
-            "/api/v1/tenants/7/models/18/analysis/validation-runs/1048/execute",
-            json={"expected_model_revision": 4},
+            "/api/v1/tenants/7/projects/18/analysis/validation-runs/1048/execute",
+            json={"expected_project_revision": 4},
         )
         rejected = client.post(
-            "/api/v1/tenants/7/models/18/analysis/validation-runs/1048/execute",
+            "/api/v1/tenants/7/projects/18/analysis/validation-runs/1048/execute",
             json={
-                "expected_model_revision": 4,
+                "expected_project_revision": 4,
                 "source_context_digest": "a" * 64,
                 "databricks_token": "user-supplied-token",
             },
@@ -755,8 +766,8 @@ def test_validation_route_is_explicit_strict_and_replay_safe() -> None:
     assert rejected.status_code == 422
     assert (
         ExecuteAnalysisValidationRunRequest.model_validate(
-            {"expected_model_revision": 4}, strict=True
-        ).expected_model_revision
+            {"expected_project_revision": 4}, strict=True
+        ).expected_project_revision
         == 4
     )
     assert service.starts == [(7, 18, 1048, 4)]
@@ -765,8 +776,8 @@ def test_validation_route_is_explicit_strict_and_replay_safe() -> None:
     replay_service = _StaticValidationService(changed=False)
     with _client(replay_service) as client:
         replay = client.post(
-            "/api/v1/tenants/7/models/18/analysis/validation-runs/1048/execute",
-            json={"expected_model_revision": 4},
+            "/api/v1/tenants/7/projects/18/analysis/validation-runs/1048/execute",
+            json={"expected_project_revision": 4},
         )
     assert replay.status_code == 200
     assert replay_service.executions == []

@@ -2,13 +2,13 @@ import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, readFile, readdir, realpath, writeFile, rename, unlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
-import { stableStringify, isEntityOwnedModelCatalog, SHA256, UUID, MAX_MANIFEST_BYTES, MAX_PATH_CHARACTERS,
+import { stableStringify, isEntityOwnedProjectCatalog, SHA256, UUID, MAX_MANIFEST_BYTES, MAX_PATH_CHARACTERS,
  MAX_LOCAL_PAYLOAD_BYTES, ALLOWED_DATASETS, fail, isObject, hasExactKeys,
  recordKey, normalizedTenantCode, type StageRequest, type StageApprovedManifestInput,
  type JsonRecord, type StageRequestDataset, type BackendIdentity } from "./stage-contract.js";
 export async function workspaceDigest(
   directory: string,
-  maximumPayloadBytes = MAX_LOCAL_PAYLOAD_BYTES.model,
+  maximumPayloadBytes = MAX_LOCAL_PAYLOAD_BYTES.project,
 ): Promise<string> {
   const entries = await readdir(directory, { withFileTypes: true });
   const hash = createHash("sha256");
@@ -112,9 +112,9 @@ export async function readRequest(
   }
   const request = parsed as unknown as StageRequest;
   if (
-    request.schema_version !== "1.0" ||
+    request.schema_version !== "2.0" ||
     request.kind !== "atlas-stage-request" ||
-    !["metadata", "model"].includes(request.area) ||
+    !["metadata", "project"].includes(request.area) ||
     typeof request.task !== "string" || !UUID.test(request.task) ||
     !SHA256.test(request.accepted_digest) ||
     typeof request.failed_retry !== "boolean" ||
@@ -130,9 +130,9 @@ export async function readRequest(
       request.area === "metadata"
         ? ["tenant_code", "change_set_id", "starting_revision"]
         : [
-            "model_id",
-            "model_name",
-            "model_revision",
+            "project_id",
+            "project_name",
+            "project_revision",
             "change_set_id",
             "starting_revision",
           ],
@@ -152,14 +152,14 @@ export async function readRequest(
       (typeof request.target.tenant_code !== "string" ||
         request.target.tenant_code.trim().length < 1 ||
         request.target.tenant_code.length > 100)) ||
-    (request.area === "model" &&
-      (!Number.isSafeInteger(request.target.model_id) ||
-        Number(request.target.model_id) < 1 ||
-        typeof request.target.model_name !== "string" ||
-        request.target.model_name.trim().length < 1 ||
-        request.target.model_name.length > 200 ||
-        !Number.isSafeInteger(request.target.model_revision) ||
-        Number(request.target.model_revision) < 1))
+    (request.area === "project" &&
+      (!Number.isSafeInteger(request.target.project_id) ||
+        Number(request.target.project_id) < 1 ||
+        typeof request.target.project_name !== "string" ||
+        request.target.project_name.trim().length < 1 ||
+        request.target.project_name.length > 200 ||
+        !Number.isSafeInteger(request.target.project_revision) ||
+        Number(request.target.project_revision) < 1))
   ) {
     fail("MANIFEST_INVALID", "Stage request target is invalid.");
   }
@@ -192,13 +192,13 @@ export async function readRequest(
     "LOCAL_STATE_MISMATCH", "Atlas session state is invalid.");
   const task = await readRegularJson(await safePath(session, `.atlas/tasks/${request.task}.json`, "LOCAL_STATE_MISMATCH"),
     "LOCAL_STATE_MISMATCH", "Atlas task is invalid.");
-  if (!isObject(state) || state.schema_version !== "1.0" || !isObject(state.tenant) ||
+  if (!isObject(state) || state.schema_version !== "2.0" || !isObject(state.tenant) ||
       !Number.isSafeInteger(state.tenant.id) || Number(state.tenant.id) < 1 || typeof state.tenant.code !== "string" ||
-      !isObject(task) || task.schema_version !== "1.0" || typeof task.outcome !== "string" || !task.outcome.trim()) {
+      !isObject(task) || task.schema_version !== "2.0" || typeof task.outcome !== "string" || !task.outcome.trim()) {
     fail("LOCAL_STATE_MISMATCH", "Atlas session or task binding is invalid.");
   }
   const ownerRoot = request.owner.id === state.tenant.id ? "." : `metadata-owners/tenant-${request.owner.id}`;
-  if (request.owner.root !== ownerRoot || (request.area === "model" &&
+  if (request.owner.root !== ownerRoot || (request.area === "project" &&
       (ownerRoot !== "." || normalizedTenantCode(request.owner.code) !== normalizedTenantCode(state.tenant.code))) ||
       (request.area === "metadata" && normalizedTenantCode(request.owner.code) !== normalizedTenantCode(request.target.tenant_code))) {
     fail("TARGET_MISMATCH", "The request owner does not match its workspace placement.");
@@ -209,11 +209,11 @@ export async function readRequest(
         normalizedTenantCode(registered.code) !== normalizedTenantCode(request.owner.code)) {
       fail("LOCAL_STATE_MISMATCH", "Metadata owner is not registered in this workspace.");
     }
-  } else if (!isObject(state.model) || state.model.id !== request.target.model_id || state.model.name !== request.target.model_name) {
-    fail("LOCAL_STATE_MISMATCH", "The workspace is bound to a different Model.");
+  } else if (!isObject(state.project) || state.project.id !== request.target.project_id || state.project.name !== request.target.project_name) {
+    fail("LOCAL_STATE_MISMATCH", "The workspace is bound to a different Project.");
   }
   const current = isObject(state.operations)
-    ? request.area === "model" ? state.operations.model
+    ? request.area === "project" ? state.operations.project
       : isObject(state.operations.metadata) ? state.operations.metadata[String(request.owner.id)] : undefined
     : undefined;
   if (current !== operationPath) fail("LOCAL_STATE_MISMATCH", "The operation is no longer current for this owner.");
@@ -222,7 +222,7 @@ export async function readRequest(
   let operation: unknown;
   try { operation = JSON.parse(operationBytes.toString("utf8")); }
   catch { fail("LOCAL_STATE_MISMATCH", "The operation record is invalid."); }
-  if (!isObject(operation) || operation.schema_version !== "1.0" || operation.id !== request.operation.id ||
+  if (!isObject(operation) || operation.schema_version !== "2.0" || operation.id !== request.operation.id ||
       operation.task_id !== request.task || operation.area !== request.area ||
       stableStringify(operation.owner) !== stableStringify(request.owner) ||
       stableStringify(operation.backend) !== stableStringify(request.backend) ||
@@ -259,7 +259,7 @@ export async function readRequest(
   }
   const report = await readRegularJson(await safePath(session, reportPath, "MODELING_EVIDENCE_CHANGED"),
     "MODELING_EVIDENCE_CHANGED", "The reviewed validation report is invalid.");
-  if (!isObject(report) || report.schema_version !== "1.0" || report.valid !== true ||
+  if (!isObject(report) || report.schema_version !== "2.0" || report.valid !== true ||
       report.digest !== request.accepted_digest || report.area !== request.area ||
       report.owner_tenant_id !== request.owner.id || !Array.isArray(report.evidence_files) ||
       stableStringify(report.inputs) !== stableStringify(operation.inputs)) {
@@ -285,20 +285,20 @@ export async function readRequest(
   if (request.snapshot.manifest_path !== expectedSnapshotPath) fail("SNAPSHOT_MISMATCH", "Snapshot belongs to a different owner root.");
   let primaryInput = false;
   for (const binding of operation.inputs) {
-    if (!isObject(binding) || !["metadata", "model"].includes(String(binding.area)) ||
+    if (!isObject(binding) || !["metadata", "project"].includes(String(binding.area)) ||
         !Number.isSafeInteger(binding.owner_tenant_id) || Number(binding.owner_tenant_id) < 1 ||
         typeof binding.manifest_path !== "string" || typeof binding.snapshot_id !== "string" || !UUID.test(binding.snapshot_id) ||
         typeof binding.manifest_sha256 !== "string" || !SHA256.test(binding.manifest_sha256)) {
       fail("SNAPSHOT_MISMATCH", "An operation Snapshot binding is invalid.");
     }
-    const inputOwner = binding.area === "model" ? state.tenant
+    const inputOwner = binding.area === "project" ? state.tenant
       : isObject(state.metadata_owners) ? state.metadata_owners[String(binding.owner_tenant_id)] : undefined;
     const inputRoot = binding.owner_tenant_id === state.tenant.id ? "." : `metadata-owners/tenant-${binding.owner_tenant_id}`;
     const inputPath = `${inputRoot === "." ? "" : inputRoot + "/"}${binding.area}/${binding.area}-snapshot/manifest.json`;
     if (!isObject(inputOwner) || inputOwner.id !== binding.owner_tenant_id ||
         binding.manifest_path !== inputPath || (binding.area === "metadata" && inputOwner.root !== inputRoot) ||
-        (binding.area === "model" && (binding.owner_tenant_id !== state.tenant.id ||
-          !isObject(state.model) || !Number.isSafeInteger(binding.model_revision) || Number(binding.model_revision) < 1))) {
+        (binding.area === "project" && (binding.owner_tenant_id !== state.tenant.id ||
+          !isObject(state.project) || !Number.isSafeInteger(binding.project_revision) || Number(binding.project_revision) < 1))) {
       fail("SNAPSHOT_MISMATCH", "An input Snapshot owner or path is not registered in this workspace.");
     }
     if (Array.isArray(state.refresh_required) && state.refresh_required.some((item) => isObject(item) &&
@@ -309,16 +309,16 @@ export async function readRequest(
     let inputManifest: unknown;
     try { inputManifest = JSON.parse(bytes.toString("utf8")); } catch { fail("SNAPSHOT_MISMATCH", "An input Snapshot is invalid."); }
     if (sha256(bytes) !== binding.manifest_sha256 || !isObject(inputManifest) ||
-        inputManifest.snapshot_id !== binding.snapshot_id || inputManifest.snapshot_kind !== binding.area ||
-        (binding.area === "model" && (inputManifest.schema_version !== "2.0" || inputManifest.model_revision !== binding.model_revision ||
-          !isObject(state.model) || inputManifest.model_id !== state.model.id || inputManifest.model_name !== state.model.name)) ||
+        inputManifest.snapshot_id !== binding.snapshot_id || inputManifest.snapshot_kind !== binding.area || inputManifest.schema_version !== "3.0" ||
+        (binding.area === "project" && (inputManifest.schema_version !== "3.0" || inputManifest.project_revision !== binding.project_revision ||
+          !isObject(state.project) || inputManifest.project_id !== state.project.id || inputManifest.project_name !== state.project.name)) ||
         (binding.area === "metadata" && normalizedTenantCode(inputManifest.tenant_code) !== normalizedTenantCode(inputOwner.code))) {
       fail("SNAPSHOT_MISMATCH", "An input Snapshot changed after acknowledgement.");
     }
     if (binding.area === request.area && binding.owner_tenant_id === request.owner.id &&
         binding.manifest_path === request.snapshot.manifest_path && binding.snapshot_id === request.snapshot.snapshot_id &&
         binding.manifest_sha256 === request.snapshot.manifest_sha256 &&
-        (request.area !== "model" || binding.model_revision === request.target.model_revision)) primaryInput = true;
+        (request.area !== "project" || binding.project_revision === request.target.project_revision)) primaryInput = true;
   }
   if (!primaryInput) fail("SNAPSHOT_MISMATCH", "The operation does not bind the Stage Snapshot.");
   const changeSetDirectory = await safePath(session, `${ownerRoot === "." ? "" : ownerRoot + "/"}${request.area}-change-set`, "LOCAL_CHANGE_SET_INVALID", true);
@@ -413,7 +413,7 @@ async function verifySnapshotBinding(request: StageRequest, session: string): Pr
   if (
     !isObject(manifest) ||
     manifest.snapshot_kind !== request.area ||
-    (request.area === "model" && manifest.schema_version !== "2.0") ||
+    manifest.schema_version !== "3.0" ||
     manifest.snapshot_id !== request.snapshot.snapshot_id
   ) {
     fail("SNAPSHOT_MISMATCH", "The Stage request does not match its bound Snapshot.");
@@ -446,10 +446,10 @@ async function verifySnapshotBinding(request: StageRequest, session: string): Pr
   } catch {
     fail("SNAPSHOT_MISMATCH", "The bound Snapshot catalog is invalid.");
   }
-  if (!isObject(catalog) || catalog.snapshot_kind !== request.area || (request.area === "model" && catalog.schema_version !== "2.0") || !Array.isArray(catalog.sections)) {
+  if (!isObject(catalog) || catalog.snapshot_kind !== request.area || catalog.schema_version !== "3.0" || !Array.isArray(catalog.sections)) {
     fail("SNAPSHOT_MISMATCH", "The bound Snapshot catalog identity is invalid.");
   }
-  if (request.area === "model" && !isEntityOwnedModelCatalog(catalog)) fail("SNAPSHOT_MISMATCH", "Legacy Model Snapshot contract; fetch a new Entity-owned Model Snapshot.");
+  if (request.area === "project" && !isEntityOwnedProjectCatalog(catalog)) fail("SNAPSHOT_MISMATCH", "Legacy Project Snapshot contract; fetch a new Entity-owned Project Snapshot.");
   const catalogDatasets = new Map<string, string[]>();
   for (const section of catalog.sections) {
     if (!isObject(section) || !Array.isArray(section.datasets)) {
@@ -486,15 +486,15 @@ async function verifySnapshotBinding(request: StageRequest, session: string): Pr
       fail("TARGET_MISMATCH", "Metadata Stage target does not match its Snapshot and session.");
     }
   } else if (
-    manifest.model_id !== request.target.model_id ||
-    manifest.model_name !== request.target.model_name ||
-    manifest.model_revision !== request.target.model_revision ||
-    !isObject(catalog.model) ||
-    catalog.model.model_id !== request.target.model_id ||
-    catalog.model.model_name !== request.target.model_name ||
-    catalog.model.model_revision !== request.target.model_revision
+    manifest.project_id !== request.target.project_id ||
+    manifest.project_name !== request.target.project_name ||
+    manifest.project_revision !== request.target.project_revision ||
+    !isObject(catalog.project) ||
+    catalog.project.project_id !== request.target.project_id ||
+    catalog.project.project_name !== request.target.project_name ||
+    catalog.project.project_revision !== request.target.project_revision
   ) {
-    fail("TARGET_MISMATCH", "Model Stage target does not match its Snapshot.");
+    fail("TARGET_MISMATCH", "Project Stage target does not match its Snapshot.");
   }
 }
 
@@ -521,7 +521,7 @@ export async function readLocalDatasets(
       !ALLOWED_DATASETS[request.area].has(definition.dataset) ||
       !Array.isArray(definition.canonical_key) ||
       (definition.canonical_key.length < 1 &&
-        !(request.area === "model" && definition.dataset === "model_details")) ||
+        !(request.area === "project" && definition.dataset === "project_details")) ||
       definition.canonical_key.length > 16 ||
       definition.canonical_key.some(
         (field) => typeof field !== "string" || !/^[a-z][a-z0-9_]{0,99}$/.test(field),

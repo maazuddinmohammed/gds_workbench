@@ -1,4 +1,4 @@
-"""Model-friendly authoring guidance for shared Metadata dataset contracts."""
+"""Project-friendly authoring guidance for shared Metadata dataset contracts."""
 
 from __future__ import annotations
 
@@ -298,8 +298,8 @@ _EXACT_GUIDANCE = {
 }
 
 _EXAMPLES = {
-    "project_code": "DATA_PLATFORM",
-    "project_name": "Enterprise Data Platform",
+    "lane_code": "DATA_PLATFORM",
+    "lane_name": "Enterprise Data Platform",
     "tenant_code": "ACME",
     "tenant_name": "Acme",
     "system_code": "ERP",
@@ -420,7 +420,7 @@ def metadata_population_rules(definition: DatasetDefinition) -> tuple[str, ...]:
     if definition.record_type == "object":
         rules.append(
             "source_tenant_code identifies its metadata/user-selected owner, independently of "
-            "Model ownership. "
+            "Project ownership. "
             "tenant_code, "
             "system_code, and connection_code identify its physical Connection."
         )

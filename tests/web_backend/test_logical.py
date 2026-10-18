@@ -14,14 +14,14 @@ from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
 from gds_workbench_api.features.logical import (
-    AssertionRecordReference,
+    ContextRecordReference,
     DatabaseLogicalService,
-    LogicalAssertionSource,
     LogicalAttributeDetail,
     LogicalAttributeFilters,
     LogicalAttributePage,
     LogicalAttributePhysicalSource,
     LogicalAttributeSummary,
+    LogicalContextSource,
     LogicalEntityDetail,
     LogicalEntityFilters,
     LogicalEntityPage,
@@ -51,22 +51,23 @@ class StaticLogicalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: LogicalEntityFilters,
         page_size: int,
         cursor: str | None,
     ) -> LogicalEntityPage:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, page_size, cursor) == (7, 18, 25, None)
+        assert (tenant_id, project_id, page_size, cursor) == (7, 18, 25, None)
         self.filters = filters
         return LogicalEntityPage(
-            model_id=18,
-            model_revision=4,
+            project_id=18,
+            project_revision=4,
             items=(
                 LogicalEntitySummary(
                     logical_entity_id=101,
                     workflow_run_id=None,
-                    logical_entity_schema_name="silver", logical_entity_name="Customer",
+                    logical_entity_schema_name="silver",
+                    logical_entity_name="Customer",
                     logical_entity_type="core",
                     logical_entity_dependency_order=0,
                     logical_entity_confidence="high",
@@ -83,15 +84,16 @@ class StaticLogicalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         logical_entity_id: int,
     ) -> LogicalEntityDetail:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, logical_entity_id) == (7, 18, 101)
+        assert (tenant_id, project_id, logical_entity_id) == (7, 18, 101)
         return LogicalEntityDetail(
             logical_entity_id=101,
             workflow_run_id=None,
-            logical_entity_schema_name="silver", logical_entity_name="Customer",
+            logical_entity_schema_name="silver",
+            logical_entity_name="Customer",
             logical_entity_definition="One governed customer.",
             logical_entity_type="core",
             logical_entity_type_detail=None,
@@ -134,18 +136,17 @@ class StaticLogicalService:
                     created_at=datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
                     updated_at=datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
                 ),
-                LogicalAssertionSource(
+                LogicalContextSource(
                     logical_entity_source_mapping_id=402,
                     workflow_run_id=81,
-                    support_source_type="assertion",
-                    assertion_record=AssertionRecordReference(
-                        modeling_assertion_record_id=601,
-                        modeling_assertion_record_key="customer.grain",
-                        modeling_assertion_document_name="customer_rules",
-                        modeling_assertion_record_type="grain_rule",
-                        modeling_assertion_text="One row represents one Customer.",
-                        modeling_assertion_confidence="high",
-                        modeling_assertion_record_status="active",
+                    support_source_type="context_record",
+                    context_record=ContextRecordReference(
+                        context_record_id="f6c97e13-4665-53e0-aa01-865c4b35e7b2",
+                        context_group_name="customer_rules",
+                        context_type_name="Business Rules",
+                        context_text="One row represents one Customer.",
+                        source_reference=None,
+                        status="active",
                     ),
                     source_order=None,
                     rationale="Defines the grain.",
@@ -162,27 +163,28 @@ class StaticLogicalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: LogicalAttributeFilters,
         page_size: int,
         cursor: str | None,
     ) -> LogicalAttributePage:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, page_size, cursor) == (7, 18, 25, None)
+        assert (tenant_id, project_id, page_size, cursor) == (7, 18, 25, None)
         assert filters == LogicalAttributeFilters(
             status="active",
             name_exact="customer id",
             logical_entity_id=101,
         )
         return LogicalAttributePage(
-            model_id=18,
-            model_revision=4,
+            project_id=18,
+            project_revision=4,
             items=(
                 LogicalAttributeSummary(
                     logical_attribute_id=701,
                     workflow_run_id=None,
                     logical_entity_id=101,
-                    logical_entity_schema_name="silver", logical_entity_name="Customer",
+                    logical_entity_schema_name="silver",
+                    logical_entity_name="Customer",
                     logical_attribute_name="Customer ID",
                     logical_attribute_data_type="BIGINT",
                     logical_attribute_is_nullable=False,
@@ -203,16 +205,17 @@ class StaticLogicalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         logical_attribute_id: int,
     ) -> LogicalAttributeDetail:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, logical_attribute_id) == (7, 18, 701)
+        assert (tenant_id, project_id, logical_attribute_id) == (7, 18, 701)
         return LogicalAttributeDetail(
             logical_attribute_id=701,
             workflow_run_id=None,
             logical_entity_id=101,
-            logical_entity_schema_name="silver", logical_entity_name="Customer",
+            logical_entity_schema_name="silver",
+            logical_entity_name="Customer",
             logical_attribute_name="Customer ID",
             logical_attribute_definition="Stable warehouse identifier.",
             logical_attribute_data_type="BIGINT",
@@ -256,7 +259,7 @@ class StaticLogicalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: LogicalRelationshipFilters,
         page_size: int,
         cursor: str | None,
@@ -268,8 +271,8 @@ class StaticLogicalService:
             logical_entity_id=102,
         )
         return LogicalRelationshipPage(
-            model_id=18,
-            model_revision=4,
+            project_id=18,
+            project_revision=4,
             items=(self._relationship(),),
             next_cursor=None,
         )
@@ -279,11 +282,11 @@ class StaticLogicalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         logical_relationship_id: int,
     ) -> LogicalRelationshipDetail:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, logical_relationship_id) == (7, 18, 901)
+        assert (tenant_id, project_id, logical_relationship_id) == (7, 18, 901)
         relationship = self._relationship()
         return LogicalRelationshipDetail(
             **relationship.model_dump(),
@@ -299,11 +302,13 @@ class StaticLogicalService:
             logical_relationship_id=901,
             workflow_run_id=None,
             from_logical_entity_id=102,
-            from_logical_entity_schema_name="silver", from_logical_entity_name="Order",
+            from_logical_entity_schema_name="silver",
+            from_logical_entity_name="Order",
             from_logical_attribute_id=702,
             from_logical_attribute_name="Customer ID",
             to_logical_entity_id=101,
-            to_logical_entity_schema_name="silver", to_logical_entity_name="Customer",
+            to_logical_entity_schema_name="silver",
+            to_logical_entity_name="Customer",
             to_logical_attribute_id=701,
             to_logical_attribute_name="Customer ID",
             logical_relationship_name="Order references Customer",
@@ -319,7 +324,7 @@ class StaticLogicalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: ModeledFilters,
         page_size: int,
         cursor: str | None,
@@ -327,8 +332,8 @@ class StaticLogicalService:
         assert principal.actor_kind is ActorKind.HUMAN
         assert filters == ModeledFilters(status="active", name_prefix="customer")
         return LogicalSubmodelPage(
-            model_id=18,
-            model_revision=4,
+            project_id=18,
+            project_revision=4,
             items=(
                 LogicalSubmodelSummary(
                     logical_submodel_id=301,
@@ -348,11 +353,11 @@ class StaticLogicalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         logical_submodel_id: int,
     ) -> LogicalSubmodelDetail:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, logical_submodel_id) == (7, 18, 301)
+        assert (tenant_id, project_id, logical_submodel_id) == (7, 18, 301)
         return LogicalSubmodelDetail(
             logical_submodel_id=301,
             workflow_run_id=None,
@@ -368,7 +373,8 @@ class StaticLogicalService:
                     logical_entity_submodel_id=201,
                     workflow_run_id=None,
                     logical_entity_id=101,
-                    logical_entity_schema_name="silver", logical_entity_name="Customer",
+                    logical_entity_schema_name="silver",
+                    logical_entity_name="Customer",
                     logical_entity_type="core",
                     logical_entity_status="active",
                     membership_status="active",
@@ -400,7 +406,7 @@ def test_logical_entity_collection_normalizes_review_filters() -> None:
 
     with TestClient(app) as client:
         response = client.get(
-            "/api/v1/tenants/7/models/18/logical/entities",
+            "/api/v1/tenants/7/projects/18/logical/entities",
             params={
                 "status": "INACTIVE",
                 "locked": "false",
@@ -431,17 +437,21 @@ def test_logical_entity_detail_returns_all_normalized_memberships_and_sources() 
     )
 
     with TestClient(app) as client:
-        response = client.get("/api/v1/tenants/7/models/18/logical/entities/101")
+        response = client.get("/api/v1/tenants/7/projects/18/logical/entities/101")
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["workflow_run_id"] is None
     assert payload["submodels"][0]["logical_submodel_name"] == "Customer Domain"
     assert payload["sources"][0]["source_object"]["object_name"] == "customer_raw"
-    assert (
-        payload["sources"][1]["assertion_record"]["modeling_assertion_record_key"]
-        == "customer.grain"
-    )
+    assert payload["sources"][1]["context_record"] == {
+        "context_record_id": "f6c97e13-4665-53e0-aa01-865c4b35e7b2",
+        "context_group_name": "customer_rules",
+        "context_type_name": "Business Rules",
+        "context_text": "One row represents one Customer.",
+        "source_reference": None,
+        "status": "active",
+    }
     assert "agent_run_id" not in response.text
     assert "prompt" not in response.text
 
@@ -457,7 +467,7 @@ def test_logical_attribute_collection_and_detail_use_exact_normalized_sources() 
 
     with TestClient(app) as client:
         collection = client.get(
-            "/api/v1/tenants/7/models/18/logical/attributes",
+            "/api/v1/tenants/7/projects/18/logical/attributes",
             params={
                 "status": "ACTIVE",
                 "name_exact": "  Customer ID  ",
@@ -465,7 +475,7 @@ def test_logical_attribute_collection_and_detail_use_exact_normalized_sources() 
                 "page_size": "25",
             },
         )
-        detail = client.get("/api/v1/tenants/7/models/18/logical/attributes/701")
+        detail = client.get("/api/v1/tenants/7/projects/18/logical/attributes/701")
 
     assert collection.status_code == 200
     assert collection.json()["items"][0]["logical_entity_name"] == "Customer"
@@ -486,14 +496,14 @@ def test_logical_relationship_collection_and_detail_return_named_endpoints() -> 
 
     with TestClient(app) as client:
         collection = client.get(
-            "/api/v1/tenants/7/models/18/logical/relationships",
+            "/api/v1/tenants/7/projects/18/logical/relationships",
             params={
                 "status": "INACTIVE",
                 "locked": "true",
                 "logical_entity_id": "102",
             },
         )
-        detail = client.get("/api/v1/tenants/7/models/18/logical/relationships/901")
+        detail = client.get("/api/v1/tenants/7/projects/18/logical/relationships/901")
 
     assert collection.status_code == 200
     item = collection.json()["items"][0]
@@ -516,10 +526,10 @@ def test_logical_submodel_collection_and_detail_return_bounded_memberships() -> 
 
     with TestClient(app) as client:
         collection = client.get(
-            "/api/v1/tenants/7/models/18/logical/submodels",
+            "/api/v1/tenants/7/projects/18/logical/submodels",
             params={"status": "ACTIVE", "name_prefix": " Customer "},
         )
-        detail = client.get("/api/v1/tenants/7/models/18/logical/submodels/301")
+        detail = client.get("/api/v1/tenants/7/projects/18/logical/submodels/301")
 
     assert collection.status_code == 200
     assert collection.json()["items"][0]["entity_count"] == 1
@@ -536,10 +546,10 @@ class LogicalCollectionTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
-        if "SELECT target_model.model_revision" in query:
-            assert "target_model.tenant_id = %s" in query
+        if "SELECT target_project.project_revision" in query:
+            assert "target_project.tenant_id = %s" in query
             assert parameters == (7, 18)
-            return {"model_revision": 4}
+            return {"project_revision": 4}
         assert "security.entra_principal_identity" in query
         assert parameters[-1] == 7
         return {
@@ -564,8 +574,8 @@ class LogicalCollectionTransaction:
         if "core.tenant AS tenant" in query and "effective_role" in query:
             return []
         assert "FROM workflow.logical_entity AS entity" in query
-        assert "JOIN model.model AS target_model" in query
-        assert "target_model.tenant_id = %s" in query
+        assert "JOIN project.project AS target_project" in query
+        assert "target_project.tenant_id = %s" in query
         assert "FROM workflow.logical_entity_submodel AS membership" in query
         assert "membership.logical_entity_submodel_status" in query
         assert parameters[:11] == (
@@ -589,7 +599,8 @@ class LogicalCollectionTransaction:
             {
                 "logical_entity_id": 101,
                 "workflow_run_id": None,
-                "logical_entity_schema_name": "silver", "logical_entity_name": "Customer",
+                "logical_entity_schema_name": "silver",
+                "logical_entity_name": "Customer",
                 "logical_entity_type": "core",
                 "logical_entity_dependency_order": 0,
                 "logical_entity_confidence": "high",
@@ -600,7 +611,8 @@ class LogicalCollectionTransaction:
             {
                 "logical_entity_id": 102,
                 "workflow_run_id": 81,
-                "logical_entity_schema_name": "silver", "logical_entity_name": "Customer Account",
+                "logical_entity_schema_name": "silver",
+                "logical_entity_name": "Customer Account",
                 "logical_entity_type": "association",
                 "logical_entity_dependency_order": 1,
                 "logical_entity_confidence": "medium",
@@ -627,7 +639,9 @@ class LogicalCollectionDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_logical_entities_are_tenant_authorized_and_cursor_bound() -> None:
+async def test_database_logical_entities_are_tenant_authorized_and_cursor_bound() -> (
+    None
+):
     database = LogicalCollectionDatabase()
     service = DatabaseLogicalService(
         database=database,
@@ -649,7 +663,7 @@ async def test_database_logical_entities_are_tenant_authorized_and_cursor_bound(
     first = await service.list_entities(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         filters=filters,
         page_size=1,
         cursor=None,
@@ -657,7 +671,7 @@ async def test_database_logical_entities_are_tenant_authorized_and_cursor_bound(
     second = await service.list_entities(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         filters=filters,
         page_size=1,
         cursor=first.next_cursor,
@@ -672,8 +686,10 @@ async def test_database_logical_entities_are_tenant_authorized_and_cursor_bound(
         await service.list_entities(
             principal,
             tenant_id=7,
-            model_id=18,
-            filters=LogicalEntityFilters(name_prefix="account", logical_submodel_id=301),
+            project_id=18,
+            filters=LogicalEntityFilters(
+                name_prefix="account", logical_submodel_id=301
+            ),
             page_size=1,
             cursor=first.next_cursor,
         )

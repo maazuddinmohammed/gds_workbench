@@ -16,7 +16,9 @@ if TYPE_CHECKING:
     from conftest import DisposablePostgres
 
 
-SEED_FILE = Path(__file__).parents[2] / "database" / "seed" / "04_application_reference.sql"
+SEED_FILE = (
+    Path(__file__).parents[2] / "database" / "seed" / "04_application_reference.sql"
+)
 
 EXPECTED_STAGES = {
     ("metadata_enrichment_object", "one_shot", "candidate_authoring", 10, True),
@@ -82,7 +84,7 @@ FOUNDATIONAL_NAMES = {
     "object_attribute_context",
     "ingestion_mapping",
     "object_relationship_context",
-    "modeling_assertions",
+    "context_records",
 }
 CONCEPTUAL_NAMES = {
     "conceptual_object_list",
@@ -103,21 +105,26 @@ LOGICAL_NAMES = {
 DIMENSIONAL_NAMES = {name.replace("logical", "dimensional") for name in LOGICAL_NAMES}
 EXPECTED_NAMES = {
     "metadata_enrichment_object": FOUNDATIONAL_NAMES
-    - {"object_relationship_context", "modeling_assertions"},
+    - {"object_relationship_context", "context_records"},
     "metadata_enrichment_attribute": FOUNDATIONAL_NAMES
-    - {"object_relationship_context", "modeling_assertions"},
+    - {"object_relationship_context", "context_records"},
     "analysis": FOUNDATIONAL_NAMES,
     "conceptual": FOUNDATIONAL_NAMES | CONCEPTUAL_NAMES,
     "logical": FOUNDATIONAL_NAMES
-    | CONCEPTUAL_NAMES
     | LOGICAL_NAMES
-    | {"naming_instructions", "audit_columns", "schemas", "logical_entity_scd_type", "coverage_threshold_percent"},
+    | {
+        "naming_instructions",
+        "audit_columns",
+        "schemas",
+        "logical_entity_scd_type",
+        "coverage_threshold_percent",
+    },
     "dimensional": LOGICAL_NAMES
     | DIMENSIONAL_NAMES
-    | (FOUNDATIONAL_NAMES - {"gds_context", "modeling_assertions"})
+    | (FOUNDATIONAL_NAMES - {"gds_context", "context_records"})
     | {
         "gds_context",
-        "modeling_assertions",
+        "context_records",
         "selected_logical_entities",
         "schemas",
         "naming_instructions",
@@ -172,7 +179,7 @@ def _expected_variables() -> set[VariableIdentity]:
         if not is_agentic:
             continue
         contracts = list_prompt_input_contracts(
-            model_workflow=workflow,
+            project_workflow=workflow,
             workflow_execution_mode=mode,
             stage_code=stage,
         )
@@ -183,14 +190,18 @@ def _expected_variables() -> set[VariableIdentity]:
                 == f"workflow.{workflow}.common.{stage}.inputs.{contract.name}"
             )
             Draft202012Validator.check_schema(contract.value_schema)
-            assert cast(Any, Draft202012Validator(contract.value_schema)).is_valid(contract.example)
+            assert cast(Any, Draft202012Validator(contract.value_schema)).is_valid(
+                contract.example
+            )
             # The catalog supplies the complete example; SQL reference rows retain
             # a bounded preview and use null when that preview exceeds the seed cap.
             encoded_example = json.dumps(
                 contract.example, ensure_ascii=False, separators=(",", ":")
             )
             stored_example = (
-                None if len(encoded_example.encode("utf-8")) > 3500 else contract.example
+                None
+                if len(encoded_example.encode("utf-8")) > 3500
+                else contract.example
             )
             variables.add(
                 (
@@ -225,7 +236,7 @@ def test_application_reference_seed_creates_exact_workflow_stage_inventory(
     with bootstrap_postgres_database.connect_owner() as connection:
         rows = connection.execute(
             """
-            SELECT model_workflow,
+            SELECT project_workflow,
                    workflow_execution_mode,
                    workflow_stage_code,
                    workflow_stage_order,
@@ -236,7 +247,7 @@ def test_application_reference_seed_creates_exact_workflow_stage_inventory(
 
     assert {
         (
-            row["model_workflow"],
+            row["project_workflow"],
             row["workflow_execution_mode"],
             row["workflow_stage_code"],
             row["workflow_stage_order"],
@@ -254,7 +265,7 @@ def test_application_reference_seed_allowlists_exact_prompt_variables(
     with bootstrap_postgres_database.connect_owner() as connection:
         rows = connection.execute(
             """
-            SELECT stage.model_workflow,
+            SELECT stage.project_workflow,
                    stage.workflow_execution_mode,
                    stage.workflow_stage_code,
                    variable.workflow_stage_variable_name,
@@ -278,7 +289,7 @@ def test_application_reference_seed_allowlists_exact_prompt_variables(
     }
     assert {
         (
-            row["model_workflow"],
+            row["project_workflow"],
             row["workflow_execution_mode"],
             row["workflow_stage_code"],
             row["workflow_stage_variable_name"],
@@ -363,10 +374,12 @@ def test_reference_merge_refreshes_documentation_preserving_identity_and_setting
     database = reference_merge_database
     _apply_seed(database)
     with database.connect_owner() as connection:
-        before = require_row(connection.execute(
-            """SELECT * FROM application.workflow_stage_variable
+        before = require_row(
+            connection.execute(
+                """SELECT * FROM application.workflow_stage_variable
                  WHERE workflow_stage_variable_name = 'mapping_templates'"""
-        ).fetchone())
+            ).fetchone()
+        )
         connection.execute(
             """UPDATE application.workflow_stage_variable
                   SET workflow_stage_variable_description = 'Old description',
@@ -378,15 +391,21 @@ def test_reference_merge_refreshes_documentation_preserving_identity_and_setting
         )
     _apply_seed(database)
     with database.connect_owner() as connection:
-        after = require_row(connection.execute(
-            """SELECT * FROM application.workflow_stage_variable
+        after = require_row(
+            connection.execute(
+                """SELECT * FROM application.workflow_stage_variable
                  WHERE workflow_stage_variable_id = %s""",
-            (before["workflow_stage_variable_id"],),
-        ).fetchone())
+                (before["workflow_stage_variable_id"],),
+            ).fetchone()
+        )
     for field in (
-        "workflow_stage_variable_id", "workflow_stage_id", "created_time",
-        "workflow_stage_variable_order", "workflow_stage_variable_resolver_key",
-        "workflow_stage_variable_description", "workflow_stage_variable_example",
+        "workflow_stage_variable_id",
+        "workflow_stage_id",
+        "created_time",
+        "workflow_stage_variable_order",
+        "workflow_stage_variable_resolver_key",
+        "workflow_stage_variable_description",
+        "workflow_stage_variable_example",
     ):
         assert after[field] == before[field]
     assert after["workflow_stage_variable_is_required"] is True
@@ -397,38 +416,47 @@ def test_reference_merge_appends_new_variable_after_custom_order(
     reference_merge_database: DisposablePostgres,
 ) -> None:
     database = reference_merge_database
-    # Model an earlier reference seed without deleting any saved configuration.
+    # Project an earlier reference seed without deleting any saved configuration.
     earlier_seed = "\n".join(
-        line for line in SEED_FILE.read_text().splitlines()
+        line
+        for line in SEED_FILE.read_text().splitlines()
         if "'mapping_templates', 'workflow.code_generation." not in line
     )
     with database.connect_owner() as connection:
         connection.execute(cast(LiteralString, earlier_seed))
-        stage = require_row(connection.execute(
-            """SELECT workflow_stage_id FROM application.workflow_stage
-                WHERE model_workflow = 'code_generation'
+        stage = require_row(
+            connection.execute(
+                """SELECT workflow_stage_id FROM application.workflow_stage
+                WHERE project_workflow = 'code_generation'
                   AND workflow_stage_code = 'sql_generation'"""
-        ).fetchone())["workflow_stage_id"]
-        custom = require_row(connection.execute(
-            """INSERT INTO application.workflow_stage_variable (
+            ).fetchone()
+        )["workflow_stage_id"]
+        custom = require_row(
+            connection.execute(
+                """INSERT INTO application.workflow_stage_variable (
                    workflow_stage_id, workflow_stage_variable_name,
                    workflow_stage_variable_resolver_key, workflow_stage_variable_data_type,
                    workflow_stage_variable_description, workflow_stage_variable_order
                ) VALUES (%s, 'custom_context', 'custom.context', 'json', 'Custom context', 500)
-               RETURNING *""", (stage,),
-        ).fetchone())
+               RETURNING *""",
+                (stage,),
+            ).fetchone()
+        )
     _apply_seed(database)
     _apply_seed(database)
     with database.connect_owner() as connection:
-        saved_custom = require_row(connection.execute(
-            """SELECT * FROM application.workflow_stage_variable
+        saved_custom = require_row(
+            connection.execute(
+                """SELECT * FROM application.workflow_stage_variable
                 WHERE workflow_stage_variable_id = %s""",
-            (custom["workflow_stage_variable_id"],),
-        ).fetchone())
+                (custom["workflow_stage_variable_id"],),
+            ).fetchone()
+        )
         new_rows = connection.execute(
             """SELECT workflow_stage_variable_order FROM application.workflow_stage_variable
                 WHERE workflow_stage_id = %s
-                  AND workflow_stage_variable_name = 'mapping_templates'""", (stage,),
+                  AND workflow_stage_variable_name = 'mapping_templates'""",
+            (stage,),
         ).fetchall()
     assert saved_custom == custom
     assert new_rows == [{"workflow_stage_variable_order": 510}]
@@ -445,7 +473,9 @@ def test_reference_merge_rejects_conflicting_resolver(
                   SET workflow_stage_variable_resolver_key = 'custom.conflicting_resolver'
                 WHERE workflow_stage_variable_name = 'mapping_templates'"""
         )
-    with pytest.raises(psycopg.errors.RaiseException, match="Reference variable identity conflicts"):
+    with pytest.raises(
+        psycopg.errors.RaiseException, match="Reference variable identity conflicts"
+    ):
         _apply_seed(database)
 
 

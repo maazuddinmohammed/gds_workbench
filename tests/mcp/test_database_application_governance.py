@@ -34,14 +34,14 @@ APPLICATION_TABLES = (
 )
 
 APPLICATION_WEB_FUNCTIONS = (
-    ("add_model_input_scope_objects", "uuid, uuid, bigint, bigint, bigint, bigint[]"),
+    ("add_project_input_scope_objects", "uuid, uuid, bigint, bigint, bigint, bigint[]"),
     (
         "append_workflow_run_event",
         "uuid, uuid, character varying, bigint, bigint, bigint, integer, "
         "character varying, character varying, character varying, integer, integer, integer",
     ),
     (
-        "archive_model",
+        "archive_project",
         "uuid, uuid, character varying, bigint, bigint",
     ),
     (
@@ -49,7 +49,7 @@ APPLICATION_WEB_FUNCTIONS = (
         "bigint, uuid",
     ),
     (
-        "authorize_model_record_review",
+        "authorize_project_record_review",
         "uuid, uuid, character varying, bigint, bigint",
     ),
     (
@@ -89,7 +89,7 @@ APPLICATION_WEB_FUNCTIONS = (
         "bigint, bigint, bigint, bigint, boolean",
     ),
     (
-        "create_model",
+        "create_project",
         "uuid, uuid, character varying, bigint, character varying, character varying, "
         "jsonb, jsonb, text, jsonb, text, jsonb, jsonb, character varying, character varying, "
         "character varying, character varying, integer, integer, bigint, character varying, "
@@ -110,7 +110,7 @@ APPLICATION_WEB_FUNCTIONS = (
         "character varying, bigint[]",
     ),
     (
-        "delete_model_records",
+        "delete_project_records",
         "uuid, uuid, bigint, bigint, bigint, uuid, jsonb",
     ),
     (
@@ -166,7 +166,7 @@ APPLICATION_WEB_FUNCTIONS = (
         "bigint, uuid, integer",
     ),
     (
-        "review_model_enrichment",
+        "review_project_enrichment",
         "uuid, uuid, bigint, bigint, bigint, character varying, character varying, jsonb, uuid",
     ),
     (
@@ -179,7 +179,7 @@ APPLICATION_WEB_FUNCTIONS = (
         "uuid, uuid, character varying, bigint, bigint, text, text, text, "
         "timestamp with time zone, text[]",
     ),
-    ("set_model_lock", "uuid, uuid, bigint, bigint, bigint, boolean"),
+    ("set_project_lock", "uuid, uuid, bigint, bigint, bigint, boolean"),
     (
         "set_principal_last_tenant",
         "uuid, uuid, character varying, bigint",
@@ -197,7 +197,7 @@ APPLICATION_WEB_FUNCTIONS = (
         "uuid, uuid, character varying, bigint, character varying, character varying",
     ),
     (
-        "update_model",
+        "update_project",
         "uuid, uuid, character varying, bigint, bigint, character varying, "
         "character varying, jsonb, jsonb, text, jsonb, text, jsonb, jsonb, character varying, "
         "character varying, character varying, character varying, integer, integer, "
@@ -244,11 +244,12 @@ def test_application_web_function_allowlist_is_exact_and_verified(
         ).fetchall()
 
     assert len(APPLICATION_WEB_FUNCTIONS) == 40
-    assert [(row["function_name"], row["argument_types"]) for row in rows] == list(
+    assert [(row["function_name"], row["argument_types"]) for row in rows] == sorted(
         APPLICATION_WEB_FUNCTIONS
     )
-    assert [row["function_name"] for row in rows if not row["is_security_definer"]] == [
-    ]
+    assert [
+        row["function_name"] for row in rows if not row["is_security_definer"]
+    ] == []
     assert all(row["fixed_search_path"] for row in rows)
     assert not any(row["mcp_can_execute"] for row in rows)
     assert not any(row["public_can_execute"] for row in rows)
@@ -266,7 +267,9 @@ def test_application_web_function_allowlist_is_exact_and_verified(
             ) TO gds_web_write
             """
         )
-        connection.execute(cast(LiteralString, VERIFY_INSTALL_SQL.read_text(encoding="utf-8")))
+        connection.execute(
+            cast(LiteralString, VERIFY_INSTALL_SQL.read_text(encoding="utf-8"))
+        )
 
 
 def test_verify_install_rejects_direct_web_revision_audit_mutation(
@@ -278,10 +281,12 @@ def test_verify_install_rejects_direct_web_revision_audit_mutation(
         connection.transaction(),
     ):
         connection.execute(
-            "GRANT INSERT (model_id, transaction_id) "
-            "ON model.model_revision_transaction TO gds_web_write"
+            "GRANT INSERT (project_id, transaction_id) "
+            "ON project.project_revision_transaction TO gds_web_write"
         )
-        connection.execute(cast(LiteralString, VERIFY_INSTALL_SQL.read_text(encoding="utf-8")))
+        connection.execute(
+            cast(LiteralString, VERIFY_INSTALL_SQL.read_text(encoding="utf-8"))
+        )
 
 
 def test_verify_install_rejects_direct_web_profile_mutation(
@@ -292,8 +297,12 @@ def test_verify_install_rejects_direct_web_profile_mutation(
         pytest.raises(RaiseException, match="runtime table privileges"),
         connection.transaction(),
     ):
-        connection.execute("GRANT INSERT ON workflow.attribute_profile TO gds_web_write")
-        connection.execute(cast(LiteralString, VERIFY_INSTALL_SQL.read_text(encoding="utf-8")))
+        connection.execute(
+            "GRANT INSERT ON workflow.attribute_profile TO gds_web_write"
+        )
+        connection.execute(
+            cast(LiteralString, VERIFY_INSTALL_SQL.read_text(encoding="utf-8"))
+        )
 
 
 def test_verify_install_requires_object_source_tenant_index(
@@ -310,7 +319,9 @@ def test_verify_install_requires_object_source_tenant_index(
             RENAME TO invalid_object_source_tenant_index
             """
         )
-        connection.execute(cast(LiteralString, VERIFY_INSTALL_SQL.read_text(encoding="utf-8")))
+        connection.execute(
+            cast(LiteralString, VERIFY_INSTALL_SQL.read_text(encoding="utf-8"))
+        )
 
 
 def test_verify_install_requires_immutable_workflow_change_set_binding(
@@ -323,11 +334,13 @@ def test_verify_install_requires_immutable_workflow_change_set_binding(
     ):
         connection.execute(
             """
-            ALTER TABLE mcp.model_change_set
-            DISABLE TRIGGER guard_model_change_set_workflow_binding
+            ALTER TABLE mcp.project_change_set
+            DISABLE TRIGGER guard_project_change_set_workflow_binding
             """
         )
-        connection.execute(cast(LiteralString, VERIFY_INSTALL_SQL.read_text(encoding="utf-8")))
+        connection.execute(
+            cast(LiteralString, VERIFY_INSTALL_SQL.read_text(encoding="utf-8"))
+        )
 
 
 def test_last_tenant_preference_is_identity_derived_and_function_governed(
@@ -338,21 +351,21 @@ def test_last_tenant_preference_is_identity_derived_and_function_governed(
     suffix = uuid4().hex
 
     with postgres_database.connect_owner() as connection:
-        project_id = require_row(
+        lane_id = require_row(
             connection.execute(
                 """
-            INSERT INTO core.project (project_code, project_name)
+            INSERT INTO core.lane (lane_code, lane_name)
             VALUES (%s, %s)
-            RETURNING project_id
+            RETURNING lane_id
             """,
                 (f"preference_project_{suffix}", f"Preference Project {suffix}"),
             ).fetchone()
-        )["project_id"]
+        )["lane_id"]
         tenant_id = require_row(
             connection.execute(
                 """
             INSERT INTO core.tenant (
-                project_id,
+                lane_id,
                 tenant_code,
                 tenant_name,
                 tenant_catalog,
@@ -361,7 +374,7 @@ def test_last_tenant_preference_is_identity_derived_and_function_governed(
             RETURNING tenant_id
             """,
                 (
-                    project_id,
+                    lane_id,
                     f"preference_tenant_{suffix}",
                     f"Preference Tenant {suffix}",
                     f"preference_catalog_{suffix}",

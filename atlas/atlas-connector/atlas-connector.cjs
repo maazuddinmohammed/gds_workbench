@@ -7264,7 +7264,7 @@ var require_core3 = __commonJS({
       function normalize(area, field, value) {
         if (typeof value !== "string") return value;
         const trimmed = value.replace(/^ +| +$/g, "");
-        if (area === "model") {
+        if (area === "project") {
           return unicode2?.casefold ? unicode2.casefold(trimmed) : trimmed.toLowerCase();
         }
         if (/(_code|_name|_schema)$/.test(field)) {
@@ -7283,12 +7283,12 @@ var require_core3 = __commonJS({
           return normalize(area, field, record2[field]);
         });
       }
-      function isEntityOwnedModelCatalog2(catalog) {
+      function isEntityOwnedProjectCatalog2(catalog) {
         if (!Array.isArray(catalog?.sections)) return false;
         for (const section of catalog.sections) {
-          if (section?.name === "model_binding" || !Array.isArray(section?.datasets)) return false;
+          if (section?.name === "project_binding" || !Array.isArray(section?.datasets)) return false;
           for (const dataset of section.datasets) {
-            if (["model_object_binding", "model_attribute_binding", "mapping_dependency"].includes(dataset?.name)) return false;
+            if (["project_object_binding", "project_attribute_binding", "mapping_dependency"].includes(dataset?.name)) return false;
             let required2 = [];
             if (["mapping_object", "mapping_attribute", "generated_code", "generated_code_source_system"].includes(dataset?.name)) required2 = ["modeled_entity_schema_name"];
             for (const layer of ["logical", "dimensional"]) {
@@ -7345,7 +7345,7 @@ var require_core3 = __commonJS({
           };
         });
       }
-      return { active, isEntityOwnedModelCatalog: isEntityOwnedModelCatalog2, key, normalize, overlay, reviewActions, stableStringify: stableStringify2, validateSubagentPolicy };
+      return { active, isEntityOwnedProjectCatalog: isEntityOwnedProjectCatalog2, key, normalize, overlay, reviewActions, stableStringify: stableStringify2, validateSubagentPolicy };
     });
   }
 });
@@ -17239,15 +17239,15 @@ var unicodeLower = unicode.lower;
 // src/stage-contract.ts
 var import_core8 = __toESM(require_core3(), 1);
 var stableStringify = import_core8.default.stableStringify;
-var isEntityOwnedModelCatalog = import_core8.default.isEntityOwnedModelCatalog;
+var isEntityOwnedProjectCatalog = import_core8.default.isEntityOwnedProjectCatalog;
 var MAX_MANIFEST_BYTES = 128 * 1024;
 var DIRECT_STAGE_MAX_BYTES = 64 * 1024;
 var MAX_STAGE_CHUNKS = 64;
 var METADATA_STAGE_CHUNK_MAX_BYTES = 450 * 1024;
-var MODEL_STAGE_CHUNK_MAX_BYTES = 1024 * 1024;
+var PROJECT_STAGE_CHUNK_MAX_BYTES = 1024 * 1024;
 var MAX_LOCAL_PAYLOAD_BYTES = {
   metadata: MAX_STAGE_CHUNKS * METADATA_STAGE_CHUNK_MAX_BYTES + 1024,
-  model: MAX_STAGE_CHUNKS * MODEL_STAGE_CHUNK_MAX_BYTES + 1024
+  project: MAX_STAGE_CHUNKS * PROJECT_STAGE_CHUNK_MAX_BYTES + 1024
 };
 var StageRunnerError = class extends Error {
   constructor(code, message) {

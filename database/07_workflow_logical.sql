@@ -2,7 +2,7 @@
 
 CREATE TABLE workflow.logical_submodel (
     logical_submodel_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     workflow_run_id BIGINT,
     logical_submodel_name VARCHAR(255) NOT NULL,
@@ -13,9 +13,9 @@ CREATE TABLE workflow.logical_submodel (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_logical_submodel_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
-    CONSTRAINT uq_logical_submodel_id_model UNIQUE (logical_submodel_id, model_id),
+    CONSTRAINT fk_logical_submodel_project FOREIGN KEY (project_id)
+        REFERENCES project.project (project_id) ON DELETE NO ACTION,
+    CONSTRAINT uq_logical_submodel_id_project UNIQUE (logical_submodel_id, project_id),
     CONSTRAINT ck_logical_submodel_name CHECK (reference.is_nonblank(logical_submodel_name)),
     CONSTRAINT ck_logical_submodel_definition CHECK (
         reference.is_nonblank(logical_submodel_definition)
@@ -25,12 +25,12 @@ CREATE TABLE workflow.logical_submodel (
     )
 );
 
-CREATE UNIQUE INDEX ux_logical_submodel_model_name
-    ON workflow.logical_submodel (model_id, lower(btrim(logical_submodel_name)));
+CREATE UNIQUE INDEX ux_logical_submodel_project_name
+    ON workflow.logical_submodel (project_id, lower(btrim(logical_submodel_name)));
 
 CREATE TABLE workflow.logical_entity (
     logical_entity_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     workflow_run_id BIGINT,
     logical_entity_schema_name VARCHAR(400) NOT NULL,
@@ -47,9 +47,9 @@ CREATE TABLE workflow.logical_entity (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_logical_entity_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
-    CONSTRAINT uq_logical_entity_id_model UNIQUE (logical_entity_id, model_id),
+    CONSTRAINT fk_logical_entity_project FOREIGN KEY (project_id)
+        REFERENCES project.project (project_id) ON DELETE NO ACTION,
+    CONSTRAINT uq_logical_entity_id_project UNIQUE (logical_entity_id, project_id),
     CONSTRAINT ck_logical_entity_schema_name CHECK (
         reference.is_nonblank(logical_entity_schema_name)
     ),
@@ -79,14 +79,14 @@ CREATE TABLE workflow.logical_entity (
     )
 );
 
-CREATE UNIQUE INDEX ux_logical_entity_model_name
+CREATE UNIQUE INDEX ux_logical_entity_project_name
     ON workflow.logical_entity (
-        model_id, lower(btrim(logical_entity_schema_name)), lower(btrim(logical_entity_name))
+        project_id, lower(btrim(logical_entity_schema_name)), lower(btrim(logical_entity_name))
     );
 
 CREATE TABLE workflow.logical_entity_submodel (
     logical_entity_submodel_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     workflow_run_id BIGINT,
     logical_entity_id BIGINT NOT NULL,
@@ -97,20 +97,20 @@ CREATE TABLE workflow.logical_entity_submodel (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_logical_entity_submodel_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_logical_entity_submodel_project FOREIGN KEY (project_id)
+        REFERENCES project.project (project_id) ON DELETE NO ACTION,
     CONSTRAINT fk_logical_entity_submodel_entity FOREIGN KEY (
         logical_entity_id,
-        model_id
-    ) REFERENCES workflow.logical_entity (logical_entity_id, model_id)
+        project_id
+    ) REFERENCES workflow.logical_entity (logical_entity_id, project_id)
         ON DELETE NO ACTION,
     CONSTRAINT fk_logical_entity_submodel_submodel FOREIGN KEY (
         logical_submodel_id,
-        model_id
-    ) REFERENCES workflow.logical_submodel (logical_submodel_id, model_id)
+        project_id
+    ) REFERENCES workflow.logical_submodel (logical_submodel_id, project_id)
         ON DELETE NO ACTION,
     CONSTRAINT uq_logical_entity_submodel_identity
-        UNIQUE (model_id, logical_entity_id, logical_submodel_id),
+        UNIQUE (project_id, logical_entity_id, logical_submodel_id),
     CONSTRAINT ck_logical_entity_submodel_status CHECK (
         logical_entity_submodel_status IN (
             'active', 'inactive', 'deprecated'
@@ -120,7 +120,7 @@ CREATE TABLE workflow.logical_entity_submodel (
 
 CREATE TABLE workflow.logical_attribute (
     logical_attribute_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     workflow_run_id BIGINT,
     logical_entity_id BIGINT NOT NULL,
@@ -138,16 +138,16 @@ CREATE TABLE workflow.logical_attribute (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_logical_attribute_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_logical_attribute_project FOREIGN KEY (project_id)
+        REFERENCES project.project (project_id) ON DELETE NO ACTION,
     CONSTRAINT fk_logical_attribute_entity FOREIGN KEY (
         logical_entity_id,
-        model_id
-    ) REFERENCES workflow.logical_entity (logical_entity_id, model_id)
+        project_id
+    ) REFERENCES workflow.logical_entity (logical_entity_id, project_id)
         ON DELETE NO ACTION,
-    CONSTRAINT uq_logical_attribute_id_model UNIQUE (logical_attribute_id, model_id),
+    CONSTRAINT uq_logical_attribute_id_project UNIQUE (logical_attribute_id, project_id),
     CONSTRAINT uq_logical_attribute_witness
-        UNIQUE (logical_attribute_id, logical_entity_id, model_id),
+        UNIQUE (logical_attribute_id, logical_entity_id, project_id),
     CONSTRAINT ck_logical_attribute_name CHECK (
         reference.is_nonblank(logical_attribute_name)
     ),
@@ -179,20 +179,20 @@ CREATE TABLE workflow.logical_attribute (
 
 CREATE UNIQUE INDEX ux_logical_attribute_entity_name
     ON workflow.logical_attribute (
-        model_id,
+        project_id,
         logical_entity_id,
         lower(btrim(logical_attribute_name))
     );
 
 CREATE TABLE workflow.logical_entity_source_mapping (
     logical_entity_source_mapping_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     workflow_run_id BIGINT,
     logical_entity_id BIGINT NOT NULL,
     support_source_type VARCHAR(20) NOT NULL,
     source_object_id BIGINT,
-    modeling_assertion_record_id BIGINT,
+    context_record_id UUID,
     logical_entity_source_mapping_order INTEGER,
     logical_entity_source_mapping_rationale TEXT NOT NULL,
     logical_entity_source_mapping_status VARCHAR(20) NOT NULL DEFAULT 'active',
@@ -201,38 +201,38 @@ CREATE TABLE workflow.logical_entity_source_mapping (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_logical_entity_source_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_logical_entity_source_project FOREIGN KEY (project_id)
+        REFERENCES project.project (project_id) ON DELETE NO ACTION,
     CONSTRAINT fk_logical_entity_source_entity FOREIGN KEY (
         logical_entity_id,
-        model_id
-    ) REFERENCES workflow.logical_entity (logical_entity_id, model_id)
+        project_id
+    ) REFERENCES workflow.logical_entity (logical_entity_id, project_id)
         ON DELETE NO ACTION,
     CONSTRAINT fk_logical_entity_source_scope FOREIGN KEY (
-        model_id,
+        project_id,
         source_object_id
-    ) REFERENCES model.model_input_scope (model_id, object_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_logical_entity_source_assertion_record FOREIGN KEY (
-        modeling_assertion_record_id,
-        model_id
-    ) REFERENCES model.modeling_assertion_record (
-        modeling_assertion_record_id,
-        model_id
+    ) REFERENCES project.project_input_scope (project_id, object_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_logical_entity_source_context_record FOREIGN KEY (
+        context_record_id,
+        project_id
+    ) REFERENCES project.context_record (
+        context_record_id,
+        project_id
     ) ON DELETE NO ACTION,
     CONSTRAINT uq_logical_entity_source_witness UNIQUE (
         logical_entity_source_mapping_id,
         logical_entity_id,
         source_object_id,
-        model_id
+        project_id
     ),
     CONSTRAINT ck_logical_entity_source_typed_source CHECK (
         (
             support_source_type = 'object'
             AND source_object_id IS NOT NULL
-            AND modeling_assertion_record_id IS NULL
+            AND context_record_id IS NULL
         ) OR (
-            support_source_type = 'assertion'
-            AND modeling_assertion_record_id IS NOT NULL
+            support_source_type = 'context_record'
+            AND context_record_id IS NOT NULL
             AND source_object_id IS NULL
         )
     ),
@@ -252,20 +252,20 @@ CREATE TABLE workflow.logical_entity_source_mapping (
 
 CREATE UNIQUE INDEX ux_logical_entity_source_object
     ON workflow.logical_entity_source_mapping (
-        model_id,
+        project_id,
         logical_entity_id,
         source_object_id
     ) WHERE support_source_type = 'object';
-CREATE UNIQUE INDEX ux_logical_entity_source_assertion
+CREATE UNIQUE INDEX ux_logical_entity_source_context
     ON workflow.logical_entity_source_mapping (
-        model_id,
+        project_id,
         logical_entity_id,
-        modeling_assertion_record_id
-    ) WHERE support_source_type = 'assertion';
+        context_record_id
+    ) WHERE support_source_type = 'context_record';
 
 CREATE TABLE workflow.logical_attribute_source_mapping (
     logical_attribute_source_mapping_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     workflow_run_id BIGINT,
     logical_entity_source_mapping_id BIGINT,
@@ -274,7 +274,7 @@ CREATE TABLE workflow.logical_attribute_source_mapping (
     support_source_type VARCHAR(20) NOT NULL,
     source_object_id BIGINT,
     source_attribute_id BIGINT,
-    modeling_assertion_record_id BIGINT,
+    context_record_id UUID,
     logical_attribute_source_mapping_order INTEGER,
     logical_attribute_source_mapping_rationale TEXT NOT NULL,
     logical_attribute_source_mapping_status VARCHAR(20) NOT NULL DEFAULT 'active',
@@ -283,38 +283,38 @@ CREATE TABLE workflow.logical_attribute_source_mapping (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_logical_attribute_source_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_logical_attribute_source_project FOREIGN KEY (project_id)
+        REFERENCES project.project (project_id) ON DELETE NO ACTION,
     CONSTRAINT fk_logical_attribute_source_parent FOREIGN KEY (
         logical_entity_source_mapping_id,
         logical_entity_id,
         source_object_id,
-        model_id
+        project_id
     ) REFERENCES workflow.logical_entity_source_mapping (
         logical_entity_source_mapping_id,
         logical_entity_id,
         source_object_id,
-        model_id
+        project_id
     ) ON DELETE NO ACTION,
     CONSTRAINT fk_logical_attribute_source_attribute FOREIGN KEY (
         logical_attribute_id,
         logical_entity_id,
-        model_id
+        project_id
     ) REFERENCES workflow.logical_attribute (
         logical_attribute_id,
         logical_entity_id,
-        model_id
+        project_id
     ) ON DELETE NO ACTION,
     CONSTRAINT fk_logical_attribute_source_physical FOREIGN KEY (
         source_attribute_id,
         source_object_id
     ) REFERENCES core.attribute (attribute_id, object_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_logical_attribute_source_assertion_record FOREIGN KEY (
-        modeling_assertion_record_id,
-        model_id
-    ) REFERENCES model.modeling_assertion_record (
-        modeling_assertion_record_id,
-        model_id
+    CONSTRAINT fk_logical_attribute_source_context_record FOREIGN KEY (
+        context_record_id,
+        project_id
+    ) REFERENCES project.context_record (
+        context_record_id,
+        project_id
     ) ON DELETE NO ACTION,
     CONSTRAINT ck_logical_attribute_source_typed_source CHECK (
         (
@@ -322,10 +322,10 @@ CREATE TABLE workflow.logical_attribute_source_mapping (
             AND logical_entity_source_mapping_id IS NOT NULL
             AND source_object_id IS NOT NULL
             AND source_attribute_id IS NOT NULL
-            AND modeling_assertion_record_id IS NULL
+            AND context_record_id IS NULL
         ) OR (
-            support_source_type = 'assertion'
-            AND modeling_assertion_record_id IS NOT NULL
+            support_source_type = 'context_record'
+            AND context_record_id IS NOT NULL
             AND logical_entity_source_mapping_id IS NULL
             AND source_object_id IS NULL
             AND source_attribute_id IS NULL
@@ -347,21 +347,21 @@ CREATE TABLE workflow.logical_attribute_source_mapping (
 
 CREATE UNIQUE INDEX ux_logical_attribute_source_physical
     ON workflow.logical_attribute_source_mapping (
-        model_id,
+        project_id,
         logical_entity_source_mapping_id,
         logical_attribute_id,
         source_attribute_id
     ) WHERE support_source_type = 'attribute';
-CREATE UNIQUE INDEX ux_logical_attribute_source_assertion
+CREATE UNIQUE INDEX ux_logical_attribute_source_context
     ON workflow.logical_attribute_source_mapping (
-        model_id,
+        project_id,
         logical_attribute_id,
-        modeling_assertion_record_id
-    ) WHERE support_source_type = 'assertion';
+        context_record_id
+    ) WHERE support_source_type = 'context_record';
 
 CREATE TABLE workflow.logical_relationship (
     logical_relationship_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     workflow_run_id BIGINT,
     logical_relationship_name VARCHAR(255) NOT NULL,
@@ -380,35 +380,35 @@ CREATE TABLE workflow.logical_relationship (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_logical_relationship_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_logical_relationship_project FOREIGN KEY (project_id)
+        REFERENCES project.project (project_id) ON DELETE NO ACTION,
     CONSTRAINT fk_logical_relationship_from_entity FOREIGN KEY (
         logical_relationship_from_entity_id,
-        model_id
-    ) REFERENCES workflow.logical_entity (logical_entity_id, model_id)
+        project_id
+    ) REFERENCES workflow.logical_entity (logical_entity_id, project_id)
         ON DELETE NO ACTION,
     CONSTRAINT fk_logical_relationship_to_entity FOREIGN KEY (
         logical_relationship_to_entity_id,
-        model_id
-    ) REFERENCES workflow.logical_entity (logical_entity_id, model_id)
+        project_id
+    ) REFERENCES workflow.logical_entity (logical_entity_id, project_id)
         ON DELETE NO ACTION,
     CONSTRAINT fk_logical_relationship_from_attribute FOREIGN KEY (
         logical_relationship_from_attribute_id,
         logical_relationship_from_entity_id,
-        model_id
+        project_id
     ) REFERENCES workflow.logical_attribute (
         logical_attribute_id,
         logical_entity_id,
-        model_id
+        project_id
     ) ON DELETE NO ACTION,
     CONSTRAINT fk_logical_relationship_to_attribute FOREIGN KEY (
         logical_relationship_to_attribute_id,
         logical_relationship_to_entity_id,
-        model_id
+        project_id
     ) REFERENCES workflow.logical_attribute (
         logical_attribute_id,
         logical_entity_id,
-        model_id
+        project_id
     ) ON DELETE NO ACTION,
     CONSTRAINT ck_logical_relationship_distinct_endpoints CHECK (
         (logical_relationship_from_entity_id, logical_relationship_from_attribute_id)
@@ -439,7 +439,7 @@ CREATE TABLE workflow.logical_relationship (
 
 CREATE UNIQUE INDEX ux_logical_relationship_identity
     ON workflow.logical_relationship (
-        model_id,
+        project_id,
         logical_relationship_from_entity_id,
         logical_relationship_from_attribute_id,
         logical_relationship_to_entity_id,
@@ -450,28 +450,28 @@ CREATE UNIQUE INDEX ux_logical_relationship_identity
 -- Every Logical mutation participates in the one-revision transaction guard.
 
 -- Supporting read, impact, and parent indexes.
-CREATE INDEX ix_logical_submodel_status ON workflow.logical_submodel (model_id, logical_submodel_status);
-CREATE INDEX ix_logical_entity_status_order ON workflow.logical_entity (model_id, logical_entity_status, logical_entity_dependency_order);
-CREATE INDEX ix_logical_entity_submodel_submodel ON workflow.logical_entity_submodel (model_id, logical_submodel_id);
-CREATE INDEX ix_logical_attribute_entity_status ON workflow.logical_attribute (model_id, logical_entity_id, logical_attribute_status);
+CREATE INDEX ix_logical_submodel_status ON workflow.logical_submodel (project_id, logical_submodel_status);
+CREATE INDEX ix_logical_entity_status_order ON workflow.logical_entity (project_id, logical_entity_status, logical_entity_dependency_order);
+CREATE INDEX ix_logical_entity_submodel_submodel ON workflow.logical_entity_submodel (project_id, logical_submodel_id);
+CREATE INDEX ix_logical_attribute_entity_status ON workflow.logical_attribute (project_id, logical_entity_id, logical_attribute_status);
 CREATE INDEX ix_logical_entity_source_object
-    ON workflow.logical_entity_source_mapping (model_id, source_object_id)
+    ON workflow.logical_entity_source_mapping (project_id, source_object_id)
     WHERE support_source_type = 'object';
-CREATE INDEX ix_logical_entity_source_assertion
+CREATE INDEX ix_logical_entity_source_context
     ON workflow.logical_entity_source_mapping (
-        model_id,
-        modeling_assertion_record_id
-    ) WHERE support_source_type = 'assertion';
+        project_id,
+        context_record_id
+    ) WHERE support_source_type = 'context_record';
 CREATE INDEX ix_logical_attribute_source_physical
     ON workflow.logical_attribute_source_mapping (
-        model_id,
+        project_id,
         source_object_id,
         source_attribute_id
     ) WHERE support_source_type = 'attribute';
-CREATE INDEX ix_logical_attribute_source_assertion
+CREATE INDEX ix_logical_attribute_source_context
     ON workflow.logical_attribute_source_mapping (
-        model_id,
-        modeling_assertion_record_id
-    ) WHERE support_source_type = 'assertion';
-CREATE INDEX ix_logical_attribute_source_target ON workflow.logical_attribute_source_mapping (model_id, logical_attribute_id);
-CREATE INDEX ix_logical_relationship_to ON workflow.logical_relationship (model_id, logical_relationship_to_entity_id, logical_relationship_to_attribute_id);
+        project_id,
+        context_record_id
+    ) WHERE support_source_type = 'context_record';
+CREATE INDEX ix_logical_attribute_source_target ON workflow.logical_attribute_source_mapping (project_id, logical_attribute_id);
+CREATE INDEX ix_logical_relationship_to ON workflow.logical_relationship (project_id, logical_relationship_to_entity_id, logical_relationship_to_attribute_id);

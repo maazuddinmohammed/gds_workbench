@@ -9,9 +9,9 @@ from gds_etl_workbench.domain.authorization import RequestPrincipal
 from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.prompts.contracts import (
     CreatePromptTemplateRequest,
-    ModelPromptAssignments,
-    ModelPromptAssignmentState,
-    ModelWorkflow,
+    ProjectPromptAssignments,
+    ProjectPromptAssignmentState,
+    ProjectWorkflow,
     PromptPreview,
     PromptStageCatalog,
     PromptTemplateDetail,
@@ -21,7 +21,7 @@ from gds_workbench_api.features.prompts.contracts import (
     PromptTemplateVersion,
     PromptVersionStatus,
     SavePromptDraftRequest,
-    SetModelPromptAssignmentRequest,
+    SetProjectPromptAssignmentRequest,
     UpdatePromptTemplateRequest,
     WorkflowExecutionMode,
 )
@@ -55,7 +55,7 @@ def create_prompts_router(
 
     async def list_templates(
         tenant_id: Annotated[int, tenant_path],
-        workflow: ModelWorkflow | None = None,
+        workflow: ProjectWorkflow | None = None,
         mode: WorkflowExecutionMode | None = None,
         stage_code: Annotated[
             str | None, Query(min_length=1, max_length=100, pattern="^[a-z][a-z0-9_]{0,99}$")
@@ -70,7 +70,7 @@ def create_prompts_router(
             principal,
             tenant_id=tenant_id,
             filters=PromptTemplateFilters(
-                model_workflow=workflow,
+                project_workflow=workflow,
                 workflow_execution_mode=mode,
                 workflow_stage_code=stage_code,
                 version_status=status,
@@ -194,30 +194,30 @@ def create_prompts_router(
             prompt_template_version_id=prompt_template_version_id,
         )
 
-    async def list_model_assignments(
+    async def list_project_assignments(
         tenant_id: Annotated[int, tenant_path],
-        model_id: Annotated[int, id_path],
+        project_id: Annotated[int, id_path],
         *,
         principal: RequestPrincipal = Depends(authenticate),
-    ) -> ModelPromptAssignments:
-        return await service.list_model_assignments(
+    ) -> ProjectPromptAssignments:
+        return await service.list_project_assignments(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
         )
 
-    async def set_model_assignment(
+    async def set_project_assignment(
         tenant_id: Annotated[int, tenant_path],
-        model_id: Annotated[int, id_path],
+        project_id: Annotated[int, id_path],
         workflow_stage_id: Annotated[int, id_path],
-        body: SetModelPromptAssignmentRequest,
+        body: SetProjectPromptAssignmentRequest,
         *,
         principal: RequestPrincipal = Depends(authenticate),
-    ) -> ModelPromptAssignmentState:
-        return await service.set_model_assignment(
+    ) -> ProjectPromptAssignmentState:
+        return await service.set_project_assignment(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             workflow_stage_id=workflow_stage_id,
             body=body,
         )
@@ -278,15 +278,15 @@ def create_prompts_router(
         response_model=PromptTemplateVersion,
     )
     router.add_api_route(
-        "/models/{model_id}/assignments",
-        list_model_assignments,
+        "/projects/{project_id}/assignments",
+        list_project_assignments,
         methods=["GET"],
-        response_model=ModelPromptAssignments,
+        response_model=ProjectPromptAssignments,
     )
     router.add_api_route(
-        "/models/{model_id}/assignments/{workflow_stage_id}",
-        set_model_assignment,
+        "/projects/{project_id}/assignments/{workflow_stage_id}",
+        set_project_assignment,
         methods=["PUT"],
-        response_model=ModelPromptAssignmentState,
+        response_model=ProjectPromptAssignmentState,
     )
     return router

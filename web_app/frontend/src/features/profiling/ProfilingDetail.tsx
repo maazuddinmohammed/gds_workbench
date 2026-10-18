@@ -13,20 +13,20 @@ import { formatPercent } from "./shared";
 export function ProfilingObjectDetailPage({
   api,
   tenantId,
-  modelId,
+  projectId,
   objectId,
   returnSearch,
 }: {
   api: ProfilingApi;
   tenantId: number;
-  modelId: number;
+  projectId: number;
   objectId: number;
   returnSearch: ProfilingRouteSearch;
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
   const detailQuery = useQuery({
-    queryKey: profilingQueryKeys.result(tenantId, modelId, objectId),
-    queryFn: () => api.readProfilingObject(tenantId, modelId, objectId),
+    queryKey: profilingQueryKeys.result(tenantId, projectId, objectId),
+    queryFn: () => api.readProfilingObject(tenantId, projectId, objectId),
   });
 
   useEffect(() => {
@@ -53,17 +53,16 @@ export function ProfilingObjectDetailPage({
   return (
     <article className="workflow-detail-page profiling-detail-page page-enter">
       <header className="workflow-detail-header">
-        <div>
+        <div className="workspace-record-heading">
           <Link
             className="text-action"
             aria-label="Back to Profiling"
-            to="/tenants/$tenantId/models/$modelId/profiling"
-            params={{ tenantId: String(tenantId), modelId: String(modelId) }}
+            to="/tenants/$tenantId/projects/$projectId/profiling"
+            params={{ tenantId: String(tenantId), projectId: String(projectId) }}
             search={returnSearch}
           >
             ← Back to Profiling
           </Link>
-          <p className="eyebrow">Profiled Object</p>
           <h1 ref={heading} tabIndex={-1}>{detail.object_name}</h1>
         </div>
         <span className="status-badge is-neutral">
@@ -71,20 +70,11 @@ export function ProfilingObjectDetailPage({
         </span>
       </header>
 
-      <section className="detail-section detail-primary" aria-labelledby="profiled-object-description-heading">
-        <header><h2 id="profiled-object-description-heading">Object description</h2></header>
-        <p className="detail-prose is-prominent">{detail.object_description ?? "No description provided."}</p>
-      </section>
-
       <section className="detail-section" aria-labelledby="attribute-profiles-heading">
         <header>
           <h2 id="attribute-profiles-heading">Attribute profiles</h2>
           <span>{returnedProfileCount} returned</span>
         </header>
-        <p className="field-help">
-          Populated means non-null, including blanks. Blank, distinct, and duplicate percentages
-          use non-null rows. Lengths are measured in characters.
-        </p>
         {detail.profiles_truncated ? (
           <p className="drawer-warning">
             This response contains {returnedProfileCount} of {detail.profiled_attribute_count}

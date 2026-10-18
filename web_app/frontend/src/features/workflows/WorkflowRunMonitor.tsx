@@ -12,7 +12,7 @@ import { ApiError } from "../../core/http";
 import { formatRequiredDateTime as formatDateTime } from "../../shared/presentation";
 import {
   workflowRunQueryKeys,
-  type ModelWorkflow,
+  type ProjectWorkflow,
   type WorkflowDraftReview,
   type WorkflowRunDetail,
   type WorkflowRunMonitorApi,
@@ -35,7 +35,7 @@ import { WorkflowActivityPanel, WorkflowCommandContext } from "./WorkflowCommand
 import type { WorkflowRunFilterState } from "./api";
 
 type DraftWorkflow = Extract<
-  ModelWorkflow,
+  ProjectWorkflow,
   | "metadata_enrichment"
   | "analysis"
   | "conceptual"
@@ -51,8 +51,8 @@ const WORKFLOW_EVENT_PAGE_SIZE = 200;
 export function WorkflowRunMonitor({
   api,
   tenantId,
-  modelId,
-  modelRevision,
+  projectId,
+  projectRevision,
   workflow,
   hasTenantLock,
   focusRunId,
@@ -62,8 +62,8 @@ export function WorkflowRunMonitor({
   api: WorkflowRunMonitorApi;
   enrichmentApi?: Pick<MetadataEnrichmentTransport, "readMetadataEnrichmentResults">;
   tenantId: number;
-  modelId: number;
-  modelRevision: number;
+  projectId: number;
+  projectRevision: number;
   workflow: DraftWorkflow;
   hasTenantLock: boolean;
   focusRunId: number | null;
@@ -80,12 +80,12 @@ export function WorkflowRunMonitor({
   const applyIdempotencyKey = useRef<string | null>(null);
   const applyTrigger = useRef<HTMLButtonElement>(null);
   const label = workflowLabel(workflow);
-  const recentKey = [...workflowRunQueryKeys.recent(tenantId, modelId, workflow), ...(runState ? [runState] : [])];
+  const recentKey = [...workflowRunQueryKeys.recent(tenantId, projectId, workflow), ...(runState ? [runState] : [])];
   const recentQuery = useInfiniteQuery({
     queryKey: recentKey,
     queryFn: ({ pageParam }) => api.listWorkflowRuns(
       tenantId,
-      modelId,
+      projectId,
       workflow,
       runState,
       5,
@@ -106,12 +106,12 @@ export function WorkflowRunMonitor({
     if (focusRunId !== null) {
       void Promise.all([
         queryClient.invalidateQueries({
-          queryKey: workflowRunQueryKeys.recent(tenantId, modelId, workflow),
+          queryKey: workflowRunQueryKeys.recent(tenantId, projectId, workflow),
         }),
-        queryClient.invalidateQueries({ queryKey: ["model-overview", tenantId, modelId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-overview", tenantId, projectId] }),
       ]);
     }
-  }, [commandCenter, focusRunId, modelId, queryClient, tenantId, workflow]);
+  }, [commandCenter, focusRunId, projectId, queryClient, tenantId, workflow]);
   useEffect(() => {
     if (selectedRunId === null && recentRuns[0]) {
       setSelectedRunId(recentRuns[0].workflow_run_id);
@@ -120,15 +120,15 @@ export function WorkflowRunMonitor({
   }, [recentRuns, selectedRunId]);
 
   const runQuery = useQuery({
-    queryKey: workflowRunQueryKeys.detail(tenantId, modelId, selectedRunId ?? 0),
-    queryFn: () => api.readWorkflowRun(tenantId, modelId, selectedRunId ?? 0),
+    queryKey: workflowRunQueryKeys.detail(tenantId, projectId, selectedRunId ?? 0),
+    queryFn: () => api.readWorkflowRun(tenantId, projectId, selectedRunId ?? 0),
     enabled: selectedRunId !== null && (!commandCenter || expanded),
   });
   const eventsQuery = useInfiniteQuery({
-    queryKey: workflowRunQueryKeys.events(tenantId, modelId, selectedRunId ?? 0),
+    queryKey: workflowRunQueryKeys.events(tenantId, projectId, selectedRunId ?? 0),
     queryFn: ({ pageParam }) => api.listWorkflowRunEvents(
       tenantId,
-      modelId,
+      projectId,
       selectedRunId ?? 0,
       pageParam,
     ),
@@ -146,21 +146,21 @@ export function WorkflowRunMonitor({
       void eventsQuery.fetchNextPage();
     }
   }, [commandCenter, expanded, eventsQuery.fetchNextPage, eventsQuery.hasNextPage, eventsQuery.isFetchingNextPage]);
-  const run = workflow === "metadata_enrichment" && runQuery.data?.model_workflow !== workflow
+  const run = workflow === "metadata_enrichment" && runQuery.data?.project_workflow !== workflow
     ? undefined : runQuery.data;
   const validatedDraft = workflow !== "metadata_enrichment" && isValidatedDraft(run) ? run : null;
   const retainedDraft = workflow !== "metadata_enrichment" && Boolean(run?.workflow_run_state === "failed"
-    && run.model_change_set_status === "active" && run.model_change_set_id && run.draft_revision);
+    && run.project_change_set_status === "active" && run.project_change_set_id && run.draft_revision);
   const draftReviewQuery = useQuery({
     queryKey: workflowRunQueryKeys.draftReview(
       tenantId,
-      modelId,
-      run?.model_change_set_id ?? "none",
+      projectId,
+      run?.project_change_set_id ?? "none",
     ),
     queryFn: () => api.readWorkflowDraftReview(
       tenantId,
-      modelId,
-      run?.model_change_set_id ?? "",
+      projectId,
+      run?.project_change_set_id ?? "",
     ),
     enabled: (Boolean(validatedDraft) || retainedDraft) && (!commandCenter || expanded),
   });
@@ -193,9 +193,9 @@ export function WorkflowRunMonitor({
       }
       return api.applyWorkflowDraft(
         tenantId,
-        modelId,
+        projectId,
         validatedDraft.workflow_run_id,
-        modelRevision,
+        projectRevision,
         validatedDraft.draft_revision,
         validatedDraft.candidate_digest,
         applyIdempotencyKey.current,
@@ -207,17 +207,17 @@ export function WorkflowRunMonitor({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: recentKey }),
         queryClient.invalidateQueries({
-          queryKey: workflowRunQueryKeys.detail(tenantId, modelId, result.workflow_run_id),
+          queryKey: workflowRunQueryKeys.detail(tenantId, projectId, result.workflow_run_id),
         }),
         queryClient.invalidateQueries({
           queryKey: workflowRunQueryKeys.draftReview(
             tenantId,
-            modelId,
-            result.model_change_set_id,
+            projectId,
+            result.project_change_set_id,
           ),
         }),
-        queryClient.invalidateQueries({ queryKey: ["model", tenantId, modelId] }),
-        queryClient.invalidateQueries({ queryKey: ["model-overview", tenantId, modelId] }),
+        queryClient.invalidateQueries({ queryKey: ["project", tenantId, projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-overview", tenantId, projectId] }),
         queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
         onApplied(),
       ]);
@@ -237,7 +237,7 @@ export function WorkflowRunMonitor({
   const parsedRunId = Number(runIdInput);
   const runIdIsValid = Number.isSafeInteger(parsedRunId) && parsedRunId > 0;
   const enrichmentResultsFetching = useIsFetching({
-    queryKey: enrichmentResultKey(tenantId, modelId, selectedRunId ?? 0),
+    queryKey: enrichmentResultKey(tenantId, projectId, selectedRunId ?? 0),
   });
   const refreshing = enrichmentResultsFetching > 0 || recentQuery.isFetching
     || runQuery.isFetching
@@ -246,7 +246,7 @@ export function WorkflowRunMonitor({
   const refreshAll = async () => {
     const refreshes: Promise<unknown>[] = [
       recentQuery.refetch(),
-      queryClient.invalidateQueries({ queryKey: ["model-overview", tenantId, modelId] }),
+      queryClient.invalidateQueries({ queryKey: ["project-overview", tenantId, projectId] }),
     ];
     // Enrichment saves during execution, so refreshing runs must also reload saved values.
     if (workflow === "metadata_enrichment") refreshes.push(onApplied());
@@ -254,14 +254,14 @@ export function WorkflowRunMonitor({
       refreshes.push(runQuery.refetch(), eventsQuery.refetch());
       if (workflow === "metadata_enrichment") {
         refreshes.push(queryClient.invalidateQueries({
-          queryKey: enrichmentResultKey(tenantId, modelId, selectedRunId),
+          queryKey: enrichmentResultKey(tenantId, projectId, selectedRunId),
         }));
       }
     }
     if (validatedDraft || retainedDraft) {
       refreshes.push(draftReviewQuery.refetch());
       refreshes.push(queryClient.invalidateQueries({
-        queryKey: ["workflow-draft-records", tenantId, modelId, run?.model_change_set_id],
+        queryKey: ["workflow-draft-records", tenantId, projectId, run?.project_change_set_id],
       }));
     }
     await Promise.all(refreshes);
@@ -396,7 +396,7 @@ export function WorkflowRunMonitor({
             ) : (
               <>
               <CancelWorkflowRun key={`cancel-${run.workflow_run_id}`} api={api} tenantId={tenantId}
-                modelId={modelId} run={run} hasTenantLock={hasTenantLock} onCancelled={refreshAll} />
+                projectId={projectId} run={run} hasTenantLock={hasTenantLock} onCancelled={refreshAll} />
               <WorkflowRunDetailView
                 key={run.workflow_run_id}
                 tabbed={commandCenter}
@@ -404,8 +404,8 @@ export function WorkflowRunMonitor({
                 physicalMetadata={workflow === "metadata_enrichment"}
                 enrichmentResults={workflow === "metadata_enrichment" && enrichmentApi
                 && ["completed", "completed_with_repair"].includes(run.workflow_run_state) ? (
-                <MetadataEnrichmentResults key={`${tenantId}-${modelId}-${run.workflow_run_id}`}
-                  api={enrichmentApi} tenantId={tenantId} modelId={modelId} runId={run.workflow_run_id} />
+                <MetadataEnrichmentResults key={`${tenantId}-${projectId}-${run.workflow_run_id}`}
+                  api={enrichmentApi} tenantId={tenantId} projectId={projectId} runId={run.workflow_run_id} />
               ) : null}
                 events={events}
                 eventsPending={eventsQuery.isPending}
@@ -419,7 +419,7 @@ export function WorkflowRunMonitor({
                     key={`${run.workflow_run_id}-${run.draft_revision}`}
                     api={api}
                     tenantId={tenantId}
-                    modelId={modelId}
+                    projectId={projectId}
                     run={run}
                     review={draftReviewQuery.data ?? null}
                     isPending={draftReviewQuery.isPending}
@@ -454,7 +454,7 @@ export function WorkflowRunMonitor({
           draftRevision={validatedDraft.draft_revision}
           failedMappingPairs={isPartialMappingRun(validatedDraft)
             ? validatedDraft.mapping_outcome?.failed_pair_count ?? 0 : 0}
-          missingMappingPairs={validatedDraft.model_workflow === "mapping"
+          missingMappingPairs={validatedDraft.project_workflow === "mapping"
             ? (validatedDraft.mapping_outcome?.partial_pair_count ?? 0)
               + (validatedDraft.mapping_outcome?.empty_pair_count ?? 0) : 0}
           isPending={applyMutation.isPending}
@@ -520,7 +520,7 @@ function WorkflowRunDetailView({
 }) {
   const [tab, setTab] = useState("Overview");
   const partialMapping = isPartialMappingRun(run);
-  const mappingOutcome = run.model_workflow === "mapping" ? run.mapping_outcome : null;
+  const mappingOutcome = run.project_workflow === "mapping" ? run.mapping_outcome : null;
   const incompletePairs = mappingOutcome?.partial_pair_count ?? 0;
   const emptyPairs = mappingOutcome?.empty_pair_count ?? 0;
   const mappingFailures = run.mapping_failures ?? [];
@@ -535,7 +535,7 @@ function WorkflowRunDetailView({
       <header className="workflow-run-detail-header">
         <div>
           <small>Run {run.workflow_run_id}</small>
-          <strong>{runKind(run.workflow_execution_mode, run.model_workflow)}</strong>
+          <strong>{runKind(run.workflow_execution_mode, run.project_workflow)}</strong>
         </div>
         <RunStateBadge state={run.workflow_run_state} partial={partialMapping} />
       </header>
@@ -548,8 +548,8 @@ function WorkflowRunDetailView({
       <dl className="workflow-run-facts">
         <div><dt>Created</dt><dd>{formatDateTime(run.created_at)}</dd></div>
         <div><dt>Actor</dt><dd>{run.actor_display_name}</dd></div>
-        <div><dt>{run.model_workflow === "validation" ? "Systems" : "Objects"}</dt><dd>{run.selected_scope_count}</dd></div>
-        <div><dt>Mode</dt><dd>{run.workflow_execution_mode?.replaceAll("_", " ") ?? (["code_generation", "validation"].includes(run.model_workflow) ? "Configured generator" : "Deterministic")}</dd></div>
+        <div><dt>{run.project_workflow === "validation" ? "Systems" : "Objects"}</dt><dd>{run.selected_scope_count}</dd></div>
+        <div><dt>Mode</dt><dd>{run.workflow_execution_mode?.replaceAll("_", " ") ?? (["code_generation", "validation"].includes(run.project_workflow) ? "Configured generator" : "Deterministic")}</dd></div>
       </dl>
 
       {run.workflow_run_state === "failed" ? (
@@ -599,9 +599,9 @@ function WorkflowRunDetailView({
           </p>
           {incompletePairs > 0 || emptyPairs > 0 ? <p>{isActiveRun(run)
             ? "Generation continues for the remaining pairs. Review the results when the run finishes."
-            : run.model_change_set_status === "applied" || appliedRunId === run.workflow_run_id
+            : run.project_change_set_status === "applied" || appliedRunId === run.workflow_run_id
               ? "Available mappings applied. Missing selected transformations remain blank."
-              : run.model_change_set_status === "validated"
+              : run.project_change_set_status === "validated"
                 ? "Apply the available mappings. Missing selected transformations will be blank."
                 : incompletePairs > 0 ? "Incomplete pairs have missing transformations. Review this run before generating again."
                   : "No mapping output was generated for the empty pairs."}
@@ -609,9 +609,9 @@ function WorkflowRunDetailView({
           </p> : <p>{isActiveRun(run)
             ? "Generation continues for the remaining pairs. Review the results when the run finishes."
             : partialMapping
-            ? run.model_change_set_status === "applied" || appliedRunId === run.workflow_run_id
+            ? run.project_change_set_status === "applied" || appliedRunId === run.workflow_run_id
               ? "Successful mappings applied. Failed pairs remain unchanged."
-              : run.model_change_set_status === "validated"
+              : run.project_change_set_status === "validated"
                 ? "Apply the successful mappings. Failed pairs remain unchanged; resolve their issues before running them again."
                 : "Failed pairs remain unchanged. Resolve their issues before running them again."
             : "No successful draft is available. Resolve the issues below before running again."}</p>}
@@ -634,7 +634,7 @@ function WorkflowRunDetailView({
         </section>
       ) : null}
       {draftRecovery}
-      {run.model_change_set_status === "validated" ? (
+      {run.project_change_set_status === "validated" ? (
         <AuthoritativeDraftReview
           run={run}
           review={draftReview}
@@ -926,7 +926,7 @@ function ApplyDraftConfirmation({
           </button>
         </header>
         <p>
-          Run {runId}, draft revision {draftRevision}, will be applied to the Model under the
+          Run {runId}, draft revision {draftRevision}, will be applied to the Project under the
           current Tenant Lock. The backend rechecks every revision and digest fence.
         </p>
         {failedMappingPairs > 0 ? <p>
@@ -957,9 +957,9 @@ function isValidatedDraft(run: WorkflowRunDetail | undefined): run is WorkflowRu
   return Boolean(
     run
     && (run.workflow_run_state === "completed" || run.workflow_run_state === "completed_with_repair")
-    && (run.workflow_execution_mode !== null || run.model_workflow === "code_generation" || run.model_workflow === "validation")
-    && run.model_change_set_id
-    && run.model_change_set_status === "validated"
+    && (run.workflow_execution_mode !== null || run.project_workflow === "code_generation" || run.project_workflow === "validation")
+    && run.project_change_set_id
+    && run.project_change_set_status === "validated"
     && run.draft_revision
     && run.candidate_digest,
   );
@@ -969,7 +969,7 @@ function isAuthoritativeReview(
   run: WorkflowRunDetail & { draft_revision: number; candidate_digest: string },
   review: WorkflowDraftReview,
 ): boolean {
-  return review.model_change_set_id === run.model_change_set_id
+  return review.project_change_set_id === run.project_change_set_id
     && review.status === "validated"
     && review.draft_revision === run.draft_revision
     && review.candidate_digest === run.candidate_digest
@@ -991,7 +991,7 @@ function workflowLabel(workflow: DraftWorkflow): string {
   return workflow.charAt(0).toUpperCase() + workflow.slice(1);
 }
 
-function runKind(mode: WorkflowRunDetail["workflow_execution_mode"], workflow: ModelWorkflow): string {
+function runKind(mode: WorkflowRunDetail["workflow_execution_mode"], workflow: ProjectWorkflow): string {
   if (workflow === "metadata_enrichment") return "Physical metadata enrichment";
   if (workflow === "code_generation") return "SQL generation";
   if (workflow === "validation") return "Validation authoring";
@@ -1001,23 +1001,23 @@ function runKind(mode: WorkflowRunDetail["workflow_execution_mode"], workflow: M
 
 function draftStatus(run: WorkflowRunDetail): string {
   if (isPartialMappingRun(run)) {
-    if (run.model_change_set_status === "validated") return "Successful mappings ready to apply";
-    if (run.model_change_set_status === "applied") return "Successful mappings applied · partial results";
+    if (run.project_change_set_status === "validated") return "Successful mappings ready to apply";
+    if (run.project_change_set_status === "applied") return "Successful mappings applied · partial results";
   }
-  if (run.workflow_run_state === "failed" && run.model_change_set_status === "active") {
+  if (run.workflow_run_state === "failed" && run.project_change_set_status === "active") {
     return "Draft retained · corrections required";
   }
-  if (run.model_change_set_status === "validated") return "Validated draft ready";
-  if (run.model_change_set_status === "applied") return "Draft applied";
-  if (run.model_change_set_status) {
-    return `Draft ${run.model_change_set_status.replaceAll("_", " ")}`;
+  if (run.project_change_set_status === "validated") return "Validated draft ready";
+  if (run.project_change_set_status === "applied") return "Draft applied";
+  if (run.project_change_set_status) {
+    return `Draft ${run.project_change_set_status.replaceAll("_", " ")}`;
   }
   return isActiveRun(run) ? "Authoring in progress" : "No applicable draft";
 }
 
 function safeApplyFailure(error: Error): string {
   if (error instanceof ApiError && error.status === 409) {
-    return "The Model or draft changed before Apply. Refresh the run and review the latest draft.";
+    return "The Project or draft changed before Apply. Refresh the run and review the latest draft.";
   }
   if (error instanceof ApiError && error.status === 403) {
     return "Apply was not authorized. Confirm your role and owned Tenant Lock.";

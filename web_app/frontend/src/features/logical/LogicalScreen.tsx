@@ -1,8 +1,8 @@
-import { DdlExportButton } from "../model_targets/DdlExportButton";
+import { DdlExportButton } from "../project_targets/DdlExportButton";
 import { WorkflowCommandCenter, WorkflowCommandTools, WorkflowMenu } from "../workflows/WorkflowCommandCenter";
-import { ModelLayerActions } from "../model_record_review/ModelLayerActions";
-import { TargetExportButton } from "../model_targets/TargetExportDialog";
-import { ModelRecordReview } from "../model_record_review/ModelRecordReview";
+import { ProjectLayerActions } from "../project_record_review/ProjectLayerActions";
+import { TargetExportButton } from "../project_targets/TargetExportDialog";
+import { ProjectRecordReview } from "../project_record_review/ProjectRecordReview";
 import { useState } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -11,7 +11,7 @@ import type {
   LogicalFilters,
   LogicalRelationshipFilters,
 } from "./api";
-import type { ModelDetail } from "../models/api";
+import type { ProjectDetail } from "../projects/api";
 import { loadAllLogicalSubmodels, logicalQueryKeys, type LogicalApi } from "./api";
 import {
   LogicalEntitiesLedger,
@@ -26,13 +26,13 @@ type LogicalView = "entities" | "relationships" | "submodels";
 export function LogicalScreen({
   api,
   tenantId,
-  model,
+  project,
   hasTenantLock,
   canDelete = false,
 }: {
   api: LogicalApi;
   tenantId: number;
-  model: ModelDetail;
+  project: ProjectDetail;
   hasTenantLock: boolean;
   canDelete?: boolean;
 }) {
@@ -45,10 +45,10 @@ export function LogicalScreen({
   const [relationshipFilters, setRelationshipFilters] = useState<LogicalRelationshipFilters>({ status: "active" });
   const [submodelFilters, setSubmodelFilters] = useState<LogicalFilters>({ status: "active" });
   const entitiesQuery = useInfiniteQuery({
-    queryKey: logicalQueryKeys.entities(tenantId, model.model_id, entityFilters),
+    queryKey: logicalQueryKeys.entities(tenantId, project.project_id, entityFilters),
     queryFn: ({ pageParam }) => api.listLogicalEntities(
       tenantId,
-      model.model_id,
+      project.project_id,
       entityFilters,
       200,
       pageParam,
@@ -58,15 +58,15 @@ export function LogicalScreen({
     enabled: view === "entities",
   });
   const entitySubmodelsQuery = useQuery({
-    queryKey: logicalQueryKeys.submodelOptions(tenantId, model.model_id),
-    queryFn: () => loadAllLogicalSubmodels(api, tenantId, model.model_id),
+    queryKey: logicalQueryKeys.submodelOptions(tenantId, project.project_id),
+    queryFn: () => loadAllLogicalSubmodels(api, tenantId, project.project_id),
     enabled: view === "entities",
   });
   const relationshipsQuery = useInfiniteQuery({
-    queryKey: logicalQueryKeys.relationships(tenantId, model.model_id, relationshipFilters),
+    queryKey: logicalQueryKeys.relationships(tenantId, project.project_id, relationshipFilters),
     queryFn: ({ pageParam }) => api.listLogicalRelationships(
       tenantId,
-      model.model_id,
+      project.project_id,
       relationshipFilters,
       200,
       pageParam,
@@ -76,10 +76,10 @@ export function LogicalScreen({
     enabled: view === "relationships",
   });
   const submodelsQuery = useInfiniteQuery({
-    queryKey: logicalQueryKeys.submodels(tenantId, model.model_id, submodelFilters),
+    queryKey: logicalQueryKeys.submodels(tenantId, project.project_id, submodelFilters),
     queryFn: ({ pageParam }) => api.listLogicalSubmodels(
       tenantId,
-      model.model_id,
+      project.project_id,
       submodelFilters,
       200,
       pageParam,
@@ -99,26 +99,26 @@ export function LogicalScreen({
             ? relationshipsQuery.refetch()
             : submodelsQuery.refetch(),
       view === "entities" ? entitySubmodelsQuery.refetch() : Promise.resolve(),
-      queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
+      queryClient.invalidateQueries({ queryKey: ["project", tenantId, project.project_id] }),
       queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
     ]);
   };
   const invalidateLedgers = async () => {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["logical-entities", tenantId, model.model_id] }),
-      queryClient.invalidateQueries({ queryKey: ["logical-attributes", tenantId, model.model_id] }),
-      queryClient.invalidateQueries({ queryKey: ["logical-relationships", tenantId, model.model_id] }),
-      queryClient.invalidateQueries({ queryKey: ["logical-submodels", tenantId, model.model_id] }),
+      queryClient.invalidateQueries({ queryKey: ["logical-entities", tenantId, project.project_id] }),
+      queryClient.invalidateQueries({ queryKey: ["logical-attributes", tenantId, project.project_id] }),
+      queryClient.invalidateQueries({ queryKey: ["logical-relationships", tenantId, project.project_id] }),
+      queryClient.invalidateQueries({ queryKey: ["logical-submodels", tenantId, project.project_id] }),
       queryClient.invalidateQueries({
-        queryKey: logicalQueryKeys.submodelOptions(tenantId, model.model_id),
+        queryKey: logicalQueryKeys.submodelOptions(tenantId, project.project_id),
       }),
     ]);
   };
 
   return (
     <WorkflowCommandCenter filterCount={Object.values(view === "entities" ? entityFilters : view === "relationships" ? relationshipFilters : submodelFilters).filter(Boolean).length} className="logical-page page-enter">
-      <header className="workflow-commandbar model-section-toolbar logical-commandbar">
-        <h1 className="model-section-title sr-only">Logical</h1>
+      <header className="workflow-commandbar project-section-toolbar logical-commandbar">
+        <h1 className="project-section-title sr-only">Logical</h1>
         <div className="workflow-command-context">
           <nav className="workflow-tabs" aria-label="Logical views">
             {([
@@ -145,9 +145,9 @@ export function LogicalScreen({
         <div className="workflow-command-actions">
           <WorkflowCommandTools />
           <WorkflowMenu>
-          <ModelLayerActions api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} hasTenantLock={hasTenantLock} canDelete={canDelete} layer="logical" onApplied={() => setSelectedIds(new Set())} />
-          <TargetExportButton api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} layer="logical" entityIds={view === "entities" && selectedIds.size ? [...selectedIds] : undefined} />
-          <DdlExportButton api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} layer="logical" entityIds={view === "entities" && selectedIds.size ? [...selectedIds] : undefined} />
+          <ProjectLayerActions api={api} tenantId={tenantId} projectId={project.project_id} projectRevision={project.project_revision} hasTenantLock={hasTenantLock} canDelete={canDelete} layer="logical" onApplied={() => setSelectedIds(new Set())} />
+          <TargetExportButton api={api} tenantId={tenantId} projectId={project.project_id} projectRevision={project.project_revision} layer="logical" entityIds={view === "entities" && selectedIds.size ? [...selectedIds] : undefined} />
+          <DdlExportButton api={api} tenantId={tenantId} projectId={project.project_id} projectRevision={project.project_revision} layer="logical" entityIds={view === "entities" && selectedIds.size ? [...selectedIds] : undefined} />
           </WorkflowMenu>
           <button className="button button-secondary button-small" type="button" disabled={activeReviewQuery.isFetching} onClick={() => void refresh()}>
             {activeReviewQuery.isFetching ? "Refreshing…" : "Refresh"}
@@ -166,18 +166,18 @@ export function LogicalScreen({
       <WorkflowRunMonitor
         api={api}
         tenantId={tenantId}
-        modelId={model.model_id}
-        modelRevision={model.model_revision}
+        projectId={project.project_id}
+        projectRevision={project.project_revision}
         workflow="logical"
         hasTenantLock={hasTenantLock}
         focusRunId={recentRunId}
         onApplied={invalidateLedgers}
       />
-      <ModelRecordReview
+      <ProjectRecordReview
         actions={canDelete ? ["lock", "unlock", "deactivate", "reactivate", "delete"] : ["lock", "unlock", "deactivate", "reactivate"]}
-        api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision}
+        api={api} tenantId={tenantId} projectId={project.project_id} projectRevision={project.project_revision}
         dataset={view === "entities" ? "logical_entity" : view === "relationships" ? "logical_relationship" : "logical_submodel"} selectedIds={selectedIds} hasTenantLock={hasTenantLock}
-        disabled={activeReviewQuery.isPending || activeReviewQuery.isError || activeReviewQuery.data?.pages.some((page) => page.model_revision !== model.model_revision) === true}
+        disabled={activeReviewQuery.isPending || activeReviewQuery.isError || activeReviewQuery.data?.pages.some((page) => page.project_revision !== project.project_revision) === true}
         onApplied={async () => {
           setSelectedIds(new Set());
           await queryClient.invalidateQueries({ predicate: (query) => query.queryKey[1] === tenantId });
@@ -187,7 +187,7 @@ export function LogicalScreen({
         <LogicalEntitiesLedger
           selectedIds={selectedIds} onSelectionChange={setSelectedIds}
           tenantId={tenantId}
-          modelId={model.model_id}
+          projectId={project.project_id}
           items={entitiesQuery.data?.pages.flatMap((page) => page.items) ?? []}
           filters={entityFilters}
           submodels={entitySubmodelsQuery.data?.items ?? []}
@@ -195,10 +195,10 @@ export function LogicalScreen({
             ? "loading"
             : entitySubmodelsQuery.isError
               ? "error"
-              : entitySubmodelsQuery.data.modelRevision !== model.model_revision
+              : entitySubmodelsQuery.data.projectRevision !== project.project_revision
                 ? "revision_mismatch"
                 : "ready"}
-          state={queryState(entitiesQuery, model.model_revision)}
+          state={queryState(entitiesQuery, project.project_revision)}
           onApplyFilters={(next) => { setSelectedIds(new Set()); setEntityFilters(next); }}
           onLoadMore={() => void entitiesQuery.fetchNextPage()}
         />
@@ -206,10 +206,10 @@ export function LogicalScreen({
         <LogicalRelationshipsLedger
           selectedIds={selectedIds} onSelectionChange={setSelectedIds}
           tenantId={tenantId}
-          modelId={model.model_id}
+          projectId={project.project_id}
           items={relationshipsQuery.data?.pages.flatMap((page) => page.items) ?? []}
           filters={relationshipFilters}
-          state={queryState(relationshipsQuery, model.model_revision)}
+          state={queryState(relationshipsQuery, project.project_revision)}
           onApplyFilters={(next) => { setSelectedIds(new Set()); setRelationshipFilters(next); }}
           onLoadMore={() => void relationshipsQuery.fetchNextPage()}
         />
@@ -217,10 +217,10 @@ export function LogicalScreen({
         <LogicalSubmodelsLedger
           selectedIds={selectedIds} onSelectionChange={setSelectedIds}
           tenantId={tenantId}
-          modelId={model.model_id}
+          projectId={project.project_id}
           items={submodelsQuery.data?.pages.flatMap((page) => page.items) ?? []}
           filters={submodelFilters}
-          state={queryState(submodelsQuery, model.model_revision)}
+          state={queryState(submodelsQuery, project.project_revision)}
           onApplyFilters={(next) => { setSelectedIds(new Set()); setSubmodelFilters(next); }}
           onLoadMore={() => void submodelsQuery.fetchNextPage()}
         />
@@ -229,21 +229,21 @@ export function LogicalScreen({
         <WorkflowRunDialog
           api={api}
           tenantId={tenantId}
-          model={model}
+          project={project}
           kind="inference"
           workflow="logical"
-          executeCreated={(workflowRunId, executionMode, expectedModelRevision) => api.executeLogicalRun(
+          executeCreated={(workflowRunId, executionMode, expectedProjectRevision) => api.executeLogicalRun(
             tenantId,
-            model.model_id,
+            project.project_id,
             workflowRunId,
             executionMode,
-            expectedModelRevision,
+            expectedProjectRevision,
           ).then(() => undefined)}
           onClose={() => setRunDialogOpen(false)}
           onCreated={async (workflowRunId) => {
             setRecentRunId(workflowRunId);
             await Promise.all([
-              queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
+              queryClient.invalidateQueries({ queryKey: ["project", tenantId, project.project_id] }),
               queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
             ]);
           }}
@@ -257,17 +257,17 @@ function queryState(
   query: {
     isPending: boolean;
     isError: boolean;
-    data: { pages: { model_revision: number }[] } | undefined;
+    data: { pages: { project_revision: number }[] } | undefined;
     hasNextPage: boolean;
     isFetchingNextPage: boolean;
   },
-  modelRevision: number,
+  projectRevision: number,
 ) {
   return {
     isLoading: query.isPending,
     isError: query.isError,
     revisionMismatch: query.data !== undefined
-      && query.data.pages.some((page) => page.model_revision !== modelRevision),
+      && query.data.pages.some((page) => page.project_revision !== projectRevision),
     hasMore: query.hasNextPage,
     isLoadingMore: query.isFetchingNextPage,
   };

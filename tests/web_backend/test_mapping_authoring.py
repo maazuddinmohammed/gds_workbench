@@ -32,8 +32,8 @@ def _serialized(value: object) -> str:
 
 def test_mapping_generation_targets_are_active_modeled_entities() -> None:
     assert "workflow.modeled_entity" in _MAPPING_GENERATION_TARGETS_SQL
-    assert "model_object_binding" not in _MAPPING_GENERATION_TARGETS_SQL
-    assert "model_input_scope" not in _MAPPING_GENERATION_TARGETS_SQL
+    assert "project_object_binding" not in _MAPPING_GENERATION_TARGETS_SQL
+    assert "project_input_scope" not in _MAPPING_GENERATION_TARGETS_SQL
 
 
 @pytest.mark.parametrize("owner", [None, 0, "missing"])
@@ -190,7 +190,7 @@ def test_all_mapping_modes_share_one_authoring_contract(
             "get_existing_mapping",
             {},
         )
-        assert "model_object_binding_id" not in _serialized(header_page)
+        assert "project_object_binding_id" not in _serialized(header_page)
         assert "CustomerID" in _serialized(header_page)
     else:
         assert context.tool_catalog is None
@@ -334,9 +334,7 @@ async def test_empty_output_is_valid_even_with_known_sources_or_existing_mapping
     ).issues
 
 
-async def test_empty_output_is_valid_with_attribute_lineage() -> (
-    None
-):
+async def test_empty_output_is_valid_with_attribute_lineage() -> None:
     preparation = mapping_preparation()
     preparation = preparation.model_copy(
         update={
@@ -364,7 +362,7 @@ async def test_empty_output_is_valid_with_attribute_lineage() -> (
 
 
 @pytest.mark.parametrize("layer", ("logical_entity", "dimensional_entity"))
-async def test_assertion_default_system_accepts_partial_source_free_mapping(
+async def test_context_default_system_accepts_partial_source_free_mapping(
     layer: ModeledEntityType,
 ) -> None:
     preparation = mapping_preparation(modeled_entity_type=layer)

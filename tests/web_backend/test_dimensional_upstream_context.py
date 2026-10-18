@@ -7,8 +7,8 @@ from datetime import UTC, datetime
 from typing import Any, LiteralString, cast
 
 import pytest
-from gds_etl_workbench.application.change_sets.model_validation import (
-    PhysicalModelCatalog,
+from gds_etl_workbench.application.change_sets.project_validation import (
+    PhysicalProjectCatalog,
 )
 from gds_etl_workbench.domain.modeling_records import (
     AttributePhysicalSourceRecord,
@@ -16,7 +16,7 @@ from gds_etl_workbench.domain.modeling_records import (
     PhysicalAttributeKey,
     PhysicalObjectKey,
 )
-from gds_etl_workbench.domain.snapshots.model import ModelSnapshot
+from gds_etl_workbench.domain.snapshots.project import ProjectSnapshot
 from gds_workbench_api.features.dimensional.service import _candidate_validator
 from gds_workbench_api.features.workflows.authoring.context import (
     AgentContextLimits,
@@ -50,7 +50,7 @@ from tests.web_backend.test_dimensional_executor import (
 )
 
 
-def _snapshot(*, attribute_only: bool = False) -> ModelSnapshot:
+def _snapshot(*, attribute_only: bool = False) -> ProjectSnapshot:
     snapshot = _dimensional_snapshot()
     source = LogicalObjectSourceRecord(
         support_source_type="object",
@@ -116,9 +116,9 @@ def _snapshot(*, attribute_only: bool = False) -> ModelSnapshot:
     )
     return snapshot.model_copy(
         update={
-            "model_input_scope": snapshot.model_input_scope.model_copy(
+            "project_input_scope": snapshot.project_input_scope.model_copy(
                 update={
-                    "details": snapshot.model_input_scope.details.model_copy(
+                    "details": snapshot.project_input_scope.details.model_copy(
                         update={
                             "gold_model_audit_columns_template": _audit_template(),
                             "gold_model_technical_columns_template": _technical_template(),
@@ -207,8 +207,10 @@ class SupportingContextTransaction(DimensionalContextTransaction):
 
 
 @pytest.mark.asyncio
-async def test_dimensional_rejects_physical_authoring_selection_before_loading() -> None:
-    plan = _plan(model_workflow="dimensional", selected_object_ids=(701,)).model_copy(
+async def test_dimensional_rejects_physical_authoring_selection_before_loading() -> (
+    None
+):
+    plan = _plan(project_workflow="dimensional", selected_object_ids=(701,)).model_copy(
         update={"selected_object_ids": (501,)}
     )
     with pytest.raises(AgentContextUnavailableError):
@@ -226,22 +228,22 @@ async def test_dimensional_support_preserves_enrichment_profiles_and_scope(
     snapshot = _snapshot(attribute_only=attribute_only)
     transaction = SupportingContextTransaction()
 
-    async def snapshot_loader(*_: Any) -> ModelSnapshot:
+    async def snapshot_loader(*_: Any) -> ProjectSnapshot:
         return snapshot
 
-    async def scope_loader(*_: Any) -> PhysicalModelCatalog:
+    async def scope_loader(*_: Any) -> PhysicalProjectCatalog:
         # Orders is authorized but has only inactive or unselected Logical lineage.
         keys = frozenset(
             natural_key(_object_key(name)) for name in ("customers", "orders")
         )
         attrs = frozenset((*key, "customer_id") for key in keys)
-        return PhysicalModelCatalog(
-            model_tenant_code="SOURCE",
+        return PhysicalProjectCatalog(
+            project_tenant_code="SOURCE",
             active_system_codes=frozenset({"ERP"}),
             objects=keys,
             attributes=attrs,
-            model_input_objects=keys,
-            model_input_attributes=attrs,
+            project_input_objects=keys,
+            project_input_attributes=attrs,
         )
 
     result = await PostgresAgentContextRepository(
@@ -252,7 +254,7 @@ async def test_dimensional_support_preserves_enrichment_profiles_and_scope(
         transaction,
         tenant_id=7,
         plan=_plan(
-            model_workflow="dimensional",
+            project_workflow="dimensional",
             execution_mode=mode,
             selected_object_ids=(701,),
         ),

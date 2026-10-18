@@ -4,8 +4,12 @@
 from typing import Any, cast
 
 import pytest
-from gds_etl_workbench.application.change_sets.model_validation import validate_future_graph
-from gds_workbench_api.features.workflows.authoring.repair import AgentCandidateValidationError
+from gds_etl_workbench.application.change_sets.project_validation import (
+    validate_future_graph,
+)
+from gds_workbench_api.features.workflows.authoring.repair import (
+    AgentCandidateValidationError,
+)
 from pydantic import JsonValue
 
 from tests.web_backend.test_code_generation_executor import (
@@ -36,7 +40,9 @@ async def test_code_reconciles_locked_artifact_before_handoff_or_retains_complet
             ),
         }
     )
-    context = code_validation_context(context.model_copy(update={"targets": (first, second)}))
+    context = code_validation_context(
+        context.model_copy(update={"targets": (first, second)})
+    )
     first_candidate: JsonValue = {
         "artifacts": [{"target_ref": "target_1", "generated_sql": "SELECT 10;"}]
     }
@@ -49,16 +55,20 @@ async def test_code_reconciles_locked_artifact_before_handoff_or_retains_complet
             }
         ]
     }
-    corrected: JsonValue = {"artifacts": [{"target_ref": "target_2", "generated_sql": "SELECT 2;"}]}
-    agent = _AgentExecutor(responses=[first_candidate, invalid, corrected if repair else None])
+    corrected: JsonValue = {
+        "artifacts": [{"target_ref": "target_2", "generated_sql": "SELECT 2;"}]
+    }
+    agent = _AgentExecutor(
+        responses=[first_candidate, invalid, corrected if repair else None]
+    )
     service, _, _, handoff, _, lifecycle = _service(executor=agent, context=context)
     if repair:
         await service.execute_started(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
         )
         assert len(handoff.calls) == 1 and not handoff.retained
@@ -73,9 +83,9 @@ async def test_code_reconciles_locked_artifact_before_handoff_or_retains_complet
             await service.execute_started(
                 _principal(),
                 tenant_id=7,
-                model_id=18,
+                project_id=18,
                 workflow_run_id=1048,
-                expected_model_revision=7,
+                expected_project_revision=7,
                 workflow_run_claim_token=_CLAIM_TOKEN,
             )
         assert not handoff.calls and len(handoff.retained) == 1
@@ -85,5 +95,9 @@ async def test_code_reconciles_locked_artifact_before_handoff_or_retains_complet
             "TargetTwo",
         }
     assert lifecycle.failed is None and len(agent.requests) == 3
-    feedback = cast(dict[str, Any], agent.requests[-1].context)["repair"]["validation_issues"]
-    assert any(issue["code"] == "candidate.active_dependency_invalid" for issue in feedback)
+    feedback = cast(dict[str, Any], agent.requests[-1].context)["repair"][
+        "validation_issues"
+    ]
+    assert any(
+        issue["code"] == "candidate.active_dependency_invalid" for issue in feedback
+    )

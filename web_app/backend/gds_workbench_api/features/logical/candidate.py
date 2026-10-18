@@ -6,16 +6,16 @@ from collections.abc import Callable, Sequence
 from copy import deepcopy
 from typing import cast
 
-from gds_etl_workbench.application.change_sets.model import StageModelChange
-from gds_etl_workbench.application.change_sets.model_validation import (
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
+from gds_etl_workbench.application.change_sets.project_validation import (
     validate_staged_records,
 )
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
-    AttributeAssertionSourceRecord,
+    AttributeContextSourceRecord,
     AttributePhysicalSourceRecord,
-    LogicalAssertionSourceRecord,
     LogicalAttributeRecord,
+    LogicalContextSourceRecord,
     LogicalEntityRecord,
     LogicalObjectSourceRecord,
     LogicalRelationshipRecord,
@@ -23,22 +23,22 @@ from gds_etl_workbench.domain.modeling_records import (
     PhysicalAttributeKey,
     PhysicalObjectKey,
     SubmodelMembershipRecord,
-    normalize_model_key_value,
+    normalize_project_key_value,
 )
-from gds_etl_workbench.domain.snapshots.model import LogicalSection
+from gds_etl_workbench.domain.snapshots.project import LogicalSection
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from gds_workbench_api.features.workflows.authoring.repair import (
     MAX_COVERAGE_SOURCE_REFS,
     AgentCandidateValidation,
     AgentValidationIssue,
-    enrich_agent_output_model_definitions,
-    model_validation_issues,
+    enrich_agent_output_project_definitions,
     parse_pydantic_candidate,
+    project_validation_issues,
 )
 
-type _EntitySource = LogicalObjectSourceRecord | LogicalAssertionSourceRecord
-type _AttributeSource = AttributePhysicalSourceRecord | AttributeAssertionSourceRecord
+type _EntitySource = LogicalObjectSourceRecord | LogicalContextSourceRecord
+type _AttributeSource = AttributePhysicalSourceRecord | AttributeContextSourceRecord
 
 
 class _LogicalCandidate(BaseModel):
@@ -80,7 +80,7 @@ class LogicalCandidateValidator:
         *,
         selected_object_keys: tuple[PhysicalObjectKey, ...],
         selected_attribute_keys: tuple[PhysicalAttributeKey, ...],
-        assertion_record_keys: tuple[str, ...],
+        context_record_ids: tuple[str, ...],
         applied: LogicalSection | None,
         coverage_threshold_percent: int = 70,
     ) -> None:
@@ -100,13 +100,13 @@ class LogicalCandidateValidator:
         self._selected_attribute_keys = {
             _physical_attribute_key(item) for item in selected_attribute_keys
         }
-        self._assertion_record_keys = {
-            normalize_model_key_value(item) for item in assertion_record_keys
+        self._context_record_ids = {
+            normalize_project_key_value(item) for item in context_record_ids
         }
         if (
             len(self._selected_object_keys) != len(selected_object_keys)
             or len(self._selected_attribute_keys) != len(selected_attribute_keys)
-            or len(self._assertion_record_keys) != len(assertion_record_keys)
+            or len(self._context_record_ids) != len(context_record_ids)
         ):
             raise ValueError("Logical candidate evidence keys must be unique")
 
@@ -138,7 +138,8 @@ class LogicalCandidateValidator:
         schema = cast(dict[str, JsonValue], deepcopy(_LogicalCandidate.model_json_schema()))
         schema["description"] = (
             "Author a normalized Logical Model from the full selected physical scope, "
-            "Model enrichment, Profiles, Analysis and Assertions; Conceptual is not an input. "
+            "Project enrichment, Profiles, Analysis and Context "
+            "records; Conceptual is not an input. "
             "Plan coherent business Submodels, then Entity grain and complete identity, then "
             "Attributes and Relationships across the resulting graph. Preserve source "
             "namespaces, distinct grains, supported associations and calibrated confidence; "
@@ -146,8 +147,8 @@ class LogicalCandidateValidator:
             "Measured Analysis validation remains separate from inferred confidence. "
             "Null validation means unvalidated, not disproven. In compact "
             "object_attribute_context, registered_is_natural_key is physical metadata and "
-            "is_natural_key is the separate nullable Model finding. Legacy selected_metadata "
-            "and raw Attribute readers retain registered is_natural_key with Model findings "
+            "is_natural_key is the separate nullable Project finding. Legacy selected_metadata "
+            "and raw Attribute readers retain registered is_natural_key with Project findings "
             "under enrichment; do not confuse these representations. "
             "If a Relationship references a new own generated surrogate, explicitly include "
             "that Attribute with the exact endpoint name, sources=[], "
@@ -167,11 +168,11 @@ class LogicalCandidateValidator:
             "candidate, not a patch: attempts are not accumulated. If previous_candidate_omitted "
             "is true, reconstruct from the supplied evidence/readers. Never invent mappings, "
             "reactivate protected records or merge incompatible grains to satisfy coverage. "
-            "The backend applies the Model enforcement setting after repairs; every other "
+            "The backend applies the Project enforcement setting after repairs; every other "
             "validation rule remains mandatory."
         )
         _set_lock_fields_false(schema)
-        enrich_agent_output_model_definitions(schema)
+        enrich_agent_output_project_definitions(schema)
         return schema
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
@@ -181,7 +182,7 @@ class LogicalCandidateValidator:
         self,
         candidate: JsonValue,
     ) -> tuple[AgentValidationIssue, ...]:
-        """Measure distinct selected Object coverage across the resulting Model."""
+        """Measure distinct selected Object coverage across the resulting Project."""
         normalized = self._normalize(candidate)
         if normalized.issues:
             return normalized.issues
@@ -223,12 +224,12 @@ class LogicalCandidateValidator:
             )
         return tuple(issues)
 
-    def parse_validated(self, candidate: JsonValue) -> tuple[StageModelChange, ...]:
+    def parse_validated(self, candidate: JsonValue) -> tuple[StageProjectChange, ...]:
         normalized = self._normalize(candidate)
         if normalized.issues:
             raise InvalidRequestError("The Logical candidate is invalid.")
 
-        changes: list[StageModelChange] = []
+        changes: list[StageProjectChange] = []
         changed_submodels = [
             record.model_dump(mode="json")
             for record in normalized.submodels
@@ -250,16 +251,18 @@ class LogicalCandidateValidator:
             if self._applied_relationships.get(_relationship_key(record)) != record
         ]
         if changed_submodels:
-            changes.append(StageModelChange(dataset="logical_submodel", records=changed_submodels))
+            changes.append(
+                StageProjectChange(dataset="logical_submodel", records=changed_submodels)
+            )
         if changed_entities:
-            changes.append(StageModelChange(dataset="logical_entity", records=changed_entities))
+            changes.append(StageProjectChange(dataset="logical_entity", records=changed_entities))
         if changed_attributes:
             changes.append(
-                StageModelChange(dataset="logical_attribute", records=changed_attributes)
+                StageProjectChange(dataset="logical_attribute", records=changed_attributes)
             )
         if changed_relationships:
             changes.append(
-                StageModelChange(
+                StageProjectChange(
                     dataset="logical_relationship",
                     records=changed_relationships,
                 )
@@ -331,7 +334,7 @@ class LogicalCandidateValidator:
             "logical_relationship", raw_relationships
         )
         issues.extend(
-            model_validation_issues(
+            project_validation_issues(
                 submodel_issues + entity_issues + attribute_issues + relationship_issues
             )
         )
@@ -380,11 +383,11 @@ class LogicalCandidateValidator:
                 message = "Physical Object source must belong to this immutable run selection."
             else:
                 valid = (
-                    normalize_model_key_value(source.assertion_record.modeling_assertion_record_key)
-                    in self._assertion_record_keys
+                    normalize_project_key_value(source.context_record.context_record_id)
+                    in self._context_record_ids
                 )
-                code = "candidate.assertion_unavailable"
-                message = "Assertion source must exist in this immutable run context."
+                code = "candidate.context_unavailable"
+                message = "Context source must exist in this immutable run context."
             if not valid:
                 issues.append(
                     AgentValidationIssue(
@@ -413,11 +416,11 @@ class LogicalCandidateValidator:
                 message = "Physical Attribute source must belong to this immutable run selection."
             else:
                 valid = (
-                    normalize_model_key_value(source.assertion_record.modeling_assertion_record_key)
-                    in self._assertion_record_keys
+                    normalize_project_key_value(source.context_record.context_record_id)
+                    in self._context_record_ids
                 )
-                code = "candidate.assertion_unavailable"
-                message = "Assertion source must exist in this immutable run context."
+                code = "candidate.context_unavailable"
+                message = "Context source must exist in this immutable run context."
             if not valid:
                 issues.append(
                     AgentValidationIssue(
@@ -474,7 +477,7 @@ class LogicalCandidateValidator:
 
         for index, entity in enumerate(entities):
             if any(
-                normalize_model_key_value(membership.submodel_name) not in submodel_keys
+                normalize_project_key_value(membership.submodel_name) not in submodel_keys
                 for membership in entity.submodels
             ):
                 issues.append(
@@ -486,8 +489,8 @@ class LogicalCandidateValidator:
                 )
         for index, attribute in enumerate(attributes):
             if (
-                normalize_model_key_value(attribute.logical_entity_schema_name),
-                normalize_model_key_value(attribute.logical_entity_name),
+                normalize_project_key_value(attribute.logical_entity_schema_name),
+                normalize_project_key_value(attribute.logical_entity_name),
             ) not in entity_keys:
                 issues.append(
                     AgentValidationIssue(
@@ -499,14 +502,14 @@ class LogicalCandidateValidator:
         for index, relationship in enumerate(relationships):
             endpoints = (
                 (
-                    normalize_model_key_value(relationship.from_logical_entity_schema_name),
-                    normalize_model_key_value(relationship.from_logical_entity_name),
-                    normalize_model_key_value(relationship.from_logical_attribute_name),
+                    normalize_project_key_value(relationship.from_logical_entity_schema_name),
+                    normalize_project_key_value(relationship.from_logical_entity_name),
+                    normalize_project_key_value(relationship.from_logical_attribute_name),
                 ),
                 (
-                    normalize_model_key_value(relationship.to_logical_entity_schema_name),
-                    normalize_model_key_value(relationship.to_logical_entity_name),
-                    normalize_model_key_value(relationship.to_logical_attribute_name),
+                    normalize_project_key_value(relationship.to_logical_entity_schema_name),
+                    normalize_project_key_value(relationship.to_logical_entity_name),
+                    normalize_project_key_value(relationship.to_logical_attribute_name),
                 ),
             )
             if any(endpoint not in attribute_keys for endpoint in endpoints):
@@ -730,46 +733,46 @@ def _top_lock(record: object) -> bool:
 
 
 def _submodel_key(record: LogicalSubmodelRecord) -> str:
-    return normalize_model_key_value(record.logical_submodel_name)
+    return normalize_project_key_value(record.logical_submodel_name)
 
 
 def _entity_key(record: LogicalEntityRecord) -> tuple[str, str]:
     return (
-        normalize_model_key_value(record.logical_entity_schema_name),
-        normalize_model_key_value(record.logical_entity_name),
+        normalize_project_key_value(record.logical_entity_schema_name),
+        normalize_project_key_value(record.logical_entity_name),
     )
 
 
 def _attribute_key(record: LogicalAttributeRecord) -> tuple[str, str, str]:
     return (
-        normalize_model_key_value(record.logical_entity_schema_name),
-        normalize_model_key_value(record.logical_entity_name),
-        normalize_model_key_value(record.logical_attribute_name),
+        normalize_project_key_value(record.logical_entity_schema_name),
+        normalize_project_key_value(record.logical_entity_name),
+        normalize_project_key_value(record.logical_attribute_name),
     )
 
 
 def _relationship_key(record: LogicalRelationshipRecord) -> tuple[str, ...]:
     return (
-        normalize_model_key_value(record.from_logical_entity_schema_name),
-        normalize_model_key_value(record.from_logical_entity_name),
-        normalize_model_key_value(record.from_logical_attribute_name),
-        normalize_model_key_value(record.to_logical_entity_schema_name),
-        normalize_model_key_value(record.to_logical_entity_name),
-        normalize_model_key_value(record.to_logical_attribute_name),
-        normalize_model_key_value(record.logical_relationship_name),
+        normalize_project_key_value(record.from_logical_entity_schema_name),
+        normalize_project_key_value(record.from_logical_entity_name),
+        normalize_project_key_value(record.from_logical_attribute_name),
+        normalize_project_key_value(record.to_logical_entity_schema_name),
+        normalize_project_key_value(record.to_logical_entity_name),
+        normalize_project_key_value(record.to_logical_attribute_name),
+        normalize_project_key_value(record.logical_relationship_name),
     )
 
 
 def _membership_key(record: SubmodelMembershipRecord) -> tuple[str, ...]:
-    return (normalize_model_key_value(record.submodel_name),)
+    return (normalize_project_key_value(record.submodel_name),)
 
 
 def _entity_source_key(record: _EntitySource) -> tuple[str, ...]:
     if isinstance(record, LogicalObjectSourceRecord):
         return ("object", *_physical_object_key(record.source_object))
     return (
-        "assertion",
-        normalize_model_key_value(record.assertion_record.modeling_assertion_record_key),
+        "context_record",
+        normalize_project_key_value(record.context_record.context_record_id),
     )
 
 
@@ -777,22 +780,22 @@ def _attribute_source_key(record: _AttributeSource) -> tuple[str, ...]:
     if isinstance(record, AttributePhysicalSourceRecord):
         return ("attribute", *_physical_attribute_key(record.source_attribute))
     return (
-        "assertion",
-        normalize_model_key_value(record.assertion_record.modeling_assertion_record_key),
+        "context_record",
+        normalize_project_key_value(record.context_record.context_record_id),
     )
 
 
 def _nested_source_key(record: object) -> tuple[str, ...]:
-    if isinstance(record, (LogicalObjectSourceRecord, LogicalAssertionSourceRecord)):
+    if isinstance(record, (LogicalObjectSourceRecord, LogicalContextSourceRecord)):
         return _entity_source_key(record)
-    if isinstance(record, (AttributePhysicalSourceRecord, AttributeAssertionSourceRecord)):
+    if isinstance(record, (AttributePhysicalSourceRecord, AttributeContextSourceRecord)):
         return _attribute_source_key(record)
     raise TypeError("Unsupported Logical nested source")
 
 
 def _physical_object_key(record: PhysicalObjectKey) -> tuple[str, str, str, str, str]:
     return tuple(
-        normalize_model_key_value(getattr(record, field))
+        normalize_project_key_value(getattr(record, field))
         for field in (
             "tenant_code",
             "system_code",
@@ -806,7 +809,7 @@ def _physical_object_key(record: PhysicalObjectKey) -> tuple[str, str, str, str,
 def _physical_attribute_key(
     record: PhysicalAttributeKey,
 ) -> tuple[str, str, str, str, str, str]:
-    return (*_physical_object_key(record), normalize_model_key_value(record.attribute_name))
+    return (*_physical_object_key(record), normalize_project_key_value(record.attribute_name))
 
 
 def _set_lock_fields_false(value: JsonValue) -> None:

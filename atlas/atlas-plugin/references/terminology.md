@@ -4,7 +4,7 @@ Use these terms consistently. Load the affected [metadata table reference](metad
 
 | Term | Meaning |
 |---|---|
-| Tenant | Ownership and authorization scope for metadata and Models. |
+| Tenant | Ownership and authorization scope for metadata and Projects. |
 | Tenant Code | Stable human-readable Tenant key; distinct from Tenant name and database ID. |
 | Source Tenant | Owner of an Object's data/metadata, independent of physical storage placement. See [Object ownership](metadata/tables/object.md#ownership-and-physical-identity), including explicitly mixed targets. |
 | Physical placement | Registered Tenant/System/Connection and schema/name identifying where an Object resides. Endpoint Tenant codes use this identity; see [field distinctions](metadata/tables/object.md#ownership-and-physical-identity). |
@@ -15,31 +15,31 @@ Use these terms consistently. Load the affected [metadata table reference](metad
 | Attribute | A field/column of an Object. |
 | Row grain | What one record represents, including any entity, event, line or time boundary supported by evidence. |
 | Inferred data type | Evidence-supported logical interpretation of an Attribute's values, stored separately from its physical data type. Sample-based conclusions retain their scope and limitations. |
-| Metadata enrichment | Improving Object descriptions, Attribute descriptions and Attribute inferred data types. Scope may come from Tenant/System selection or Model Input Scope; writes remain Metadata changes. |
+| Metadata enrichment | Improving Object descriptions, Attribute descriptions and Attribute inferred data types. Scope may come from Tenant/System selection or Project Input Scope; writes remain Metadata changes. |
 | Custom SELECT expression | Attribute custom code replacing one complete SELECT item during SQL Source extraction or Bronze loading. Includes any required cast and output alias; blank code selects the column unchanged. See [Attribute rules](metadata/tables/attribute.md#custom-select-expressions). |
 | Output alias | Name produced by a SELECT expression; distinct from the registered Attribute name and its metadata identity. |
 | Zone | Registered layer classification. Object authoring uses source, bronze, silver, gold. |
 | Natural key | Complete business identifier used to match an ID-free record. Use the published normalization. |
-| Metadata Change Set | Tenant-owned pending physical metadata and Copy/Process configuration. It contains no Model records. |
-| Model | Tenant-owned governed aggregate containing scope, modeling sections, and revision. |
-| Model Change Set | Pending Model records; it cannot change physical metadata. |
-| Concept / Conceptual Object | Business meaning represented in a Model, independent of a particular physical Object. Several Objects may support one concept. See [business concepts](logical-build/business-concepts.md). |
-| Conceptual Relationship | Business association between Concepts, with direction, cardinality and an explained basis. Its [record contract](model/conceptual.md) differs from physical Attribute-level Analysis. |
-| Conceptual support | Nested evidence linking a Concept or Conceptual Relationship to an actual scoped Object or applicable Assertion Record. A support is not a physical join or a separate Change Set dataset. |
-| Logical Entity / Attribute | A modeled business occurrence and its fields. Physical lineage uses typed sources; see [Logical records](model/logical.md). |
-| Dimensional Entity / Attribute | An analytical fact, dimension or bridge and its fields, with eligible Silver lineage or justified generation. [Dimensional records](model/dimensional.md) has distinct roles, grain, measure and history fields. |
+| Metadata Change Set | Tenant-owned pending physical metadata and Copy/Process configuration. It contains no Project records. |
+| Project | Tenant-owned governed aggregate containing scope, modeling sections, and revision. |
+| Project Change Set | Pending Project records; it cannot change physical metadata. |
+| Concept / Conceptual Object | Business meaning represented in a Project, independent of a particular physical Object. Several Objects may support one concept. See [business concepts](conceptual-build/business-concepts.md). |
+| Conceptual Relationship | Business association between Concepts, with direction, cardinality and an explained basis. Its [record contract](project/conceptual.md) differs from physical Attribute-level Analysis. |
+| Conceptual support | Nested evidence linking a Concept or Conceptual Relationship to an actual scoped Object or applicable Context Record. A support is not a physical join or a separate Change Set dataset. |
+| Logical Entity / Attribute | A modeled business occurrence and its fields. Physical lineage uses typed sources; see [Logical records](project/logical.md). |
+| Dimensional Entity / Attribute | An analytical fact, dimension or bridge and its fields, with eligible Silver lineage or justified generation. [Dimensional records](project/dimensional.md) has distinct roles, grain, measure and history fields. |
 | Conformed dimension | Shared analytical context whose meaning, identity and relevant values/history agree across processes; matching names alone is insufficient. |
 | Role-playing dimension | One dimension used in distinct roles, such as OrderDate and ShipDate, through separate keys/relationships rather than copied definitions. |
 | Type 1 / Type 2 | Overwriting changing values versus retaining row versions. The framework supports both and populates Type 2 fields using natural keys; [history rules](dimensional-build/history.md) define analytical choice, lookup time and SQL omissions. |
 | Submodel | Business grouping/view of shared Entities through memberships. It does not create separate copies or isolate cross-group relationships. |
-| Assertion | Durable user-supplied/documented rule or evidence in an Assertion Document/Record. Used when useful; not a mandatory substitute for absent physical lineage. See [Assertions](model/assertions.md). |
-| Surrogate key | Generated target identity, separate from business identity. Atlas defaults to a first-column BIGINT own surrogate; FKs are mapped values. See [keys/audit](model/keys-and-audit.md). |
+| Context | Durable user-supplied/documented rule or evidence in a Context Group/Record. Used when useful; not a mandatory substitute for absent physical lineage. See [Context records](project/context.md). |
+| Surrogate key | Generated target identity, separate from business identity. Atlas defaults to a first-column BIGINT own surrogate; FKs are mapped values. See [keys/audit](project/keys-and-audit.md). |
 | Business-key tuple | Complete set of facts identifying an occurrence, including source namespace or time when required; components need not be individually unique. |
 | Generated / standalone structure | Intentionally produced without a physical source, such as a calendar or fixed reference set. Its meaning and population are explained; no fictitious source is required. |
-| Guided build workflow | Dedicated skill following defined phases. Logical Guided follows Profiling → Analysis → Conceptual → Logical, checking existing results and reuse/redo choices. Dimensional Guided will have its own agreed sequence. |
+| Guided build workflow | Dedicated skill following defined phases. Logical Guided follows Profiling → Enrichment → Analysis → Logical as needed, checking existing results and reuse/redo choices. Conceptual is a standalone deliverable and never feeds Logical or Dimensional. Dimensional uses applied Logical records. |
 | Grill Me build workflow | Dedicated collaborative modeling skill: inspect scope and evidence, recommend answers, challenge relevant scenarios and develop agreed parts. Shares domain rules with Guided, with its own interaction and sequence. Previously called custom build mode; distinct from the top-level Custom workflow. |
 | Custom workflow | Outcome-driven investigation or work outside named workflows, such as debugging, reverse engineering or explaining existing data/models. It selects only needed inputs/methods; no new permissions or compulsory phase sequence. |
-| Foundational metadata | Project, Tenant, System, and Connection context; read-only through this change-set surface. |
+| Foundational metadata | Lane, Tenant, System, and Connection context; read-only through this change-set surface. |
 | Reference metadata | Registered classification/operation values used by editable records; read-only through this surface. |
 | Ingestion Object Mapping | Source-to-Bronze link used by Copy selection and provenance. Multiple Source Objects may share a Bronze target. |
 | Ingestion Attribute Mapping | Optional reference correspondence; usually empty and not used by the current framework to drive column selection or transformation. |
@@ -74,15 +74,15 @@ Use these terms consistently. Load the affected [metadata table reference](metad
 | Effective result | Snapshot records overlaid with pending changes using complete natural keys. |
 | Local Change Set | Sparse draft containing complete proposed records. Related edits accumulate locally before governed submission; omitted applied records remain unchanged. |
 | Target registration | Derive Silver/Gold Object and Attribute metadata plus local creation DDL from selected applied modeled Entities. Metadata Apply registers definitions; it does not execute DDL or change modeled ownership. |
-| Entity ownership | Mapping and Code belong to a schema-qualified Logical or Dimensional Entity. Target registration is a separate operational handoff; see [Entity ownership](model/entity-ownership.md). |
+| Entity ownership | Mapping and Code belong to a schema-qualified Logical or Dimensional Entity. Target registration is a separate operational handoff; see [Entity ownership](project/entity-ownership.md). |
 | Mapping branch | One schema-qualified modeled Entity and originating source System, with Object steps and per-Attribute population rules. Several branches can feed one target; Code Generation decides their file grouping. |
-| Object / Attribute transformation | Object steps define relational operations, grain and branch behavior; Attribute rules define individual values or database/framework generation. See the shared [Mapping templates](model/mapping-documents.md). |
+| Object / Attribute transformation | Object steps define relational operations, grain and branch behavior; Attribute rules define individual values or database/framework generation. See the shared [Mapping templates](project/mapping-documents.md). |
 | Complete Mapping view | Derived Mapping instructions plus resolved target/source metadata, modeled column definitions and Object dependency orders. Coding and Validation consume it without reconstructing upstream model design; not another editable dataset. Source-System list order does not define precedence or execution. |
-| Code artifact | One modeled target's named generated file and content. Its Model record is separate from local file placement and does not execute/deploy code. See [Code records](model/generated-code.md). |
+| Code artifact | One modeled target's named generated file and content. Its Project record is separate from local file placement and does not execute/deploy code. See [Code records](project/generated-code.md). |
 | Code source-System assignment | Separate record linking a contributing System to an artifact. Every active mapped System for an authored target has exactly one active assignment; combined files can have several. |
-| Validation Group / Check | Model-owned, System-associated definitions: a purposeful collection and its individual SQL assertions. [Validation records](model/validation.md) store queries/expected operands, not execution results; association alone does not filter queried rows. |
+| Validation Group / Check | Project-owned, System-associated definitions: a purposeful collection and its individual SQL assertions. [Validation records](project/validation.md) store queries/expected operands, not execution results; association alone does not filter queried rows. |
 | Transformation output / loaded target | Rows produced before persistence versus rows stored after framework loading. [Check design](validation/check-design.md) distinguishes their populations and generated-field responsibilities. |
-| Definition validation / assertion execution | Structural and semantic checks of authored records versus running SQL and evaluating its expected result. Stage/Validate/Apply does not run business assertions. |
+| Definition validation / context execution | Structural and semantic checks of authored records versus running SQL and evaluating its expected result. Stage/Validate/Apply does not run business contexts. |
 | SQL policy | User's choice about executing evidence queries; does not grant server permissions. |
 | SQL environment | Selected registered execution environment: dev, qa, stg, prod. |
 | Query scope | Exact Objects, Attributes, environment, batch selections and measurement context used for evidence; governed by the shared [query-scope guide](query-scope.md). |

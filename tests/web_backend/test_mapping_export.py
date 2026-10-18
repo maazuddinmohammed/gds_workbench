@@ -18,7 +18,7 @@ from gds_workbench_api.features.mapping.read_service import (
     DatabaseMappingReviewService,
     MappingReadDatabase,
 )
-from gds_workbench_api.features.models import ModelRevisionConflictError
+from gds_workbench_api.features.projects import ProjectRevisionConflictError
 from openpyxl import load_workbook
 
 
@@ -34,8 +34,8 @@ def setup_export(
     transaction.fetch_one = AsyncMock(
         side_effect=[
             {
-                "model_revision": revision,
-                "model_name": "Customer model",
+                "project_revision": revision,
+                "project_name": "Customer project",
                 "tenant_name": "Demo",
             },
             {"rows": rows, "document_bytes": size},
@@ -126,19 +126,23 @@ async def test_exports_saved_mapping_under_one_authorized_repeatable_read(
     download = await service.export_workbook(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         entity_type=layer,
         source_system_code=" CRM ",
-        expected_model_revision=4,
+        expected_project_revision=4,
     )
     authorizer.authorize_tenant.assert_awaited_once_with(
-        transaction, principal, tenant_id=7, model_id=18, policy=ToolPolicy.TENANT_READ
+        transaction,
+        principal,
+        tenant_id=7,
+        project_id=18,
+        policy=ToolPolicy.TENANT_READ,
     )
     database.read_transaction.assert_called_once_with(
         isolation=ReadIsolation.REPEATABLE_READ
     )
     assert transaction.fetch_all.call_args_list[0].args[1] == (7, 18, layer, "crm", 201)
-    assert "model.tenant_id = %s" in transaction.fetch_all.call_args_list[0].args[0]
+    assert "project.tenant_id = %s" in transaction.fetch_all.call_args_list[0].args[0]
     assert transaction.fetch_all.call_args_list[1].args[1] == (18, [81])
     workbook = load_workbook(BytesIO(download.content))
     try:
@@ -161,10 +165,10 @@ async def test_export_authorization_precedes_all_record_reads() -> None:
         await service.export_workbook(
             MagicMock(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             entity_type="logical_entity",
             source_system_code="CRM",
-            expected_model_revision=4,
+            expected_project_revision=4,
         )
     transaction.fetch_one.assert_not_awaited()
     transaction.fetch_all.assert_not_awaited()
@@ -173,7 +177,7 @@ async def test_export_authorization_precedes_all_record_reads() -> None:
 @pytest.mark.parametrize(
     "settings,error,reads",
     [
-        ({"revision": 5}, ModelRevisionConflictError, 0),
+        ({"revision": 5}, ProjectRevisionConflictError, 0),
         ({"entities_count": 0}, InvalidRequestError, 1),
         ({"entities_count": 201}, InvalidRequestError, 1),
         ({"rows": 50001}, InvalidRequestError, 1),
@@ -189,10 +193,10 @@ async def test_export_rejects_stale_empty_oversized_or_uninterpretable_records(
         await service.export_workbook(
             MagicMock(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             entity_type="logical_entity",
             source_system_code="CRM",
-            expected_model_revision=4,
+            expected_project_revision=4,
         )
     assert transaction.fetch_all.await_count == reads
 
@@ -211,14 +215,14 @@ def test_mapping_export_route_streams_only_download_with_strict_request() -> Non
         )
     )
     with TestClient(app) as client:
-        path = "/api/v1/tenants/7/models/18/mapping/export"
+        path = "/api/v1/tenants/7/projects/18/mapping/export"
         command = {
             "entity_type": "dimensional_entity",
             "source_system_code": "CRM",
-            "expected_model_revision": 4,
+            "expected_project_revision": 4,
         }
         for patch in (
-            {"expected_model_revision": 0},
+            {"expected_project_revision": 0},
             {"source_system_code": " "},
             {"entity_type": "invalid"},
             {"extra": 1},
@@ -230,7 +234,7 @@ def test_mapping_export_route_streams_only_download_with_strict_request() -> Non
         assert response.headers["x-content-type-options"] == "nosniff"
         assert response.headers["content-type"].endswith("spreadsheetml.sheet")
         assert (
-            'filename="gds_mapping_dimensional__model_18__r4.xlsx"'
+            'filename="gds_mapping_dimensional__project_18__r4.xlsx"'
             in response.headers["content-disposition"]
         )
         assert response.content.startswith(b"PK")

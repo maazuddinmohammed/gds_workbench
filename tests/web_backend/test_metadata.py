@@ -242,7 +242,7 @@ def test_dataset_registry_uses_server_derived_identity_and_complete_v2_inventory
     assert document["schema_version"] == "1.0"
     assert document["tenant_id"] == 7
     assert [item["dataset"] for item in document["datasets"]] == [
-        "project",
+        "lane",
         "tenant",
         "system",
         "connection",

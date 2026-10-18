@@ -47,6 +47,8 @@ def test_existing_connection_import_is_compatible() -> None:
 
 
 def test_profiling_http_and_storage_have_explicit_owners() -> None:
-    assert DatabaseProfilingWorkflowRepository.__module__.endswith("profiling.repository")
+    assert DatabaseProfilingWorkflowRepository.__module__.endswith(
+        "profiling.repository"
+    )
     assert ExecuteProfilingRunRequest.__module__.endswith("profiling.router")
     assert create_profiling_workflow_router.__module__.endswith("profiling.router")

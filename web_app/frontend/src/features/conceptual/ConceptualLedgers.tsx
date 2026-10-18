@@ -27,7 +27,7 @@ interface LedgerState {
 
 export function ConceptualObjectsLedger({
   tenantId,
-  modelId,
+  projectId,
   items,
   filters,
   state,
@@ -37,7 +37,7 @@ export function ConceptualObjectsLedger({
   onLoadMore,
 }: {
   tenantId: number;
-  modelId: number;
+  projectId: number;
   items: ConceptualObject[];
   filters: ConceptualFilters;
   state: LedgerState;
@@ -100,10 +100,10 @@ export function ConceptualObjectsLedger({
         <Link
           className="text-action"
           aria-label={`Open Conceptual Object ${row.original.conceptual_object_id}`}
-          to="/tenants/$tenantId/models/$modelId/conceptual/objects/$objectId"
+          to="/tenants/$tenantId/projects/$projectId/conceptual/objects/$objectId"
           params={{
             tenantId: String(tenantId),
-            modelId: String(modelId),
+            projectId: String(projectId),
             objectId: String(row.original.conceptual_object_id),
           }}
         >
@@ -111,7 +111,7 @@ export function ConceptualObjectsLedger({
         </Link>
       ),
     },
-  ], [items, modelId, onSelectionChange, selectedIds, tenantId]);
+  ], [items, projectId, onSelectionChange, selectedIds, tenantId]);
   return (
     <ConceptualLedgerSurface
       tableLabel="Conceptual Objects"
@@ -122,7 +122,7 @@ export function ConceptualObjectsLedger({
       loadingLabel="Loading Conceptual Objects…"
       deniedLabel="You do not have permission to view Conceptual Objects."
       errorLabel="Conceptual Objects could not be loaded."
-      revisionLabel="The Model changed while Conceptual Objects were loading. Refresh to reconcile revisions."
+      revisionLabel="The Project changed while Conceptual Objects were loading. Refresh to reconcile revisions."
       emptyLabel="No Conceptual Objects match these filters."
       filters={(
         <ConceptualFilterBar
@@ -137,7 +137,7 @@ export function ConceptualObjectsLedger({
 
 export function ConceptualRelationshipsLedger({
   tenantId,
-  modelId,
+  projectId,
   items,
   filters,
   state,
@@ -147,7 +147,7 @@ export function ConceptualRelationshipsLedger({
   onLoadMore,
 }: {
   tenantId: number;
-  modelId: number;
+  projectId: number;
   items: ConceptualRelationship[];
   filters: ConceptualFilters;
   state: LedgerState;
@@ -212,10 +212,10 @@ export function ConceptualRelationshipsLedger({
         <Link
           className="text-action"
           aria-label={`Open Conceptual Relationship ${row.original.conceptual_relationship_id}`}
-          to="/tenants/$tenantId/models/$modelId/conceptual/relationships/$relationshipId"
+          to="/tenants/$tenantId/projects/$projectId/conceptual/relationships/$relationshipId"
           params={{
             tenantId: String(tenantId),
-            modelId: String(modelId),
+            projectId: String(projectId),
             relationshipId: String(row.original.conceptual_relationship_id),
           }}
         >
@@ -223,7 +223,7 @@ export function ConceptualRelationshipsLedger({
         </Link>
       ),
     },
-  ], [items, modelId, onSelectionChange, selectedIds, tenantId]);
+  ], [items, projectId, onSelectionChange, selectedIds, tenantId]);
   return (
     <ConceptualLedgerSurface
       tableLabel="Conceptual Relationships"
@@ -234,7 +234,7 @@ export function ConceptualRelationshipsLedger({
       loadingLabel="Loading Conceptual Relationships…"
       deniedLabel="You do not have permission to view Conceptual Relationships."
       errorLabel="Conceptual Relationships could not be loaded."
-      revisionLabel="The Model changed while Conceptual Relationships were loading. Refresh to reconcile revisions."
+      revisionLabel="The Project changed while Conceptual Relationships were loading. Refresh to reconcile revisions."
       emptyLabel="No Conceptual Relationships match these filters."
       filters={(
         <ConceptualFilterBar

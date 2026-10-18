@@ -1,4 +1,4 @@
-"""Bounded numeric usage totals from durable, Model-owned request receipts."""
+"""Bounded numeric usage totals from durable, Project-owned request receipts."""
 
 from typing import Annotated, Literal, LiteralString
 
@@ -64,9 +64,9 @@ SELECT run.workflow_run_state,
        )) AS history_incomplete,
        usage.*
   FROM application.workflow_run AS run
-  JOIN model.model AS model
-    ON model.model_id = run.model_id
-   AND model.tenant_id = %s
+  JOIN project.project AS project
+    ON project.project_id = run.project_id
+   AND project.tenant_id = %s
  CROSS JOIN LATERAL (
        SELECT count(*) AS request_count,
               count(*) FILTER (WHERE completed_time IS NULL) AS pending_request_count,
@@ -138,7 +138,7 @@ SELECT run.workflow_run_state,
         ) AS eligibility
         WHERE request.workflow_run_id = run.workflow_run_id
  ) AS usage
- WHERE run.model_id = %s
+ WHERE run.project_id = %s
    AND run.workflow_run_id = %s
 """
 
@@ -147,11 +147,11 @@ async def read_run_token_usage(
     transaction: ReadTransaction,
     *,
     tenant_id: int,
-    model_id: int,
+    project_id: int,
     workflow_run_id: int,
 ) -> WorkflowTokenUsageSummary | None:
     """Read inside the caller's authorized Run transaction, retaining ownership checks."""
-    row = await transaction.fetch_one(_TOKEN_USAGE_SQL, (tenant_id, model_id, workflow_run_id))
+    row = await transaction.fetch_one(_TOKEN_USAGE_SQL, (tenant_id, project_id, workflow_run_id))
     if row is None:
         return None
     if row["usage_tracking_version"] is None:

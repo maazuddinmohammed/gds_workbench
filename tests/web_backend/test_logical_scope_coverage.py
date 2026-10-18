@@ -29,7 +29,7 @@ from gds_workbench_api.prompt_rendering import (
 )
 from pydantic import JsonValue
 
-from tests.mcp.model_test_fixtures import complete_model_graph
+from tests.mcp.project_test_fixtures import complete_project_graph
 from tests.web_backend.test_default_prompt_contracts import DEFAULTS
 from tests.web_backend.test_logical_executor import (
     _CLAIM_TOKEN,
@@ -113,7 +113,7 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
             "is_pii": None,
         },
     )
-    evidence = complete_model_graph()
+    evidence = complete_project_graph()
     source_key = {
         key: selected[0]["object"][key]
         for key in (
@@ -138,11 +138,7 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
     ]
     relationship = {
         **evidence["analysis_result"][0],
-        **{
-            f"{side}_{key}": value
-            for side in ("from", "to")
-            for key, value in source_key.items()
-        },
+        **{f"{side}_{key}": value for side in ("from", "to") for key, value in source_key.items()},
         "to_object_name": "source_1",
         "validation_result": "unsupported",
         "validation_target_non_null_count": 6,
@@ -170,10 +166,10 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
     # Reach the 70% threshold on the second attempt, or use all three attempts.
     complete["entities"] = complete["entities"][:19]
     complete["attributes"] = [
-        record for record in complete["attributes"]
-        if record["logical_entity_name"] in {
-            entity["logical_entity_name"] for entity in complete["entities"]
-        }
+        record
+        for record in complete["attributes"]
+        if record["logical_entity_name"]
+        in {entity["logical_entity_name"] for entity in complete["entities"]}
     ]
     agent = _AgentExecutor(
         responses=[
@@ -186,10 +182,10 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
     default = next(
         row
         for row in DEFAULTS
-        if row["model_workflow"] == "logical" and row["workflow_execution_mode"] == mode
+        if row["project_workflow"] == "logical" and row["workflow_execution_mode"] == mode
     )
     contracts = list_prompt_input_contracts(
-        model_workflow="logical",
+        project_workflow="logical",
         workflow_execution_mode=mode,
         stage_code="candidate_authoring",
     )
@@ -207,7 +203,6 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
                     is_required=False,
                 )
                 for contract in contracts
-                if "conceptual" not in contract.name
             ),
             "agent_tool_names": (
                 tuple(default["agent_tool_names"])
@@ -221,16 +216,14 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
         agent=agent,
         plan=plan,
         context_bundle=bundle,
-        context_policy=AgentContextPolicy(
-            max_candidate_bytes=2_000_000, max_validation_issues=20
-        ),
+        context_policy=AgentContextPolicy(max_candidate_bytes=2_000_000, max_validation_issues=20),
     )
     execution = service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
     await execution
@@ -288,15 +281,9 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
                 break
         assert (object_count, attribute_count) == (27, 883)
         objects = cast(dict[str, Any], catalog.invoke("get_objects", {}))
-        assert (
-            objects["items"][0]["object_description"]
-            == "Enriched customer business meaning."
-        )
+        assert objects["items"][0]["object_description"] == "Enriched customer business meaning."
         attribute = supplied_details[0]["attributes"][0]
-        assert (
-            attribute["attribute_description"]
-            == "Enriched customer business identifier."
-        )
+        assert attribute["attribute_description"] == "Enriched customer business identifier."
         assert attribute["attribute_inferred_data_type"] == "STRING"
         assert attribute["is_primary_key"] is True and attribute["is_pii"] is None
         assert attribute["profile"]["row_count"] == 10
@@ -305,15 +292,11 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
         assert attribute["profile"]["percent_duplicates"] == 44.4444
         assert attribute["profile"]["row_scope"] == "batch"
         assert attribute["profile"]["profiled_at"] == "2026-10-06T00:00:00Z"
-        relationships = cast(
-            dict[str, Any], catalog.invoke("get_object_relationships", {})
-        )
+        relationships = cast(dict[str, Any], catalog.invoke("get_object_relationships", {}))
         assert relationships["items"][0]["outgoing_relationships"] == [relationship]
     assert handoff.retained == []
     assert len(handoff.calls) == 1 and lifecycle.failed is None
-    entities = next(
-        change for change in handoff.calls[0] if change.dataset == "logical_entity"
-    )
+    entities = next(change for change in handoff.calls[0] if change.dataset == "logical_entity")
     attributes = next(
         change for change in handoff.calls[0] if change.dataset == "logical_attribute"
     )
@@ -334,9 +317,9 @@ async def test_empty_final_candidate_reports_zero_coverage_without_creating_a_dr
     result = await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
     assert len(agent.requests) == 2
@@ -352,11 +335,14 @@ async def test_empty_final_candidate_reports_zero_coverage_without_creating_a_dr
 @pytest.mark.parametrize("enforce", [False, True])
 @pytest.mark.parametrize("final_invalid", [False, True])
 async def test_coverage_enforcement_rejects_after_retries_without_handoff(
-    mode: str, retries: int, enforce: bool, final_invalid: bool,
+    mode: str,
+    retries: int,
+    enforce: bool,
+    final_invalid: bool,
 ) -> None:
     bundle = _context_bundle(mode=mode)
     raw = bundle.context.model_dump(mode="json")
-    raw["model_details"]["logical_enforce_coverage_threshold"] = enforce
+    raw["project_details"]["logical_enforce_coverage_threshold"] = enforce
     second = deepcopy(raw["selected_objects"][0])
     second["selection_order"] = 2
     second["object"]["object_name"] = "other_customer"
@@ -365,12 +351,18 @@ async def test_coverage_enforcement_rejects_after_retries_without_handoff(
     context = AgentAuthoringContext.model_validate(raw, strict=False)
     catalog = (
         InMemoryAgentContextToolCatalog(
-            context=context, max_result_bytes=128 * 1024,
-            max_catalog_bytes=128 * 1024, max_page_records=20,
-        ) if mode == "tool_assisted" else None
+            context=context,
+            max_result_bytes=128 * 1024,
+            max_catalog_bytes=128 * 1024,
+            max_page_records=20,
+        )
+        if mode == "tool_assisted"
+        else None
     )
     bundle = replace(
-        bundle, context=context, tool_catalog=catalog,
+        bundle,
+        context=context,
+        tool_catalog=catalog,
         embedded_context=catalog.manifest if catalog else cast(JsonValue, raw),
     )
     candidates: list[JsonValue | Exception] = [_candidate() for _ in range(retries + 1)]
@@ -378,11 +370,17 @@ async def test_coverage_enforcement_rejects_after_retries_without_handoff(
         candidates[-1] = _candidate(source_name="unselected")
     agent = _AgentExecutor(responses=candidates)
     service, _, _, handoff, lifecycle = _service(
-        agent=agent, plan=_plan(mode=mode, retry_count=retries), context_bundle=bundle,
+        agent=agent,
+        plan=_plan(mode=mode, retry_count=retries),
+        context_bundle=bundle,
     )
     execution = service.execute_started(
-        _principal(), tenant_id=7, model_id=18, workflow_run_id=1048,
-        expected_model_revision=7, workflow_run_claim_token=_CLAIM_TOKEN,
+        _principal(),
+        tenant_id=7,
+        project_id=18,
+        workflow_run_id=1048,
+        expected_project_revision=7,
+        workflow_run_claim_token=_CLAIM_TOKEN,
     )
     if enforce or final_invalid:
         with pytest.raises(AgentCandidateValidationError):

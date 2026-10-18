@@ -26,7 +26,9 @@ def test_old_attribute_records_cannot_clear_new_metadata_by_omission(
 
 def test_inferred_type_is_separate_and_part_of_candidate_digest() -> None:
     current = _foundation()
-    current["bronze_object"] = [_object_record(object_schema="public", tenant_code="DEMO")]
+    current["bronze_object"] = [
+        _object_record(object_schema="public", tenant_code="DEMO")
+    ]
     record = _attribute_record()
     record["attribute_data_type"] = "STRING"
     record["attribute_inferred_data_type"] = "DECIMAL(18,2)"
@@ -47,12 +49,16 @@ def test_inferred_type_is_separate_and_part_of_candidate_digest() -> None:
     assert result.candidate_digest != revised.candidate_digest
 
 
-@pytest.mark.parametrize("change", [{"attribute_description": "Changed"}, {"is_locked": False}, {}])
+@pytest.mark.parametrize(
+    "change", [{"attribute_description": "Changed"}, {"is_locked": False}, {}]
+)
 def test_locked_physical_attribute_rejects_authoring_changes(
     change: dict[str, object],
 ) -> None:
     current = _foundation()
-    current["bronze_object"] = [_object_record(object_schema="public", tenant_code="DEMO")]
+    current["bronze_object"] = [
+        _object_record(object_schema="public", tenant_code="DEMO")
+    ]
     locked = {
         **_attribute_record(),
         "is_locked": True,

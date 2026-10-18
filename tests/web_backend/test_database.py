@@ -118,7 +118,7 @@ async def test_readiness_checks_the_web_schema_and_role(
     assert "application.workflow_run_object_selection" in readiness_sql
     assert "workflow.generated_code" in readiness_sql
     assert "application.generated_sql_artifact" not in readiness_sql
-    assert "application.create_model" in readiness_sql
+    assert "application.create_project" in readiness_sql
     assert (
         "character varying,integer,integer,bigint,character varying,character varying,"
         in readiness_sql
@@ -131,15 +131,15 @@ async def test_readiness_checks_the_web_schema_and_role(
     assert "column_name = 'logical_entity_scd_type'" in readiness_sql
     assert "column_name = 'dimensional_entity_scd_type'" in readiness_sql
     assert "workflow.list_tenant_visible_objects" in readiness_sql
-    assert "workflow.list_model_object_eligibility" in readiness_sql
-    assert "workflow.list_model_attribute_eligibility" in readiness_sql
+    assert "workflow.list_project_object_eligibility" in readiness_sql
+    assert "workflow.list_project_attribute_eligibility" in readiness_sql
     assert "workflow.list_code_generation_target_context" in readiness_sql
     assert "mcp.get_databricks_sql_connection_values" in readiness_sql
     assert "uq_workflow_run_running_tenant" in readiness_sql
-    assert "fk_workflow_run_model" in readiness_sql
+    assert "fk_workflow_run_project" in readiness_sql
     assert "count(*) = 26" in readiness_sql
-    assert "count(*) = 192" in readiness_sql
+    assert "count(*) = 184" in readiness_sql
     assert "pg_auth_members" in readiness_sql
-    assert "mcp.model_change_set" in readiness_sql
+    assert "mcp.project_change_set" in readiness_sql
     assert "workflow.conceptual_object" in readiness_sql
     assert "workflow.attribute_profile" in readiness_sql

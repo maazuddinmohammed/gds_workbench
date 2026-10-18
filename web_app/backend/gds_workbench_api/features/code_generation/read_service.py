@@ -10,36 +10,40 @@ from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation, ReadTransaction
 
-from gds_workbench_api.features.models import ModelNotFoundError
+from gds_workbench_api.features.projects import ProjectNotFoundError
+from gds_workbench_api.features.projects.command_contracts import ProjectRevisionConflictError
 
 from .contracts import (
     MAX_BULK_SQL_BYTES,
+    MAX_EXPORT_ARTIFACTS,
     MAX_SELECTED_ARTIFACTS,
     CodeGenerationTargetFilters,
     CodeGenerationTargetPage,
     CodeGenerationTargetSummary,
+    ExportSqlArtifactsRequest,
     GeneratedSqlArtifactDetail,
     GeneratedSqlArtifactNotFoundError,
     SqlArtifactBundleLimitExceededError,
     SqlArtifactDownload,
+    SqlArtifactExportEmptyError,
 )
 
-_MODEL_HEADER_SQL: LiteralString = """
-SELECT target_model.model_revision
-  FROM model.model AS target_model
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+_PROJECT_HEADER_SQL: LiteralString = """
+SELECT target_project.project_revision
+  FROM project.project AS target_project
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
 """
 
 _CODE_GENERATION_TARGETS_SQL: LiteralString = """
-WITH target_model AS (
-    SELECT target_model.model_id,
-           target_model.model_revision
-      FROM model.model AS target_model
-     WHERE target_model.tenant_id = %s
-       AND target_model.model_id = %s
-       AND target_model.is_active
+WITH target_project AS (
+    SELECT target_project.project_id,
+           target_project.project_revision
+      FROM project.project AS target_project
+     WHERE target_project.tenant_id = %s
+       AND target_project.project_id = %s
+       AND target_project.is_active
 ), requested_layer AS (
     SELECT layer.modeled_entity_type
       FROM (VALUES
@@ -50,10 +54,10 @@ WITH target_model AS (
         OR layer.modeled_entity_type = %s
 ), current_context AS MATERIALIZED (
     SELECT context.*
-      FROM target_model
+      FROM target_project
       CROSS JOIN requested_layer AS layer
       CROSS JOIN LATERAL workflow.list_code_generation_target_context(
-          target_model.model_id,
+          target_project.project_id,
           layer.modeled_entity_type
       ) AS context
 )
@@ -75,16 +79,16 @@ SELECT jsonb_build_object(
           LEFT JOIN workflow.generated_code_source_system AS locked_source
             ON locked_source.generated_code_id = locked_code.generated_code_id
            AND locked_source.generated_code_source_system_status = 'active'
-         WHERE locked_code.model_id = context.model_id
+         WHERE locked_code.project_id = context.project_id
            AND locked_code.modeled_entity_type = context.modeled_entity_type
            AND coalesce(locked_code.logical_entity_id, locked_code.dimensional_entity_id) =
                context.modeled_entity_id
            AND locked_code.generated_code_status = 'active'
            AND (locked_code.generated_code_is_locked
                 OR locked_source.generated_code_source_system_is_locked)) AS is_locked
-  FROM target_model
+  FROM target_project
   JOIN current_context AS context
-    ON context.model_id = target_model.model_id
+    ON context.project_id = target_project.project_id
   CROSS JOIN LATERAL (
       SELECT coalesce(
                  jsonb_agg(support.document ORDER BY support.position)
@@ -213,7 +217,7 @@ SELECT jsonb_build_object(
                ON system.system_id = assignment.source_system_id
             WHERE assignment.generated_code_id = generated.generated_code_id
        ) AS association
-       WHERE generated.model_id = context.model_id
+       WHERE generated.project_id = context.project_id
            AND generated.modeled_entity_type = context.modeled_entity_type
            AND coalesce(generated.logical_entity_id, generated.dimensional_entity_id) =
                context.modeled_entity_id
@@ -256,7 +260,7 @@ SELECT jsonb_build_object(
 _GENERATED_SQL_ARTIFACT_DETAIL_SQL: LiteralString = """
 SELECT artifact.generated_code_id AS generated_sql_artifact_id,
        artifact.artifact_name,
-       target_model.model_id,
+       target_project.project_id,
        jsonb_build_object(
            'entity_id', entity.modeled_entity_id,
            'entity_type', entity.modeled_entity_type,
@@ -290,22 +294,22 @@ SELECT artifact.generated_code_id AS generated_sql_artifact_id,
        octet_length(artifact.generated_code_content)::INTEGER
            AS generated_sql_byte_count
   FROM workflow.generated_code AS artifact
-  JOIN model.model AS target_model
-    ON target_model.model_id = artifact.model_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = artifact.project_id
   JOIN workflow.modeled_entity AS entity
-    ON entity.model_id = artifact.model_id
+    ON entity.project_id = artifact.project_id
    AND entity.modeled_entity_type = artifact.modeled_entity_type
    AND entity.modeled_entity_id = coalesce(artifact.logical_entity_id,
        artifact.dimensional_entity_id)
   LEFT JOIN LATERAL workflow.list_code_generation_target_context(
-      artifact.model_id,
+      artifact.project_id,
       artifact.modeled_entity_type
   ) AS current_context
     ON current_context.modeled_entity_id = entity.modeled_entity_id
   LEFT JOIN application.workflow_run AS generating_run
     ON generating_run.workflow_run_id = artifact.workflow_run_id
-   AND generating_run.model_id = artifact.model_id
-   AND generating_run.model_workflow = 'code_generation'
+   AND generating_run.project_id = artifact.project_id
+   AND generating_run.project_workflow = 'code_generation'
   LEFT JOIN security.principal AS generator
     ON generator.principal_id = generating_run.actor_principal_id
   CROSS JOIN LATERAL (
@@ -408,8 +412,8 @@ SELECT artifact.generated_code_id AS generated_sql_artifact_id,
           ON system.system_id = assignment.source_system_id
        WHERE assignment.generated_code_id = artifact.generated_code_id
   ) AS source_system
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
    AND artifact.generated_code_id = %s
    AND artifact.artifact_type = 'sql_file'
    AND artifact.code_storage_type = 'table'
@@ -420,10 +424,10 @@ SELECT count(*)::INTEGER AS artifact_count,
        coalesce(sum(octet_length(artifact.generated_code_content)), 0)::BIGINT
            AS total_sql_bytes
   FROM workflow.generated_code AS artifact
-  JOIN model.model AS target_model
-    ON target_model.model_id = artifact.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
+  JOIN project.project AS target_project
+    ON target_project.project_id = artifact.project_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
    AND artifact.generated_code_id = ANY(%s::BIGINT[])
    AND artifact.artifact_type = 'sql_file'
    AND artifact.code_storage_type = 'table'
@@ -443,15 +447,15 @@ SELECT artifact.generated_code_id AS generated_sql_artifact_id,
        octet_length(artifact.generated_code_content)::INTEGER
            AS generated_sql_byte_count
   FROM workflow.generated_code AS artifact
-  JOIN model.model AS target_model
-    ON target_model.model_id = artifact.model_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = artifact.project_id
   JOIN workflow.modeled_entity AS entity
-    ON entity.model_id = artifact.model_id
+    ON entity.project_id = artifact.project_id
    AND entity.modeled_entity_type = artifact.modeled_entity_type
    AND entity.modeled_entity_id = coalesce(artifact.logical_entity_id,
        artifact.dimensional_entity_id)
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
    AND artifact.generated_code_id = ANY(%s::BIGINT[])
    AND artifact.artifact_type = 'sql_file'
    AND artifact.code_storage_type = 'table'
@@ -459,13 +463,79 @@ SELECT artifact.generated_code_id AS generated_sql_artifact_id,
 """
 
 
+_ACTIVE_SQL_EXPORT_FROM: LiteralString = """
+  FROM project.project AS owned_project
+  JOIN workflow.generated_code AS artifact ON artifact.project_id = owned_project.project_id
+  JOIN workflow.modeled_entity AS entity
+    ON entity.project_id = artifact.project_id
+   AND entity.modeled_entity_type = artifact.modeled_entity_type
+   AND entity.modeled_entity_id = coalesce(
+       artifact.logical_entity_id, artifact.dimensional_entity_id)
+  LEFT JOIN LATERAL workflow.list_code_generation_target_context(
+      owned_project.project_id, %s::VARCHAR, NULL
+  ) AS context ON context.modeled_entity_id = entity.modeled_entity_id
+             AND context.modeled_entity_type = entity.modeled_entity_type
+ CROSS JOIN LATERAL (
+     SELECT coalesce(array_agg(system.system_code ORDER BY lower(btrim(system.system_code)),
+             system.system_id), ARRAY[]::VARCHAR[]) AS source_system_codes
+       FROM workflow.generated_code_source_system AS assignment
+       JOIN core.system AS system ON system.system_id = assignment.source_system_id
+      WHERE assignment.generated_code_id = artifact.generated_code_id
+        AND assignment.generated_code_source_system_status = 'active'
+ ) AS source
+ WHERE owned_project.tenant_id = %s AND owned_project.project_id = %s
+   AND owned_project.is_active AND artifact.modeled_entity_type = %s
+   AND artifact.generated_code_status = 'active'
+   AND artifact.artifact_type = 'sql_file' AND artifact.code_storage_type = 'table'
+"""
+_ACTIVE_SQL_EXPORT_BOUNDS_SQL: LiteralString = (
+    "SELECT count(*)::INTEGER AS artifact_count, "
+    "coalesce(sum(octet_length(artifact.generated_code_content) "
+    "+ octet_length(artifact.artifact_name) + octet_length(entity.modeled_entity_schema_name) "
+    "+ octet_length(entity.modeled_entity_name) "
+    "+ octet_length(source.source_system_codes::TEXT) + 512), 0)::BIGINT AS total_export_bytes"
+    + _ACTIVE_SQL_EXPORT_FROM
+)
+_ACTIVE_SQL_EXPORT_SQL: LiteralString = (
+    """
+SELECT artifact.generated_code_id AS generated_sql_artifact_id,
+       artifact.artifact_name,
+       jsonb_build_object(
+           'entity_id', entity.modeled_entity_id,
+           'entity_type', entity.modeled_entity_type,
+           'entity_schema_name', entity.modeled_entity_schema_name,
+           'entity_name', entity.modeled_entity_name
+       ) AS target,
+       artifact.modeled_entity_type AS entity_type,
+       artifact.generated_code_content AS generated_sql,
+       octet_length(artifact.generated_code_content)::INTEGER AS generated_sql_byte_count,
+       coalesce(artifact.code_input_digest = context.code_input_digest, FALSE)
+           AS artifact_is_current,
+       source.source_system_codes
+"""
+    + _ACTIVE_SQL_EXPORT_FROM
+    + " ORDER BY lower(btrim(entity.modeled_entity_schema_name)), "
+    "lower(btrim(entity.modeled_entity_name)), lower(btrim(artifact.artifact_name)), "
+    "artifact.generated_code_id LIMIT %s"
+)
+
+
 class CodeGenerationService(Protocol):
+    async def read_all_artifacts_for_download(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        project_id: int,
+        command: ExportSqlArtifactsRequest,
+    ) -> tuple[SqlArtifactDownload, ...]: ...
+
     async def list_targets(
         self,
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: CodeGenerationTargetFilters,
         page_size: int,
         cursor: str | None,
@@ -476,7 +546,7 @@ class CodeGenerationService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         generated_sql_artifact_id: int,
     ) -> GeneratedSqlArtifactDetail: ...
 
@@ -485,7 +555,7 @@ class CodeGenerationService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         generated_sql_artifact_ids: tuple[int, ...],
     ) -> tuple[SqlArtifactDownload, ...]: ...
 
@@ -510,19 +580,58 @@ class DatabaseCodeGenerationService:
         self._authorizer = authorizer
         self._cursors = CursorCodec(cursor_signing_key)
 
+    async def read_all_artifacts_for_download(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        project_id: int,
+        command: ExportSqlArtifactsRequest,
+    ) -> tuple[SqlArtifactDownload, ...]:
+        async with self._database.read_transaction(
+            isolation=ReadIsolation.REPEATABLE_READ
+        ) as transaction:
+            await self._authorizer.authorize_tenant(
+                transaction,
+                principal,
+                tenant_id=tenant_id,
+                policy=ToolPolicy.TENANT_READ,
+                project_id=project_id,
+            )
+            header = await transaction.fetch_one(_PROJECT_HEADER_SQL, (tenant_id, project_id))
+            if header is None:
+                raise ProjectNotFoundError()
+            if header["project_revision"] != command.expected_project_revision:
+                raise ProjectRevisionConflictError()
+            parameters = (command.entity_type, tenant_id, project_id, command.entity_type)
+            bounds = await transaction.fetch_one(_ACTIVE_SQL_EXPORT_BOUNDS_SQL, parameters)
+            if bounds is None or bounds["artifact_count"] == 0:
+                raise SqlArtifactExportEmptyError()
+            if (
+                bounds["artifact_count"] > MAX_EXPORT_ARTIFACTS
+                or bounds["total_export_bytes"] > MAX_BULK_SQL_BYTES
+            ):
+                raise SqlArtifactBundleLimitExceededError()
+            rows = await transaction.fetch_all(
+                _ACTIVE_SQL_EXPORT_SQL, (*parameters, MAX_EXPORT_ARTIFACTS + 1)
+            )
+        if len(rows) != bounds["artifact_count"]:
+            raise SqlArtifactBundleLimitExceededError()
+        return tuple(SqlArtifactDownload.model_validate(row, strict=False) for row in rows)
+
     async def list_targets(
         self,
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: CodeGenerationTargetFilters,
         page_size: int,
         cursor: str | None,
     ) -> CodeGenerationTargetPage:
         filter_digest = sha256(filters.model_dump_json().encode()).hexdigest()
         collection = (
-            f"web_code_generation_targets:{tenant_id}:{model_id}:{page_size}:{filter_digest}"
+            f"web_code_generation_targets:{tenant_id}:{project_id}:{page_size}:{filter_digest}"
         )
         offset = self._cursors.decode(cursor, collection=collection)
         async with self._database.read_transaction(
@@ -533,16 +642,16 @@ class DatabaseCodeGenerationService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
-            header = await transaction.fetch_one(_MODEL_HEADER_SQL, (tenant_id, model_id))
+            header = await transaction.fetch_one(_PROJECT_HEADER_SQL, (tenant_id, project_id))
             if header is None:
-                raise ModelNotFoundError()
+                raise ProjectNotFoundError()
             rows = await transaction.fetch_all(
                 _CODE_GENERATION_TARGETS_SQL,
                 (
                     tenant_id,
-                    model_id,
+                    project_id,
                     filters.entity_type,
                     filters.entity_type,
                     filters.system_id,
@@ -565,8 +674,8 @@ class DatabaseCodeGenerationService:
                 offset=offset + page_size,
             )
         return CodeGenerationTargetPage(
-            model_id=model_id,
-            model_revision=header["model_revision"],
+            project_id=project_id,
+            project_revision=header["project_revision"],
             items=tuple(
                 CodeGenerationTargetSummary.model_validate(row, strict=False)
                 for row in rows[:page_size]
@@ -579,7 +688,7 @@ class DatabaseCodeGenerationService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         generated_sql_artifact_id: int,
     ) -> GeneratedSqlArtifactDetail:
         async with self._database.read_transaction(
@@ -590,11 +699,11 @@ class DatabaseCodeGenerationService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
             row = await transaction.fetch_one(
                 _GENERATED_SQL_ARTIFACT_DETAIL_SQL,
-                (tenant_id, model_id, generated_sql_artifact_id),
+                (tenant_id, project_id, generated_sql_artifact_id),
             )
         if row is None:
             raise GeneratedSqlArtifactNotFoundError()
@@ -605,7 +714,7 @@ class DatabaseCodeGenerationService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         generated_sql_artifact_ids: tuple[int, ...],
     ) -> tuple[SqlArtifactDownload, ...]:
         if (
@@ -625,11 +734,11 @@ class DatabaseCodeGenerationService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
             bounds = await transaction.fetch_one(
                 _GENERATED_SQL_DOWNLOAD_BOUNDS_SQL,
-                (tenant_id, model_id, selected_ids),
+                (tenant_id, project_id, selected_ids),
             )
             if bounds is None or bounds["artifact_count"] != len(selected_ids):
                 raise GeneratedSqlArtifactNotFoundError()
@@ -637,7 +746,7 @@ class DatabaseCodeGenerationService:
                 raise SqlArtifactBundleLimitExceededError()
             rows = await transaction.fetch_all(
                 _GENERATED_SQL_DOWNLOAD_SQL,
-                (tenant_id, model_id, selected_ids, selected_ids),
+                (tenant_id, project_id, selected_ids, selected_ids),
             )
         if tuple(row["generated_sql_artifact_id"] for row in rows) != (generated_sql_artifact_ids):
             raise GeneratedSqlArtifactNotFoundError()

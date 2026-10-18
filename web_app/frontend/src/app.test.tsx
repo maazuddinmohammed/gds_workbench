@@ -351,27 +351,27 @@ describe("Tenant Home", () => {
   });
 });
 
-describe("Models ledger", () => {
+describe("Projects ledger", () => {
   it.each(["viewer", "developer", "architect", "tenant_admin", "super_admin"])("offers creation only to admins: %s", async (role) => {
     const base = tenantFetchStub();
     const fetcher = vi.fn<typeof fetch>(async (input, init) => String(input).endsWith("/home")
       ? jsonResponse({ ...acquiredTenantHomePayload, tenant: { ...tenantHomePayload.tenant, effective_role: role } })
       : base(input, init));
-    const router = createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/models"] }) });
+    const router = createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/projects"] }) });
     render(<WorkbenchApp router={router} />);
-    await screen.findByRole("table", { name: "Active Models" });
-    expect(Boolean(screen.queryByRole("button", { name: "Create Model" }))).toBe(["tenant_admin", "super_admin"].includes(role));
+    await screen.findByRole("table", { name: "Active Projects" });
+    expect(Boolean(screen.queryByRole("button", { name: "Create Project" }))).toBe(["tenant_admin", "super_admin"].includes(role));
   });
 
   it("allows form inspection without a lock, blocks creation, and restores focus on Escape", async () => {
-    const router = createWorkbenchRouter({ api: createApiClient(tenantFetchStub()), history: createMemoryHistory({ initialEntries: ["/tenants/7/models"] }) });
+    const router = createWorkbenchRouter({ api: createApiClient(tenantFetchStub()), history: createMemoryHistory({ initialEntries: ["/tenants/7/projects"] }) });
     const user = userEvent.setup();
     render(<WorkbenchApp router={router} />);
-    const trigger = await screen.findByRole("button", { name: "Create Model" });
+    const trigger = await screen.findByRole("button", { name: "Create Project" });
     await user.click(trigger);
-    const dialog = screen.getByRole("dialog", { name: "Create Model" });
-    expect(within(dialog).getByRole("textbox", { name: /Model name/ })).toHaveFocus();
-    expect(within(dialog).getByRole("button", { name: "Create Model" })).toBeDisabled();
+    const dialog = screen.getByRole("dialog", { name: "Create Project" });
+    expect(within(dialog).getByRole("textbox", { name: /Project name/ })).toHaveFocus();
+    expect(within(dialog).getByRole("button", { name: "Create Project" })).toBeDisabled();
     expect(within(dialog).getByRole("link", { name: "Home" })).toHaveAttribute("href", "/tenants/7");
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(trigger).toHaveFocus();
@@ -381,27 +381,27 @@ describe("Models ledger", () => {
     expect(trigger).toHaveFocus();
   });
 
-  it("validates fields, preserves failed input, then creates and opens the Model without duplicate submissions", async () => {
+  it("validates fields, preserves failed input, then creates and opens the Project without duplicate submissions", async () => {
     const base = tenantFetchStub();
     let posted = 0;
     const fetcher = vi.fn<typeof fetch>(async (input, init) => {
       if (String(input).endsWith("/home")) return jsonResponse(acquiredTenantHomePayload);
-      if (String(input) === "/api/v1/tenants/7/models" && init?.method === "POST") {
+      if (String(input) === "/api/v1/tenants/7/projects" && init?.method === "POST") {
         posted += 1;
-        if (posted === 1) return jsonResponse({ error: { code: "model_name_conflict" } }, 409);
-        return jsonResponse({ model_id: 18, tenant_id: 7, model_revision: 1, is_active: true, updated_at: "2026-09-22T00:00:00Z" }, 201);
+        if (posted === 1) return jsonResponse({ error: { code: "project_name_conflict" } }, 409);
+        return jsonResponse({ project_id: 18, tenant_id: 7, project_revision: 1, is_active: true, updated_at: "2026-09-22T00:00:00Z" }, 201);
       }
       return base(input, init);
     });
-    const router = createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/models"] }) });
+    const router = createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/projects"] }) });
     const user = userEvent.setup();
     render(<WorkbenchApp router={router} />);
-    await user.click(await screen.findByRole("button", { name: "Create Model" }));
+    await user.click(await screen.findByRole("button", { name: "Create Project" }));
     const dialog = screen.getByRole("dialog");
-    const submit = within(dialog).getByRole("button", { name: "Create Model" });
-    const name = within(dialog).getByRole("textbox", { name: /Model name/ });
+    const submit = within(dialog).getByRole("button", { name: "Create Project" });
+    const name = within(dialog).getByRole("textbox", { name: /Project name/ });
     await user.click(submit);
-    expect(await screen.findByRole("alert")).toHaveTextContent("Enter a Model name");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Enter a Project name");
     expect(posted).toBe(0);
     await user.type(name, "  Customer 360  ");
     await user.type(within(dialog).getAllByRole("textbox", { name: "Description" })[0]!, "Customer domain");
@@ -423,15 +423,15 @@ describe("Models ledger", () => {
     await user.clear(naming);
     await user.type(naming, "Use snake case.");
     await user.click(submit);
-    expect(await screen.findByRole("alert")).toHaveTextContent("already has a Model with that name");
+    expect(await screen.findByRole("alert")).toHaveTextContent("already has a Project with that name");
     expect(name).toHaveValue("  Customer 360  ");
     await user.clear(name);
     await user.type(name, "Customer 361");
     await user.dblClick(submit);
-    await waitFor(() => expect(router.state.location.pathname).toBe("/tenants/7/models/18"));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/tenants/7/projects/18"));
     expect(posted).toBe(2);
-    const command = JSON.parse(String(fetcher.mock.calls.filter(([input, init]) => String(input) === "/api/v1/tenants/7/models" && init?.method === "POST")[1]?.[1]?.body));
-    expect(command).toMatchObject({ model_name: "Customer 361", model_description: "Customer domain", logical_schemas: [], dimensional_schemas: [], silver_model_naming_instructions: "Use snake case.", silver_model_audit_columns_template: { columns: [{ name: "created_at", type: "timestamp" }] }, default_agent_model_code: null, default_max_turns: null });
+    const command = JSON.parse(String(fetcher.mock.calls.filter(([input, init]) => String(input) === "/api/v1/tenants/7/projects" && init?.method === "POST")[1]?.[1]?.body));
+    expect(command).toMatchObject({ project_name: "Customer 361", project_description: "Customer domain", logical_schemas: [], dimensional_schemas: [], silver_model_naming_instructions: "Use snake case.", silver_model_audit_columns_template: { columns: [{ name: "created_at", type: "timestamp" }] }, default_agent_model_code: null, default_max_turns: null });
     expect(Object.keys(command).some((key) => /tenant|principal|revision/.test(key))).toBe(false);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
@@ -451,18 +451,18 @@ describe("Models ledger", () => {
     const fetcher = vi.fn<typeof fetch>(async (input, init) => {
       if (String(input).endsWith("/home")) return jsonResponse(acquiredTenantHomePayload);
       if (String(input).endsWith("/agent-capabilities")) return jsonResponse(capabilities);
-      if (String(input) === "/api/v1/tenants/7/models" && init?.method === "POST") {
+      if (String(input) === "/api/v1/tenants/7/projects" && init?.method === "POST") {
         command = JSON.parse(String(init.body));
         return jsonResponse({ error: { code: "tenant_lock_required" } }, 409);
       }
       return base(input, init);
     });
-    const router = createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/models"] }) });
+    const router = createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/projects"] }) });
     const user = userEvent.setup();
     render(<WorkbenchApp router={router} />);
-    await user.click(await screen.findByRole("button", { name: "Create Model" }));
+    await user.click(await screen.findByRole("button", { name: "Create Project" }));
     const dialog = screen.getByRole("dialog");
-    await user.type(within(dialog).getByRole("textbox", { name: /Model name/ }), "New model");
+    await user.type(within(dialog).getByRole("textbox", { name: /Project name/ }), "New project");
     await user.click(within(dialog).getByText("Logical schemas", { exact: true }));
     const logicalSchemas = within(within(dialog).getByText("Logical schemas", { exact: true }).closest("details")!);
     await user.type(logicalSchemas.getByRole("textbox", { name: "Schema name" }), " silver_shared ");
@@ -492,7 +492,7 @@ describe("Models ledger", () => {
     expect(retries).toHaveAttribute("max", "25");
     await user.clear(turns);
     await user.type(turns, "101");
-    const submit = within(dialog).getByRole("button", { name: "Create Model" });
+    const submit = within(dialog).getByRole("button", { name: "Create Project" });
     await user.click(submit);
     expect(await screen.findByRole("alert")).toHaveTextContent("Enter a whole number from 1 to 100");
     expect(command).toBeUndefined();
@@ -510,7 +510,7 @@ describe("Models ledger", () => {
     expect(command).toMatchObject({
       logical_schemas: [{ schema_name: "silver_shared", description: "Shared logical design" }],
       dimensional_schemas: [{ schema_name: "gold_analytics", description: null }],
-      model_name: "New model", gold_model_naming_instructions: "Use business names.",
+      project_name: "New project", gold_model_naming_instructions: "Use business names.",
       gold_model_technical_columns_template: null, gold_model_audit_columns_template: { columns: [] },
       default_agent_sdk_code: "openai_agents_sdk", default_agent_provider_code: "microsoft_foundry", default_agent_model_code: "foundry-primary",
       default_reasoning_effort_code: "medium", default_max_turns: 100, default_validation_retry_count: 25,
@@ -520,21 +520,21 @@ describe("Models ledger", () => {
     expect(logicalSchemas.getByRole("textbox", { name: "Schema name" })).toHaveValue(" silver_shared ");
   });
 
-  it("lists active Models and keeps Open links inside the active Tenant", async () => {
+  it("lists active Projects and keeps Open links inside the active Tenant", async () => {
     const router = createWorkbenchRouter({
       api: createApiClient(tenantFetchStub()),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/models"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/projects"] }),
     });
 
     render(<WorkbenchApp router={router} />);
 
-    const ledger = await screen.findByRole("table", { name: "Active Models" });
+    const ledger = await screen.findByRole("table", { name: "Active Projects" });
     expect(within(ledger).getByText("Customer 360")).toBeVisible();
     expect(within(ledger).queryByText("25 Objects")).not.toBeInTheDocument();
     expect(within(ledger).getByText("Unlocked")).toBeVisible();
     expect(within(ledger).getByRole("link", { name: "Open Customer 360" })).toHaveAttribute(
       "href",
-      "/tenants/7/models/18",
+      "/tenants/7/projects/18",
     );
   });
 
@@ -542,80 +542,81 @@ describe("Models ledger", () => {
     const fetcher = tenantFetchStub();
     const router = createWorkbenchRouter({
       api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/models"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/projects"] }),
     });
     const user = userEvent.setup();
     render(<WorkbenchApp router={router} />);
-    await screen.findByRole("table", { name: "Active Models" });
+    await screen.findByRole("table", { name: "Active Projects" });
 
     await user.click(screen.getByRole("button", { name: "Archived" }));
 
-    const archived = await screen.findByRole("table", { name: "Archived Models" });
+    const archived = await screen.findByRole("table", { name: "Archived Projects" });
     expect(within(archived).getByText("Legacy Customer View")).toBeVisible();
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models?status=archived&page_size=200",
+      "/api/v1/tenants/7/projects?status=archived&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
   });
 });
 
-describe("Model overview", () => {
-  it("keeps Model sections visible when workspace navigation is collapsed", async () => {
+describe("Project overview", () => {
+  it("keeps Project sections visible when workspace navigation is collapsed", async () => {
     const router = createWorkbenchRouter({
       api: createApiClient(tenantFetchStub()),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18"] }),
     });
     const user = userEvent.setup();
     render(<WorkbenchApp router={router} />);
     await screen.findByRole("heading", { name: "Overview" });
     const workspaceNavigation = screen.getByLabelText("Workspace navigation");
-    const modelSections = screen.getByRole("navigation", { name: "Model sections" });
+    const projectSections = screen.getByRole("navigation", { name: "Project sections" });
     expect(within(workspaceNavigation).queryByRole("link", { name: "Mapping" })).not.toBeInTheDocument();
-    expect(within(modelSections).getAllByRole("link").map((item) => item.getAttribute("aria-label"))).toEqual([
-      "Overview", "Settings", "Model Input Scope", "Assertions", "Profiling", "Metadata enrichment",
+    expect(within(projectSections).getAllByRole("link").map((item) => item.getAttribute("aria-label"))).toEqual([
+      "Overview", "Settings", "Project Input Scope", "Context", "Profiling", "Metadata enrichment",
       "Analysis", "Conceptual", "Logical", "Dimensional", "Mapping", "Code generation", "Validation",
     ]);
     await user.click(within(workspaceNavigation).getByRole("button", { name: "Collapse workspace navigation" }));
     expect(workspaceNavigation).toHaveAttribute("data-collapsed", "true");
-    await user.click(within(modelSections).getByRole("link", { name: "Model Input Scope" }));
-    expect(await screen.findByRole("table", { name: "Active Model Input Scope" })).toBeVisible();
+    await user.click(within(projectSections).getByRole("link", { name: "Project Input Scope" }));
+    expect(await screen.findByRole("table", { name: "Active Project Input Scope" })).toBeVisible();
     expect(screen.getByLabelText("Workspace navigation")).toHaveAttribute("data-collapsed", "true");
-    const tabs = screen.getByRole("navigation", { name: "Model sections" });
-    expect(within(tabs).getByRole("link", { name: "Model Input Scope" })).toHaveAttribute("aria-current", "page");
+    const tabs = screen.getByRole("navigation", { name: "Project sections" });
+    expect(within(tabs).getByRole("link", { name: "Project Input Scope" })).toHaveAttribute("aria-current", "page");
     within(tabs).getByRole("link", { name: "Overview" }).focus();
     await user.keyboard("{ArrowRight}");
     expect(within(tabs).getByRole("link", { name: "Settings" })).toHaveFocus();
     await user.hover(within(tabs).getByRole("link", { name: "Mapping" }));
     expect(within(tabs).getByRole("link", { name: "Settings" })).toHaveFocus();
-    expect(within(tabs).getByRole("link", { name: "Model Input Scope" })).toHaveAttribute("aria-current", "page");
+    expect(within(tabs).getByRole("link", { name: "Project Input Scope" })).toHaveAttribute("aria-current", "page");
     await user.keyboard("{End}");
     expect(within(tabs).getByRole("link", { name: "Validation" })).toHaveFocus();
     await user.keyboard("{ArrowRight}");
     expect(within(tabs).getByRole("link", { name: "Overview" })).toHaveFocus();
   });
 
-  it("orients the selected Model and links Scope within the active Tenant", async () => {
+  it("orients the selected Project and links Scope within the active Tenant", async () => {
     const router = createWorkbenchRouter({
       api: createApiClient(tenantFetchStub()),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18"] }),
     });
     render(<WorkbenchApp router={router} />);
 
     expect(await screen.findByRole("heading", { name: "Overview" })).toBeVisible();
     expect(screen.getByText("Cross-system customer domain")).toBeVisible();
-    const ledger = screen.getByRole("table", { name: "Model workflow ledger" });
+    const ledger = screen.getByRole("table", { name: "Project workflow ledger" });
     expect(within(ledger).getByText("25 Objects")).toBeVisible();
     expect(within(ledger).getByText("18 results")).toBeVisible();
     expect(within(ledger).getByText("Results available")).toBeVisible();
-    expect(within(ledger).getByText("Conceptual results unavailable")).toBeVisible();
+    expect(within(ledger).queryByText("Conceptual results unavailable")).not.toBeInTheDocument();
+    expect(within(ledger).getByText("Logical results unavailable")).toBeVisible();
     expect(within(ledger).queryByText(/blocked/i)).not.toBeInTheDocument();
     expect(within(ledger).getByRole("link", { name: "Review Input Scope" })).toHaveAttribute(
       "href",
-      "/tenants/7/models/18/input-scope",
+      "/tenants/7/projects/18/input-scope",
     );
     expect(within(ledger).getByRole("link", { name: "Review Profiling" })).toHaveAttribute(
       "href",
-      "/tenants/7/models/18/profiling",
+      "/tenants/7/projects/18/profiling",
     );
   });
 });
@@ -625,17 +626,17 @@ describe("Active Scope", () => {
     const fetcher = tenantFetchStub();
     const router = createWorkbenchRouter({
       api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/input-scope"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/input-scope"] }),
     });
     render(<WorkbenchApp router={router} />);
 
-    const scope = await screen.findByRole("table", { name: "Active Model Input Scope" });
+    const scope = await screen.findByRole("table", { name: "Active Project Input Scope" });
     expect(within(scope).getByText("customer_raw")).toBeVisible();
     expect(within(scope).getByText("GRDM")).toBeVisible();
     expect(within(scope).getByText("Bronze")).toBeVisible();
     expect(within(scope).getByRole("button", { name: "Show details for customer_raw" })).toBeVisible();
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/input-scope?page_size=200",
+      "/api/v1/tenants/7/projects/18/input-scope?page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
   });
@@ -644,11 +645,11 @@ describe("Active Scope", () => {
     const fetcher = tenantFetchStub();
     const router = createWorkbenchRouter({
       api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/input-scope"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/input-scope"] }),
     });
     const user = userEvent.setup();
     render(<WorkbenchApp router={router} />);
-    await screen.findByRole("table", { name: "Active Model Input Scope" });
+    await screen.findByRole("table", { name: "Active Project Input Scope" });
 
     expect(screen.getByLabelText("Zone")).not.toBeVisible();
     await user.click(screen.getByRole("button", { name: "Filters" }));
@@ -658,9 +659,9 @@ describe("Active Scope", () => {
     await user.type(screen.getByLabelText("Schema or Object name"), " Customer_Raw ");
     await user.click(screen.getByRole("button", { name: "Apply filters" }));
 
-    expect(await screen.findByRole("table", { name: "Active Model Input Scope" })).toBeVisible();
+    expect(await screen.findByRole("table", { name: "Active Project Input Scope" })).toBeVisible();
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/input-scope?zone=bronze&system_code=crm&source_tenant_code=grdm&object_name=customer_raw&page_size=200",
+      "/api/v1/tenants/7/projects/18/input-scope?zone=bronze&system_code=crm&source_tenant_code=grdm&object_name=customer_raw&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
     await user.click(screen.getByRole("button", { name: /Filters/ }));
@@ -673,7 +674,7 @@ describe("Active Scope", () => {
     const fetcher = tenantFetchStub();
     const router = createWorkbenchRouter({
       api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/input-scope"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/input-scope"] }),
     });
     const user = userEvent.setup();
     render(<WorkbenchApp router={router} />);
@@ -684,7 +685,7 @@ describe("Active Scope", () => {
 
     await user.click(showDetails);
 
-    const drawer = await screen.findByRole("complementary", { name: "Model Input Scope Object details" });
+    const drawer = await screen.findByRole("complementary", { name: "Project Input Scope Object details" });
     expect(within(drawer).getByRole("heading", { name: "customer_raw" })).toBeVisible();
     expect(within(drawer).getByText("customer_id")).toBeVisible();
     expect(within(drawer).getByRole("link", { name: "Review physical metadata" })).toHaveAttribute("href", "/tenants/7/metadata/objects?objectId=501");
@@ -706,7 +707,7 @@ describe("Active Scope", () => {
 
     await user.click(within(drawer).getByRole("button", { name: "Close object details" }));
 
-    expect(screen.queryByRole("complementary", { name: "Model Input Scope Object details" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "Project Input Scope Object details" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show details for customer_raw" })).toHaveFocus();
   });
 });
@@ -720,29 +721,29 @@ function tenantFetchStub(): ReturnType<typeof vi.fn<typeof fetch>> {
       return jsonResponse({ tenant_id: 7 });
     }
     if (url === "/api/v1/tenants/7/home") return jsonResponse(tenantHomePayload);
-    if (url.endsWith("/models/templates")) return jsonResponse({
+    if (url.endsWith("/projects/templates")) return jsonResponse({
       silver_model_naming_instructions: "Use PascalCase.", silver_model_audit_columns_template: { columns: [] },
       gold_model_naming_instructions: "Use PascalCase.", gold_model_technical_columns_template: { columns: [] },
       gold_model_audit_columns_template: { columns: [] },
     });
-    if (url === "/api/v1/tenants/7/models?status=active&page_size=200") {
-      return jsonResponse(modelCollectionPayload);
+    if (url === "/api/v1/tenants/7/projects?status=active&page_size=200") {
+      return jsonResponse(projectCollectionPayload);
     }
-    if (url === "/api/v1/tenants/7/models?status=archived&page_size=200") {
-      return jsonResponse(archivedModelCollectionPayload);
+    if (url === "/api/v1/tenants/7/projects?status=archived&page_size=200") {
+      return jsonResponse(archivedProjectCollectionPayload);
     }
-    if (url === "/api/v1/tenants/7/models/18") return jsonResponse(modelDetailPayload);
-    if (url === "/api/v1/tenants/7/models/18/overview") {
-      return jsonResponse(modelOverviewPayload);
+    if (url === "/api/v1/tenants/7/projects/18") return jsonResponse(projectDetailPayload);
+    if (url === "/api/v1/tenants/7/projects/18/overview") {
+      return jsonResponse(projectOverviewPayload);
     }
-    if (url === "/api/v1/tenants/7/models/18/input-scope?page_size=200") {
-      return jsonResponse(modelInputScopePayload);
+    if (url === "/api/v1/tenants/7/projects/18/input-scope?page_size=200") {
+      return jsonResponse(projectInputScopePayload);
     }
-    if (url.startsWith("/api/v1/tenants/7/models/18/input-scope?zone=bronze")) {
-      return jsonResponse(modelInputScopePayload);
+    if (url.startsWith("/api/v1/tenants/7/projects/18/input-scope?zone=bronze")) {
+      return jsonResponse(projectInputScopePayload);
     }
-    if (url === "/api/v1/tenants/7/models/18/input-scope/501") {
-      return jsonResponse(modelInputScopeDetailPayload);
+    if (url === "/api/v1/tenants/7/projects/18/input-scope/501") {
+      return jsonResponse(projectInputScopeDetailPayload);
     }
     return jsonResponse({ error: { code: "not_found", message: "Not found." } }, 404);
   });
@@ -809,7 +810,7 @@ const tenantHomePayload = {
       system_type_name: "Salesforce",
       connection_count: 1,
       registered_object_count: 63,
-      active_model_count: 2,
+      active_project_count: 2,
       last_metadata_update_time: "2026-08-24T13:34:00Z",
     },
   ],
@@ -860,14 +861,14 @@ const renewedTenantHomePayload = {
   },
 };
 
-const modelCollectionPayload = {
+const projectCollectionPayload = {
   items: [
     {
-      model_id: 18,
-      model_name: "Customer 360",
-      model_description: "Cross-system customer domain",
-      model_revision: 18,
-      model_input_scope_object_count: 25,
+      project_id: 18,
+      project_name: "Customer 360",
+      project_description: "Cross-system customer domain",
+      project_revision: 18,
+      project_input_scope_object_count: 25,
       latest_workflow: "analysis",
       latest_run_status: "completed",
       updated_at: "2026-08-24T14:00:00Z",
@@ -876,13 +877,13 @@ const modelCollectionPayload = {
   next_cursor: null,
 };
 
-const archivedModelCollectionPayload = {
+const archivedProjectCollectionPayload = {
   items: [
     {
-      ...modelCollectionPayload.items[0],
-      model_id: 17,
-      model_name: "Legacy Customer View",
-      model_revision: 6,
+      ...projectCollectionPayload.items[0],
+      project_id: 17,
+      project_name: "Legacy Customer View",
+      project_revision: 6,
       latest_workflow: null,
       latest_run_status: null,
     },
@@ -890,13 +891,13 @@ const archivedModelCollectionPayload = {
   next_cursor: null,
 };
 
-const modelDetailPayload = {
-  model_id: 18,
+const projectDetailPayload = {
+  project_id: 18,
   tenant_id: 7,
-  model_name: "Customer 360",
-  model_description: "Cross-system customer domain",
-  model_revision: 18,
-  model_input_scope_object_count: 25,
+  project_name: "Customer 360",
+  project_description: "Cross-system customer domain",
+  project_revision: 18,
+  project_input_scope_object_count: 25,
   logical_schemas: [], dimensional_schemas: [], silver_model_naming_instructions: "Use business names.",
   silver_model_audit_columns_template: { columns: ["created_at"] },
   gold_model_naming_instructions: null,
@@ -912,9 +913,9 @@ const modelDetailPayload = {
   updated_at: "2026-08-24T14:00:00Z",
 };
 
-const modelOverviewPayload = {
-  model_id: 18,
-  model_revision: 18,
+const projectOverviewPayload = {
+  project_id: 18,
+  project_revision: 18,
   items: [
     workflowOverviewItem("scope", 25, "ready"),
     {
@@ -924,12 +925,9 @@ const modelOverviewPayload = {
       latest_run_created_at: "2026-08-24T14:00:00Z",
     },
     workflowOverviewItem("analysis", 0, "not_started"),
-    workflowOverviewItem("assertions", 0, "not_started"),
+    workflowOverviewItem("context", 0, "not_started"),
     workflowOverviewItem("conceptual", 0, "not_started"),
-    {
-      ...workflowOverviewItem("logical", 0, "not_started"),
-      quality_warning_codes: ["conceptual_results_unavailable"],
-    },
+    workflowOverviewItem("logical", 0, "not_started"),
     {
       ...workflowOverviewItem("dimensional", 0, "not_started"),
       quality_warning_codes: ["logical_results_unavailable"],
@@ -950,12 +948,12 @@ function workflowOverviewItem(workflow: string, resultCount: number, state: stri
   };
 }
 
-const modelInputScopePayload = {
-  model_id: 18,
-  model_revision: 18,
+const projectInputScopePayload = {
+  project_id: 18,
+  project_revision: 18,
   items: [
     {
-      model_input_scope_id: 101,
+      project_input_scope_id: 101,
       object_id: 501,
       connection_id: 21,
       system_id: 31,
@@ -969,7 +967,7 @@ const modelInputScopePayload = {
       zone_code: "bronze",
       batch_attribute_name: "batch_id",
       attribute_count: 12,
-      is_model_input_eligible: true,
+      is_project_input_eligible: true,
       created_at: "2026-08-24T14:00:00Z",
       updated_at: "2026-08-24T14:00:00Z",
     },
@@ -977,8 +975,8 @@ const modelInputScopePayload = {
   next_cursor: null,
 };
 
-const modelInputScopeDetailPayload = {
-  ...modelInputScopePayload.items[0],
+const projectInputScopeDetailPayload = {
+  ...projectInputScopePayload.items[0],
   attribute_count: 2,
   attributes: [
     {

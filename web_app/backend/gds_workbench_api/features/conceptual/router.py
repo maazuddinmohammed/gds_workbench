@@ -17,7 +17,7 @@ class ExecuteConceptualRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     execution_mode: Literal["one_shot", "tool_assisted"]
-    expected_model_revision: int = Field(gt=0)
+    expected_project_revision: int = Field(gt=0)
 
 
 class ConceptualWorkflowService(Protocol):
@@ -26,13 +26,13 @@ class ConceptualWorkflowService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         expected_execution_mode: Literal[
             "one_shot",
             "tool_assisted",
         ],
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart: ...
 
 
@@ -43,14 +43,14 @@ def create_conceptual_workflow_router(
 ) -> APIRouter:
     authenticate = principal_dependency(identity_provider)
     router = APIRouter(
-        prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/conceptual/runs",
+        prefix="/api/v1/tenants/{tenant_id}/projects/{project_id}/conceptual/runs",
         tags=["conceptual"],
     )
 
     async def execute_run(
         response: Response,
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         workflow_run_id: Annotated[int, Path(gt=0)],
         command: ExecuteConceptualRunRequest,
         *,
@@ -59,10 +59,10 @@ def create_conceptual_workflow_router(
         result = await service.start(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             workflow_run_id=workflow_run_id,
             expected_execution_mode=command.execution_mode,
-            expected_model_revision=command.expected_model_revision,
+            expected_project_revision=command.expected_project_revision,
         )
         if result.changed and result.workflow_run_state == "running":
             response.status_code = status.HTTP_202_ACCEPTED

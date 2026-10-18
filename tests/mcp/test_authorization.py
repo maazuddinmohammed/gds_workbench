@@ -17,12 +17,16 @@ class UnexpectedDatabaseAccess:
     async def fetch_one(
         self, query: LiteralString, parameters: tuple[Any, ...] = ()
     ) -> dict[str, Any] | None:
-        raise AssertionError("dev authorization must not query production identity data")
+        raise AssertionError(
+            "dev authorization must not query production identity data"
+        )
 
     async def fetch_all(
         self, query: LiteralString, parameters: tuple[Any, ...] = ()
     ) -> list[dict[str, Any]]:
-        raise AssertionError("dev authorization must not query production identity data")
+        raise AssertionError(
+            "dev authorization must not query production identity data"
+        )
 
 
 @pytest.mark.asyncio
@@ -40,7 +44,7 @@ async def test_dev_tenant_read_skips_identity_and_role_checks() -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "policy",
-    [ToolPolicy.TENANT_METADATA_WRITE, ToolPolicy.TENANT_MODEL_WRITE],
+    [ToolPolicy.TENANT_METADATA_WRITE, ToolPolicy.TENANT_PROJECT_WRITE],
 )
 async def test_dev_tenant_write_still_requires_a_tenant_lock(
     policy: ToolPolicy,

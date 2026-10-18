@@ -2,22 +2,22 @@
 
 CREATE SCHEMA mcp;
 
-CREATE TABLE mcp.model_change_set (
-    model_change_set_id UUID PRIMARY KEY,
-    model_id BIGINT NOT NULL,
+CREATE TABLE mcp.project_change_set (
+    project_change_set_id UUID PRIMARY KEY,
+    project_id BIGINT NOT NULL,
     workflow_run_id BIGINT,
-    model_change_set_status VARCHAR(20) NOT NULL DEFAULT 'active',
-    base_model_revision BIGINT NOT NULL,
+    project_change_set_status VARCHAR(20) NOT NULL DEFAULT 'active',
+    base_project_revision BIGINT NOT NULL,
     base_source_context_digest CHAR(64) NOT NULL,
-    base_assertion_digest CHAR(64) NOT NULL,
+    base_context_digest CHAR(64) NOT NULL,
     base_policy_digest CHAR(64) NOT NULL,
     draft_revision BIGINT NOT NULL DEFAULT 1,
     candidate_digest CHAR(64),
     validation_outcome JSONB,
-    model_input_scope_document JSONB NOT NULL DEFAULT '{}'::JSONB,
+    project_input_scope_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     profiling_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     enrichment_document JSONB NOT NULL DEFAULT '{}'::JSONB,
-    assertion_document JSONB NOT NULL DEFAULT '{}'::JSONB,
+    context_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     analysis_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     conceptual_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     logical_document JSONB NOT NULL DEFAULT '{}'::JSONB,
@@ -33,29 +33,29 @@ CREATE TABLE mcp.model_change_set (
     validated_time TIMESTAMPTZ,
     applied_time TIMESTAMPTZ,
     terminal_time TIMESTAMPTZ,
-    CONSTRAINT fk_change_set_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_change_set_project FOREIGN KEY (project_id)
+        REFERENCES project.project (project_id) ON DELETE NO ACTION,
     CONSTRAINT fk_change_set_workflow_run FOREIGN KEY (
         workflow_run_id,
-        model_id
-    ) REFERENCES application.workflow_run (workflow_run_id, model_id)
+        project_id
+    ) REFERENCES application.workflow_run (workflow_run_id, project_id)
         ON DELETE NO ACTION,
     CONSTRAINT fk_change_set_creator FOREIGN KEY (created_by_principal_id)
         REFERENCES security.principal (principal_id)
         ON DELETE NO ACTION,
-    CONSTRAINT uq_change_set_id_model UNIQUE (model_change_set_id, model_id),
+    CONSTRAINT uq_change_set_id_project UNIQUE (project_change_set_id, project_id),
     CONSTRAINT uq_change_set_workflow_run UNIQUE (workflow_run_id),
     CONSTRAINT ck_change_set_status CHECK (
-        model_change_set_status IN (
+        project_change_set_status IN (
             'active', 'validated', 'applied', 'expired', 'discarded', 'superseded'
         )
     ),
     CONSTRAINT ck_change_set_revisions CHECK (
-        base_model_revision > 0 AND draft_revision >= 1
+        base_project_revision > 0 AND draft_revision >= 1
     ),
     CONSTRAINT ck_change_set_digests CHECK (
         base_source_context_digest ~ '^[0-9a-f]{64}$'
-        AND base_assertion_digest ~ '^[0-9a-f]{64}$'
+        AND base_context_digest ~ '^[0-9a-f]{64}$'
         AND base_policy_digest ~ '^[0-9a-f]{64}$'
         AND (candidate_digest IS NULL OR candidate_digest ~ '^[0-9a-f]{64}$')
     ),
@@ -63,10 +63,10 @@ CREATE TABLE mcp.model_change_set (
         validation_outcome IS NULL OR jsonb_typeof(validation_outcome) = 'object'
     ),
     CONSTRAINT ck_change_set_documents CHECK (
-        jsonb_typeof(model_input_scope_document) = 'object'
+        jsonb_typeof(project_input_scope_document) = 'object'
         AND jsonb_typeof(profiling_document) = 'object'
         AND jsonb_typeof(enrichment_document) = 'object'
-        AND jsonb_typeof(assertion_document) = 'object'
+        AND jsonb_typeof(context_document) = 'object'
         AND jsonb_typeof(analysis_document) = 'object'
         AND jsonb_typeof(conceptual_document) = 'object'
         AND jsonb_typeof(logical_document) = 'object'
@@ -74,10 +74,10 @@ CREATE TABLE mcp.model_change_set (
         AND jsonb_typeof(mapping_document) = 'object'
         AND jsonb_typeof(code_generation_document) = 'object'
         AND jsonb_typeof(validation_document) = 'object'
-        AND octet_length(model_input_scope_document::TEXT) <= 16777216
+        AND octet_length(project_input_scope_document::TEXT) <= 16777216
         AND octet_length(profiling_document::TEXT) <= 16777216
         AND octet_length(enrichment_document::TEXT) <= 16777216
-        AND octet_length(assertion_document::TEXT) <= 16777216
+        AND octet_length(context_document::TEXT) <= 4194304
         AND octet_length(analysis_document::TEXT) <= 16777216
         AND octet_length(conceptual_document::TEXT) <= 16777216
         AND octet_length(logical_document::TEXT) <= 16777216
@@ -91,40 +91,40 @@ CREATE TABLE mcp.model_change_set (
         AND expires_time > last_activity_time
     ),
     CONSTRAINT ck_change_set_candidate_state CHECK (
-        (model_change_set_status = 'active' AND candidate_digest IS NULL)
+        (project_change_set_status = 'active' AND candidate_digest IS NULL)
         OR (
-            model_change_set_status IN ('validated', 'applied')
+            project_change_set_status IN ('validated', 'applied')
             AND candidate_digest IS NOT NULL
-        ) OR model_change_set_status IN ('expired', 'discarded', 'superseded')
+        ) OR project_change_set_status IN ('expired', 'discarded', 'superseded')
     ),
     CONSTRAINT ck_change_set_terminal_time CHECK (
-        (model_change_set_status IN ('applied', 'expired', 'discarded', 'superseded'))
+        (project_change_set_status IN ('applied', 'expired', 'discarded', 'superseded'))
         = (terminal_time IS NOT NULL)
     )
 );
 
-CREATE FUNCTION mcp.guard_model_change_set_workflow_binding()
+CREATE FUNCTION mcp.guard_project_change_set_workflow_binding()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SET search_path = pg_catalog
-AS $guard_model_change_set_workflow_binding$
+AS $guard_project_change_set_workflow_binding$
 BEGIN
     IF NEW.workflow_run_id IS DISTINCT FROM OLD.workflow_run_id THEN
-        RAISE EXCEPTION 'Model Change Set Workflow Run binding is immutable'
+        RAISE EXCEPTION 'Project Change Set Workflow Run binding is immutable'
             USING ERRCODE = '55000';
     END IF;
     RETURN NEW;
 END;
-$guard_model_change_set_workflow_binding$;
+$guard_project_change_set_workflow_binding$;
 
-CREATE TRIGGER guard_model_change_set_workflow_binding
-BEFORE UPDATE ON mcp.model_change_set
-FOR EACH ROW EXECUTE FUNCTION mcp.guard_model_change_set_workflow_binding();
+CREATE TRIGGER guard_project_change_set_workflow_binding
+BEFORE UPDATE ON mcp.project_change_set
+FOR EACH ROW EXECUTE FUNCTION mcp.guard_project_change_set_workflow_binding();
 
-CREATE TABLE mcp.model_stage_batch (
+CREATE TABLE mcp.project_stage_batch (
     stage_batch_id UUID PRIMARY KEY,
-    model_change_set_id UUID NOT NULL,
-    model_id BIGINT NOT NULL,
+    project_change_set_id UUID NOT NULL,
+    project_id BIGINT NOT NULL,
     dataset_name VARCHAR(50) NOT NULL,
     expected_draft_revision BIGINT NOT NULL,
     total_record_count INTEGER NOT NULL,
@@ -143,26 +143,26 @@ CREATE TABLE mcp.model_stage_batch (
     committed_revision BIGINT,
     committed_expires_time TIMESTAMPTZ,
     terminal_time TIMESTAMPTZ,
-    CONSTRAINT fk_model_stage_batch_change_set FOREIGN KEY (
-        model_change_set_id,
-        model_id
-    ) REFERENCES mcp.model_change_set (
-        model_change_set_id,
-        model_id
+    CONSTRAINT fk_project_stage_batch_change_set FOREIGN KEY (
+        project_change_set_id,
+        project_id
+    ) REFERENCES mcp.project_change_set (
+        project_change_set_id,
+        project_id
     ) ON DELETE NO ACTION,
-    CONSTRAINT fk_model_stage_batch_creator FOREIGN KEY (
+    CONSTRAINT fk_project_stage_batch_creator FOREIGN KEY (
         created_by_principal_id
     ) REFERENCES security.principal (principal_id) ON DELETE NO ACTION,
-    CONSTRAINT uq_model_stage_batch_id_model
-        UNIQUE (stage_batch_id, model_id),
-    CONSTRAINT uq_model_stage_batch_id_payload_mode
+    CONSTRAINT uq_project_stage_batch_id_project
+        UNIQUE (stage_batch_id, project_id),
+    CONSTRAINT uq_project_stage_batch_id_payload_mode
         UNIQUE (stage_batch_id, payload_mode),
-    CONSTRAINT ck_model_stage_batch_dataset CHECK (
+    CONSTRAINT ck_project_stage_batch_dataset CHECK (
         dataset_name IN (
-            'model_details', 'model_input_scope', 'profiling_profile',
+            'project_details', 'project_input_scope', 'profiling_profile',
             'object_enrichment', 'attribute_enrichment',
-            'analysis_result', 'modeling_assertion_document',
-            'modeling_assertion_record', 'conceptual_object',
+            'analysis_result', 'context_group',
+            'context_record', 'conceptual_object',
             'conceptual_relationship', 'logical_submodel', 'logical_entity',
             'logical_attribute', 'logical_relationship',
             'dimensional_submodel', 'dimensional_entity',
@@ -172,7 +172,7 @@ CREATE TABLE mcp.model_stage_batch (
             'validation_group', 'validation_check'
         )
     ),
-    CONSTRAINT ck_model_stage_batch_manifest CHECK (
+    CONSTRAINT ck_project_stage_batch_manifest CHECK (
         expected_draft_revision >= 1
         AND total_record_count BETWEEN 1 AND 20000
         AND total_chunk_count BETWEEN 1 AND 64
@@ -186,14 +186,14 @@ CREATE TABLE mcp.model_stage_batch (
             )
         )
     ),
-    CONSTRAINT ck_model_stage_batch_status CHECK (
+    CONSTRAINT ck_project_stage_batch_status CHECK (
         stage_batch_status IN ('active', 'committed', 'expired')
     ),
-    CONSTRAINT ck_model_stage_batch_expiry CHECK (
+    CONSTRAINT ck_project_stage_batch_expiry CHECK (
         last_activity_time >= created_time
         AND expires_time > last_activity_time
     ),
-    CONSTRAINT ck_model_stage_batch_terminal_state CHECK (
+    CONSTRAINT ck_project_stage_batch_terminal_state CHECK (
         (
             stage_batch_status = 'active'
             AND committed_revision IS NULL
@@ -213,7 +213,7 @@ CREATE TABLE mcp.model_stage_batch (
     )
 );
 
-CREATE TABLE mcp.model_stage_chunk (
+CREATE TABLE mcp.project_stage_chunk (
     stage_batch_id UUID NOT NULL,
     payload_mode VARCHAR(20) NOT NULL DEFAULT 'records',
     chunk_index INTEGER NOT NULL,
@@ -221,24 +221,24 @@ CREATE TABLE mcp.model_stage_chunk (
     chunk_sha256 CHAR(64) NOT NULL,
     records_document JSONB NOT NULL,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT pk_model_stage_chunk PRIMARY KEY (
+    CONSTRAINT pk_project_stage_chunk PRIMARY KEY (
         stage_batch_id,
         chunk_index
     ),
-    CONSTRAINT fk_model_stage_chunk_batch FOREIGN KEY (
+    CONSTRAINT fk_project_stage_chunk_batch FOREIGN KEY (
         stage_batch_id,
         payload_mode
-    ) REFERENCES mcp.model_stage_batch (
+    ) REFERENCES mcp.project_stage_batch (
         stage_batch_id,
         payload_mode
     ) ON DELETE NO ACTION,
-    CONSTRAINT ck_model_stage_chunk_mode CHECK (
+    CONSTRAINT ck_project_stage_chunk_mode CHECK (
         payload_mode = 'records'
     ),
-    CONSTRAINT ck_model_stage_chunk_index CHECK (
+    CONSTRAINT ck_project_stage_chunk_index CHECK (
         chunk_index BETWEEN 1 AND 64
     ),
-    CONSTRAINT ck_model_stage_chunk_content CHECK (
+    CONSTRAINT ck_project_stage_chunk_content CHECK (
         record_count >= 1
         AND chunk_sha256 ~ '^[0-9a-f]{64}$'
         AND jsonb_typeof(records_document) = 'array'
@@ -247,7 +247,7 @@ CREATE TABLE mcp.model_stage_chunk (
     )
 );
 
-CREATE TABLE mcp.model_stage_payload_chunk (
+CREATE TABLE mcp.project_stage_payload_chunk (
     stage_batch_id UUID NOT NULL,
     payload_mode VARCHAR(20) NOT NULL DEFAULT 'json_fragments',
     chunk_index INTEGER NOT NULL,
@@ -255,21 +255,21 @@ CREATE TABLE mcp.model_stage_payload_chunk (
     chunk_sha256 CHAR(64) NOT NULL,
     payload_fragment BYTEA NOT NULL,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT pk_model_stage_payload_chunk PRIMARY KEY (
+    CONSTRAINT pk_project_stage_payload_chunk PRIMARY KEY (
         stage_batch_id,
         chunk_index
     ),
-    CONSTRAINT fk_model_stage_payload_chunk_batch FOREIGN KEY (
+    CONSTRAINT fk_project_stage_payload_chunk_batch FOREIGN KEY (
         stage_batch_id,
         payload_mode
-    ) REFERENCES mcp.model_stage_batch (
+    ) REFERENCES mcp.project_stage_batch (
         stage_batch_id,
         payload_mode
     ) ON DELETE NO ACTION,
-    CONSTRAINT ck_model_stage_payload_chunk_mode CHECK (
+    CONSTRAINT ck_project_stage_payload_chunk_mode CHECK (
         payload_mode = 'json_fragments'
     ),
-    CONSTRAINT ck_model_stage_payload_chunk_content CHECK (
+    CONSTRAINT ck_project_stage_payload_chunk_content CHECK (
         chunk_index BETWEEN 1 AND 64
         AND chunk_byte_count BETWEEN 1 AND 1048576
         AND chunk_byte_count = octet_length(payload_fragment)
@@ -277,10 +277,10 @@ CREATE TABLE mcp.model_stage_payload_chunk (
     )
 );
 
-CREATE TABLE mcp.model_change_set_event (
-    model_change_set_event_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    model_change_set_id UUID NOT NULL,
-    model_id BIGINT NOT NULL,
+CREATE TABLE mcp.project_change_set_event (
+    project_change_set_event_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    project_change_set_id UUID NOT NULL,
+    project_id BIGINT NOT NULL,
     event_sequence BIGINT NOT NULL,
     event_type VARCHAR(30) NOT NULL,
     draft_revision BIGINT NOT NULL,
@@ -293,12 +293,12 @@ CREATE TABLE mcp.model_change_set_event (
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     CONSTRAINT fk_change_set_event_parent FOREIGN KEY (
-        model_change_set_id,
-        model_id
-    ) REFERENCES mcp.model_change_set (model_change_set_id, model_id)
+        project_change_set_id,
+        project_id
+    ) REFERENCES mcp.project_change_set (project_change_set_id, project_id)
         ON DELETE NO ACTION,
     CONSTRAINT uq_change_set_event_sequence
-        UNIQUE (model_change_set_id, event_sequence),
+        UNIQUE (project_change_set_id, event_sequence),
     CONSTRAINT ck_change_set_event_sequence CHECK (event_sequence > 0),
     CONSTRAINT ck_change_set_event_type CHECK (
         event_type IN (
@@ -310,7 +310,7 @@ CREATE TABLE mcp.model_change_set_event (
     CONSTRAINT ck_change_set_event_section CHECK (
         section_name IS NULL
         OR section_name IN (
-            'model_input_scope', 'profiling', 'enrichment', 'assertion', 'analysis', 'conceptual',
+            'project_input_scope', 'profiling', 'enrichment', 'context', 'analysis', 'conceptual',
             'logical', 'dimensional', 'mapping',
             'code_generation', 'validation'
         )
@@ -2385,22 +2385,22 @@ BEGIN
 END;
 $get_databricks_sql_connection_values$;
 
-CREATE INDEX ix_change_set_model_status_activity
-    ON mcp.model_change_set (model_id, model_change_set_status, last_activity_time);
+CREATE INDEX ix_change_set_project_status_activity
+    ON mcp.project_change_set (project_id, project_change_set_status, last_activity_time);
 
 CREATE INDEX ix_change_set_expiry
-    ON mcp.model_change_set (expires_time)
-    WHERE model_change_set_status IN ('active', 'validated');
+    ON mcp.project_change_set (expires_time)
+    WHERE project_change_set_status IN ('active', 'validated');
 
-CREATE UNIQUE INDEX uq_model_stage_batch_active_dataset
-    ON mcp.model_stage_batch (
-        model_change_set_id,
+CREATE UNIQUE INDEX uq_project_stage_batch_active_dataset
+    ON mcp.project_stage_batch (
+        project_change_set_id,
         dataset_name
     )
     WHERE stage_batch_status = 'active';
 
-CREATE INDEX ix_model_stage_batch_expiry
-    ON mcp.model_stage_batch (expires_time)
+CREATE INDEX ix_project_stage_batch_expiry
+    ON mcp.project_stage_batch (expires_time)
     WHERE stage_batch_status = 'active';
 
 CREATE INDEX ix_metadata_change_set_tenant_status_activity
@@ -2446,8 +2446,8 @@ BEGIN
         ON identity.entra_principal_identity_id = run.actor_entra_principal_identity_id
        AND identity.is_active
      WHERE run.workflow_run_id = p_run_id AND run.execution_backend = 'mcp'
-       AND run.model_workflow = 'profiling';
-    PERFORM model.assert_writable(v_run.model_id);
+       AND run.project_workflow = 'profiling';
+    PERFORM project.assert_writable(v_run.project_id);
     FOR v_source IN SELECT DISTINCT object.source_tenant_id
         FROM application.workflow_run_object_selection AS selection
         JOIN core.object AS object ON object.object_id = selection.object_id
@@ -2491,11 +2491,11 @@ BEGIN
         ORDER BY context.selection_order, context.attribute_ordinal_position, context.attribute_id)
       INTO v_context FROM application.get_profiling_execution_context(
         v_run.entra_tenant_id, v_run.entra_object_id, v_run.principal_type,
-        p_run_id, v_run.model_revision) AS context;
+        p_run_id, v_run.project_revision) AS context;
     IF v_context IS NULL OR jsonb_array_length(v_context) <> (
         SELECT count(*) FROM application.workflow_run_object_selection AS selection
-        JOIN workflow.list_model_attribute_eligibility(v_run.model_id) AS attribute
-          ON attribute.object_id = selection.object_id AND attribute.is_model_input_eligible
+        JOIN workflow.list_project_attribute_eligibility(v_run.project_id) AS attribute
+          ON attribute.object_id = selection.object_id AND attribute.is_project_input_eligible
         WHERE selection.workflow_run_id = p_run_id
     ) THEN RAISE EXCEPTION 'profiling_attributes_missing'; END IF;
     IF EXISTS (SELECT 1 FROM jsonb_array_elements(v_context) AS item
@@ -2522,18 +2522,18 @@ CREATE FUNCTION mcp.get_mcp_profiling_status(
 AS $mcp_profiling_status$
 DECLARE v_run RECORD; v_access RECORD;
 BEGIN
-    SELECT run.*, model.model_revision AS current_model_revision INTO v_run
-      FROM application.workflow_run AS run JOIN model.model AS model USING (model_id)
+    SELECT run.*, project.project_revision AS current_project_revision INTO v_run
+      FROM application.workflow_run AS run JOIN project.project AS project USING (project_id)
      WHERE run.workflow_run_id = p_run_id AND run.execution_backend = 'mcp'
-       AND run.model_workflow = 'profiling';
+       AND run.project_workflow = 'profiling';
     IF NOT FOUND THEN RAISE EXCEPTION 'profiling_run_not_found'; END IF;
     SELECT * INTO v_access FROM security.authorize_tenant_operation(
         p_entra_tenant_id, p_entra_object_id, p_principal_type, v_run.tenant_id, 'tenant_read');
     IF NOT coalesce(v_access.authorized, FALSE) THEN
         RAISE EXCEPTION 'profiling_run_not_found';
     END IF;
-    RETURN jsonb_build_object('run_id', p_run_id, 'model_id', v_run.model_id,
-        'state', v_run.workflow_run_state, 'model_revision', v_run.current_model_revision,
+    RETURN jsonb_build_object('run_id', p_run_id, 'project_id', v_run.project_id,
+        'state', v_run.workflow_run_state, 'project_revision', v_run.current_project_revision,
         'selected_object_count', v_run.selected_scope_count,
         'completed_object_count', v_run.profiling_completed_objects,
         'saved_profile_count', v_run.profiling_saved_profiles,
@@ -2545,22 +2545,22 @@ REVOKE ALL ON FUNCTION mcp.get_mcp_profiling_status(UUID, UUID, VARCHAR, BIGINT)
 
 CREATE FUNCTION mcp.start_mcp_profiling_run(
     p_entra_tenant_id UUID, p_entra_object_id UUID, p_principal_type VARCHAR,
-    p_model_id BIGINT, p_revision BIGINT, p_object_ids BIGINT[], p_batch_ids TEXT[],
+    p_project_id BIGINT, p_revision BIGINT, p_object_ids BIGINT[], p_batch_ids TEXT[],
     p_environment VARCHAR, p_request_id UUID
 ) RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
 AS $start_mcp_profiling$
 DECLARE
-    v_model RECORD; v_access RECORD; v_existing RECORD; v_created RECORD; v_context JSONB;
+    v_project RECORD; v_access RECORD; v_existing RECORD; v_created RECORD; v_context JSONB;
     v_request_digest TEXT;
 BEGIN
-    SELECT * INTO v_model FROM model.model WHERE model_id = p_model_id AND is_active FOR UPDATE;
-    IF NOT FOUND THEN RAISE EXCEPTION 'model_not_found'; END IF;
+    SELECT * INTO v_project FROM project.project WHERE project_id = p_project_id AND is_active FOR UPDATE;
+    IF NOT FOUND THEN RAISE EXCEPTION 'project_not_found'; END IF;
     SELECT * INTO v_access FROM security.authorize_tenant_operation(
-        p_entra_tenant_id, p_entra_object_id, p_principal_type, v_model.tenant_id, 'tenant_model_write');
+        p_entra_tenant_id, p_entra_object_id, p_principal_type, v_project.tenant_id, 'tenant_project_write');
     IF NOT coalesce(v_access.authorized, FALSE) THEN
         RAISE EXCEPTION 'profiling_execution_denied: %', coalesce(v_access.denial_code, 'authorization_denied');
     END IF;
-    PERFORM model.assert_writable(p_model_id);
+    PERFORM project.assert_writable(p_project_id);
     IF p_request_id IS NULL OR p_object_ids IS NULL OR cardinality(p_object_ids) NOT BETWEEN 1 AND 500
        OR p_revision IS NULL OR p_revision < 1
        OR p_environment IS NULL OR length(p_environment) NOT BETWEEN 1 AND 100
@@ -2582,12 +2582,12 @@ BEGIN
         RAISE EXCEPTION 'profiling_environment_unavailable';
     END IF;
     v_request_digest := encode(sha256(convert_to(jsonb_build_object(
-        'model', p_model_id, 'revision', p_revision, 'objects', p_object_ids,
+        'project', p_project_id, 'revision', p_revision, 'objects', p_object_ids,
         'batches', p_batch_ids, 'environment', p_environment)::TEXT, 'UTF8')), 'hex');
     SELECT * INTO v_existing FROM application.workflow_run WHERE correlation_id = p_request_id;
     IF FOUND THEN
         IF v_existing.actor_principal_id <> v_access.principal_id
-           OR v_existing.execution_backend <> 'mcp' OR v_existing.model_id <> p_model_id
+           OR v_existing.execution_backend <> 'mcp' OR v_existing.project_id <> p_project_id
            OR v_existing.profiling_request_digest IS DISTINCT FROM v_request_digest THEN
             RAISE EXCEPTION 'profiling_request_conflict';
         END IF;
@@ -2596,7 +2596,7 @@ BEGIN
             'context', NULL, 'batch_ids', p_batch_ids);
     END IF;
     SELECT * INTO v_created FROM application.create_workflow_run(
-        p_entra_tenant_id, p_entra_object_id, p_principal_type, p_model_id, p_revision,
+        p_entra_tenant_id, p_entra_object_id, p_principal_type, p_project_id, p_revision,
         'profiling', NULL, NULL, NULL, NULL, NULL, NULL, NULL,
         p_object_ids, ARRAY[]::VARCHAR[], NULL, NULL, p_request_id, '{}'::JSONB);
     PERFORM application.start_workflow_run(p_entra_tenant_id, p_entra_object_id,
@@ -2625,9 +2625,9 @@ DECLARE v_status JSONB; v_tenant BIGINT;
 BEGIN
     v_status := mcp.get_mcp_profiling_status(p_entra_tenant_id, p_entra_object_id, p_principal_type, p_run_id);
     SELECT tenant_id INTO v_tenant FROM application.workflow_run WHERE workflow_run_id = p_run_id;
-    PERFORM model.assert_writable((v_status->>'model_id')::BIGINT);
+    PERFORM project.assert_writable((v_status->>'project_id')::BIGINT);
     PERFORM application.cancel_workflow_run(p_entra_tenant_id, p_entra_object_id,
-        p_principal_type, v_tenant, (v_status->>'model_id')::BIGINT, p_run_id);
+        p_principal_type, v_tenant, (v_status->>'project_id')::BIGINT, p_run_id);
     RETURN mcp.get_mcp_profiling_status(p_entra_tenant_id, p_entra_object_id, p_principal_type, p_run_id);
 END;
 $cancel_mcp_profiling$;
@@ -2652,18 +2652,18 @@ BEGIN
         ON identity.entra_principal_identity_id = run.actor_entra_principal_identity_id
        AND identity.is_active
       WHERE run.workflow_run_id = p_run_id AND run.execution_backend = 'mcp'
-        AND run.model_workflow = 'profiling';
-    PERFORM model.assert_writable(v_run.model_id);
+        AND run.project_workflow = 'profiling';
+    PERFORM project.assert_writable(v_run.project_id);
     IF p_operation IN ('heartbeat', 'progress') THEN
         SELECT * INTO v_access FROM security.authorize_tenant_operation(
             v_run.entra_tenant_id, v_run.entra_object_id, v_run.principal_type,
-            v_run.tenant_id, 'tenant_model_write');
+            v_run.tenant_id, 'tenant_project_write');
         IF NOT coalesce(v_access.authorized, FALSE) THEN
             RAISE EXCEPTION 'profiling_execution_denied';
         END IF;
-        IF NOT EXISTS (SELECT 1 FROM model.model WHERE model_id = v_run.model_id
-                       AND is_active AND model_revision = v_run.model_revision) THEN
-            RAISE EXCEPTION 'stale_model_revision';
+        IF NOT EXISTS (SELECT 1 FROM project.project WHERE project_id = v_run.project_id
+                       AND is_active AND project_revision = v_run.project_revision) THEN
+            RAISE EXCEPTION 'stale_project_revision';
         END IF;
     END IF;
     IF p_operation = 'heartbeat' THEN
@@ -2674,7 +2674,7 @@ BEGIN
         v_context := mcp.mcp_profiling_context(p_run_id);
         SELECT jsonb_agg(to_jsonb(connection_values)) INTO v_values
           FROM application.get_profiling_connection_values(v_run.entra_tenant_id,
-            v_run.entra_object_id, v_run.principal_type, p_run_id, v_run.model_revision,
+            v_run.entra_object_id, v_run.principal_type, p_run_id, v_run.project_revision,
             v_run.profiling_environment_code) AS connection_values;
         RETURN jsonb_build_object('context', v_context, 'connections', v_values,
             'batch_ids', v_run.profiling_batch_ids);
@@ -2689,15 +2689,15 @@ BEGIN
         PERFORM mcp.mcp_profiling_context(p_run_id);
         SELECT * INTO v_result FROM application.persist_profiling_results(
             v_run.entra_tenant_id, v_run.entra_object_id, v_run.principal_type,
-            p_run_id, v_run.model_revision, p_payload);
+            p_run_id, v_run.project_revision, p_payload);
         UPDATE application.workflow_run SET profiling_saved_profiles = v_result.submitted_profile_count,
             profiling_completed_objects = selected_scope_count WHERE workflow_run_id = p_run_id;
         PERFORM application.complete_workflow_run(v_run.entra_tenant_id, v_run.entra_object_id,
-            v_run.principal_type, p_run_id, v_result.model_revision, v_result.submitted_profile_count);
+            v_run.principal_type, p_run_id, v_result.project_revision, v_result.submitted_profile_count);
     ELSIF p_operation = 'fail' THEN
         -- Failure details are deliberately bounded; connector errors can contain secrets.
         PERFORM application.fail_workflow_run(v_run.entra_tenant_id, v_run.entra_object_id,
-            v_run.principal_type, p_run_id, v_run.model_revision,
+            v_run.principal_type, p_run_id, v_run.project_revision,
             'profiling_execution_failed', 'Profiling could not complete. Check scope, batch metadata, and GDS execution access.');
     ELSE RAISE EXCEPTION 'invalid_profiling_operation';
     END IF;
@@ -2708,14 +2708,14 @@ REVOKE ALL ON FUNCTION mcp.mcp_profiling_worker(TEXT, BIGINT, UUID, JSONB) FROM 
 
 -- Internal materialization of an already validated, owned Change Set.
 -- Runtime roles retain no direct INSERT/UPDATE rights on enrichment tables.
-CREATE FUNCTION mcp.apply_model_enrichment_change_set(
+CREATE FUNCTION mcp.apply_project_enrichment_change_set(
     p_entra_tenant_id UUID, p_entra_object_id UUID, p_principal_type VARCHAR,
-    p_model_id BIGINT, p_change_set_id UUID, p_draft_revision BIGINT, p_candidate_digest VARCHAR
+    p_project_id BIGINT, p_change_set_id UUID, p_draft_revision BIGINT, p_candidate_digest VARCHAR
 )
 RETURNS INTEGER LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
-AS $apply_model_enrichment_change_set$
+AS $apply_project_enrichment_change_set$
 DECLARE
-    v_model RECORD;
+    v_project RECORD;
     v_change RECORD;
     v_access RECORD;
     v_source_access RECORD;
@@ -2729,16 +2729,16 @@ DECLARE
     v_count INTEGER := 0;
     v_preflight BOOLEAN;
 BEGIN
-    SELECT * INTO STRICT v_model FROM model.model WHERE model_id = p_model_id AND is_active FOR UPDATE;
-    IF v_model.is_locked THEN RAISE EXCEPTION 'model_locked'; END IF;
+    SELECT * INTO STRICT v_project FROM project.project WHERE project_id = p_project_id AND is_active FOR UPDATE;
+    IF v_project.is_locked THEN RAISE EXCEPTION 'project_locked'; END IF;
     SELECT * INTO v_access FROM security.authorize_tenant_operation(
-        p_entra_tenant_id, p_entra_object_id, p_principal_type, v_model.tenant_id, 'tenant_model_write');
+        p_entra_tenant_id, p_entra_object_id, p_principal_type, v_project.tenant_id, 'tenant_project_write');
     IF NOT coalesce(v_access.authorized, FALSE) THEN RAISE EXCEPTION 'enrichment_apply_denied'; END IF;
-    SELECT * INTO STRICT v_change FROM mcp.model_change_set
-     WHERE model_change_set_id = p_change_set_id AND model_id = p_model_id FOR UPDATE;
+    SELECT * INTO STRICT v_change FROM mcp.project_change_set
+     WHERE project_change_set_id = p_change_set_id AND project_id = p_project_id FOR UPDATE;
     IF v_change.created_by_principal_id IS DISTINCT FROM v_access.principal_id
-       OR v_change.workflow_run_id IS NOT NULL OR v_change.model_change_set_status <> 'validated'
-       OR v_change.base_model_revision IS DISTINCT FROM v_model.model_revision
+       OR v_change.workflow_run_id IS NOT NULL OR v_change.project_change_set_status <> 'validated'
+       OR v_change.base_project_revision IS DISTINCT FROM v_project.project_revision
        OR v_change.draft_revision IS DISTINCT FROM p_draft_revision
        OR v_change.candidate_digest IS DISTINCT FROM p_candidate_digest
        OR p_candidate_digest IS NULL OR v_change.expires_time <= clock_timestamp() THEN
@@ -2749,12 +2749,12 @@ BEGIN
     FOREACH v_kind IN ARRAY ARRAY['object_enrichment', 'attribute_enrichment'] LOOP
         FOR v_item IN SELECT value FROM jsonb_array_elements(coalesce(v_change.enrichment_document->v_kind, '[]'::JSONB)) LOOP
             SELECT object.object_id, object.source_tenant_id INTO STRICT v_object
-              FROM model.model_input_scope AS scope
+              FROM project.project_input_scope AS scope
               JOIN core.object AS object USING (object_id)
               JOIN core.connection AS connection USING (connection_id)
               JOIN core.tenant AS tenant ON tenant.tenant_id = connection.tenant_id
               JOIN core.system AS system ON system.system_id = connection.system_id
-             WHERE scope.model_id = p_model_id AND scope.is_active AND object.is_active
+             WHERE scope.project_id = p_project_id AND scope.is_active AND object.is_active
                AND connection.is_active AND tenant.is_active AND system.is_active
                AND lower(btrim(tenant.tenant_code)) = lower(btrim(v_item->>'tenant_code'))
                AND lower(btrim(system.system_code)) = lower(btrim(v_item->>'system_code'))
@@ -2768,13 +2768,13 @@ BEGIN
                 p_entra_tenant_id, p_entra_object_id, p_principal_type, v_object.source_tenant_id, 'tenant_read');
             IF NOT coalesce(v_source_access.authorized, FALSE) THEN RAISE EXCEPTION 'enrichment_source_denied'; END IF;
             SELECT is_locked INTO v_parent_locked FROM workflow.object_enrichment
-             WHERE model_id = p_model_id AND object_id = v_object.object_id FOR UPDATE;
+             WHERE project_id = p_project_id AND object_id = v_object.object_id FOR UPDATE;
             IF v_kind = 'object_enrichment' THEN
                 SELECT jsonb_build_object('object_description', object_description, 'is_locked', is_locked)
                   INTO v_existing FROM workflow.object_enrichment
-                 WHERE model_id = p_model_id AND object_id = v_object.object_id FOR UPDATE;
+                 WHERE project_id = p_project_id AND object_id = v_object.object_id FOR UPDATE;
                 IF v_preflight THEN
-                    IF (CASE WHEN v_existing IS NOT NULL THEN workflow.enrichment_review_revision(p_model_id, v_object.object_id) END)
+                    IF (CASE WHEN v_existing IS NOT NULL THEN workflow.enrichment_review_revision(p_project_id, v_object.object_id) END)
                        IS DISTINCT FROM v_item->>'expected_revision' THEN
                         RAISE EXCEPTION 'enrichment_revision_conflict';
                     END IF;
@@ -2785,9 +2785,9 @@ BEGIN
                 IF coalesce(v_parent_locked, FALSE) OR (v_item->>'is_locked')::BOOLEAN IS DISTINCT FROM FALSE THEN
                     RAISE EXCEPTION 'enrichment_locked';
                 END IF;
-                INSERT INTO workflow.object_enrichment(model_id, object_id, object_description, created_by, updated_by)
-                VALUES(p_model_id, v_object.object_id, v_item->>'object_description', v_access.principal_id::TEXT, v_access.principal_id::TEXT)
-                ON CONFLICT (model_id, object_id) DO UPDATE SET
+                INSERT INTO workflow.object_enrichment(project_id, object_id, object_description, created_by, updated_by)
+                VALUES(p_project_id, v_object.object_id, v_item->>'object_description', v_access.principal_id::TEXT, v_access.principal_id::TEXT)
+                ON CONFLICT (project_id, object_id) DO UPDATE SET
                     object_description = EXCLUDED.object_description, workflow_run_id = NULL,
                     updated_time = clock_timestamp(), updated_by = EXCLUDED.updated_by;
             ELSE
@@ -2799,9 +2799,9 @@ BEGIN
                     'is_natural_key', is_natural_key, 'is_primary_key', is_primary_key,
                     'is_nullable', is_nullable, 'is_pii', is_pii, 'is_locked', is_locked)
                   INTO v_existing FROM workflow.attribute_enrichment
-                 WHERE model_id = p_model_id AND attribute_id = v_attribute_id FOR UPDATE;
+                 WHERE project_id = p_project_id AND attribute_id = v_attribute_id FOR UPDATE;
                 IF v_preflight THEN
-                    IF (CASE WHEN v_existing IS NOT NULL THEN workflow.enrichment_review_revision(p_model_id, v_object.object_id, v_attribute_id) END)
+                    IF (CASE WHEN v_existing IS NOT NULL THEN workflow.enrichment_review_revision(p_project_id, v_object.object_id, v_attribute_id) END)
                        IS DISTINCT FROM v_item->>'expected_revision' THEN
                         RAISE EXCEPTION 'enrichment_revision_conflict';
                     END IF;
@@ -2811,15 +2811,15 @@ BEGIN
                 IF v_existing = v_desired THEN CONTINUE; END IF;
                 IF coalesce(v_parent_locked, FALSE) OR coalesce((v_existing->>'is_locked')::BOOLEAN, FALSE)
                    OR (v_item->>'is_locked')::BOOLEAN IS DISTINCT FROM FALSE THEN RAISE EXCEPTION 'enrichment_locked'; END IF;
-                INSERT INTO workflow.attribute_enrichment(model_id, object_id, attribute_id,
+                INSERT INTO workflow.attribute_enrichment(project_id, object_id, attribute_id,
                     attribute_description, attribute_inferred_data_type, is_natural_key, is_primary_key,
                     is_nullable, is_pii, created_by, updated_by)
-                VALUES(p_model_id, v_object.object_id, v_attribute_id,
+                VALUES(p_project_id, v_object.object_id, v_attribute_id,
                     v_item->>'attribute_description', v_item->>'attribute_inferred_data_type',
                     (v_item->>'is_natural_key')::BOOLEAN, (v_item->>'is_primary_key')::BOOLEAN,
                     (v_item->>'is_nullable')::BOOLEAN, (v_item->>'is_pii')::BOOLEAN,
                     v_access.principal_id::TEXT, v_access.principal_id::TEXT)
-                ON CONFLICT (model_id, attribute_id) DO UPDATE SET
+                ON CONFLICT (project_id, attribute_id) DO UPDATE SET
                     attribute_description = EXCLUDED.attribute_description,
                     attribute_inferred_data_type = EXCLUDED.attribute_inferred_data_type,
                     is_natural_key = EXCLUDED.is_natural_key, is_primary_key = EXCLUDED.is_primary_key,
@@ -2832,5 +2832,5 @@ BEGIN
     END LOOP;
     RETURN v_count;
 END;
-$apply_model_enrichment_change_set$;
-REVOKE ALL ON FUNCTION mcp.apply_model_enrichment_change_set(UUID, UUID, VARCHAR, BIGINT, UUID, BIGINT, VARCHAR) FROM PUBLIC;
+$apply_project_enrichment_change_set$;
+REVOKE ALL ON FUNCTION mcp.apply_project_enrichment_change_set(UUID, UUID, VARCHAR, BIGINT, UUID, BIGINT, VARCHAR) FROM PUBLIC;

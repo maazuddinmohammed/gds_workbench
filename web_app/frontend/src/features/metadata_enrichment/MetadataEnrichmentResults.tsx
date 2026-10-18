@@ -21,17 +21,17 @@ const EVIDENCE_NAMES: Record<EnrichmentEvidence, string> = {
   none: "No evidence used",
 };
 
-export function MetadataEnrichmentResults({ api, tenantId, modelId, runId }: {
-  api: Pick<MetadataEnrichmentTransport, "readMetadataEnrichmentResults">; tenantId: number; modelId: number; runId: number;
+export function MetadataEnrichmentResults({ api, tenantId, projectId, runId }: {
+  api: Pick<MetadataEnrichmentTransport, "readMetadataEnrichmentResults">; tenantId: number; projectId: number; runId: number;
 }) {
   const [offset, setOffset] = useState(0);
   const query = useQuery({
-    queryKey: [...enrichmentResultKey(tenantId, modelId, runId), offset],
-    queryFn: () => api.readMetadataEnrichmentResults(tenantId, modelId, runId, 100, offset),
+    queryKey: [...enrichmentResultKey(tenantId, projectId, runId), offset],
+    queryFn: () => api.readMetadataEnrichmentResults(tenantId, projectId, runId, 100, offset),
   });
   if (query.isPending) return <p aria-busy="true">Loading enrichment results…</p>;
   const page = query.data;
-  if (query.isError || !page || page.tenant_id !== tenantId || page.model_id !== modelId
+  if (query.isError || !page || page.tenant_id !== tenantId || page.project_id !== projectId
     || page.workflow_run_id !== runId || page.offset !== offset
     || !["completed", "completed_with_repair"].includes(page.workflow_run_state)) {
     return <p className="inline-error" role="alert">Enrichment results could not be loaded. Use Refresh runs to try again.</p>;
@@ -49,9 +49,9 @@ export function MetadataEnrichmentResults({ api, tenantId, modelId, runId }: {
       </dl>
       <p>{page.counts.existing ?? 0} preserved · {page.counts.locked ?? 0} locked · {unresolved} unresolved</p>
       {unresolved > 0 ? <p className="inline-warning">Unresolved fields remain unchanged because evidence was unavailable or inconclusive.</p> : null}
-      {(page.counts.changed ?? 0) > 0 ? <p className="inline-warning">{page.counts.changed} fields were skipped because metadata or Model enrichment changed during the run.</p> : null}
+      {(page.counts.changed ?? 0) > 0 ? <p className="inline-warning">{page.counts.changed} fields were skipped because metadata or Project enrichment changed during the run.</p> : null}
       {(page.counts.inactive ?? 0) > 0 ? <p>{page.counts.inactive} inactive fields skipped.</p> : null}
-      <p className="enrichment-history-note">Saved values from Run {runId} · Model revision {page.model_revision}. Names and storage types reflect current metadata.</p>
+      <p className="enrichment-history-note">Saved values from Run {runId} · Project revision {page.project_revision}. Names and storage types reflect current metadata.</p>
       {page.total_count > 0 ? <>
         <div className="enrichment-table-scroll" tabIndex={0} role="region" aria-label="Scrollable enrichment results">
           <table className="enrichment-result-table" aria-label="Enrichment field results">

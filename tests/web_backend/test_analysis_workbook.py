@@ -137,7 +137,9 @@ def test_missing_validation_is_distinct_from_measured_zero_and_empty_population(
             "source_missing_target_count": None,
         }
     )
-    workbook = load_workbook(BytesIO(build_analysis_workbook(findings=(empty, unvalidated))))
+    workbook = load_workbook(
+        BytesIO(build_analysis_workbook(findings=(empty, unvalidated)))
+    )
     try:
         sheet = workbook["Analysis"]
         assert sheet["I2"].value == "Unavailable"
@@ -169,14 +171,18 @@ def test_large_saved_counts_survive_excel_without_numeric_rounding(
         workbook.close()
 
 
-@pytest.mark.parametrize("literal", ["=1+1", '=HYPERLINK("https://example.test")', "#N/A"])
+@pytest.mark.parametrize(
+    "literal", ["=1+1", '=HYPERLINK("https://example.test")', "#N/A"]
+)
 def test_source_names_remain_literal_text_without_excel_formulas_or_external_links(
     finding: AnalysisFindingSummary,
     literal: str,
 ) -> None:
     finding = finding.model_copy(
         update={
-            "from_endpoint": finding.from_endpoint.model_copy(update={"object_name": literal}),
+            "from_endpoint": finding.from_endpoint.model_copy(
+                update={"object_name": literal}
+            ),
         }
     )
     content = build_analysis_workbook(findings=(finding,))
@@ -202,7 +208,9 @@ def test_invalid_or_oversized_text_fails_without_truncation_or_echoing_content(
 ) -> None:
     finding = finding.model_copy(
         update={
-            "from_endpoint": finding.from_endpoint.model_copy(update={"object_name": text}),
+            "from_endpoint": finding.from_endpoint.model_copy(
+                update={"object_name": text}
+            ),
         }
     )
     with pytest.raises(AnalysisWorkbookBuildError) as error:

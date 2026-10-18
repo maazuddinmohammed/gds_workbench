@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "2.0",
   "runtime": {
     "node": "Node.js 20+",
     "powershell": "Windows PowerShell 5.1 native fallback",
@@ -18,7 +18,7 @@
       "mutates": false
     },
     "session-init": {
-      "usage": "session-init --root <absolute-directory> --tenant <verified-code> --tenant-id <positive-id> [--model-id <id> --model-name <name>] [--policy never|essential|proactive --environment dev|qa|stg|prod]",
+      "usage": "session-init --root <absolute-directory> --tenant <verified-code> --tenant-id <positive-id> [--project-id <id> --project-name <name>] [--policy never|essential|proactive --environment dev|qa|stg|prod]",
       "session_required": false,
       "mutates": true
     },
@@ -33,8 +33,8 @@
       "session_required": true,
       "mutates": true
     },
-    "model-select": {
-      "usage": "model-select --session <working-directory> --model-id <verified-id> --model-name <name> [--output-file <new-.atlas/temp-result.json>]",
+    "project-select": {
+      "usage": "project-select --session <working-directory> --project-id <verified-id> --project-name <name> [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
@@ -65,73 +65,75 @@
       "notes": "Save the user's sub-agent model choice in session.subagent_policy. Only custom requires and accepts --model (1-200 characters; no surrounding whitespace or control characters). An absent policy is unresolved; resolve only before useful authorized delegation. The host must support the selected model rule. This does not change the main chat model or authorize delegation."
     },
     "inspect": {
-      "usage": "inspect --session <working-directory> --area metadata|model [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
+      "usage": "inspect --session <working-directory> --area metadata|project [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": false
     },
     "describe": {
-      "usage": "describe --session <working-directory> --area metadata|model --dataset <name> [--detail compact|full] [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
+      "usage": "describe --session <working-directory> --area metadata|project --dataset <name> [--detail compact|full] [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": false
     },
     "select": {
-      "usage": "select --session <working-directory> --area metadata|model --dataset <name> [--where <JSON-object>] [--limit <1..200>] [--cursor <next_cursor>] [--fields <JSON-string-array>] [--owner <tenant-id>] [--view snapshot|effective] [--output-file <new-.atlas/temp-result.json>]",
+      "usage": "select --session <working-directory> --area metadata|project --dataset <name> [--where <JSON-object>] [--limit <1..200>] [--cursor <next_cursor>] [--fields <JSON-string-array>] [--owner <tenant-id>] [--view snapshot|effective] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": false,
       "notes": "Follow next_cursor until null with unchanged selection/limit. Cursor binds manifest, owner, dataset, normalized filter, view, projection and selected pending records. Changed inputs require restarting the traversal. --fields selects 1..100 schema fields and always includes complete canonical keys; projected rows are read-only context, not complete upsert records. A cursor is not authorization or evidence that previous pages were reviewed."
     },
     "copy": {
-      "usage": "copy --session <working-directory> --area metadata|model --dataset <name> --where <JSON-object> --expected-digest <sha256|empty> [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
+      "usage": "copy --session <working-directory> --area metadata|project --dataset <name> --where <JSON-object> --expected-digest <sha256|empty> [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "upsert": {
-      "usage": "upsert --session <working-directory> --area metadata|model --dataset <name> --record <JSON-object> --expected-digest <sha256|empty> [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
+      "usage": "upsert --session <working-directory> --area metadata|project --dataset <name> --record <JSON-object> --expected-digest <sha256|empty> [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
-      "mutates": true
+      "mutates": true,
+      "notes": "For a new context_record only, omit context_record_id to generate and save one UUID; the result returns it. Retain that UUID for edits, references and retries. Expected digest still fences every write."
     },
     "upsert-batch": {
-      "usage": "upsert-batch --session <working-directory> --area metadata|model --changes <dataset-to-record-array-JSON> --expected-digest <sha256|empty> [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
+      "usage": "upsert-batch --session <working-directory> --area metadata|project --changes <dataset-to-record-array-JSON> --expected-digest <sha256|empty> [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
-      "mutates": true
+      "mutates": true,
+      "notes": "Each Context Record must already carry its stable UUID. Types are read-only Snapshot datasets."
     },
     "discard": {
-      "usage": "discard --session <working-directory> --area metadata|model --dataset <name> --key <canonical-key-JSON> --expected-digest <sha256|empty> [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
+      "usage": "discard --session <working-directory> --area metadata|project --dataset <name> --key <canonical-key-JSON> --expected-digest <sha256|empty> [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "review": {
-      "usage": "review --session <working-directory> --area metadata|model [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
+      "usage": "review --session <working-directory> --area metadata|project [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": false
     },
     "validate": {
-      "usage": "validate --session <working-directory> --area metadata|model [--owner <tenant-id>] [--task <UUID>] [--output-file <new-.atlas/temp-result.json>]",
+      "usage": "validate --session <working-directory> --area metadata|project [--owner <tenant-id>] [--task <UUID>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "accept": {
-      "usage": "accept --session <working-directory> --area metadata|model --digest <reviewed-sha256> [--backend-file <check-result.json> | --backend-profile production|local|azureLocalTest --endpoint-sha256 <safe-backend-identity>] [--draft-file <server-response.json>] [--prepare-stage true] [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
+      "usage": "accept --session <working-directory> --area metadata|project --digest <reviewed-sha256> [--backend-file <check-result.json> | --backend-profile production|local|azureLocalTest --endpoint-sha256 <safe-backend-identity>] [--draft-file <server-response.json>] [--prepare-stage true] [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "draft-cache": {
-      "usage": "draft-cache --session <working-directory> --area metadata|model [--file <server-response.json> | --id <verified-change-set-UUID> --revision <nonnegative-integer> --status active|validated] [--validation-failed true] [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
+      "usage": "draft-cache --session <working-directory> --area metadata|project [--file <server-response.json> | --id <verified-change-set-UUID> --revision <nonnegative-integer> --status active|validated] [--validation-failed true] [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "prepare-stage-request": {
-      "usage": "prepare-stage-request --session <working-directory> --area metadata|model [--draft-file <server-response.json>] [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
+      "usage": "prepare-stage-request --session <working-directory> --area metadata|project [--draft-file <server-response.json>] [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "operation-record": {
-      "usage": "operation-record --session <working-directory> --area metadata|model --checkpoint validation|apply-approval|apply [--file <server-response.json>] [--review-digest <sha256> | --digest-from-operation true] [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
+      "usage": "operation-record --session <working-directory> --area metadata|project --checkpoint validation|apply-approval|apply [--file <server-response.json>] [--review-digest <sha256> | --digest-from-operation true] [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "snapshot-install": {
-      "usage": "snapshot-install --session <working-directory> --area metadata|model --archive <downloaded-zip> --snapshot-id <UUID> --size-bytes <integer> --sha256 <sha256> [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
+      "usage": "snapshot-install --session <working-directory> --area metadata|project --archive <downloaded-zip> --snapshot-id <UUID> --size-bytes <integer> --sha256 <sha256> [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },

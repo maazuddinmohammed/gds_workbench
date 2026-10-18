@@ -25,7 +25,7 @@ describe("Validation criteria", () => {
   ])("explains %s without changing the stored assertion", (operator, expected) => {
     const unary = operator.startsWith("is_");
     const list = operator === "in" || operator === "not_in";
-    render(<ValidationLedger tenantId={7} modelId={18} groupId={1} checkId={2} modelRevision={4} loadedModelRevision={4} isLoading={false} error={null}
+    render(<ValidationLedger tenantId={7} projectId={18} groupId={1} checkId={2} projectRevision={4} loadedProjectRevision={4} isLoading={false} error={null}
       groups={[{ ...group, checks: [{ ...check, validation_comparison_operator: operator,
         validation_comparison_value_type: unary ? "none" : list ? "literal_list" : "literal",
         validation_comparison_value: list ? [0, 1] : 0 }] }]} />);
@@ -36,7 +36,7 @@ describe("Validation criteria", () => {
   });
 
   it("distinguishes execution-only checks from scalar assertions", () => {
-    render(<ValidationLedger tenantId={7} modelId={18} groupId={1} checkId={2} modelRevision={4} loadedModelRevision={4} isLoading={false} error={null}
+    render(<ValidationLedger tenantId={7} projectId={18} groupId={1} checkId={2} projectRevision={4} loadedProjectRevision={4} isLoading={false} error={null}
       groups={[{ ...group, checks: [{ ...check, validation_comparison_operator: "executes_successfully",
         validation_comparison_value_type: "none", validation_result_data_type: null, validation_comparison_value: null }] }]} />);
     const criteria = screen.getByLabelText("Pass and fail criteria");

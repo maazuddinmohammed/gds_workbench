@@ -1,5 +1,5 @@
-import type { ModelLayer } from "../../shared/ModelLayerTabs";
-import type { ModelReviewSelection } from "../model_record_review/selection";
+import type { ProjectLayer } from "../../shared/ProjectLayerTabs";
+import type { ProjectReviewSelection } from "../project_record_review/selection";
 import { useEffect, useId, useRef } from "react";
 import { Link } from "@tanstack/react-router";
 
@@ -7,20 +7,20 @@ import { ApiError } from "../../core/http";
 import type { ValidationValidationCheck, ValidationValidationGroup } from "./api";
 
 export function ValidationLedger({
-  tenantId, modelId, groupId, checkId, selection, groups, layer, isFiltered = false,
-  modelRevision, loadedModelRevision, isLoading, error, onShowDetails,
+  tenantId, projectId, groupId, checkId, selection, groups, layer, isFiltered = false,
+  projectRevision, loadedProjectRevision, isLoading, error, onShowDetails,
 }: {
-  layer?: ModelLayer;
+  layer?: ProjectLayer;
   onShowDetails?: ((groupId: number, checkId?: number) => void) | undefined;
   isFiltered?: boolean;
   tenantId: number;
-  modelId: number;
+  projectId: number;
   groupId?: number | undefined;
   checkId?: number | undefined;
-  selection?: ModelReviewSelection & { dataset: "validation_group" | "validation_check" };
+  selection?: ProjectReviewSelection & { dataset: "validation_group" | "validation_check" };
   groups: ValidationValidationGroup[];
-  modelRevision: number;
-  loadedModelRevision: number | undefined;
+  projectRevision: number;
+  loadedProjectRevision: number | undefined;
   isLoading: boolean;
   error: Error | null;
 }) {
@@ -28,12 +28,12 @@ export function ValidationLedger({
   const heading = useRef<HTMLHeadingElement>(null);
   const group = groups.find((item) => item.validation_group_id === groupId);
   const check = group?.checks.find((item) => item.validation_check_id === checkId);
-  const revisionMismatch = loadedModelRevision !== undefined && loadedModelRevision !== modelRevision;
+  const revisionMismatch = loadedProjectRevision !== undefined && loadedProjectRevision !== projectRevision;
   const ready = !isLoading && !error && !revisionMismatch;
   useEffect(() => {
     if (ready) heading.current?.focus();
   }, [ready, groupId, checkId]);
-  const params = { tenantId: String(tenantId), modelId: String(modelId) };
+  const params = { tenantId: String(tenantId), projectId: String(projectId) };
   const title = checkId !== undefined ? check?.validation_check_name ?? "Validation Check"
     : groupId !== undefined ? group?.validation_group_name ?? "Validation Group" : "Validation Groups";
   const checkCount = group?.checks.length ?? groups.reduce((total, item) => total + item.checks.length, 0);
@@ -60,9 +60,9 @@ export function ValidationLedger({
       ) : error ? (
         <div className="surface-state is-error" role="alert">Applied Validation definitions could not be loaded. Refresh to try again.</div>
       ) : revisionMismatch ? (
-        <div className="surface-state is-error" role="alert">The Model changed while the Validation ledger was loading. Refresh before authoring Validation.</div>
+        <div className="surface-state is-error" role="alert">The Project changed while the Validation ledger was loading. Refresh before authoring Validation.</div>
       ) : groupId !== undefined && !group ? (
-        <div className="surface-state is-error" role="alert">This Validation Group is not available in this Model.</div>
+        <div className="surface-state is-error" role="alert">This Validation Group is not available in this Project.</div>
       ) : checkId !== undefined && !check ? (
         <div className="surface-state is-error" role="alert">This Validation Check is not available in this Group.</div>
       ) : check && group ? (
@@ -92,7 +92,7 @@ export function ValidationLedger({
                     <td>{onShowDetails ? <button className="text-action" type="button"
                       aria-label={`Show details for ${item.validation_check_name}`}
                       onClick={() => onShowDetails(group.validation_group_id, item.validation_check_id)}>Show details</button> : <Link search={{ layer: layer ?? "logical" }} className="text-action"
-                      to="/tenants/$tenantId/validation/models/$modelId/groups/$groupId/checks/$checkId"
+                      to="/tenants/$tenantId/validation/projects/$projectId/groups/$groupId/checks/$checkId"
                       params={{ ...params, groupId: String(group.validation_group_id), checkId: String(item.validation_check_id) }}
                       aria-label={`Show details for ${item.validation_check_name}`}>Show details</Link>}</td>
                   </tr>
@@ -103,7 +103,7 @@ export function ValidationLedger({
           <GroupStatus group={group} />
         </>
       ) : groups.length === 0 ? (
-        <div className="empty-state compact">{isFiltered ? "No Validation Groups match these filters." : "No Validation Groups are applied to this Model. Run Validation to author the first draft."}</div>
+        <div className="empty-state compact">{isFiltered ? "No Validation Groups match these filters." : "No Validation Groups are applied to this Project. Run Validation to author the first draft."}</div>
       ) : (
         <div className="table-scroll validation-check-table-scroll validation-group-grid ledger-grid" role="region" aria-label="Validation table" tabIndex={0}>
           <table aria-label="Validation Groups">
@@ -118,7 +118,7 @@ export function ValidationLedger({
                 <td>{item.validation_group_is_current ? "Current" : "Stale"}</td>
                 <td>{item.is_active ? "Active" : "Inactive"}</td><td>{item.is_locked ? "Locked" : "Open"}</td>
                 <td><Link search={{ layer: layer ?? "logical" }} className="text-action"
-                  to="/tenants/$tenantId/validation/models/$modelId/groups/$groupId"
+                  to="/tenants/$tenantId/validation/projects/$projectId/groups/$groupId"
                   params={{ ...params, groupId: String(item.validation_group_id) }}
                   aria-label={`Show details for ${item.validation_group_name}`}>Show details</Link></td>
               </tr>

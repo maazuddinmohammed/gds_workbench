@@ -9,7 +9,7 @@ from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
 
 from gds_workbench_api.features.metadata.contracts import MetadataWorkbookDownload
-from gds_workbench_api.features.models import ModelNotFoundError
+from gds_workbench_api.features.projects import ProjectNotFoundError
 
 from .export import export_mapping_workbook
 from .read_contracts import (
@@ -29,21 +29,21 @@ from .read_contracts import (
     MappingReadDatabase,
 )
 
-_MODEL_HEADER_SQL: LiteralString = """
-SELECT target_model.model_revision
-  FROM model.model AS target_model
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+_PROJECT_HEADER_SQL: LiteralString = """
+SELECT target_project.project_revision
+  FROM project.project AS target_project
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
 """
 
 _MAPPING_TARGET_BASE_SQL: LiteralString = """
 SELECT entity.modeled_entity_id AS entity_id, entity.modeled_entity_type AS entity_type,
        entity.modeled_entity_schema_name AS entity_schema_name, entity.modeled_entity_name AS
            entity_name
-  FROM model.model AS target_model
-  JOIN workflow.modeled_entity AS entity ON entity.model_id = target_model.model_id
- WHERE target_model.tenant_id = %s AND target_model.model_id = %s AND target_model.is_active
+  FROM project.project AS target_project
+  JOIN workflow.modeled_entity AS entity ON entity.project_id = target_project.project_id
+ WHERE target_project.tenant_id = %s AND target_project.project_id = %s AND target_project.is_active
    AND entity.modeled_entity_type = %s AND entity.status = 'active'
 """
 
@@ -59,35 +59,36 @@ SELECT targets.*, jsonb_build_object('system_id', source_system.system_id, 'syst
        coalesce(mapping.object_dependency_order, entity.dependency_order) AS object_order,
        entity.is_locked OR coalesce(mapping.object_mapping_is_locked, FALSE) AS is_locked,
        input.is_default OR EXISTS (
-           SELECT 1 FROM workflow.list_mapping_source_objects(entity.model_id,
+           SELECT 1 FROM workflow.list_mapping_source_objects(entity.project_id,
                entity.modeled_entity_id, entity.modeled_entity_type, source_system.system_id)
        ) AS has_sources,
        attributes.items AS attributes
   FROM targets
-  JOIN model.model AS model ON model.tenant_id = %s AND model.model_id = %s AND model.is_active
-  JOIN workflow.modeled_entity AS entity ON entity.model_id = model.model_id
+  JOIN project.project AS project
+    ON project.tenant_id = %s AND project.project_id = %s AND project.is_active
+  JOIN workflow.modeled_entity AS entity ON entity.project_id = project.project_id
    AND entity.modeled_entity_type = targets.entity_type AND entity.modeled_entity_id =
        targets.entity_id
  CROSS JOIN LATERAL (
-     SELECT model.default_mapping_source_system_id IS NOT NULL
-        AND workflow.is_assertion_only_mapping_target(model.model_id,
+     SELECT project.default_mapping_source_system_id IS NOT NULL
+        AND workflow.is_context_only_mapping_target(project.project_id,
             entity.modeled_entity_id, entity.modeled_entity_type) AS uses_default
  ) AS fallback
  CROSS JOIN LATERAL (
      SELECT DISTINCT source_system_id, FALSE AS is_default
-       FROM workflow.list_model_input_sources(model.model_id)
+       FROM workflow.list_project_input_sources(project.project_id)
       WHERE NOT fallback.uses_default
      UNION
-     SELECT model.default_mapping_source_system_id, TRUE WHERE fallback.uses_default
+     SELECT project.default_mapping_source_system_id, TRUE WHERE fallback.uses_default
  ) AS input
   JOIN core.system AS source_system ON source_system.system_id = input.source_system_id
    AND source_system.is_active
    AND (NOT input.is_default OR EXISTS (
        SELECT 1 FROM core.connection AS owned_connection
-        WHERE owned_connection.tenant_id = model.tenant_id
+        WHERE owned_connection.tenant_id = project.tenant_id
           AND owned_connection.system_id = source_system.system_id AND owned_connection.is_active
    ))
-  LEFT JOIN workflow.mapping_object AS mapping ON mapping.model_id = entity.model_id
+  LEFT JOIN workflow.mapping_object AS mapping ON mapping.project_id = entity.project_id
    AND mapping.modeled_entity_type = entity.modeled_entity_type
    AND coalesce(mapping.logical_entity_id, mapping.dimensional_entity_id) = entity.modeled_entity_id
    AND mapping.source_system_id = source_system.system_id
@@ -104,7 +105,7 @@ SELECT targets.*, jsonb_build_object('system_id', source_system.system_id, 'syst
          mapping.mapping_object_id
       AND coalesce(child.logical_attribute_id, child.dimensional_attribute_id) =
           attribute.modeled_attribute_id
-    WHERE attribute.model_id = entity.model_id AND attribute.modeled_entity_type =
+    WHERE attribute.project_id = entity.project_id AND attribute.modeled_entity_type =
         entity.modeled_entity_type
       AND attribute.modeled_entity_id = entity.modeled_entity_id AND attribute.status = 'active'
  ) AS attributes
@@ -126,8 +127,8 @@ SELECT mapping.mapping_object_id, mapping.workflow_run_id, jsonb_build_object('e
 
 _OBJECT_BASE_SQL = """
   FROM workflow.mapping_object AS mapping
-  JOIN model.model AS target_model ON target_model.model_id = mapping.model_id
-  JOIN workflow.modeled_entity AS entity ON entity.model_id = mapping.model_id
+  JOIN project.project AS target_project ON target_project.project_id = mapping.project_id
+  JOIN workflow.modeled_entity AS entity ON entity.project_id = mapping.project_id
    AND entity.modeled_entity_type = mapping.modeled_entity_type
    AND entity.modeled_entity_id = coalesce(mapping.logical_entity_id, mapping.dimensional_entity_id)
   JOIN core.system AS source_system ON source_system.system_id = mapping.source_system_id
@@ -137,11 +138,11 @@ MAPPING_OBJECTS_SQL: LiteralString = (
     _OBJECT_COLUMNS
     + _OBJECT_BASE_SQL
     + """
- WHERE target_model.tenant_id = %s AND target_model.model_id = %s AND target_model.is_active
+ WHERE target_project.tenant_id = %s AND target_project.project_id = %s AND target_project.is_active
    AND (mapping.mapping_transformation_document IS NOT NULL OR EXISTS (
        SELECT 1 FROM workflow.mapping_attribute AS mapped_attribute
        JOIN workflow.modeled_attribute AS modeled_attribute
-         ON modeled_attribute.model_id = mapping.model_id
+         ON modeled_attribute.project_id = mapping.project_id
         AND modeled_attribute.modeled_entity_type = mapping.modeled_entity_type
         AND modeled_attribute.modeled_entity_id = entity.modeled_entity_id
         AND modeled_attribute.modeled_attribute_id = coalesce(
@@ -180,7 +181,7 @@ MAPPING_OBJECT_DETAIL_SQL: LiteralString = (
     + """
  LEFT JOIN application.output_template AS output_template ON output_template.output_template_id =
      mapping.output_template_id
- WHERE target_model.tenant_id = %s AND target_model.model_id = %s AND target_model.is_active
+ WHERE target_project.tenant_id = %s AND target_project.project_id = %s AND target_project.is_active
    AND mapping.mapping_object_id = %s
 """
 )
@@ -205,12 +206,12 @@ SELECT attribute_mapping.mapping_attribute_id, attribute_mapping.workflow_run_id
 
 _ATTRIBUTE_BASE_SQL = """
   FROM workflow.mapping_object AS object_mapping
-  JOIN model.model AS target_model ON target_model.model_id = object_mapping.model_id
-  JOIN workflow.modeled_entity AS entity ON entity.model_id = object_mapping.model_id
+  JOIN project.project AS target_project ON target_project.project_id = object_mapping.project_id
+  JOIN workflow.modeled_entity AS entity ON entity.project_id = object_mapping.project_id
    AND entity.modeled_entity_type = object_mapping.modeled_entity_type
    AND entity.modeled_entity_id = coalesce(object_mapping.logical_entity_id,
        object_mapping.dimensional_entity_id)
-  JOIN workflow.modeled_attribute AS attribute ON attribute.model_id = entity.model_id
+  JOIN workflow.modeled_attribute AS attribute ON attribute.project_id = entity.project_id
    AND attribute.modeled_entity_type = entity.modeled_entity_type
    AND attribute.modeled_entity_id = entity.modeled_entity_id
   LEFT JOIN workflow.mapping_attribute AS attribute_mapping ON
@@ -224,7 +225,7 @@ MAPPING_ATTRIBUTES_SQL: LiteralString = (
     _ATTRIBUTE_COLUMNS
     + _ATTRIBUTE_BASE_SQL
     + """
- WHERE target_model.tenant_id = %s AND target_model.model_id = %s AND target_model.is_active
+ WHERE target_project.tenant_id = %s AND target_project.project_id = %s AND target_project.is_active
    AND (attribute.status = 'active' OR attribute_mapping.mapping_attribute_id IS NOT NULL)
    AND (%s::VARCHAR IS NULL OR entity.modeled_entity_type = %s)
    AND (%s::BIGINT IS NULL OR source_system.system_id = %s)
@@ -260,7 +261,7 @@ MAPPING_ATTRIBUTE_DETAIL_SQL: LiteralString = (
     + """
  LEFT JOIN application.output_template AS output_template ON output_template.output_template_id =
      attribute_mapping.output_template_id
- WHERE target_model.tenant_id = %s AND target_model.model_id = %s AND target_model.is_active
+ WHERE target_project.tenant_id = %s AND target_project.project_id = %s AND target_project.is_active
    AND attribute_mapping.mapping_attribute_id = %s
 """
 )
@@ -272,10 +273,10 @@ class MappingReviewService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         entity_type: MappingEntityType,
         source_system_code: str,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> MetadataWorkbookDownload: ...
 
     async def list_generation_targets(
@@ -283,7 +284,7 @@ class MappingReviewService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         entity_type: MappingEntityType,
         page_size: int,
         cursor: str | None,
@@ -294,20 +295,25 @@ class MappingReviewService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: MappingFilters,
         page_size: int,
         cursor: str | None,
     ) -> MappingObjectPage: ...
     async def read_object(
-        self, principal: RequestPrincipal, *, tenant_id: int, model_id: int, mapping_object_id: int
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        project_id: int,
+        mapping_object_id: int,
     ) -> MappingObjectDetail: ...
     async def list_attributes(
         self,
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: MappingAttributeFilters,
         page_size: int,
         cursor: str | None,
@@ -317,7 +323,7 @@ class MappingReviewService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         mapping_attribute_id: int,
     ) -> MappingAttributeDetail: ...
 
@@ -339,20 +345,20 @@ class DatabaseMappingReviewService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         entity_type: MappingEntityType,
         source_system_code: str,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> MetadataWorkbookDownload:
         return await export_mapping_workbook(
             database=self._database,
             authorizer=self._authorizer,
             principal=principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             entity_type=entity_type,
             source_system_code=source_system_code,
-            expected_model_revision=expected_model_revision,
+            expected_project_revision=expected_project_revision,
         )
 
     async def list_generation_targets(
@@ -360,12 +366,12 @@ class DatabaseMappingReviewService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         entity_type: MappingEntityType,
         page_size: int,
         cursor: str | None,
     ) -> MappingGenerationPage:
-        collection = f"web_mapping_generation:{tenant_id}:{model_id}:{entity_type}:{page_size}"
+        collection = f"web_mapping_generation:{tenant_id}:{project_id}:{entity_type}:{page_size}"
         offset = self._cursors.decode(cursor, collection=collection)
         async with self._database.read_transaction(
             isolation=ReadIsolation.REPEATABLE_READ
@@ -375,14 +381,14 @@ class DatabaseMappingReviewService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
-            header = await transaction.fetch_one(_MODEL_HEADER_SQL, (tenant_id, model_id))
+            header = await transaction.fetch_one(_PROJECT_HEADER_SQL, (tenant_id, project_id))
             if header is None:
-                raise ModelNotFoundError()
+                raise ProjectNotFoundError()
             rows = await transaction.fetch_all(
                 _MAPPING_GENERATION_TARGETS_SQL,
-                (tenant_id, model_id, entity_type, tenant_id, model_id, page_size + 1, offset),
+                (tenant_id, project_id, entity_type, tenant_id, project_id, page_size + 1, offset),
             )
         next_cursor = (
             self._cursors.encode(collection=collection, offset=offset + page_size)
@@ -390,8 +396,8 @@ class DatabaseMappingReviewService:
             else None
         )
         return MappingGenerationPage(
-            model_id=model_id,
-            model_revision=header["model_revision"],
+            project_id=project_id,
+            project_revision=header["project_revision"],
             items=tuple(
                 MappingGenerationTarget.model_validate(row, strict=False)
                 for row in rows[:page_size]
@@ -404,7 +410,7 @@ class DatabaseMappingReviewService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: MappingFilters,
         page_size: int,
         cursor: str | None,
@@ -412,7 +418,7 @@ class DatabaseMappingReviewService:
         header, rows, next_cursor = await self._list(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=filters,
             page_size=page_size,
             cursor=cursor,
@@ -420,19 +426,24 @@ class DatabaseMappingReviewService:
             sql=MAPPING_OBJECTS_SQL,
         )
         return MappingObjectPage(
-            model_id=model_id,
-            model_revision=header["model_revision"],
+            project_id=project_id,
+            project_revision=header["project_revision"],
             items=tuple(MappingObjectSummary.model_validate(row, strict=False) for row in rows),
             next_cursor=next_cursor,
         )
 
     async def read_object(
-        self, principal: RequestPrincipal, *, tenant_id: int, model_id: int, mapping_object_id: int
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        project_id: int,
+        mapping_object_id: int,
     ) -> MappingObjectDetail:
         row = await self._read(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             record_id=mapping_object_id,
             sql=MAPPING_OBJECT_DETAIL_SQL,
         )
@@ -445,7 +456,7 @@ class DatabaseMappingReviewService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: MappingAttributeFilters,
         page_size: int,
         cursor: str | None,
@@ -453,7 +464,7 @@ class DatabaseMappingReviewService:
         header, rows, next_cursor = await self._list(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=filters,
             page_size=page_size,
             cursor=cursor,
@@ -461,8 +472,8 @@ class DatabaseMappingReviewService:
             sql=MAPPING_ATTRIBUTES_SQL,
         )
         return MappingAttributePage(
-            model_id=model_id,
-            model_revision=header["model_revision"],
+            project_id=project_id,
+            project_revision=header["project_revision"],
             items=tuple(MappingAttributeSummary.model_validate(row, strict=False) for row in rows),
             next_cursor=next_cursor,
         )
@@ -472,13 +483,13 @@ class DatabaseMappingReviewService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         mapping_attribute_id: int,
     ) -> MappingAttributeDetail:
         row = await self._read(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             record_id=mapping_attribute_id,
             sql=MAPPING_ATTRIBUTE_DETAIL_SQL,
         )
@@ -491,7 +502,7 @@ class DatabaseMappingReviewService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: MappingFilters,
         page_size: int,
         cursor: str | None,
@@ -499,7 +510,7 @@ class DatabaseMappingReviewService:
         sql: LiteralString,
     ) -> tuple[dict[str, Any], list[dict[str, Any]], str | None]:
         digest = sha256(filters.model_dump_json().encode()).hexdigest()
-        collection = f"web_mapping_{kind}:{tenant_id}:{model_id}:{page_size}:{digest}"
+        collection = f"web_mapping_{kind}:{tenant_id}:{project_id}:{page_size}:{digest}"
         offset = self._cursors.decode(cursor, collection=collection)
         async with self._database.read_transaction(
             isolation=ReadIsolation.REPEATABLE_READ
@@ -509,16 +520,16 @@ class DatabaseMappingReviewService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
-            header = await transaction.fetch_one(_MODEL_HEADER_SQL, (tenant_id, model_id))
+            header = await transaction.fetch_one(_PROJECT_HEADER_SQL, (tenant_id, project_id))
             if header is None:
-                raise ModelNotFoundError()
+                raise ProjectNotFoundError()
             rows = await transaction.fetch_all(
                 sql,
                 (
                     tenant_id,
-                    model_id,
+                    project_id,
                     filters.entity_type,
                     filters.entity_type,
                     filters.source_system_id,
@@ -550,7 +561,7 @@ class DatabaseMappingReviewService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         record_id: int,
         sql: LiteralString,
     ) -> dict[str, Any] | None:
@@ -562,6 +573,6 @@ class DatabaseMappingReviewService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
-            return await transaction.fetch_one(sql, (tenant_id, model_id, record_id))
+            return await transaction.fetch_one(sql, (tenant_id, project_id, record_id))

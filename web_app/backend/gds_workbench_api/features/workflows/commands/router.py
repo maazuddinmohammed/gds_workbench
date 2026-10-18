@@ -23,14 +23,14 @@ def create_workflow_commands_router(
 ) -> APIRouter:
     authenticate = principal_dependency(identity_provider)
     router = APIRouter(
-        prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/runs",
+        prefix="/api/v1/tenants/{tenant_id}/projects/{project_id}/runs",
         tags=["workflow-runs"],
     )
 
     async def create_run(
         response: Response,
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         command: CreateWorkflowRunRequest,
         idempotency_key: Annotated[UUID, Header(alias="Idempotency-Key")],
         *,
@@ -39,7 +39,7 @@ def create_workflow_commands_router(
         result = await service.create_run(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             correlation_id=idempotency_key,
             command=command,
         )
@@ -56,7 +56,7 @@ def create_workflow_commands_router(
 
     async def cancel_run(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         workflow_run_id: Annotated[int, Path(gt=0)],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -64,7 +64,7 @@ def create_workflow_commands_router(
         return await service.cancel_run(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             workflow_run_id=workflow_run_id,
         )
 

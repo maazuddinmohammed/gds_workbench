@@ -1,14 +1,14 @@
-import { DdlExportButton } from "../model_targets/DdlExportButton";
+import { DdlExportButton } from "../project_targets/DdlExportButton";
 import { WorkflowCommandCenter, WorkflowCommandTools, WorkflowMenu } from "../workflows/WorkflowCommandCenter";
-import { ModelLayerActions } from "../model_record_review/ModelLayerActions";
+import { ProjectLayerActions } from "../project_record_review/ProjectLayerActions";
 import { useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError } from "../../core/http";
-import type { ModelDetail } from "../models/api";
+import type { ProjectDetail } from "../projects/api";
 import { conceptualQueryKeys, type ConceptualApi, type ConceptualFilters } from "./api";
 import { ConceptualObjectsLedger, ConceptualRelationshipsLedger } from "./ConceptualLedgers";
-import { ModelRecordReview } from "../model_record_review/ModelRecordReview";
+import { ProjectRecordReview } from "../project_record_review/ProjectRecordReview";
 import { WorkflowRunDialog } from "../workflows/WorkflowRunDialog";
 import { WorkflowRunMonitor } from "../workflows/WorkflowRunMonitor";
 
@@ -17,13 +17,13 @@ type ConceptualView = "objects" | "relationships";
 export function ConceptualScreen({
   api,
   tenantId,
-  model,
+  project,
   hasTenantLock,
   canDelete = false,
 }: {
   api: ConceptualApi;
   tenantId: number;
-  model: ModelDetail;
+  project: ProjectDetail;
   hasTenantLock: boolean;
   canDelete?: boolean;
 }) {
@@ -35,10 +35,10 @@ export function ConceptualScreen({
   const [objectFilters, setObjectFilters] = useState<ConceptualFilters>({ status: "active" });
   const [relationshipFilters, setRelationshipFilters] = useState<ConceptualFilters>({ status: "active" });
   const objectsQuery = useInfiniteQuery({
-    queryKey: conceptualQueryKeys.objects(tenantId, model.model_id, objectFilters),
+    queryKey: conceptualQueryKeys.objects(tenantId, project.project_id, objectFilters),
     queryFn: ({ pageParam }) => api.listConceptualObjects(
       tenantId,
-      model.model_id,
+      project.project_id,
       objectFilters,
       200,
       pageParam,
@@ -50,12 +50,12 @@ export function ConceptualScreen({
   const relationshipsQuery = useInfiniteQuery({
     queryKey: conceptualQueryKeys.relationships(
       tenantId,
-      model.model_id,
+      project.project_id,
       relationshipFilters,
     ),
     queryFn: ({ pageParam }) => api.listConceptualRelationships(
       tenantId,
-      model.model_id,
+      project.project_id,
       relationshipFilters,
       200,
       pageParam,
@@ -70,25 +70,25 @@ export function ConceptualScreen({
     setSelectedIds(new Set());
     await Promise.all([
       view === "objects" ? objectsQuery.refetch() : relationshipsQuery.refetch(),
-      queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
+      queryClient.invalidateQueries({ queryKey: ["project", tenantId, project.project_id] }),
       queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
     ]);
   };
   const invalidateLedgers = async () => {
     await Promise.all([
       queryClient.invalidateQueries({
-        queryKey: ["conceptual-objects", tenantId, model.model_id],
+        queryKey: ["conceptual-objects", tenantId, project.project_id],
       }),
       queryClient.invalidateQueries({
-        queryKey: ["conceptual-relationships", tenantId, model.model_id],
+        queryKey: ["conceptual-relationships", tenantId, project.project_id],
       }),
     ]);
   };
 
   return (
     <WorkflowCommandCenter filterCount={Object.values(view === "objects" ? objectFilters : relationshipFilters).filter(Boolean).length} className="conceptual-page page-enter">
-      <header className="workflow-commandbar model-section-toolbar conceptual-commandbar">
-        <h1 className="model-section-title sr-only">Conceptual</h1>
+      <header className="workflow-commandbar project-section-toolbar conceptual-commandbar">
+        <h1 className="project-section-title sr-only">Conceptual</h1>
         <div className="workflow-command-context">
           <nav className="workflow-tabs" aria-label="Conceptual views">
             <button
@@ -119,8 +119,8 @@ export function ConceptualScreen({
         <div className="workflow-command-actions">
           <WorkflowCommandTools />
           <WorkflowMenu>
-          <ModelLayerActions api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} hasTenantLock={hasTenantLock} canDelete={canDelete} layer="conceptual" onApplied={() => setSelectedIds(new Set())} />
-          <DdlExportButton api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} layer="conceptual" entityIds={view === "objects" && selectedIds.size ? [...selectedIds] : undefined} />
+          <ProjectLayerActions api={api} tenantId={tenantId} projectId={project.project_id} projectRevision={project.project_revision} hasTenantLock={hasTenantLock} canDelete={canDelete} layer="conceptual" onApplied={() => setSelectedIds(new Set())} />
+          <DdlExportButton api={api} tenantId={tenantId} projectId={project.project_id} projectRevision={project.project_revision} layer="conceptual" entityIds={view === "objects" && selectedIds.size ? [...selectedIds] : undefined} />
           </WorkflowMenu>
           <button className="button button-secondary button-small" type="button" disabled={activeReviewQuery.isFetching} onClick={() => void refresh()}>
             {activeReviewQuery.isFetching ? "Refreshing…" : "Refresh"}
@@ -140,30 +140,30 @@ export function ConceptualScreen({
       <WorkflowRunMonitor
         api={api}
         tenantId={tenantId}
-        modelId={model.model_id}
-        modelRevision={model.model_revision}
+        projectId={project.project_id}
+        projectRevision={project.project_revision}
         workflow="conceptual"
         hasTenantLock={hasTenantLock}
         focusRunId={recentRunId}
         onApplied={invalidateLedgers}
       />
 
-      <ModelRecordReview
+      <ProjectRecordReview
         actions={canDelete ? ["lock", "unlock", "deactivate", "reactivate", "delete"] : ["lock", "unlock", "deactivate", "reactivate"]}
-        api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision}
+        api={api} tenantId={tenantId} projectId={project.project_id} projectRevision={project.project_revision}
         dataset={view === "objects" ? "conceptual_object" : "conceptual_relationship"}
         selectedIds={selectedIds} hasTenantLock={hasTenantLock}
         disabled={(view === "objects" ? objectsQuery : relationshipsQuery).isPending
           || (view === "objects" ? objectsQuery : relationshipsQuery).isError
           || (view === "objects" ? objectsQuery : relationshipsQuery).data?.pages.some(
-            (page) => page.model_revision !== model.model_revision,
+            (page) => page.project_revision !== project.project_revision,
           ) === true}
         onApplied={async () => {
           setSelectedIds(new Set());
           await Promise.all([
             invalidateLedgers(),
-            ...["conceptual-object", "conceptual-relationship", "model", "model-overview"].map(
-              (key) => queryClient.invalidateQueries({ queryKey: [key, tenantId, model.model_id] }),
+            ...["conceptual-object", "conceptual-relationship", "project", "project-overview"].map(
+              (key) => queryClient.invalidateQueries({ queryKey: [key, tenantId, project.project_id] }),
             ),
             queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
           ]);
@@ -173,7 +173,7 @@ export function ConceptualScreen({
       {view === "objects" ? (
         <ConceptualObjectsLedger
           tenantId={tenantId}
-          modelId={model.model_id}
+          projectId={project.project_id}
           items={objectsQuery.data?.pages.flatMap((page) => page.items) ?? []}
           filters={objectFilters}
           state={{
@@ -181,7 +181,7 @@ export function ConceptualScreen({
             isError: objectsQuery.isError,
             isDenied: objectsQuery.error instanceof ApiError && objectsQuery.error.status === 403,
             revisionMismatch: objectsQuery.data !== undefined
-              && objectsQuery.data.pages.some((page) => page.model_revision !== model.model_revision),
+              && objectsQuery.data.pages.some((page) => page.project_revision !== project.project_revision),
             hasMore: objectsQuery.hasNextPage,
             isLoadingMore: objectsQuery.isFetchingNextPage,
           }}
@@ -193,7 +193,7 @@ export function ConceptualScreen({
       ) : (
         <ConceptualRelationshipsLedger
           tenantId={tenantId}
-          modelId={model.model_id}
+          projectId={project.project_id}
           items={relationshipsQuery.data?.pages.flatMap((page) => page.items) ?? []}
           filters={relationshipFilters}
           state={{
@@ -203,7 +203,7 @@ export function ConceptualScreen({
               && relationshipsQuery.error.status === 403,
             revisionMismatch: relationshipsQuery.data !== undefined
               && relationshipsQuery.data.pages.some(
-                (page) => page.model_revision !== model.model_revision,
+                (page) => page.project_revision !== project.project_revision,
               ),
             hasMore: relationshipsQuery.hasNextPage,
             isLoadingMore: relationshipsQuery.isFetchingNextPage,
@@ -218,21 +218,21 @@ export function ConceptualScreen({
         <WorkflowRunDialog
           api={api}
           tenantId={tenantId}
-          model={model}
+          project={project}
           kind="inference"
           workflow="conceptual"
-          executeCreated={(workflowRunId, executionMode, expectedModelRevision) => api.executeConceptualRun(
+          executeCreated={(workflowRunId, executionMode, expectedProjectRevision) => api.executeConceptualRun(
             tenantId,
-            model.model_id,
+            project.project_id,
             workflowRunId,
             executionMode,
-            expectedModelRevision,
+            expectedProjectRevision,
           ).then(() => undefined)}
           onClose={() => setRunDialogOpen(false)}
           onCreated={async (workflowRunId) => {
             setRecentRunId(workflowRunId);
             await Promise.all([
-              queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
+              queryClient.invalidateQueries({ queryKey: ["project", tenantId, project.project_id] }),
               queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
             ]);
           }}

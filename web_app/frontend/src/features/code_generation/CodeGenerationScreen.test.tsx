@@ -1,27 +1,112 @@
-import { withRecordReview } from "../../test/modelRecordReview";
+import { withRecordReview } from "../../test/projectRecordReview";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryHistory } from "@tanstack/react-router";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createApiClient } from "../../api";
 import { WorkbenchApp, createWorkbenchRouter } from "../../app";
 
+afterEach(() => vi.restoreAllMocks());
+
 describe("Code Generation journey", () => {
-  it("keeps the legacy Model picker bookmark usable", async () => {
+  it("lets a viewer export the entire layer across filters and pages, then change layers", async () => {
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:sql");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const clicked = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const base = codeGenerationFetchStub({ role: "viewer", hasLock: false, hasNextPage: true });
+    const exports: unknown[] = [];
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input).endsWith("/code-generation/downloads/all.zip")) {
+        exports.push(JSON.parse(String(init?.body)));
+        return new Response("zip fixture", { headers: {
+          "content-type": "application/zip", "content-disposition": 'attachment; filename="sql.zip"',
+        } });
+      }
+      return base(input, init);
+    });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
+    })} />);
+    await screen.findByRole("table", { name: "Code Generation target Entities" });
+    expect(screen.getByRole("button", { name: "Generate SQL" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: /^Filters/ }));
+    await user.selectOptions(screen.getByLabelText("Status"), "stale");
+    await user.click(screen.getByRole("button", { name: "Apply filters" }));
+    await user.click(screen.getByText("More", { selector: "summary" }));
+    const download = screen.getByRole("button", { name: "Download all SQL" });
+    expect(download).toBeEnabled();
+    expect(download).toHaveAttribute("title", "All active SQL files for this layer, including stale files; ignores table filters.");
+    await user.click(download);
+    await waitFor(() => expect(clicked).toHaveBeenCalledTimes(1));
+    expect(exports).toEqual([{ entity_type: "logical_entity", expected_project_revision: 18 }]);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:sql");
+
+    await user.click(within(screen.getByRole("navigation", { name: "Code generation layer" })).getByRole("link", { name: "Dimensional" }));
+    await screen.findByRole("table", { name: "Code Generation target Entities" });
+    await user.click(screen.getByText("More", { selector: "summary" }));
+    await user.click(screen.getByRole("button", { name: "Download all SQL" }));
+    await waitFor(() => expect(clicked).toHaveBeenCalledTimes(2));
+    expect(exports[1]).toEqual({ entity_type: "dimensional_entity", expected_project_revision: 18 });
+  });
+
+  it("keeps export errors visible after More closes and retries with the refreshed revision", async () => {
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:sql");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const clicked = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const base = codeGenerationFetchStub();
+    let revision = 18;
+    const exports: unknown[] = [];
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input) === "/api/v1/tenants/7/projects/18") return jsonResponse({ ...projectDetail, project_revision: revision });
+      if (String(input).endsWith("/code-generation/downloads/all.zip")) {
+        exports.push(JSON.parse(String(init?.body)));
+        if (exports.length === 1) {
+          revision = 19;
+          return jsonResponse({ error: { code: "project_revision_conflict", detail: "untrusted server detail" } }, 409);
+        }
+        return new Response("zip fixture", { headers: {
+          "content-type": "application/zip", "content-disposition": 'attachment; filename="sql.zip"',
+        } });
+      }
+      return base(input, init);
+    });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
+    })} />);
+    await screen.findByRole("table", { name: "Code Generation target Entities" });
+    await user.click(screen.getByText("More", { selector: "summary" }));
+    await user.click(screen.getByRole("button", { name: "Download all SQL" }));
+    const error = await screen.findByRole("alert");
+    await user.keyboard("{Escape}");
+    expect(error.closest("details")).toBeNull();
+    expect(error).toBeVisible();
+    expect(error).toHaveTextContent("The Project changed. Refresh, then retry the export.");
+    expect(screen.queryByText("untrusted server detail")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    await screen.findByText("Revision 19");
+    await user.click(within(error).getByRole("button", { name: "Retry export" }));
+    await waitFor(() => expect(clicked).toHaveBeenCalledOnce());
+    expect(exports[1]).toEqual({ entity_type: "logical_entity", expected_project_revision: 19 });
+    expect(screen.queryByText("The Project changed. Refresh, then retry the export.")).not.toBeInTheDocument();
+  });
+
+  it("keeps the legacy Project picker bookmark usable", async () => {
     const fetcher = codeGenerationFetchStub();
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation"] }),
     })} />);
 
-    const ledger = await screen.findByRole("table", { name: "Models for Code Generation" });
+    const ledger = await screen.findByRole("table", { name: "Projects for Code Generation" });
     expect(within(ledger).getByText("Customer 360")).toBeVisible();
     expect(within(ledger).getByRole("link", {
       name: "Open Customer 360 Code Generation",
-    })).toHaveAttribute("href", "/tenants/7/code-generation/models/18");
+    })).toHaveAttribute("href", "/tenants/7/code-generation/projects/18");
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models?status=active&page_size=200",
+      "/api/v1/tenants/7/projects?status=active&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
   });
@@ -31,7 +116,7 @@ describe("Code Generation journey", () => {
     const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     const ledger = await screen.findByRole("table", { name: "Code Generation target Entities" });
     expect(within(ledger).getAllByRole("columnheader").slice(1, 3).map((header) => header.textContent)).toEqual(["Schema", "Entity name"]);
@@ -56,7 +141,7 @@ describe("Code Generation journey", () => {
     expect(within(ledger).getByText("order_mart", { exact: true })).toBeVisible();
     await user.click(within(screen.getByRole("navigation", { name: "Code generation layer" })).getByRole("link", { name: "Dimensional" }));
     await waitFor(() => expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/code-generation/targets?entity_type=dimensional_entity&page_size=200",
+      "/api/v1/tenants/7/projects/18/code-generation/targets?entity_type=dimensional_entity&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     ));
     expect(within(screen.getByRole("navigation", { name: "Code generation layer" })).getByRole("link", { name: "Dimensional" })).toHaveAttribute("aria-current", "page");
@@ -66,18 +151,28 @@ describe("Code Generation journey", () => {
   });
 
   it("reviews stored SQL and essential context on a dedicated full page", async () => {
+    const user = userEvent.setup();
     const { container } = render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(codeGenerationFetchStub()),
       history: createMemoryHistory({
-        initialEntries: ["/tenants/7/code-generation/models/18/artifacts/501"],
+        initialEntries: ["/tenants/7/code-generation/projects/18/artifacts/501"],
       }),
     })} />);
 
     const heading = await screen.findByRole("heading", { name: "customer.sql" });
     expect(heading).toHaveFocus();
+    const header = within(heading.closest("header")!);
+    expect(header.getByRole("link", { name: "Download .sql" })).toBeVisible();
+    expect(header.getByRole("button", { name: "Regenerate SQL" })).toBeVisible();
     expect(screen.getByLabelText("Stored SQL for silver_nwa.customer")).toBeVisible();
-    expect(within(screen.getByLabelText("SQL context")).getByText("CRM")).toBeVisible();
-    await userEvent.setup().click(screen.getByRole("heading", { name: "Source mappings" }));
+    const context = within(screen.getByLabelText("SQL context"));
+    expect(screen.getByLabelText("SQL context")).not.toBeVisible();
+    const sqlDetails = screen.getByRole("heading", { name: "SQL details" }).closest("summary")!;
+    sqlDetails.focus();
+    expect(sqlDetails).toHaveFocus();
+    await user.click(sqlDetails);
+    for (const value of ["silver_nwa", "customer", "CRM", "Active", "Logical"]) expect(context.getByText(value, { exact: true })).toBeVisible();
+    await user.click(screen.getByRole("heading", { name: "Source mappings" }));
     expect(screen.getByRole("table", { name: "Applied Mapping supports" })).toBeVisible();
     expect(screen.getByText("Customer source")).toBeVisible();
     expect(screen.queryByText("Standard Databricks SQL (databricks.standard)")).not.toBeInTheDocument();
@@ -88,14 +183,14 @@ describe("Code Generation journey", () => {
     );
     expect(container.querySelector("script")).toBeNull();
     expect(screen.getAllByRole("heading", { level: 2 }).map((item) => item.textContent)).toEqual([
-      "Stored SQL", "Source mappings",
+      "Stored SQL", "SQL details", "Source mappings",
     ]);
     expect(screen.getByRole("link", { name: "Show mapping" })).toHaveAttribute(
-      "href", "/tenants/7/mapping/models/18/objects/81",
+      "href", "/tenants/7/mapping/projects/18/objects/81",
     );
     expect(screen.getByRole("link", { name: "Download .sql" })).toHaveAttribute(
       "href",
-      "/api/v1/tenants/7/models/18/code-generation/artifacts/501/download.sql",
+      "/api/v1/tenants/7/projects/18/code-generation/artifacts/501/download.sql",
     );
   });
 
@@ -103,7 +198,7 @@ describe("Code Generation journey", () => {
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(codeGenerationFetchStub({ nullableProvenance: true })),
       history: createMemoryHistory({
-        initialEntries: ["/tenants/7/code-generation/models/18/artifacts/501"],
+        initialEntries: ["/tenants/7/code-generation/projects/18/artifacts/501"],
       }),
     })} />);
 
@@ -131,7 +226,7 @@ describe("Code Generation journey", () => {
       ], mapping_support_count: 2 });
     });
     render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18/artifacts/501"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18/artifacts/501"] }),
     })} />);
     await screen.findByRole("heading", { name: "customer.sql" });
     expect(screen.getByText((_, element) => element?.className === "code-mapping-warning" && element.textContent === message)).toBeVisible();
@@ -144,7 +239,7 @@ describe("Code Generation journey", () => {
   it.each([false, true])("keeps stored SQL available with stale or bounded supports (%s)", async (truncated) => {
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(codeGenerationFetchStub({ stale: !truncated, truncated })),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18/artifacts/501"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18/artifacts/501"] }),
     })} />);
     await screen.findByRole("heading", { name: "customer.sql" });
     expect(screen.getByLabelText("Stored SQL for silver_nwa.customer").textContent).toBe(generatedSqlDetail.generated_sql);
@@ -153,7 +248,11 @@ describe("Code Generation journey", () => {
       expect(screen.getByText("Showing 1 of 3 Mapping supports.")).toBeVisible();
     } else {
       expect(screen.getByText("Stale")).toBeVisible();
+      const header = screen.getByRole("heading", { name: "customer.sql" }).closest("header")!;
+      expect(within(header).getByRole("status")).toHaveTextContent("Generation context changed. Review this SQL before reuse.");
       expect(screen.getByText("Current Mapping support is unavailable for this stale artifact.")).toBeVisible();
+      expect(screen.getByLabelText("SQL context")).not.toBeVisible();
+      await userEvent.setup().click(screen.getByRole("heading", { name: "SQL details" }));
       expect(within(screen.getByLabelText("SQL context")).getByText("Unavailable")).toBeVisible();
     }
   });
@@ -161,7 +260,7 @@ describe("Code Generation journey", () => {
   it("gates generation, then explicitly creates and executes selected and all coverage", async () => {
     const unlocked = render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(codeGenerationFetchStub({ hasLock: false })),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     await screen.findByRole("table", { name: "Code Generation target Entities" });
     expect(screen.getByRole("button", { name: "Generate SQL" })).toBeDisabled();
@@ -171,7 +270,7 @@ describe("Code Generation journey", () => {
 
     const denied = render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(codeGenerationFetchStub({ role: "developer" })),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     await screen.findByRole("table", { name: "Code Generation target Entities" });
     expect(screen.getByRole("button", { name: "Generate SQL" })).toBeDisabled();
@@ -182,7 +281,7 @@ describe("Code Generation journey", () => {
     const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     await screen.findByRole("table", { name: "Code Generation target Entities" });
     await user.click(screen.getByRole("checkbox", { name: "Select silver_nwa.customer" }));
@@ -195,8 +294,8 @@ describe("Code Generation journey", () => {
     );
     const selectedCreate = createCalls(fetcher)[0];
     expect(JSON.parse(String(selectedCreate?.[1]?.body))).toEqual({
-      expected_model_revision: 18,
-      model_workflow: "code_generation",
+      expected_project_revision: 18,
+      project_workflow: "code_generation",
       workflow_execution_mode: null,
       selected_object_ids: [], selected_entity_ids: [701],
       modeled_entity_type: "logical_entity",
@@ -215,10 +314,10 @@ describe("Code Generation journey", () => {
       code_generation_file_layout: "per_system",
     });
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/code-generation/runs/1151/execute",
+      "/api/v1/tenants/7/projects/18/code-generation/runs/1151/execute",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ expected_model_revision: 18 }),
+        body: JSON.stringify({ expected_project_revision: 18 }),
       }),
     );
 
@@ -254,7 +353,7 @@ describe("Code Generation journey", () => {
     });
     const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     await user.click(await screen.findByRole("button", { name: "Generate SQL" }));
     const dialog = within(await screen.findByRole("dialog", { name: "Generate SQL" }));
@@ -293,7 +392,7 @@ describe("Code Generation journey", () => {
     });
     const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     await user.click(await screen.findByRole("button", { name: "Generate SQL" }));
     const dialog = within(await screen.findByRole("dialog", { name: "Generate SQL" }));
@@ -329,7 +428,7 @@ describe("Code Generation journey", () => {
     });
     const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     await user.click(await screen.findByRole("button", { name: "Generate SQL" }));
     const dialog = within(await screen.findByRole("dialog", { name: "Generate SQL" }));
@@ -356,7 +455,7 @@ describe("Code Generation journey", () => {
     });
     const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     await user.click(await screen.findByRole("button", { name: "Generate SQL" }));
     const dialog = await screen.findByRole("dialog", { name: "Generate SQL" });
@@ -382,7 +481,7 @@ describe("Code Generation journey", () => {
     const fetcher = codeGenerationFetchStub({ disjointSourceSystems: true });
     const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     await user.click(await screen.findByRole("checkbox", { name: "Select silver_nwa.customer" }));
     await user.click(screen.getByRole("button", { name: "Generate SQL" }));
@@ -402,7 +501,7 @@ describe("Code Generation journey", () => {
     const fetcher = codeGenerationFetchStub({ disjointSourceSystems: true });
     const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     await user.click(await screen.findByRole("button", { name: "Generate SQL" }));
     const dialog = within(await screen.findByRole("dialog", { name: "Generate SQL" }));
@@ -446,7 +545,7 @@ describe("Code Generation journey", () => {
     const success = codeGenerationFetchStub();
     let attempts = 0;
     const fetcher = vi.fn<typeof fetch>(async (input, init) => {
-      if (String(input) === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST" && ++attempts === 1) {
+      if (String(input) === "/api/v1/tenants/7/projects/18/runs" && init?.method === "POST" && ++attempts === 1) {
         if (failure === "network") throw new TypeError("Synthetic network failure");
         return jsonResponse({ error: { code: "unavailable" } }, 503);
       }
@@ -455,7 +554,7 @@ describe("Code Generation journey", () => {
     const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     await screen.findByRole("table", { name: "Code Generation target Entities" });
     await user.click(screen.getByRole("checkbox", { name: "Select silver_nwa.customer" }));
@@ -471,7 +570,7 @@ describe("Code Generation journey", () => {
     await user.click(submit);
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     const creates = fetcher.mock.calls.filter(([input, init]) =>
-      String(input) === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST");
+      String(input) === "/api/v1/tenants/7/projects/18/runs" && init?.method === "POST");
     expect(creates).toHaveLength(2);
     expect(creates[1]?.[1]?.body).toBe(creates[0]?.[1]?.body);
     const firstKey = new Headers(creates[0]?.[1]?.headers).get("Idempotency-Key");
@@ -485,12 +584,12 @@ describe("Code Generation journey", () => {
     ["code_system_unavailable", "A selected System no longer contributes to the selected Entities."],
     ["workflow_prompt_unavailable", "A published Code generation prompt is unavailable."],
     ["tenant_lock_required", "Acquire the Tenant Lock on Home before generating SQL."],
-    ["model_revision_conflict", "The Model changed. Close this dialog and refresh before generating SQL."],
+    ["project_revision_conflict", "The Project changed. Close this dialog and refresh before generating SQL."],
   ])("shows safe %s guidance and keeps the failed selection editable", async (code, message) => {
     const base = codeGenerationFetchStub();
     const rawMessage = "Synthetic provider diagnostics must not be rendered.";
     const fetcher = vi.fn<typeof fetch>(async (input, init) => {
-      if (String(input) === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST") {
+      if (String(input) === "/api/v1/tenants/7/projects/18/runs" && init?.method === "POST") {
         const response = jsonResponse({ error: { code, message: rawMessage,
           retryable: false, correlation_id: "synthetic-code-create-reference" } }, 400);
         response.headers.set("x-correlation-id", "synthetic-code-create-reference");
@@ -500,7 +599,7 @@ describe("Code Generation journey", () => {
     });
     const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     await screen.findByRole("table", { name: "Code Generation target Entities" });
     await user.click(screen.getByRole("checkbox", { name: "Select silver_nwa.customer" }));
@@ -526,7 +625,7 @@ describe("Code Generation journey", () => {
     const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     await screen.findByRole("table", { name: "Code Generation target Entities" });
 
@@ -545,7 +644,7 @@ describe("Code Generation journey", () => {
     await waitFor(() => {
       expect(createCalls(fetcher)).toHaveLength(1);
       expect(fetcher.mock.calls.filter(([input, init]) => (
-        String(input) === "/api/v1/tenants/7/models/18/code-generation/runs/1151/execute"
+        String(input) === "/api/v1/tenants/7/projects/18/code-generation/runs/1151/execute"
         && init?.method === "POST"
       ))).toHaveLength(2);
     });
@@ -556,7 +655,7 @@ describe("Code Generation journey", () => {
     const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     await screen.findByRole("table", { name: "Code Generation target Entities" });
 
@@ -575,14 +674,14 @@ describe("Code Generation journey", () => {
   it("keeps empty, denied, error, and revision-drift states explicit and redacted", async () => {
     const empty = render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(codeGenerationFetchStub({ empty: true })),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     expect(await screen.findByText("No eligible target Entities in this layer.")).toBeVisible();
     empty.unmount();
 
     const denied = render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(codeGenerationFetchStub({ denied: true })),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "You do not have permission to view Code Generation targets.",
@@ -590,17 +689,17 @@ describe("Code Generation journey", () => {
     denied.unmount();
 
     const drift = render(<WorkbenchApp router={createWorkbenchRouter({
-      api: createApiClient(codeGenerationFetchStub({ modelRevision: 19 })),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+      api: createApiClient(codeGenerationFetchStub({ projectRevision: 19 })),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The Model changed while Code Generation targets were loading.",
+      "The Project changed while Code Generation targets were loading.",
     );
     drift.unmount();
 
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(codeGenerationFetchStub({ error: true })),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Code Generation targets could not be loaded.",
@@ -615,7 +714,7 @@ function codeGenerationFetchStub(options: {
   empty?: boolean;
   denied?: boolean;
   error?: boolean;
-  modelRevision?: number;
+  projectRevision?: number;
   hasLock?: boolean;
   role?: string;
   executeConflictOnce?: boolean;
@@ -636,19 +735,19 @@ function codeGenerationFetchStub(options: {
         owned_by_current_principal: options.hasLock ?? true,
       },
     });
-    if (url === "/api/v1/tenants/7/models?status=active&page_size=200") {
-      return jsonResponse({ items: [modelLedger], next_cursor: null });
+    if (url === "/api/v1/tenants/7/projects?status=active&page_size=200") {
+      return jsonResponse({ items: [projectLedger], next_cursor: null });
     }
-    if (url === "/api/v1/tenants/7/models/18") return jsonResponse(modelDetail);
-    if (url.startsWith("/api/v1/tenants/7/models/18/code-generation/targets?")) {
+    if (url === "/api/v1/tenants/7/projects/18") return jsonResponse(projectDetail);
+    if (url.startsWith("/api/v1/tenants/7/projects/18/code-generation/targets?")) {
       if (options.denied) return jsonResponse({ error: { code: "authorization_denied" } }, 403);
       if (options.error) {
         return new Response("secret physical row", { status: 503, headers: { "content-type": "text/plain" } });
       }
       const nextPage = url.includes("cursor=targets-next");
       return jsonResponse({
-        model_id: 18,
-        model_revision: options.modelRevision ?? 18,
+        project_id: 18,
+        project_revision: options.projectRevision ?? 18,
         items: options.empty ? [] : options.disjointSourceSystems
           ? codeGenerationTargets.slice(0, 2).map((item, index) => ({ ...item, artifacts: [], artifact_count: 0,
             source_systems: [{ ...mappingSupport.source_system,
@@ -657,7 +756,7 @@ function codeGenerationFetchStub(options: {
         next_cursor: options.hasNextPage && !nextPage ? "targets-next" : null,
       });
     }
-    if (url === "/api/v1/tenants/7/models/18/code-generation/artifacts/501") {
+    if (url === "/api/v1/tenants/7/projects/18/code-generation/artifacts/501") {
       return jsonResponse({
         ...generatedSqlDetail,
         ...(options.nullableProvenance ? { generator: null } : {}),
@@ -666,10 +765,10 @@ function codeGenerationFetchStub(options: {
       });
     }
     if (url === "/api/v1/config/agent-capabilities") return jsonResponse(agentCapabilities);
-    if (url === "/api/v1/tenants/7/models/18/runs?workflow=code_generation&page_size=5") {
+    if (url === "/api/v1/tenants/7/projects/18/runs?workflow=code_generation&page_size=5") {
       return jsonResponse({ items: [], next_cursor: null });
     }
-    if (url === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST") {
+    if (url === "/api/v1/tenants/7/projects/18/runs" && init?.method === "POST") {
       return jsonResponse({
         created: true,
         workflow_run_id: 1151,
@@ -679,7 +778,7 @@ function codeGenerationFetchStub(options: {
         created_at: "2026-08-24T11:00:00Z",
       }, 201);
     }
-    if (url === "/api/v1/tenants/7/models/18/code-generation/runs/1151/execute") {
+    if (url === "/api/v1/tenants/7/projects/18/code-generation/runs/1151/execute") {
       executeAttempts += 1;
       if (options.executePending) return new Promise<Response>(() => undefined);
       if (options.executeConflictOnce && executeAttempts === 1) {
@@ -689,7 +788,7 @@ function codeGenerationFetchStub(options: {
         changed: true,
         workflow_run_id: 1151,
         workflow_run_state: "running",
-        model_revision: 18,
+        project_revision: 18,
       }, 202);
     }
     return new Response(null, { status: 404 });
@@ -699,7 +798,7 @@ function codeGenerationFetchStub(options: {
 
 function createCalls(fetcher: ReturnType<typeof vi.fn<typeof fetch>>) {
   return fetcher.mock.calls.filter(([input, init]) => (
-    String(input) === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST"
+    String(input) === "/api/v1/tenants/7/projects/18/runs" && init?.method === "POST"
   ));
 }
 
@@ -731,19 +830,19 @@ const tenantHome = {
   systems: [],
 };
 
-const modelLedger = {
-  model_id: 18,
-  model_name: "Customer 360",
-  model_description: "Cross-system customer domain",
-  model_revision: 18,
-  model_input_scope_object_count: 25,
+const projectLedger = {
+  project_id: 18,
+  project_name: "Customer 360",
+  project_description: "Cross-system customer domain",
+  project_revision: 18,
+  project_input_scope_object_count: 25,
   latest_workflow: "code_generation",
   latest_run_status: "completed",
   updated_at: "2026-08-24T10:00:00Z",
 };
 
-const modelDetail = {
-  ...modelLedger,
+const projectDetail = {
+  ...projectLedger,
   tenant_id: 7,
   logical_schemas: [], dimensional_schemas: [], silver_model_naming_instructions: null,
   silver_model_audit_columns_template: null,
@@ -814,7 +913,7 @@ function codeGenerationTarget(
 const generatedSqlDetail = {
   generated_sql_artifact_id: 501,
   artifact_name: "customer.sql",
-  model_id: 18,
+  project_id: 18,
   target: targetObject,
   entity_type: "logical_entity",
   source_systems: [mappingSupport.source_system],
@@ -858,21 +957,21 @@ const agentCapabilities = {
 
 it("finds and reactivates inactive Code without an eligible generation target", async () => {
   const { fetcher, commands } = withRecordReview(codeGenerationFetchStub({ empty: true }), {
-    model_id: 18, model_revision: 18, dataset: "generated_code", next_page: null,
+    project_id: 18, project_revision: 18, dataset: "generated_code", next_page: null,
     items: [{ record_id: 501, label: "Customer · customer.sql", status: "inactive", is_locked: false }],
   });
   render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
-    history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+    history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
   })} />);
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "SQL files" }));
   const table = await screen.findByRole("table", { name: "SQL files" });
   expect(within(table).getByText("inactive")).toBeVisible();
-  expect(within(table).getByRole("link", { name: "Show SQL details" })).toHaveAttribute("href", "/tenants/7/code-generation/models/18/artifacts/501?layer=logical");
+  expect(within(table).getByRole("link", { name: "Show SQL details" })).toHaveAttribute("href", "/tenants/7/code-generation/projects/18/artifacts/501?layer=logical");
   await user.click(screen.getByRole("checkbox", { name: "Select SQL files 501" }));
   await user.click(screen.getByRole("button", { name: "Activate selected" }));
   await user.click(await screen.findByRole("button", { name: "Apply this change" }));
-  expect(commands[0]).toEqual({ dataset: "generated_code", record_ids: [501], action: "reactivate", expected_model_revision: 18 });
+  expect(commands[0]).toEqual({ dataset: "generated_code", record_ids: [501], action: "reactivate", expected_project_revision: 18 });
 });
 
 it.each(["Entities", "SQL files"] as const)("keeps Dimensional context through %s SQL details and back into Mapping", async (view) => {
@@ -880,7 +979,7 @@ it.each(["Entities", "SQL files"] as const)("keeps Dimensional context through %
   const { fetcher } = withRecordReview(vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input);
     if (url.includes("/code-generation/targets?")) return jsonResponse({
-      model_id: 18, model_revision: 18, next_cursor: null,
+      project_id: 18, project_revision: 18, next_cursor: null,
       items: [{ ...codeGenerationTargets[0], entity_type: "dimensional_entity",
         target: { ...targetObject, entity_type: "dimensional_entity" } }],
     });
@@ -888,15 +987,15 @@ it.each(["Entities", "SQL files"] as const)("keeps Dimensional context through %
       ...generatedSqlDetail, entity_type: "dimensional_entity",
       target: { ...targetObject, entity_type: "dimensional_entity" },
     });
-    if (url.includes("/mapping/objects?")) return jsonResponse({ model_id: 18, model_revision: 18, items: [], next_cursor: null });
+    if (url.includes("/mapping/objects?")) return jsonResponse({ project_id: 18, project_revision: 18, items: [], next_cursor: null });
     if (url.includes("/runs?")) return jsonResponse({ items: [], next_cursor: null });
     return base(input, init);
   }), {
-    model_id: 18, model_revision: 18, dataset: "generated_code", next_page: null,
+    project_id: 18, project_revision: 18, dataset: "generated_code", next_page: null,
     items: [{ record_id: 501, label: "Customer · customer.sql", status: "active", is_locked: false }],
   });
   const router = createWorkbenchRouter({ api: createApiClient(fetcher),
-    history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18?layer=dimensional"] }) });
+    history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18?layer=dimensional"] }) });
   render(<WorkbenchApp router={router} />);
   const user = userEvent.setup();
   if (view === "SQL files") {
@@ -907,10 +1006,10 @@ it.each(["Entities", "SQL files"] as const)("keeps Dimensional context through %
   }
   await screen.findByRole("heading", { name: "customer.sql", level: 1 });
   expect(router.state.location.search).toEqual({ layer: "dimensional" });
-  await user.click(within(screen.getByRole("navigation", { name: "Model sections" })).getByRole("link", { name: "Mapping" }));
+  await user.click(within(screen.getByRole("navigation", { name: "Project sections" })).getByRole("link", { name: "Mapping" }));
   await screen.findByText("No Object Mappings match these filters.");
   expect(router.state.location.search).toEqual({ layer: "dimensional" });
   expect(fetcher).toHaveBeenCalledWith(
-    "/api/v1/tenants/7/models/18/mapping/objects?entity_type=dimensional_entity&page_size=200", expect.anything(),
+    "/api/v1/tenants/7/projects/18/mapping/objects?entity_type=dimensional_entity&page_size=200", expect.anything(),
   );
 });

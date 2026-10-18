@@ -8,8 +8,8 @@ import type { CreateWorkflowRunCommand, WorkflowRunCommandResult, WorkflowsApi }
 import { useWorkflowRunSubmission } from "./useWorkflowRunSubmission";
 
 const command: CreateWorkflowRunCommand = {
-  expected_model_revision: 18,
-  model_workflow: "mapping",
+  expected_project_revision: 18,
+  project_workflow: "mapping",
   workflow_execution_mode: "tool_assisted",
   selected_object_ids: [701],
   requested_batch_id: null,
@@ -33,7 +33,7 @@ describe("Workflow Run submission", () => {
       .mockResolvedValue(created);
     const execute = vi.fn(async () => undefined);
     const onSuccess = vi.fn(async () => undefined);
-    const { result } = mount({ api: { createWorkflowRun }, tenantId: 7, modelId: 18, execute, onSuccess });
+    const { result } = mount({ api: { createWorkflowRun }, tenantId: 7, projectId: 18, execute, onSuccess });
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
       await act(async () => {
@@ -57,7 +57,7 @@ describe("Workflow Run submission", () => {
     const createWorkflowRun = vi.fn<WorkflowsApi["createWorkflowRun"]>().mockResolvedValue(created);
     const execute = vi.fn(async (_id: number, _command: CreateWorkflowRunCommand) => undefined)
       .mockRejectedValueOnce(new ApiError(409, "tenant_workflow_conflict", null));
-    const options = { api: { createWorkflowRun }, tenantId: 7, modelId: 18, execute, onSuccess: vi.fn(async () => undefined) };
+    const options = { api: { createWorkflowRun }, tenantId: 7, projectId: 18, execute, onSuccess: vi.fn(async () => undefined) };
     const { result, rerender } = mount(options);
     const original = structuredClone(command);
     await act(async () => {
@@ -67,7 +67,7 @@ describe("Workflow Run submission", () => {
     expect(options.onSuccess).not.toHaveBeenCalled();
 
     original.workflow_execution_mode = "one_shot";
-    original.expected_model_revision = 19;
+    original.expected_project_revision = 19;
     original.selected_object_ids.push(702);
     const nextExecute = vi.fn(async () => undefined);
     rerender({ ...options, execute: nextExecute });
@@ -90,7 +90,7 @@ describe("Workflow Run submission", () => {
     const onCreated = vi.fn((_workflowRunId: number) => successGate);
     const close = vi.fn();
     const { result } = mount({
-      api: { createWorkflowRun }, tenantId: 7, modelId: 18, execute,
+      api: { createWorkflowRun }, tenantId: 7, projectId: 18, execute,
       onSuccess: async (id) => { await onCreated(id); close(); },
     });
     act(() => result.current.mutation.mutate(command));
@@ -114,7 +114,7 @@ describe("Workflow Run submission", () => {
   it("preserves create-only callers without reporting a pending start", async () => {
     const createWorkflowRun = vi.fn<WorkflowsApi["createWorkflowRun"]>().mockResolvedValue(created);
     const onSuccess = vi.fn(async () => undefined);
-    const { result } = mount({ api: { createWorkflowRun }, tenantId: 7, modelId: 18, onSuccess });
+    const { result } = mount({ api: { createWorkflowRun }, tenantId: 7, projectId: 18, onSuccess });
     await act(async () => { await result.current.mutation.mutateAsync(command); });
     expect(createWorkflowRun).toHaveBeenCalledOnce();
     expect(result.current.pendingRunId).toBeNull();

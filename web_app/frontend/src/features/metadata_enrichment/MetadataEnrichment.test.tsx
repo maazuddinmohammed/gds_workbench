@@ -1,6 +1,6 @@
 import type { ReviewEnrichmentCommand } from "./api";
 import { MetadataEnrichmentScreen } from "./MetadataEnrichmentScreen";
-import type { ModelInputScopeDetail } from "../model_input_scope/api";
+import type { ProjectInputScopeDetail } from "../project_input_scope/api";
 import { ApiError } from "../../core/http";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
@@ -11,7 +11,7 @@ import { WorkbenchApp, createWorkbenchRouter } from "../../app";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ModelDetail } from "../models/api";
+import type { ProjectDetail } from "../projects/api";
 import { WorkflowRunDialog } from "../workflows/WorkflowRunDialog";
 import { WorkflowRunMonitor } from "../workflows/WorkflowRunMonitor";
 import { loadWorkflowScope, type AgentCapabilities, type WorkflowCreationApi, type WorkflowRunDetail, type WorkflowRunMonitorApi } from "../workflows/api";
@@ -19,11 +19,11 @@ import { createHttpRequest } from "../../core/http";
 import { createMetadataEnrichmentApi, type MetadataEnrichmentResult, type MetadataEnrichmentResultPage } from "./api";
 import { MetadataEnrichmentResults } from "./MetadataEnrichmentResults";
 
-const model: ModelDetail = {
+const project: ProjectDetail = {
   logical_coverage_threshold_percent: 70, dimensional_coverage_threshold_percent: 60,
   logical_enforce_coverage_threshold: false, dimensional_enforce_coverage_threshold: false,
-  model_id: 18, tenant_id: 7, model_name: "Customer 360", model_description: null,
-  model_revision: 18, model_input_scope_object_count: 2, logical_schemas: [], dimensional_schemas: [], silver_model_naming_instructions: null,
+  project_id: 18, tenant_id: 7, project_name: "Customer 360", project_description: null,
+  project_revision: 18, project_input_scope_object_count: 2, logical_schemas: [], dimensional_schemas: [], silver_model_naming_instructions: null,
   silver_model_audit_columns_template: null, gold_model_naming_instructions: null,
   gold_model_technical_columns_template: null, gold_model_audit_columns_template: null,
   default_agent_sdk_code: "sdk", default_agent_provider_code: "provider",
@@ -55,13 +55,13 @@ const run: WorkflowRunDetail = {
         context_limit_exceeded: 0, missing_usage: 0, unsupported_token_types: 0 } },
     history_incomplete: false,
   },
-  workflow_run_id: 1048, model_workflow: "metadata_enrichment", workflow_execution_mode: "one_shot",
+  workflow_run_id: 1048, project_workflow: "metadata_enrichment", workflow_execution_mode: "one_shot",
   modeled_entity_type: null, selected_scope_count: 2, requested_batch_id: null,
   workflow_run_state: "completed", actor_display_name: "Fixture user", created_at: "2026-09-05T12:00:00Z",
   started_at: "2026-09-05T12:00:01Z", completed_at: "2026-09-05T12:01:00Z", correlation_id: "fixture-correlation",
   agent_sdk_code: "sdk", agent_provider_code: "provider", agent_model_code: "one-shot",
   reasoning_effort_code: "default", max_turns: 8, validation_retry_count: 1, failure_code: null, failure_message: null,
-  model_change_set_id: null, model_change_set_status: null, draft_revision: null, candidate_digest: null, validated_at: null,
+  project_change_set_id: null, project_change_set_status: null, draft_revision: null, candidate_digest: null, validated_at: null,
 };
 const field = (overrides: Partial<MetadataEnrichmentResult> = {}): MetadataEnrichmentResult => ({
   result_id: 1, object_id: 501, attribute_id: null, object_schema: "crm", object_name: "customers",
@@ -69,7 +69,7 @@ const field = (overrides: Partial<MetadataEnrichmentResult> = {}): MetadataEnric
   evidence_method: "source_comment", applied_value: "Customer accounts.\nIncludes archived accounts.", sample_count: 0, ...overrides,
 });
 const page = (overrides: Partial<MetadataEnrichmentResultPage> = {}): MetadataEnrichmentResultPage => ({
-  tenant_id: 7, model_id: 18, model_revision: 18, workflow_run_id: 1048, workflow_run_state: "completed",
+  tenant_id: 7, project_id: 18, project_revision: 18, workflow_run_id: 1048, workflow_run_state: "completed",
   total_count: 3, result_count: 3, warning_count: 0, counts: { applied: 2, locked: 1 },
   applied_field_counts: { is_natural_key: 0, is_primary_key: 0, is_nullable: 0, is_pii: 0, object_description: 1, attribute_description: 0, attribute_inferred_data_type: 1 },
   results: [field(), field({ result_id: 2, attribute_id: 81, attribute_name: "customer_id", storage_type: "STRING", field_name: "attribute_inferred_data_type", evidence_method: "source_sample", applied_value: "BIGINT", sample_count: 50 }),
@@ -78,9 +78,9 @@ const page = (overrides: Partial<MetadataEnrichmentResultPage> = {}): MetadataEn
 });
 function creationApi() {
   return {
-    listModelInputScope: vi.fn<WorkflowCreationApi["listModelInputScope"]>(async () => ({ model_revision: 18, items: [scope(501), scope(502, "bronze")], next_cursor: null })),
+    listProjectInputScope: vi.fn<WorkflowCreationApi["listProjectInputScope"]>(async () => ({ project_revision: 18, items: [scope(501), scope(502, "bronze")], next_cursor: null })),
     readAgentCapabilities: vi.fn(async () => capabilities),
-    createWorkflowRun: vi.fn<WorkflowCreationApi["createWorkflowRun"]>(async () => ({ workflow_run_id: 1048, model_id: 18, model_revision: 18, workflow_run_state: "queued", correlation_id: "fixture", created: true, prompt_snapshot_count: 1, created_at: "2026-09-05T12:00:00Z" })),
+    createWorkflowRun: vi.fn<WorkflowCreationApi["createWorkflowRun"]>(async () => ({ workflow_run_id: 1048, project_id: 18, project_revision: 18, workflow_run_state: "queued", correlation_id: "fixture", created: true, prompt_snapshot_count: 1, created_at: "2026-09-05T12:00:00Z" })),
   };
 }
 function setup(children: ReactNode) {
@@ -91,21 +91,21 @@ function setup(children: ReactNode) {
 describe("Metadata enrichment scope and run creation", () => {
   it("loads both Source and Bronze pages with exact cursor and revision fences", async () => {
     const api = creationApi();
-    api.listModelInputScope.mockResolvedValueOnce({ model_revision: 18, items: [scope(501)], next_cursor: "opaque" })
-      .mockResolvedValueOnce({ model_revision: 18, items: [scope(502, "bronze")], next_cursor: null });
+    api.listProjectInputScope.mockResolvedValueOnce({ project_revision: 18, items: [scope(501)], next_cursor: "opaque" })
+      .mockResolvedValueOnce({ project_revision: 18, items: [scope(502, "bronze")], next_cursor: null });
     expect((await loadWorkflowScope(api, 7, 18, "enrichment")).items.map((item) => item.object_id)).toEqual([501, 502]);
-    expect(api.listModelInputScope.mock.calls).toEqual([[7, 18, {}, 200, undefined], [7, 18, {}, 200, "opaque"]]);
+    expect(api.listProjectInputScope.mock.calls).toEqual([[7, 18, {}, 200, undefined], [7, 18, {}, 200, "opaque"]]);
   });
   it.each(["revision", "cursor", "zone"])("rejects %s drift while loading scope", async (drift) => {
     const api = creationApi();
-    api.listModelInputScope.mockResolvedValueOnce({ model_revision: 18, items: [scope(501)], next_cursor: "opaque" })
-      .mockResolvedValue({ model_revision: drift === "revision" ? 19 : 18, items: [{ ...scope(502), zone_code: drift === "zone" ? "silver" : "bronze" }], next_cursor: drift === "cursor" ? "opaque" : null });
+    api.listProjectInputScope.mockResolvedValueOnce({ project_revision: 18, items: [scope(501)], next_cursor: "opaque" })
+      .mockResolvedValue({ project_revision: drift === "revision" ? 19 : 18, items: [{ ...scope(502), zone_code: drift === "zone" ? "silver" : "bronze" }], next_cursor: drift === "cursor" ? "opaque" : null });
     await expect(loadWorkflowScope(api, 7, 18, "enrichment")).rejects.toThrow();
   });
   it("restricts profiles to one shot and reuses create identity after an ambiguous response", async () => {
     const api = creationApi(); const user = userEvent.setup(); const onCreated = vi.fn(async () => undefined);
     api.createWorkflowRun.mockRejectedValueOnce(new TypeError("Network unavailable"));
-    setup(<WorkflowRunDialog api={api} tenantId={7} model={model} kind="inference" workflow="metadata_enrichment" onClose={vi.fn()} onCreated={onCreated} />);
+    setup(<WorkflowRunDialog api={api} tenantId={7} project={project} kind="inference" workflow="metadata_enrichment" onClose={vi.fn()} onCreated={onCreated} />);
     const submit = await screen.findByRole("button", { name: "Run object enrichment" });
     await waitFor(() => expect(submit).toBeEnabled());
     expect(screen.queryByLabelText("Execution mode")).not.toBeInTheDocument();
@@ -116,13 +116,13 @@ describe("Metadata enrichment scope and run creation", () => {
     await user.click(submit);
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(1048));
     const first = api.createWorkflowRun.mock.calls[0];
-    expect(first?.slice(0, 3)).toEqual([7, 18, { expected_model_revision: 18, model_workflow: "metadata_enrichment", workflow_execution_mode: "one_shot", selected_object_ids: [501, 502], requested_batch_id: null, agent: { sdk_code: "openai_agents_sdk", provider_code: "microsoft_foundry", model_code: "one-shot", reasoning_effort_code: "default", max_turns: 8, validation_retry_count: 1 }, prompt_overrides: {}, description_targets: [501, 502].map((object_id) => ({ object_id, attribute_id: null, expected_revision: "a".repeat(64) })) }]);
+    expect(first?.slice(0, 3)).toEqual([7, 18, { expected_project_revision: 18, project_workflow: "metadata_enrichment", workflow_execution_mode: "one_shot", selected_object_ids: [501, 502], requested_batch_id: null, agent: { sdk_code: "openai_agents_sdk", provider_code: "microsoft_foundry", model_code: "one-shot", reasoning_effort_code: "default", max_turns: 8, validation_retry_count: 1 }, prompt_overrides: {}, description_targets: [501, 502].map((object_id) => ({ object_id, attribute_id: null, expected_revision: "a".repeat(64) })) }]);
     expect(api.createWorkflowRun.mock.calls[1]).toEqual(first);
   });
   it("All includes only unlocked owned Objects and freezes each description revision", async () => {
     const api = creationApi(); const user = userEvent.setup();
-    api.listModelInputScope.mockResolvedValue({ model_revision: 18, items: [scope(501), { ...scope(502), is_locked: true }, { ...scope(503), source_tenant_id: 8 }], next_cursor: null });
-    setup(<WorkflowRunDialog api={api} tenantId={7} model={model} kind="inference" workflow="metadata_enrichment" onClose={vi.fn()} onCreated={vi.fn(async () => undefined)} />);
+    api.listProjectInputScope.mockResolvedValue({ project_revision: 18, items: [scope(501), { ...scope(502), is_locked: true }, { ...scope(503), source_tenant_id: 8 }], next_cursor: null });
+    setup(<WorkflowRunDialog api={api} tenantId={7} project={project} kind="inference" workflow="metadata_enrichment" onClose={vi.fn()} onCreated={vi.fn(async () => undefined)} />);
     const submit = await screen.findByRole("button", { name: "Run object enrichment" });
     await waitFor(() => expect(submit).toBeEnabled());
     expect(screen.getAllByRole("checkbox")).toHaveLength(2);
@@ -137,8 +137,8 @@ describe("Metadata enrichment scope and run creation", () => {
 
   it("does not turn a locked-only selection into an All run", async () => {
     const api = creationApi(); const user = userEvent.setup();
-    api.listModelInputScope.mockResolvedValue({ model_revision: 18, items: [scope(501), { ...scope(502), is_locked: true }], next_cursor: null });
-    setup(<WorkflowRunDialog api={api} tenantId={7} model={model} kind="inference" workflow="metadata_enrichment" initialSelectedIds={[502]} onClose={vi.fn()} onCreated={vi.fn(async () => undefined)} />);
+    api.listProjectInputScope.mockResolvedValue({ project_revision: 18, items: [scope(501), { ...scope(502), is_locked: true }], next_cursor: null });
+    setup(<WorkflowRunDialog api={api} tenantId={7} project={project} kind="inference" workflow="metadata_enrichment" initialSelectedIds={[502]} onClose={vi.fn()} onCreated={vi.fn(async () => undefined)} />);
     const submit = await screen.findByRole("button", { name: "Run object enrichment" });
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("one-shot"));
     expect(submit).toBeDisabled();
@@ -147,20 +147,20 @@ describe("Metadata enrichment scope and run creation", () => {
 
   it("submits every selected Object above the former 200 cap", async () => {
     const api = creationApi(); const user = userEvent.setup();
-    api.listModelInputScope.mockResolvedValue({ model_revision: 18, items: Array.from({ length: 201 }, (_, index) => scope(index + 1)), next_cursor: null });
-    setup(<WorkflowRunDialog api={api} tenantId={7} model={model} kind="inference" workflow="metadata_enrichment" onClose={vi.fn()} onCreated={vi.fn(async () => undefined)} />);
+    api.listProjectInputScope.mockResolvedValue({ project_revision: 18, items: Array.from({ length: 201 }, (_, index) => scope(index + 1)), next_cursor: null });
+    setup(<WorkflowRunDialog api={api} tenantId={7} project={project} kind="inference" workflow="metadata_enrichment" onClose={vi.fn()} onCreated={vi.fn(async () => undefined)} />);
     const submit = await screen.findByRole("button", { name: "Run object enrichment" });
     await waitFor(() => expect(submit).toBeEnabled());
     await user.click(submit);
     await waitFor(() => expect(api.createWorkflowRun).toHaveBeenCalledOnce());
     expect(api.createWorkflowRun.mock.calls[0]?.[2].selected_object_ids).toEqual(Array.from({ length: 201 }, (_, index) => index + 1));
   });
-  it("blocks a Model revision mismatch and traps keyboard focus", async () => {
+  it("blocks a Project revision mismatch and traps keyboard focus", async () => {
     const api = creationApi(); const user = userEvent.setup();
-    api.listModelInputScope.mockResolvedValue({ model_revision: 19, items: [scope(501)], next_cursor: null });
+    api.listProjectInputScope.mockResolvedValue({ project_revision: 19, items: [scope(501)], next_cursor: null });
     const onClose = vi.fn();
-    setup(<WorkflowRunDialog api={api} tenantId={7} model={model} kind="inference" workflow="metadata_enrichment" onClose={onClose} onCreated={vi.fn(async () => undefined)} />);
-    await screen.findByText(/The Model changed. Close this dialog/);
+    setup(<WorkflowRunDialog api={api} tenantId={7} project={project} kind="inference" workflow="metadata_enrichment" onClose={onClose} onCreated={vi.fn(async () => undefined)} />);
+    await screen.findByText(/The Project changed. Close this dialog/);
     expect(screen.getByRole("button", { name: "Run object enrichment" })).toBeDisabled();
     const close = screen.getByRole("button", { name: "Close Enrich objects" });
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("one-shot"));
@@ -171,8 +171,8 @@ describe("Metadata enrichment scope and run creation", () => {
   });
 });
 
-describe("Metadata enrichment Model screen", () => {
-  it.each([false, true])("creates then starts through the registered Model route (start retry: %s)", async (retryStart) => {
+describe("Metadata enrichment Project screen", () => {
+  it.each([false, true])("creates then starts through the registered Project route (start retry: %s)", async (retryStart) => {
     let current: WorkflowRunDetail | null = null;
     let startAttempts = 0;
     const respond = (value: unknown) => new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } });
@@ -181,28 +181,28 @@ describe("Metadata enrichment Model screen", () => {
       if (url.endsWith("/home")) return respond({ tenant: { tenant_id: 7, tenant_code: "NWA", tenant_name: "Northwind", tenant_description: null, tenant_visibility: "private", effective_role: "tenant_admin" },
         lock: { is_locked: true, owner_display_name: "Fixture user", owned_by_current_principal: true, purpose: "Test", acquired_at: "2026-09-05T12:00:00Z", expires_at: "2026-09-06T12:00:00Z" },
         lock_actions: { can_acquire: false, can_renew: true, can_release: true, can_override: false }, systems: [] });
-      if (url.endsWith("/models/18")) return respond(model);
-      if (url.includes("/metadata-enrichment/objects?")) return respond({ model_revision: 18, items: [scope(501), scope(502, "bronze")], next_cursor: null });
+      if (url.endsWith("/projects/18")) return respond(project);
+      if (url.includes("/metadata-enrichment/objects?")) return respond({ project_revision: 18, items: [scope(501), scope(502, "bronze")], next_cursor: null });
       if (url.endsWith("/agent-capabilities")) return respond(capabilities);
       if (url.includes("/runs?")) return respond({ items: current ? [current] : [], next_cursor: null });
       if (url.endsWith("/runs") && init?.method === "POST") {
         current = { ...run, workflow_run_state: "queued" };
-        return respond({ workflow_run_id: 1048, model_id: 18, model_revision: 18, workflow_run_state: "queued", correlation_id: "fixture", created: true, prompt_snapshot_count: 1, created_at: run.created_at });
+        return respond({ workflow_run_id: 1048, project_id: 18, project_revision: 18, workflow_run_state: "queued", correlation_id: "fixture", created: true, prompt_snapshot_count: 1, created_at: run.created_at });
       }
       if (url.endsWith("/metadata-enrichment/runs/1048/execute")) {
         startAttempts += 1;
         if (retryStart && startAttempts === 1) throw new TypeError("Synthetic network failure");
         current = { ...run, workflow_run_state: "running" };
-        return respond({ workflow_run_id: 1048, model_revision: 18, workflow_run_state: "running", changed: true });
+        return respond({ workflow_run_id: 1048, project_revision: 18, workflow_run_state: "running", changed: true });
       }
       if (url.endsWith("/runs/1048")) return respond(current);
       if (url.includes("/events?")) return respond({ items: [], next_after_sequence: 0 });
       throw new Error("Unexpected synthetic route");
     });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/metadata-enrichment"] }) })} />);
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/metadata-enrichment"] }) })} />);
     const trigger = await screen.findByRole("button", { name: "Run object enrichment" });
-    expect(screen.getByRole("link", { name: "Metadata enrichment" })).toHaveAttribute("href", "/tenants/7/models/18/metadata-enrichment");
+    expect(screen.getByRole("link", { name: "Metadata enrichment" })).toHaveAttribute("href", "/tenants/7/projects/18/metadata-enrichment");
     await user.click(trigger);
     const submit = within(screen.getByRole("dialog")).getByRole("button", { name: "Run object enrichment" });
     await waitFor(() => expect(submit).toBeEnabled());
@@ -220,7 +220,7 @@ describe("Metadata enrichment Model screen", () => {
     expect(createCalls).toHaveLength(1);
     expect(JSON.parse(String(createCalls[0]?.[1]?.body)).selected_object_ids).toEqual([501, 502]);
     expect(startCalls).toHaveLength(retryStart ? 2 : 1);
-    for (const [, init] of startCalls) expect(JSON.parse(String(init?.body))).toEqual({ execution_mode: "one_shot", expected_model_revision: 18 });
+    for (const [, init] of startCalls) expect(JSON.parse(String(init?.body))).toEqual({ execution_mode: "one_shot", expected_project_revision: 18 });
     expect(screen.queryByLabelText("Validated draft status")).not.toBeInTheDocument();
   });
 });
@@ -228,7 +228,7 @@ describe("Metadata enrichment Model screen", () => {
 describe("Metadata enrichment results", () => {
   it("shows accurate field totals, historical values, storage type and evidence without Apply", async () => {
     const api = { readMetadataEnrichmentResults: vi.fn(async () => page()) }; const user = userEvent.setup();
-    setup(<MetadataEnrichmentResults api={api} tenantId={7} modelId={18} runId={1048} />);
+    setup(<MetadataEnrichmentResults api={api} tenantId={7} projectId={18} runId={1048} />);
     await screen.findByRole("heading", { name: "2 fields saved" });
     expect(screen.getByText("0 preserved · 1 locked · 0 unresolved")).toBeVisible();
     await user.click(screen.getByText("Inspect inferred type"));
@@ -244,34 +244,34 @@ describe("Metadata enrichment results", () => {
     const api = { readMetadataEnrichmentResults: vi.fn(async () => page({ counts: { existing: 1, inconclusive: 1, unavailable: 1 }, warning_count: 2,
       applied_field_counts: { is_natural_key: 0, is_primary_key: 0, is_nullable: 0, is_pii: 0, object_description: 0, attribute_description: 0, attribute_inferred_data_type: 0 },
       results: [field({ object_name: null, object_schema: null, attribute_id: 81, attribute_name: null, field_name: "attribute_inferred_data_type", status: "inconclusive", evidence_method: "source_sample", applied_value: null, sample_count: 50 })] })) };
-    setup(<MetadataEnrichmentResults api={api} tenantId={7} modelId={18} runId={1048} />);
+    setup(<MetadataEnrichmentResults api={api} tenantId={7} projectId={18} runId={1048} />);
     expect(await screen.findByText("No values saved")).toBeVisible();
     expect(screen.getByText("1 preserved · 0 locked · 2 unresolved")).toBeVisible();
     expect(screen.getByText(/Unresolved fields remain unchanged/)).toBeVisible();
     expect(screen.getByRole("rowheader")).toHaveTextContent("Object 501Attribute 81");
   });
-  it.each(["tenant", "model", "run", "offset", "state"])("hides a mismatched %s response", async (mismatch) => {
+  it.each(["tenant", "project", "run", "offset", "state"])("hides a mismatched %s response", async (mismatch) => {
     const api = { readMetadataEnrichmentResults: vi.fn(async () => page({
-      ...(mismatch === "tenant" ? { tenant_id: 99 } : {}), ...(mismatch === "model" ? { model_id: 99 } : {}),
+      ...(mismatch === "tenant" ? { tenant_id: 99 } : {}), ...(mismatch === "project" ? { project_id: 99 } : {}),
       ...(mismatch === "run" ? { workflow_run_id: 99 } : {}), ...(mismatch === "offset" ? { offset: 100 } : {}),
       ...(mismatch === "state" ? { workflow_run_state: "running" as const } : {}),
     })) };
-    setup(<MetadataEnrichmentResults api={api} tenantId={7} modelId={18} runId={1048} />);
+    setup(<MetadataEnrichmentResults api={api} tenantId={7} projectId={18} runId={1048} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Enrichment results could not be loaded");
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
   it("paginates exact offsets with global totals and refreshes only the selected run", async () => {
     const api = {
       listWorkflowRuns: vi.fn<WorkflowRunMonitorApi["listWorkflowRuns"]>(async () => ({ items: [run], next_cursor: null })),
-      readWorkflowRun: vi.fn(async () => ({ ...run, model_change_set_id: "unrelated-draft", model_change_set_status: "validated" as const, draft_revision: 2, candidate_digest: "d".repeat(64), validated_at: run.completed_at })),
+      readWorkflowRun: vi.fn(async () => ({ ...run, project_change_set_id: "unrelated-draft", project_change_set_status: "validated" as const, draft_revision: 2, candidate_digest: "d".repeat(64), validated_at: run.completed_at })),
       listWorkflowRunEvents: vi.fn<WorkflowRunMonitorApi["listWorkflowRunEvents"]>(async () => ({ items: [], next_after_sequence: 0 })),
       readWorkflowDraftReview: vi.fn(), applyWorkflowDraft: vi.fn(), cancelWorkflowRun: vi.fn(),
-      readMetadataEnrichmentResults: vi.fn(async (_tenant: number, _model: number, _run: number, _limit = 100, offset = 0) => page({ offset,
+      readMetadataEnrichmentResults: vi.fn(async (_tenant: number, _project: number, _run: number, _limit = 100, offset = 0) => page({ offset,
         total_count: 101, result_count: 101, counts: { applied: 101 }, applied_field_counts: { is_natural_key: 0, is_primary_key: 0, is_nullable: 0, is_pii: 0, object_description: 1, attribute_description: 0, attribute_inferred_data_type: 100 },
         results: offset === 0 ? Array.from({ length: 100 }, (_, index) => field({ result_id: index + 1, object_name: `object_${index}` })) : [field({ result_id: 101, object_name: "last_object" })], next_offset: offset === 0 ? 100 : null })),
     };
     const user = userEvent.setup();
-    setup(<WorkflowRunMonitor api={api} enrichmentApi={api} tenantId={7} modelId={18} modelRevision={18} workflow="metadata_enrichment" hasTenantLock focusRunId={1048} onApplied={vi.fn(async () => undefined)} />);
+    setup(<WorkflowRunMonitor api={api} enrichmentApi={api} tenantId={7} projectId={18} projectRevision={18} workflow="metadata_enrichment" hasTenantLock focusRunId={1048} onApplied={vi.fn(async () => undefined)} />);
     await screen.findByRole("heading", { name: "101 fields saved" });
     expect(screen.queryByLabelText("Validated draft status")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Next results" }));
@@ -287,7 +287,7 @@ describe("Metadata enrichment results", () => {
   it("uses the governed result endpoint with limit and offset", async () => {
     const fetcher = vi.fn<typeof fetch>(async () => new Response(JSON.stringify(page()), { headers: { "content-type": "application/json" } }));
     await createMetadataEnrichmentApi(createHttpRequest(fetcher)).readMetadataEnrichmentResults(7, 18, 1048, 100, 100);
-    expect(fetcher.mock.calls[0]?.[0]).toBe("/api/v1/tenants/7/models/18/runs/1048/metadata-enrichment?limit=100&offset=100");
+    expect(fetcher.mock.calls[0]?.[0]).toBe("/api/v1/tenants/7/projects/18/runs/1048/metadata-enrichment?limit=100&offset=100");
   });
 });
 
@@ -295,12 +295,12 @@ describe("current metadata enrichment workspace", () => {
   function metadataFixture(options: { failOnce?: boolean; foreign?: boolean; secondObject?: boolean } = {}) {
     let revision = "a".repeat(64);
     let attempts = 0;
-    let metadata: ModelInputScopeDetail = {
-      model_input_scope_id: 1, object_id: 501, connection_id: 1, system_id: 9,
+    let metadata: ProjectInputScopeDetail = {
+      project_input_scope_id: 1, object_id: 501, connection_id: 1, system_id: 9,
       system_code: "CRM", system_name: "Customer system", source_tenant_id: options.foreign ? 8 : 7,
       source_tenant_code: "NWA", source_tenant_name: "Northwind", object_schema: "crm", object_name: "customers",
       zone_code: "source", object_description: "Customer accounts.", description_truncated: false, is_locked: false,
-      review_revision: revision, batch_attribute_name: null, attribute_count: 1, total_attribute_count: 1, is_model_input_eligible: true,
+      review_revision: revision, batch_attribute_name: null, attribute_count: 1, total_attribute_count: 1, is_project_input_eligible: true,
       created_at: "2026-09-05T12:00:00Z", updated_at: "2026-09-05T12:00:00Z",
       attributes: [{ attribute_id: 81, review_revision: revision, attribute_name: "customer_id", attribute_ordinal_position: 1,
         attribute_description: "Customer identifier.", attribute_data_type: "STRING", attribute_inferred_data_type: "BIGINT",
@@ -309,16 +309,16 @@ describe("current metadata enrichment workspace", () => {
     };
     const api = {
       ...creationApi(),
-      listModelInputScope: vi.fn(async () => ({ model_id: 18, model_revision: 18, items: options.secondObject ? [metadata, { ...metadata, object_id: 502, object_name: "orders" }] : [metadata], next_cursor: null })),
-      readModelInputScopeObject: vi.fn(async (_tenant: number, _model: number, objectId: number) => objectId === 502
+      listProjectInputScope: vi.fn(async () => ({ project_id: 18, project_revision: 18, items: options.secondObject ? [metadata, { ...metadata, object_id: 502, object_name: "orders" }] : [metadata], next_cursor: null })),
+      readProjectInputScopeObject: vi.fn(async (_tenant: number, _project: number, objectId: number) => objectId === 502
         ? { ...metadata, object_id: 502, object_name: "orders", attributes: metadata.attributes.map((attribute) => ({ ...attribute, attribute_id: 82 })) } : metadata),
       listWorkflowRuns: vi.fn(async () => ({ items: [run], next_cursor: null })),
       readWorkflowRun: vi.fn(async () => run),
       listWorkflowRunEvents: vi.fn(async () => ({ items: [], next_after_sequence: 0 })),
       readWorkflowDraftReview: vi.fn(), applyWorkflowDraft: vi.fn(), cancelWorkflowRun: vi.fn(), listWorkflowDraftRecords: vi.fn(),
       readMetadataEnrichmentResults: vi.fn(),
-      executeMetadataEnrichmentRun: vi.fn(async () => ({ workflow_run_id: 1048, model_revision: 18, workflow_run_state: "running" as const, changed: true })),
-      reviewEnrichment: vi.fn(async (_tenantId: number, _modelId: number, _revision: number, command: ReviewEnrichmentCommand, _key: string) => {
+      executeMetadataEnrichmentRun: vi.fn(async () => ({ workflow_run_id: 1048, project_revision: 18, workflow_run_state: "running" as const, changed: true })),
+      reviewEnrichment: vi.fn(async (_tenantId: number, _projectId: number, _revision: number, command: ReviewEnrichmentCommand, _key: string) => {
         if (options.failOnce && attempts++ === 0) throw new ApiError(503, "dependency_unavailable", "Synthetic response");
         revision = "b".repeat(64);
         const description = command.action === "edit" ? command.records[0]!.description : undefined;
@@ -333,11 +333,11 @@ describe("current metadata enrichment workspace", () => {
         return { review_event_id: 1, action_count: command.records.length, records: command.records.map((item) => ({ record_id: item.record_id, review_revision: revision, is_locked: command.action === "lock", is_active: true })) };
       }),
     };
-    const enrichmentApi = { ...api, listEnrichmentObjects: api.listModelInputScope,
-      readEnrichmentObject: api.readModelInputScopeObject,
-      exportEnrichment: vi.fn(async () => ({ blob: new Blob(), filename: "Model_Enrichment.xlsx" })),
+    const enrichmentApi = { ...api, listEnrichmentObjects: api.listProjectInputScope,
+      readEnrichmentObject: api.readProjectInputScopeObject,
+      exportEnrichment: vi.fn(async () => ({ blob: new Blob(), filename: "Project_Enrichment.xlsx" })),
     };
-    setup(<MetadataEnrichmentScreen api={enrichmentApi} tenantId={7} model={model} hasTenantLock />);
+    setup(<MetadataEnrichmentScreen api={enrichmentApi} tenantId={7} project={project} hasTenantLock />);
     return enrichmentApi;
   }
 
@@ -346,7 +346,7 @@ describe("current metadata enrichment workspace", () => {
     await user.click(await screen.findByRole("button", { name: "Show details for customers" }));
     const attributes = await screen.findByRole("table", { name: "Attributes for customers" });
     expect(within(attributes).getByText("Customer identifier.")).toBeVisible();
-    const before: ModelInputScopeDetail = await api.readEnrichmentObject.mock.results[0]!.value;
+    const before: ProjectInputScopeDetail = await api.readEnrichmentObject.mock.results[0]!.value;
     await user.click(screen.getByRole("button", { name: "← Back to Objects" }));
     api.readEnrichmentObject.mockResolvedValue({
       ...before,
@@ -378,7 +378,7 @@ describe("current metadata enrichment workspace", () => {
     expect(within(table).queryByRole("button", { name: "Lock" })).not.toBeInTheDocument();
     await user.click(within(table).getByRole("checkbox", { name: "Select all visible records" }));
     await user.click(screen.getByRole("button", { name: "Lock" }));
-    await screen.findByText("Model enrichment saved.");
+    await screen.findByText("Project enrichment saved.");
     expect(api.reviewEnrichment.mock.calls[0]?.[3]).toEqual({ record_type: "object", action: "lock", records: [501, 502].map((record_id) => ({ record_id, expected_revision: "a".repeat(64) })) });
     expect(within(table).getAllByText("Locked")).toHaveLength(2);
   });
@@ -393,7 +393,7 @@ describe("current metadata enrichment workspace", () => {
     await user.selectOptions(screen.getByLabelText("Zone"), "source");
     await user.type(screen.getByLabelText("Schema or Object name"), " customer ");
     await user.click(screen.getByRole("button", { name: "Apply filters" }));
-    await waitFor(() => expect(api.listModelInputScope).toHaveBeenLastCalledWith(7, 18, {
+    await waitFor(() => expect(api.listProjectInputScope).toHaveBeenLastCalledWith(7, 18, {
       sourceTenantCode: "NWA", systemCode: "CRM", zone: "source", objectName: " customer ",
     }, 200, undefined));
     table = screen.getByRole("table", { name: "Object metadata" });
@@ -428,6 +428,12 @@ describe("current metadata enrichment workspace", () => {
     await waitFor(() => expect(within(table).getByRole("button", { name: "Edit" })).toBeEnabled());
     await user.click(within(table).getByRole("button", { name: "Show details for customers" }));
     const attributes = await screen.findByRole("table", { name: "Attributes for customers" });
+    const heading = screen.getByRole("heading", { name: "customers" });
+    expect(heading).toHaveFocus();
+    expect(within(heading.closest("header")!).getByLabelText("Object identity")).toHaveTextContent("Schemacrm");
+    expect(screen.queryByRole("heading", { name: "crm.customers" })).not.toBeInTheDocument();
+    expect(within(heading.closest("header")!).getByText("Customer accounts.")).toBeVisible();
+    expect(screen.getAllByText("Customer accounts.")).toHaveLength(1);
     expect(within(attributes).getByText("BIGINT")).toBeVisible(); expect(within(attributes).getByText("STRING")).toBeVisible();
     await user.click(within(attributes).getByRole("button", { name: "Edit" }));
     await user.clear(screen.getByRole("textbox", { name: "customer_id" }));
@@ -503,7 +509,7 @@ describe("current metadata enrichment workspace", () => {
       description_targets: [{ object_id: 502, attribute_id: 82, expected_revision: "a".repeat(64) }] });
   });
 
-  it("regenerates only the chosen Attribute using the normal model and effort controls", async () => {
+  it("regenerates only the chosen Attribute using the normal project and effort controls", async () => {
     const api = metadataFixture(); const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Show details for customers" }));
     const attributes = await screen.findByRole("table", { name: "Attributes for customers" });
@@ -538,11 +544,11 @@ describe("current metadata enrichment workspace", () => {
 });
 
 describe("bulk Attribute enrichment selection", () => {
-  function detail(id: number, attributeCount = 2, overrides: Partial<ModelInputScopeDetail> = {}): ModelInputScopeDetail {
+  function detail(id: number, attributeCount = 2, overrides: Partial<ProjectInputScopeDetail> = {}): ProjectInputScopeDetail {
     return {
-      ...scope(id), model_input_scope_id: id, connection_id: 1, system_name: "Customer system",
+      ...scope(id), project_input_scope_id: id, connection_id: 1, system_name: "Customer system",
       source_tenant_name: "Northwind", batch_attribute_name: null, attribute_count: attributeCount,
-      total_attribute_count: attributeCount, is_model_input_eligible: true,
+      total_attribute_count: attributeCount, is_project_input_eligible: true,
       created_at: "2026-09-05T12:00:00Z", updated_at: "2026-09-05T12:00:00Z",
       attributes: Array.from({ length: attributeCount }, (_, index) => ({
         attribute_id: id * 10000 + index, attribute_name: `field_${index}`, attribute_ordinal_position: index + 1,
@@ -555,17 +561,17 @@ describe("bulk Attribute enrichment selection", () => {
   }
   function bulk(objects = [detail(501), detail(502)], options: {
     selected?: number[];
-    read?: (tenantId: number, modelId: number, objectId: number) => Promise<ModelInputScopeDetail>;
+    read?: (tenantId: number, projectId: number, objectId: number) => Promise<ProjectInputScopeDetail>;
     execute?: (id: number, mode: "one_shot" | "tool_assisted") => Promise<void>;
     pages?: boolean;
   } = {}) {
     const api = creationApi();
-    api.listModelInputScope.mockImplementation(async (_tenant, _model, _filters, _size, cursor) => ({
-      model_revision: 18, items: options.pages ? cursor ? objects.slice(1) : objects.slice(0, 1) : objects,
+    api.listProjectInputScope.mockImplementation(async (_tenant, _project, _filters, _size, cursor) => ({
+      project_revision: 18, items: options.pages ? cursor ? objects.slice(1) : objects.slice(0, 1) : objects,
       next_cursor: options.pages && !cursor ? "next-page" : null,
     }));
-    const read = vi.fn(options.read ?? (async (_tenant: number, _model: number, id: number) => objects.find((object) => object.object_id === id)!));
-    const mounted = setup(<WorkflowRunDialog api={api} tenantId={7} model={model} kind="inference"
+    const read = vi.fn(options.read ?? (async (_tenant: number, _project: number, id: number) => objects.find((object) => object.object_id === id)!));
+    const mounted = setup(<WorkflowRunDialog api={api} tenantId={7} project={project} kind="inference"
       workflow="metadata_enrichment" enrichmentTarget="attribute" readEnrichmentObject={read}
       {...(options.selected ? { initialSelectedIds: options.selected } : {})}
       {...(options.execute ? { executeCreated: options.execute } : {})}
@@ -579,7 +585,7 @@ describe("bulk Attribute enrichment selection", () => {
     const { api, read, user } = bulk([first, detail(502), locked], { pages: true });
     const submit = screen.getByRole("button", { name: "Run attribute enrichment" });
     await waitFor(() => expect(submit).toBeEnabled());
-    expect(api.listModelInputScope.mock.calls[1]?.[4]).toBe("next-page");
+    expect(api.listProjectInputScope.mock.calls[1]?.[4]).toBe("next-page");
     expect(read.mock.calls.map((call) => call[2])).toEqual([501, 502]);
     expect(screen.getByRole("checkbox", { name: "Include Object customer_503" })).toBeDisabled();
     expect(screen.getByText("4 Attributes selected across 2 Objects")).toBeVisible();
@@ -660,7 +666,7 @@ describe("bulk Attribute enrichment selection", () => {
 
   it("blocks a partial run after a failed detail and retries only that Object", async () => {
     const objects = [detail(501), detail(502)]; let fail = true;
-    const { api, read, user } = bulk(objects, { read: async (_tenant, _model, id) => {
+    const { api, read, user } = bulk(objects, { read: async (_tenant, _project, id) => {
       if (id === 502 && fail) { fail = false; throw new Error("Synthetic failure"); }
       return objects.find((object) => object.object_id === id)!;
     } });
@@ -720,8 +726,8 @@ describe("bulk Attribute enrichment selection", () => {
 
   it("loads at most four details concurrently and waits even if an in-flight Object is deselected", async () => {
     const objects = Array.from({ length: 5 }, (_, index) => detail(index + 1));
-    const resolves = new Map<number, (value: ModelInputScopeDetail) => void>();
-    const { read, user } = bulk(objects, { read: (_tenant, _model, id) => new Promise((resolve) => { resolves.set(id, resolve); }) });
+    const resolves = new Map<number, (value: ProjectInputScopeDetail) => void>();
+    const { read, user } = bulk(objects, { read: (_tenant, _project, id) => new Promise((resolve) => { resolves.set(id, resolve); }) });
     await waitFor(() => expect(read).toHaveBeenCalledTimes(4));
     await user.click(screen.getByRole("radio", { name: "Selected Objects" }));
     await user.click(screen.getByRole("checkbox", { name: "Include Object customer_4" }));

@@ -34,7 +34,7 @@ function Documents({ api, items, enabled = true }: {
   items: MappingAttribute[];
   enabled?: boolean;
 }) {
-  const { documents, fields } = useMappingAttributeDocuments({ api, tenantId: 7, modelId: 18, items, enabled });
+  const { documents, fields } = useMappingAttributeDocuments({ api, tenantId: 7, projectId: 18, items, enabled });
   return <>
     <output data-testid="fields">{JSON.stringify(fields)}</output>
     {items.map((row) => <output key={row.target.attribute_id} data-testid={`document-${row.mapping_attribute_id}`}>
@@ -126,7 +126,7 @@ describe("Mapping Attribute documents", () => {
   it("unions fields from loaded rows and reuses the shared detail cache", async () => {
     const next: MappingAttribute = { ...item, mapping_attribute_id: 92,
       target: { ...item.target, attribute_id: 703, attribute_name: "customer_code", ordinal_position: 3 } };
-    const api = { readMappingAttribute: vi.fn<MappingApi["readMappingAttribute"]>().mockImplementation(async (_tenant, _model, id) => ({
+    const api = { readMappingAttribute: vi.fn<MappingApi["readMappingAttribute"]>().mockImplementation(async (_tenant, _project, id) => ({
       ...detail, target: (id === 91 ? item : next).target, mapping_attribute_id: id,
       mapping_document: id === 91 ? { transformation: "TRIM(name)", custom_check: false }
         : { transformation: "code", source_attributes: ["raw.customer.code"] },
@@ -185,7 +185,7 @@ describe("Mapping Attribute documents", () => {
   it("skips queued reads when the ledger unmounts", async () => {
     const releases: (() => void)[] = [];
     const api = { readMappingAttribute: vi.fn<MappingApi["readMappingAttribute"]>()
-      .mockImplementation(async (_tenant, _model, id) => {
+      .mockImplementation(async (_tenant, _project, id) => {
         await new Promise<void>((resolve) => releases.push(resolve));
         return { ...detail, mapping_attribute_id: id };
       }) };

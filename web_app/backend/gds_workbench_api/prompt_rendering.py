@@ -157,7 +157,7 @@ def render_prompt(
     variables: tuple[PromptVariableDefinition, ...],
     resolver_values: Mapping[str, object],
 ) -> RenderedPrompt:
-    """Render once; unknown names/fields fail before a model request. Missing known data is null."""
+    """Render once before a model request; unknown fields fail, missing known data is null."""
     by_name = {variable.name: variable for variable in variables}
     if len(by_name) != len(variables):
         raise InvalidRequestError("Prompt variable definitions are invalid.")

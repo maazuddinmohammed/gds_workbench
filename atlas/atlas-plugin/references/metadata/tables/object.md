@@ -19,15 +19,15 @@ This section owns the distinction for all workflows. Snapshot Object records alr
 |---|---|
 | Object tenant_code | Physical Connection's Tenant; part of the natural key with System, Connection, schema and Object name. |
 | Object source_tenant_code | Data/metadata owner, resolving database source_tenant_id. Must match the authorized Metadata Change Set/locked Tenant; not part of the physical key. |
-| Profiling tenant_code; Analysis from_tenant_code/to_tenant_code | Physical endpoint Tenant codes. Copy them from the registered keys, not from Object ownership or Model ownership. |
+| Profiling tenant_code; Analysis from_tenant_code/to_tenant_code | Physical endpoint Tenant codes. Copy them from the registered keys, not from Object ownership or Project ownership. |
 | Ingestion Mapping source_tenant_code/target_tenant_code | Physical endpoint Tenant codes. The source_ prefix here does not mean the referenced Object's owner field. |
-| Model owner and tool IDs | Bind the governed Model/Change Set or execution request. They do not replace physical keys in ID-free records. |
+| Project owner and tool IDs | Bind the governed Project/Change Set or execution request. They do not replace physical keys in ID-free records. |
 
 Source Objects use their actual owned non-GDS Connection, so owner and physical Tenant match. Bronze, Silver and Gold use the owner's explicitly configured GDS Connection; owner and physical Tenant **may match or differ**.
 
 For `execute_databricks_sql`, Bronze/Silver/Gold catalog lookup uses `source_tenant_code` → `tenant.tenant_catalog`; Connection placement does not select the catalog. Source uses the Connection's foreign catalog. Follow the shared [query coordinate rules](../../query-scope.md#resolve-coordinates-and-access); retain the physical natural key in records.
 
-For a single-origin Silver/Gold target, source_tenant_code retains the actual source/data Tenant established by input provenance. Resolve that Tenant's configured GDS Connection for physical placement. Do not substitute the source Connection, the Model Tenant or the physical GDS Tenant merely because it is convenient. An existing target retains its registered owner; mixed targets follow the explicit choice below.
+For a single-origin Silver/Gold target, source_tenant_code retains the actual source/data Tenant established by input provenance. Resolve that Tenant's configured GDS Connection for physical placement. Do not substitute the source Connection, the Project Tenant or the physical GDS Tenant merely because it is convenient. An existing target retains its registered owner; mixed targets follow the explicit choice below.
 
 For a Silver Object combining data from several Tenants, the user may choose the GDS Connection's Tenant as its source_tenant_code. This makes owner and physical Tenant equal when that Tenant is authorized to own the Object and its configured GDS Connection is this exact Connection. Treat this as an explicit ownership choice for the mixed target, not an automatic rule for all downstream Objects. Input provenance still needs to be retained.
 
@@ -79,7 +79,7 @@ Every field is listed explicitly. Exact current MCP/Snapshot schemas remain auth
 - All four zone datasets share one physical-table identity. Owner and Zone are not part of the natural key.
 - Follow [ownership and physical identity](object.md#ownership-and-physical-identity) for placement and the selected Change Set Tenant.
 - Changing Connection/schema/name requires the user's [manual database correction](../editing.md#manual-natural-key-changes). The agent supplies instructions only. Apply does not transfer Object ownership.
-- Preserve existing protection and unrelated fields. Check Attributes, mappings, Copies, Model Input Scope and Processes when changing classification or activity.
+- Preserve existing protection and unrelated fields. Check Attributes, mappings, Copies, Project Input Scope and Processes when changing classification or activity.
 - Stage only affected records. Even unchanged re-staging of a locked Object or its Attributes fails the lock check.
 - Foreign-catalog coordinates are conditional on the requested evidence operation; they are not universally mandatory.
 - Follow [shared editing rules](../editing.md); validate the complete effective result and preserve unrelated fields.

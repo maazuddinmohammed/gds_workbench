@@ -7,9 +7,9 @@ from typing import Any, Literal, Protocol, cast
 from uuid import UUID
 
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.model import validate_locked_model_change_set
-from gds_etl_workbench.application.change_sets.model_apply import ModelMaterializer
-from gds_etl_workbench.application.model_read import ModelReadContext
+from gds_etl_workbench.application.change_sets.project import validate_locked_project_change_set
+from gds_etl_workbench.application.change_sets.project_apply import ProjectMaterializer
+from gds_etl_workbench.application.project_read import ProjectReadContext
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import (
     AuthorizationDeniedError,
@@ -17,18 +17,18 @@ from gds_etl_workbench.domain.errors import (
     DependencyUnavailableError,
     DraftRevisionConflictError,
     InvalidRequestError,
-    ModelChangeSetNotActiveError,
-    ModelChangeSetNotFoundError,
-    ModelChangeSetNotValidatedError,
+    ProjectChangeSetNotActiveError,
+    ProjectChangeSetNotFoundError,
+    ProjectChangeSetNotValidatedError,
 )
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 from pydantic import BaseModel, ConfigDict, Field
 
-from gds_workbench_api.features.model_change_sets.repository import (
-    PostgresModelChangeSetRepository,
+from gds_workbench_api.features.project_change_sets.repository import (
+    PostgresProjectChangeSetRepository,
     require_datetime,
 )
-from gds_workbench_api.features.models import ModelNotFoundError, ModelRevisionConflictError
+from gds_workbench_api.features.projects import ProjectNotFoundError, ProjectRevisionConflictError
 from gds_workbench_api.features.workflows.runs import WorkflowRunNotFoundError
 
 _EXPLICIT_APPLY_WORKFLOWS = frozenset(
@@ -48,7 +48,7 @@ _MODELESS_APPLY_WORKFLOWS = frozenset({"code_generation", "validation"})
 class ApplyWorkflowDraftRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    expected_model_revision: int = Field(gt=0)
+    expected_project_revision: int = Field(gt=0)
     expected_draft_revision: int = Field(gt=0)
     expected_candidate_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
@@ -57,14 +57,14 @@ class ApplyWorkflowDraftResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     schema_version: Literal["1.0"] = "1.0"
-    model_id: int = Field(gt=0)
+    project_id: int = Field(gt=0)
     workflow_run_id: int = Field(gt=0)
-    model_change_set_id: UUID
+    project_change_set_id: UUID
     replayed: bool
     draft_revision: int = Field(gt=0)
     candidate_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     action_count: int = Field(ge=0)
-    model_revision: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     applied_at: datetime
 
 
@@ -89,26 +89,26 @@ class DatabaseWorkflowDraftApplyService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         command: ApplyWorkflowDraftRequest,
         idempotency_key: UUID,
     ) -> ApplyWorkflowDraftResult:
         async with self._database.write_transaction() as transaction:
-            repository = PostgresModelChangeSetRepository(transaction)
-            model_row = await repository.get_model(
+            repository = PostgresProjectChangeSetRepository(transaction)
+            project_row = await repository.get_project(
                 tenant_id=tenant_id,
-                model_id=model_id,
+                project_id=project_id,
             )
-            if model_row is None:
-                raise ModelNotFoundError()
+            if project_row is None:
+                raise ProjectNotFoundError()
 
             read_authorization = await self._authorizer.authorize_tenant(
                 transaction,
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
             source_tenants = read_authorization.readable_source_tenant_ids
             principal_id = read_authorization.principal.principal_id
@@ -117,16 +117,16 @@ class DatabaseWorkflowDraftApplyService:
 
             run = await repository.get_workflow_run_for_update(
                 workflow_run_id=workflow_run_id,
-                model_id=model_id,
+                project_id=project_id,
             )
             if run is None:
                 raise WorkflowRunNotFoundError()
             if run["actor_principal_id"] != principal_id:
                 raise AuthorizationDeniedError()
-            model_workflow = run["model_workflow"]
+            project_workflow = run["project_workflow"]
             execution_mode = run["workflow_execution_mode"]
-            if model_workflow not in _EXPLICIT_APPLY_WORKFLOWS or (
-                (model_workflow in _MODELESS_APPLY_WORKFLOWS) != (execution_mode is None)
+            if project_workflow not in _EXPLICIT_APPLY_WORKFLOWS or (
+                (project_workflow in _MODELESS_APPLY_WORKFLOWS) != (execution_mode is None)
             ):
                 raise InvalidRequestError(
                     "Only a completed Analysis, Conceptual, Logical, Dimensional, "
@@ -153,81 +153,81 @@ class DatabaseWorkflowDraftApplyService:
                 raise DependencyUnavailableError()
             row = await repository.get_by_workflow_run(
                 workflow_run_id=workflow_run_id,
-                model_id=model_id,
+                project_id=project_id,
             )
             if row is None:
-                raise ModelChangeSetNotFoundError()
+                raise ProjectChangeSetNotFoundError()
             if row["created_by_principal_id"] != principal_id:
                 raise AuthorizationDeniedError()
             if row["correlation_id"] != run["correlation_id"]:
                 raise DependencyUnavailableError()
             self._require_fences(row, command)
-            change_set_id = row["model_change_set_id"]
+            change_set_id = row["project_change_set_id"]
             if not isinstance(change_set_id, UUID):
                 raise DependencyUnavailableError()
 
-            if row["model_change_set_status"] == "applied":
+            if row["project_change_set_status"] == "applied":
                 return await self._replay(
                     repository,
                     row=row,
-                    model_id=model_id,
+                    project_id=project_id,
                     workflow_run_id=workflow_run_id,
                     change_set_id=change_set_id,
                     idempotency_key=idempotency_key,
                 )
-            if row["model_change_set_status"] != "validated":
-                raise ModelChangeSetNotValidatedError()
+            if row["project_change_set_status"] != "validated":
+                raise ProjectChangeSetNotValidatedError()
             if require_datetime(row, "expires_time") <= require_datetime(
                 row,
                 "database_time",
             ):
-                raise ModelChangeSetNotActiveError()
-            if model_row["model_revision"] != command.expected_model_revision:
-                raise ModelRevisionConflictError()
+                raise ProjectChangeSetNotActiveError()
+            if project_row["project_revision"] != command.expected_project_revision:
+                raise ProjectRevisionConflictError()
 
             authorization = await self._authorizer.authorize_tenant(
                 transaction,
                 principal,
                 tenant_id=tenant_id,
-                policy=ToolPolicy.TENANT_MODEL_WRITE,
-                model_id=model_id,
+                policy=ToolPolicy.TENANT_PROJECT_WRITE,
+                project_id=project_id,
             )
             source_tenants = authorization.readable_source_tenant_ids
-            model = ModelReadContext(
-                model_id=model_row["model_id"],
-                tenant_id=model_row["tenant_id"],
-                model_name=model_row["model_name"],
-                model_revision=model_row["model_revision"],
+            project = ProjectReadContext(
+                project_id=project_row["project_id"],
+                tenant_id=project_row["tenant_id"],
+                project_name=project_row["project_name"],
+                project_revision=project_row["project_revision"],
                 readable_source_tenant_ids=source_tenants,
             )
-            validation = await validate_locked_model_change_set(
-                transaction, model, row, enforce_row_limits=False
+            validation = await validate_locked_project_change_set(
+                transaction, project, row, enforce_row_limits=False
             )
             if not validation.valid or validation.candidate_digest is None:
                 raise CandidateDigestConflictError()
             if validation.candidate_digest != command.expected_candidate_digest:
                 raise CandidateDigestConflictError()
 
-            materializer = ModelMaterializer.for_workflow_apply(
+            materializer = ProjectMaterializer.for_workflow_apply(
                 transaction=transaction,
-                model_id=model_id,
+                project_id=project_id,
                 source_context_digest=row["base_source_context_digest"],
                 workflow_run_id=workflow_run_id,
-                model_workflow=model_workflow,
+                project_workflow=project_workflow,
                 mapping_object_output_template_id=object_output_template_id,
                 mapping_attribute_output_template_id=attribute_output_template_id,
             )
             action_count = await materializer.apply(validation.records)
-            revision = await repository.advance_model_revision(
-                model_id=model_id,
-                expected_model_revision=command.expected_model_revision,
+            revision = await repository.advance_project_revision(
+                project_id=project_id,
+                expected_project_revision=command.expected_project_revision,
                 changed=action_count > 0,
             )
             if revision is None:
-                raise ModelRevisionConflictError()
+                raise ProjectRevisionConflictError()
             applied = await repository.mark_workflow_applied(
                 change_set_id=change_set_id,
-                model_id=model_id,
+                project_id=project_id,
                 workflow_run_id=workflow_run_id,
                 draft_revision=command.expected_draft_revision,
                 candidate_digest=command.expected_candidate_digest,
@@ -236,24 +236,24 @@ class DatabaseWorkflowDraftApplyService:
                 raise DependencyUnavailableError()
             await repository.insert_event(
                 change_set_id=change_set_id,
-                model_id=model_id,
+                project_id=project_id,
                 event_type="applied",
                 draft_revision=command.expected_draft_revision,
                 section=None,
                 action_count=action_count,
                 outcome="applied",
-                metadata={"model_revision": revision["model_revision"]},
+                metadata={"project_revision": revision["project_revision"]},
                 correlation_id=idempotency_key,
             )
             return ApplyWorkflowDraftResult(
-                model_id=model_id,
+                project_id=project_id,
                 workflow_run_id=workflow_run_id,
-                model_change_set_id=change_set_id,
+                project_change_set_id=change_set_id,
                 replayed=False,
                 draft_revision=command.expected_draft_revision,
                 candidate_digest=command.expected_candidate_digest,
                 action_count=action_count,
-                model_revision=revision["model_revision"],
+                project_revision=revision["project_revision"],
                 applied_at=require_datetime(applied, "applied_time"),
             )
 
@@ -262,8 +262,8 @@ class DatabaseWorkflowDraftApplyService:
         row: Mapping[str, Any],
         command: ApplyWorkflowDraftRequest,
     ) -> None:
-        if row["base_model_revision"] != command.expected_model_revision:
-            raise ModelRevisionConflictError()
+        if row["base_project_revision"] != command.expected_project_revision:
+            raise ProjectRevisionConflictError()
         if row["draft_revision"] != command.expected_draft_revision:
             current = row["draft_revision"]
             if not isinstance(current, int):
@@ -274,17 +274,17 @@ class DatabaseWorkflowDraftApplyService:
 
     @staticmethod
     async def _replay(
-        repository: PostgresModelChangeSetRepository,
+        repository: PostgresProjectChangeSetRepository,
         *,
         row: Mapping[str, Any],
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         change_set_id: UUID,
         idempotency_key: UUID,
     ) -> ApplyWorkflowDraftResult:
         event = await repository.get_applied_event(
             change_set_id=change_set_id,
-            model_id=model_id,
+            project_id=project_id,
         )
         if event is None or event["correlation_id"] != idempotency_key:
             raise InvalidRequestError("Idempotency key conflicts with the recorded draft apply.")
@@ -292,23 +292,23 @@ class DatabaseWorkflowDraftApplyService:
         if not isinstance(raw_metadata, Mapping):
             raise DependencyUnavailableError()
         metadata = cast(Mapping[str, object], raw_metadata)
-        model_revision = metadata.get("model_revision")
+        project_revision = metadata.get("project_revision")
         action_count = event["action_count"]
-        if not isinstance(model_revision, int) or not isinstance(action_count, int):
+        if not isinstance(project_revision, int) or not isinstance(action_count, int):
             raise DependencyUnavailableError()
         candidate_digest = row["candidate_digest"]
         draft_revision = row["draft_revision"]
         if not isinstance(candidate_digest, str) or not isinstance(draft_revision, int):
             raise DependencyUnavailableError()
         return ApplyWorkflowDraftResult(
-            model_id=model_id,
+            project_id=project_id,
             workflow_run_id=workflow_run_id,
-            model_change_set_id=change_set_id,
+            project_change_set_id=change_set_id,
             replayed=True,
             draft_revision=draft_revision,
             candidate_digest=candidate_digest,
             action_count=action_count,
-            model_revision=model_revision,
+            project_revision=project_revision,
             applied_at=require_datetime(row, "applied_time"),
         )
 

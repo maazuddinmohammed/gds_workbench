@@ -64,7 +64,9 @@ def test_global_connection_object_stores_the_data_tenant_directly(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
-        data_tenant_id, connection_id, zone_id, object_type_id = _seed_object_parents(connection)
+        data_tenant_id, connection_id, zone_id, object_type_id = _seed_object_parents(
+            connection
+        )
         row = connection.execute(
             """
             INSERT INTO core.object (
@@ -104,30 +106,30 @@ def test_global_connection_object_stores_the_data_tenant_directly(
 
 
 def _seed_object_parents(connection: Connection[Any]) -> tuple[int, int, int, int]:
-    project_id = connection.execute(
+    lane_id = connection.execute(
         """
-        INSERT INTO core.project (project_code, project_name)
+        INSERT INTO core.lane (lane_code, lane_name)
         VALUES ('OBJECT_OWNER_PROJECT', 'Object Owner Project')
-        RETURNING project_id
+        RETURNING lane_id
         """
-    ).fetchone()["project_id"]
+    ).fetchone()["lane_id"]
     data_tenant_id = connection.execute(
         """
         INSERT INTO core.tenant (
-            project_id, tenant_code, tenant_name, tenant_catalog, gds_admin_catalog
+            lane_id, tenant_code, tenant_name, tenant_catalog, gds_admin_catalog
         ) VALUES (%s, 'OBJECT_DATA_TENANT', 'Object Data Tenant', 'data', 'data_admin')
         RETURNING tenant_id
         """,
-        (project_id,),
+        (lane_id,),
     ).fetchone()["tenant_id"]
     gds_tenant_id = connection.execute(
         """
         INSERT INTO core.tenant (
-            project_id, tenant_code, tenant_name, tenant_catalog, gds_admin_catalog
+            lane_id, tenant_code, tenant_name, tenant_catalog, gds_admin_catalog
         ) VALUES (%s, 'OBJECT_GDS_TENANT', 'Object GDS Tenant', 'gds', 'gds_admin')
         RETURNING tenant_id
         """,
-        (project_id,),
+        (lane_id,),
     ).fetchone()["tenant_id"]
     system_type_id = connection.execute(
         """

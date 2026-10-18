@@ -33,14 +33,14 @@ function alias(value, canonical, alternatives) {
   return values[0];
 }
 
-function serverResponse(value, area, owner, modelId) {
-  const other = area === "metadata" ? "model_change_set_id" : "metadata_change_set_id";
+function serverResponse(value, area, owner, projectId) {
+  const other = area === "metadata" ? "project_change_set_id" : "metadata_change_set_id";
   const id = alias(value, "change_set_id", [`${area}_change_set_id`]);
-  const ownerId = area === "metadata" ? alias(value, "tenant_id", ["owner_tenant_id"]) : value.model_id;
-  if (value.schema_version !== "1.0" || value[other] !== undefined || (value.area !== undefined && value.area !== area) ||
+  const ownerId = area === "metadata" ? alias(value, "tenant_id", ["owner_tenant_id"]) : value.project_id;
+  if (value.schema_version !== (area === "project" ? "2.0" : "1.0") || value[other] !== undefined || (value.area !== undefined && value.area !== area) ||
       (value.owner_tenant_id !== undefined && value.owner_tenant_id !== owner.id) ||
-      ownerId !== (area === "metadata" ? owner.id : modelId) || typeof id !== "string" || !uuid.test(id) ||
-      !Number.isSafeInteger(value.draft_revision) || value.draft_revision < 0) throw Error("Server response does not match the owner, Model or Change Set contract.");
+      ownerId !== (area === "metadata" ? owner.id : projectId) || typeof id !== "string" || !uuid.test(id) ||
+      !Number.isSafeInteger(value.draft_revision) || value.draft_revision < 0) throw Error("Server response does not match the owner, Project or Change Set contract.");
   return {...value, change_set_id: id, ...(area === "metadata" ? {tenant_id: ownerId} : {})};
 }
 

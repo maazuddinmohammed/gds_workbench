@@ -463,18 +463,18 @@ def test_validation_allows_attribute_change_under_unlocked_object() -> None:
 
 def _foundation() -> dict[str, list[dict[str, object]]]:
     return {
-        "project": [
+        "lane": [
             {
-                "project_code": "PROJECT",
-                "project_name": "Project",
-                "project_description": None,
+                "lane_code": "PROJECT",
+                "lane_name": "Lane",
+                "lane_description": None,
                 "is_active": True,
             }
         ],
         "tenant": [
             {
                 "tenant_code": "DEMO",
-                "project_code": "PROJECT",
+                "lane_code": "PROJECT",
                 "tenant_name": "Demo",
                 "tenant_description": None,
                 "tenant_catalog": "demo",
@@ -549,7 +549,7 @@ def _foundation_with_external_gds() -> dict[str, list[dict[str, object]]]:
     current["tenant"].append(
         {
             "tenant_code": "GLOBAL",
-            "project_code": "PROJECT",
+            "lane_code": "PROJECT",
             "tenant_name": "Global",
             "tenant_description": None,
             "tenant_catalog": "global",

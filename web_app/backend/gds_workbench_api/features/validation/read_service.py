@@ -5,17 +5,17 @@ from dataclasses import dataclass
 from typing import Any, Literal, LiteralString, Protocol, cast
 
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.model_validation import (
+from gds_etl_workbench.application.change_sets.project_validation import (
     CodeGenerationTargetContext,
     validation_code_context_digest,
     validation_mapping_context_digest,
 )
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.domain.modeling_records import normalize_model_key_value
+from gds_etl_workbench.domain.modeling_records import normalize_project_key_value
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation, ReadTransaction
 
-from gds_workbench_api.features.models import ModelNotFoundError
+from gds_workbench_api.features.projects import ProjectNotFoundError
 
 from .contracts import (
     ValidationEligibleSystem,
@@ -30,35 +30,35 @@ _MAX_CHECKS = 50_000
 _MAX_CONTEXTS = 50_000
 _MAX_LEDGER_BYTES = 32 * 1024 * 1024
 
-_MODEL_HEADER_SQL: LiteralString = """
-SELECT target_model.model_revision
-  FROM model.model AS target_model
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+_PROJECT_HEADER_SQL: LiteralString = """
+SELECT target_project.project_revision
+  FROM project.project AS target_project
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
 """
 
 _ELIGIBLE_SYSTEMS_SQL: LiteralString = """
-WITH target_model AS MATERIALIZED (
-    SELECT target_model.model_id,
-           target_model.tenant_id
-      FROM model.model AS target_model
-     WHERE target_model.tenant_id = %s
-       AND target_model.model_id = %s
-       AND target_model.is_active
+WITH target_project AS MATERIALIZED (
+    SELECT target_project.project_id,
+           target_project.tenant_id
+      FROM project.project AS target_project
+     WHERE target_project.tenant_id = %s
+       AND target_project.project_id = %s
+       AND target_project.is_active
 ), current_context AS MATERIALIZED (
     SELECT context.*
-      FROM target_model
+      FROM target_project
       CROSS JOIN LATERAL workflow.list_code_generation_target_context(
-          target_model.model_id,
+          target_project.project_id,
           'logical_entity',
           NULL
       ) AS context
     UNION ALL
     SELECT context.*
-      FROM target_model
+      FROM target_project
       CROSS JOIN LATERAL workflow.list_code_generation_target_context(
-          target_model.model_id,
+          target_project.project_id,
           'dimensional_entity',
           NULL
       ) AS context
@@ -83,7 +83,7 @@ SELECT source_system.system_id,
                    ON assignment.generated_code_id = generated.generated_code_id
                   AND assignment.source_system_id = context.source_system_id
                   AND assignment.generated_code_source_system_status = 'active'
-                WHERE generated.model_id = context.model_id
+                WHERE generated.project_id = context.project_id
                   AND generated.modeled_entity_type = context.modeled_entity_type
                   AND coalesce(generated.logical_entity_id, generated.dimensional_entity_id) =
                       context.modeled_entity_id
@@ -93,10 +93,10 @@ SELECT source_system.system_id,
        )::INTEGER AS current_code_target_count,
        EXISTS (
            SELECT 1
-             FROM target_model
+             FROM target_project
              JOIN workflow.validation_group AS validation_group
-               ON validation_group.model_id = target_model.model_id
-              AND validation_group.tenant_id = target_model.tenant_id
+               ON validation_group.project_id = target_project.project_id
+              AND validation_group.tenant_id = target_project.tenant_id
               AND validation_group.system_id = source_system.system_id
               AND validation_group.is_active
               AND (%s::VARCHAR IS NULL OR validation_group.modeled_entity_type IS NULL
@@ -115,13 +115,13 @@ SELECT source_system.system_id,
 """
 
 _LEDGER_BOUNDS_SQL: LiteralString = """
-WITH target_model AS MATERIALIZED (
-    SELECT target_model.model_id,
-           target_model.tenant_id
-      FROM model.model AS target_model
-     WHERE target_model.tenant_id = %s
-       AND target_model.model_id = %s
-       AND target_model.is_active
+WITH target_project AS MATERIALIZED (
+    SELECT target_project.project_id,
+           target_project.tenant_id
+      FROM project.project AS target_project
+     WHERE target_project.tenant_id = %s
+       AND target_project.project_id = %s
+       AND target_project.is_active
 ), group_summary AS (
     SELECT count(*)::INTEGER AS group_count,
            coalesce(sum(
@@ -132,10 +132,10 @@ WITH target_model AS MATERIALIZED (
                )
                + 128
            ), 0)::BIGINT AS group_bytes
-      FROM target_model
+      FROM target_project
       JOIN workflow.validation_group AS validation_group
-        ON validation_group.model_id = target_model.model_id
-       AND validation_group.tenant_id = target_model.tenant_id
+        ON validation_group.project_id = target_project.project_id
+       AND validation_group.tenant_id = target_project.tenant_id
 ), check_summary AS (
     SELECT count(*)::INTEGER AS check_count,
            coalesce(sum(
@@ -162,10 +162,10 @@ WITH target_model AS MATERIALIZED (
                    0
                )
            ), 0)::BIGINT AS check_bytes
-      FROM target_model
+      FROM target_project
       JOIN workflow.validation_group AS validation_group
-        ON validation_group.model_id = target_model.model_id
-       AND validation_group.tenant_id = target_model.tenant_id
+        ON validation_group.project_id = target_project.project_id
+       AND validation_group.tenant_id = target_project.tenant_id
       JOIN workflow.validation_check AS validation_check
         ON validation_check.validation_group_id =
            validation_group.validation_group_id
@@ -189,15 +189,15 @@ SELECT validation_group.validation_group_id,
        btrim(validation_group.code_context_digest::TEXT) AS code_context_digest,
        validation_group.is_active,
        validation_group.is_locked
-  FROM model.model AS target_model
+  FROM project.project AS target_project
   JOIN workflow.validation_group AS validation_group
-    ON validation_group.model_id = target_model.model_id
-   AND validation_group.tenant_id = target_model.tenant_id
+    ON validation_group.project_id = target_project.project_id
+   AND validation_group.tenant_id = target_project.tenant_id
   JOIN core.system AS source_system
     ON source_system.system_id = validation_group.system_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
  ORDER BY lower(btrim(source_system.system_code)),
           validation_group.system_id,
           lower(btrim(validation_group.validation_group_name)),
@@ -219,17 +219,17 @@ SELECT validation_group.validation_group_id,
        validation_check.validation_comparison_value,
        validation_check.is_active AS validation_check_is_active,
        validation_check.is_locked AS validation_check_is_locked
-  FROM model.model AS target_model
+  FROM project.project AS target_project
   JOIN workflow.validation_group AS validation_group
-    ON validation_group.model_id = target_model.model_id
-   AND validation_group.tenant_id = target_model.tenant_id
+    ON validation_group.project_id = target_project.project_id
+   AND validation_group.tenant_id = target_project.tenant_id
   JOIN core.system AS source_system
     ON source_system.system_id = validation_group.system_id
   JOIN workflow.validation_check AS validation_check
     ON validation_check.validation_group_id = validation_group.validation_group_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
  ORDER BY lower(btrim(source_system.system_code)),
           validation_group.system_id,
           lower(btrim(validation_group.validation_group_name)),
@@ -239,30 +239,30 @@ SELECT validation_group.validation_group_id,
 """
 
 _CURRENT_CONTEXT_SQL: LiteralString = """
-WITH target_model AS MATERIALIZED (
-    SELECT target_model.model_id
-      FROM model.model AS target_model
-     WHERE target_model.tenant_id = %s
-       AND target_model.model_id = %s
-       AND target_model.is_active
+WITH target_project AS MATERIALIZED (
+    SELECT target_project.project_id
+      FROM project.project AS target_project
+     WHERE target_project.tenant_id = %s
+       AND target_project.project_id = %s
+       AND target_project.is_active
 ), group_system AS MATERIALIZED (
     SELECT DISTINCT validation_group.system_id
-      FROM target_model
+      FROM target_project
       JOIN workflow.validation_group AS validation_group
-        ON validation_group.model_id = target_model.model_id
+        ON validation_group.project_id = target_project.project_id
 ), current_context AS MATERIALIZED (
     SELECT context.*
-      FROM target_model
+      FROM target_project
       CROSS JOIN LATERAL workflow.list_code_generation_target_context(
-          target_model.model_id,
+          target_project.project_id,
           'logical_entity',
           NULL
       ) AS context
     UNION ALL
     SELECT context.*
-      FROM target_model
+      FROM target_project
       CROSS JOIN LATERAL workflow.list_code_generation_target_context(
-          target_model.model_id,
+          target_project.project_id,
           'dimensional_entity',
           NULL
       ) AS context
@@ -327,7 +327,7 @@ SELECT context.modeled_entity_id,
                ON system.system_id = source.source_system_id
             WHERE source.generated_code_id = artifact.generated_code_id
        ) AS assignment
-       WHERE artifact.model_id = context.model_id
+       WHERE artifact.project_id = context.project_id
                   AND artifact.modeled_entity_type = context.modeled_entity_type
                   AND coalesce(artifact.logical_entity_id, artifact.dimensional_entity_id) =
                       context.modeled_entity_id
@@ -363,7 +363,7 @@ class ValidationReadService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         entity_type: Literal["logical_entity", "dimensional_entity"] | None = None,
     ) -> ValidationEligibleSystemCollection: ...
 
@@ -372,7 +372,7 @@ class ValidationReadService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         entity_type: Literal["logical_entity", "dimensional_entity"] | None = None,
     ) -> ValidationLedger: ...
 
@@ -392,7 +392,7 @@ class DatabaseValidationReadService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         entity_type: Literal["logical_entity", "dimensional_entity"] | None = None,
     ) -> ValidationEligibleSystemCollection:
         async with self._database.read_transaction(
@@ -403,18 +403,18 @@ class DatabaseValidationReadService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
-            header = await transaction.fetch_one(_MODEL_HEADER_SQL, (tenant_id, model_id))
+            header = await transaction.fetch_one(_PROJECT_HEADER_SQL, (tenant_id, project_id))
             if header is None:
-                raise ModelNotFoundError()
+                raise ProjectNotFoundError()
             rows = await transaction.fetch_all(
                 _ELIGIBLE_SYSTEMS_SQL,
-                (tenant_id, model_id, entity_type, entity_type, entity_type, entity_type),
+                (tenant_id, project_id, entity_type, entity_type, entity_type, entity_type),
             )
         return ValidationEligibleSystemCollection(
-            model_id=model_id,
-            model_revision=header["model_revision"],
+            project_id=project_id,
+            project_revision=header["project_revision"],
             items=tuple(ValidationEligibleSystem.model_validate(row, strict=False) for row in rows),
             is_truncated=False,
         )
@@ -424,7 +424,7 @@ class DatabaseValidationReadService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         entity_type: Literal["logical_entity", "dimensional_entity"] | None = None,
     ) -> ValidationLedger:
         async with self._database.read_transaction(
@@ -435,14 +435,14 @@ class DatabaseValidationReadService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
-            header = await transaction.fetch_one(_MODEL_HEADER_SQL, (tenant_id, model_id))
+            header = await transaction.fetch_one(_PROJECT_HEADER_SQL, (tenant_id, project_id))
             if header is None:
-                raise ModelNotFoundError()
+                raise ProjectNotFoundError()
             bounds = await transaction.fetch_one(
                 _LEDGER_BOUNDS_SQL,
-                (tenant_id, model_id),
+                (tenant_id, project_id),
             )
             if bounds is None or (
                 _bounded_nonnegative_int(bounds, "group_count") > _MAX_GROUPS
@@ -452,15 +452,15 @@ class DatabaseValidationReadService:
                 raise InvalidRequestError("The Validation ledger exceeds its bounded size.")
             group_rows = await transaction.fetch_all(
                 _LEDGER_GROUPS_SQL,
-                (tenant_id, model_id),
+                (tenant_id, project_id),
             )
             check_rows = await transaction.fetch_all(
                 _LEDGER_CHECKS_SQL,
-                (tenant_id, model_id),
+                (tenant_id, project_id),
             )
             context_rows = await transaction.fetch_all(
                 _CURRENT_CONTEXT_SQL,
-                (tenant_id, model_id),
+                (tenant_id, project_id),
             )
         groups = _assemble_ledger_groups(
             group_rows=group_rows,
@@ -468,8 +468,8 @@ class DatabaseValidationReadService:
             context_rows=context_rows,
         )
         return ValidationLedger(
-            model_id=model_id,
-            model_revision=header["model_revision"],
+            project_id=project_id,
+            project_revision=header["project_revision"],
             groups=tuple(
                 group
                 for group in groups
@@ -545,7 +545,7 @@ def _assemble_ledger_groups(
         system_code = row.get("system_code")
         if not isinstance(system_code, str) or not system_code.strip():
             raise InvalidRequestError("The Validation ledger is invalid.")
-        normalized = normalize_model_key_value(system_code)
+        normalized = normalize_project_key_value(system_code)
         if normalized not in current_digests:
             current_digests[normalized] = (
                 validation_mapping_context_digest(digest_contexts, system_code),
@@ -630,7 +630,7 @@ def _ledger_digest_context(
             raise InvalidRequestError("The current Validation context is invalid.")
         source_values = cast(list[str], source_objects)
         source_codes = frozenset(source_values)
-        normalized_source_codes = {normalize_model_key_value(value) for value in source_values}
+        normalized_source_codes = {normalize_project_key_value(value) for value in source_values}
         if len(normalized_source_codes) != len(source_values):
             raise InvalidRequestError("The current Validation context is ambiguous.")
         contexts.append(

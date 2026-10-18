@@ -3,11 +3,11 @@ from __future__ import annotations
 from typing import Any, cast
 from uuid import UUID
 
-from gds_etl_workbench.application.change_sets.model_validation import (
-    PhysicalModelCatalog,
+from gds_etl_workbench.application.change_sets.project_validation import (
+    PhysicalProjectCatalog,
 )
 from gds_etl_workbench.domain.modeling_records import PhysicalObjectKey
-from gds_etl_workbench.domain.snapshots.model import ModelChangeSetDataset
+from gds_etl_workbench.domain.snapshots.project import ProjectChangeSetDataset
 from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.mapping import (
     MappingPreparation,
@@ -24,12 +24,12 @@ from gds_workbench_api.features.workflows.authoring.plan import (
 from gds_workbench_api.prompt_rendering import PromptComponentTemplates
 from pydantic import JsonValue
 
-from tests.mcp.model_test_fixtures import (
+from tests.mcp.project_test_fixtures import (
     dimensional_attribute,
     dimensional_entity,
     logical_attribute,
     logical_entity,
-    model_details,
+    project_details,
     snapshot_from_graph,
 )
 
@@ -49,10 +49,10 @@ def mapping_preparation(
         {
             "agent_plan": AgentRunPlan(
                 workflow_run_id=1048,
-                model_id=18,
+                project_id=18,
                 correlation_id=UUID("33333333-3333-3333-3333-333333333333"),
-                model_revision=7,
-                model_workflow="mapping",
+                project_revision=7,
+                project_workflow="mapping",
                 workflow_execution_mode=execution_mode,
                 modeled_entity_type=modeled_entity_type,
                 selected_scope_digest="a" * 64,
@@ -97,8 +97,8 @@ def mapping_preparation(
     )
     context_document: dict[str, Any] = {
         "workflow_run_id": 1048,
-        "model_id": 18,
-        "model_revision": 7,
+        "project_id": 18,
+        "project_revision": 7,
         "correlation_id": "33333333-3333-3333-3333-333333333333",
         "pair": {"modeled_entity_id": 201, "source_system_id": 31},
         "modeled_entity_type": modeled_entity_type,
@@ -220,7 +220,7 @@ def mapping_preparation(
             }
         ],
         "authoring": {
-            "model_name": "Customer Model",
+            "project_name": "Customer Project",
             "naming_instructions": "Use PascalCase names.",
             "audit_columns_template": None,
             "technical_columns_template": None,
@@ -470,13 +470,13 @@ def mapping_validation_preparation(
                 }
             ]
         attributes.append(record)
-    graph: dict[ModelChangeSetDataset, list[dict[str, object]]] = {
-        "model_details": [model_details(context.authoring.model_name)],
-        "model_input_scope": [
-            {**source_key, "is_active": True, "model_input_scope_is_locked": False}
+    graph: dict[ProjectChangeSetDataset, list[dict[str, object]]] = {
+        "project_details": [project_details(context.authoring.project_name)],
+        "project_input_scope": [
+            {**source_key, "is_active": True, "project_input_scope_is_locked": False}
         ],
-        cast(ModelChangeSetDataset, layer + "_entity"): [entity_record],
-        cast(ModelChangeSetDataset, layer + "_attribute"): attributes,
+        cast(ProjectChangeSetDataset, layer + "_entity"): [entity_record],
+        cast(ProjectChangeSetDataset, layer + "_attribute"): attributes,
     }
     if dimensional:
         input_entity = logical_entity("CustomerInput", "core", source_key)
@@ -517,19 +517,22 @@ def mapping_validation_preparation(
             )
         ]
     snapshot = snapshot_from_graph(graph).model_copy(
-        update={"model_id": plan.model_id, "model_revision": plan.model_revision}
+        update={
+            "project_id": plan.project_id,
+            "project_revision": plan.project_revision,
+        }
     )
     source_objects = frozenset(
         {tuple(str(value).casefold() for value in source_key.values())}
     )
     source_attributes = frozenset((*key, "customer_id") for key in source_objects)
-    scope = PhysicalModelCatalog(
-        model_tenant_code="NWA",
+    scope = PhysicalProjectCatalog(
+        project_tenant_code="NWA",
         active_system_codes=frozenset({"crm", "gds"}),
         objects=cast(Any, source_objects),
         attributes=cast(Any, source_attributes),
-        model_input_objects=cast(Any, source_objects),
-        model_input_attributes=cast(Any, source_attributes),
+        project_input_objects=cast(Any, source_objects),
+        project_input_attributes=cast(Any, source_attributes),
     )
     return MappingPreparation(
         plan=plan,

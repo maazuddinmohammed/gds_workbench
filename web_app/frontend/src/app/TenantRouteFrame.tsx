@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import type { ModelDetail } from "../features/models/api";
+import type { ProjectDetail } from "../features/projects/api";
 import type { TenantHomeRecord, TenantsApi } from "../features/tenants/api";
 import { ErrorPage, LoadingPage } from "../shared/ui";
 import { TenantWorkspace, type WorkspaceNavigation } from "./TenantWorkspace";
@@ -15,14 +15,14 @@ export function TenantRouteFrame({
   tenantId,
   activeNav,
   loadingLabel,
-  model,
+  project,
   children,
 }: {
   api: Pick<TenantsApi, "readTenantHome">;
   tenantId: number;
   activeNav: WorkspaceNavigation;
   loadingLabel: string;
-  model?: ModelDetail;
+  project?: ProjectDetail;
   children: (context: TenantRouteContext) => ReactNode;
 }) {
   const validTenantId = Number.isSafeInteger(tenantId) && tenantId > 0;
@@ -41,7 +41,7 @@ export function TenantRouteFrame({
     <TenantWorkspace
       home={context.home}
       activeNav={activeNav}
-      {...(model ? { model } : {})}
+      {...(project ? { project } : {})}
     >
       {children(context)}
     </TenantWorkspace>

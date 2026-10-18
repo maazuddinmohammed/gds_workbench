@@ -2,7 +2,7 @@
 
 CREATE TABLE workflow.mapping_object (
     mapping_object_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     modeled_entity_type VARCHAR(30) NOT NULL,
     logical_entity_id BIGINT,
     dimensional_entity_id BIGINT,
@@ -18,12 +18,12 @@ CREATE TABLE workflow.mapping_object (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_mapping_object_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_mapping_object_logical_entity FOREIGN KEY (logical_entity_id, model_id)
-        REFERENCES workflow.logical_entity (logical_entity_id, model_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_mapping_object_dimensional_entity FOREIGN KEY (dimensional_entity_id, model_id)
-        REFERENCES workflow.dimensional_entity (dimensional_entity_id, model_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_mapping_object_project FOREIGN KEY (project_id)
+        REFERENCES project.project (project_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_mapping_object_logical_entity FOREIGN KEY (logical_entity_id, project_id)
+        REFERENCES workflow.logical_entity (logical_entity_id, project_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_mapping_object_dimensional_entity FOREIGN KEY (dimensional_entity_id, project_id)
+        REFERENCES workflow.dimensional_entity (dimensional_entity_id, project_id) ON DELETE NO ACTION,
     CONSTRAINT ck_mapping_object_typed_entity CHECK (
         (modeled_entity_type = 'logical_entity' AND logical_entity_id IS NOT NULL
             AND dimensional_entity_id IS NULL)
@@ -31,10 +31,10 @@ CREATE TABLE workflow.mapping_object (
             AND logical_entity_id IS NULL)
     ),
     CONSTRAINT uq_mapping_object_logical_witness UNIQUE (
-        mapping_object_id, model_id, modeled_entity_type, logical_entity_id
+        mapping_object_id, project_id, modeled_entity_type, logical_entity_id
     ),
     CONSTRAINT uq_mapping_object_dimensional_witness UNIQUE (
-        mapping_object_id, model_id, modeled_entity_type, dimensional_entity_id
+        mapping_object_id, project_id, modeled_entity_type, dimensional_entity_id
     ),
     CONSTRAINT fk_mapping_object_source_system FOREIGN KEY (source_system_id)
         REFERENCES core.system (system_id) ON DELETE NO ACTION,
@@ -57,7 +57,7 @@ CREATE TABLE workflow.mapping_object (
 CREATE TABLE workflow.mapping_attribute (
     mapping_attribute_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     mapping_object_id BIGINT NOT NULL,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     modeled_entity_type VARCHAR(30) NOT NULL,
     logical_entity_id BIGINT,
     dimensional_entity_id BIGINT,
@@ -77,24 +77,24 @@ CREATE TABLE workflow.mapping_attribute (
         REFERENCES workflow.mapping_object (mapping_object_id)
         ON DELETE NO ACTION,
     CONSTRAINT fk_mapping_attribute_logical_parent FOREIGN KEY (
-        mapping_object_id, model_id, modeled_entity_type, logical_entity_id
+        mapping_object_id, project_id, modeled_entity_type, logical_entity_id
     ) REFERENCES workflow.mapping_object (
-        mapping_object_id, model_id, modeled_entity_type, logical_entity_id
+        mapping_object_id, project_id, modeled_entity_type, logical_entity_id
     ) ON DELETE NO ACTION,
     CONSTRAINT fk_mapping_attribute_dimensional_parent FOREIGN KEY (
-        mapping_object_id, model_id, modeled_entity_type, dimensional_entity_id
+        mapping_object_id, project_id, modeled_entity_type, dimensional_entity_id
     ) REFERENCES workflow.mapping_object (
-        mapping_object_id, model_id, modeled_entity_type, dimensional_entity_id
+        mapping_object_id, project_id, modeled_entity_type, dimensional_entity_id
     ) ON DELETE NO ACTION,
     CONSTRAINT fk_mapping_attribute_logical FOREIGN KEY (
-        logical_attribute_id, logical_entity_id, model_id
+        logical_attribute_id, logical_entity_id, project_id
     ) REFERENCES workflow.logical_attribute (
-        logical_attribute_id, logical_entity_id, model_id
+        logical_attribute_id, logical_entity_id, project_id
     ) ON DELETE NO ACTION,
     CONSTRAINT fk_mapping_attribute_dimensional FOREIGN KEY (
-        dimensional_attribute_id, dimensional_entity_id, model_id
+        dimensional_attribute_id, dimensional_entity_id, project_id
     ) REFERENCES workflow.dimensional_attribute (
-        dimensional_attribute_id, dimensional_entity_id, model_id
+        dimensional_attribute_id, dimensional_entity_id, project_id
     ) ON DELETE NO ACTION,
     CONSTRAINT ck_mapping_attribute_typed_entity CHECK (
         (modeled_entity_type = 'logical_entity' AND logical_entity_id IS NOT NULL
@@ -117,9 +117,9 @@ CREATE TABLE workflow.mapping_attribute (
 );
 
 -- Supports dependency-ordered target reads for Mapping and Code Generation.
-CREATE INDEX ix_mapping_object_model_wave
+CREATE INDEX ix_mapping_object_project_wave
     ON workflow.mapping_object (
-        model_id,
+        project_id,
         object_dependency_order,
         modeled_entity_type,
         logical_entity_id,
@@ -129,10 +129,10 @@ CREATE INDEX ix_mapping_object_model_wave
     WHERE object_mapping_status = 'active';
 
 CREATE UNIQUE INDEX ux_mapping_object_logical_system
-    ON workflow.mapping_object (model_id, logical_entity_id, source_system_id)
+    ON workflow.mapping_object (project_id, logical_entity_id, source_system_id)
     WHERE modeled_entity_type = 'logical_entity';
 CREATE UNIQUE INDEX ux_mapping_object_dimensional_system
-    ON workflow.mapping_object (model_id, dimensional_entity_id, source_system_id)
+    ON workflow.mapping_object (project_id, dimensional_entity_id, source_system_id)
     WHERE modeled_entity_type = 'dimensional_entity';
 CREATE UNIQUE INDEX ux_mapping_attribute_logical
     ON workflow.mapping_attribute (mapping_object_id, logical_attribute_id)

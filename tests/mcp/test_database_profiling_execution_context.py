@@ -232,7 +232,7 @@ def _execution_parameters(seed: ProfilingExecutionSeed) -> tuple[object, ...]:
         seed.context.entra_tenant_id,
         seed.context.entra_object_id,
         seed.workflow_run_id,
-        seed.context.model_revision,
+        seed.context.project_revision,
     )
 
 
@@ -257,11 +257,14 @@ def test_running_profiling_context_returns_scope_metadata_and_one_secret_row(
 
     assert len(context_rows) == len(seed.attributes)
     assert [
-        (row["object_id"], row["attribute_id"], row["attribute_name"]) for row in context_rows
+        (row["object_id"], row["attribute_id"], row["attribute_name"])
+        for row in context_rows
     ] == list(seed.attributes)
     assert all(row["workflow_run_id"] == seed.workflow_run_id for row in context_rows)
-    assert all(row["model_id"] == seed.context.model_id for row in context_rows)
-    assert all(row["model_revision"] == seed.context.model_revision for row in context_rows)
+    assert all(row["project_id"] == seed.context.project_id for row in context_rows)
+    assert all(
+        row["project_revision"] == seed.context.project_revision for row in context_rows
+    )
     assert all(row["relation_catalog"] == seed.relation_catalog for row in context_rows)
     assert all(row["relation_schema"] == seed.relation_schema for row in context_rows)
     assert all(row["gds_connection_id"] == seed.connection_id for row in context_rows)
@@ -273,7 +276,9 @@ def test_running_profiling_context_returns_scope_metadata_and_one_secret_row(
     assert connection_row["failure_message"] is None
     assert connection_row["gds_connection_id"] == seed.connection_id
     assert connection_row["environment_code"] == seed.environment_code
-    assert _digest(connection_row["databricks_host_name"]) == _digest(seed.server_hostname)
+    assert _digest(connection_row["databricks_host_name"]) == _digest(
+        seed.server_hostname
+    )
     assert _digest(connection_row["databricks_http_path"]) == _digest(seed.http_path)
     assert _digest(connection_row["databricks_token"]) == _digest(seed.access_token)
 
@@ -402,7 +407,7 @@ def test_source_profiling_rejects_missing_foreign_catalog_metadata(
         ).fetchall()
 
 
-def test_profiling_context_requires_objects_to_belong_to_model_tenant(
+def test_profiling_context_requires_objects_to_belong_to_project_tenant(
     postgres_database: DisposablePostgres,
 ) -> None:
     seed = _seed_profiling_execution(postgres_database)
@@ -490,7 +495,7 @@ def test_profiling_context_denies_another_tenant_principal(
                 other_context.entra_tenant_id,
                 other_context.entra_object_id,
                 seed.workflow_run_id,
-                seed.context.model_revision,
+                seed.context.project_revision,
             ),
         ).fetchall()
 
@@ -535,7 +540,7 @@ def test_profiling_context_requires_current_revision_and_owned_lock(
             postgres_database.web_runtime_dsn(),
             row_factory=dict_row,
         ) as connection,
-        pytest.raises(RaiseException, match="stale_model_revision"),
+        pytest.raises(RaiseException, match="stale_project_revision"),
         connection.transaction(),
     ):
         connection.execute("SET ROLE gds_web_write")
@@ -545,7 +550,7 @@ def test_profiling_context_requires_current_revision_and_owned_lock(
                 seed.context.entra_tenant_id,
                 seed.context.entra_object_id,
                 seed.workflow_run_id,
-                seed.context.model_revision + 1,
+                seed.context.project_revision + 1,
             ),
         ).fetchall()
 
@@ -625,9 +630,13 @@ def test_profiling_connection_gaps_return_fixed_failures_without_secrets(
         )
 
     assert missing_environment["failure_code"] == "environment_not_found"
-    assert missing_environment["failure_message"] == ("Profiling Environment is unavailable.")
+    assert missing_environment["failure_message"] == (
+        "Profiling Environment is unavailable."
+    )
     assert missing_values["failure_code"] == "connection_values_missing"
-    assert missing_values["failure_message"] == ("Profiling GDS connection values are incomplete.")
+    assert missing_values["failure_message"] == (
+        "Profiling GDS connection values are incomplete."
+    )
     for failure in (missing_environment, missing_values):
         assert failure["gds_connection_id"] is None
         assert failure["databricks_host_name"] is None
@@ -650,7 +659,7 @@ def test_no_batch_context_rejects_multiple_source_tenants(
         physical = require_row(
             connection.execute(
                 """
-                SELECT source_tenant.project_id,
+                SELECT source_tenant.lane_id,
                        source_system.system_type_id,
                        source_connection.connection_type_id,
                        object_record.zone_id
@@ -670,7 +679,7 @@ def test_no_batch_context_rejects_multiple_source_tenants(
             connection.execute(
                 """
                 INSERT INTO core.tenant (
-                    project_id,
+                    lane_id,
                     tenant_code,
                     tenant_name,
                     tenant_catalog,
@@ -679,7 +688,7 @@ def test_no_batch_context_rejects_multiple_source_tenants(
                 RETURNING tenant_id
                 """,
                 (
-                    physical["project_id"],
+                    physical["lane_id"],
                     f"second_source_{uuid4().hex}",
                     f"Second Source {uuid4().hex}",
                     second_catalog,

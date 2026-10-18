@@ -28,12 +28,12 @@ All 16 currently accepted Metadata Change Set datasets are listed below, grouped
 
 ## Read-only foundational tables
 
-These establish ownership and physical placement. Consult only the page needed to resolve the request; Project is usually unnecessary for a metadata edit.
+These establish ownership and physical placement. Consult only the page needed to resolve the request; Lane is usually unnecessary for a metadata edit.
 
 | Table reference | Read-only dataset | How it is used |
 |---|---|---|
-| [project](read-only/project.md) | `project` | Registered organizational grouping to which Tenants belong. |
-| [tenant](read-only/tenant.md) | `tenant` | Ownership and authorization scope for metadata, Models, and principals; belongs to a Project. |
+| [lane](read-only/lane.md) | `lane` | Registered organizational grouping to which Tenants belong. |
+| [tenant](read-only/tenant.md) | `tenant` | Ownership and authorization scope for metadata, Projects, and principals; belongs to a Lane. |
 | [system](read-only/system.md) | `system` | Registered named system providing business and technical context; classified by a System Type. |
 | [connection](read-only/connection.md) | `connection` | Registered physical access or placement context joining a Tenant, System, and Connection Type. |
 

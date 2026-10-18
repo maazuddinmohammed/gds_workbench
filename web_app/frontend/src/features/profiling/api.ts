@@ -1,5 +1,5 @@
 import type { HttpRequest } from "../../core/http";
-import type { ModelInputScopeApi } from "../model_input_scope/api";
+import type { ProjectInputScopeApi } from "../project_input_scope/api";
 import type {
   WorkflowRunCommandResult,
   WorkflowRunStart,
@@ -35,8 +35,8 @@ export interface ProfilingObject {
 }
 
 export interface ProfilingObjectPage {
-  model_id: number;
-  model_revision: number;
+  project_id: number;
+  project_revision: number;
   items: ProfilingObject[];
   next_cursor: string | null;
 }
@@ -71,16 +71,16 @@ export interface AttributeProfile {
 }
 
 export interface ProfilingObjectDetail extends ProfilingObject {
-  model_id: number;
-  model_revision: number;
+  project_id: number;
+  project_revision: number;
   object_description: string | null;
   attribute_profiles: AttributeProfile[];
   profiles_truncated: boolean;
 }
 
 export interface CreateProfilingRunCommand {
-  expected_model_revision: number;
-  model_workflow: "profiling";
+  expected_project_revision: number;
+  project_workflow: "profiling";
   selected_object_ids: number[];
   requested_batch_id: string | null;
 }
@@ -90,19 +90,19 @@ export type ProfilingRunStart = WorkflowRunStart;
 export interface ProfilingTransport {
   listProfilingObjects: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     filters?: ProfilingFilters,
     pageSize?: number,
     cursor?: string,
   ) => Promise<ProfilingObjectPage>;
   readProfilingObject: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     objectId: number,
   ) => Promise<ProfilingObjectDetail>;
   createProfilingRun: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     command: CreateProfilingRunCommand,
     idempotencyKey: string,
   ) => Promise<WorkflowRunCommandResult>;
@@ -117,11 +117,11 @@ export type ProfilingApi = ProfilingTransport
     | "executeProfilingRun"
     | "cancelWorkflowRun"
   >
-  & Pick<ModelInputScopeApi, "listModelInputScope">;
+  & Pick<ProjectInputScopeApi, "listProjectInputScope">;
 
 export function createProfilingApi(request: HttpRequest): ProfilingTransport {
   return {
-    listProfilingObjects: (tenantId, modelId, filters = {}, pageSize = 200, cursor) => {
+    listProfilingObjects: (tenantId, projectId, filters = {}, pageSize = 200, cursor) => {
       const query = new URLSearchParams();
       if (filters.objectId) query.set("object_id", String(filters.objectId));
       const naturalKeyFilters = {
@@ -136,16 +136,16 @@ export function createProfilingApi(request: HttpRequest): ProfilingTransport {
       query.set("page_size", String(pageSize));
       if (cursor) query.set("cursor", cursor);
       return request<ProfilingObjectPage>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/profiling?${query}`,
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/profiling?${query}`,
       );
     },
-    readProfilingObject: (tenantId, modelId, objectId) =>
+    readProfilingObject: (tenantId, projectId, objectId) =>
       request<ProfilingObjectDetail>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/profiling/${objectId}`,
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/profiling/${objectId}`,
       ),
-    createProfilingRun: (tenantId, modelId, command, idempotencyKey) =>
+    createProfilingRun: (tenantId, projectId, command, idempotencyKey) =>
       request<WorkflowRunCommandResult>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/runs`,
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/runs`,
         {
           method: "POST",
           headers: {
@@ -159,34 +159,34 @@ export function createProfilingApi(request: HttpRequest): ProfilingTransport {
 }
 
 export const profilingQueryKeys = {
-  results: (tenantId: number, modelId: number, filters: unknown) => (
-    ["profiling-results", tenantId, modelId, filters] as const
+  results: (tenantId: number, projectId: number, filters: unknown) => (
+    ["profiling-results", tenantId, projectId, filters] as const
   ),
-  result: (tenantId: number, modelId: number, objectId: number | null) => (
-    ["profiling-result", tenantId, modelId, objectId] as const
+  result: (tenantId: number, projectId: number, objectId: number | null) => (
+    ["profiling-result", tenantId, projectId, objectId] as const
   ),
-  runs: (tenantId: number, modelId: number, state?: string) => (
+  runs: (tenantId: number, projectId: number, state?: string) => (
     state === undefined
-      ? ["profiling-runs", tenantId, modelId] as const
-      : ["profiling-runs", tenantId, modelId, state] as const
+      ? ["profiling-runs", tenantId, projectId] as const
+      : ["profiling-runs", tenantId, projectId, state] as const
   ),
-  run: (tenantId: number, modelId: number, runId: number) => (
-    ["workflow-run", tenantId, modelId, runId] as const
+  run: (tenantId: number, projectId: number, runId: number) => (
+    ["workflow-run", tenantId, projectId, runId] as const
   ),
-  eventFamily: (tenantId: number, modelId: number, runId: number) => (
-    ["workflow-run-events", tenantId, modelId, runId] as const
+  eventFamily: (tenantId: number, projectId: number, runId: number) => (
+    ["workflow-run-events", tenantId, projectId, runId] as const
   ),
   events: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     runId: number,
     afterSequence: number,
   ) => [
-    ...profilingQueryKeys.eventFamily(tenantId, modelId, runId),
+    ...profilingQueryKeys.eventFamily(tenantId, projectId, runId),
     afterSequence,
   ] as const,
-  scope: (tenantId: number, modelId: number) => (
-    ["profiling-run-scope", tenantId, modelId] as const
+  scope: (tenantId: number, projectId: number) => (
+    ["profiling-run-scope", tenantId, projectId] as const
   ),
 };
 

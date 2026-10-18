@@ -5,19 +5,19 @@ from typing import Any, Literal, LiteralString, cast
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.application.change_sets.model_validation import (
-    PhysicalModelCatalog,
+from gds_etl_workbench.application.change_sets.project_validation import (
+    PhysicalProjectCatalog,
 )
-from gds_etl_workbench.application.model_read import ModelReadContext
+from gds_etl_workbench.application.project_read import ProjectReadContext
 from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_etl_workbench.domain.modeling_records import (
     GeneratedCodeRecord,
-    MappingObjectRecord,
-    LogicalEntityRecord,
     LogicalAttributeRecord,
+    LogicalEntityRecord,
+    MappingObjectRecord,
     ObjectSupportRecord,
 )
-from gds_etl_workbench.domain.snapshots.model import ModelSnapshot
+from gds_etl_workbench.domain.snapshots.project import ProjectSnapshot
 from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.workflows.authoring.context import (
     AgentContextLimits,
@@ -35,27 +35,27 @@ from gds_workbench_api.prompt_rendering import PromptComponentTemplates
 def _plan(
     *,
     execution_mode: Literal["one_shot", "tool_assisted"] = "one_shot",
-    model_workflow: Literal["conceptual", "logical", "dimensional"] = "conceptual",
+    project_workflow: Literal["conceptual", "logical", "dimensional"] = "conceptual",
     selected_object_ids: tuple[int, ...] = (501,),
     max_turns: int = 8,
 ) -> AgentRunPlan:
     return AgentRunPlan.model_validate(
         {
             "workflow_run_id": 1048,
-            "model_id": 18,
+            "project_id": 18,
             "correlation_id": UUID("33333333-3333-3333-3333-333333333333"),
-            "model_revision": 7,
-            "model_workflow": model_workflow,
+            "project_revision": 7,
+            "project_workflow": project_workflow,
             "workflow_execution_mode": execution_mode,
             "modeled_entity_type": "logical_entity"
-            if model_workflow == "dimensional"
+            if project_workflow == "dimensional"
             else None,
             "selected_scope_digest": "a" * 64,
             "selected_object_ids": ()
-            if model_workflow == "dimensional"
+            if project_workflow == "dimensional"
             else selected_object_ids,
             "selected_entity_ids": selected_object_ids
-            if model_workflow == "dimensional"
+            if project_workflow == "dimensional"
             else (),
             "selection": AgentRunSelection(
                 sdk_code="openai_agents_sdk",
@@ -146,16 +146,16 @@ def _analysis(*, from_name: str, from_tenant: str = "SOURCE") -> dict[str, objec
     }
 
 
-def _snapshot() -> ModelSnapshot:
-    return ModelSnapshot.model_validate(
+def _snapshot() -> ProjectSnapshot:
+    return ProjectSnapshot.model_validate(
         {
-            "model_id": 18,
-            "model_name": "Customer Model",
-            "model_revision": 7,
-            "model_input_scope": {
+            "project_id": 18,
+            "project_name": "Customer Project",
+            "project_revision": 7,
+            "project_input_scope": {
                 "details": {
-                    "model_name": "Customer Model",
-                    "model_description": None,
+                    "project_name": "Customer Project",
+                    "project_description": None,
                     "logical_schemas": [
                         {"schema_name": "silver_sales", "description": None}
                     ],
@@ -171,12 +171,12 @@ def _snapshot() -> ModelSnapshot:
                 "objects": (
                     {
                         **_object_key("customers"),
-                        "model_input_scope_is_locked": False,
+                        "project_input_scope_is_locked": False,
                         "is_active": True,
                     },
                     {
                         **_object_key("orders"),
-                        "model_input_scope_is_locked": False,
+                        "project_input_scope_is_locked": False,
                         "is_active": True,
                     },
                 ),
@@ -194,45 +194,40 @@ def _snapshot() -> ModelSnapshot:
                     _analysis(from_name="customers", from_tenant="CONNECTION_OWNER"),
                 )
             },
-            "assertion": {
-                "documents": (
-                    {
-                        "modeling_assertion_document_name": "requirements.md",
-                        "tenant_code": None,
-                        "system_code": None,
-                        "modeling_assertion_file_pattern": None,
-                        "modeling_assertion_document_type": "requirements",
-                        "modeling_assertion_document_description": None,
-                        "modeling_assertion_document_metadata": {},
-                        "is_active": True,
-                    },
-                ),
+            "context": {
                 "records": (
                     {
-                        "modeling_assertion_record_key": "customer-meaning",
-                        "modeling_assertion_document_name": "requirements.md",
-                        "modeling_assertion_record_type": "business_rule",
-                        "modeling_assertion_text": "Customer means a purchasing party.",
-                        "modeling_assertion_details": {},
-                        "modeling_assertion_source_location": None,
-                        "modeling_assertion_applicable_layers": ("conceptual",),
-                        "modeling_assertion_confidence": "high",
-                        "modeling_assertion_record_status": "active",
-                        "modeling_assertion_record_is_locked": True,
+                        "context_record_id": "f9a5bf39-7d50-5a3e-aa4c-4f7326a2c238",
+                        "context_group_name": "requirements.md",
+                        "context_text": "Customer means a purchasing party.",
+                        "status": "active",
+                        "is_locked": True,
+                        "source_reference": None,
                     },
                     {
-                        "modeling_assertion_record_key": "logical-only",
-                        "modeling_assertion_document_name": "requirements.md",
-                        "modeling_assertion_record_type": "business_rule",
-                        "modeling_assertion_text": "Only for Logical authoring.",
-                        "modeling_assertion_details": {},
-                        "modeling_assertion_source_location": None,
-                        "modeling_assertion_applicable_layers": ("logical",),
-                        "modeling_assertion_confidence": "medium",
-                        "modeling_assertion_record_status": "active",
-                        "modeling_assertion_record_is_locked": False,
+                        "context_record_id": "80f02975-f05a-5bcb-9c57-cea147951c16",
+                        "context_group_name": "requirements.md",
+                        "context_text": "Only for Logical authoring.",
+                        "status": "active",
+                        "is_locked": False,
+                        "source_reference": None,
                     },
                 ),
+                "groups": (
+                    {
+                        "context_group_name": "requirements.md",
+                        "context_type_name": "Business Requirement",
+                        "context_group_description": None,
+                        "is_active": True,
+                        "source_system_code": None,
+                    },
+                ),
+                "types": [
+                    {
+                        "context_type_name": "Business Requirement",
+                        "context_type_description": "Required business outcomes.",
+                    }
+                ],
             },
             "conceptual": {
                 "objects": (
@@ -268,21 +263,19 @@ def _snapshot() -> ModelSnapshot:
     )
 
 
-def _snapshot_with_large_assertion(text: str) -> ModelSnapshot:
+def _snapshot_with_large_context(text: str) -> ProjectSnapshot:
     snapshot = _snapshot()
-    assertion = snapshot.assertion.model_copy(
+    context_section = snapshot.context.model_copy(
         update={
             "records": (
-                snapshot.assertion.records[0].model_copy(
-                    update={"modeling_assertion_text": text}
-                ),
+                snapshot.context.records[0].model_copy(update={"context_text": text}),
             )
         }
     )
-    return snapshot.model_copy(update={"assertion": assertion})
+    return snapshot.model_copy(update={"context": context_section})
 
 
-def _dimensional_snapshot() -> ModelSnapshot:
+def _dimensional_snapshot() -> ProjectSnapshot:
     snapshot = _snapshot()
     entity = LogicalEntityRecord(
         logical_entity_schema_name="silver_sales",
@@ -332,25 +325,23 @@ def _dimensional_snapshot() -> ModelSnapshot:
             "logical": snapshot.logical.model_copy(
                 update={"entities": (entity,), "attributes": (attribute,)}
             ),
-            "mapping": snapshot.mapping.model_copy(
-                update={"objects": (mapping,)}
-            ),
+            "mapping": snapshot.mapping.model_copy(update={"objects": (mapping,)}),
         }
     )
 
 
 async def _load_physical_scope(
-    transaction: object, model: ModelReadContext
-) -> PhysicalModelCatalog:
+    transaction: object, project: ProjectReadContext
+) -> PhysicalProjectCatalog:
     del transaction
-    assert model.model_id == 18 and model.model_revision == 7
-    return PhysicalModelCatalog(
-        model_tenant_code="SOURCE",
+    assert project.project_id == 18 and project.project_revision == 7
+    return PhysicalProjectCatalog(
+        project_tenant_code="SOURCE",
         active_system_codes=frozenset({"ERP"}),
         objects=frozenset(),
         attributes=frozenset(),
-        model_input_objects=frozenset(),
-        model_input_attributes=frozenset(),
+        project_input_objects=frozenset(),
+        project_input_attributes=frozenset(),
     )
 
 
@@ -360,13 +351,13 @@ class ContextTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
-        assert "model_revision" in query
+        assert "project_revision" in query
         assert parameters == (7, 18, 7)
         return {
-            "model_id": 18,
+            "project_id": 18,
             "tenant_id": 7,
-            "model_name": "Customer Model",
-            "model_revision": 7,
+            "project_name": "Customer Project",
+            "project_revision": 7,
         }
 
     async def fetch_all(
@@ -499,16 +490,16 @@ class LogicalContextTransaction(ContextTransaction):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("model_workflow", ("conceptual", "logical"))
+@pytest.mark.parametrize("project_workflow", ("conceptual", "logical"))
 @pytest.mark.parametrize("execution_mode", ("one_shot", "tool_assisted"))
 async def test_full_validation_state_stays_private_while_dependencies_are_readable(
-    model_workflow: Literal["conceptual", "logical"],
+    project_workflow: Literal["conceptual", "logical"],
     execution_mode: Literal["one_shot", "tool_assisted"],
 ) -> None:
     snapshot = _dimensional_snapshot()
     snapshot = snapshot.model_copy(
         update={
-            "model_tenant_code": "PRIVATE_CATALOG_TENANT",
+            "project_tenant_code": "PRIVATE_CATALOG_TENANT",
             "mapping": snapshot.mapping.model_copy(
                 update={
                     "objects": (
@@ -540,35 +531,35 @@ async def test_full_validation_state_stays_private_while_dependencies_are_readab
             ),
         }
     )
-    physical_scope = PhysicalModelCatalog(
-        model_tenant_code="PRIVATE_CATALOG_TENANT",
+    physical_scope = PhysicalProjectCatalog(
+        project_tenant_code="PRIVATE_CATALOG_TENANT",
         active_system_codes=frozenset({"ERP"}),
         objects=frozenset(),
         attributes=frozenset(),
-        model_input_objects=frozenset(),
-        model_input_attributes=frozenset(),
+        project_input_objects=frozenset(),
+        project_input_attributes=frozenset(),
     )
     transaction = (
         LogicalContextTransaction()
-        if model_workflow == "logical"
+        if project_workflow == "logical"
         else ContextTransaction()
     )
     loaded: list[str] = []
 
     async def load_snapshot(
-        actual_transaction: object, model: ModelReadContext
-    ) -> ModelSnapshot:
+        actual_transaction: object, project: ProjectReadContext
+    ) -> ProjectSnapshot:
         assert actual_transaction is transaction
-        assert model.model_revision == 7
+        assert project.project_revision == 7
         loaded.append("snapshot")
         return snapshot
 
     async def load_physical_scope(
         actual_transaction: object,
-        model: ModelReadContext,
-    ) -> PhysicalModelCatalog:
+        project: ProjectReadContext,
+    ) -> PhysicalProjectCatalog:
         assert actual_transaction is transaction
-        assert model.model_revision == 7
+        assert project.project_revision == 7
         loaded.append("physical_scope")
         return physical_scope
 
@@ -588,14 +579,14 @@ async def test_full_validation_state_stays_private_while_dependencies_are_readab
         transaction,
         tenant_id=7,
         plan=_plan(
-            model_workflow=model_workflow,
+            project_workflow=project_workflow,
             execution_mode=execution_mode,
         ),
     )
 
     assert result.snapshot is snapshot
     assert result.snapshot is not None
-    assert len(result.snapshot.model_input_scope.objects) == 2
+    assert len(result.snapshot.project_input_scope.objects) == 2
     assert len(result.context.selected_objects) == 1
     assert result.physical_scope is physical_scope
     assert loaded == ["snapshot", "physical_scope"]
@@ -605,11 +596,10 @@ async def test_full_validation_state_stays_private_while_dependencies_are_readab
     assert "PRIVATE_CATALOG_TENANT" not in provider_text + repr(result)
     assert "PRIVATE_MAPPING_BODY" not in provider_text + repr(result)
     assert "PRIVATE_CODE_BODY" not in provider_text + repr(result)
-    if model_workflow == "logical":
+    if project_workflow == "logical":
         assert result.context.applied.conceptual is None
         assert "Legacy Customer" not in provider_text
         assert {item.dataset for item in result.context.read_only_dependencies} == {
-
             "mapping_object",
             "generated_code",
         }
@@ -632,22 +622,22 @@ async def test_full_validation_state_stays_private_while_dependencies_are_readab
         assert result.context.read_only_dependencies == ()
 
 
-async def _load_snapshot(*_: object) -> ModelSnapshot:
+async def _load_snapshot(*_: object) -> ProjectSnapshot:
     return _snapshot()
 
 
-def _snapshot_with_policy_json(value: dict[str, object]) -> ModelSnapshot:
+def _snapshot_with_policy_json(value: dict[str, object]) -> ProjectSnapshot:
     snapshot = _snapshot()
-    details = snapshot.model_input_scope.details.model_copy(
+    details = snapshot.project_input_scope.details.model_copy(
         update={"silver_model_audit_columns_template": value}
     )
-    model_input_scope = snapshot.model_input_scope.model_copy(
+    project_input_scope = snapshot.project_input_scope.model_copy(
         update={"details": details}
     )
-    return snapshot.model_copy(update={"model_input_scope": model_input_scope})
+    return snapshot.model_copy(update={"project_input_scope": project_input_scope})
 
 
-def _snapshot_with_nested_supports(count: int) -> ModelSnapshot:
+def _snapshot_with_nested_supports(count: int) -> ProjectSnapshot:
     snapshot = _snapshot()
     supports = tuple(
         ObjectSupportRecord.model_validate(
@@ -715,23 +705,24 @@ async def test_load_builds_selected_canonical_evidence_and_reconciliation_baseli
     ]
     assert [item.object_name for item in context.profiles] == ["customers"]
     assert len(context.analysis_relationships) == 1
-    assert [
-        item.modeling_assertion_record_key for item in context.assertion.records
-    ] == ["customer-meaning", "logical-only"]
+    assert [item.context_record_id for item in context.context.records] == [
+        "f9a5bf39-7d50-5a3e-aa4c-4f7326a2c238",
+        "80f02975-f05a-5bcb-9c57-cea147951c16",
+    ]
     assert context.applied.conceptual is not None
     assert context.applied.conceptual.objects[0].conceptual_object_status == "inactive"
     assert context.applied.conceptual.objects[0].conceptual_object_is_locked is True
     assert context.applied.logical is None
     assert result.tool_catalog is None
     assert isinstance(result.embedded_context, dict)
-    assert result.embedded_context["model_revision"] == 7
+    assert result.embedded_context["project_revision"] == 7
     assert "workflow_run_id" not in result.embedded_context
-    assert "model_id" not in result.embedded_context
+    assert "project_id" not in result.embedded_context
     # batch_id identifies the profiled source batch, not an internal database row.
     assert not {
         key
         for key in _json_keys(result.embedded_context)
-        if key.endswith("_id") and key != "batch_id"
+        if key.endswith("_id") and key not in {"batch_id", "context_record_id"}
     }
     assert "sensitive physical description" not in repr(result)
     assert "private system prompt" not in repr(result)
@@ -743,18 +734,18 @@ async def test_dimensional_context_reads_active_logical_attributes_without_regis
 ):
     transaction = DimensionalContextTransaction()
     snapshot = _dimensional_snapshot()
-    physical_scope: PhysicalModelCatalog | None = None
+    physical_scope: PhysicalProjectCatalog | None = None
     scope_loaded = False
 
-    async def load_dimensional_snapshot(*_: object) -> ModelSnapshot:
+    async def load_dimensional_snapshot(*_: object) -> ProjectSnapshot:
         return snapshot
 
     async def load_dimensional_scope(
-        transaction: object, model: ModelReadContext
-    ) -> PhysicalModelCatalog:
+        transaction: object, project: ProjectReadContext
+    ) -> PhysicalProjectCatalog:
         nonlocal scope_loaded, physical_scope
         scope_loaded = True
-        physical_scope = await _load_physical_scope(transaction, model)
+        physical_scope = await _load_physical_scope(transaction, project)
         return physical_scope
 
     result = await PostgresAgentContextRepository(
@@ -771,7 +762,7 @@ async def test_dimensional_context_reads_active_logical_attributes_without_regis
     ).load(
         transaction,
         tenant_id=7,
-        plan=_plan(model_workflow="dimensional", selected_object_ids=(701,)),
+        plan=_plan(project_workflow="dimensional", selected_object_ids=(701,)),
     )
 
     assert transaction.entity_query_filtered is True
@@ -797,7 +788,7 @@ async def test_dimensional_context_reads_active_logical_attributes_without_regis
 async def test_dimensional_context_rejects_an_ineligible_selected_object() -> None:
     transaction = DimensionalContextTransaction(object_is_eligible=False)
 
-    async def load_ineligible_dimensional_snapshot(*_: object) -> ModelSnapshot:
+    async def load_ineligible_dimensional_snapshot(*_: object) -> ProjectSnapshot:
         return _dimensional_snapshot()
 
     with pytest.raises(WorkbenchError) as captured:
@@ -815,7 +806,7 @@ async def test_dimensional_context_rejects_an_ineligible_selected_object() -> No
         ).load(
             transaction,
             tenant_id=7,
-            plan=_plan(model_workflow="dimensional", selected_object_ids=(701,)),
+            plan=_plan(project_workflow="dimensional", selected_object_ids=(701,)),
         )
 
     assert captured.value.code == "agent_context_unavailable"
@@ -860,7 +851,7 @@ async def test_tool_assisted_mode_embeds_manifest_and_pages_only_local_records()
     assert dataset_counts.get("profiling_profile") == 1
     assert "profiles" not in manifest
     assert "workflow_run_id" not in manifest
-    assert "model_id" not in manifest
+    assert "project_id" not in manifest
     assert len(result.tool_catalog.allowed_tool_names) == 10
     assert "get_object_details" in result.tool_catalog.allowed_tool_names
     assert "get_agent_context_dataset" not in result.tool_catalog.allowed_tool_names
@@ -976,10 +967,10 @@ async def test_tool_manifest_compacts_selected_objects_to_stay_within_result_bou
 
 @pytest.mark.asyncio
 async def test_tool_pages_byte_pack_and_reassemble_one_oversized_record() -> None:
-    assertion_text = 'Policy says "retain" λ\\n' * 2_000
+    context_text = 'Policy says "retain" λ\\n' * 2_000
 
-    async def load_large_snapshot(*_: object) -> ModelSnapshot:
-        return _snapshot_with_large_assertion(assertion_text)
+    async def load_large_snapshot(*_: object) -> ProjectSnapshot:
+        return _snapshot_with_large_context(context_text)
 
     result = await PostgresAgentContextRepository(
         physical_scope_loader=_load_physical_scope,
@@ -1005,7 +996,7 @@ async def test_tool_pages_byte_pack_and_reassemble_one_oversized_record() -> Non
     manifest = cast(dict[str, object], catalog.manifest)
     page_counts = cast(dict[str, int], manifest["dataset_counts"])
     record_counts = cast(dict[str, int], manifest["dataset_record_counts"])
-    dataset = "modeling_assertion_record"
+    dataset = "context_record"
     assert record_counts[dataset] == 1
     assert page_counts[dataset] > record_counts[dataset]
     count_semantics = cast(dict[str, str], manifest["dataset_count_semantics"])
@@ -1075,9 +1066,9 @@ async def test_tool_pages_byte_pack_and_reassemble_one_oversized_record() -> Non
     reconstructed = json.loads(
         "".join(cast(str, item["json_text"]) for item in fragments)
     )
-    assert reconstructed == _snapshot_with_large_assertion(
-        assertion_text
-    ).assertion.records[0].model_dump(mode="json")
+    assert reconstructed == _snapshot_with_large_context(context_text).context.records[
+        0
+    ].model_dump(mode="json")
 
 
 class UnavailableFenceTransaction(ContextTransaction):
@@ -1175,7 +1166,7 @@ async def test_tool_mode_rejects_a_bound_too_small_for_its_manifest() -> None:
 async def test_provider_projection_rejects_unsafe_nested_json(
     unsafe_json: dict[str, object],
 ) -> None:
-    async def load_unsafe_snapshot(*_: object) -> ModelSnapshot:
+    async def load_unsafe_snapshot(*_: object) -> ProjectSnapshot:
         return _snapshot_with_policy_json(unsafe_json)
 
     with pytest.raises(WorkbenchError) as captured:
@@ -1198,7 +1189,7 @@ async def test_provider_projection_rejects_unsafe_nested_json(
 
 @pytest.mark.asyncio
 async def test_nested_authored_records_count_toward_hard_record_bound() -> None:
-    async def load_nested_snapshot(*_: object) -> ModelSnapshot:
+    async def load_nested_snapshot(*_: object) -> ProjectSnapshot:
         return _snapshot_with_nested_supports(25)
 
     with pytest.raises(WorkbenchError) as captured:
@@ -1374,18 +1365,18 @@ async def test_projected_inputs_keep_actual_keys_profiles_and_scoped_relationshi
 @pytest.mark.parametrize("workflow", ["logical", "dimensional"])
 async def test_authoring_requires_configured_output_schemas(workflow: Any) -> None:
     snapshot = _dimensional_snapshot()
-    details = snapshot.model_input_scope.details.model_copy(
+    details = snapshot.project_input_scope.details.model_copy(
         update={f"{workflow}_schemas": ()}
     )
     snapshot = snapshot.model_copy(
         update={
-            "model_input_scope": snapshot.model_input_scope.model_copy(
+            "project_input_scope": snapshot.project_input_scope.model_copy(
                 update={"details": details}
             )
         }
     )
 
-    async def load_snapshot(*_: object) -> ModelSnapshot:
+    async def load_snapshot(*_: object) -> ProjectSnapshot:
         return snapshot
 
     with pytest.raises(WorkbenchError, match="revision-fenced"):
@@ -1398,7 +1389,7 @@ async def test_authoring_requires_configured_output_schemas(workflow: Any) -> No
             else LogicalContextTransaction(),
             tenant_id=7,
             plan=_plan(
-                model_workflow=workflow,
+                project_workflow=workflow,
                 selected_object_ids=(701,) if workflow == "dimensional" else (501,),
             ),
         )

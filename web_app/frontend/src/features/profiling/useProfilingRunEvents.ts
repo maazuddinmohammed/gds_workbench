@@ -7,22 +7,22 @@ import { profilingQueryKeys, type ProfilingApi } from "./api";
 export function useProfilingRunEvents({
   api,
   tenantId,
-  modelId,
+  projectId,
   runId,
 }: {
   api: ProfilingApi;
   tenantId: number;
-  modelId: number;
+  projectId: number;
   runId: number;
 }) {
   const [cursor, setCursor] = useState({ runId, sequence: 0 });
   const [events, setEvents] = useState<WorkflowRunEvent[]>([]);
   const afterSequence = cursor.runId === runId ? cursor.sequence : 0;
   const query = useQuery({
-    queryKey: profilingQueryKeys.events(tenantId, modelId, runId, afterSequence),
+    queryKey: profilingQueryKeys.events(tenantId, projectId, runId, afterSequence),
     queryFn: () => api.listWorkflowRunEvents(
       tenantId,
-      modelId,
+      projectId,
       runId,
       afterSequence,
     ),

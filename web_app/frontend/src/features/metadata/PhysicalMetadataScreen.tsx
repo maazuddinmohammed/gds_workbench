@@ -100,7 +100,7 @@ export function PhysicalMetadataScreen({ api, tenantId, objectId, onObjectChange
       </nav> : null}
       <header className="metadata-commandbar">
         {embedded ? <h2 className="sr-only" ref={headingRef} tabIndex={-1}>Objects and Attributes</h2> : <div><p className="eyebrow">Physical metadata</p><h1 ref={headingRef} tabIndex={-1}>Objects and Attributes</h1>
-          <p>Making a record inactive does not remove its Model Scope membership.</p></div>}
+          <p>Making a record inactive does not remove its Project Scope membership.</p></div>}
         <div>{!embedded || objectId === null ? <WorkflowCommandTools /> : null}{!embedded ? <Link className="button button-secondary button-small" to="/tenants/$tenantId/metadata" params={{ tenantId: String(tenantId) }}>Metadata sheets</Link> : null}
           <button className="button button-secondary button-small" disabled={objectsQuery.isFetching || (objectId !== null && detailQuery.isFetching)} onClick={() => void refresh()}>Refresh</button></div>
       </header>

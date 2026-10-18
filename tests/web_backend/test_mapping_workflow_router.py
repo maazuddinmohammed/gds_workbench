@@ -36,19 +36,19 @@ class _StaticMappingWorkflowService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         expected_execution_mode: WorkflowExecutionMode,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart:
         del principal
         self.starts.append(
             (
                 tenant_id,
-                model_id,
+                project_id,
                 workflow_run_id,
                 expected_execution_mode,
-                expected_model_revision,
+                expected_project_revision,
             )
         )
         return AgentWorkflowRunStart(
@@ -56,7 +56,7 @@ class _StaticMappingWorkflowService:
             workflow_run_id=workflow_run_id,
             workflow_run_state="running",
             started_at=datetime(2026, 8, 24, 10, tzinfo=UTC),
-            model_revision=expected_model_revision,
+            project_revision=expected_project_revision,
         )
 
     async def execute_started(
@@ -64,12 +64,14 @@ class _StaticMappingWorkflowService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> None:
         del principal
-        self.executions.append((tenant_id, model_id, workflow_run_id, expected_model_revision))
+        self.executions.append(
+            (tenant_id, project_id, workflow_run_id, expected_project_revision)
+        )
 
 
 def _client(service: _StaticMappingWorkflowService) -> TestClient:
@@ -87,13 +89,15 @@ def _client(service: _StaticMappingWorkflowService) -> TestClient:
     return TestClient(app)
 
 
-def test_mapping_execute_route_starts_each_mode_without_process_local_execution() -> None:
-    for mode in ('one_shot', 'tool_assisted'):
+def test_mapping_execute_route_starts_each_mode_without_process_local_execution() -> (
+    None
+):
+    for mode in ("one_shot", "tool_assisted"):
         service = _StaticMappingWorkflowService()
         with _client(service) as client:
             response = client.post(
-                "/api/v1/tenants/7/models/18/mapping/runs/1048/execute",
-                json={"execution_mode": mode, "expected_model_revision": 4},
+                "/api/v1/tenants/7/projects/18/mapping/runs/1048/execute",
+                json={"execution_mode": mode, "expected_project_revision": 4},
             )
 
         assert response.status_code == 202
@@ -106,14 +110,14 @@ def test_mapping_execute_route_does_not_reschedule_an_already_started_run() -> N
 
     with _client(service) as client:
         response = client.post(
-            "/api/v1/tenants/7/models/18/mapping/runs/1048/execute",
-            json={"execution_mode": "one_shot", "expected_model_revision": 4},
+            "/api/v1/tenants/7/projects/18/mapping/runs/1048/execute",
+            json={"execution_mode": "one_shot", "expected_project_revision": 4},
         )
 
     assert response.status_code == 200
     assert (
         ExecuteMappingRunRequest.model_validate(
-            {"execution_mode": "one_shot", "expected_model_revision": 4},
+            {"execution_mode": "one_shot", "expected_project_revision": 4},
             strict=True,
         ).execution_mode
         == "one_shot"

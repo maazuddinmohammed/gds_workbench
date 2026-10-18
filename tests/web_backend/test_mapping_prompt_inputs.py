@@ -24,7 +24,9 @@ from tests.web_backend.mapping_fixtures import mapping_preparation
 
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
 @pytest.mark.parametrize("entity_type", ["logical_entity", "dimensional_entity"])
-def test_mapping_inputs_preserve_actual_pair_and_evidence(mode: Any, entity_type: Any) -> None:
+def test_mapping_inputs_preserve_actual_pair_and_evidence(
+    mode: Any, entity_type: Any
+) -> None:
     preparation = mapping_preparation(
         execution_mode=mode, existing=True, modeled_entity_type=entity_type
     )
@@ -40,7 +42,9 @@ def test_mapping_inputs_preserve_actual_pair_and_evidence(mode: Any, entity_type
                 PromptVariableDefinition(
                     name=name,
                     resolver_key=prefix + name,
-                    data_type="text" if inputs[name][0].get("type") == "string" else "json",
+                    data_type="text"
+                    if inputs[name][0].get("type") == "string"
+                    else "json",
                     is_required=False,
                 )
                 for name in inputs
@@ -53,7 +57,7 @@ def test_mapping_inputs_preserve_actual_pair_and_evidence(mode: Any, entity_type
     )
     for name in inputs:
         contract = get_prompt_input_contract(
-            model_workflow="mapping",
+            project_workflow="mapping",
             workflow_execution_mode=mode,
             stage_code=stage.stage_code,
             resolver_key=prefix + name,
@@ -68,7 +72,7 @@ def test_mapping_inputs_preserve_actual_pair_and_evidence(mode: Any, entity_type
         headers[0]["modeled_entity"]["entity_name"]
         == preparation.context.headers[0].modeled_entity.entity_name
     )
-    assert "model_object_binding_id" not in headers[0]
+    assert "project_object_binding_id" not in headers[0]
     assert headers[0]["attribute_mappings"][0]["modeled_attribute_name"] == "CustomerID"
     assert before == context and values["legacy"] is context
     with pytest.raises(InvalidRequestError):

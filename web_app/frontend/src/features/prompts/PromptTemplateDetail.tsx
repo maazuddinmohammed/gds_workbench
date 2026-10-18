@@ -135,7 +135,7 @@ export function PromptTemplateDetailPage({
           >
             ← Back to Prompts
           </Link>
-          <p className="prompt-context-line">{template.prompt_template_ownership_scope === "global" ? "Global" : "This Tenant"} · {humanize(template.model_workflow)} · {modeLabel(template.workflow_execution_mode)} · {template.workflow_stage_name}{!template.is_active ? " · Inactive" : ""}</p>
+          <p className="prompt-context-line">{template.prompt_template_ownership_scope === "global" ? "Global" : "This Tenant"} · {humanize(template.project_workflow)} · {modeLabel(template.workflow_execution_mode)} · {template.workflow_stage_name}{!template.is_active ? " · Inactive" : ""}</p>
           <h1 ref={heading} tabIndex={-1}>{template.prompt_template_name}</h1>
           {template.prompt_template_description ? <p>{template.prompt_template_description}</p> : null}
         </div>
@@ -584,6 +584,6 @@ async function invalidatePromptQueries(
     queryClient.invalidateQueries({ queryKey: promptQueryKeys.template(tenantId, promptTemplateId) }),
     queryClient.invalidateQueries({ queryKey: ["prompt-templates", tenantId] }),
     queryClient.invalidateQueries({ queryKey: ["assignable-prompt-versions", tenantId] }),
-    queryClient.invalidateQueries({ queryKey: ["model-prompt-assignments", tenantId] }),
+    queryClient.invalidateQueries({ queryKey: ["project-prompt-assignments", tenantId] }),
   ]);
 }

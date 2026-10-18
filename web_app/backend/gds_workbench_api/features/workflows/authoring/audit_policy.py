@@ -1,4 +1,4 @@
-"""Reusable audit defaults; explicit Model templates remain authoritative."""
+"""Reusable audit defaults; explicit Project templates remain authoritative."""
 
 from collections.abc import Mapping
 from copy import deepcopy

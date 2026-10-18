@@ -7,7 +7,7 @@ from typing import cast
 from uuid import UUID
 
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 from gds_etl_workbench.domain.modeling_records import (
@@ -110,19 +110,19 @@ class AnalysisInferenceWorkflow:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         expected_execution_mode: WorkflowExecutionMode,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart:
         return await self._lifecycle.start(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             workflow_run_id=workflow_run_id,
             expected_workflow="analysis",
             expected_execution_mode=expected_execution_mode,
-            expected_model_revision=expected_model_revision,
+            expected_project_revision=expected_project_revision,
         )
 
     async def execute_started(
@@ -130,13 +130,13 @@ class AnalysisInferenceWorkflow:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
     ) -> WorkflowChangeSetHandoffResult | None:
         finalization_attempted = False
-        changes: tuple[StageModelChange, ...] = ()
+        changes: tuple[StageProjectChange, ...] = ()
         try:
             async with self._database.write_transaction(
                 isolation=ReadIsolation.REPEATABLE_READ
@@ -145,20 +145,20 @@ class AnalysisInferenceWorkflow:
                     transaction,
                     principal,
                     tenant_id=tenant_id,
-                    policy=ToolPolicy.TENANT_MODEL_WRITE,
-                    model_id=model_id,
+                    policy=ToolPolicy.TENANT_PROJECT_WRITE,
+                    project_id=project_id,
                 )
                 plan = await self._plan_repository.load(
                     transaction,
                     tenant_id=tenant_id,
-                    model_id=model_id,
+                    project_id=project_id,
                     workflow_run_id=workflow_run_id,
                 )
                 self._validate_plan(
                     plan,
-                    model_id=model_id,
+                    project_id=project_id,
                     workflow_run_id=workflow_run_id,
-                    expected_model_revision=expected_model_revision,
+                    expected_project_revision=expected_project_revision,
                 )
                 context = await self._context_repository.load(
                     transaction,
@@ -172,7 +172,7 @@ class AnalysisInferenceWorkflow:
                 lifecycle=self._lifecycle,
                 principal=principal,
                 workflow_run_id=workflow_run_id,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 workflow_run_claim_token=workflow_run_claim_token,
             )
             await progress.append(
@@ -234,10 +234,10 @@ class AnalysisInferenceWorkflow:
                 finalization = await self._handoff.finalize(
                     principal,
                     tenant_id=tenant_id,
-                    model_id=model_id,
+                    project_id=project_id,
                     workflow_run_id=workflow_run_id,
                     expected_workflow="analysis",
-                    expected_model_revision=expected_model_revision,
+                    expected_project_revision=expected_project_revision,
                     workflow_run_claim_token=workflow_run_claim_token,
                     changes=changes,
                     final_event=final_event,
@@ -248,14 +248,14 @@ class AnalysisInferenceWorkflow:
             await self._no_op.complete(
                 principal,
                 tenant_id=tenant_id,
-                model_id=model_id,
+                project_id=project_id,
                 workflow_run_id=workflow_run_id,
                 workflow_run_claim_token=workflow_run_claim_token,
                 request=AuthoringNoOpRequest(
                     expected_workflow="analysis",
                     expected_execution_mode=execution_mode,
                     expected_correlation_id=plan.correlation_id,
-                    expected_model_revision=expected_model_revision,
+                    expected_project_revision=expected_project_revision,
                     candidate_digest=authoring_no_op_candidate_digest(plan),
                     final_event=final_event,
                 ),
@@ -267,10 +267,10 @@ class AnalysisInferenceWorkflow:
                     await self._handoff.retain_failed_candidate(
                         principal,
                         tenant_id=tenant_id,
-                        model_id=model_id,
+                        project_id=project_id,
                         workflow_run_id=workflow_run_id,
                         expected_workflow="analysis",
-                        expected_model_revision=expected_model_revision,
+                        expected_project_revision=expected_project_revision,
                         workflow_run_claim_token=workflow_run_claim_token,
                         changes=changes,
                         issues=error.issues,
@@ -282,7 +282,7 @@ class AnalysisInferenceWorkflow:
                 except Exception as retention_error:
                     _logger.warning(
                         "Rejected Workflow draft retention remains pending.",
-                        extra={"workflow_run_id": workflow_run_id, "model_id": model_id},
+                        extra={"workflow_run_id": workflow_run_id, "project_id": project_id},
                     )
                     raise _safe_execution_error(
                         retention_error,
@@ -298,7 +298,7 @@ class AnalysisInferenceWorkflow:
                     "Analysis Workflow Run finalization remains pending.",
                     extra={
                         "workflow_run_id": workflow_run_id,
-                        "model_id": model_id,
+                        "project_id": project_id,
                         "failure_code": safe_error.code[:100],
                     },
                 )
@@ -307,7 +307,7 @@ class AnalysisInferenceWorkflow:
                     await self._lifecycle.fail(
                         principal,
                         workflow_run_id=workflow_run_id,
-                        expected_model_revision=expected_model_revision,
+                        expected_project_revision=expected_project_revision,
                         workflow_run_claim_token=workflow_run_claim_token,
                         failure_code=safe_error.code[:100],
                         safe_failure_message=safe_error.message[:2000],
@@ -317,7 +317,7 @@ class AnalysisInferenceWorkflow:
                         "Analysis inference failure state could not be persisted.",
                         extra={
                             "workflow_run_id": workflow_run_id,
-                            "model_id": model_id,
+                            "project_id": project_id,
                             "failure_code": safe_error.code[:100],
                         },
                     )
@@ -327,9 +327,9 @@ class AnalysisInferenceWorkflow:
     def _validate_plan(
         plan: AgentRunPlan,
         *,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> None:
         stage_codes = tuple(stage.stage_code for stage in plan.stages)
         mode_path_is_valid = plan.workflow_execution_mode in (
@@ -337,10 +337,10 @@ class AnalysisInferenceWorkflow:
             "tool_assisted",
         ) and stage_codes == ("relationship_inference",)
         if (
-            plan.model_id != model_id
+            plan.project_id != project_id
             or plan.workflow_run_id != workflow_run_id
-            or plan.model_revision != expected_model_revision
-            or plan.model_workflow != "analysis"
+            or plan.project_revision != expected_project_revision
+            or plan.project_workflow != "analysis"
             or plan.modeled_entity_type is not None
             or not mode_path_is_valid
         ):

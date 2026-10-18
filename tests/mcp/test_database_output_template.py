@@ -18,7 +18,7 @@ DATABASE_ROOT = Path(__file__).resolve().parents[2] / "database"
 def _seed_demo_if_needed(connection: Any) -> None:
     if (
         connection.execute(
-            "SELECT 1 FROM core.project WHERE project_code = 'DEMO_PROJECT'"
+            "SELECT 1 FROM core.lane WHERE lane_code = 'DEMO_LANE'"
         ).fetchone()
         is None
     ):
@@ -52,48 +52,48 @@ def _seed_mapping(connection: Any) -> dict[str, int]:
         "SELECT system_id FROM core.system WHERE system_code = 'DEMO_CUSTOMER_SYSTEM'"
     ).fetchone()
     assert tenant is not None and target is not None and source_system is not None
-    model = connection.execute(
+    project = connection.execute(
         """
-        INSERT INTO model.model (tenant_id, model_name, logical_schemas)
+        INSERT INTO project.project (tenant_id, project_name, logical_schemas)
         VALUES (%s, %s, '[{"schema_name":"silver","description":null}]')
-        RETURNING model_id
+        RETURNING project_id
         """,
         (tenant["tenant_id"], f"Output Template {uuid4().hex}"),
     ).fetchone()
-    assert model is not None
+    assert project is not None
     entity = connection.execute(
         """
         INSERT INTO workflow.logical_entity (
-            model_id, logical_entity_name, logical_entity_definition,
+            project_id, logical_entity_name, logical_entity_definition,
             logical_entity_type, logical_entity_grain, logical_entity_schema_name
         ) VALUES (%s, 'Customer', 'Customer.', 'core', 'One customer', 'silver')
         RETURNING logical_entity_id
         """,
-        (model["model_id"],),
+        (project["project_id"],),
     ).fetchone()
     assert entity is not None
     logical_attribute = connection.execute(
         """
         INSERT INTO workflow.logical_attribute (
-            model_id, logical_entity_id, logical_attribute_name,
+            project_id, logical_entity_id, logical_attribute_name,
             logical_attribute_definition, logical_attribute_data_type,
             logical_attribute_ordinal_position
         ) VALUES (%s, %s, 'CustomerID', 'Customer ID.', 'bigint', 1)
         RETURNING logical_attribute_id
         """,
-        (model["model_id"], entity["logical_entity_id"]),
+        (project["project_id"], entity["logical_entity_id"]),
     ).fetchone()
     assert logical_attribute is not None
     mapping_object = connection.execute(
         """
         INSERT INTO workflow.mapping_object (
-            model_id, logical_entity_id, source_system_id, modeled_entity_type,
+            project_id, logical_entity_id, source_system_id, modeled_entity_type,
             mapping_transformation_document
         ) VALUES (%s, %s, %s, 'logical_entity', '{"kind":"direct"}'::JSONB)
         RETURNING mapping_object_id
         """,
         (
-            model["model_id"],
+            project["project_id"],
             entity["logical_entity_id"],
             source_system["system_id"],
         ),
@@ -102,7 +102,7 @@ def _seed_mapping(connection: Any) -> dict[str, int]:
     mapping_attribute = connection.execute(
         """
         INSERT INTO workflow.mapping_attribute (
-            mapping_object_id, logical_attribute_id, model_id, logical_entity_id, modeled_entity_type,
+            mapping_object_id, logical_attribute_id, project_id, logical_entity_id, modeled_entity_type,
             attribute_mapping_transformation_document
         ) VALUES (%s, %s, %s, %s, 'logical_entity', '{"expression":"CustomerID"}'::JSONB)
         RETURNING mapping_attribute_id
@@ -110,7 +110,7 @@ def _seed_mapping(connection: Any) -> dict[str, int]:
         (
             mapping_object["mapping_object_id"],
             logical_attribute["logical_attribute_id"],
-            model["model_id"],
+            project["project_id"],
             entity["logical_entity_id"],
         ),
     ).fetchone()

@@ -2,7 +2,7 @@ import { WorkflowActivityPanel, WorkflowCommandCenter, WorkflowCommandTools } fr
 import { useEffect, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import type { ModelDetail } from "../models/api";
+import type { ProjectDetail } from "../projects/api";
 import type { WorkflowRunFilterState } from "../workflows/api";
 import {
   profilingQueryKeys,
@@ -11,7 +11,7 @@ import {
 } from "./api";
 import { ProfilingRunConfiguration } from "./ProfilingRunConfiguration";
 import { ProfilingResults } from "./ProfilingResults";
-import { useScopeFilterChoices } from "../model_input_scope/scopeFilterChoices";
+import { useScopeFilterChoices } from "../project_input_scope/scopeFilterChoices";
 import { ProfilingRunDrawer, ProfilingRuns } from "./ProfilingRuns";
 
 type ProfilingView = "results" | "runs";
@@ -19,7 +19,7 @@ type ProfilingView = "results" | "runs";
 export function ProfilingScreen({
   api,
   tenantId,
-  model,
+  project,
   hasTenantLock,
   resultFilters,
   returnObjectId,
@@ -28,7 +28,7 @@ export function ProfilingScreen({
 }: {
   api: ProfilingApi;
   tenantId: number;
-  model: ModelDetail;
+  project: ProjectDetail;
   hasTenantLock: boolean;
   resultFilters: ProfilingFilters;
   returnObjectId?: number;
@@ -42,21 +42,21 @@ export function ProfilingScreen({
   const [runConfigurationOpen, setRunConfigurationOpen] = useState(false);
   const runReturnId = useRef<number | null>(null);
   const handledReturnObjectId = useRef<number | null>(null);
-  const sourceChoices = useScopeFilterChoices(api, tenantId, model.model_id, model.model_revision);
+  const sourceChoices = useScopeFilterChoices(api, tenantId, project.project_id, project.project_revision);
 
   const resultsQuery = useQuery({
-    queryKey: profilingQueryKeys.results(tenantId, model.model_id, resultFilters),
+    queryKey: profilingQueryKeys.results(tenantId, project.project_id, resultFilters),
     queryFn: () => api.listProfilingObjects(
       tenantId,
-      model.model_id,
+      project.project_id,
       resultFilters,
     ),
   });
   const runsQuery = useInfiniteQuery({
-    queryKey: profilingQueryKeys.runs(tenantId, model.model_id, runState),
+    queryKey: profilingQueryKeys.runs(tenantId, project.project_id, runState),
     queryFn: ({ pageParam }) => api.listWorkflowRuns(
       tenantId,
-      model.model_id,
+      project.project_id,
       "profiling",
       runState,
       50,
@@ -109,7 +109,7 @@ export function ProfilingScreen({
             : queryClient.invalidateQueries({
                 queryKey: profilingQueryKeys.run(
                   tenantId,
-                  model.model_id,
+                  project.project_id,
                   selectedRunId,
                 ),
               }),
@@ -118,7 +118,7 @@ export function ProfilingScreen({
             : queryClient.invalidateQueries({
                 queryKey: profilingQueryKeys.eventFamily(
                   tenantId,
-                  model.model_id,
+                  project.project_id,
                   selectedRunId,
                 ),
               }),
@@ -127,7 +127,7 @@ export function ProfilingScreen({
       sourceChoices.refetch(),
       ...requests,
       queryClient.invalidateQueries({
-        queryKey: ["model", tenantId, model.model_id],
+        queryKey: ["project", tenantId, project.project_id],
       }),
       queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
     ]);
@@ -135,8 +135,8 @@ export function ProfilingScreen({
 
   return (
     <WorkflowCommandCenter filterCount={Object.values(resultFilters).filter(Boolean).length} className="profiling-page page-enter">
-      <header className="workflow-commandbar model-section-toolbar">
-        <h1 className="model-section-title sr-only">Profiling</h1>
+      <header className="workflow-commandbar project-section-toolbar">
+        <h1 className="project-section-title sr-only">Profiling</h1>
         <div className="workflow-command-context">
           <strong className="workflow-view-label">Results</strong>
         </div>
@@ -164,7 +164,7 @@ export function ProfilingScreen({
 
         <ProfilingResults
           tenantId={tenantId}
-          modelId={model.model_id}
+          projectId={project.project_id}
           filters={resultFilters}
           sourceChoices={sourceChoices}
           items={resultsQuery.data?.items ?? []}
@@ -172,7 +172,7 @@ export function ProfilingScreen({
           isError={resultsQuery.isError}
           revisionMismatch={
             resultsQuery.data !== undefined
-            && resultsQuery.data.model_revision !== model.model_revision
+            && resultsQuery.data.project_revision !== project.project_revision
           }
           onApplyFilters={onApplyResultFilters}
         />
@@ -189,7 +189,7 @@ export function ProfilingScreen({
               disabled={runsQuery.isFetchingNextPage} onClick={() => void runsQuery.fetchNextPage()}>Load more runs</button> : null}
           </div>
           <div className="workflow-run-monitor-detail">
-            {selectedRunId !== null ? <ProfilingRunDrawer embedded api={api} tenantId={tenantId} model={model}
+            {selectedRunId !== null ? <ProfilingRunDrawer embedded api={api} tenantId={tenantId} project={project}
               hasTenantLock={hasTenantLock} runId={selectedRunId}
               onClose={() => { runReturnId.current = selectedRunId; setSelectedRunId(null); }} />
               : <p className="empty-state compact">Choose a run to see its details.</p>}
@@ -201,7 +201,7 @@ export function ProfilingScreen({
         <ProfilingRunConfiguration
           api={api}
           tenantId={tenantId}
-          model={model}
+          project={project}
           onClose={() => {
             setRunConfigurationOpen(false);
             queueMicrotask(() => {
@@ -215,7 +215,7 @@ export function ProfilingScreen({
             runReturnId.current = null;
             setSelectedRunId(workflowRunId);
             await queryClient.invalidateQueries({
-              queryKey: profilingQueryKeys.runs(tenantId, model.model_id),
+              queryKey: profilingQueryKeys.runs(tenantId, project.project_id),
             });
           }}
         />

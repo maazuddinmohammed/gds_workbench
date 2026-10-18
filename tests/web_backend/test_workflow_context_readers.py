@@ -65,9 +65,7 @@ def physical_key(row: dict[str, Any]) -> dict[str, Any]:
 @pytest.mark.parametrize("workflow", ["analysis", "conceptual", "logical"])
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
 @pytest.mark.parametrize("locked", [False, True])
-@pytest.mark.parametrize(
-    "validation_result", [None, "supported", "unsupported", "inconclusive"]
-)
+@pytest.mark.parametrize("validation_result", [None, "supported", "unsupported", "inconclusive"])
 def test_existing_relationships_preserve_locks_and_recorded_validation(
     workflow: str,
     mode: str,
@@ -99,13 +97,13 @@ def test_existing_relationships_preserve_locks_and_recorded_validation(
     )
     context = _context_bundle().context.model_copy(
         update={
-            "model_workflow": workflow,
+            "project_workflow": workflow,
             "workflow_execution_mode": mode,
             "analysis_relationships": (relationship,),
         }
     )
     plan = _plan().model_copy(
-        update={"model_workflow": workflow, "workflow_execution_mode": mode}
+        update={"project_workflow": workflow, "workflow_execution_mode": mode}
     )
     code = "relationship_inference" if workflow == "analysis" else "candidate_authoring"
     key = f"workflow.{workflow}.common.{code}.inputs.object_relationship_context"
@@ -140,22 +138,14 @@ def test_existing_relationships_preserve_locks_and_recorded_validation(
         precomputed_values=readers.prompt_values if readers else None,
     )
     groups = cast(list[dict[str, Any]], values[key])
-    assert (
-        groups[0]["incoming_relationships"] == groups[1]["outgoing_relationships"] == []
-    )
+    assert groups[0]["incoming_relationships"] == groups[1]["outgoing_relationships"] == []
     expected = relationship.model_dump(mode="json")
-    assert (
-        groups[0]["outgoing_relationships"]
-        == groups[1]["incoming_relationships"]
-        == [expected]
-    )
+    assert groups[0]["outgoing_relationships"] == groups[1]["incoming_relationships"] == [expected]
     assert expected["analysis_result_is_locked"] is locked
     assert expected["validation_result"] == validation_result
     if validation_result is None:
         assert all(
-            value is None
-            for name, value in expected.items()
-            if name.startswith("validation_")
+            value is None for name, value in expected.items() if name.startswith("validation_")
         )
     if readers:
         result = cast(dict[str, Any], readers.invoke("get_object_relationships", {}))
@@ -185,7 +175,7 @@ def test_relationship_context_does_not_widen_selected_objects(
     )
     context = _context_bundle().context.model_copy(
         update={
-            "model_workflow": workflow,
+            "project_workflow": workflow,
             "workflow_execution_mode": mode,
             "analysis_relationships": (relationship,),
         }
@@ -211,9 +201,7 @@ def test_relationship_context_does_not_widen_selected_objects(
     assert groups == values["object_relationship_context"]
     assert groups[0]["outgoing_relationships"] == ([expected] if from_selected else [])
     assert groups[1]["incoming_relationships"] == ([expected] if to_selected else [])
-    assert (
-        groups[0]["incoming_relationships"] == groups[1]["outgoing_relationships"] == []
-    )
+    assert groups[0]["incoming_relationships"] == groups[1]["outgoing_relationships"] == []
     assert context.selected_objects == original_selection
     assert [item["object_name"] for item in values["object_context"]] == [
         "order_raw",
@@ -226,9 +214,7 @@ def test_relationship_context_does_not_widen_selected_objects(
         )
         for side, selected in (("from", from_selected), ("to", to_selected)):
             if not selected:
-                outside_key = {
-                    field: record[f"{side}_{field}"] for field in OBJECT_FIELDS
-                }
+                outside_key = {field: record[f"{side}_{field}"] for field in OBJECT_FIELDS}
                 with pytest.raises(AgentContextToolRequestError):
                     readers.invoke("get_object_details", {"object_keys": [outside_key]})
 
@@ -238,20 +224,16 @@ def test_relationship_context_does_not_widen_selected_objects(
     [
         ("analysis", 6),
         ("conceptual", 10),
-        ("logical", 18),
+        ("logical", 14),
         ("dimensional", 23),
     ],
 )
-def test_approved_schema_examples_and_every_no_input_reader(
-    workflow: str, count: int
-) -> None:
+def test_approved_schema_examples_and_every_no_input_reader(workflow: str, count: int) -> None:
     reader = catalog(workflow)
     assert len(reader.definitions) == count
     for definition in workflow_input_contracts(workflow).values():
         Draft202012Validator.check_schema(definition["schema"])
-        assert cast(Any, Draft202012Validator(definition["schema"])).is_valid(
-            definition["example"]
-        )
+        assert cast(Any, Draft202012Validator(definition["schema"])).is_valid(definition["example"])
     for tool in reader.definitions:
         assert cast(Any, Draft202012Validator(tool.input_schema)).is_valid({})
         result = reader.invoke(tool.name, {})
@@ -280,9 +262,7 @@ def test_source_connection_filter_returns_actual_gds_keys_and_never_broadens() -
             {"source_connection_key": {"connection_code": source["connection_code"]}},
         )
     with pytest.raises(AgentContextToolRequestError):
-        reader.invoke(
-            "get_object_details", {"object_keys": [{**key, "tenant_code": "UNKNOWN"}]}
-        )
+        reader.invoke("get_object_details", {"object_keys": [{**key, "tenant_code": "UNKNOWN"}]})
     assert reader.invoke("get_object_details", {"object_keys": []}) == reader.invoke(
         "get_object_details", {}
     )
@@ -294,9 +274,7 @@ def test_cursors_keep_frozen_filter_and_repeat_deterministically() -> None:
     cursor = first["next_cursor"]
     assert isinstance(cursor, str)
     second = reader.invoke("get_object_details", {"cursor": cursor})
-    assert second == reader.invoke(
-        "get_object_details", {"cursor": cursor, "object_keys": []}
-    )
+    assert second == reader.invoke("get_object_details", {"cursor": cursor, "object_keys": []})
     first["items"].clear()
     assert reader.invoke("get_object_details", {})["items"]
     with pytest.raises(AgentContextToolRequestError):
@@ -314,12 +292,8 @@ def test_physical_groups_continue_by_whole_attributes_with_explicit_marker() -> 
     values = deepcopy(INPUT_EXAMPLES["analysis"])
     group = values["object_attribute_context"][0]
     prototype = group["attributes"][0]
-    group["attributes"] = [
-        {**prototype, "attribute_name": f"field_{n}"} for n in range(12)
-    ]
-    group["selected_attribute_names"] = [
-        attr["attribute_name"] for attr in group["attributes"]
-    ]
+    group["attributes"] = [{**prototype, "attribute_name": f"field_{n}"} for n in range(12)]
+    group["selected_attribute_names"] = [attr["attribute_name"] for attr in group["attributes"]]
     values["object_attribute_context"] = [group]
     reader = catalog(values=values, size=1800)
     page = reader.invoke("get_object_details", {})
@@ -339,7 +313,7 @@ def test_physical_groups_continue_by_whole_attributes_with_explicit_marker() -> 
     assert names == group["selected_attribute_names"]
 
 
-def test_saved_model_records_are_whole_and_unavailable_is_not_empty() -> None:
+def test_saved_project_records_are_whole_and_unavailable_is_not_empty() -> None:
     values = deepcopy(INPUT_EXAMPLES["logical"])
     values["logical_entities"][0]["logical_entity_definition"] = "x" * 2000
     reader = catalog("logical", values=values, size=1000)
@@ -353,12 +327,8 @@ def test_saved_model_records_are_whole_and_unavailable_is_not_empty() -> None:
 
 def test_empty_tool_selection_is_valid_and_preserves_inline_inputs() -> None:
     reader = catalog()
-    configured = configure_tools(
-        reader, (), workflow="analysis", execution_mode="tool_assisted"
-    )
-    assert (
-        isinstance(configured, ConfiguredToolCatalog) and configured.definitions == ()
-    )
+    configured = configure_tools(reader, (), workflow="analysis", execution_mode="tool_assisted")
+    assert isinstance(configured, ConfiguredToolCatalog) and configured.definitions == ()
     assert configured.prompt_values == reader.prompt_values
     with pytest.raises(InvalidRequestError, match="not enabled"):
         configured.invoke("get_objects", {})
@@ -377,8 +347,7 @@ def test_workflows_without_public_modes_can_choose_any_or_no_readers(
     )
 
     values = {
-        name: example
-        for name, (_, _, example) in downstream_input_contracts(workflow).items()
+        name: example for name, (_, _, example) in downstream_input_contracts(workflow).items()
     }
     reader = build_downstream_readers(
         workflow,
@@ -388,12 +357,8 @@ def test_workflows_without_public_modes_can_choose_any_or_no_readers(
         max_cumulative_result_bytes=200_000,
     )
     first_name = cast(AgentToolName, reader.definitions[0].name)
-    selected = configure_tools(
-        reader, (first_name,), workflow=workflow, execution_mode=None
-    )
-    assert selected is not None and tuple(d.name for d in selected.definitions) == (
-        first_name,
-    )
+    selected = configure_tools(reader, (first_name,), workflow=workflow, execution_mode=None)
+    assert selected is not None and tuple(d.name for d in selected.definitions) == (first_name,)
     assert selected.invoke(first_name, {}) == reader.invoke(first_name, {})
     empty = configure_tools(reader, (), workflow=workflow, execution_mode=None)
     assert empty is not None and empty.definitions == ()

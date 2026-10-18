@@ -19,7 +19,7 @@ from gds_workbench_api.features.metadata.workbook import XLSX_MEDIA_TYPE
 
 class AnalysisExportRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    expected_model_revision: int = Field(gt=0)
+    expected_project_revision: int = Field(gt=0)
     filters: AnalysisFindingFilters = Field(default_factory=AnalysisFindingFilters)
 
 
@@ -30,13 +30,13 @@ def create_analysis_review_router(
 ) -> APIRouter:
     authenticate = principal_dependency(identity_provider)
     router = APIRouter(
-        prefix="/api/v1/tenants/{tenant_id}/models/{model_id}",
+        prefix="/api/v1/tenants/{tenant_id}/projects/{project_id}",
         tags=["analysis"],
     )
 
     async def list_analysis_findings(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         object_id: Annotated[int | None, Query(gt=0)] = None,
         from_object_id: Annotated[int | None, Query(gt=0)] = None,
         to_object_id: Annotated[int | None, Query(gt=0)] = None,
@@ -63,7 +63,7 @@ def create_analysis_review_router(
         return await service.list_analysis_findings(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=filters,
             page_size=page_size,
             cursor=cursor,
@@ -78,7 +78,7 @@ def create_analysis_review_router(
 
     async def export_analysis_findings(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         command: AnalysisExportRequest,
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -86,9 +86,9 @@ def create_analysis_review_router(
         result = await service.export_analysis_findings(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=command.filters,
-            expected_model_revision=command.expected_model_revision,
+            expected_project_revision=command.expected_project_revision,
         )
         return Response(
             content=result.content,
@@ -104,7 +104,7 @@ def create_analysis_review_router(
 
     async def read_analysis_finding(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         analysis_result_id: Annotated[int, Path(gt=0)],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -112,7 +112,7 @@ def create_analysis_review_router(
         return await service.read_analysis_finding(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             analysis_result_id=analysis_result_id,
         )
 

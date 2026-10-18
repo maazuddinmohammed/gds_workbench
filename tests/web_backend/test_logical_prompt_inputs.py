@@ -20,15 +20,14 @@ from tests.web_backend.test_logical_executor import _context_bundle, _plan
 
 NAMES = {
     "one_shot": (
-        "model_brief",
+        "project_brief",
         "selected_metadata",
         "profile_evidence",
-        "modeling_assertions",
+        "context_records",
         "analysis_evidence",
-        "applied_conceptual",
         "applied_logical",
     ),
-    "tool_assisted": ("model_identity", "evidence_datasets"),
+    "tool_assisted": ("project_identity", "evidence_datasets"),
 }
 
 
@@ -42,7 +41,10 @@ def test_logical_inputs_match_actual_context_and_documented_examples(mode: str) 
                 *plan.stages[0].variables,
                 *(
                     PromptVariableDefinition(
-                        name=name, resolver_key=prefix + name, data_type="json", is_required=False
+                        name=name,
+                        resolver_key=prefix + name,
+                        data_type="json",
+                        is_required=False,
                     )
                     for name in NAMES[mode]
                 ),
@@ -52,16 +54,16 @@ def test_logical_inputs_match_actual_context_and_documented_examples(mode: str) 
     plan = plan.model_copy(update={"stages": (stage,)})
     context = _context_bundle(mode=mode).embedded_context
     before = deepcopy(context)
-    legacy = {"legacy": context, "model.naming_instructions": "Keep supplied names."}
+    legacy = {"legacy": context, "project.naming_instructions": "Keep supplied names."}
     values = project_prompt_input_values(
         plan=plan, stage=stage, context=context, resolver_values=legacy
     )
     assert context == before and values["legacy"] is context
-    assert values["model.naming_instructions"] is legacy["model.naming_instructions"]
+    assert values["project.naming_instructions"] is legacy["project.naming_instructions"]
     assert set(values) - set(legacy) == {prefix + name for name in NAMES[mode]}
     for name in NAMES[mode]:
         contract = get_prompt_input_contract(
-            model_workflow="logical",
+            project_workflow="logical",
             workflow_execution_mode=mode,
             stage_code="candidate_authoring",
             resolver_key=prefix + name,
@@ -71,16 +73,7 @@ def test_logical_inputs_match_actual_context_and_documented_examples(mode: str) 
         assert not list(schema.iter_errors(contract.example))
         assert not list(schema.iter_errors(values[prefix + name]))
     if mode == "one_shot":
-        assert values[prefix + "applied_conceptual"] is None
         assert values[prefix + "applied_logical"] is None
-        nullable = cast(dict[str, JsonValue], deepcopy(context))
-        cast(dict[str, JsonValue], nullable["applied"])["conceptual"] = None
-        assert (
-            project_prompt_input_values(
-                plan=plan, stage=stage, context=nullable, resolver_values={}
-            )[prefix + "applied_conceptual"]
-            is None
-        )
         broken = cast(dict[str, JsonValue], deepcopy(context))
         broken.pop("applied")
         with pytest.raises(InvalidRequestError):
@@ -90,7 +83,7 @@ def test_logical_inputs_match_actual_context_and_documented_examples(mode: str) 
 
     else:
         broken = cast(dict[str, JsonValue], deepcopy(context))
-        broken["model_workflow"] = "analysis"
+        broken["project_workflow"] = "analysis"
         with pytest.raises(InvalidRequestError):
             project_prompt_input_values(
                 plan=plan, stage=stage, context=broken, resolver_values=legacy
@@ -103,9 +96,12 @@ def test_logical_manifest_contains_actual_applied_and_downstream_datasets() -> N
         modeled_layer_dependencies,
     )
 
-    from tests.mcp.model_test_fixtures import complete_model_graph, snapshot_from_graph
+    from tests.mcp.project_test_fixtures import (
+        complete_project_graph,
+        snapshot_from_graph,
+    )
 
-    snapshot = snapshot_from_graph(complete_model_graph())
+    snapshot = snapshot_from_graph(complete_project_graph())
     context = _context_bundle(mode="tool_assisted").context
     context = context.model_copy(
         update={
@@ -116,7 +112,10 @@ def test_logical_manifest_contains_actual_applied_and_downstream_datasets() -> N
         }
     )
     catalog = InMemoryAgentContextToolCatalog(
-        context=context, max_result_bytes=8192, max_catalog_bytes=1024 * 1024, max_page_records=20
+        context=context,
+        max_result_bytes=8192,
+        max_catalog_bytes=1024 * 1024,
+        max_page_records=20,
     )
     plan = _plan(mode="tool_assisted")
     prefix = "workflow.logical.tool_assisted.candidate_authoring.inputs."

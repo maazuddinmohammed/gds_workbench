@@ -35,8 +35,8 @@ class MetadataEnrichmentResult(EnrichmentFieldResult):
 
 class MetadataEnrichmentResultPage(EnrichmentContract):
     tenant_id: int = Field(gt=0)
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     workflow_run_id: int = Field(gt=0)
     workflow_run_state: RunState
     total_count: int = Field(ge=0, le=30_200)

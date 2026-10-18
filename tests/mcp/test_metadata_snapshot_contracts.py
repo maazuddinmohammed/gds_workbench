@@ -21,7 +21,7 @@ from gds_etl_workbench.domain.snapshots.metadata import (
 from pydantic import ValidationError
 
 EXPECTED_DATASET_NAMES = (
-    "project",
+    "lane",
     "tenant",
     "system",
     "connection",
@@ -111,9 +111,9 @@ def test_metadata_records_reject_database_constraint_failures_before_apply() -> 
         ),
         (CopyRecord, copy),
     )
-    for model, record in invalid:
+    for project, record in invalid:
         with pytest.raises(ValidationError):
-            model.model_validate(record)
+            project.model_validate(record)
 
 
 def test_every_custom_metadata_record_validator_is_exported_for_local_parity() -> None:
@@ -206,8 +206,8 @@ def test_registry_uses_flat_rows_per_dataset_schemas_and_selective_lookups() -> 
     assert len(schema_paths) == 30
     assert len(lookup_paths) == 10
     assert next(
-        dataset for dataset in DATASETS if dataset.name == "project"
-    ).rows_path == ("data/foundational/project/rows.jsonl")
+        dataset for dataset in DATASETS if dataset.name == "lane"
+    ).rows_path == ("data/foundational/lane/rows.jsonl")
     assert (
         next(
             dataset for dataset in DATASETS if dataset.name == "source_object"
@@ -229,7 +229,7 @@ def test_registry_uses_flat_rows_per_dataset_schemas_and_selective_lookups() -> 
     )
 
 
-def test_all_row_models_are_id_free_and_keys_are_real_fields() -> None:
+def test_all_row_projects_are_id_free_and_keys_are_real_fields() -> None:
     for dataset in DATASETS:
         fields = set(dataset.row_model.model_fields)
         assert not any(field == "id" or field.endswith("_id") for field in fields)
@@ -243,7 +243,7 @@ def test_all_row_models_are_id_free_and_keys_are_real_fields() -> None:
             assert len(reference.columns) == len(reference.target_columns)
 
 
-def test_zone_datasets_share_record_models_without_nested_attributes() -> None:
+def test_zone_datasets_share_record_projects_without_nested_attributes() -> None:
     object_datasets = tuple(
         dataset for dataset in DATASETS if dataset.record_type == "object"
     )

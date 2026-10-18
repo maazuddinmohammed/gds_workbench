@@ -13,14 +13,13 @@ METADATA_RECORD_VALIDATIONS: Final[dict[str, tuple[str, ...]]] = {
     "copy": ("copy_record_limit",),
 }
 
-MODEL_RECORD_VALIDATIONS: Final[dict[str, tuple[str, ...]]] = {
-    "model_details": ("model_details_policy",),
+PROJECT_RECORD_VALIDATIONS: Final[dict[str, tuple[str, ...]]] = {
+    "project_details": ("project_details_policy",),
     "object_enrichment": ("enrichment_text",),
     "attribute_enrichment": ("enrichment_text",),
     "profiling_profile": ("profiling_profile",),
     "analysis_result": ("analysis_result",),
-    "modeling_assertion_document": ("modeling_assertion_document",),
-    "modeling_assertion_record": ("modeling_assertion_record",),
+    "context_record": ("context_record",),
     "conceptual_object": ("conceptual_object",),
     "conceptual_relationship": ("conceptual_relationship",),
     "logical_entity": ("logical_entity",),

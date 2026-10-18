@@ -1,1 +1,1 @@
-"""Fill missing physical metadata within a Model's selected input scope."""
+"""Fill missing physical metadata within a Project's selected input scope."""

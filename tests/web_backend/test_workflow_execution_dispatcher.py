@@ -21,18 +21,18 @@ class RecordingExecutor:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
     ) -> object:
         self.calls.append(
             {
                 "principal": principal,
                 "tenant_id": tenant_id,
-                "model_id": model_id,
+                "project_id": project_id,
                 "workflow_run_id": workflow_run_id,
-                "expected_model_revision": expected_model_revision,
+                "expected_project_revision": expected_project_revision,
                 "workflow_run_claim_token": workflow_run_claim_token,
             }
         )
@@ -41,7 +41,7 @@ class RecordingExecutor:
 
 def _claim(
     *,
-    model_workflow: str,
+    project_workflow: str,
     workflow_execution_mode: str | None = None,
     actor_principal_type: str = "user",
 ) -> WorkflowExecutionClaim:
@@ -50,9 +50,9 @@ def _claim(
         {
             "workflow_run_id": 701,
             "tenant_id": 7,
-            "model_id": 18,
-            "model_revision": 4,
-            "model_workflow": model_workflow,
+            "project_id": 18,
+            "project_revision": 4,
+            "project_workflow": project_workflow,
             "workflow_execution_mode": workflow_execution_mode,
             "correlation_id": UUID("11111111-1111-1111-1111-111111111111"),
             "actor_principal_type": actor_principal_type,
@@ -86,24 +86,26 @@ def _services() -> tuple[WorkflowExecutionServices, dict[str, RecordingExecutor]
     return WorkflowExecutionServices(**executors, usage_recorder=None), executors
 
 
-@pytest.mark.parametrize("mode", [None, 'tool_assisted'])
+@pytest.mark.parametrize("mode", [None, "tool_assisted"])
 def test_metadata_enrichment_claim_requires_one_shot(mode: str | None) -> None:
     with pytest.raises(ValidationError, match="requires one-shot"):
-        _claim(model_workflow="metadata_enrichment", workflow_execution_mode=mode)
+        _claim(project_workflow="metadata_enrichment", workflow_execution_mode=mode)
 
 
 @pytest.mark.asyncio
 async def test_metadata_enrichment_dispatch_never_falls_through_to_validation() -> None:
     services, executors = _services()
     await WorkflowExecutionDispatcher(services).execute(
-        _claim(model_workflow="metadata_enrichment", workflow_execution_mode="one_shot")
+        _claim(
+            project_workflow="metadata_enrichment", workflow_execution_mode="one_shot"
+        )
     )
     assert executors["metadata_enrichment"].calls
     assert not executors["validation"].calls
 
 
 @pytest.mark.parametrize(
-    ("model_workflow", "workflow_execution_mode", "expected_executor"),
+    ("project_workflow", "workflow_execution_mode", "expected_executor"),
     [
         ("profiling", None, "profiling"),
         ("analysis", "one_shot", "analysis_inference"),
@@ -119,13 +121,13 @@ async def test_metadata_enrichment_dispatch_never_falls_through_to_validation() 
 )
 @pytest.mark.asyncio
 async def test_dispatcher_routes_each_claim_to_the_exact_workflow_executor(
-    model_workflow: str,
+    project_workflow: str,
     workflow_execution_mode: str | None,
     expected_executor: str,
 ) -> None:
     services, executors = _services()
     claim = _claim(
-        model_workflow=model_workflow,
+        project_workflow=project_workflow,
         workflow_execution_mode=workflow_execution_mode,
     )
 
@@ -141,9 +143,9 @@ async def test_dispatcher_routes_each_claim_to_the_exact_workflow_executor(
                 entra_object_id=UUID("33333333-3333-3333-3333-333333333333"),
             ),
             "tenant_id": 7,
-            "model_id": 18,
+            "project_id": 18,
             "workflow_run_id": 701,
-            "expected_model_revision": 4,
+            "expected_project_revision": 4,
             "workflow_run_claim_token": UUID("44444444-4444-4444-4444-444444444444"),
         }
     ]
@@ -155,7 +157,7 @@ async def test_dispatcher_reconstructs_a_workload_principal_server_side() -> Non
 
     await WorkflowExecutionDispatcher(services).execute(
         _claim(
-            model_workflow="code_generation",
+            project_workflow="code_generation",
             actor_principal_type="service_principal",
         )
     )
@@ -165,13 +167,13 @@ async def test_dispatcher_reconstructs_a_workload_principal_server_side() -> Non
 
 
 def test_claim_repr_never_exposes_the_raw_claim_token() -> None:
-    claim = _claim(model_workflow="profiling")
+    claim = _claim(project_workflow="profiling")
 
     assert str(claim.workflow_run_claim_token) not in repr(claim)
 
 
 def test_claim_serialization_never_exposes_the_raw_claim_token() -> None:
-    claim = _claim(model_workflow="profiling")
+    claim = _claim(project_workflow="profiling")
     token = str(claim.workflow_run_claim_token)
 
     assert "workflow_run_claim_token" not in claim.model_dump()

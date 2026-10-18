@@ -92,7 +92,9 @@ def _target(*, object_id: int, attribute_id: int) -> ProfilingExecutionTarget:
 @dataclass
 class _Repository:
     context: ProfilingExecutionContext
-    events: list[tuple[int, str, str, int | None, int | None]] = field(default_factory=lambda: [])
+    events: list[tuple[int, str, str, int | None, int | None]] = field(
+        default_factory=lambda: []
+    )
     committed_profiles: list[dict[str, object]] | None = None
     failed: tuple[str, str] | None = None
     fail_persistence: bool = False
@@ -102,12 +104,12 @@ class _Repository:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> ProfilingRunStart:
         assert principal == _principal()
-        assert (tenant_id, model_id, workflow_run_id, expected_model_revision) == (
+        assert (tenant_id, project_id, workflow_run_id, expected_project_revision) == (
             7,
             18,
             1048,
@@ -117,7 +119,7 @@ class _Repository:
             changed=True,
             workflow_run_id=workflow_run_id,
             workflow_run_state="running",
-            model_revision=expected_model_revision,
+            project_revision=expected_project_revision,
         )
 
     async def load_context(
@@ -125,12 +127,12 @@ class _Repository:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> ProfilingExecutionContext:
         assert principal == _principal()
-        assert (tenant_id, model_id, workflow_run_id, expected_model_revision) == (
+        assert (tenant_id, project_id, workflow_run_id, expected_project_revision) == (
             7,
             18,
             1048,
@@ -143,7 +145,7 @@ class _Repository:
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         sequence: int,
         stage: str,
@@ -153,7 +155,13 @@ class _Repository:
         total: int | None,
         finding_count: int,
     ) -> None:
-        del principal, workflow_run_id, expected_model_revision, message, finding_count
+        del (
+            principal,
+            workflow_run_id,
+            expected_project_revision,
+            message,
+            finding_count,
+        )
         assert workflow_run_claim_token == _CLAIM_TOKEN
         self.events.append((sequence, stage, status, current, total))
 
@@ -162,19 +170,19 @@ class _Repository:
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         profiles: list[dict[str, object]],
     ) -> ProfilingCommitResult:
         del principal, workflow_run_id
-        assert expected_model_revision == 4
+        assert expected_project_revision == 4
         assert workflow_run_claim_token == _CLAIM_TOKEN
         self.committed_profiles = profiles
         return ProfilingCommitResult(
             changed=True,
             workflow_run_id=1048,
-            model_id=18,
-            model_revision=5,
+            project_id=18,
+            project_revision=5,
             submitted_profile_count=len(profiles),
             changed_profile_count=len(profiles),
             workflow_run_state="completed",
@@ -185,12 +193,12 @@ class _Repository:
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         failure_code: str,
         safe_failure_message: str,
     ) -> None:
-        del principal, workflow_run_id, expected_model_revision
+        del principal, workflow_run_id, expected_project_revision
         assert workflow_run_claim_token == _CLAIM_TOKEN
         if self.fail_persistence:
             raise DependencyUnavailableError()
@@ -235,12 +243,14 @@ class _Executor:
 
 
 @pytest.mark.asyncio
-async def test_profiling_run_executes_all_queries_then_commits_one_complete_payload() -> None:
+async def test_profiling_run_executes_all_queries_then_commits_one_complete_payload() -> (
+    None
+):
     repository = _Repository(
         context=ProfilingExecutionContext(
             workflow_run_id=1048,
-            model_id=18,
-            model_revision=4,
+            project_id=18,
+            project_revision=4,
             requested_batch_id=None,
             targets=(
                 _target(object_id=101, attribute_id=1001),
@@ -257,16 +267,16 @@ async def test_profiling_run_executes_all_queries_then_commits_one_complete_payl
     start = await orchestrator.start(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=4,
+        expected_project_revision=4,
     )
     await orchestrator.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=start.model_revision,
+        expected_project_revision=start.project_revision,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -294,8 +304,8 @@ async def test_profiling_run_bounds_large_object_progress() -> None:
     repository = _Repository(
         context=ProfilingExecutionContext(
             workflow_run_id=1048,
-            model_id=18,
-            model_revision=4,
+            project_id=18,
+            project_revision=4,
             requested_batch_id=None,
             targets=tuple(
                 _target(object_id=100 + position, attribute_id=1_000 + position)
@@ -311,9 +321,9 @@ async def test_profiling_run_bounds_large_object_progress() -> None:
     await orchestrator.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=4,
+        expected_project_revision=4,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -338,8 +348,8 @@ async def test_profiling_failure_is_safe_and_never_commits_partial_profiles() ->
     repository = _Repository(
         context=ProfilingExecutionContext(
             workflow_run_id=1048,
-            model_id=18,
-            model_revision=4,
+            project_id=18,
+            project_revision=4,
             requested_batch_id=None,
             targets=(_target(object_id=101, attribute_id=1001),),
         )
@@ -352,9 +362,9 @@ async def test_profiling_failure_is_safe_and_never_commits_partial_profiles() ->
     await orchestrator.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=4,
+        expected_project_revision=4,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -371,8 +381,8 @@ async def test_profiling_propagates_when_terminal_failure_cannot_be_persisted() 
     repository = _Repository(
         context=ProfilingExecutionContext(
             workflow_run_id=1048,
-            model_id=18,
-            model_revision=4,
+            project_id=18,
+            project_revision=4,
             requested_batch_id=None,
             targets=(_target(object_id=101, attribute_id=1001),),
         ),
@@ -387,9 +397,9 @@ async def test_profiling_propagates_when_terminal_failure_cannot_be_persisted() 
         await orchestrator.execute_started(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=4,
+            expected_project_revision=4,
             workflow_run_claim_token=_CLAIM_TOKEN,
         )
 
@@ -407,16 +417,16 @@ class _StaticWorkflowService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> ProfilingRunStart:
         assert principal.actor_kind is ActorKind.HUMAN
         return ProfilingRunStart(
             changed=self.changed,
             workflow_run_id=workflow_run_id,
             workflow_run_state="running",
-            model_revision=expected_model_revision,
+            project_revision=expected_project_revision,
         )
 
     async def execute_started(
@@ -424,14 +434,16 @@ class _StaticWorkflowService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
     ) -> None:
         assert principal.actor_kind is ActorKind.HUMAN
         assert workflow_run_claim_token == _CLAIM_TOKEN
-        self.executed.append((tenant_id, model_id, workflow_run_id, expected_model_revision))
+        self.executed.append(
+            (tenant_id, project_id, workflow_run_id, expected_project_revision)
+        )
 
 
 def _client(service: _StaticWorkflowService) -> TestClient:
@@ -451,22 +463,22 @@ def test_execute_endpoint_starts_without_process_local_profiling() -> None:
     service = _StaticWorkflowService()
     with _client(service) as client:
         response = client.post(
-            "/api/v1/tenants/7/models/18/profiling/runs/1048/execute",
-            json={"expected_model_revision": 4},
+            "/api/v1/tenants/7/projects/18/profiling/runs/1048/execute",
+            json={"expected_project_revision": 4},
         )
 
     assert response.status_code == 202
     assert (
         ExecuteProfilingRunRequest.model_validate(
-            {"expected_model_revision": 4}, strict=True
-        ).expected_model_revision
+            {"expected_project_revision": 4}, strict=True
+        ).expected_project_revision
         == 4
     )
     assert response.json() == {
         "changed": True,
         "workflow_run_id": 1048,
         "workflow_run_state": "running",
-        "model_revision": 4,
+        "project_revision": 4,
     }
     assert service.executed == []
 
@@ -475,8 +487,8 @@ def test_execute_endpoint_does_not_duplicate_an_already_started_run() -> None:
     service = _StaticWorkflowService(changed=False)
     with _client(service) as client:
         response = client.post(
-            "/api/v1/tenants/7/models/18/profiling/runs/1048/execute",
-            json={"expected_model_revision": 4},
+            "/api/v1/tenants/7/projects/18/profiling/runs/1048/execute",
+            json={"expected_project_revision": 4},
         )
 
     assert response.status_code == 200
@@ -515,8 +527,8 @@ class _DatabaseTransaction:
             return {
                 "changed": True,
                 "workflow_run_id": 1048,
-                "model_id": 18,
-                "model_revision": 5,
+                "project_id": 18,
+                "project_revision": 5,
                 "submitted_profile_count": 2,
                 "changed_profile_count": 2,
             }
@@ -529,11 +541,11 @@ class _DatabaseTransaction:
                 "completed_time": "ignored",
             }
         if "application.append_workflow_run_event" in query:
-            return {"model_event_log_id": 44}
+            return {"project_event_log_id": 44}
         if "application.fail_workflow_run" in query:
             return {"changed": True}
         assert "FROM application.workflow_run AS run" in query
-        return {"model_revision": 4, "model_workflow": "profiling"}
+        return {"project_revision": 4, "project_workflow": "profiling"}
 
     async def fetch_all(
         self,
@@ -545,8 +557,8 @@ class _DatabaseTransaction:
             return [
                 {
                     "workflow_run_id": 1048,
-                    "model_id": 18,
-                    "model_revision": 4,
+                    "project_id": 18,
+                    "project_revision": 4,
                     "gds_connection_id": 91,
                     "environment_code": "DEV",
                     "failure_code": None,
@@ -567,8 +579,8 @@ class _DatabaseTransaction:
 def _profiling_context_rows(*, zone_code: str = "bronze") -> list[dict[str, Any]]:
     base = {
         "workflow_run_id": 1048,
-        "model_id": 18,
-        "model_revision": 4,
+        "project_id": 18,
+        "project_revision": 4,
         "requested_batch_id": "10428",
         "selection_order": 1,
         "source_tenant_id": 7,
@@ -657,16 +669,16 @@ async def test_database_repository_starts_run_without_leaking_database_fields() 
     result = await repository.start(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=4,
+        expected_project_revision=4,
     )
 
     assert result.model_dump() == {
         "changed": True,
         "workflow_run_id": 1048,
         "workflow_run_state": "running",
-        "model_revision": 4,
+        "project_revision": 4,
     }
 
 
@@ -683,14 +695,16 @@ async def test_database_repository_maps_tenant_workflow_conflict() -> None:
         await repository.start(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=4,
+            expected_project_revision=4,
         )
 
 
 @pytest.mark.asyncio
-async def test_database_repository_groups_context_without_exposing_credentials() -> None:
+async def test_database_repository_groups_context_without_exposing_credentials() -> (
+    None
+):
     database = _Database()
     repository = DatabaseProfilingWorkflowRepository(
         database=database,
@@ -700,9 +714,9 @@ async def test_database_repository_groups_context_without_exposing_credentials()
     context = await repository.load_context(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=4,
+        expected_project_revision=4,
     )
 
     assert context.requested_batch_id == "10428"
@@ -724,9 +738,13 @@ async def test_database_repository_groups_context_without_exposing_credentials()
 
 
 @pytest.mark.asyncio
-async def test_database_repository_profiles_source_only_through_foreign_catalog() -> None:
+async def test_database_repository_profiles_source_only_through_foreign_catalog() -> (
+    None
+):
     database = _Database()
-    database.transaction.profiling_context_rows = _profiling_context_rows(zone_code="source")
+    database.transaction.profiling_context_rows = _profiling_context_rows(
+        zone_code="source"
+    )
     repository = DatabaseProfilingWorkflowRepository(
         database=database,
         environment_code="DEV",
@@ -735,9 +753,9 @@ async def test_database_repository_profiles_source_only_through_foreign_catalog(
     context = await repository.load_context(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=4,
+        expected_project_revision=4,
     )
 
     target = context.targets[0].object
@@ -777,9 +795,9 @@ async def test_database_repository_rejects_incomplete_source_foreign_catalog(
         await repository.load_context(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=4,
+            expected_project_revision=4,
         )
 
 
@@ -798,9 +816,9 @@ async def test_database_repository_rejects_source_without_foreign_catalog() -> N
         await repository.load_context(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=4,
+            expected_project_revision=4,
         )
 
 
@@ -819,9 +837,9 @@ async def test_database_repository_maps_unavailable_source_relation_safely() -> 
         await repository.load_context(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=4,
+            expected_project_revision=4,
         )
 
 
@@ -836,13 +854,13 @@ async def test_database_repository_persists_and_completes_in_one_transaction() -
     result = await repository.commit(
         _principal(),
         workflow_run_id=1048,
-        expected_model_revision=4,
+        expected_project_revision=4,
         workflow_run_claim_token=_CLAIM_TOKEN,
         profiles=[{"attribute_id": 1001}, {"attribute_id": 1002}],
     )
 
     assert result.workflow_run_state == "completed"
-    assert result.model_revision == 5
+    assert result.project_revision == 5
     assert database.write_transactions == 1
     write_calls = [query for query, _parameters in database.transaction.calls]
     assert "application.assert_workflow_run_claim" in write_calls[0]
@@ -861,7 +879,7 @@ async def test_database_repository_fences_event_and_failure_before_writing() -> 
     await event_repository.append_event(
         _principal(),
         workflow_run_id=1048,
-        expected_model_revision=4,
+        expected_project_revision=4,
         workflow_run_claim_token=_CLAIM_TOKEN,
         sequence=2,
         stage="profiling.prepare",
@@ -885,7 +903,7 @@ async def test_database_repository_fences_event_and_failure_before_writing() -> 
     await failure_repository.fail(
         _principal(),
         workflow_run_id=1048,
-        expected_model_revision=4,
+        expected_project_revision=4,
         workflow_run_claim_token=_CLAIM_TOKEN,
         failure_code="profiling_failed",
         safe_failure_message="Profiling failed safely.",
@@ -913,7 +931,7 @@ async def test_database_repository_stops_before_any_write_when_claim_fence_fails
             await repository.append_event(
                 _principal(),
                 workflow_run_id=1048,
-                expected_model_revision=4,
+                expected_project_revision=4,
                 workflow_run_claim_token=_CLAIM_TOKEN,
                 sequence=2,
                 stage="profiling.prepare",
@@ -927,7 +945,7 @@ async def test_database_repository_stops_before_any_write_when_claim_fence_fails
             await repository.commit(
                 _principal(),
                 workflow_run_id=1048,
-                expected_model_revision=4,
+                expected_project_revision=4,
                 workflow_run_claim_token=_CLAIM_TOKEN,
                 profiles=[{"attribute_id": 1001}],
             )
@@ -935,7 +953,7 @@ async def test_database_repository_stops_before_any_write_when_claim_fence_fails
             await repository.fail(
                 _principal(),
                 workflow_run_id=1048,
-                expected_model_revision=4,
+                expected_project_revision=4,
                 workflow_run_claim_token=_CLAIM_TOKEN,
                 failure_code="profiling_failed",
                 safe_failure_message="Profiling failed safely.",

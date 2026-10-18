@@ -47,7 +47,7 @@ class ProfilingRunStart(BaseModel):
         "cancelled",
         "failed",
     ]
-    model_revision: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
 
 
 class ProfilingCommitResult(BaseModel):
@@ -55,8 +55,8 @@ class ProfilingCommitResult(BaseModel):
 
     changed: bool
     workflow_run_id: int = Field(gt=0)
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     submitted_profile_count: int = Field(ge=0, le=50_000)
     changed_profile_count: int = Field(ge=0, le=50_000)
     workflow_run_state: Literal["completed"]
@@ -71,13 +71,13 @@ class ProfilingExecutionTarget:
 @dataclass(frozen=True, slots=True)
 class ProfilingExecutionContext:
     workflow_run_id: int
-    model_id: int
-    model_revision: int
+    project_id: int
+    project_revision: int
     requested_batch_id: str | None
     targets: tuple[ProfilingExecutionTarget, ...]
 
     def __post_init__(self) -> None:
-        if self.workflow_run_id < 1 or self.model_id < 1 or self.model_revision < 1:
+        if self.workflow_run_id < 1 or self.project_id < 1 or self.project_revision < 1:
             raise ValueError("Profiling execution identifiers must be positive")
         if not 1 <= len(self.targets) <= 50_000:
             raise ValueError("Profiling execution targets are incomplete")
@@ -97,9 +97,9 @@ class ProfilingWorkflowRepository(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> ProfilingRunStart: ...
 
     async def load_context(
@@ -107,9 +107,9 @@ class ProfilingWorkflowRepository(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> ProfilingExecutionContext: ...
 
     async def append_event(
@@ -117,7 +117,7 @@ class ProfilingWorkflowRepository(Protocol):
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         sequence: int,
         stage: str,
@@ -133,7 +133,7 @@ class ProfilingWorkflowRepository(Protocol):
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         profiles: list[dict[str, object]],
     ) -> ProfilingCommitResult: ...
@@ -143,7 +143,7 @@ class ProfilingWorkflowRepository(Protocol):
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         failure_code: str,
         safe_failure_message: str,
@@ -169,16 +169,16 @@ class ProfilingWorkflowOrchestrator:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> ProfilingRunStart:
         return await self._repository.start(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             workflow_run_id=workflow_run_id,
-            expected_model_revision=expected_model_revision,
+            expected_project_revision=expected_project_revision,
         )
 
     async def execute_started(
@@ -186,23 +186,23 @@ class ProfilingWorkflowOrchestrator:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
     ) -> None:
         try:
             context = await self._repository.load_context(
                 principal,
                 tenant_id=tenant_id,
-                model_id=model_id,
+                project_id=project_id,
                 workflow_run_id=workflow_run_id,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
             )
             if (
                 context.workflow_run_id != workflow_run_id
-                or context.model_id != model_id
-                or context.model_revision != expected_model_revision
+                or context.project_id != project_id
+                or context.project_revision != expected_project_revision
             ):
                 raise RuntimeError("Profiling execution context does not match the run")
 
@@ -219,7 +219,7 @@ class ProfilingWorkflowOrchestrator:
             await self._repository.append_event(
                 principal,
                 workflow_run_id=workflow_run_id,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 workflow_run_claim_token=workflow_run_claim_token,
                 sequence=2,
                 stage="profiling.prepare",
@@ -271,7 +271,7 @@ class ProfilingWorkflowOrchestrator:
                             await self._repository.append_event(
                                 principal,
                                 workflow_run_id=workflow_run_id,
-                                expected_model_revision=expected_model_revision,
+                                expected_project_revision=expected_project_revision,
                                 workflow_run_claim_token=workflow_run_claim_token,
                                 sequence=event_sequence,
                                 stage="profiling.execute",
@@ -313,7 +313,7 @@ class ProfilingWorkflowOrchestrator:
             await self._repository.commit(
                 principal,
                 workflow_run_id=workflow_run_id,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 workflow_run_claim_token=workflow_run_claim_token,
                 profiles=profiles,
             )
@@ -323,7 +323,7 @@ class ProfilingWorkflowOrchestrator:
                 await self._repository.fail(
                     principal,
                     workflow_run_id=workflow_run_id,
-                    expected_model_revision=expected_model_revision,
+                    expected_project_revision=expected_project_revision,
                     workflow_run_claim_token=workflow_run_claim_token,
                     failure_code=failure_code,
                     safe_failure_message=safe_message,
@@ -333,7 +333,7 @@ class ProfilingWorkflowOrchestrator:
                     "Profiling failure state could not be persisted.",
                     extra={
                         "workflow_run_id": workflow_run_id,
-                        "model_id": model_id,
+                        "project_id": project_id,
                         "failure_code": failure_code,
                     },
                 )

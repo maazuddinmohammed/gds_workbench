@@ -1,4 +1,4 @@
-"""ID-free modeling records shared by snapshots and Model Change Sets."""
+"""Portable project records shared by snapshots and Project Change Sets."""
 
 from __future__ import annotations
 
@@ -19,12 +19,9 @@ from pydantic import (
     model_validator,
 )
 
-from gds_etl_workbench.domain.assertion_safety import (
-    ASSERTION_DOCUMENT_METADATA_MAX_BYTES,
-    ASSERTION_RECORD_DETAILS_MAX_BYTES,
-    ASSERTION_RECORD_SOURCE_LOCATION_MAX_BYTES,
-    ASSERTION_RECORD_TEXT_MAX_CHARACTERS,
-    validate_assertion_json,
+from gds_etl_workbench.domain.context_safety import (
+    CONTEXT_RECORD_TEXT_MAX_CHARACTERS,
+    CONTEXT_SOURCE_REFERENCE_MAX_BYTES,
 )
 
 Code100 = Annotated[
@@ -76,8 +73,8 @@ ANALYSIS_VALIDATION_FIELDS = (
 )
 
 
-def normalize_model_key_value[T](value: T) -> T:
-    """Normalize one textual Model natural-key value for comparison."""
+def normalize_project_key_value[T](value: T) -> T:
+    """Normalize one textual Project natural-key value for comparison."""
     if isinstance(value, str):
         return cast(T, value.strip(" ").casefold())
     return value
@@ -98,7 +95,7 @@ def has_mapping_transformation_content(value: object) -> bool:
 
 
 class ModelingRecord(BaseModel):
-    """Exact ID-free modeling record; database and audit IDs are never fields."""
+    """Portable record; numeric database/audit IDs stay internal. Context UUIDs are portable."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -115,19 +112,19 @@ class PhysicalAttributeKey(PhysicalObjectKey):
     attribute_name: Name400
 
 
-class ModelSchemaDefinition(ModelingRecord):
+class ProjectSchemaDefinition(ModelingRecord):
     schema_name: Name400
     description: (
         Annotated[str, StringConstraints(min_length=1, max_length=2000, pattern=r"\S")] | None
     )
 
 
-class ModelDetailsRecord(ModelingRecord):
-    model_name: Annotated[
+class ProjectDetailsRecord(ModelingRecord):
+    project_name: Annotated[
         str,
         StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
     ]
-    model_description: (
+    project_description: (
         Annotated[
             str,
             StringConstraints(min_length=1, max_length=2000, pattern=r"\S"),
@@ -139,8 +136,8 @@ class ModelDetailsRecord(ModelingRecord):
     gold_model_naming_instructions: NamingInstructions | None
     gold_model_technical_columns_template: JsonObject | None
     gold_model_audit_columns_template: JsonObject | None
-    logical_schemas: tuple[ModelSchemaDefinition, ...] = Field(default=(), max_length=100)
-    dimensional_schemas: tuple[ModelSchemaDefinition, ...] = Field(default=(), max_length=100)
+    logical_schemas: tuple[ProjectSchemaDefinition, ...] = Field(default=(), max_length=100)
+    dimensional_schemas: tuple[ProjectSchemaDefinition, ...] = Field(default=(), max_length=100)
     logical_entity_scd_type: Literal["type_1", "type_2"] | None = None
     dimensional_entity_scd_type: Literal["type_1", "type_2"] | None = None
     logical_coverage_threshold_percent: int = Field(default=70, ge=1, le=100, strict=True)
@@ -150,11 +147,11 @@ class ModelDetailsRecord(ModelingRecord):
     default_mapping_source_system_code: Code100 | None = None
 
     @model_validator(mode="after")
-    def validate_policy_fields(self) -> ModelDetailsRecord:
+    def validate_policy_fields(self) -> ProjectDetailsRecord:
         for schemas in (self.logical_schemas, self.dimensional_schemas):
-            _require_unique((schema.schema_name for schema in schemas), "Model schema names")
+            _require_unique((schema.schema_name for schema in schemas), "Project schema names")
             if _json_size([schema.model_dump(mode="json") for schema in schemas]) > 262_144:
-                raise ValueError("Model schema configuration is too large.")
+                raise ValueError("Project schema configuration is too large.")
         naming_instructions = (
             self.silver_model_naming_instructions,
             self.gold_model_naming_instructions,
@@ -163,24 +160,30 @@ class ModelDetailsRecord(ModelingRecord):
             value is not None and len(value.encode("utf-8")) > 32_768
             for value in naming_instructions
         ):
-            raise ValueError("Model naming instructions are too large.")
+            raise ValueError("Project naming instructions are too large.")
         templates = (
             self.silver_model_audit_columns_template,
             self.gold_model_technical_columns_template,
             self.gold_model_audit_columns_template,
         )
         if any(value is not None and _json_size(value) > 262_144 for value in templates):
-            raise ValueError("A Model policy template is too large.")
+            raise ValueError("A Project policy template is too large.")
         return self
 
 
-class ModelInputScopeRecord(PhysicalObjectKey):
-    model_input_scope_is_locked: bool
+class ProjectInputScopeRecord(PhysicalObjectKey):
+    project_input_scope_is_locked: bool
     is_active: bool
 
 
-class AssertionRecordKey(ModelingRecord):
-    modeling_assertion_record_key: StableKey
+ContextRecordId = Annotated[
+    str,
+    StringConstraints(pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"),
+]
+
+
+class ContextRecordReference(ModelingRecord):
+    context_record_id: ContextRecordId
 
 
 class ObjectEnrichmentRecord(PhysicalObjectKey):
@@ -372,114 +375,67 @@ class AnalysisResultRecord(ModelingRecord):
                 strict=True,
             )
         from_key = (
-            normalize_model_key_value(self.from_tenant_code),
-            normalize_model_key_value(self.from_system_code),
-            normalize_model_key_value(self.from_connection_code),
-            normalize_model_key_value(self.from_object_schema),
-            normalize_model_key_value(self.from_object_name),
-            normalize_model_key_value(self.from_attribute_name),
+            normalize_project_key_value(self.from_tenant_code),
+            normalize_project_key_value(self.from_system_code),
+            normalize_project_key_value(self.from_connection_code),
+            normalize_project_key_value(self.from_object_schema),
+            normalize_project_key_value(self.from_object_name),
+            normalize_project_key_value(self.from_attribute_name),
         )
         to_key = (
-            normalize_model_key_value(self.to_tenant_code),
-            normalize_model_key_value(self.to_system_code),
-            normalize_model_key_value(self.to_connection_code),
-            normalize_model_key_value(self.to_object_schema),
-            normalize_model_key_value(self.to_object_name),
-            normalize_model_key_value(self.to_attribute_name),
+            normalize_project_key_value(self.to_tenant_code),
+            normalize_project_key_value(self.to_system_code),
+            normalize_project_key_value(self.to_connection_code),
+            normalize_project_key_value(self.to_object_schema),
+            normalize_project_key_value(self.to_object_name),
+            normalize_project_key_value(self.to_attribute_name),
         )
         if from_key == to_key:
             raise ValueError("Analysis endpoints must be different.")
         return self
 
 
-class ModelingAssertionDocumentRecord(ModelingRecord):
-    modeling_assertion_document_name: Annotated[
-        str,
-        StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
+class ContextTypeRecord(ModelingRecord):
+    context_type_name: Annotated[
+        str, StringConstraints(min_length=1, max_length=200, pattern=r"\S")
     ]
-    tenant_code: Code100 | None
-    system_code: Code100 | None
-    modeling_assertion_file_pattern: (
-        Annotated[
-            str,
-            StringConstraints(min_length=1, max_length=500, pattern=r"\S"),
-        ]
-        | None
+    context_type_description: str | None
+
+
+class ContextGroupRecord(ModelingRecord):
+    context_group_name: Annotated[
+        str, StringConstraints(min_length=1, max_length=255, pattern=r"\S")
+    ]
+    context_type_name: Annotated[
+        str, StringConstraints(min_length=1, max_length=200, pattern=r"\S")
+    ]
+    context_group_description: (
+        Annotated[str, StringConstraints(min_length=1, max_length=2000, pattern=r"\S")] | None
     )
-    modeling_assertion_document_type: Code100 | None
-    modeling_assertion_document_description: (
-        Annotated[
-            str,
-            StringConstraints(min_length=1, max_length=2000, pattern=r"\S"),
-        ]
-        | None
-    )
-    modeling_assertion_document_metadata: JsonObject
+    source_system_code: Code100 | None
     is_active: bool
 
-    @field_validator("modeling_assertion_document_metadata")
-    @classmethod
-    def validate_metadata(cls, value: JsonObject) -> JsonObject:
-        validate_assertion_json(
-            value,
-            maximum_bytes=ASSERTION_DOCUMENT_METADATA_MAX_BYTES,
-            label="Assertion Document metadata",
-        )
-        return value
 
-
-class ModelingAssertionRecordRecord(AssertionRecordKey):
-    modeling_assertion_document_name: Annotated[
+class ContextRecord(ContextRecordReference):
+    context_group_name: Annotated[
+        str, StringConstraints(min_length=1, max_length=255, pattern=r"\S")
+    ]
+    context_text: Annotated[
         str,
-        StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
+        StringConstraints(
+            min_length=1, max_length=CONTEXT_RECORD_TEXT_MAX_CHARACTERS, pattern=r"\S"
+        ),
     ]
-    modeling_assertion_record_type: Code100
-    modeling_assertion_text: NonblankText
-    modeling_assertion_details: JsonObject
-    modeling_assertion_source_location: JsonObject | None
-    modeling_assertion_applicable_layers: tuple[
-        Literal["analysis", "conceptual", "logical", "dimensional", "mapping"],
-        ...,
-    ]
-    modeling_assertion_confidence: Confidence | None
-    modeling_assertion_record_status: Status
-    modeling_assertion_record_is_locked: bool
+    source_reference: str | None
+    status: Status
+    is_locked: bool
 
-    @field_validator("modeling_assertion_text")
+    @field_validator("source_reference")
     @classmethod
-    def validate_text(cls, value: str) -> str:
-        if len(value) > ASSERTION_RECORD_TEXT_MAX_CHARACTERS:
-            raise ValueError("Assertion Record text is too large")
+    def validate_source_reference(cls, value: str | None) -> str | None:
+        if value is not None and len(value.encode("utf-8")) > CONTEXT_SOURCE_REFERENCE_MAX_BYTES:
+            raise ValueError("Context source reference is too large")
         return value
-
-    @field_validator("modeling_assertion_details")
-    @classmethod
-    def validate_details(cls, value: JsonObject) -> JsonObject:
-        validate_assertion_json(
-            value,
-            maximum_bytes=ASSERTION_RECORD_DETAILS_MAX_BYTES,
-            label="Assertion Record details",
-        )
-        return value
-
-    @field_validator("modeling_assertion_source_location")
-    @classmethod
-    def validate_source_location(cls, value: JsonObject | None) -> JsonObject | None:
-        if value is not None:
-            validate_assertion_json(
-                value,
-                maximum_bytes=ASSERTION_RECORD_SOURCE_LOCATION_MAX_BYTES,
-                label="Assertion Record source location",
-            )
-        return value
-
-    @model_validator(mode="after")
-    def validate_layers(self) -> ModelingAssertionRecordRecord:
-        if len(set(self.modeling_assertion_applicable_layers)) != len(
-            self.modeling_assertion_applicable_layers
-        ):
-            raise ValueError("Assertion applicable layers must be unique.")
-        return self
 
 
 class ObjectSupportRecord(ModelingRecord):
@@ -499,9 +455,9 @@ class ObjectSupportRecord(ModelingRecord):
     support_is_locked: bool
 
 
-class AssertionSupportRecord(ModelingRecord):
-    support_source_type: Literal["assertion"]
-    assertion_record: AssertionRecordKey
+class ContextSupportRecord(ModelingRecord):
+    support_source_type: Literal["context_record"]
+    context_record: ContextRecordReference
     support_role: (
         Annotated[
             str,
@@ -517,7 +473,7 @@ class AssertionSupportRecord(ModelingRecord):
 
 
 type SupportRecord = Annotated[
-    ObjectSupportRecord | AssertionSupportRecord,
+    ObjectSupportRecord | ContextSupportRecord,
     Field(discriminator="support_source_type"),
 ]
 
@@ -568,9 +524,9 @@ class ConceptualRelationshipRecord(ModelingRecord):
 
     @model_validator(mode="after")
     def validate_relationship(self) -> ConceptualRelationshipRecord:
-        if normalize_model_key_value(self.from_conceptual_object_name) == normalize_model_key_value(
-            self.to_conceptual_object_name
-        ):
+        if normalize_project_key_value(
+            self.from_conceptual_object_name
+        ) == normalize_project_key_value(self.to_conceptual_object_name):
             raise ValueError("Conceptual Relationship endpoints must be different.")
         _require_unique_sources(self.supports, "Conceptual Relationship supports")
         return self
@@ -594,9 +550,9 @@ class LogicalObjectSourceRecord(ModelingRecord):
     is_locked: bool
 
 
-class LogicalAssertionSourceRecord(ModelingRecord):
-    support_source_type: Literal["assertion"]
-    assertion_record: AssertionRecordKey
+class LogicalContextSourceRecord(ModelingRecord):
+    support_source_type: Literal["context_record"]
+    context_record: ContextRecordReference
     source_order: int | None = Field(default=None, gt=0)
     rationale: NonblankText
     status: Status
@@ -604,7 +560,7 @@ class LogicalAssertionSourceRecord(ModelingRecord):
 
 
 type LogicalEntitySourceRecord = Annotated[
-    LogicalObjectSourceRecord | LogicalAssertionSourceRecord,
+    LogicalObjectSourceRecord | LogicalContextSourceRecord,
     Field(discriminator="support_source_type"),
 ]
 
@@ -635,7 +591,7 @@ class DimensionalLogicalEntitySourceRecord(ModelingRecord):
     ]
 
 
-class DimensionalAssertionSourceRecord(LogicalAssertionSourceRecord):
+class DimensionalContextSourceRecord(LogicalContextSourceRecord):
     source_role: Annotated[
         str,
         StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
@@ -643,7 +599,7 @@ class DimensionalAssertionSourceRecord(LogicalAssertionSourceRecord):
 
 
 type DimensionalEntitySourceRecord = Annotated[
-    DimensionalLogicalEntitySourceRecord | DimensionalAssertionSourceRecord,
+    DimensionalLogicalEntitySourceRecord | DimensionalContextSourceRecord,
     Field(discriminator="support_source_type"),
 ]
 
@@ -657,9 +613,9 @@ class AttributePhysicalSourceRecord(ModelingRecord):
     is_locked: bool
 
 
-class AttributeAssertionSourceRecord(ModelingRecord):
-    support_source_type: Literal["assertion"]
-    assertion_record: AssertionRecordKey
+class AttributeContextSourceRecord(ModelingRecord):
+    support_source_type: Literal["context_record"]
+    context_record: ContextRecordReference
     source_order: int | None = Field(default=None, gt=0)
     rationale: NonblankText
     status: Status
@@ -667,7 +623,7 @@ class AttributeAssertionSourceRecord(ModelingRecord):
 
 
 type AttributeSourceRecord = Annotated[
-    AttributePhysicalSourceRecord | AttributeAssertionSourceRecord,
+    AttributePhysicalSourceRecord | AttributeContextSourceRecord,
     Field(discriminator="support_source_type"),
 ]
 
@@ -682,7 +638,7 @@ class AttributeLogicalSourceRecord(ModelingRecord):
 
 
 type DimensionalAttributeSourceRecord = Annotated[
-    AttributeLogicalSourceRecord | AttributeAssertionSourceRecord,
+    AttributeLogicalSourceRecord | AttributeContextSourceRecord,
     Field(discriminator="support_source_type"),
 ]
 
@@ -804,13 +760,13 @@ class LogicalRelationshipRecord(ModelingRecord):
     @model_validator(mode="after")
     def validate_endpoints(self) -> LogicalRelationshipRecord:
         if (
-            normalize_model_key_value(self.from_logical_entity_schema_name),
-            normalize_model_key_value(self.from_logical_entity_name),
-            normalize_model_key_value(self.from_logical_attribute_name),
+            normalize_project_key_value(self.from_logical_entity_schema_name),
+            normalize_project_key_value(self.from_logical_entity_name),
+            normalize_project_key_value(self.from_logical_attribute_name),
         ) == (
-            normalize_model_key_value(self.to_logical_entity_schema_name),
-            normalize_model_key_value(self.to_logical_entity_name),
-            normalize_model_key_value(self.to_logical_attribute_name),
+            normalize_project_key_value(self.to_logical_entity_schema_name),
+            normalize_project_key_value(self.to_logical_entity_name),
+            normalize_project_key_value(self.to_logical_attribute_name),
         ):
             raise ValueError("Logical Relationship endpoints must be different.")
         return self
@@ -989,13 +945,13 @@ class DimensionalRelationshipRecord(ModelingRecord):
     @model_validator(mode="after")
     def validate_endpoints(self) -> DimensionalRelationshipRecord:
         if (
-            normalize_model_key_value(self.from_dimensional_entity_schema_name),
-            normalize_model_key_value(self.from_dimensional_entity_name),
-            normalize_model_key_value(self.from_dimensional_attribute_name),
+            normalize_project_key_value(self.from_dimensional_entity_schema_name),
+            normalize_project_key_value(self.from_dimensional_entity_name),
+            normalize_project_key_value(self.from_dimensional_attribute_name),
         ) == (
-            normalize_model_key_value(self.to_dimensional_entity_schema_name),
-            normalize_model_key_value(self.to_dimensional_entity_name),
-            normalize_model_key_value(self.to_dimensional_attribute_name),
+            normalize_project_key_value(self.to_dimensional_entity_schema_name),
+            normalize_project_key_value(self.to_dimensional_entity_name),
+            normalize_project_key_value(self.to_dimensional_attribute_name),
         ):
             raise ValueError("Dimensional Relationship endpoints must be different.")
         return self
@@ -1285,7 +1241,7 @@ def _validation_literal_matches(result_type: str | None, value: object) -> bool:
 
 
 def _require_unique(values: Iterable[str], label: str) -> None:
-    normalized = [normalize_model_key_value(value) for value in values]
+    normalized = [normalize_project_key_value(value) for value in values]
     if len(set(normalized)) != len(normalized):
         raise ValueError(f"{label} must be unique.")
 
@@ -1293,10 +1249,10 @@ def _require_unique(values: Iterable[str], label: str) -> None:
 def _require_unique_sources(sources: Iterable[Any], label: str) -> None:
     keys: list[tuple[str, ...]] = []
     for source in sources:
-        if source.support_source_type == "assertion":
+        if source.support_source_type == "context_record":
             key = (
-                "assertion",
-                normalize_model_key_value(source.assertion_record.modeling_assertion_record_key),
+                "context",
+                normalize_project_key_value(source.context_record.context_record_id),
             )
         elif source.support_source_type in {"logical_entity", "logical_attribute"}:
             logical = (
@@ -1306,10 +1262,10 @@ def _require_unique_sources(sources: Iterable[Any], label: str) -> None:
             )
             key = (
                 source.support_source_type,
-                normalize_model_key_value(logical.logical_entity_schema_name),
-                normalize_model_key_value(logical.logical_entity_name),
+                normalize_project_key_value(logical.logical_entity_schema_name),
+                normalize_project_key_value(logical.logical_entity_name),
                 *(
-                    (normalize_model_key_value(logical.logical_attribute_name),)
+                    (normalize_project_key_value(logical.logical_attribute_name),)
                     if source.support_source_type == "logical_attribute"
                     else ()
                 ),
@@ -1318,13 +1274,13 @@ def _require_unique_sources(sources: Iterable[Any], label: str) -> None:
             physical = getattr(source, "source_object", None) or source.source_attribute
             key = (
                 source.support_source_type,
-                normalize_model_key_value(physical.tenant_code),
-                normalize_model_key_value(physical.system_code),
-                normalize_model_key_value(physical.connection_code),
-                normalize_model_key_value(physical.object_schema),
-                normalize_model_key_value(physical.object_name),
+                normalize_project_key_value(physical.tenant_code),
+                normalize_project_key_value(physical.system_code),
+                normalize_project_key_value(physical.connection_code),
+                normalize_project_key_value(physical.object_schema),
+                normalize_project_key_value(physical.object_name),
                 *(
-                    (normalize_model_key_value(physical.attribute_name),)
+                    (normalize_project_key_value(physical.attribute_name),)
                     if hasattr(physical, "attribute_name")
                     else ()
                 ),

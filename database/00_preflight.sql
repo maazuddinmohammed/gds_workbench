@@ -17,7 +17,7 @@
 --DROP SCHEMA mcp CASCADE;
 --DROP SCHEMA application CASCADE;
 --DROP SCHEMA workflow CASCADE;
---DROP SCHEMA model CASCADE;
+--DROP SCHEMA project CASCADE;
 --DROP SCHEMA security CASCADE;
 --DROP SCHEMA core CASCADE;
 --DROP SCHEMA reference CASCADE;
@@ -66,7 +66,7 @@ BEGIN
       INTO v_existing_schema
      FROM pg_catalog.pg_namespace AS namespace_record
      WHERE namespace_record.nspname IN (
-               'reference', 'core', 'security', 'model', 'workflow',
+               'reference', 'core', 'security', 'model', 'project', 'workflow',
                'application', 'mcp'
            )
      ORDER BY namespace_record.nspname

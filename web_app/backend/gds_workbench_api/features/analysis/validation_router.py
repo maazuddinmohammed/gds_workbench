@@ -16,7 +16,7 @@ from gds_workbench_api.features.workflows.authoring.lifecycle import (
 class ExecuteAnalysisValidationRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    expected_model_revision: int = Field(gt=0)
+    expected_project_revision: int = Field(gt=0)
 
 
 class AnalysisValidationWorkflowService(Protocol):
@@ -25,9 +25,9 @@ class AnalysisValidationWorkflowService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart: ...
 
 
@@ -38,14 +38,14 @@ def create_analysis_validation_workflow_router(
 ) -> APIRouter:
     authenticate = principal_dependency(identity_provider)
     router = APIRouter(
-        prefix=("/api/v1/tenants/{tenant_id}/models/{model_id}/analysis/validation-runs"),
+        prefix=("/api/v1/tenants/{tenant_id}/projects/{project_id}/analysis/validation-runs"),
         tags=["analysis"],
     )
 
     async def execute_run(
         response: Response,
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         workflow_run_id: Annotated[int, Path(gt=0)],
         command: ExecuteAnalysisValidationRunRequest,
         *,
@@ -54,9 +54,9 @@ def create_analysis_validation_workflow_router(
         result = await service.start(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             workflow_run_id=workflow_run_id,
-            expected_model_revision=command.expected_model_revision,
+            expected_project_revision=command.expected_project_revision,
         )
         if result.changed and result.workflow_run_state == "running":
             response.status_code = status.HTTP_202_ACCEPTED

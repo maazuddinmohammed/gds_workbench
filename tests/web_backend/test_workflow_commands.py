@@ -35,8 +35,8 @@ def test_metadata_enrichment_request_requires_one_shot(mode: str | None) -> None
     with pytest.raises(ValidationError, match="requires one-shot"):
         CreateWorkflowRunRequest.model_validate(
             {
-                "expected_model_revision": 4,
-                "model_workflow": "metadata_enrichment",
+                "expected_project_revision": 4,
+                "project_workflow": "metadata_enrichment",
                 "workflow_execution_mode": mode,
                 "selected_object_ids": [101],
             },
@@ -44,14 +44,18 @@ def test_metadata_enrichment_request_requires_one_shot(mode: str | None) -> None
         )
 
 
-@pytest.mark.parametrize("workflow", ["metadata_enrichment", "conceptual", "validation"])
+@pytest.mark.parametrize(
+    "workflow", ["metadata_enrichment", "conceptual", "validation"]
+)
 def test_workflow_request_preserves_large_explicit_selection(workflow: str) -> None:
     objects = list(range(1, 50_002)) if workflow != "validation" else []
-    systems = [f"system_{index}" for index in range(1001)] if workflow == "validation" else []
+    systems = (
+        [f"system_{index}" for index in range(1001)] if workflow == "validation" else []
+    )
     request = CreateWorkflowRunRequest.model_validate(
         {
-            "expected_model_revision": 4,
-            "model_workflow": workflow,
+            "expected_project_revision": 4,
+            "project_workflow": workflow,
             "workflow_execution_mode": None if workflow == "validation" else "one_shot",
             "selected_object_ids": objects,
             "selected_system_codes": systems,
@@ -68,11 +72,11 @@ class StaticWorkflowCommandService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
     ) -> WorkflowRunCancellationResult:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, workflow_run_id) == (7, 18, 1048)
+        assert (tenant_id, project_id, workflow_run_id) == (7, 18, 1048)
         return WorkflowRunCancellationResult(
             changed=True,
             workflow_run_id=workflow_run_id,
@@ -85,12 +89,12 @@ class StaticWorkflowCommandService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         correlation_id: UUID,
         command: CreateWorkflowRunRequest,
     ) -> WorkflowRunCommandResult:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, correlation_id) == (
+        assert (tenant_id, project_id, correlation_id) == (
             7,
             18,
             UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
@@ -102,7 +106,7 @@ class StaticWorkflowCommandService:
             workflow_run_state="queued",
             correlation_id=correlation_id,
             prompt_snapshot_count=2,
-            model_revision=4,
+            project_revision=4,
             selected_scope_digest="a" * 64,
             selected_scope_count=2,
             code_generation_coverage_mode=None,
@@ -125,11 +129,11 @@ def _app() -> TestClient:
 def test_agentic_run_is_explicit_and_queues_one_atomic_run() -> None:
     with _app() as client:
         response = client.post(
-            "/api/v1/tenants/7/models/18/runs",
+            "/api/v1/tenants/7/projects/18/runs",
             headers={"Idempotency-Key": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"},
             json={
-                "expected_model_revision": 4,
-                "model_workflow": "conceptual",
+                "expected_project_revision": 4,
+                "project_workflow": "conceptual",
                 "workflow_execution_mode": "tool_assisted",
                 "selected_object_ids": [101, 102],
                 "agent": {
@@ -151,7 +155,7 @@ def test_agentic_run_is_explicit_and_queues_one_atomic_run() -> None:
         "workflow_run_state": "queued",
         "correlation_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
         "prompt_snapshot_count": 2,
-        "model_revision": 4,
+        "project_revision": 4,
         "selected_scope_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "selected_scope_count": 2,
         "code_generation_coverage_mode": None,
@@ -162,11 +166,11 @@ def test_agentic_run_is_explicit_and_queues_one_atomic_run() -> None:
 def test_deterministic_and_agentic_inputs_cannot_be_mixed() -> None:
     with _app() as client:
         response = client.post(
-            "/api/v1/tenants/7/models/18/runs",
+            "/api/v1/tenants/7/projects/18/runs",
             headers={"Idempotency-Key": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"},
             json={
-                "expected_model_revision": 4,
-                "model_workflow": "profiling",
+                "expected_project_revision": 4,
+                "project_workflow": "profiling",
                 "workflow_execution_mode": None,
                 "selected_object_ids": [101],
                 "agent": {
@@ -194,8 +198,8 @@ def test_code_generation_coverage_is_explicit(
 ) -> None:
     command = CreateWorkflowRunRequest.model_validate(
         {
-            "expected_model_revision": 4,
-            "model_workflow": "code_generation",
+            "expected_project_revision": 4,
+            "project_workflow": "code_generation",
             "selected_entity_ids": selected_object_ids,
             "modeled_entity_type": "logical_entity",
             "code_generation_coverage_mode": coverage_mode,
@@ -219,8 +223,8 @@ def test_code_generation_rejects_mismatched_coverage_intent(
     with pytest.raises(ValidationError, match="Code Generation coverage"):
         CreateWorkflowRunRequest.model_validate(
             {
-                "expected_model_revision": 4,
-                "model_workflow": "code_generation",
+                "expected_project_revision": 4,
+                "project_workflow": "code_generation",
                 "selected_entity_ids": selected_object_ids,
                 "modeled_entity_type": "logical_entity",
                 "code_generation_coverage_mode": coverage_mode,
@@ -233,8 +237,8 @@ def test_code_generation_rejects_mismatched_coverage_intent(
 def test_validation_requires_an_exact_case_insensitive_system_selection() -> None:
     command = CreateWorkflowRunRequest.model_validate(
         {
-            "expected_model_revision": 4,
-            "model_workflow": "validation",
+            "expected_project_revision": 4,
+            "project_workflow": "validation",
             "workflow_execution_mode": None,
             "selected_object_ids": [],
             "selected_system_codes": [" CRM ", "ERP"],
@@ -262,8 +266,8 @@ def test_validation_rejects_ambiguous_scope_or_execution_mode(
     with pytest.raises(ValidationError):
         CreateWorkflowRunRequest.model_validate(
             {
-                "expected_model_revision": 4,
-                "model_workflow": "validation",
+                "expected_project_revision": 4,
+                "project_workflow": "validation",
                 "workflow_execution_mode": None,
                 "selected_object_ids": [],
                 "selected_system_codes": ["CRM"],
@@ -277,8 +281,8 @@ def test_validation_rejects_ambiguous_scope_or_execution_mode(
 def test_mapping_request_selects_one_pair_without_choosing_the_route() -> None:
     command = CreateWorkflowRunRequest.model_validate(
         {
-            "expected_model_revision": 4,
-            "model_workflow": "mapping",
+            "expected_project_revision": 4,
+            "project_workflow": "mapping",
             "modeled_entity_type": "logical_entity",
             "workflow_execution_mode": "one_shot",
             "selected_entity_ids": [101],
@@ -312,8 +316,8 @@ def test_mapping_request_allows_each_output_template_selection_independently(
 ) -> None:
     command = CreateWorkflowRunRequest.model_validate(
         {
-            "expected_model_revision": 4,
-            "model_workflow": "mapping",
+            "expected_project_revision": 4,
+            "project_workflow": "mapping",
             "modeled_entity_type": "logical_entity",
             "workflow_execution_mode": "one_shot",
             "selected_entity_ids": [101],
@@ -345,8 +349,8 @@ def test_mapping_request_rejects_nonpositive_output_template_id(
     field_value: int,
 ) -> None:
     payload: dict[str, object] = {
-        "expected_model_revision": 4,
-        "model_workflow": "mapping",
+        "expected_project_revision": 4,
+        "project_workflow": "mapping",
         "modeled_entity_type": "logical_entity",
         "workflow_execution_mode": "one_shot",
         "selected_entity_ids": [101],
@@ -372,8 +376,8 @@ def test_non_mapping_request_rejects_output_template_selection(
     field_name: str,
 ) -> None:
     payload: dict[str, object] = {
-        "expected_model_revision": 4,
-        "model_workflow": "profiling",
+        "expected_project_revision": 4,
+        "project_workflow": "profiling",
         "selected_object_ids": [101],
         "prompt_overrides": {},
         field_name: 501,
@@ -395,8 +399,8 @@ def test_mapping_request_rejects_a_caller_route_or_incomplete_pair(
     invalid_fields: dict[str, object],
 ) -> None:
     payload: dict[str, object] = {
-        "expected_model_revision": 4,
-        "model_workflow": "mapping",
+        "expected_project_revision": 4,
+        "project_workflow": "mapping",
         "modeled_entity_type": "logical_entity",
         "workflow_execution_mode": "one_shot",
         "selected_entity_ids": [101],
@@ -409,7 +413,7 @@ def test_mapping_request_rejects_a_caller_route_or_incomplete_pair(
 
     with _app() as client:
         response = client.post(
-            "/api/v1/tenants/7/models/18/runs",
+            "/api/v1/tenants/7/projects/18/runs",
             headers={"Idempotency-Key": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"},
             json=payload,
         )
@@ -431,10 +435,10 @@ class WorkflowCommandTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
-        if "model.assert_writable" in query:
+        if "project.assert_writable" in query:
             return {"assert_writable": None}
         if "security.authorize_tenant_operation" in query:
-            assert parameters[-2:] == (7, "tenant_model_write")
+            assert parameters[-2:] == (7, "tenant_project_write")
             return {
                 "principal_id": 41,
                 "principal_display_name": "Maaz",
@@ -445,10 +449,10 @@ class WorkflowCommandTransaction:
                 "lock_owner_display_name": "Maaz",
                 "lock_expires_time": datetime(2026, 8, 24, 15, 0, tzinfo=UTC),
             }
-        if "FROM model.model AS target_model" in query:
+        if "FROM project.project AS target_project" in query:
             assert parameters == (7, 18)
             return {
-                "model_revision": 4,
+                "project_revision": 4,
                 "default_agent_sdk_code": "openai_agents_sdk",
                 "default_agent_provider_code": "microsoft_foundry",
                 "default_agent_model_code": "foundry-primary",
@@ -470,7 +474,7 @@ class WorkflowCommandTransaction:
             "workflow_run_state": "queued",
             "correlation_id": UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
             "prompt_snapshot_count": 0,
-            "model_revision": 4,
+            "project_revision": 4,
             "selected_scope_digest": "a" * 64,
             "selected_scope_count": 2,
             "code_generation_coverage_mode": None,
@@ -487,7 +491,9 @@ class WorkflowCommandDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_command_derives_actor_and_calls_only_governed_function() -> None:
+async def test_database_command_derives_actor_and_calls_only_governed_function() -> (
+    None
+):
     service = DatabaseWorkflowCommandService(
         database=WorkflowCommandDatabase(),
         authorizer=AuthorizationService(),
@@ -500,8 +506,8 @@ async def test_database_command_derives_actor_and_calls_only_governed_function()
     )
     command = CreateWorkflowRunRequest.model_validate(
         {
-            "expected_model_revision": 4,
-            "model_workflow": "profiling",
+            "expected_project_revision": 4,
+            "project_workflow": "profiling",
             "workflow_execution_mode": None,
             "selected_object_ids": [101, 102],
             "requested_batch_id": "10428",
@@ -513,7 +519,7 @@ async def test_database_command_derives_actor_and_calls_only_governed_function()
     result = await service.create_run(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         correlation_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
         command=command,
     )
@@ -523,10 +529,14 @@ async def test_database_command_derives_actor_and_calls_only_governed_function()
 
 
 @pytest.mark.asyncio
-async def test_database_command_validates_agent_against_the_requested_execution_mode() -> None:
+async def test_database_command_validates_agent_against_the_requested_execution_mode() -> (
+    None
+):
     registry = load_default_agent_capabilities()
-    databricks_model = next(model for model in registry.models if model.code == "foundry-primary")
-    restricted = databricks_model.model_copy(
+    primary_model = next(
+        model for model in registry.models if model.code == "foundry-primary"
+    )
+    restricted = primary_model.model_copy(
         update={
             "execution_profiles": (
                 AgentModelExecutionProfile(
@@ -540,7 +550,8 @@ async def test_database_command_validates_agent_against_the_requested_execution_
     registry = registry.model_copy(
         update={
             "models": tuple(
-                restricted if model.code == restricted.code else model for model in registry.models
+                restricted if model.code == restricted.code else model
+                for model in registry.models
             )
         }
     )
@@ -551,8 +562,8 @@ async def test_database_command_validates_agent_against_the_requested_execution_
     )
     command = CreateWorkflowRunRequest.model_validate(
         {
-            "expected_model_revision": 4,
-            "model_workflow": "analysis",
+            "expected_project_revision": 4,
+            "project_workflow": "analysis",
             "workflow_execution_mode": "one_shot",
             "selected_object_ids": [101],
             "agent": {
@@ -576,7 +587,7 @@ async def test_database_command_validates_agent_against_the_requested_execution_
                 entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
             ),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             correlation_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
             command=command,
         )
@@ -588,7 +599,9 @@ class _RecordingCapabilityRegistry:
         self.selections: list[AgentRunSelection] = []
 
     def resolve_default_selection(self, **values: Any) -> AgentRunSelection:
-        selection = load_default_agent_capabilities().resolve_default_selection(**values)
+        selection = load_default_agent_capabilities().resolve_default_selection(
+            **values
+        )
         self.validate_selection(selection, execution_mode=values["execution_mode"])
         return selection
 
@@ -615,8 +628,8 @@ async def test_database_command_validates_code_generation_against_internal_tool_
     )
     command = CreateWorkflowRunRequest.model_validate(
         {
-            "expected_model_revision": 4,
-            "model_workflow": "code_generation",
+            "expected_project_revision": 4,
+            "project_workflow": "code_generation",
             "selected_entity_ids": [101],
             "modeled_entity_type": "logical_entity",
             "code_generation_coverage_mode": "selected_targets",
@@ -641,7 +654,7 @@ async def test_database_command_validates_code_generation_against_internal_tool_
                 entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
             ),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             correlation_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
             command=command,
         )
@@ -650,7 +663,9 @@ async def test_database_command_validates_code_generation_against_internal_tool_
 
 
 @pytest.mark.asyncio
-async def test_database_command_validates_validation_against_internal_tool_assisted_mode() -> None:
+async def test_database_command_validates_validation_against_internal_tool_assisted_mode() -> (
+    None
+):
     registry = _RecordingCapabilityRegistry()
     service = DatabaseWorkflowCommandService(
         database=WorkflowCommandDatabase(),
@@ -659,8 +674,8 @@ async def test_database_command_validates_validation_against_internal_tool_assis
     )
     command = CreateWorkflowRunRequest.model_validate(
         {
-            "expected_model_revision": 4,
-            "model_workflow": "validation",
+            "expected_project_revision": 4,
+            "project_workflow": "validation",
             "selected_object_ids": [],
             "selected_system_codes": ["CRM", "ERP"],
             "agent": {
@@ -684,7 +699,7 @@ async def test_database_command_validates_validation_against_internal_tool_assis
                 entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
             ),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             correlation_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
             command=command,
         )
@@ -702,9 +717,9 @@ class _ImplicitDefaultWorkflowCommandTransaction(WorkflowCommandTransaction):
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
-        if "model.assert_writable" in query:
+        if "project.assert_writable" in query:
             return {"assert_writable": None}
-        if "FROM model.model AS target_model" in query:
+        if "FROM project.project AS target_project" in query:
             row = await super().fetch_one(query, parameters)
             assert row is not None
             return {**row, "default_agent_model_code": self.model_code}
@@ -732,7 +747,7 @@ class _SuccessfulImplicitDefaultWorkflowCommandTransaction(WorkflowCommandTransa
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
-        if "model.assert_writable" in query:
+        if "project.assert_writable" in query:
             return {"assert_writable": None}
         if "application.create_workflow_run" not in query:
             return await super().fetch_one(query, parameters)
@@ -743,7 +758,7 @@ class _SuccessfulImplicitDefaultWorkflowCommandTransaction(WorkflowCommandTransa
             "workflow_run_state": "queued",
             "correlation_id": UUID("cccccccc-cccc-cccc-cccc-cccccccccccc"),
             "prompt_snapshot_count": 1,
-            "model_revision": 4,
+            "project_revision": 4,
             "selected_scope_digest": "c" * 64,
             "selected_scope_count": 1,
             "code_generation_coverage_mode": None,
@@ -764,7 +779,9 @@ class _SuccessfulImplicitDefaultWorkflowCommandDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_command_passes_validated_defaults_to_governed_creation() -> None:
+async def test_database_command_passes_validated_defaults_to_governed_creation() -> (
+    None
+):
     transaction = _SuccessfulImplicitDefaultWorkflowCommandTransaction()
     service = DatabaseWorkflowCommandService(
         database=_SuccessfulImplicitDefaultWorkflowCommandDatabase(transaction),
@@ -773,8 +790,8 @@ async def test_database_command_passes_validated_defaults_to_governed_creation()
     )
     command = CreateWorkflowRunRequest.model_validate(
         {
-            "expected_model_revision": 4,
-            "model_workflow": "conceptual",
+            "expected_project_revision": 4,
+            "project_workflow": "conceptual",
             "workflow_execution_mode": "one_shot",
             "selected_object_ids": [101],
             "prompt_overrides": {},
@@ -789,7 +806,7 @@ async def test_database_command_passes_validated_defaults_to_governed_creation()
             entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
         ),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         correlation_id=UUID("cccccccc-cccc-cccc-cccc-cccccccccccc"),
         command=command,
     )
@@ -812,8 +829,8 @@ async def test_database_command_passes_validated_defaults_to_governed_creation()
     (
         (
             {
-                "expected_model_revision": 4,
-                "model_workflow": "conceptual",
+                "expected_project_revision": 4,
+                "project_workflow": "conceptual",
                 "workflow_execution_mode": "one_shot",
                 "selected_object_ids": [101],
                 "prompt_overrides": {},
@@ -822,8 +839,8 @@ async def test_database_command_passes_validated_defaults_to_governed_creation()
         ),
         (
             {
-                "expected_model_revision": 4,
-                "model_workflow": "code_generation",
+                "expected_project_revision": 4,
+                "project_workflow": "code_generation",
                 "selected_entity_ids": [101],
                 "modeled_entity_type": "logical_entity",
                 "code_generation_coverage_mode": "selected_targets",
@@ -834,7 +851,7 @@ async def test_database_command_passes_validated_defaults_to_governed_creation()
     ),
 )
 @pytest.mark.asyncio
-async def test_database_command_validates_implicit_model_agent_default(
+async def test_database_command_validates_implicit_project_agent_default(
     payload: dict[str, object],
     expected_mode: str,
 ) -> None:
@@ -854,7 +871,7 @@ async def test_database_command_validates_implicit_model_agent_default(
                 entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
             ),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             correlation_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
             command=CreateWorkflowRunRequest.model_validate(payload, strict=True),
         )
@@ -874,21 +891,23 @@ async def test_database_command_validates_implicit_model_agent_default(
 
 
 @pytest.mark.asyncio
-async def test_database_command_recovers_retired_implicit_model_agent_default() -> None:
+async def test_database_command_recovers_retired_implicit_project_agent_default() -> (
+    None
+):
     class RetiredDefaults(_SuccessfulImplicitDefaultWorkflowCommandTransaction):
         async def fetch_one(
             self,
             query: LiteralString,
             parameters: tuple[Any, ...] = (),
         ) -> dict[str, Any] | None:
-            if "model.assert_writable" in query:
+            if "project.assert_writable" in query:
                 return {"assert_writable": None}
             row = await super().fetch_one(query, parameters)
-            if row is not None and "FROM model.model AS target_model" in query:
+            if row is not None and "FROM project.project AS target_project" in query:
                 row.update(
                     default_agent_sdk_code="langchain_create_agent",
                     default_agent_provider_code="databricks",
-                    default_agent_model_code="removed-model",
+                    default_agent_model_code="removed-project",
                 )
             return row
 
@@ -900,8 +919,8 @@ async def test_database_command_recovers_retired_implicit_model_agent_default() 
     )
     command = CreateWorkflowRunRequest.model_validate(
         {
-            "expected_model_revision": 4,
-            "model_workflow": "conceptual",
+            "expected_project_revision": 4,
+            "project_workflow": "conceptual",
             "workflow_execution_mode": "one_shot",
             "selected_object_ids": [101],
         },
@@ -914,7 +933,7 @@ async def test_database_command_recovers_retired_implicit_model_agent_default() 
             entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
         ),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         correlation_id=UUID("cccccccc-cccc-cccc-cccc-cccccccccccc"),
         command=command,
     )
@@ -934,7 +953,7 @@ class MappingWorkflowCommandTransaction(WorkflowCommandTransaction):
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
-        if "model.assert_writable" in query:
+        if "project.assert_writable" in query:
             return {"assert_writable": None}
         if "application.create_workflow_run" not in query:
             return await super().fetch_one(query, parameters)
@@ -958,7 +977,7 @@ class MappingWorkflowCommandTransaction(WorkflowCommandTransaction):
             "workflow_run_state": "queued",
             "correlation_id": UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
             "prompt_snapshot_count": 1,
-            "model_revision": 4,
+            "project_revision": 4,
             "selected_scope_digest": "b" * 64,
             "selected_scope_count": 1,
             "code_generation_coverage_mode": None,
@@ -1012,8 +1031,8 @@ async def test_database_command_forwards_mapping_output_template_selection(
     )
     command = CreateWorkflowRunRequest.model_validate(
         {
-            "expected_model_revision": 4,
-            "model_workflow": "mapping",
+            "expected_project_revision": 4,
+            "project_workflow": "mapping",
             "modeled_entity_type": "logical_entity",
             "workflow_execution_mode": mode,
             "selected_entity_ids": [101],
@@ -1029,7 +1048,7 @@ async def test_database_command_forwards_mapping_output_template_selection(
     result = await service.create_run(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         correlation_id=UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
         command=command,
     )
@@ -1051,7 +1070,7 @@ async def test_missing_mapping_default_returns_a_clear_controlled_error(
         async def fetch_one(
             self, query: LiteralString, parameters: tuple[Any, ...] = ()
         ) -> dict[str, Any] | None:
-            if "model.assert_writable" in query:
+            if "project.assert_writable" in query:
                 return {"assert_writable": None}
             if "application.create_workflow_run" in query:
                 raise RuntimeError(
@@ -1072,11 +1091,11 @@ async def test_missing_mapping_default_returns_a_clear_controlled_error(
                 entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
             ),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             correlation_id=UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
             command=CreateWorkflowRunRequest(
-                expected_model_revision=4,
-                model_workflow="mapping",
+                expected_project_revision=4,
+                project_workflow="mapping",
                 workflow_execution_mode="one_shot",
                 selected_entity_ids=[101],
                 modeled_entity_type="logical_entity",
@@ -1085,7 +1104,9 @@ async def test_missing_mapping_default_returns_a_clear_controlled_error(
                 mapping_source_system_id=77,
             ),
         )
-    assert caught.value.message == "The global Mapping output templates are unavailable."
+    assert (
+        caught.value.message == "The global Mapping output templates are unavailable."
+    )
 
 
 @pytest.mark.parametrize(
@@ -1123,7 +1144,7 @@ async def test_incomplete_mapping_prerequisite_returns_an_actionable_controlled_
         async def fetch_one(
             self, query: LiteralString, parameters: tuple[Any, ...] = ()
         ) -> dict[str, Any] | None:
-            if "model.assert_writable" in query:
+            if "project.assert_writable" in query:
                 return {"assert_writable": None}
             if "application.create_workflow_run" in query:
                 raise RuntimeError(database_message)
@@ -1134,17 +1155,21 @@ async def test_incomplete_mapping_prerequisite_returns_an_actionable_controlled_
         authorizer=AuthorizationService(),
         agent_capability_registry=load_default_agent_capabilities(),
     )
-    no_eligible_targets = database_message == "Code Generation has no eligible target set"
+    no_eligible_targets = (
+        database_message == "Code Generation has no eligible target set"
+    )
     command = CreateWorkflowRunRequest.model_validate(
         {
-            "expected_model_revision": 4,
-            "model_workflow": workflow,
+            "expected_project_revision": 4,
+            "project_workflow": workflow,
             **(
                 {
                     "selected_entity_ids": [] if no_eligible_targets else [101],
                     "modeled_entity_type": "logical_entity",
                     "code_generation_coverage_mode": (
-                        "all_eligible_targets" if no_eligible_targets else "selected_targets"
+                        "all_eligible_targets"
+                        if no_eligible_targets
+                        else "selected_targets"
                     ),
                 }
                 if workflow == "code_generation"
@@ -1160,7 +1185,7 @@ async def test_incomplete_mapping_prerequisite_returns_an_actionable_controlled_
                 entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
             ),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             correlation_id=UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
             command=command,
         )
@@ -1170,10 +1195,13 @@ async def test_incomplete_mapping_prerequisite_returns_an_actionable_controlled_
 
 def test_cancel_workflow_http_contract() -> None:
     with _app() as client:
-        response = client.post("/api/v1/tenants/7/models/18/runs/1048/cancel")
+        response = client.post("/api/v1/tenants/7/projects/18/runs/1048/cancel")
         assert response.status_code == 200
         assert response.json()["workflow_run_state"] == "cancelled"
-        assert client.post("/api/v1/tenants/7/models/18/runs/0/cancel").status_code == 422
+        assert (
+            client.post("/api/v1/tenants/7/projects/18/runs/0/cancel").status_code
+            == 422
+        )
 
 
 @pytest.mark.parametrize(

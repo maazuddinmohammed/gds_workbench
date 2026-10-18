@@ -42,7 +42,7 @@ async def workbench_error_response(
         or error.code
         in {
             "tenant_locked",
-            "model_locked",
+            "project_locked",
             "tenant_lock_required",
             "tenant_workflow_conflict",
         }

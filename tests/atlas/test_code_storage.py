@@ -4,17 +4,17 @@ import json
 import subprocess
 from pathlib import Path
 
-from gds_etl_workbench.domain.snapshots.model import (
+from gds_etl_workbench.domain.snapshots.project import (
     DATASETS_BY_NAME,
-    build_model_dataset_schema,
+    build_project_dataset_schema,
 )
 
-from tests.mcp.model_test_fixtures import complete_model_graph
+from tests.mcp.project_test_fixtures import complete_project_graph
 
 
 def test_plugin_accepts_git_metadata_with_the_published_schema(tmp_path: Path) -> None:
     record = {
-        **complete_model_graph()["generated_code"][0],
+        **complete_project_graph()["generated_code"][0],
         "code_storage_type": "git",
         "generated_code_content": None,
         "code_repository_url": "any repository",
@@ -28,7 +28,7 @@ def test_plugin_accepts_git_metadata_with_the_published_schema(tmp_path: Path) -
     source.write_text(
         json.dumps(
             {
-                "schema": build_model_dataset_schema(
+                "schema": build_project_dataset_schema(
                     DATASETS_BY_NAME["generated_code"]
                 ),
                 "records": records,

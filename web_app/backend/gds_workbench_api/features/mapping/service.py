@@ -7,15 +7,15 @@ from collections.abc import Mapping
 from typing import Protocol
 from uuid import UUID
 
-from gds_etl_workbench.application.change_sets.model import StageModelChange
-from gds_etl_workbench.application.change_sets.model_validation import (
-    ModelValidationIssue,
-    PhysicalModelCatalog,
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
+from gds_etl_workbench.application.change_sets.project_validation import (
+    PhysicalProjectCatalog,
+    ProjectValidationIssue,
     validate_future_graph,
 )
 from gds_etl_workbench.domain.authorization import RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
-from gds_etl_workbench.domain.snapshots.model import ModelChangeSetDataset, ModelSnapshot
+from gds_etl_workbench.domain.snapshots.project import ProjectChangeSetDataset, ProjectSnapshot
 from pydantic import JsonValue
 
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
@@ -53,7 +53,7 @@ from gds_workbench_api.features.workflows.authoring.repair import (
     AgentContextTooLargeError,
     AgentExecutor,
     load_default_agent_context_policy,
-    model_validation_issues,
+    project_validation_issues,
 )
 from gds_workbench_api.features.workflows.authoring.stage_runner import (
     AgentStageRunner,
@@ -81,9 +81,9 @@ class MappingPreparationService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> tuple[MappingPreparation, ...]: ...
 
 
@@ -136,19 +136,19 @@ class MappingWorkflow:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         expected_execution_mode: WorkflowExecutionMode,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart:
         return await self._lifecycle.start(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             workflow_run_id=workflow_run_id,
             expected_workflow="mapping",
             expected_execution_mode=expected_execution_mode,
-            expected_model_revision=expected_model_revision,
+            expected_project_revision=expected_project_revision,
         )
 
     async def execute_started(
@@ -156,22 +156,22 @@ class MappingWorkflow:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         workflow_run_claim_token: UUID,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> MappingExecutionResult:
         finalization_attempted = False
-        changes: tuple[StageModelChange, ...] = ()
-        rejected_changes: tuple[StageModelChange, ...] = ()
-        rejected_issues: tuple[ModelValidationIssue, ...] = ()
+        changes: tuple[StageProjectChange, ...] = ()
+        rejected_changes: tuple[StageProjectChange, ...] = ()
+        rejected_issues: tuple[ProjectValidationIssue, ...] = ()
         try:
             preparations = await self._preparation_service.prepare(
                 principal,
                 tenant_id=tenant_id,
-                model_id=model_id,
+                project_id=project_id,
                 workflow_run_id=workflow_run_id,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
             )
             if not preparations:
                 raise InvalidRequestError("Select at least one eligible Mapping Object.")
@@ -180,8 +180,8 @@ class MappingWorkflow:
             final_attempt = 1
             sequence = 2
             failures: list[Exception] = []
-            first_rejected_changes: tuple[StageModelChange, ...] = ()
-            first_rejected_issues: tuple[ModelValidationIssue, ...] = ()
+            first_rejected_changes: tuple[StageProjectChange, ...] = ()
+            first_rejected_issues: tuple[ProjectValidationIssue, ...] = ()
             completed = 0
             unmatched = 0
             partial = 0
@@ -190,9 +190,9 @@ class MappingWorkflow:
                 plan = preparation.plan.agent_plan
                 _validate_plan(
                     preparation,
-                    model_id=model_id,
+                    project_id=project_id,
                     workflow_run_id=workflow_run_id,
-                    expected_model_revision=expected_model_revision,
+                    expected_project_revision=expected_project_revision,
                 )
                 if any(
                     issue.code == "context.identity_drift" for issue in preparation.readiness.issues
@@ -202,7 +202,7 @@ class MappingWorkflow:
                     principal,
                     workflow_run_id=workflow_run_id,
                     workflow_run_claim_token=workflow_run_claim_token,
-                    expected_model_revision=expected_model_revision,
+                    expected_project_revision=expected_project_revision,
                     event=AgentWorkflowEvent(
                         sequence=sequence,
                         attempt=1,
@@ -240,13 +240,13 @@ class MappingWorkflow:
                         async def validate_complete_candidate(
                             value: JsonValue,
                             validator: CompleteMappingCandidateValidator = validator,
-                            prior_changes: tuple[StageModelChange, ...] = changes,
-                            snapshot: ModelSnapshot = snapshot,
-                            physical_scope: PhysicalModelCatalog = physical_scope,
+                            prior_changes: tuple[StageProjectChange, ...] = changes,
+                            snapshot: ProjectSnapshot = snapshot,
+                            physical_scope: PhysicalProjectCatalog = physical_scope,
                         ) -> AgentCandidateValidation:
                             nonlocal rejected_changes, rejected_issues
                             candidate_changes = validator.parse_validated(value).changes
-                            combined: dict[ModelChangeSetDataset, list[dict[str, object]]] = {}
+                            combined: dict[ProjectChangeSetDataset, list[dict[str, object]]] = {}
                             for change in (*prior_changes, *candidate_changes):
                                 combined.setdefault(change.dataset, []).extend(change.records)
                             checked = validate_future_graph(
@@ -260,7 +260,7 @@ class MappingWorkflow:
                             else:
                                 rejected_changes, rejected_issues = (), ()
                             return AgentCandidateValidation(
-                                issues=model_validation_issues(checked.issues)
+                                issues=project_validation_issues(checked.issues)
                             )
 
                         execution_context = build_mapping_execution_context(
@@ -364,7 +364,7 @@ class MappingWorkflow:
                     principal,
                     workflow_run_id=workflow_run_id,
                     workflow_run_claim_token=workflow_run_claim_token,
-                    expected_model_revision=expected_model_revision,
+                    expected_project_revision=expected_project_revision,
                     event=AgentWorkflowEvent(
                         sequence=sequence,
                         attempt=pair_attempt,
@@ -384,11 +384,11 @@ class MappingWorkflow:
                 rejected_changes, rejected_issues = first_rejected_changes, first_rejected_issues
                 raise failures[0]
             # One section per dataset; each pair retains its own identity and frozen evidence.
-            combined_records: dict[ModelChangeSetDataset, list[dict[str, object]]] = {}
+            combined_records: dict[ProjectChangeSetDataset, list[dict[str, object]]] = {}
             for change in changes:
                 combined_records.setdefault(change.dataset, []).extend(change.records)
             changes = tuple(
-                StageModelChange(dataset=dataset, records=records)
+                StageProjectChange(dataset=dataset, records=records)
                 for dataset, records in combined_records.items()
             )
             final_sequence = sequence
@@ -398,10 +398,10 @@ class MappingWorkflow:
                     principal,
                     preparation=preparations[0],
                     tenant_id=tenant_id,
-                    model_id=model_id,
+                    project_id=project_id,
                     workflow_run_id=workflow_run_id,
                     workflow_run_claim_token=workflow_run_claim_token,
-                    expected_model_revision=expected_model_revision,
+                    expected_project_revision=expected_project_revision,
                     sequence=final_sequence,
                     attempt=final_attempt,
                     warning=warning,
@@ -417,11 +417,11 @@ class MappingWorkflow:
             finalized = await self._handoff.finalize(
                 principal,
                 tenant_id=tenant_id,
-                model_id=model_id,
+                project_id=project_id,
                 workflow_run_id=workflow_run_id,
                 workflow_run_claim_token=workflow_run_claim_token,
                 expected_workflow="mapping",
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 changes=changes,
                 final_event=AgentWorkflowEvent(
                     sequence=final_sequence,
@@ -451,10 +451,10 @@ class MappingWorkflow:
                     await self._handoff.retain_failed_candidate(
                         principal,
                         tenant_id=tenant_id,
-                        model_id=model_id,
+                        project_id=project_id,
                         workflow_run_id=workflow_run_id,
                         expected_workflow="mapping",
-                        expected_model_revision=expected_model_revision,
+                        expected_project_revision=expected_project_revision,
                         workflow_run_claim_token=workflow_run_claim_token,
                         changes=changes,
                         issues=retention_issues,
@@ -466,7 +466,7 @@ class MappingWorkflow:
                 except Exception as retention_error:
                     _logger.warning(
                         "Rejected Workflow draft retention remains pending.",
-                        extra={"workflow_run_id": workflow_run_id, "model_id": model_id},
+                        extra={"workflow_run_id": workflow_run_id, "project_id": project_id},
                     )
                     raise _safe_execution_error(
                         retention_error,
@@ -482,7 +482,7 @@ class MappingWorkflow:
                     "Mapping Workflow Run finalization remains pending.",
                     extra={
                         "workflow_run_id": workflow_run_id,
-                        "model_id": model_id,
+                        "project_id": project_id,
                         "failure_code": safe_error.code[:100],
                     },
                 )
@@ -492,7 +492,7 @@ class MappingWorkflow:
                         principal,
                         workflow_run_id=workflow_run_id,
                         workflow_run_claim_token=workflow_run_claim_token,
-                        expected_model_revision=expected_model_revision,
+                        expected_project_revision=expected_project_revision,
                         failure_code=safe_error.code[:100],
                         safe_failure_message=safe_error.message[:2000],
                     )
@@ -501,7 +501,7 @@ class MappingWorkflow:
                         "Mapping failure state could not be persisted.",
                         extra={
                             "workflow_run_id": workflow_run_id,
-                            "model_id": model_id,
+                            "project_id": project_id,
                             "failure_code": safe_error.code[:100],
                         },
                     )
@@ -513,10 +513,10 @@ class MappingWorkflow:
         *,
         preparation: MappingPreparation,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         workflow_run_claim_token: UUID,
-        expected_model_revision: int,
+        expected_project_revision: int,
         sequence: int,
         attempt: int,
         warning: bool,
@@ -529,14 +529,14 @@ class MappingWorkflow:
         return await self._no_op.complete(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             workflow_run_id=workflow_run_id,
             workflow_run_claim_token=workflow_run_claim_token,
             request=AuthoringNoOpRequest(
                 expected_workflow="mapping",
                 expected_execution_mode=execution_mode,
                 expected_correlation_id=plan.correlation_id,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 candidate_digest=authoring_no_op_candidate_digest(plan),
                 final_event=AgentWorkflowEvent(
                     sequence=sequence,
@@ -555,23 +555,23 @@ class MappingWorkflow:
 def _validate_plan(
     preparation: MappingPreparation,
     *,
-    model_id: int,
+    project_id: int,
     workflow_run_id: int,
-    expected_model_revision: int,
+    expected_project_revision: int,
 ) -> None:
     mapping_plan = preparation.plan
     plan = mapping_plan.agent_plan
     mode = plan.workflow_execution_mode
     expected_stages = ("mapping_authoring",)
     if (
-        plan.model_workflow != "mapping"
+        plan.project_workflow != "mapping"
         or mode not in ("one_shot", "tool_assisted")
-        or plan.model_id != model_id
-        or mapping_plan.model_id != model_id
+        or plan.project_id != project_id
+        or mapping_plan.project_id != project_id
         or plan.workflow_run_id != workflow_run_id
         or mapping_plan.workflow_run_id != workflow_run_id
-        or plan.model_revision != expected_model_revision
-        or mapping_plan.model_revision != expected_model_revision
+        or plan.project_revision != expected_project_revision
+        or mapping_plan.project_revision != expected_project_revision
         or plan.correlation_id != mapping_plan.correlation_id
         or plan.modeled_entity_type != mapping_plan.modeled_entity_type
         or plan.selected_entity_ids != (mapping_plan.pair.modeled_entity_id,)

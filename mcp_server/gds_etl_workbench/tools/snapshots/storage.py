@@ -15,7 +15,7 @@ from gds_etl_workbench.configuration import RuntimeSettings
 from gds_etl_workbench.domain.errors import DependencyUnavailableError
 from gds_etl_workbench.infrastructure.snapshot_archive import SnapshotArchive, SnapshotContractError
 
-type SnapshotKind = Literal["metadata", "model"]
+type SnapshotKind = Literal["metadata", "project"]
 
 
 class SnapshotStore(Protocol):
@@ -207,7 +207,7 @@ def _blob_name(
 
 
 def _scope_field(snapshot_kind: SnapshotKind) -> str:
-    return "tenant_id" if snapshot_kind == "metadata" else "model_id"
+    return "tenant_id" if snapshot_kind == "metadata" else "project_id"
 
 
 def _validate_identity(
@@ -218,7 +218,7 @@ def _validate_identity(
     snapshot_id: UUID,
 ) -> None:
     if (
-        snapshot_kind not in ("metadata", "model")
+        snapshot_kind not in ("metadata", "project")
         or tenant_id <= 0
         or scope_id <= 0
         or (snapshot_kind == "metadata" and scope_id != tenant_id)

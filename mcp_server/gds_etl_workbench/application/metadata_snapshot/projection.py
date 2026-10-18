@@ -21,11 +21,11 @@ REFERENCE_ID_COLUMNS = {
 }
 
 
-def project_id_free_rows(
+def lane_id_free_rows(
     raw_rows: Mapping[str, Rows],
 ) -> dict[str, list[dict[str, object]]]:
     """Resolve every internal ID to the target record's natural key."""
-    project_by_id = _by_id(raw_rows["project"], "project_id")
+    lane_by_id = _by_id(raw_rows["lane"], "lane_id")
     tenant_by_id = _by_id(raw_rows["tenant"], "tenant_id")
     system_by_id = _by_id(raw_rows["system"], "system_id")
     connection_by_id = _by_id(raw_rows["connection"], "connection_id")
@@ -121,7 +121,7 @@ def project_id_free_rows(
         }
 
     projected: dict[str, list[dict[str, object]]] = {
-        "project": [_without(row, "project_id") for row in raw_rows["project"]],
+        "lane": [_without(row, "lane_id") for row in raw_rows["lane"]],
         "tenant": [],
         "system": [],
         "connection": [],
@@ -144,7 +144,7 @@ def project_id_free_rows(
         projected["tenant"].append(
             {
                 "tenant_code": row["tenant_code"],
-                "project_code": project_by_id[row["project_id"]]["project_code"],
+                "lane_code": lane_by_id[row["lane_id"]]["lane_code"],
                 "tenant_name": row["tenant_name"],
                 "tenant_description": row["tenant_description"],
                 "tenant_catalog": row["tenant_catalog"],

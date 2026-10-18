@@ -21,10 +21,10 @@ from gds_etl_workbench.application.mapping_context import (
     mapping_context_issues,
     project_mapping_inputs,
 )
-from gds_etl_workbench.application.model_read import (
+from gds_etl_workbench.application.project_read import (
     POLICY,
-    authorize_model_read,
-    require_model_source_access,
+    authorize_project_read,
+    require_project_source_access,
 )
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 from gds_etl_workbench.infrastructure.postgres import Database, ReadIsolation
@@ -52,8 +52,8 @@ SELECT code_input_digest,
 class MappingContextResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     schema_version: Literal["1.0"] = "1.0"
-    model_id: int
-    model_revision: int
+    project_id: int
+    project_revision: int
     context_digest: str
     component: MappingComponent
     records: tuple[dict[str, Any], ...]
@@ -69,8 +69,8 @@ class MappingContextToolError(Exception):
 def mapping_context_page(
     *,
     context: dict[str, Any],
-    model_id: int,
-    model_revision: int,
+    project_id: int,
+    project_revision: int,
     entity_type: str,
     entity_name: str,
     entity_schema_name: str,
@@ -113,8 +113,8 @@ def mapping_context_page(
         json.dumps(
             [
                 "read_mapping_context",
-                model_id,
-                model_revision,
+                project_id,
+                project_revision,
                 digest,
                 entity_type,
                 entity_schema_name.strip().casefold(),
@@ -150,8 +150,8 @@ def mapping_context_page(
         used += size
     next_offset = offset + len(page)
     return MappingContextResult(
-        model_id=model_id,
-        model_revision=model_revision,
+        project_id=project_id,
+        project_revision=project_revision,
         context_digest=digest,
         component=component,
         records=tuple(page),
@@ -179,7 +179,7 @@ def register_read_mapping_context_tool(
         description=(
             "Read one applied target Mapping component for independent SQL/Validation "
             "authoring. Read all five components, preserving expected_context_digest and "
-            "expected_model_revision across pages/components. Missing context is reported; "
+            "expected_project_revision across pages/components. Missing context is reported; "
             "Code may review partial Mapping with explicit gaps; Validation requires "
             "complete=true. No SQL is executed."
         ),
@@ -191,7 +191,7 @@ def register_read_mapping_context_tool(
     )
     async def read_mapping_context(
         ctx: Context[None],
-        model_id: Annotated[int, Field(gt=0)],
+        project_id: Annotated[int, Field(gt=0)],
         modeled_entity_type: Literal["logical_entity", "dimensional_entity"],
         modeled_entity_schema_name: Annotated[
             str, Field(min_length=1, max_length=400, pattern=r"\S")
@@ -199,7 +199,7 @@ def register_read_mapping_context_tool(
         modeled_entity_name: Annotated[str, Field(min_length=1, max_length=400, pattern=r"\S")],
         component: MappingComponent,
         source_system_codes: Annotated[list[str], Field(max_length=200)] | None = None,
-        expected_model_revision: Annotated[int | None, Field(gt=0)] = None,
+        expected_project_revision: Annotated[int | None, Field(gt=0)] = None,
         expected_context_digest: Annotated[str | None, Field(pattern=r"^[a-f0-9]{64}$")] = None,
         page_size: Annotated[int, Field(ge=1, le=100)] = 50,
         cursor: Annotated[str | None, Field(max_length=2048)] = None,
@@ -211,24 +211,24 @@ def register_read_mapping_context_tool(
             async with database.read_transaction(
                 isolation=ReadIsolation.REPEATABLE_READ
             ) as transaction:
-                model = await authorize_model_read(
-                    transaction, authorizer=authorizer, principal=principal, model_id=model_id
+                project = await authorize_project_read(
+                    transaction, authorizer=authorizer, principal=principal, project_id=project_id
                 )
                 if (
-                    expected_model_revision is not None
-                    and expected_model_revision != model.model_revision
+                    expected_project_revision is not None
+                    and expected_project_revision != project.project_revision
                 ):
                     raise InvalidRequestError(
-                        "Model revision changed; refresh the Mapping context."
+                        "Project revision changed; refresh the Mapping context."
                     )
-                await require_model_source_access(
-                    transaction, model.model_id, model.readable_source_tenant_ids
+                await require_project_source_access(
+                    transaction, project.project_id, project.readable_source_tenant_ids
                 )
                 rows = await transaction.fetch_all(
                     _SQL,
                     (
                         _MAX_CONTEXT_BYTES,
-                        model.model_id,
+                        project.project_id,
                         modeled_entity_type,
                         modeled_entity_schema_name,
                         modeled_entity_name,
@@ -239,7 +239,7 @@ def register_read_mapping_context_tool(
                         "The target has no bounded eligible applied Mapping context."
                     )
                 context = rows[0]["source_context"]
-                if context.get("consumer_context_version") != "entity-3":
+                if context.get("consumer_context_version") != "entity-4":
                     raise InvalidRequestError(
                         "The Mapping reader requires the Atlas backend upgrade."
                     )
@@ -247,12 +247,12 @@ def register_read_mapping_context_tool(
                     context["target"]["source_tenant_id"],
                     *(row["object"]["source_tenant_id"] for row in context["physical_sources"]),
                 }
-                if not owners <= {*model.readable_source_tenant_ids, model.tenant_id}:
+                if not owners <= {*project.readable_source_tenant_ids, project.tenant_id}:
                     raise InvalidRequestError("Access to every Mapping Source Tenant is required.")
             return mapping_context_page(
                 context=context,
-                model_id=model.model_id,
-                model_revision=model.model_revision,
+                project_id=project.project_id,
+                project_revision=project.project_revision,
                 entity_type=modeled_entity_type,
                 entity_name=modeled_entity_name,
                 entity_schema_name=modeled_entity_schema_name,
@@ -276,14 +276,16 @@ def register_read_mapping_context_tool(
         "read_mapping_context",
         policy=POLICY,
         summarize_input=_audit_input,
-        retain_arguments={"model_id", "component", "page_size", "schema_version"},
+        retain_arguments={"project_id", "component", "page_size", "schema_version"},
     )
 
 
 def _audit_input(arguments: Mapping[str, Any]) -> dict[str, str | int]:
     return {
         "schema_version": "1.0",
-        "model_id": arguments["model_id"] if type(arguments.get("model_id")) is int else "invalid",
+        "project_id": arguments["project_id"]
+        if type(arguments.get("project_id")) is int
+        else "invalid",
         "component": str(arguments.get("component", "invalid")),
         "page_size": arguments.get("page_size", 50)
         if type(arguments.get("page_size", 50)) is int

@@ -21,7 +21,6 @@ from gds_etl_workbench.domain.errors import (
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation, WriteTransaction
 from psycopg.types.json import Jsonb
 
-from gds_workbench_api.features.models import ModelRevisionConflictError
 from gds_workbench_api.features.profiling.execution import (
     ProfileAttribute,
     ProfileObject,
@@ -32,20 +31,21 @@ from gds_workbench_api.features.profiling.workflow import (
     ProfilingExecutionTarget,
     ProfilingRunStart,
 )
+from gds_workbench_api.features.projects import ProjectRevisionConflictError
 from gds_workbench_api.features.workflows.execution.fence import (
     assert_workflow_run_claim,
 )
 from gds_workbench_api.features.workflows.runs import WorkflowRunNotFoundError
 
 _RUN_BINDING_SQL = """
-SELECT target_model.model_revision,
-       run.model_workflow
+SELECT target_project.project_revision,
+       run.project_workflow
   FROM application.workflow_run AS run
-  JOIN model.model AS target_model
-    ON target_model.model_id = run.model_id
-   AND target_model.is_active
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
+  JOIN project.project AS target_project
+    ON target_project.project_id = run.project_id
+   AND target_project.is_active
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
    AND run.workflow_run_id = %s
 """
 
@@ -68,7 +68,7 @@ SELECT *
 """
 
 _APPEND_EVENT_SQL = """
-SELECT event.model_event_log_id
+SELECT event.project_event_log_id
   FROM application.append_workflow_run_event(
        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
   ) AS event
@@ -77,8 +77,8 @@ SELECT event.model_event_log_id
 _PERSIST_SQL = """
 SELECT persisted.changed,
        persisted.workflow_run_id,
-       persisted.model_id,
-       persisted.model_revision,
+       persisted.project_id,
+       persisted.project_revision,
        persisted.submitted_profile_count,
        persisted.changed_profile_count
   FROM application.persist_profiling_results(
@@ -130,9 +130,9 @@ class DatabaseProfilingWorkflowRepository:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> ProfilingRunStart:
         identity = _identity_triple(principal)
         try:
@@ -140,12 +140,12 @@ class DatabaseProfilingWorkflowRepository:
                 await _require_profiling_binding(
                     transaction,
                     tenant_id=tenant_id,
-                    model_id=model_id,
+                    project_id=project_id,
                     workflow_run_id=workflow_run_id,
                 )
                 row = await transaction.fetch_one(
                     _START_SQL,
-                    identity + (workflow_run_id, expected_model_revision),
+                    identity + (workflow_run_id, expected_project_revision),
                 )
         except Exception as error:
             _raise_repository_error(error)
@@ -156,7 +156,7 @@ class DatabaseProfilingWorkflowRepository:
                 "changed": row.get("changed"),
                 "workflow_run_id": row.get("workflow_run_id"),
                 "workflow_run_state": row.get("workflow_run_state"),
-                "model_revision": expected_model_revision,
+                "project_revision": expected_project_revision,
             },
             strict=False,
         )
@@ -166,9 +166,9 @@ class DatabaseProfilingWorkflowRepository:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> ProfilingExecutionContext:
         identity = _identity_triple(principal)
         try:
@@ -178,19 +178,19 @@ class DatabaseProfilingWorkflowRepository:
                 await _require_profiling_binding(
                     transaction,
                     tenant_id=tenant_id,
-                    model_id=model_id,
+                    project_id=project_id,
                     workflow_run_id=workflow_run_id,
                 )
                 context_rows = await transaction.fetch_all(
                     _CONTEXT_SQL,
-                    identity + (workflow_run_id, expected_model_revision),
+                    identity + (workflow_run_id, expected_project_revision),
                 )
                 connection_rows = await transaction.fetch_all(
                     _CONNECTION_VALUES_SQL,
                     identity
                     + (
                         workflow_run_id,
-                        expected_model_revision,
+                        expected_project_revision,
                         self._environment_code,
                     ),
                 )
@@ -215,8 +215,8 @@ class DatabaseProfilingWorkflowRepository:
         for row in context_rows:
             if (
                 _required_int(row, "workflow_run_id") != workflow_run_id
-                or _required_int(row, "model_id") != model_id
-                or _required_int(row, "model_revision") != expected_model_revision
+                or _required_int(row, "project_id") != project_id
+                or _required_int(row, "project_revision") != expected_project_revision
             ):
                 raise DependencyUnavailableError()
             grouped.setdefault(_required_int(row, "object_id"), []).append(row)
@@ -270,8 +270,8 @@ class DatabaseProfilingWorkflowRepository:
         first = context_rows[0]
         return ProfilingExecutionContext(
             workflow_run_id=workflow_run_id,
-            model_id=model_id,
-            model_revision=expected_model_revision,
+            project_id=project_id,
+            project_revision=expected_project_revision,
             requested_batch_id=_optional_text(first, "requested_batch_id"),
             targets=tuple(target for _order, target in targets),
         )
@@ -281,7 +281,7 @@ class DatabaseProfilingWorkflowRepository:
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         sequence: int,
         stage: str,
@@ -304,7 +304,7 @@ class DatabaseProfilingWorkflowRepository:
                     identity
                     + (
                         workflow_run_id,
-                        expected_model_revision,
+                        expected_project_revision,
                         sequence,
                         1,
                         stage,
@@ -325,7 +325,7 @@ class DatabaseProfilingWorkflowRepository:
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         profiles: list[dict[str, object]],
     ) -> ProfilingCommitResult:
@@ -342,7 +342,7 @@ class DatabaseProfilingWorkflowRepository:
                     identity
                     + (
                         workflow_run_id,
-                        expected_model_revision,
+                        expected_project_revision,
                         Jsonb(profiles),
                     ),
                 )
@@ -353,7 +353,7 @@ class DatabaseProfilingWorkflowRepository:
                     identity
                     + (
                         workflow_run_id,
-                        _required_int(persisted, "model_revision"),
+                        _required_int(persisted, "project_revision"),
                         _required_int(persisted, "submitted_profile_count"),
                     ),
                 )
@@ -374,7 +374,7 @@ class DatabaseProfilingWorkflowRepository:
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         failure_code: str,
         safe_failure_message: str,
@@ -392,7 +392,7 @@ class DatabaseProfilingWorkflowRepository:
                     identity
                     + (
                         workflow_run_id,
-                        expected_model_revision,
+                        expected_project_revision,
                         failure_code,
                         safe_failure_message,
                     ),
@@ -407,16 +407,16 @@ async def _require_profiling_binding(
     transaction: WriteTransaction,
     *,
     tenant_id: int,
-    model_id: int,
+    project_id: int,
     workflow_run_id: int,
 ) -> None:
     row = await transaction.fetch_one(
         _RUN_BINDING_SQL,
-        (tenant_id, model_id, workflow_run_id),
+        (tenant_id, project_id, workflow_run_id),
     )
     if row is None:
         raise WorkflowRunNotFoundError()
-    if row.get("model_workflow") != "profiling":
+    if row.get("project_workflow") != "profiling":
         raise InvalidRequestError("The requested Workflow Run is not a Profiling run.")
 
 
@@ -473,7 +473,7 @@ def _resolve_profiling_relation(
         names = tuple(_required_text(row, "attribute_name") for row in rows)
     else:
         raise InvalidRequestError(
-            "Profiling supports only Source or Bronze Model Input Scope Objects."
+            "Profiling supports only Source or Bronze Project Input Scope Objects."
         )
 
     expected_object_fields = (
@@ -523,8 +523,8 @@ def _raise_repository_error(error: Exception) -> Never:
     ):
         raise error
     message = _primary_database_message(error)
-    if message == "stale_model_revision":
-        raise ModelRevisionConflictError() from error
+    if message == "stale_project_revision":
+        raise ProjectRevisionConflictError() from error
     if message == "tenant_workflow_conflict":
         raise TenantWorkflowConflictError() from error
     if message.startswith("profiling_run_not_found:"):
@@ -541,10 +541,10 @@ def _raise_repository_error(error: Exception) -> Never:
     safe_context_failures = {
         "profiling_run_not_running": "The Profiling Workflow Run is not running.",
         "profiling_scope_incomplete": "The Profiling selection is incomplete.",
-        "profiling_scope_changed": "The selected Model Input Scope changed before execution.",
+        "profiling_scope_changed": "The selected Project Input Scope changed before execution.",
         "profiling_relation_unavailable": (
             "Every selected Object must be an eligible Source foreign-catalog or Bronze "
-            "relation owned by the Model Tenant."
+            "relation owned by the Project Tenant."
         ),
         "profiling_attributes_missing": (
             "Every selected Object requires at least one active Attribute."

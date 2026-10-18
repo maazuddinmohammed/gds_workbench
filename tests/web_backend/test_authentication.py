@@ -56,14 +56,18 @@ async def test_databricks_user_resolver_derives_existing_entra_identity() -> Non
         lookup=lookup,
     )
 
-    principal = await resolver.resolve({"x-forwarded-access-token": "bounded-user-token"})
+    principal = await resolver.resolve(
+        {"x-forwarded-access-token": "bounded-user-token"}
+    )
 
     assert principal == RequestPrincipal(
         actor_kind=ActorKind.HUMAN,
         entra_tenant_id=_TENANT_ID,
         entra_object_id=_OBJECT_ID,
     )
-    assert lookup.calls == [("https://fixture.azuredatabricks.net", "bounded-user-token")]
+    assert lookup.calls == [
+        ("https://fixture.azuredatabricks.net", "bounded-user-token")
+    ]
 
 
 @pytest.mark.asyncio
@@ -135,7 +139,9 @@ async def test_databricks_user_resolver_maps_sdk_failures_safely(
     )
 
     with pytest.raises(AuthenticationError) as captured:
-        await resolver.resolve({"x-forwarded-access-token": "never-disclose-this-token"})
+        await resolver.resolve(
+            {"x-forwarded-access-token": "never-disclose-this-token"}
+        )
 
     assert captured.value.http_status == status_code
     assert "never-disclose" not in str(captured.value)

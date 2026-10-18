@@ -22,7 +22,7 @@ from .lifecycle import (
     raise_workflow_lifecycle_error,
     workflow_identity_triple,
 )
-from .plan import AgentRunPlan, ModelWorkflow, WorkflowExecutionMode
+from .plan import AgentRunPlan, ProjectWorkflow, WorkflowExecutionMode
 
 _AUTHORING_WORKFLOWS = frozenset(
     {
@@ -40,9 +40,9 @@ _COMPLETE_AUTHORING_NO_OP_SQL: LiteralString = """
 SELECT receipt.changed,
        receipt.workflow_run_id,
        receipt.workflow_run_state,
-       receipt.model_id,
-       receipt.model_revision,
-       receipt.model_workflow,
+       receipt.project_id,
+       receipt.project_revision,
+       receipt.project_workflow,
        receipt.workflow_execution_mode,
        receipt.correlation_id,
        receipt.candidate_digest,
@@ -66,9 +66,9 @@ def authoring_no_op_candidate_digest(plan: AgentRunPlan) -> str:
     """Digest the immutable plan identity and unchanged authoring result."""
     document = {
         "schema_version": "1.0",
-        "model_id": plan.model_id,
-        "model_revision": plan.model_revision,
-        "model_workflow": plan.model_workflow,
+        "project_id": plan.project_id,
+        "project_revision": plan.project_revision,
+        "project_workflow": plan.project_workflow,
         "workflow_execution_mode": plan.workflow_execution_mode,
         "selected_scope_digest": plan.selected_scope_digest,
         "result": "no_effective_change",
@@ -86,10 +86,10 @@ def authoring_no_op_candidate_digest(plan: AgentRunPlan) -> str:
 class AuthoringNoOpRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    expected_workflow: ModelWorkflow
+    expected_workflow: ProjectWorkflow
     expected_execution_mode: WorkflowExecutionMode | None
     expected_correlation_id: UUID
-    expected_model_revision: int = Field(gt=0)
+    expected_project_revision: int = Field(gt=0)
     candidate_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     final_event: AgentWorkflowEvent
 
@@ -116,11 +116,11 @@ class AuthoringNoOpReceipt(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     schema_version: Literal["1.0"] = "1.0"
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     workflow_run_id: int = Field(gt=0)
     workflow_run_state: Literal["completed", "completed_with_repair"]
-    model_workflow: ModelWorkflow
+    project_workflow: ProjectWorkflow
     workflow_execution_mode: WorkflowExecutionMode | None
     correlation_id: UUID
     candidate_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -131,7 +131,7 @@ class AuthoringNoOpReceipt(BaseModel):
     @model_validator(mode="after")
     def validate_receipt(self) -> Self:
         if (
-            self.final_event.stage != f"{self.model_workflow}.backend_validation"
+            self.final_event.stage != f"{self.project_workflow}.backend_validation"
             or self.final_event.status not in ("running", "warning")
             or self.final_event.current != 1
             or self.final_event.total != 1
@@ -163,7 +163,7 @@ class AuthoringNoOpCompleter(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         workflow_run_claim_token: UUID,
         request: AuthoringNoOpRequest,
@@ -181,7 +181,7 @@ class DatabaseAuthoringNoOpService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         workflow_run_claim_token: UUID,
         request: AuthoringNoOpRequest,
@@ -199,12 +199,12 @@ class DatabaseAuthoringNoOpService:
                     identity
                     + (
                         tenant_id,
-                        model_id,
+                        project_id,
                         workflow_run_id,
                         request.expected_workflow,
                         request.expected_execution_mode,
                         request.expected_correlation_id,
-                        request.expected_model_revision,
+                        request.expected_project_revision,
                         request.candidate_digest,
                         request.final_event.sequence,
                         request.final_event.attempt,
@@ -223,11 +223,11 @@ class DatabaseAuthoringNoOpService:
         try:
             receipt = AuthoringNoOpReceipt.model_validate(
                 {
-                    "model_id": row.get("model_id"),
-                    "model_revision": row.get("model_revision"),
+                    "project_id": row.get("project_id"),
+                    "project_revision": row.get("project_revision"),
                     "workflow_run_id": row.get("workflow_run_id"),
                     "workflow_run_state": row.get("workflow_run_state"),
-                    "model_workflow": row.get("model_workflow"),
+                    "project_workflow": row.get("project_workflow"),
                     "workflow_execution_mode": row.get("workflow_execution_mode"),
                     "correlation_id": row.get("correlation_id"),
                     "candidate_digest": row.get("candidate_digest"),
@@ -249,10 +249,10 @@ class DatabaseAuthoringNoOpService:
         except Exception:
             raise DependencyUnavailableError() from None
         if (
-            receipt.model_id != model_id
+            receipt.project_id != project_id
             or receipt.workflow_run_id != workflow_run_id
-            or receipt.model_revision != request.expected_model_revision
-            or receipt.model_workflow != request.expected_workflow
+            or receipt.project_revision != request.expected_project_revision
+            or receipt.project_workflow != request.expected_workflow
             or receipt.workflow_execution_mode != request.expected_execution_mode
             or receipt.correlation_id != request.expected_correlation_id
             or receipt.candidate_digest != request.candidate_digest

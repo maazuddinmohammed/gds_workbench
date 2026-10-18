@@ -9,7 +9,10 @@ from typing import Any, cast
 
 import pytest
 from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_workbench_api.features.workflows.authoring.plan import AgentRunPlan, WorkflowExecutionMode
+from gds_workbench_api.features.workflows.authoring.plan import (
+    AgentRunPlan,
+    WorkflowExecutionMode,
+)
 from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
     get_prompt_input_contract,
     project_prompt_input_values,
@@ -22,13 +25,13 @@ from tests.web_backend.test_analysis_executor import _context_bundle, _plan
 
 NAMES = {
     "one_shot": (
-        "model_brief",
+        "project_brief",
         "selected_metadata",
         "profile_evidence",
         "applied_relationships",
-        "modeling_assertions",
+        "context_records",
     ),
-    "tool_assisted": ("model_identity", "evidence_datasets"),
+    "tool_assisted": ("project_identity", "evidence_datasets"),
 }
 
 
@@ -64,7 +67,7 @@ def test_registered_input_examples_and_actual_wire_values_match_schema(
     mode: str, name: str
 ) -> None:
     contract = get_prompt_input_contract(
-        model_workflow="analysis",
+        project_workflow="analysis",
         workflow_execution_mode=mode,
         stage_code="relationship_inference",
         resolver_key=key(mode, name),
@@ -96,9 +99,13 @@ def test_registered_input_examples_and_actual_wire_values_match_schema(
     )
 
 
-def test_tool_manifest_counts_keep_fragmented_source_and_retrieval_counts_distinct() -> None:
+def test_tool_manifest_counts_keep_fragmented_source_and_retrieval_counts_distinct() -> (
+    None
+):
     plan = named_plan("tool_assisted")
-    context = cast(dict[str, JsonValue], _context_bundle(mode="tool_assisted").embedded_context)
+    context = cast(
+        dict[str, JsonValue], _context_bundle(mode="tool_assisted").embedded_context
+    )
     context.pop("selected_objects", None)  # Valid compact manifest.
     context["dataset_counts"] = {"selected_attribute": 7}
     context["dataset_record_counts"] = {"selected_attribute": 3}
@@ -117,17 +124,30 @@ def test_tool_manifest_counts_keep_fragmented_source_and_retrieval_counts_distin
             "fragmented_record_count": 1,
         }
     ]
-    assert set(result) == {key("tool_assisted", name) for name in NAMES["tool_assisted"]}
+    assert set(result) == {
+        key("tool_assisted", name) for name in NAMES["tool_assisted"]
+    }
     assert "selected_metadata" not in str(result.keys())
 
 
 @pytest.mark.parametrize(
     "fault",
-    ["missing", "negative", "bool", "wrong_semantics", "unmarked_fragments", "unknown_dataset"],
+    [
+        "missing",
+        "negative",
+        "bool",
+        "wrong_semantics",
+        "unmarked_fragments",
+        "unknown_dataset",
+    ],
 )
-def test_inconsistent_tool_manifest_is_rejected_without_exposing_values(fault: str) -> None:
+def test_inconsistent_tool_manifest_is_rejected_without_exposing_values(
+    fault: str,
+) -> None:
     plan = named_plan("tool_assisted")
-    context = cast(dict[str, JsonValue], _context_bundle(mode="tool_assisted").embedded_context)
+    context = cast(
+        dict[str, JsonValue], _context_bundle(mode="tool_assisted").embedded_context
+    )
     if fault == "missing":
         context.pop("dataset_record_counts")
     elif fault == "negative":
@@ -151,7 +171,9 @@ def test_inconsistent_tool_manifest_is_rejected_without_exposing_values(fault: s
     assert "private-sentinel" not in str(caught.value)
 
 
-def test_one_shot_does_not_turn_missing_evidence_into_empty_or_copy_private_fields() -> None:
+def test_one_shot_does_not_turn_missing_evidence_into_empty_or_copy_private_fields() -> (
+    None
+):
     plan = named_plan("one_shot")
     context = cast(dict[str, JsonValue], _context_bundle().embedded_context)
     context["private_snapshot"] = {"private-sentinel": True}
@@ -190,11 +212,13 @@ def test_only_registered_inputs_are_projected_and_conflicting_values_rejected() 
             plan=plan,
             stage=plan.stages[0],
             context=context,
-            resolver_values={key("one_shot", "model_brief"): {"model_name": "conflict"}},
+            resolver_values={
+                key("one_shot", "project_brief"): {"project_name": "conflict"}
+            },
         )
     assert (
         get_prompt_input_contract(
-            model_workflow="analysis",
+            project_workflow="analysis",
             workflow_execution_mode="one_shot",
             stage_code="unknown_stage",
             resolver_key=key("one_shot", "selected_metadata"),

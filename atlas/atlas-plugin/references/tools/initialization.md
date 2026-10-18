@@ -6,8 +6,8 @@ Load for actual record access or local authoring, not general explanations. Read
 |---|---|
 | Resolve Tenant name/code | Reuse verified context or page `list_tenants`. Never invent an ID or force a menu after an unambiguous selection. |
 | Tenant configuration | `get_tenant_details`; respect `connections_truncated`. A truncated Connection list cannot prove absence. |
-| Resolve Model | Page `list_models` for the authorized Tenant; inspect its actual revision, policies and templates. No `get_model_details` tool is established. |
-| Local workspace | `session-init` creates/reuses the resolved absolute root. `model-select` binds the first Model; `owner-add` registers verified additional Metadata owners. These do not create server records or grant access. |
+| Resolve Project | Page `list_projects` for the authorized Tenant; inspect its actual revision, policies and templates. No `get_project_details` tool is established. |
+| Local workspace | `session-init` creates/reuses the resolved absolute root. `project-select` binds the first Project; `owner-add` registers verified additional Metadata owners. These do not create server records or grant access. |
 | Resume | `status`, then `task-select` only if changing the selected task. Preserve draft and operation evidence. |
 | Command arguments | `node scripts/atlas-local.js command-contract --command <name>` from the installed plugin directory. Use [local runtime](../local-runtime.md) for procedures and host setup. |
 

@@ -35,7 +35,7 @@ and [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna) contr
 Foundry must have the configured deployment names available. Tool calls use
 Responses; calls without tools use Chat Completions.
 
-Internal keys remain `foundry-primary` and `foundry-gpt-5.6-luna` so saved Model
+Internal keys remain `foundry-primary` and `foundry-gpt-5.6-luna` so saved Project
 defaults and operator pricing retain their selected tier. The historical Luna key
 now selects GPT-6 Luna. New runs with an unsupported saved effort use the existing
 provider-default fallback; this includes Sol's former `none` setting. Stored

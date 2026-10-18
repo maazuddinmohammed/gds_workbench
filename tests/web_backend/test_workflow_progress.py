@@ -22,20 +22,22 @@ def _principal() -> RequestPrincipal:
 
 @dataclass
 class _Lifecycle:
-    events: list[AgentWorkflowEvent] = field(default_factory=lambda: list[AgentWorkflowEvent]())
+    events: list[AgentWorkflowEvent] = field(
+        default_factory=lambda: list[AgentWorkflowEvent]()
+    )
 
     async def append_event(
         self,
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         event: AgentWorkflowEvent,
     ) -> None:
         assert principal == _principal()
         assert workflow_run_id == 1048
-        assert expected_model_revision == 7
+        assert expected_project_revision == 7
         assert workflow_run_claim_token == _CLAIM_TOKEN
         self.events.append(event)
 
@@ -49,13 +51,15 @@ def test_intermediate_progress_points_are_bounded_and_exclude_completion() -> No
 
 
 @pytest.mark.asyncio
-async def test_progress_allocates_contiguous_events_and_reserves_the_final_event() -> None:
+async def test_progress_allocates_contiguous_events_and_reserves_the_final_event() -> (
+    None
+):
     lifecycle = _Lifecycle()
     progress = AgentWorkflowProgress(
         lifecycle=lifecycle,
         principal=_principal(),
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 

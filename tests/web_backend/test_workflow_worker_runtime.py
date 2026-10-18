@@ -96,9 +96,9 @@ def _claim() -> WorkflowExecutionClaim:
     return WorkflowExecutionClaim(
         workflow_run_id=701,
         tenant_id=7,
-        model_id=18,
-        model_revision=4,
-        model_workflow="logical",
+        project_id=18,
+        project_revision=4,
+        project_workflow="logical",
         workflow_execution_mode="one_shot",
         correlation_id=UUID("11111111-1111-1111-1111-111111111111"),
         actor_principal_type="user",
@@ -157,7 +157,9 @@ class BlockingDispatcher:
 
 
 @pytest.mark.asyncio
-async def test_worker_process_closes_database_and_releases_active_claim_on_shutdown() -> None:
+async def test_worker_process_closes_database_and_releases_active_claim_on_shutdown() -> (
+    None
+):
     database = ProcessDatabase()
     claim = _claim()
     claims = OneClaimRepository(claim)

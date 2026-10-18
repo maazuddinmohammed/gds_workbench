@@ -7,10 +7,14 @@ from uuid import UUID
 import httpx2
 import pytest
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_workbench_api.features.workflows.authoring.lifecycle import DatabaseAgentWorkflowLifecycle
+from gds_workbench_api.features.workflows.authoring.lifecycle import (
+    DatabaseAgentWorkflowLifecycle,
+)
 from gds_workbench_api.features.workflows.runs import DatabaseWorkflowRunService
 from gds_workbench_api.features.workflows.usage.contracts import FoundryModelPricing
-from gds_workbench_api.features.workflows.usage.service import DatabaseWorkflowUsageRecorder
+from gds_workbench_api.features.workflows.usage.service import (
+    DatabaseWorkflowUsageRecorder,
+)
 
 from tests.mcp.conftest import DisposablePostgres
 from tests.web_backend.test_agent_usage import _request, _response, _router
@@ -51,7 +55,9 @@ async def test_sdk_usage_and_cost_survive_a_later_workflow_failure_and_read_repl
         assert row["pricing_input_usd_per_million"] == Decimal(2)
         return httpx2.Response(
             200,
-            json=_response({"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12}),
+            json=_response(
+                {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12}
+            ),
         )
 
     router = _router(monkeypatch, recorder, transport)
@@ -65,37 +71,45 @@ async def test_sdk_usage_and_cost_survive_a_later_workflow_failure_and_read_repl
         async with recorder.track_run(claim):
             candidate = await router.execute(
                 _request().model_copy(
-                    update={"workflow_run_id": claim.workflow_run_id, "workflow": "conceptual"}
+                    update={
+                        "workflow_run_id": claim.workflow_run_id,
+                        "workflow": "conceptual",
+                    }
                 )
             )
             assert candidate.candidate == {"result": "valid"}
         await DatabaseAgentWorkflowLifecycle(database=database).fail(
             claim.principal,
             workflow_run_id=claim.workflow_run_id,
-            expected_model_revision=claim.model_revision,
+            expected_project_revision=claim.project_revision,
             workflow_run_claim_token=claim.workflow_run_claim_token,
             failure_code="fixture_later_failure",
-            safe_failure_message="Fixture execution stopped after model completion.",
+            safe_failure_message="Fixture execution stopped after project completion.",
         )
         first = await runs.read_run(
             claim.principal,
             tenant_id=context.tenant_id,
-            model_id=context.model_id,
+            project_id=context.project_id,
             workflow_run_id=claim.workflow_run_id,
         )
         replay = await runs.read_run(
             claim.principal,
             tenant_id=context.tenant_id,
-            model_id=context.model_id,
+            project_id=context.project_id,
             workflow_run_id=claim.workflow_run_id,
         )
         assert first.workflow_run_state == "failed"
         assert first.token_usage == replay.token_usage
         assert first.token_usage.status == "complete"
-        assert first.token_usage.request_count == 1 and first.token_usage.total_tokens == 12
+        assert (
+            first.token_usage.request_count == 1
+            and first.token_usage.total_tokens == 12
+        )
         estimate = first.token_usage.cost_estimate
         assert estimate.status == "estimated" and estimate.priced_request_count == 1
-        assert estimate.amount is not None and Decimal(estimate.amount) == Decimal("0.000028")
+        assert estimate.amount is not None and Decimal(estimate.amount) == Decimal(
+            "0.000028"
+        )
         assert estimate.pricing_bases == (price.basis,)
         assert sends == 1
         assert "Private" not in first.token_usage.model_dump_json()

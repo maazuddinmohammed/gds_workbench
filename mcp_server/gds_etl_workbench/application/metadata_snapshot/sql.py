@@ -237,7 +237,7 @@ SELECT connection.connection_id,
 
 FOUNDATION_TENANT_ROWS_SQL: LiteralString = """
 SELECT tenant_id,
-       project_id,
+       lane_id,
        tenant_code,
        tenant_name,
        tenant_description,
@@ -253,15 +253,15 @@ SELECT tenant_id,
  ORDER BY tenant_id
 """
 
-FOUNDATION_PROJECT_ROWS_SQL: LiteralString = """
-SELECT project_id,
-       project_code,
-       project_name,
-       project_description,
+FOUNDATION_LANE_ROWS_SQL: LiteralString = """
+SELECT lane_id,
+       lane_code,
+       lane_name,
+       lane_description,
        is_active
-  FROM core.project
- WHERE project_id = ANY(%s::BIGINT[])
- ORDER BY project_id
+  FROM core.lane
+ WHERE lane_id = ANY(%s::BIGINT[])
+ ORDER BY lane_id
 """
 
 FOUNDATION_SYSTEM_ROWS_SQL: LiteralString = """

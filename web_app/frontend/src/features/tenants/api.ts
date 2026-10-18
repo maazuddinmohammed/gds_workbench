@@ -40,7 +40,7 @@ export interface SystemRecord {
   system_type_name: string;
   connection_count: number;
   registered_object_count: number;
-  active_model_count: number;
+  active_project_count: number;
   last_metadata_update_time: string | null;
 }
 

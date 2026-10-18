@@ -37,7 +37,7 @@ export function isTenantWorkflowConflict(error: unknown): boolean {
 }
 
 export function isPartialMappingRun(run: WorkflowRunRecord | undefined): boolean {
-  return run?.model_workflow === "mapping"
+  return run?.project_workflow === "mapping"
     && (run.workflow_run_state === "completed" || run.workflow_run_state === "completed_with_repair")
     && ((run.mapping_outcome?.failed_pair_count ?? 0) > 0
       || (run.mapping_outcome?.partial_pair_count ?? 0) > 0);

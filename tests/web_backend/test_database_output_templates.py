@@ -73,22 +73,22 @@ async def test_output_template_catalog_round_trips_through_the_web_runtime_role(
     suffix = uuid4().hex
 
     with web_postgres_database.connect_owner() as connection:
-        project_id = _required_id(
+        lane_id = _required_id(
             connection.execute(
                 """
-                INSERT INTO core.project (project_code, project_name)
+                INSERT INTO core.lane (lane_code, lane_name)
                 VALUES (%s, %s)
-                RETURNING project_id
+                RETURNING lane_id
                 """,
                 (f"output_template_{suffix}", f"Output Template Project {suffix}"),
             ).fetchone(),
-            "project_id",
+            "lane_id",
         )
         tenant_id = _required_id(
             connection.execute(
                 """
                 INSERT INTO core.tenant (
-                    project_id,
+                    lane_id,
                     tenant_code,
                     tenant_name,
                     tenant_catalog,
@@ -97,7 +97,7 @@ async def test_output_template_catalog_round_trips_through_the_web_runtime_role(
                 RETURNING tenant_id
                 """,
                 (
-                    project_id,
+                    lane_id,
                     f"OUTPUT_{suffix}",
                     f"Output Template Tenant {suffix}",
                     f"output_catalog_{suffix}",

@@ -1,7 +1,8 @@
 import type { MappingEntityType } from "../mapping/api";
-import type { ModelRecordReviewApi } from "../model_record_review/api";
+import type { ProjectRecordReviewApi } from "../project_record_review/api";
 import type { HttpRequest } from "../../core/http";
-import type { ModelsApi } from "../models/api";
+import { readArchiveDownload, type ArchiveDownload, type LayerArchiveRequest } from "../../shared/archiveDownload";
+import type { ProjectsApi } from "../projects/api";
 import type { WorkflowsApi } from "../workflows/api";
 
 export interface ValidationEligibleSystem {
@@ -14,8 +15,8 @@ export interface ValidationEligibleSystem {
 }
 
 export interface ValidationEligibleSystemCollection {
-  model_id: number;
-  model_revision: number;
+  project_id: number;
+  project_revision: number;
   items: ValidationEligibleSystem[];
   is_truncated: boolean;
 }
@@ -54,26 +55,31 @@ export interface ValidationValidationGroup {
 }
 
 export interface ValidationLedger {
-  model_id: number;
-  model_revision: number;
+  project_id: number;
+  project_revision: number;
   groups: ValidationValidationGroup[];
 }
 
 export interface ValidationTransport {
+  exportAllValidations: (
+    tenantId: number,
+    projectId: number,
+    command: LayerArchiveRequest,
+  ) => Promise<ArchiveDownload>;
   listValidationEligibleSystems: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     entityType?: MappingEntityType,
   ) => Promise<ValidationEligibleSystemCollection>;
   readValidationLedger: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     entityType?: MappingEntityType,
   ) => Promise<ValidationLedger>;
 }
 
-export type ValidationApi = ValidationTransport & ModelRecordReviewApi
-  & Pick<ModelsApi, "listModels">
+export type ValidationApi = ValidationTransport & ProjectRecordReviewApi
+  & Pick<ProjectsApi, "listProjects">
   & Pick<
     WorkflowsApi,
     | "applyWorkflowDraft"
@@ -89,16 +95,21 @@ export type ValidationApi = ValidationTransport & ModelRecordReviewApi
 
 export function createValidationApi(request: HttpRequest): ValidationTransport {
   return {
-    listValidationEligibleSystems: (tenantId, modelId, entityType) => request<ValidationEligibleSystemCollection>(
-      `/api/v1/tenants/${tenantId}/models/${modelId}/validation/systems${entityType ? `?entity_type=${entityType}` : ""}`,
+    exportAllValidations: (tenantId, projectId, command) => request(
+      `/api/v1/tenants/${tenantId}/projects/${projectId}/validation/downloads/all.zip`,
+      { method: "POST", headers: { accept: "application/zip", "content-type": "application/json" }, body: JSON.stringify(command) },
+      readArchiveDownload,
     ),
-    readValidationLedger: (tenantId, modelId, entityType) => request<ValidationLedger>(
-      `/api/v1/tenants/${tenantId}/models/${modelId}/validation/ledger${entityType ? `?entity_type=${entityType}` : ""}`,
+    listValidationEligibleSystems: (tenantId, projectId, entityType) => request<ValidationEligibleSystemCollection>(
+      `/api/v1/tenants/${tenantId}/projects/${projectId}/validation/systems${entityType ? `?entity_type=${entityType}` : ""}`,
+    ),
+    readValidationLedger: (tenantId, projectId, entityType) => request<ValidationLedger>(
+      `/api/v1/tenants/${tenantId}/projects/${projectId}/validation/ledger${entityType ? `?entity_type=${entityType}` : ""}`,
     ),
   };
 }
 
 export const validationQueryKeys = {
-  systems: (tenantId: number, modelId: number, entityType?: MappingEntityType) => ["validation-systems", tenantId, modelId, entityType] as const,
-  ledger: (tenantId: number, modelId: number, entityType?: MappingEntityType) => ["validation-ledger", tenantId, modelId, entityType] as const,
+  systems: (tenantId: number, projectId: number, entityType?: MappingEntityType) => ["validation-systems", tenantId, projectId, entityType] as const,
+  ledger: (tenantId: number, projectId: number, entityType?: MappingEntityType) => ["validation-ledger", tenantId, projectId, entityType] as const,
 };

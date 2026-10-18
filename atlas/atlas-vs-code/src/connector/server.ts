@@ -6,17 +6,17 @@ import { exportReceipt, failureReceipt } from "../receipt.js";
 import { stageApprovedManifest, StageRunnerError, type McpToolClient, type StageApprovedManifestInput } from "../stage-runner.js";
 
 // Review new backend tools before making them available. Payload transport is private
-// to Stage Runner; models cannot call begin/put/commit or direct Stage through this proxy.
+// to Stage Runner; projects cannot call begin/put/commit or direct Stage through this proxy.
 export const REMOTE_TOOLS = new Set([
-  "list_tenants", "get_tenant_details", "list_models", "get_model_input_scope",
+  "list_tenants", "get_tenant_details", "list_projects", "get_project_input_scope",
   "check_tenant_lock", "acquire_tenant_lock", "renew_tenant_lock", "release_tenant_lock", "override_tenant_lock",
   "create_metadata_change_set", "get_metadata_change_set", "get_metadata_change_set_fingerprint",
   "validate_metadata_change_set", "apply_metadata_change_set", "archive_metadata_change_set",
-  "create_model_change_set", "get_model_change_set", "get_model_change_set_fingerprint",
-  "validate_model_change_set", "apply_model_change_set", "archive_model_change_set",
+  "create_project_change_set", "get_project_change_set", "get_project_change_set_fingerprint",
+  "validate_project_change_set", "apply_project_change_set", "archive_project_change_set",
   "start_profiling_run", "get_profiling_run_status", "cancel_profiling_run",
-  "inspect_metadata", "read_model_section", "read_mapping_context", "execute_databricks_sql",
-  "describe_model_dataset", "create_model_snapshot", "describe_metadata_dataset", "create_metadata_snapshot",
+  "inspect_metadata", "read_project_section", "read_mapping_context", "execute_databricks_sql",
+  "describe_project_dataset", "create_project_snapshot", "describe_metadata_dataset", "create_metadata_snapshot",
 ]);
 
 export const LOCAL_TOOLS: Tool[] = [

@@ -5,7 +5,7 @@ import { getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-
 
 import { formatRequiredDateTime as formatDateTime } from "../../shared/presentation";
 import { Fact } from "../../shared/ui";
-import type { ModelDetail } from "../models/api";
+import type { ProjectDetail } from "../projects/api";
 import type {
   WorkflowRunEvent,
   WorkflowRunFilterState,
@@ -158,7 +158,7 @@ export function ProfilingRunDrawer({
   hasTenantLock = true,
   api,
   tenantId,
-  model,
+  project,
   runId,
   onClose,
 }: {
@@ -166,36 +166,36 @@ export function ProfilingRunDrawer({
   hasTenantLock?: boolean;
   api: ProfilingApi;
   tenantId: number;
-  model: ModelDetail;
+  project: ProjectDetail;
   runId: number;
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
   const closeButton = useRef<HTMLButtonElement>(null);
   const runQuery = useQuery({
-    queryKey: profilingQueryKeys.run(tenantId, model.model_id, runId),
-    queryFn: () => api.readWorkflowRun(tenantId, model.model_id, runId),
+    queryKey: profilingQueryKeys.run(tenantId, project.project_id, runId),
+    queryFn: () => api.readWorkflowRun(tenantId, project.project_id, runId),
   });
   const { events, query: eventsQuery } = useProfilingRunEvents({
     api,
     tenantId,
-    modelId: model.model_id,
+    projectId: project.project_id,
     runId,
   });
   const executeMutation = useMutation({
     mutationFn: () => api.executeProfilingRun(
       tenantId,
-      model.model_id,
+      project.project_id,
       runId,
-      model.model_revision,
+      project.project_revision,
     ),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: profilingQueryKeys.run(tenantId, model.model_id, runId),
+          queryKey: profilingQueryKeys.run(tenantId, project.project_id, runId),
         }),
         queryClient.invalidateQueries({
-          queryKey: profilingQueryKeys.runs(tenantId, model.model_id),
+          queryKey: profilingQueryKeys.runs(tenantId, project.project_id),
         }),
       ]);
     },
@@ -236,12 +236,12 @@ export function ProfilingRunDrawer({
             <Fact label="Batch ID" value={run.requested_batch_id ?? "Not used"} />
           </dl>
           <WorkflowTokenUsage usage={run.token_usage} />
-          <CancelWorkflowRun key={runId} api={api} tenantId={tenantId} modelId={model.model_id}
+          <CancelWorkflowRun key={runId} api={api} tenantId={tenantId} projectId={project.project_id}
             run={run} hasTenantLock={hasTenantLock} onCancelled={async () => {
               await Promise.all([
                 runQuery.refetch(), eventsQuery.refetch(),
-                queryClient.invalidateQueries({ queryKey: profilingQueryKeys.runs(tenantId, model.model_id) }),
-                queryClient.invalidateQueries({ queryKey: ["model-overview", tenantId, model.model_id] }),
+                queryClient.invalidateQueries({ queryKey: profilingQueryKeys.runs(tenantId, project.project_id) }),
+                queryClient.invalidateQueries({ queryKey: ["project-overview", tenantId, project.project_id] }),
                 queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
               ]);
             }} />

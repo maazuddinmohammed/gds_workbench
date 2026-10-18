@@ -16,7 +16,7 @@ from pydantic import (
 from gds_workbench_api.features.workflows.authoring.agent_execution import LocalAgentToolDefinition
 from gds_workbench_api.features.workflows.authoring.tool_configuration import AgentToolName
 
-type ModelWorkflow = Literal[
+type ProjectWorkflow = Literal[
     "profiling",
     "analysis",
     "conceptual",
@@ -42,8 +42,8 @@ type PromptVariableDataType = Literal[
 ]
 type PromptOwnershipScope = Literal["global", "tenant"]
 type PromptVersionStatus = Literal["draft", "published", "retired"]
-type PromptAssignmentScope = Literal["global_default", "model_default"]
-type EffectivePromptSource = Literal["global_default", "model_default", "none"]
+type PromptAssignmentScope = Literal["global_default", "project_default"]
+type EffectivePromptSource = Literal["global_default", "project_default", "none"]
 
 
 class PromptContract(BaseModel):
@@ -67,7 +67,7 @@ class PromptStageVariable(PromptContract):
 
 class PromptStage(PromptContract):
     workflow_stage_id: int = Field(gt=0)
-    model_workflow: ModelWorkflow
+    project_workflow: ProjectWorkflow
     workflow_execution_mode: WorkflowExecutionMode | None = None
     workflow_stage_code: str = Field(min_length=1, max_length=100)
     workflow_stage_name: str = Field(min_length=1, max_length=200)
@@ -82,7 +82,7 @@ class PromptStageCatalog(PromptContract):
 
 
 class PromptTemplateFilters(PromptContract):
-    model_workflow: ModelWorkflow | None = None
+    project_workflow: ProjectWorkflow | None = None
     workflow_execution_mode: WorkflowExecutionMode | None = None
     workflow_stage_code: str | None = Field(
         default=None,
@@ -101,7 +101,7 @@ class PromptTemplateFilters(PromptContract):
 class PromptTemplateSummary(PromptContract):
     prompt_template_id: int = Field(gt=0)
     workflow_stage_id: int = Field(gt=0)
-    model_workflow: ModelWorkflow
+    project_workflow: ProjectWorkflow
     workflow_execution_mode: WorkflowExecutionMode | None = None
     workflow_stage_code: str = Field(min_length=1, max_length=100)
     workflow_stage_name: str = Field(min_length=1, max_length=200)
@@ -310,7 +310,7 @@ class PromptPreview(PromptContract):
     rendered_tool_instruction_prompt: str | None = Field(default=None, repr=False)
 
 
-class SetModelPromptAssignmentRequest(PromptRequest):
+class SetProjectPromptAssignmentRequest(PromptRequest):
     prompt_template_version_id: int | None = Field(gt=0)
     expected_prompt_assignment_id: int | None = Field(default=None, gt=0)
 
@@ -358,14 +358,14 @@ class PromptAssignmentTarget(PromptContract):
         return self
 
 
-class ModelPromptAssignmentState(PromptContract):
+class ProjectPromptAssignmentState(PromptContract):
     workflow_stage_id: int = Field(gt=0)
-    model_workflow: ModelWorkflow
+    project_workflow: ProjectWorkflow
     workflow_execution_mode: WorkflowExecutionMode | None = None
     workflow_stage_code: str = Field(min_length=1, max_length=100)
     workflow_stage_name: str = Field(min_length=1, max_length=200)
     workflow_stage_order: int = Field(gt=0)
-    model_assignment: PromptAssignmentTarget | None = None
+    project_assignment: PromptAssignmentTarget | None = None
     global_assignment: PromptAssignmentTarget | None = None
     effective_source: EffectivePromptSource
     effective_assignment: PromptAssignmentTarget | None = None
@@ -373,8 +373,8 @@ class ModelPromptAssignmentState(PromptContract):
     @model_validator(mode="after")
     def validate_effective_assignment(self) -> Self:
         expected = (
-            self.model_assignment
-            if self.effective_source == "model_default"
+            self.project_assignment
+            if self.effective_source == "project_default"
             else self.global_assignment
             if self.effective_source == "global_default"
             else None
@@ -384,17 +384,17 @@ class ModelPromptAssignmentState(PromptContract):
         return self
 
 
-class ModelPromptAssignments(PromptContract):
+class ProjectPromptAssignments(PromptContract):
     tenant_id: int = Field(gt=0)
-    model_id: int = Field(gt=0)
-    items: tuple[ModelPromptAssignmentState, ...] = Field(max_length=200)
+    project_id: int = Field(gt=0)
+    items: tuple[ProjectPromptAssignmentState, ...] = Field(max_length=200)
 
 
-class PromptModelNotFoundError(WorkbenchError):
+class PromptProjectNotFoundError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(
-            code="model_not_found",
-            message="The requested Model was not found.",
+            code="project_not_found",
+            message="The requested Project was not found.",
         )
 
 

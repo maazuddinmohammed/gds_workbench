@@ -20,19 +20,21 @@ from tests.web_backend.test_conceptual_executor import _context_bundle, _plan
 
 NAMES = {
     "one_shot": (
-        "model_brief",
+        "project_brief",
         "selected_metadata",
         "profile_evidence",
-        "modeling_assertions",
+        "context_records",
         "analysis_evidence",
         "applied_conceptual",
     ),
-    "tool_assisted": ("model_identity", "evidence_datasets"),
+    "tool_assisted": ("project_identity", "evidence_datasets"),
 }
 
 
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
-def test_conceptual_inputs_match_actual_context_and_documented_examples(mode: str) -> None:
+def test_conceptual_inputs_match_actual_context_and_documented_examples(
+    mode: str,
+) -> None:
     plan = _plan(mode=mode)
     prefix = f"workflow.conceptual.{mode}.candidate_authoring.inputs."
     stage = plan.stages[0].model_copy(
@@ -41,7 +43,10 @@ def test_conceptual_inputs_match_actual_context_and_documented_examples(mode: st
                 *plan.stages[0].variables,
                 *(
                     PromptVariableDefinition(
-                        name=name, resolver_key=prefix + name, data_type="json", is_required=False
+                        name=name,
+                        resolver_key=prefix + name,
+                        data_type="json",
+                        is_required=False,
                     )
                     for name in NAMES[mode]
                 ),
@@ -51,16 +56,18 @@ def test_conceptual_inputs_match_actual_context_and_documented_examples(mode: st
     plan = plan.model_copy(update={"stages": (stage,)})
     context = _context_bundle(mode=mode).embedded_context
     before = deepcopy(context)
-    legacy = {"legacy": context, "model.naming_instructions": "Keep supplied names."}
+    legacy = {"legacy": context, "project.naming_instructions": "Keep supplied names."}
     values = project_prompt_input_values(
         plan=plan, stage=stage, context=context, resolver_values=legacy
     )
     assert context == before and values["legacy"] is context
-    assert values["model.naming_instructions"] is legacy["model.naming_instructions"]
+    assert (
+        values["project.naming_instructions"] is legacy["project.naming_instructions"]
+    )
     assert set(values) - set(legacy) == {prefix + name for name in NAMES[mode]}
     for name in NAMES[mode]:
         contract = get_prompt_input_contract(
-            model_workflow="conceptual",
+            project_workflow="conceptual",
             workflow_execution_mode=mode,
             stage_code="candidate_authoring",
             resolver_key=prefix + name,
@@ -70,7 +77,10 @@ def test_conceptual_inputs_match_actual_context_and_documented_examples(mode: st
         assert not list(schema.iter_errors(contract.example))
         assert not list(schema.iter_errors(values[prefix + name]))
     if mode == "one_shot":
-        assert values[prefix + "applied_conceptual"] == {"objects": [], "relationships": []}
+        assert values[prefix + "applied_conceptual"] == {
+            "objects": [],
+            "relationships": [],
+        }
         nullable = cast(dict[str, JsonValue], deepcopy(context))
         cast(dict[str, JsonValue], nullable["applied"])["conceptual"] = None
         assert (
@@ -88,7 +98,7 @@ def test_conceptual_inputs_match_actual_context_and_documented_examples(mode: st
 
     else:
         broken = cast(dict[str, JsonValue], deepcopy(context))
-        broken["model_workflow"] = "analysis"
+        broken["project_workflow"] = "analysis"
         with pytest.raises(InvalidRequestError):
             project_prompt_input_values(
                 plan=plan, stage=stage, context=broken, resolver_values=legacy

@@ -28,10 +28,10 @@ from .preparation_contracts import (
 
 _MAPPING_RUN_PLAN_SQL: LiteralString = """
 SELECT run.workflow_run_id,
-       run.model_id,
+       run.project_id,
        run.correlation_id,
        run.actor_principal_id,
-       target_model.model_revision,
+       target_project.project_revision,
        run.modeled_entity_type,
        run.mapping_operation,
        run.mapping_coverage_mode,
@@ -45,21 +45,21 @@ SELECT run.workflow_run_id,
        selection.selection_order,
        selection.selected_attribute_ids
   FROM application.workflow_run AS run
-  JOIN model.model AS target_model
-    ON target_model.model_id = run.model_id
-   AND target_model.tenant_id = %s
-   AND target_model.is_active
+  JOIN project.project AS target_project
+    ON target_project.project_id = run.project_id
+   AND target_project.tenant_id = %s
+   AND target_project.is_active
   JOIN application.workflow_run_mapping_target_selection AS selection
     ON selection.workflow_run_id = run.workflow_run_id
-   AND selection.model_id = run.model_id
+   AND selection.project_id = run.project_id
   JOIN application.workflow_run_entity_selection AS entity_selection
     ON entity_selection.workflow_run_entity_selection_id =
         selection.workflow_run_entity_selection_id
- WHERE run.model_id = %s
+ WHERE run.project_id = %s
    AND run.workflow_run_id = %s
-   AND target_model.model_revision = %s
+   AND target_project.project_revision = %s
    AND run.actor_principal_id = %s
-   AND run.model_workflow = 'mapping'
+   AND run.project_workflow = 'mapping'
    AND run.workflow_run_state = 'running'
    AND run.mapping_coverage_mode = 'selected_targets'
    AND run.mapping_route = CASE run.modeled_entity_type
@@ -71,8 +71,8 @@ SELECT run.workflow_run_id,
 
 _MAPPING_CONTEXT_ANCHOR_SQL: LiteralString = """
 SELECT run.workflow_run_id,
-       run.model_id,
-       target_model.model_revision,
+       run.project_id,
+       target_project.project_revision,
        run.correlation_id,
        run.actor_principal_id,
        entity_selection.modeled_entity_id AS modeled_entity_id,
@@ -91,38 +91,38 @@ SELECT run.workflow_run_id,
            'system_description', source_system.system_description,
            'is_active', source_system.is_active AND (NOT fallback.is_default OR EXISTS (
                SELECT 1 FROM core.connection AS owned_connection
-                WHERE owned_connection.tenant_id = target_model.tenant_id
+                WHERE owned_connection.tenant_id = target_project.tenant_id
                   AND owned_connection.system_id = source_system.system_id
                   AND owned_connection.is_active
            )),
            'is_default', fallback.is_default
        ) AS source_system,
        jsonb_build_object(
-           'model_name', target_model.model_name,
-           'logical_entity_scd_type', target_model.logical_entity_scd_type,
-           'dimensional_entity_scd_type', target_model.dimensional_entity_scd_type,
+           'project_name', target_project.project_name,
+           'logical_entity_scd_type', target_project.logical_entity_scd_type,
+           'dimensional_entity_scd_type', target_project.dimensional_entity_scd_type,
            'naming_instructions', CASE run.modeled_entity_type
-               WHEN 'logical_entity' THEN target_model.silver_model_naming_instructions
-               ELSE target_model.gold_model_naming_instructions
+               WHEN 'logical_entity' THEN target_project.silver_model_naming_instructions
+               ELSE target_project.gold_model_naming_instructions
            END,
            'audit_columns_template', CASE run.modeled_entity_type
-               WHEN 'logical_entity' THEN target_model.silver_model_audit_columns_template
-               ELSE target_model.gold_model_audit_columns_template
+               WHEN 'logical_entity' THEN target_project.silver_model_audit_columns_template
+               ELSE target_project.gold_model_audit_columns_template
            END,
            'technical_columns_template', CASE run.modeled_entity_type
                WHEN 'logical_entity' THEN NULL
-               ELSE target_model.gold_model_technical_columns_template
+               ELSE target_project.gold_model_technical_columns_template
            END
        ) AS authoring
   FROM application.workflow_run AS run
-  JOIN model.model AS target_model
-    ON target_model.model_id = run.model_id
-   AND target_model.tenant_id = %s
-   AND target_model.model_revision = %s
-   AND target_model.is_active
+  JOIN project.project AS target_project
+    ON target_project.project_id = run.project_id
+   AND target_project.tenant_id = %s
+   AND target_project.project_revision = %s
+   AND target_project.is_active
   JOIN application.workflow_run_mapping_target_selection AS selection
     ON selection.workflow_run_id = run.workflow_run_id
-   AND selection.model_id = run.model_id
+   AND selection.project_id = run.project_id
   JOIN application.workflow_run_entity_selection AS entity_selection
     ON entity_selection.workflow_run_entity_selection_id =
         selection.workflow_run_entity_selection_id
@@ -130,12 +130,12 @@ SELECT run.workflow_run_id,
     ON source_system.system_id = selection.source_system_id
  CROSS JOIN LATERAL (
        SELECT coalesce(source_system.system_id =
-           target_model.default_mapping_source_system_id, FALSE)
-           AND workflow.is_assertion_only_mapping_target(run.model_id,
+           target_project.default_mapping_source_system_id, FALSE)
+           AND workflow.is_context_only_mapping_target(run.project_id,
                entity_selection.modeled_entity_id, run.modeled_entity_type) AS is_default
  ) AS fallback
  WHERE run.workflow_run_id = %s
-   AND run.model_id = %s
+   AND run.project_id = %s
    AND run.actor_principal_id = %s
    AND run.correlation_id = %s
    AND entity_selection.modeled_entity_id = %s
@@ -143,7 +143,7 @@ SELECT run.workflow_run_id,
    AND run.modeled_entity_type = %s
    AND run.mapping_route = %s
    AND run.mapping_operation = %s
-   AND run.model_workflow = 'mapping'
+   AND run.project_workflow = 'mapping'
    AND run.workflow_run_state = 'running'
 """
 
@@ -154,28 +154,28 @@ SELECT jsonb_build_object('modeled_entity_id', entity.modeled_entity_id,
  'has_locked_headers', coalesce(bool_or(mapping.object_mapping_is_locked), false),
  'has_unlocked_headers', coalesce(bool_or(NOT mapping.object_mapping_is_locked), false)) AS node
  FROM workflow.modeled_entity AS entity
- LEFT JOIN workflow.mapping_object AS mapping ON mapping.model_id = entity.model_id
+ LEFT JOIN workflow.mapping_object AS mapping ON mapping.project_id = entity.project_id
   AND mapping.modeled_entity_type = entity.modeled_entity_type
   AND coalesce(mapping.logical_entity_id, mapping.dimensional_entity_id) = entity.modeled_entity_id
   AND mapping.object_mapping_status = 'active'
- WHERE entity.model_id = %s AND entity.modeled_entity_type = %s AND entity.status = 'active'
+ WHERE entity.project_id = %s AND entity.modeled_entity_type = %s AND entity.status = 'active'
  GROUP BY entity.modeled_entity_id, entity.dependency_order, entity.status
  ORDER BY entity.modeled_entity_id
 """
 
 _MAPPING_ENTITY_CONTEXT_SQL: LiteralString = """
 WITH selected_entity AS MATERIALIZED (
- SELECT * FROM workflow.modeled_entity WHERE model_id = %s AND modeled_entity_id = %s
+ SELECT * FROM workflow.modeled_entity WHERE project_id = %s AND modeled_entity_id = %s
   AND modeled_entity_type = %s AND status = 'active'
 ), selected_mapping AS MATERIALIZED (
  SELECT mapping.* FROM selected_entity AS entity
- JOIN workflow.mapping_object AS mapping ON mapping.model_id = entity.model_id
+ JOIN workflow.mapping_object AS mapping ON mapping.project_id = entity.project_id
   AND mapping.modeled_entity_type = entity.modeled_entity_type
   AND coalesce(mapping.logical_entity_id, mapping.dimensional_entity_id) = entity.modeled_entity_id
   AND mapping.source_system_id = %s
 ), attributes AS MATERIALIZED (
  SELECT attribute.* FROM selected_entity AS entity
- JOIN workflow.modeled_attribute AS attribute ON attribute.model_id = entity.model_id
+ JOIN workflow.modeled_attribute AS attribute ON attribute.project_id = entity.project_id
   AND attribute.modeled_entity_type = entity.modeled_entity_type
   AND attribute.modeled_entity_id = entity.modeled_entity_id
  WHERE attribute.status = 'active'
@@ -223,7 +223,7 @@ SELECT jsonb_build_object('modeled_entity_id', entity.modeled_entity_id,
 """
 
 # Input Scope contains Source/Bronze. Silver sources instead require an applied
-# Logical Entity and Mapping; Model ownership remains independent of physical placement.
+# Logical Entity and Mapping; Project ownership remains independent of physical placement.
 _MAPPING_PHYSICAL_SOURCE_CONTEXT_SQL: LiteralString = """
 SELECT jsonb_build_object(
            'source_mapping_id', source.source_mapping_id,
@@ -262,7 +262,7 @@ SELECT jsonb_build_object(
   JOIN core.object AS source_object
     ON source_object.object_id = source.source_object_id
   LEFT JOIN workflow.object_enrichment AS object_enrichment
-    ON object_enrichment.model_id = source.model_id
+    ON object_enrichment.project_id = source.project_id
    AND object_enrichment.object_id = source_object.object_id
   JOIN core.connection AS source_connection
     ON source_connection.connection_id = source_object.connection_id
@@ -293,7 +293,7 @@ SELECT jsonb_build_object(
               ) AS items
          FROM core.attribute AS attribute
          LEFT JOIN workflow.attribute_enrichment AS enrichment
-           ON enrichment.model_id = source.model_id
+           ON enrichment.project_id = source.project_id
           AND enrichment.attribute_id = attribute.attribute_id
         WHERE attribute.object_id = source_object.object_id
   ) AS attributes
@@ -325,7 +325,7 @@ SELECT jsonb_build_object(
  'is_surrogate_key', item.is_surrogate_key,
  'is_audit_column', item.is_audit_column, 'status', item.status, 'is_locked', item.is_locked
  ) ORDER BY item.ordinal_position, item.modeled_attribute_id), '[]'::JSONB) AS items
- FROM workflow.modeled_attribute AS item WHERE item.model_id = entity.model_id
+ FROM workflow.modeled_attribute AS item WHERE item.project_id = entity.project_id
   AND item.modeled_entity_type = entity.modeled_entity_type AND item.modeled_entity_id =
       entity.modeled_entity_id
   AND item.status = 'active'
@@ -335,9 +335,9 @@ SELECT jsonb_build_object(
 
 MAPPING_SOURCE_CONTEXT_SQL: LiteralString = (
     "WITH selected_sources AS MATERIALIZED ("
-    "SELECT owner.model_id, source.* FROM (SELECT %s::BIGINT AS model_id) AS owner "
+    "SELECT owner.project_id, source.* FROM (SELECT %s::BIGINT AS project_id) AS owner "
     "CROSS JOIN LATERAL workflow.list_mapping_source_objects("
-    "owner.model_id, %s, %s, %s) AS source) "
+    "owner.project_id, %s, %s, %s) AS source) "
     "SELECT source FROM (("
     + _MAPPING_PHYSICAL_SOURCE_CONTEXT_SQL
     + ") UNION ALL ("
@@ -353,10 +353,10 @@ _MAPPING_UPSTREAM_PHYSICAL_CONTEXT_SQL: LiteralString = (
     "SELECT NULL::BIGINT AS source_mapping_id, %s::BIGINT AS modeled_entity_id, "
     "'evidence'::TEXT AS role, 'Upstream physical provenance, not a Gold input.'::TEXT "
     "AS rationale, NULL::INTEGER AS mapping_order, FALSE AS is_locked, "
-    "input.object_id AS source_object_id, scope.model_input_scope_is_locked AS scope_is_locked, "
-    "scope.is_active AS scope_is_active, scope.model_id "
-    "FROM workflow.list_model_input_sources(%s) AS input "
-    "JOIN model.model_input_scope AS scope ON scope.model_id = %s "
+    "input.object_id AS source_object_id, scope.project_input_scope_is_locked AS scope_is_locked, "
+    "scope.is_active AS scope_is_active, scope.project_id "
+    "FROM workflow.list_project_input_sources(%s) AS input "
+    "JOIN project.project_input_scope AS scope ON scope.project_id = %s "
     "AND scope.object_id = input.object_id AND scope.is_active "
     "WHERE input.source_system_id = %s) " + _MAPPING_PHYSICAL_SOURCE_CONTEXT_SQL
 )
@@ -369,7 +369,7 @@ SELECT DISTINCT template_id AS output_template_id
    AND attribute.attribute_mapping_status = 'active'
  CROSS JOIN LATERAL unnest(ARRAY[mapping.output_template_id, attribute.output_template_id])
     AS template(template_id)
- WHERE mapping.model_id = %s AND mapping.modeled_entity_type = 'logical_entity'
+ WHERE mapping.project_id = %s AND mapping.modeled_entity_type = 'logical_entity'
    AND mapping.logical_entity_id = ANY(%s::BIGINT[])
    AND mapping.source_system_id = %s AND mapping.object_mapping_status = 'active'
    AND template_id IS NOT NULL
@@ -467,20 +467,20 @@ class PostgresMappingRunPlanRepository:
         *,
         actor_principal_id: int,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> tuple[MappingRunPlan, ...]:
         rows = await transaction.fetch_all(
             _MAPPING_RUN_PLAN_SQL,
-            (tenant_id, model_id, workflow_run_id, expected_model_revision, actor_principal_id),
+            (tenant_id, project_id, workflow_run_id, expected_project_revision, actor_principal_id),
         )
         if not rows:
             raise MappingRunPlanUnavailableError()
         common = await self._agent_plan_repository.load(
             transaction,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             workflow_run_id=workflow_run_id,
         )
         try:
@@ -488,10 +488,10 @@ class PostgresMappingRunPlanRepository:
             for selection_ordinal, row in enumerate(rows, start=1):
                 if (
                     row.get("workflow_run_id") != common.workflow_run_id
-                    or row.get("model_id") != common.model_id
+                    or row.get("project_id") != common.project_id
                     or row.get("correlation_id") != common.correlation_id
                     or row.get("actor_principal_id") != actor_principal_id
-                    or row.get("model_revision") != expected_model_revision
+                    or row.get("project_revision") != expected_project_revision
                     or row.get("modeled_entity_type") != common.modeled_entity_type
                 ):
                     raise MappingRunPlanUnavailableError()
@@ -538,9 +538,9 @@ class PostgresMappingRunContextRepository:
             _MAPPING_CONTEXT_ANCHOR_SQL,
             (
                 tenant_id,
-                plan.model_revision,
+                plan.project_revision,
                 plan.workflow_run_id,
-                plan.model_id,
+                plan.project_id,
                 plan.actor_principal_id,
                 plan.correlation_id,
                 plan.pair.modeled_entity_id,
@@ -555,7 +555,7 @@ class PostgresMappingRunContextRepository:
         header = await transaction.fetch_one(
             _MAPPING_ENTITY_CONTEXT_SQL,
             (
-                plan.model_id,
+                plan.project_id,
                 plan.pair.modeled_entity_id,
                 plan.modeled_entity_type,
                 plan.pair.source_system_id,
@@ -566,7 +566,7 @@ class PostgresMappingRunContextRepository:
         source_rows = await transaction.fetch_all(
             MAPPING_SOURCE_CONTEXT_SQL,
             (
-                plan.model_id,
+                plan.project_id,
                 plan.pair.modeled_entity_id,
                 plan.modeled_entity_type,
                 plan.pair.source_system_id,
@@ -574,7 +574,7 @@ class PostgresMappingRunContextRepository:
         )
         target_node_rows = await transaction.fetch_all(
             _MAPPING_TARGET_NODES_SQL,
-            (plan.model_id, plan.modeled_entity_type),
+            (plan.project_id, plan.modeled_entity_type),
         )
         try:
             parsed_header = ExistingMappingHeader.model_validate(
@@ -595,8 +595,8 @@ class PostgresMappingRunContextRepository:
                     _MAPPING_UPSTREAM_PHYSICAL_CONTEXT_SQL,
                     (
                         plan.pair.modeled_entity_id,
-                        plan.model_id,
-                        plan.model_id,
+                        plan.project_id,
+                        plan.project_id,
                         plan.pair.source_system_id,
                     ),
                 )
@@ -621,7 +621,7 @@ class PostgresMappingRunContextRepository:
             if logical_ids:
                 upstream_template_rows = await transaction.fetch_all(
                     _MAPPING_UPSTREAM_TEMPLATE_IDS_SQL,
-                    (plan.model_id, logical_ids, plan.pair.source_system_id),
+                    (plan.project_id, logical_ids, plan.pair.source_system_id),
                 )
                 referenced_template_ids.update(
                     row["output_template_id"] for row in upstream_template_rows
@@ -651,8 +651,8 @@ class PostgresMappingRunContextRepository:
             context = MappingRunContext.model_validate(
                 {
                     "workflow_run_id": anchor.get("workflow_run_id"),
-                    "model_id": anchor.get("model_id"),
-                    "model_revision": anchor.get("model_revision"),
+                    "project_id": anchor.get("project_id"),
+                    "project_revision": anchor.get("project_revision"),
                     "correlation_id": anchor.get("correlation_id"),
                     "pair": plan.pair,
                     "modeled_entity_type": plan.modeled_entity_type,

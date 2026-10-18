@@ -90,9 +90,9 @@ def databricks_connection_seed(
         ).fetchall()
         project = connection.execute(
             """
-            INSERT INTO core.project (project_code, project_name)
+            INSERT INTO core.lane (lane_code, lane_name)
             VALUES (%s, %s)
-            RETURNING project_id
+            RETURNING lane_id
             """,
             (f"{prefix}_PROJECT", f"{prefix} Project"),
         ).fetchone()
@@ -105,7 +105,7 @@ def databricks_connection_seed(
         tenant_rows = connection.execute(
             """
             INSERT INTO core.tenant (
-                project_id, tenant_code, tenant_name,
+                lane_id, tenant_code, tenant_name,
                 tenant_catalog, gds_admin_catalog
             )
             VALUES
@@ -114,12 +114,12 @@ def databricks_connection_seed(
             RETURNING tenant_id
             """,
             (
-                project["project_id"],
+                project["lane_id"],
                 f"{prefix}_TENANT",
                 f"{prefix} Tenant",
                 f"{prefix.lower()}_catalog",
                 f"{prefix.lower()}_admin",
-                project["project_id"],
+                project["lane_id"],
                 f"{prefix}_NO_GDS_TENANT",
                 f"{prefix} No GDS Tenant",
                 f"{prefix.lower()}_no_gds_catalog",

@@ -48,10 +48,15 @@ def test_local_compose_is_loopback_only_and_uses_one_combined_app() -> None:
     assert "cap_drop:" in compose and "- ALL" in compose
 
 
-def test_combined_local_image_builds_react_and_python_then_runs_one_app_process() -> None:
+def test_combined_local_image_builds_react_and_python_then_runs_one_app_process() -> (
+    None
+):
     dockerfile = BACKEND_DOCKERFILE.read_text(encoding="utf-8")
 
-    assert "node:22.16.0-bookworm-slim@sha256:048ed02c5fd52e86fda6fbd2f6a76cf0d4492f" in dockerfile
+    assert (
+        "node:22.16.0-bookworm-slim@sha256:048ed02c5fd52e86fda6fbd2f6a76cf0d4492f"
+        in dockerfile
+    )
     assert dockerfile.count("python:3.14.7-slim-trixie@sha256:ce40764625a4ff50") == 2
     assert "uv==0.11.14" in dockerfile
     assert "COPY package.json package-lock.json ./" in dockerfile
@@ -109,7 +114,9 @@ def test_frontend_production_build_does_not_require_test_dependencies() -> None:
     build_config = FRONTEND_BUILD_TSCONFIG.read_text(encoding="utf-8")
 
     assert '"node": ">=22.16 <23"' in package
-    assert '"build": "tsc --project tsconfig.build.json --noEmit && vite build"' in package
+    assert (
+        '"build": "tsc --project tsconfig.build.json --noEmit && vite build"' in package
+    )
     assert '"extends": "./tsconfig.json"' in build_config
     assert '"src/**/*.test.ts"' in build_config
     assert '"src/**/*.test.tsx"' in build_config
@@ -128,16 +135,22 @@ def test_frontend_declares_a_local_self_contained_atlas_svg_favicon() -> None:
         index,
     )
     assert match is not None
-    root = ET.fromstring((FRONTEND_INDEX.parent / "public" / "assets" / "atlas.svg").read_text())
+    root = ET.fromstring(
+        (FRONTEND_INDEX.parent / "public" / "assets" / "atlas.svg").read_text()
+    )
     assert root.tag == "{http://www.w3.org/2000/svg}svg"
     x, y, width, height = (float(value) for value in root.attrib["viewBox"].split())
     assert x == y == 0 and width == height and width > 0
     assert root.find("{http://www.w3.org/2000/svg}path") is not None
     assert all(not element.tag.endswith("script") for element in root.iter())
-    assert all(not key.endswith("href") for element in root.iter() for key in element.attrib)
+    assert all(
+        not key.endswith("href") for element in root.iter() for key in element.attrib
+    )
 
 
-def test_database_initializer_uses_exact_canonical_order_and_no_destructive_sql() -> None:
+def test_database_initializer_uses_exact_canonical_order_and_no_destructive_sql() -> (
+    None
+):
     initializer = INSTALL_DATABASE.read_text(encoding="utf-8")
     expected = [
         path.name
@@ -145,11 +158,15 @@ def test_database_initializer_uses_exact_canonical_order_and_no_destructive_sql(
         if path.name not in {"00_preflight.sql", "20_verify_install.sql"}
     ]
     assert [int(name[:2]) for name in expected] == list(range(1, 20))
-    release_block = re.search(r"release_files=\(\n(?P<files>.*?)\n\)", initializer, re.DOTALL)
+    release_block = re.search(
+        r"release_files=\(\n(?P<files>.*?)\n\)", initializer, re.DOTALL
+    )
 
     assert release_block is not None
     assert (
-        re.findall(r"^\s+([0-9][0-9]_[a-z0-9_]+\.sql)$", release_block["files"], re.MULTILINE)
+        re.findall(
+            r"^\s+([0-9][0-9]_[a-z0-9_]+\.sql)$", release_block["files"], re.MULTILINE
+        )
         == expected
     )
     assert "00_preflight.sql" in initializer
@@ -164,16 +181,18 @@ def test_database_initializer_uses_exact_canonical_order_and_no_destructive_sql(
     assert initializer.index("03_local_super_admin.template.sql") < initializer.index(
         "05_global_prompt_defaults.template.sql"
     )
-    assert initializer.index("05_global_prompt_defaults.template.sql") < initializer.index(
+    assert initializer.index(
+        "05_global_prompt_defaults.template.sql"
+    ) < initializer.index("07_global_mapping_output_templates.template.sql")
+    assert initializer.index(
         "07_global_mapping_output_templates.template.sql"
-    )
-    assert initializer.index("07_global_mapping_output_templates.template.sql") < initializer.index(
-        "08_local_workbench_review.sql"
-    )
+    ) < initializer.index("08_local_workbench_review.sql")
     assert not re.search(r"\b(?:DROP|TRUNCATE|RESET)\b", initializer, re.IGNORECASE)
 
 
-def test_documented_fresh_install_matches_the_exact_canonical_database_release() -> None:
+def test_documented_fresh_install_matches_the_exact_canonical_database_release() -> (
+    None
+):
     guide = (DATABASE_ROOT / "README.md").read_text(encoding="utf-8")
     azure_guide = AZURE_FRESH_DEPLOYMENT.read_text(encoding="utf-8")
     expected = [
@@ -212,14 +231,15 @@ def test_mcp_runbook_recovers_from_a_locked_windows_azure_cli_profile() -> None:
 
 def test_database_cleanup_reference_is_complete_and_remains_commented() -> None:
     sql = "\n".join(
-        path.read_text(encoding="utf-8") for path in sorted(DATABASE_ROOT.glob("[0-9][0-9]_*.sql"))
+        path.read_text(encoding="utf-8")
+        for path in sorted(DATABASE_ROOT.glob("[0-9][0-9]_*.sql"))
     )
     preflight = (DATABASE_ROOT / "00_preflight.sql").read_text(encoding="utf-8")
     expected_cleanup = [
         "DROP SCHEMA mcp CASCADE;",
         "DROP SCHEMA application CASCADE;",
         "DROP SCHEMA workflow CASCADE;",
-        "DROP SCHEMA model CASCADE;",
+        "DROP SCHEMA project CASCADE;",
         "DROP SCHEMA security CASCADE;",
         "DROP SCHEMA core CASCADE;",
         "DROP SCHEMA reference CASCADE;",

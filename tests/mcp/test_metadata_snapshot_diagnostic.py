@@ -57,7 +57,9 @@ def _local_settings() -> RuntimeSettings:
             "GDS_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
             "GDS_LOCAL_PRINCIPAL_OBJECT_ID": "33333333-3333-3333-3333-333333333333",
             "GDS_MCP_PUBLIC_URL": "http://localhost:8000/mcp",
-            "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": ("https://snapshot.blob.core.windows.net"),
+            "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": (
+                "https://snapshot.blob.core.windows.net"
+            ),
             "GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER": "snapshots",
         }
     )
@@ -159,7 +161,7 @@ class _SelectionFailureConnection(_RoleFailureConnection):
                     {
                         "schema_name": name,
                         "schema_exists": True,
-                        "can_use": name != "model",
+                        "can_use": name != "project",
                     }
                     for name in diagnostic_module._REQUIRED_SCHEMAS
                 ]
@@ -170,7 +172,7 @@ class _SelectionFailureConnection(_RoleFailureConnection):
                     {
                         "relation_name": name,
                         "relation_exists": True,
-                        "can_select": name != "model.model_input_scope",
+                        "can_select": name != "project.project_input_scope",
                     }
                     for name in diagnostic_module._SNAPSHOT_RELATIONS
                 ]
@@ -230,8 +232,8 @@ async def test_diagnostic_identifies_acl_and_exact_selection_stage(
     assert "database=OK code=ready" in output
     assert "transaction_posture=OK" in output
     assert "snapshot_acl=FAILED" in output
-    assert "schema_usage_missing=model" in output
-    assert "select_missing=model.model_input_scope" in output
+    assert "schema_usage_missing=project" in output
+    assert "select_missing=project.project_input_scope" in output
     assert "selection=FAILED stage=object_closure" in output
     assert "sqlstate=42501" in output
     assert "SENTINEL_QUERY_AND_ROW_DATA" not in output
@@ -242,13 +244,17 @@ def test_configuration_diagnostic_recovers_without_mutating_production_values(
 ) -> None:
     values = {
         "GDS_ENVIRONMENT": "production",
-        "GDS_DATABASE_DSN": ("postgresql://app@db.example.invalid/workbench?sslmode=verify-full"),
+        "GDS_DATABASE_DSN": (
+            "postgresql://app@db.example.invalid/workbench?sslmode=verify-full"
+        ),
         "GDS_CURSOR_SIGNING_KEY": "development-only-key-32-bytes-long",
         "GDS_ENTRA_API_CLIENT_ID": "22222222-2222-2222-2222-222222222222",
         "GDS_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
         "GDS_LOCAL_PRINCIPAL_OBJECT_ID": "33333333-3333-3333-3333-333333333333",
         "GDS_MCP_PUBLIC_URL": "https://workbench.example.test/mcp",
-        "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": ("https://snapshot.blob.core.windows.net"),
+        "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": (
+            "https://snapshot.blob.core.windows.net"
+        ),
         "GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER": "snapshots",
     }
 

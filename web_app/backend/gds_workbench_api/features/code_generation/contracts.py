@@ -21,11 +21,19 @@ from gds_workbench_api.features.mapping.read_contracts import (
 type MappingEntityType = Literal["logical_entity", "dimensional_entity"]
 
 MAX_SELECTED_ARTIFACTS = 25
+MAX_EXPORT_ARTIFACTS = 5_000
 MAX_BULK_SQL_BYTES = 32 * 1024 * 1024
 
 
 class ContractModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+class ExportSqlArtifactsRequest(ContractModel):
+    """Export every active stored SQL file in one layer, including stale files."""
+
+    entity_type: MappingEntityType
+    expected_project_revision: int = Field(gt=0)
 
 
 class CodeGenerationTargetFilters(ContractModel):
@@ -127,8 +135,8 @@ class CodeGenerationTargetSummary(ContractModel):
 
 
 class CodeGenerationTargetPage(ContractModel):
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     items: tuple[CodeGenerationTargetSummary, ...] = Field(max_length=200)
     next_cursor: str | None = Field(default=None, max_length=2048)
 
@@ -146,7 +154,7 @@ class SqlGeneratorProvenance(ContractModel):
 class GeneratedSqlArtifactDetail(ContractModel):
     generated_sql_artifact_id: int = Field(gt=0)
     artifact_name: str = Field(min_length=1, max_length=400)
-    model_id: int = Field(gt=0)
+    project_id: int = Field(gt=0)
     target: ModeledEntityReference
     entity_type: MappingEntityType
     source_systems: tuple[SourceSystemReference, ...] = Field(max_length=200)
@@ -185,6 +193,8 @@ class SqlArtifactDownload(ContractModel):
     entity_type: MappingEntityType
     generated_sql: str = Field(min_length=1, repr=False)
     generated_sql_byte_count: int = Field(gt=0)
+    artifact_is_current: bool | None = None
+    source_system_codes: tuple[str, ...] = Field(default=(), max_length=200)
 
     @model_validator(mode="after")
     def validate_bounded_sql(self) -> Self:
@@ -201,9 +211,17 @@ class GeneratedSqlArtifactNotFoundError(WorkbenchError):
         )
 
 
+class SqlArtifactExportEmptyError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="generated_sql_export_empty",
+            message="No active SQL files are available for this layer.",
+        )
+
+
 class SqlArtifactBundleLimitExceededError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(
             code="generated_sql_bundle_limit_exceeded",
-            message="The selected generated SQL artifacts exceed the safe bundle limit.",
+            message="The requested generated SQL artifacts exceed the safe bundle limit.",
         )

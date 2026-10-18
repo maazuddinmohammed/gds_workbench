@@ -9,9 +9,9 @@ from typing import Any, cast
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.application.change_sets.model import StageModelChange
-from gds_etl_workbench.application.change_sets.model_validation import (
-    PhysicalModelCatalog,
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
+from gds_etl_workbench.application.change_sets.project_validation import (
+    PhysicalProjectCatalog,
 )
 from gds_etl_workbench.domain.authorization import (
     ActorKind,
@@ -66,7 +66,7 @@ from gds_workbench_api.prompt_rendering import (
 )
 from pydantic import JsonValue
 
-from tests.mcp.model_test_fixtures import snapshot_from_graph
+from tests.mcp.project_test_fixtures import snapshot_from_graph
 from tests.web_backend.workflow_recovery_fixtures import RetainingHandoff
 
 _CLAIM_TOKEN = UUID("44444444-4444-4444-8444-444444444444")
@@ -93,13 +93,13 @@ def _plan(*, mode: str = "one_shot", retry_count: int = 1) -> AgentRunPlan:
             ),
             PromptVariableDefinition(
                 name="naming_instructions",
-                resolver_key="model.naming_instructions",
+                resolver_key="project.naming_instructions",
                 data_type="text",
                 is_required=False,
             ),
         ]
         instruction = "Use {{stage_context}} and {{naming_instructions}}."
-        if stage_code in ("candidate_authoring", "whole_model_reconciliation"):
+        if stage_code in ("candidate_authoring", "whole_project_reconciliation"):
             instruction += " Repair {{validation_failures}}."
             variables.append(
                 PromptVariableDefinition(
@@ -126,10 +126,10 @@ def _plan(*, mode: str = "one_shot", retry_count: int = 1) -> AgentRunPlan:
     return AgentRunPlan.model_validate(
         {
             "workflow_run_id": 1048,
-            "model_id": 18,
+            "project_id": 18,
             "correlation_id": UUID("33333333-3333-3333-3333-333333333333"),
-            "model_revision": 7,
-            "model_workflow": "conceptual",
+            "project_revision": 7,
+            "project_workflow": "conceptual",
             "workflow_execution_mode": mode,
             "modeled_entity_type": None,
             "selected_scope_digest": "a" * 64,
@@ -152,16 +152,16 @@ def _context_bundle(*, mode: str = "one_shot") -> AgentContextBundle:
     context = AgentAuthoringContext.model_validate(
         {
             "workflow_run_id": 1048,
-            "model_id": 18,
-            "model_name": "Customer Model",
-            "model_revision": 7,
-            "model_workflow": "conceptual",
+            "project_id": 18,
+            "project_name": "Customer Project",
+            "project_revision": 7,
+            "project_workflow": "conceptual",
             "workflow_execution_mode": mode,
             "modeled_entity_type": None,
             "selected_scope_digest": "a" * 64,
-            "model_details": {
-                "model_name": "Customer Model",
-                "model_description": None,
+            "project_details": {
+                "project_name": "Customer Project",
+                "project_description": None,
                 "silver_model_naming_instructions": "Use business language.",
                 "silver_model_audit_columns_template": None,
                 "gold_model_naming_instructions": None,
@@ -193,7 +193,16 @@ def _context_bundle(*, mode: str = "one_shot") -> AgentContextBundle:
             ),
             "profiles": (),
             "analysis_relationships": (),
-            "assertion": {"documents": (), "records": ()},
+            "context": {
+                "records": (),
+                "groups": (),
+                "types": [
+                    {
+                        "context_type_name": "Business Requirement",
+                        "context_type_description": "Required business outcomes.",
+                    }
+                ],
+            },
             "applied": {
                 "conceptual": {"objects": (), "relationships": ()},
                 "logical": None,
@@ -288,7 +297,7 @@ class _Authorizer:
         *,
         tenant_id: int,
         policy: ToolPolicy,
-        model_id: int | None = None,
+        project_id: int | None = None,
     ) -> object:
         del transaction
         assert principal == _principal()
@@ -335,8 +344,8 @@ class _AgentExecutor:
 
 @dataclass
 class _Handoff(RetainingHandoff):
-    calls: list[tuple[StageModelChange, ...]] = field(
-        default_factory=lambda: list[tuple[StageModelChange, ...]]()
+    calls: list[tuple[StageProjectChange, ...]] = field(
+        default_factory=lambda: list[tuple[StageProjectChange, ...]]()
     )
     final_events: list[AgentWorkflowEvent] = field(
         default_factory=lambda: list[AgentWorkflowEvent]()
@@ -347,7 +356,7 @@ class _Handoff(RetainingHandoff):
         self,
         principal: RequestPrincipal,
         *,
-        changes: tuple[StageModelChange, ...],
+        changes: tuple[StageProjectChange, ...],
         final_event: AgentWorkflowEvent,
         workflow_run_claim_token: UUID,
         **_: object,
@@ -360,9 +369,9 @@ class _Handoff(RetainingHandoff):
             raise self.finalization_error
         return WorkflowChangeSetFinalizationResult(
             handoff=WorkflowChangeSetHandoffResult(
-                model_id=18,
+                project_id=18,
                 workflow_run_id=1048,
-                model_change_set_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+                project_change_set_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
                 replayed=False,
                 draft_revision=2,
                 candidate_digest="c" * 64,
@@ -390,28 +399,28 @@ class _NoOp:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         workflow_run_claim_token: UUID,
         request: AuthoringNoOpRequest,
     ) -> AuthoringNoOpReceipt:
         assert principal == _principal()
         assert tenant_id == 7
-        assert model_id == 18
+        assert project_id == 18
         assert workflow_run_claim_token == _CLAIM_TOKEN
         self.requests.append(request)
         if self.completion_error is not None:
             raise self.completion_error
         return AuthoringNoOpReceipt(
-            model_id=model_id,
-            model_revision=request.expected_model_revision,
+            project_id=project_id,
+            project_revision=request.expected_project_revision,
             workflow_run_id=workflow_run_id,
             workflow_run_state=(
                 "completed_with_repair"
                 if request.final_event.attempt > 1
                 else "completed"
             ),
-            model_workflow=request.expected_workflow,
+            project_workflow=request.expected_workflow,
             workflow_execution_mode=request.expected_execution_mode,
             correlation_id=request.expected_correlation_id,
             candidate_digest=request.candidate_digest,
@@ -434,21 +443,21 @@ class _Lifecycle:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         expected_workflow: str,
         expected_execution_mode: str | None,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart:
         self.starts.append(
             (
                 principal,
                 tenant_id,
-                model_id,
+                project_id,
                 workflow_run_id,
                 expected_workflow,
                 expected_execution_mode,
-                expected_model_revision,
+                expected_project_revision,
             )
         )
         return AgentWorkflowRunStart(
@@ -456,7 +465,7 @@ class _Lifecycle:
             workflow_run_id=workflow_run_id,
             workflow_run_state="running",
             started_at=datetime(2026, 8, 24, 10, tzinfo=UTC),
-            model_revision=expected_model_revision,
+            project_revision=expected_project_revision,
         )
 
     events: list[AgentWorkflowEvent] = field(
@@ -543,41 +552,35 @@ def _service(
             for item in context.selected_objects
             for attribute in item.attributes
         )
-        physical_scope = PhysicalModelCatalog(
-            model_tenant_code="nwa",
+        physical_scope = PhysicalProjectCatalog(
+            project_tenant_code="nwa",
             active_system_codes=frozenset({"crm"}),
             objects=objects,
             attributes=attributes,
-            model_input_objects=objects,
-            model_input_attributes=attributes,
-
-
-
-
-
-
+            project_input_objects=objects,
+            project_input_attributes=attributes,
         )
         applied = context.applied.conceptual
         snapshot = snapshot_from_graph(
             {
-                "model_details": [context.model_details.model_dump(mode="json")],
-                "model_input_scope": [
+                "project_details": [context.project_details.model_dump(mode="json")],
+                "project_input_scope": [
                     {
                         "tenant_code": item.object.tenant_code,
                         "system_code": item.object.system_code,
                         "connection_code": item.object.connection_code,
                         "object_schema": item.object.object_schema,
                         "object_name": item.object.object_name,
-                        "model_input_scope_is_locked": False,
+                        "project_input_scope_is_locked": False,
                         "is_active": True,
                     }
                     for item in context.selected_objects
                 ],
-                "modeling_assertion_document": [
-                    item.model_dump(mode="json") for item in context.assertion.documents
+                "context_group": [
+                    item.model_dump(mode="json") for item in context.context.groups
                 ],
-                "modeling_assertion_record": [
-                    item.model_dump(mode="json") for item in context.assertion.records
+                "context_record": [
+                    item.model_dump(mode="json") for item in context.context.records
                 ],
                 "conceptual_object": [
                     item.model_dump(mode="json") for item in applied.objects
@@ -592,8 +595,8 @@ def _service(
             }
         ).model_copy(
             update={
-                "model_id": context.model_id,
-                "model_revision": context.model_revision,
+                "project_id": context.project_id,
+                "project_revision": context.project_revision,
             }
         )
         selected_bundle = replace(
@@ -638,15 +641,15 @@ async def test_start_binds_conceptual_workflow_without_executing(
     result = await service.start(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
         expected_execution_mode=mode,
-        expected_model_revision=7,
+        expected_project_revision=7,
     )
 
     assert lifecycle.starts == [(principal, 7, 18, 1048, "conceptual", mode, 7)]
     assert result.workflow_run_id == 1048
-    assert result.model_revision == 7
+    assert result.project_revision == 7
     assert database.isolations == []
     assert authorizer.calls == []
     assert handoff.calls == []
@@ -656,23 +659,23 @@ async def test_start_binds_conceptual_workflow_without_executing(
 
 
 @pytest.mark.asyncio
-async def test_executor_authors_validated_draft_without_applying_model() -> None:
+async def test_executor_authors_validated_draft_without_applying_project() -> None:
     agent = _AgentExecutor(responses=[_candidate()])
     service, database, authorizer, handoff, lifecycle = _service(agent=agent)
 
     result = await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
     assert isinstance(result, WorkflowChangeSetHandoffResult)
-    assert result.model_change_set_id == UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    assert result.project_change_set_id == UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
     assert database.isolations == [ReadIsolation.REPEATABLE_READ]
-    assert authorizer.calls == [(7, ToolPolicy.TENANT_MODEL_WRITE)]
+    assert authorizer.calls == [(7, ToolPolicy.TENANT_PROJECT_WRITE)]
     request = agent.requests[0]
     assert request.workflow == "conceptual"
     assert request.stage == "candidate_authoring"
@@ -707,9 +710,9 @@ async def test_empty_candidate_completes_with_atomic_no_op_receipt() -> None:
     result = await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -744,9 +747,9 @@ async def test_repaired_empty_candidate_preserves_attempt_and_warning() -> None:
     result = await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -776,9 +779,9 @@ async def test_no_op_error_never_marks_the_run_failed(
         await service.execute_started(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
         )
 
@@ -800,9 +803,9 @@ async def test_executor_repairs_invalid_candidate_before_single_handoff() -> Non
     await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -826,9 +829,9 @@ async def test_executor_fails_safely_without_handoff_or_partial_output() -> None
         await service.execute_started(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
         )
 
@@ -857,9 +860,9 @@ async def test_finalizer_error_never_marks_the_run_failed(
         await service.execute_started(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
         )
 
@@ -881,9 +884,9 @@ async def test_executor_tool_assisted_uses_local_catalog_and_same_handoff() -> N
     await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 

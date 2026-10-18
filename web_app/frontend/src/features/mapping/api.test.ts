@@ -38,12 +38,12 @@ describe("Mapping HTTP adapter", () => {
     await api.listOutputTemplates(7, "mapping_attribute");
 
     expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
-      "/api/v1/tenants/7/models/18/mapping/generation-targets?entity_type=logical_entity&page_size=50&cursor=target%2B%2F%3D",
-      "/api/v1/tenants/7/models/18/mapping/objects?entity_type=logical_entity&source_system_id=2&source_system_code=crm&status=inactive&locked=false&page_size=50&cursor=opaque%2B%2F%3D",
-      "/api/v1/tenants/7/models/18/mapping/objects?page_size=200",
-      "/api/v1/tenants/7/models/18/mapping/objects/81",
-      "/api/v1/tenants/7/models/18/mapping/attributes?source_system_id=4&source_system_code=erp&locked=true&mapping_object_id=81&page_size=25&cursor=attributes%2B%2F%3D",
-      "/api/v1/tenants/7/models/18/mapping/attributes/91",
+      "/api/v1/tenants/7/projects/18/mapping/generation-targets?entity_type=logical_entity&page_size=50&cursor=target%2B%2F%3D",
+      "/api/v1/tenants/7/projects/18/mapping/objects?entity_type=logical_entity&source_system_id=2&source_system_code=crm&status=inactive&locked=false&page_size=50&cursor=opaque%2B%2F%3D",
+      "/api/v1/tenants/7/projects/18/mapping/objects?page_size=200",
+      "/api/v1/tenants/7/projects/18/mapping/objects/81",
+      "/api/v1/tenants/7/projects/18/mapping/attributes?source_system_id=4&source_system_code=erp&locked=true&mapping_object_id=81&page_size=25&cursor=attributes%2B%2F%3D",
+      "/api/v1/tenants/7/projects/18/mapping/attributes/91",
       "/api/v1/tenants/7/output-templates?target_type=mapping_object&active=true&page_size=75&cursor=templates%2B%2F%3D",
       "/api/v1/tenants/7/output-templates?target_type=mapping_attribute&active=true&page_size=200",
     ]);
@@ -157,14 +157,14 @@ describe("Mapping target loader", () => {
   it("keeps revision consistency and repeated-cursor protection", async () => {
     const listMappingGenerationTargets = vi.fn<MappingApi["listMappingGenerationTargets"]>()
       .mockResolvedValueOnce({
-        model_id: 18,
-        model_revision: 4,
+        project_id: 18,
+        project_revision: 4,
         items: [],
         next_cursor: "next",
       })
       .mockResolvedValueOnce({
-        model_id: 18,
-        model_revision: 4,
+        project_id: 18,
+        project_revision: 4,
         items: [],
         next_cursor: null,
       });
@@ -175,7 +175,7 @@ describe("Mapping target loader", () => {
       18,
       "logical_entity",
     )).resolves.toEqual({
-      modelRevision: 4,
+      projectRevision: 4,
       items: [],
     });
     expect(listMappingGenerationTargets.mock.calls).toEqual([
@@ -184,8 +184,8 @@ describe("Mapping target loader", () => {
     ]);
 
     const repeatedCursor = vi.fn<MappingApi["listMappingGenerationTargets"]>().mockResolvedValue({
-      model_id: 18,
-      model_revision: 4,
+      project_id: 18,
+      project_revision: 4,
       items: [],
       next_cursor: "same",
     });
@@ -211,15 +211,15 @@ describe("Mapping filter System loader", () => {
     source_system: { system_id: 3, system_code: "RETIRED", system_name: "Retained System" },
     dependency_order: 0, status: "inactive", is_locked: true, updated_at: "2026-09-27T00:00:00Z",
   };
-  const targetPage = { model_id: 18, model_revision: 4, items: [target], next_cursor: null };
-  const savedPage = { model_id: 18, model_revision: 4, items: [saved], next_cursor: null };
+  const targetPage = { project_id: 18, project_revision: 4, items: [target], next_cursor: null };
+  const savedPage = { project_id: 18, project_revision: 4, items: [saved], next_cursor: null };
 
   it("unions every target and retained Mapping page, including fallback Systems, without duplicate codes", async () => {
     const listMappingGenerationTargets = vi.fn<MappingApi["listMappingGenerationTargets"]>()
       .mockResolvedValueOnce({ ...targetPage, next_cursor: "targets-next" })
       .mockResolvedValueOnce({ ...targetPage, items: [{
         ...target, entity_id: 702, has_sources: false,
-        source_system: { system_id: 4, system_code: "ASSERTIONS", system_name: "Assertion fallback" },
+        source_system: { system_id: 4, system_code: "CONTEXT", system_name: "Context fallback" },
       }] });
     const listMappingObjects = vi.fn<MappingApi["listMappingObjects"]>()
       .mockResolvedValueOnce({ ...savedPage, next_cursor: "saved-next" })
@@ -229,7 +229,7 @@ describe("Mapping filter System loader", () => {
       ] });
 
     await expect(loadMappingFilterSystems({ listMappingGenerationTargets, listMappingObjects }, 7, 18, "logical_entity"))
-      .resolves.toEqual({ modelRevision: 4, codes: ["ASSERTIONS", "CRM", "ERP", "RETIRED"] });
+      .resolves.toEqual({ projectRevision: 4, codes: ["CONTEXT", "CRM", "ERP", "RETIRED"] });
     expect(listMappingGenerationTargets.mock.calls).toEqual([
       [7, 18, "logical_entity", 200, undefined], [7, 18, "logical_entity", 200, "targets-next"],
     ]);
@@ -251,8 +251,8 @@ describe("Mapping filter System loader", () => {
   it.each(["first", "later"] as const)("rejects revision drift on the %s saved Mapping page", async (page) => {
     const listMappingGenerationTargets = vi.fn<MappingApi["listMappingGenerationTargets"]>().mockResolvedValue(targetPage);
     const listMappingObjects = vi.fn<MappingApi["listMappingObjects"]>()
-      .mockResolvedValueOnce({ ...savedPage, model_revision: page === "first" ? 5 : 4, next_cursor: "saved-next" })
-      .mockResolvedValueOnce({ ...savedPage, model_revision: 5 });
+      .mockResolvedValueOnce({ ...savedPage, project_revision: page === "first" ? 5 : 4, next_cursor: "saved-next" })
+      .mockResolvedValueOnce({ ...savedPage, project_revision: 5 });
 
     await expect(loadMappingFilterSystems({ listMappingGenerationTargets, listMappingObjects }, 7, 18, "logical_entity"))
       .rejects.toThrow("Mapping filter revision changed while loading");
@@ -262,7 +262,7 @@ describe("Mapping filter System loader", () => {
   it("rejects mixed target revisions before reading saved Mapping choices", async () => {
     const listMappingGenerationTargets = vi.fn<MappingApi["listMappingGenerationTargets"]>()
       .mockResolvedValueOnce({ ...targetPage, next_cursor: "targets-next" })
-      .mockResolvedValueOnce({ ...targetPage, model_revision: 5 });
+      .mockResolvedValueOnce({ ...targetPage, project_revision: 5 });
     const listMappingObjects = vi.fn<MappingApi["listMappingObjects"]>().mockResolvedValue(savedPage);
 
     await expect(loadMappingFilterSystems({ listMappingGenerationTargets, listMappingObjects }, 7, 18, "logical_entity"))

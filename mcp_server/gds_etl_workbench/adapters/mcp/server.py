@@ -33,17 +33,17 @@ from gds_etl_workbench.tools.catalog.inspect_metadata import (
 from gds_etl_workbench.tools.change_sets.metadata import (
     register_metadata_change_set_tools,
 )
-from gds_etl_workbench.tools.change_sets.model import register_model_change_set_tools
+from gds_etl_workbench.tools.change_sets.project import register_project_change_set_tools
 from gds_etl_workbench.tools.databricks.execute_sql import (
     register_execute_databricks_sql_tool,
 )
-from gds_etl_workbench.tools.modeling.model_details import register_list_models_tool
-from gds_etl_workbench.tools.modeling.model_input_scope import (
-    register_get_model_input_scope_tool,
+from gds_etl_workbench.tools.modeling.project_details import register_list_projects_tool
+from gds_etl_workbench.tools.modeling.project_input_scope import (
+    register_get_project_input_scope_tool,
 )
 from gds_etl_workbench.tools.modeling.read_mapping_context import register_read_mapping_context_tool
-from gds_etl_workbench.tools.modeling.read_model_section import (
-    register_read_model_section_tool,
+from gds_etl_workbench.tools.modeling.read_project_section import (
+    register_read_project_section_tool,
 )
 from gds_etl_workbench.tools.profiling import register_profiling_tools
 from gds_etl_workbench.tools.snapshots.metadata.describe_metadata_dataset import (
@@ -52,11 +52,11 @@ from gds_etl_workbench.tools.snapshots.metadata.describe_metadata_dataset import
 from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
     register_create_metadata_snapshot_tool,
 )
-from gds_etl_workbench.tools.snapshots.model.describe_model_dataset import (
-    register_describe_model_dataset_tool,
+from gds_etl_workbench.tools.snapshots.project.describe_project_dataset import (
+    register_describe_project_dataset_tool,
 )
-from gds_etl_workbench.tools.snapshots.model.get_model_snapshot import (
-    register_create_model_snapshot_tool,
+from gds_etl_workbench.tools.snapshots.project.get_project_snapshot import (
+    register_create_project_snapshot_tool,
 )
 from gds_etl_workbench.tools.snapshots.storage import AzureSnapshotStore, SnapshotStore
 from gds_etl_workbench.tools.tenants.get_tenant_details import (
@@ -119,11 +119,12 @@ def create_mcp_server(
             "server derives identity and authorization and enforces Tenant Lock ownership, "
             "revision fencing, idempotency, validation, dependency order, and audit. Lock "
             "override and Apply are separate high-impact operations that require explicit "
-            "approval before invocation. Model Input Scope must Apply before Profiling or model "
+            "approval before invocation. Project Input Scope must Apply before Profiling "
+            "or project "
             "development. Mapping must Apply before Code or Validation. Mapping and Code "
             "reference schema-qualified Logical or Dimensional Entities. Target export and "
-            "metadata registration are optional downstream handoff steps. For Model work, a "
-            "Model revision mismatch requires a fresh Snapshot and reassessment without auto- "
+            "metadata registration are optional downstream handoff steps. For Project work, a "
+            "Project revision mismatch requires a fresh Snapshot and reassessment without auto- "
             "merge. Metadata has no Tenant-wide revision; current state is protected by the "
             "Tenant Lock and server validation. Summarize safe results; never copy credentials, "
             "signed URLs, raw rows, prompts, or raw tool output into chat. Requested generated- "
@@ -150,7 +151,7 @@ def create_mcp_server(
         authorizer=authorizer,
         audit=audit,
     )
-    register_list_models_tool(
+    register_list_projects_tool(
         server,
         database=database,
         identity_provider=identity_provider,
@@ -158,7 +159,7 @@ def create_mcp_server(
         audit=audit,
         cursor_signing_key=settings.cursor_signing_key,
     )
-    register_get_model_input_scope_tool(
+    register_get_project_input_scope_tool(
         server,
         database=database,
         identity_provider=identity_provider,
@@ -179,7 +180,7 @@ def create_mcp_server(
         authorizer=authorizer,
         audit=audit,
     )
-    register_model_change_set_tools(
+    register_project_change_set_tools(
         server,
         database=cast(WriteDatabase, database),
         identity_provider=identity_provider,
@@ -194,7 +195,7 @@ def create_mcp_server(
         audit=audit,
         cursor_signing_key=settings.cursor_signing_key,
     )
-    register_read_model_section_tool(
+    register_read_project_section_tool(
         server,
         database=database,
         identity_provider=identity_provider,
@@ -227,12 +228,12 @@ def create_mcp_server(
         identity_provider=identity_provider,
         audit=audit,
     )
-    register_describe_model_dataset_tool(
+    register_describe_project_dataset_tool(
         server,
         identity_provider=identity_provider,
         audit=audit,
     )
-    register_create_model_snapshot_tool(
+    register_create_project_snapshot_tool(
         server,
         database=database,
         identity_provider=identity_provider,

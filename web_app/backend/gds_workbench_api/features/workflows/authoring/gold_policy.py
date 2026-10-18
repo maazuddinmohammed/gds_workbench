@@ -50,8 +50,8 @@ def effective_gold_templates(
     Explicit templates remain authoritative, including an empty audit column list.
     Validation of supplied templates stays with the Gold policy projector.
     """
-    # Existing Models may still have a separate stored key/history policy.
-    # The combined audit template takes precedence when a Model is customized.
+    # Existing Projects may still have a separate stored key/history policy.
+    # The combined audit template takes precedence when a Project is customized.
     keys = deepcopy(dict(_DEFAULT_TECHNICAL if technical is None else technical))
     columns = effective_audit_template(audit)
     for name in ("dimension_surrogate_key", "fact_bridge_foreign_key", "type_2"):

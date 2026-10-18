@@ -22,13 +22,13 @@ def create_profiling_router(
 ) -> APIRouter:
     authenticate = principal_dependency(identity_provider)
     router = APIRouter(
-        prefix="/api/v1/tenants/{tenant_id}/models/{model_id}",
+        prefix="/api/v1/tenants/{tenant_id}/projects/{project_id}",
         tags=["profiling"],
     )
 
     async def list_profiling_objects(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         object_id: Annotated[int | None, Query(gt=0)] = None,
         source_tenant_code: Annotated[str | None, Query(max_length=100)] = None,
         system_code: Annotated[str | None, Query(max_length=100)] = None,
@@ -49,7 +49,7 @@ def create_profiling_router(
         return await service.list_profiling_objects(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=filters,
             page_size=page_size,
             cursor=cursor,
@@ -64,7 +64,7 @@ def create_profiling_router(
 
     async def read_profiling_object(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         object_id: Annotated[int, Path(gt=0)],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -72,7 +72,7 @@ def create_profiling_router(
         return await service.read_profiling_object(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             object_id=object_id,
         )
 

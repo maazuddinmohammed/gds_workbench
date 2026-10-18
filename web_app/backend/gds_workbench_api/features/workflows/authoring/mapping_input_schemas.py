@@ -104,7 +104,7 @@ def mapping_input_schemas() -> dict[str, dict[str, Any]]:
                         "target_relationship",
                         "analysis_relationship",
                         "profile",
-                        "assertion",
+                        "context_record",
                         "source_logical_entity",
                         "source_logical_attribute",
                         "source_logical_relationship",

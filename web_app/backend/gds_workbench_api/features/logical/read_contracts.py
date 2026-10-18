@@ -6,6 +6,8 @@ from typing import Annotated, Literal, Self
 from gds_etl_workbench.domain.errors import WorkbenchError
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
+from gds_workbench_api.features.context.contracts import ContextRecordReference
+
 MAX_DETAIL_ROWS = 2000
 
 type ModeledStatus = Literal["active", "inactive", "deprecated"]
@@ -73,8 +75,8 @@ class LogicalEntitySummary(ContractModel):
 
 
 class LogicalEntityPage(ContractModel):
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     items: tuple[LogicalEntitySummary, ...] = Field(max_length=200)
     next_cursor: str | None = Field(default=None, max_length=2048)
 
@@ -86,16 +88,6 @@ class PhysicalObjectReference(ContractModel):
     connection_code: str = Field(min_length=1, max_length=100)
     object_schema: str = Field(min_length=1, max_length=400)
     object_name: str = Field(min_length=1, max_length=400)
-
-
-class AssertionRecordReference(ContractModel):
-    modeling_assertion_record_id: int = Field(gt=0)
-    modeling_assertion_record_key: str = Field(min_length=1, max_length=100)
-    modeling_assertion_document_name: str = Field(min_length=1, max_length=255)
-    modeling_assertion_record_type: str = Field(min_length=1, max_length=100)
-    modeling_assertion_text: str = Field(min_length=1)
-    modeling_assertion_confidence: Confidence | None = None
-    modeling_assertion_record_status: ModeledStatus
 
 
 class LogicalSubmodelMembership(ContractModel):
@@ -125,13 +117,13 @@ class LogicalObjectSource(LogicalEntitySourceBase):
     source_object: PhysicalObjectReference
 
 
-class LogicalAssertionSource(LogicalEntitySourceBase):
-    support_source_type: Literal["assertion"]
-    assertion_record: AssertionRecordReference
+class LogicalContextSource(LogicalEntitySourceBase):
+    support_source_type: Literal["context_record"]
+    context_record: ContextRecordReference
 
 
 type LogicalEntitySource = Annotated[
-    LogicalObjectSource | LogicalAssertionSource,
+    LogicalObjectSource | LogicalContextSource,
     Field(discriminator="support_source_type"),
 ]
 
@@ -173,8 +165,8 @@ class LogicalAttributeSummary(ContractModel):
 
 
 class LogicalAttributePage(ContractModel):
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     items: tuple[LogicalAttributeSummary, ...] = Field(max_length=200)
     next_cursor: str | None = Field(default=None, max_length=2048)
 
@@ -196,13 +188,13 @@ class LogicalAttributePhysicalSource(LogicalAttributeSourceBase):
     source_attribute: PhysicalAttributeReference
 
 
-class LogicalAttributeAssertionSource(LogicalAttributeSourceBase):
-    support_source_type: Literal["assertion"]
-    assertion_record: AssertionRecordReference
+class LogicalAttributeContextSource(LogicalAttributeSourceBase):
+    support_source_type: Literal["context_record"]
+    context_record: ContextRecordReference
 
 
 type LogicalAttributeSource = Annotated[
-    LogicalAttributePhysicalSource | LogicalAttributeAssertionSource,
+    LogicalAttributePhysicalSource | LogicalAttributeContextSource,
     Field(discriminator="support_source_type"),
 ]
 
@@ -239,8 +231,8 @@ class LogicalRelationshipSummary(ContractModel):
 
 
 class LogicalRelationshipPage(ContractModel):
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     items: tuple[LogicalRelationshipSummary, ...] = Field(max_length=200)
     next_cursor: str | None = Field(default=None, max_length=2048)
 
@@ -263,8 +255,8 @@ class LogicalSubmodelSummary(ContractModel):
 
 
 class LogicalSubmodelPage(ContractModel):
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     items: tuple[LogicalSubmodelSummary, ...] = Field(max_length=200)
     next_cursor: str | None = Field(default=None, max_length=2048)
 

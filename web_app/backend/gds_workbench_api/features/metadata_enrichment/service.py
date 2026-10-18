@@ -208,18 +208,18 @@ class DatabaseMetadataEnrichmentExecutor:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart:
         return await self._lifecycle.start(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             workflow_run_id=workflow_run_id,
             expected_workflow="metadata_enrichment",
             expected_execution_mode="one_shot",
-            expected_model_revision=expected_model_revision,
+            expected_project_revision=expected_project_revision,
         )
 
     async def execute_started(
@@ -227,25 +227,25 @@ class DatabaseMetadataEnrichmentExecutor:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
     ) -> MetadataEnrichmentCompletion:
         try:
             plan, context = await self._repository.load(
                 principal,
                 tenant_id=tenant_id,
-                model_id=model_id,
+                project_id=project_id,
                 workflow_run_id=workflow_run_id,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 workflow_run_claim_token=workflow_run_claim_token,
             )
             progress = AgentWorkflowProgress(
                 lifecycle=self._lifecycle,
                 principal=principal,
                 workflow_run_id=workflow_run_id,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 workflow_run_claim_token=workflow_run_claim_token,
             )
             await progress.append(
@@ -262,7 +262,7 @@ class DatabaseMetadataEnrichmentExecutor:
                 return await self._repository.connection(
                     principal,
                     workflow_run_id=workflow_run_id,
-                    expected_model_revision=expected_model_revision,
+                    expected_project_revision=expected_project_revision,
                     connection_id=connection_id,
                 )
 
@@ -604,7 +604,7 @@ class DatabaseMetadataEnrichmentExecutor:
                 await self._lifecycle.fail(
                     principal,
                     workflow_run_id=workflow_run_id,
-                    expected_model_revision=expected_model_revision,
+                    expected_project_revision=expected_project_revision,
                     workflow_run_claim_token=workflow_run_claim_token,
                     failure_code=safe_error.code,
                     safe_failure_message=safe_error.message,

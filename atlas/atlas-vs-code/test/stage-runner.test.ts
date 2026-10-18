@@ -28,7 +28,7 @@ function stageApprovedManifest(input: StageApprovedManifestInput, dependencies: 
 }
 async function sealManifest(session: string, file: string) {
   const request = JSON.parse(await readFile(file, "utf8"));
-  request.schema_version = "1.0";
+  request.schema_version = "2.0";
   request.kind = "atlas-stage-request";
   request.task = TASK;
   request.operation = { id: OP, path: OP_PATH };
@@ -42,10 +42,10 @@ async function sealManifest(session: string, file: string) {
   const operation = JSON.parse(await readFile(opFile, "utf8"));
   operation.stage_request = {path: relative(session, file), sha256: createHash("sha256").update(bytes).digest("hex")};
   operation.inputs[0] = {area:request.area, owner_tenant_id:17, ...request.snapshot,
-    ...(request.area === "model" ? {model_revision:8}: {})};
+    ...(request.area === "project" ? {project_revision:8}: {})};
   const reportPath=join(session,operation.validation.report_path);
   const report=JSON.parse(await readFile(reportPath,"utf8"));
-  report.schema_version="1.0";report.valid=true;report.digest=request.accepted_digest;
+  report.schema_version="2.0";report.valid=true;report.digest=request.accepted_digest;
   report.area=request.area;report.owner_tenant_id=17;report.inputs=operation.inputs;report.evidence_files=[];
   const reportBytes=JSON.stringify(report);
   await writeFile(reportPath,reportBytes);
@@ -63,6 +63,7 @@ test.each([
   [[{ value: 1e-7 }], "7996b584fc4eb4a0222e35cc4c752fb999adcd53ea5725150461ceb1da5b1bb6"],
   [[{ value: 1.234567e-5 }], "4e4416939731a96642d5f7bd2f658d0383a0e700902171351ead402ec3d71fd1"],
   [[{ value: 1e21 }], "92544edd51ed35f069b10ecd00e61757e80a0dd756abffd15dbcdd7d4b929be2"],
+  [[{context_record_id:"74acf19b-49ba-4a71-a21c-8b46238f3d96",context_group_name:"Identity",context_text:"Preserve zeros é 😀",source_reference:"Requirements §2",status:"active",is_locked:false}], "24654eea36fa5f58d28569e48fbaaa8d35b2a3158e8f9cd94bc4d853fbfb864c"],
   [[{ "\ue000": 1, "😀": 2 }], "d217a29d93fef13515f254c0c7932dcb38d341cd13f41118a44d78400a8ee939"],
 ] as const)("matches the Python server's record digest for %j", (records, expected) => {
   expect(canonicalRecordsSha256([...records])).toBe(expected);
@@ -70,7 +71,7 @@ test.each([
 
 const SNAPSHOT_IDS = {
   metadata: "10000000-0000-4000-8000-000000000001",
-  model: "20000000-0000-4000-8000-000000000001",
+  project: "20000000-0000-4000-8000-000000000001",
 } as const;
 const METADATA_DATASETS = [
   "source_object",
@@ -90,7 +91,7 @@ const METADATA_DATASETS = [
   "process_group",
   "process",
 ] as const;
-const MODEL_DATASETS = [
+const PROJECT_DATASETS = [
   "analysis_result",
   "attribute_enrichment",
   "conceptual_object",
@@ -107,10 +108,10 @@ const MODEL_DATASETS = [
   "logical_submodel",
   "mapping_attribute",
   "mapping_object",
-  "model_details",
-  "model_input_scope",
-  "modeling_assertion_document",
-  "modeling_assertion_record",
+  "project_details",
+  "project_input_scope",
+  "context_group",
+  "context_record",
   "object_enrichment",
   "profiling_profile",
   "validation_check",
@@ -118,12 +119,12 @@ const MODEL_DATASETS = [
 ] as const;
 
 function fingerprintResponse(
-  area: "metadata" | "model",
+  area: "metadata" | "project",
   revision: number,
   recordsByDataset: Record<string, Array<Record<string, unknown>>>,
   hashOverrides: Record<string, string> = {},
 ) {
-  const names = area === "metadata" ? METADATA_DATASETS : MODEL_DATASETS;
+  const names = area === "metadata" ? METADATA_DATASETS : [...PROJECT_DATASETS].sort();
   const datasets = names.map((dataset) => {
     const records = recordsByDataset[dataset] ?? [];
     return {
@@ -138,12 +139,12 @@ function fingerprintResponse(
     fingerprint_version: "1.0",
   };
   return {
-    schema_version: "1.0",
+    schema_version: area === "project" ? "2.0" : "1.0",
     fingerprint_version: "1.0",
     area,
     ...(area === "metadata"
       ? { tenant_id: 17, metadata_change_set_id: CHANGE_SET_ID }
-      : { model_id: 42, model_change_set_id: CHANGE_SET_ID }),
+      : { project_id: 42, project_change_set_id: CHANGE_SET_ID }),
     status: "active",
     draft_revision: revision,
     dataset_count: datasets.length,
@@ -157,15 +158,15 @@ function fingerprintResponse(
 }
 
 function directStageResponse(
-  area: "metadata" | "model",
+  area: "metadata" | "project",
   revision: number,
   recordsByDataset: Record<string, Array<Record<string, unknown>>>,
 ) {
   return {
-    schema_version: "1.0",
+    schema_version: area === "project" ? "2.0" : "1.0",
     ...(area === "metadata"
       ? { tenant_id: 17, metadata_change_set_id: CHANGE_SET_ID }
-      : { model_id: 42, model_change_set_id: CHANGE_SET_ID }),
+      : { project_id: 42, project_change_set_id: CHANGE_SET_ID }),
     staged: true,
     datasets: Object.entries(recordsByDataset).map(([dataset, records]) => ({
       dataset,
@@ -177,19 +178,19 @@ function directStageResponse(
   };
 }
 
-function batchTarget(area: "metadata" | "model") {
+function batchTarget(area: "metadata" | "project") {
   return area === "metadata"
     ? { tenant_id: 17, metadata_change_set_id: CHANGE_SET_ID }
-    : { model_id: 42, model_change_set_id: CHANGE_SET_ID };
+    : { project_id: 42, project_change_set_id: CHANGE_SET_ID };
 }
 
 function beginStageResponse(
-  area: "metadata" | "model",
+  area: "metadata" | "project",
   input: Record<string, unknown>,
   stageBatchId: string,
 ) {
   return {
-    schema_version: "1.0",
+    schema_version: area === "project" ? "2.0" : "1.0",
     ...batchTarget(area),
     stage_batch_id: stageBatchId,
     dataset: input.dataset,
@@ -199,7 +200,7 @@ function beginStageResponse(
     received_chunk_count: 0,
     expected_draft_revision: input.expected_draft_revision,
     expires_at: "2026-09-05T00:00:00Z",
-    ...(area === "model"
+    ...(area === "project"
       ? {
           payload_mode: input.payload_mode,
           total_payload_bytes: input.total_payload_bytes ?? null,
@@ -209,7 +210,7 @@ function beginStageResponse(
 }
 
 function putStageResponse(
-  area: "metadata" | "model",
+  area: "metadata" | "project",
   input: Record<string, unknown>,
   totalChunkCount: number,
 ) {
@@ -218,7 +219,7 @@ function putStageResponse(
       ? Buffer.from(input.payload_fragment_base64, "base64")
       : null;
   return {
-    schema_version: "1.0",
+    schema_version: area === "project" ? "2.0" : "1.0",
     ...batchTarget(area),
     stage_batch_id: input.stage_batch_id,
     dataset: input.dataset,
@@ -229,7 +230,7 @@ function putStageResponse(
     received_chunk_count: input.chunk_index,
     total_chunk_count: totalChunkCount,
     expires_at: "2026-09-05T00:00:00Z",
-    ...(area === "model"
+    ...(area === "project"
       ? {
           payload_mode: input.payload_mode,
           payload_byte_count: fragment?.length ?? null,
@@ -239,14 +240,14 @@ function putStageResponse(
 }
 
 function commitStageResponse(
-  area: "metadata" | "model",
+  area: "metadata" | "project",
   input: Record<string, unknown>,
   dataset: string,
   recordCount: number,
   revision: number,
 ) {
   return {
-    schema_version: "1.0",
+    schema_version: area === "project" ? "2.0" : "1.0",
     ...batchTarget(area),
     stage_batch_id: input.stage_batch_id,
     dataset,
@@ -260,14 +261,14 @@ function commitStageResponse(
 }
 
 function changeSetResponse(
-  area: "metadata" | "model",
+  area: "metadata" | "project",
   revision: number,
   dataset: unknown,
   records: Array<Record<string, unknown>> = [],
 ) {
   const selectedDataset = typeof dataset === "string" ? dataset : null;
   return {
-    schema_version: "1.0",
+    schema_version: area === "project" ? "2.0" : "1.0",
     ...batchTarget(area),
     status: "active",
     draft_revision: revision,
@@ -306,7 +307,7 @@ function tenantListResponse(
 
 async function bindSession(
   session: string,
-  area: "metadata" | "model",
+  area: "metadata" | "project",
   acceptedDigest: string,
   dataset: string,
   canonicalKey: string[],
@@ -318,10 +319,10 @@ async function bindSession(
   await mkdir(snapshotDirectory, { recursive: true });
   await mkdir(tasksDirectory, { recursive: true });
   const catalog = {
-    schema_version: "2.0",
+    schema_version: "3.0",
     snapshot_kind: area,
-    ...(area === "model"
-      ? { model: { model_id: 42, model_name: "Customer Model", model_revision: 8 } }
+    ...(area === "project"
+      ? { project: { project_id: 42, project_name: "Customer Project", project_revision: 8 } }
       : {}),
     sections: [{ name: "test", datasets: [{ name: dataset, canonical_key: canonicalKey }] }],
   };
@@ -329,12 +330,12 @@ async function bindSession(
   await writeFile(join(snapshotDirectory, "catalog.json"), catalogBytes, { mode: 0o600 });
   const catalogSha256 = createHash("sha256").update(catalogBytes).digest("hex");
   const manifest = {
-    schema_version: "2.0",
+    schema_version: "3.0",
     snapshot_kind: area,
     snapshot_id: snapshotId,
     ...(area === "metadata"
       ? { tenant_code: "DEMO" }
-      : { model_id: 42, model_name: "Customer Model", model_revision: 8 }),
+      : { project_id: 42, project_name: "Customer Project", project_revision: 8 }),
     catalog: { path: "catalog.json", sha256: catalogSha256 },
     members: [
       {
@@ -347,15 +348,15 @@ async function bindSession(
   const manifestBytes = `${JSON.stringify(manifest)}\n`;
   await writeFile(join(snapshotDirectory, "manifest.json"), manifestBytes, { mode: 0o600 });
   const manifestSha256 = createHash("sha256").update(manifestBytes).digest("hex");
-  await writeFile(join(session, ".atlas/session.json"), JSON.stringify({schema_version:"1.0",
-    tenant:{id:17,code:"DEMO"},model:area === "model" ? {id:42,name:"Customer Model"}:null,
+  await writeFile(join(session, ".atlas/session.json"), JSON.stringify({schema_version:"2.0",
+    tenant:{id:17,code:"DEMO"},project:area === "project" ? {id:42,name:"Customer Project"}:null,
     metadata_owners:{"17":{id:17,code:"DEMO",root:"."}},
-    active_task:TASK, operations: area === "model" ? {model:OP_PATH}: {metadata:{"17":OP_PATH}}}));
-  await writeFile(join(session, `.atlas/tasks/${TASK}.json`), JSON.stringify({schema_version:"1.0",outcome:"Stage test"}));
-  const report = JSON.stringify({schema_version:"1.0",outcome:"valid",checks:["fixture"],digest:acceptedDigest});
+    active_task:TASK, operations: area === "project" ? {project:OP_PATH}: {metadata:{"17":OP_PATH}}}));
+  await writeFile(join(session, `.atlas/tasks/${TASK}.json`), JSON.stringify({schema_version:"2.0",outcome:"Stage test"}));
+  const report = JSON.stringify({schema_version:"2.0",outcome:"valid",checks:["fixture"],digest:acceptedDigest});
   await writeFile(join(session,EVIDENCE,"validation.json"),report);
   const reportHash = createHash("sha256").update(report).digest("hex");
-  await writeFile(join(session,OP_PATH),JSON.stringify({schema_version:"1.0",id:OP,task_id:TASK,area,
+  await writeFile(join(session,OP_PATH),JSON.stringify({schema_version:"2.0",id:OP,task_id:TASK,area,
     owner:{id:17,code:"DEMO",root:"."},backend:BACKEND,inputs:[],local_digest:acceptedDigest,
     validation:{outcome:"valid",report_path:`${EVIDENCE}/validation.json`,report_sha256:reportHash,checks:["fixture"]},
     acknowledgement:{source:"conversation",at:"2026-09-15T00:00:00Z",digest:acceptedDigest,report_sha256:reportHash},
@@ -423,14 +424,14 @@ async function metadataRequest(records: Array<Record<string, unknown>>) {
   return { workspace, session, manifestPath, acceptedDigest };
 }
 
-async function modelRequest(
+async function projectRequest(
   dataset: string,
   canonicalKey: string[],
   records: Array<Record<string, unknown>>,
 ) {
-  const workspace = await mkdtemp(join(tmpdir(), "atlas-stage-runner-model-"));
+  const workspace = await mkdtemp(join(tmpdir(), "atlas-stage-runner-project-"));
   const session = join(workspace, "working");
-  const changeSetDirectory = join(session, "model-change-set");
+  const changeSetDirectory = join(session, "project-change-set");
   const tasksDirectory = join(session, EVIDENCE);
   await mkdir(changeSetDirectory, { recursive: true });
   await mkdir(tasksDirectory, { recursive: true });
@@ -440,7 +441,7 @@ async function modelRequest(
   const acceptedDigest = await workspaceDigest(changeSetDirectory);
   const { manifestSha256 } = await bindSession(
     session,
-    "model",
+    "project",
     acceptedDigest,
     dataset,
     canonicalKey,
@@ -452,15 +453,15 @@ async function modelRequest(
     `${JSON.stringify({
       schema_version: "2.0",
       kind: "gds-stage-request",
-      area: "model",
+      area: "project",
       task: "01",
       accepted_digest: acceptedDigest,
       failed_retry: false,
-      snapshot: { snapshot_id: SNAPSHOT_IDS.model, manifest_sha256: manifestSha256 },
+      snapshot: { snapshot_id: SNAPSHOT_IDS.project, manifest_sha256: manifestSha256 },
       target: {
-        model_id: 42,
-        model_name: "Customer Model",
-        model_revision: 8,
+        project_id: 42,
+        project_name: "Customer Project",
+        project_revision: 8,
         change_set_id: CHANGE_SET_ID,
         starting_revision: 3,
       },
@@ -559,7 +560,7 @@ async function addMetadataDataset(
 describe("stageApprovedManifest", () => {
   test.each(["missing_acceptance", "changed_decisions", "stale_metadata"])(
     "rejects %s modeling evidence before MCP", async (scenario) => {
-      const {workspace, session, manifestPath, acceptedDigest} = await modelRequest(
+      const {workspace, session, manifestPath, acceptedDigest} = await projectRequest(
         "logical_entity", ["logical_entity_schema_name", "logical_entity_name"], [{logical_entity_schema_name: "silver", logical_entity_name: "Customer"}],
       );
       if (scenario === "missing_acceptance") {
@@ -571,7 +572,7 @@ describe("stageApprovedManifest", () => {
         await writeFile(join(session, EVIDENCE, "validation.json"), "{}");
       } else {
         const state = JSON.parse(await readFile(join(session, ".atlas/session.json"), "utf8"));
-        state.refresh_required = [{area:"model",owner_tenant_id:17,reason:"fixture",evidence:[]}];
+        state.refresh_required = [{area:"project",owner_tenant_id:17,reason:"fixture",evidence:[]}];
         await writeFile(join(session, ".atlas/session.json"), JSON.stringify(state));
       }
       let calls = 0;
@@ -583,14 +584,14 @@ describe("stageApprovedManifest", () => {
   );
 
   test("rechecks modeling evidence after remote reads and before the first write", async () => {
-    const {workspace, session, manifestPath, acceptedDigest} = await modelRequest(
+    const {workspace, session, manifestPath, acceptedDigest} = await projectRequest(
       "logical_entity", ["logical_entity_schema_name", "logical_entity_name"], [{logical_entity_schema_name: "silver", logical_entity_name: "Customer"}],
     );
     let writes = 0;
     const mcp: McpToolClient = {async callTool(name, input) {
-      if (name === "get_model_change_set") {
+      if (name === "get_project_change_set") {
         if (input.dataset) await writeFile(join(session, EVIDENCE, "validation.json"), "{}");
-        return changeSetResponse("model", 3, input.dataset);
+        return changeSetResponse("project", 3, input.dataset);
       }
       writes++;
       return {};
@@ -803,7 +804,7 @@ describe("stageApprovedManifest", () => {
       target: Record<string, unknown>;
     };
     request.snapshot.snapshot_id = "not-a-uuid";
-    request.target.model_id = 42;
+    request.target.project_id = 42;
     await writeFile(manifestPath, `${JSON.stringify(request)}\n`, { mode: 0o600 });
     let callCount = 0;
     const mcp: McpToolClient = {
@@ -1120,7 +1121,7 @@ describe("stageApprovedManifest", () => {
 
     expect(receipt).toEqual({
       task_id:TASK,operation_id:OP,owner_tenant_id:17,owner_root:".",backend:BACKEND,
-      schema_version: "1.0",
+      schema_version: "2.0",
       status: "staged",
       area: "metadata",
       change_set_id: CHANGE_SET_ID,
@@ -1499,10 +1500,10 @@ describe("stageApprovedManifest", () => {
     expect(writeStarted).toBe(false);
   });
 
-  test("derives the Model target from the approved request without a Tenant lookup", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "atlas-stage-runner-model-"));
+  test("derives the Project target from the approved request without a Tenant lookup", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "atlas-stage-runner-project-"));
     const session = join(workspace, "working");
-    const changeSetDirectory = join(session, "model-change-set");
+    const changeSetDirectory = join(session, "project-change-set");
     const tasksDirectory = join(session, EVIDENCE);
     await mkdir(changeSetDirectory, { recursive: true });
     await mkdir(tasksDirectory, { recursive: true });
@@ -1513,7 +1514,7 @@ describe("stageApprovedManifest", () => {
     const acceptedDigest = await workspaceDigest(changeSetDirectory);
     const { manifestSha256 } = await bindSession(
       session,
-      "model",
+      "project",
       acceptedDigest,
       "logical_entity",
       ["logical_entity_schema_name", "logical_entity_name"],
@@ -1525,18 +1526,18 @@ describe("stageApprovedManifest", () => {
       `${JSON.stringify({
         schema_version: "2.0",
         kind: "gds-stage-request",
-        area: "model",
+        area: "project",
         task: "01",
         accepted_digest: acceptedDigest,
         failed_retry: false,
         snapshot: {
-          snapshot_id: SNAPSHOT_IDS.model,
+          snapshot_id: SNAPSHOT_IDS.project,
           manifest_sha256: manifestSha256,
         },
         target: {
-          model_id: 42,
-          model_name: "Customer Model",
-          model_revision: 8,
+          project_id: 42,
+          project_name: "Customer Project",
+          project_revision: 8,
           change_set_id: CHANGE_SET_ID,
           starting_revision: 3,
         },
@@ -1557,20 +1558,20 @@ describe("stageApprovedManifest", () => {
     const mcp: McpToolClient = {
       async callTool(name, input) {
         calls.push([name, input]);
-        if (name === "get_model_change_set") {
-          return changeSetResponse("model", 3, input.dataset);
+        if (name === "get_project_change_set") {
+          return changeSetResponse("project", 3, input.dataset);
         }
-        if (name === "stage_model_change_set") {
+        if (name === "stage_project_change_set") {
           expect(input).toEqual({
-            model_id: 42,
-            model_change_set_id: CHANGE_SET_ID,
+            project_id: 42,
+            project_change_set_id: CHANGE_SET_ID,
             expected_draft_revision: 3,
             changes: [{ dataset: "logical_entity", records }],
           });
-          return directStageResponse("model", 4, { logical_entity: records });
+          return directStageResponse("project", 4, { logical_entity: records });
         }
-        if (name === "get_model_change_set_fingerprint") {
-          return fingerprintResponse("model", 4, { logical_entity: records });
+        if (name === "get_project_change_set_fingerprint") {
+          return fingerprintResponse("project", 4, { logical_entity: records });
         }
         throw new Error(`Unexpected tool: ${name}`);
       },
@@ -1581,13 +1582,13 @@ describe("stageApprovedManifest", () => {
       { mcp, workspaceRoots: [workspace] },
     );
 
-    expect(receipt.area).toBe("model");
+    expect(receipt.area).toBe("project");
     expect(receipt.draft_revision).toBe(4);
     expect(calls.map(([name]) => name).includes("list_tenants")).toBe(false);
   });
 
-  test.each(["model_object_binding", "model_attribute_binding", "mapping_dependency"])("rejects retired %s before contacting MCP", async (dataset) => {
-    const { workspace, manifestPath, acceptedDigest } = await modelRequest(dataset, ["modeled_entity_schema_name", "modeled_entity_name"], [{modeled_entity_schema_name: "silver", modeled_entity_name: "Customer"}]);
+  test.each(["project_object_binding", "project_attribute_binding", "mapping_dependency"])("rejects retired %s before contacting MCP", async (dataset) => {
+    const { workspace, manifestPath, acceptedDigest } = await projectRequest(dataset, ["modeled_entity_schema_name", "modeled_entity_name"], [{modeled_entity_schema_name: "silver", modeled_entity_name: "Customer"}]);
     let calls = 0;
     await expect(stageApprovedManifest({manifestPath, expectedDigest: acceptedDigest}, {
       workspaceRoots: [workspace], mcp: {async callTool() { calls++; return {}; }},
@@ -1596,7 +1597,7 @@ describe("stageApprovedManifest", () => {
   });
 
   test("rejects schema-less Entity catalog keys before contacting MCP", async () => {
-    const { workspace, manifestPath, acceptedDigest } = await modelRequest("logical_entity", ["logical_entity_name"], [{logical_entity_name: "Customer"}]);
+    const { workspace, manifestPath, acceptedDigest } = await projectRequest("logical_entity", ["logical_entity_name"], [{logical_entity_name: "Customer"}]);
     let calls = 0;
     await expect(stageApprovedManifest({manifestPath, expectedDigest: acceptedDigest}, {
       workspaceRoots: [workspace], mcp: {async callTool() { calls++; return {}; }},
@@ -1611,11 +1612,11 @@ describe("stageApprovedManifest", () => {
     const records = [attribute
       ? { ...object, attribute_name: "OrderNumber", attribute_description: "Business identifier", attribute_inferred_data_type: "STRING", is_natural_key: true, is_primary_key: null, is_nullable: null, is_pii: null, is_locked: false }
       : { ...object, object_description: "Customer orders", is_locked: false }];
-    const {workspace, manifestPath, acceptedDigest} = await modelRequest(dataset, keys, records);
+    const {workspace, manifestPath, acceptedDigest} = await projectRequest(dataset, keys, records);
     const mcp: McpToolClient = { async callTool(name, input) {
-      if (name === "get_model_change_set") return changeSetResponse("model", 3, input.dataset);
-      if (name === "stage_model_change_set") return directStageResponse("model", 4, {[dataset]: records});
-      if (name === "get_model_change_set_fingerprint") return fingerprintResponse("model", 4, {[dataset]: records});
+      if (name === "get_project_change_set") return changeSetResponse("project", 3, input.dataset);
+      if (name === "stage_project_change_set") return directStageResponse("project", 4, {[dataset]: records});
+      if (name === "get_project_change_set_fingerprint") return fingerprintResponse("project", 4, {[dataset]: records});
       throw new Error(`Unexpected tool: ${name}`);
     }};
     const receipt = await stageApprovedManifest({manifestPath, expectedDigest: acceptedDigest}, {mcp, workspaceRoots: [workspace]});
@@ -1623,23 +1624,23 @@ describe("stageApprovedManifest", () => {
     expect(receipt.fingerprint_verified).toBe(true);
   });
 
-  test("stages the singleton model_details dataset with its empty canonical key", async () => {
-    const records = [{ model_name: "Customer Model", model_description: "Customers" }];
-    const { workspace, manifestPath, acceptedDigest } = await modelRequest(
-      "model_details",
+  test("stages the singleton project_details dataset with its empty canonical key", async () => {
+    const records = [{ project_name: "Customer Project", project_description: "Customers" }];
+    const { workspace, manifestPath, acceptedDigest } = await projectRequest(
+      "project_details",
       [],
       records,
     );
     const mcp: McpToolClient = {
       async callTool(name, input) {
-        if (name === "get_model_change_set") {
-          return changeSetResponse("model", 3, input.dataset);
+        if (name === "get_project_change_set") {
+          return changeSetResponse("project", 3, input.dataset);
         }
-        if (name === "stage_model_change_set") {
-          return directStageResponse("model", 4, { model_details: records });
+        if (name === "stage_project_change_set") {
+          return directStageResponse("project", 4, { project_details: records });
         }
-        if (name === "get_model_change_set_fingerprint") {
-          return fingerprintResponse("model", 4, { model_details: records });
+        if (name === "get_project_change_set_fingerprint") {
+          return fingerprintResponse("project", 4, { project_details: records });
         }
         throw new Error(`Unexpected tool: ${name}`);
       },
@@ -1650,31 +1651,31 @@ describe("stageApprovedManifest", () => {
       { mcp, workspaceRoots: [workspace] },
     );
 
-    expect(receipt.datasets).toEqual([{ dataset: "model_details", record_count: 1 }]);
+    expect(receipt.datasets).toEqual([{ dataset: "project_details", record_count: 1 }]);
   });
 
   test("binds the local digest to the authoritative fingerprint after server normalization", async () => {
     const records = [{ logical_entity_schema_name: "silver", logical_entity_name: "Customer" }];
-    const { workspace, manifestPath, acceptedDigest } = await modelRequest(
+    const { workspace, manifestPath, acceptedDigest } = await projectRequest(
       "logical_entity",
       ["logical_entity_schema_name", "logical_entity_name"],
       records,
     );
     const normalizedFingerprint = fingerprintResponse(
-      "model",
+      "project",
       4,
       { logical_entity: records },
       { logical_entity: "7".repeat(64) },
     );
     const mcp: McpToolClient = {
       async callTool(name, input) {
-        if (name === "get_model_change_set") {
-          return changeSetResponse("model", 3, input.dataset);
+        if (name === "get_project_change_set") {
+          return changeSetResponse("project", 3, input.dataset);
         }
-        if (name === "stage_model_change_set") {
-          return directStageResponse("model", 4, { logical_entity: records });
+        if (name === "stage_project_change_set") {
+          return directStageResponse("project", 4, { logical_entity: records });
         }
-        if (name === "get_model_change_set_fingerprint") {
+        if (name === "get_project_change_set_fingerprint") {
           return normalizedFingerprint;
         }
         throw new Error(`Unexpected tool: ${name}`);
@@ -1693,17 +1694,17 @@ describe("stageApprovedManifest", () => {
 
   test("rejects a self-consistent fingerprint with a noncanonical dataset order", async () => {
     const records = [{ logical_entity_schema_name: "silver", logical_entity_name: "Customer" }];
-    const { workspace, manifestPath, acceptedDigest } = await modelRequest(
+    const { workspace, manifestPath, acceptedDigest } = await projectRequest(
       "logical_entity",
       ["logical_entity_schema_name", "logical_entity_name"],
       records,
     );
-    const fingerprint = fingerprintResponse("model", 4, { logical_entity: records });
+    const fingerprint = fingerprintResponse("project", 4, { logical_entity: records });
     fingerprint.datasets = [...fingerprint.datasets].reverse();
     fingerprint.fingerprint = createHash("sha256")
       .update(
         JSON.stringify({
-          area: "model",
+          area: "project",
           datasets: fingerprint.datasets,
           fingerprint_version: "1.0",
         }),
@@ -1711,13 +1712,13 @@ describe("stageApprovedManifest", () => {
       .digest("hex");
     const mcp: McpToolClient = {
       async callTool(name, input) {
-        if (name === "get_model_change_set") {
-          return changeSetResponse("model", 3, input.dataset);
+        if (name === "get_project_change_set") {
+          return changeSetResponse("project", 3, input.dataset);
         }
-        if (name === "stage_model_change_set") {
-          return directStageResponse("model", 4, { logical_entity: records });
+        if (name === "stage_project_change_set") {
+          return directStageResponse("project", 4, { logical_entity: records });
         }
-        if (name === "get_model_change_set_fingerprint") return fingerprint;
+        if (name === "get_project_change_set_fingerprint") return fingerprint;
         throw new Error(`Unexpected tool: ${name}`);
       },
     };
@@ -1732,22 +1733,22 @@ describe("stageApprovedManifest", () => {
 
   test("rejects a tampered aggregate fingerprint", async () => {
     const records = [{ logical_entity_schema_name: "silver", logical_entity_name: "Customer" }];
-    const { workspace, manifestPath, acceptedDigest } = await modelRequest(
+    const { workspace, manifestPath, acceptedDigest } = await projectRequest(
       "logical_entity",
       ["logical_entity_schema_name", "logical_entity_name"],
       records,
     );
-    const fingerprint = fingerprintResponse("model", 4, { logical_entity: records });
+    const fingerprint = fingerprintResponse("project", 4, { logical_entity: records });
     fingerprint.fingerprint = "f".repeat(64);
     const mcp: McpToolClient = {
       async callTool(name, input) {
-        if (name === "get_model_change_set") {
-          return changeSetResponse("model", 3, input.dataset);
+        if (name === "get_project_change_set") {
+          return changeSetResponse("project", 3, input.dataset);
         }
-        if (name === "stage_model_change_set") {
-          return directStageResponse("model", 4, { logical_entity: records });
+        if (name === "stage_project_change_set") {
+          return directStageResponse("project", 4, { logical_entity: records });
         }
-        if (name === "get_model_change_set_fingerprint") return fingerprint;
+        if (name === "get_project_change_set_fingerprint") return fingerprint;
         throw new Error(`Unexpected tool: ${name}`);
       },
     };
@@ -1760,9 +1761,9 @@ describe("stageApprovedManifest", () => {
     ).rejects.toMatchObject({ code: "FINGERPRINT_MISMATCH" });
   });
 
-  test("rejects duplicate server Model keys using Unicode casefolding", async () => {
+  test("rejects duplicate server Project keys using Unicode casefolding", async () => {
     const records = [{ logical_entity_schema_name: "silver", logical_entity_name: "Other" }];
-    const { workspace, manifestPath, acceptedDigest } = await modelRequest(
+    const { workspace, manifestPath, acceptedDigest } = await projectRequest(
       "logical_entity",
       ["logical_entity_schema_name", "logical_entity_name"],
       records,
@@ -1770,8 +1771,8 @@ describe("stageApprovedManifest", () => {
     let writeCount = 0;
     const mcp: McpToolClient = {
       async callTool(name, input) {
-        if (name === "get_model_change_set") {
-          return changeSetResponse("model", 3, input.dataset, [
+        if (name === "get_project_change_set") {
+          return changeSetResponse("project", 3, input.dataset, [
             { logical_entity_schema_name: "silver", logical_entity_name: "Straße" },
             { logical_entity_schema_name: "silver", logical_entity_name: "STRASSE" },
           ]);
@@ -1795,7 +1796,7 @@ describe("stageApprovedManifest", () => {
   test("uses bounded JSON fragments only for oversized generated code", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "atlas-stage-runner-code-"));
     const session = join(workspace, "working");
-    const changeSetDirectory = join(session, "model-change-set");
+    const changeSetDirectory = join(session, "project-change-set");
     const tasksDirectory = join(session, EVIDENCE);
     await mkdir(changeSetDirectory, { recursive: true });
     await mkdir(tasksDirectory, { recursive: true });
@@ -1806,7 +1807,7 @@ describe("stageApprovedManifest", () => {
     const acceptedDigest = await workspaceDigest(changeSetDirectory);
     const { manifestSha256 } = await bindSession(
       session,
-      "model",
+      "project",
       acceptedDigest,
       "generated_code",
       ["modeled_entity_schema_name", "artifact_name"],
@@ -1818,18 +1819,18 @@ describe("stageApprovedManifest", () => {
       `${JSON.stringify({
         schema_version: "2.0",
         kind: "gds-stage-request",
-        area: "model",
+        area: "project",
         task: "01",
         accepted_digest: acceptedDigest,
         failed_retry: false,
         snapshot: {
-          snapshot_id: SNAPSHOT_IDS.model,
+          snapshot_id: SNAPSHOT_IDS.project,
           manifest_sha256: manifestSha256,
         },
         target: {
-          model_id: 42,
-          model_name: "Customer Model",
-          model_revision: 8,
+          project_id: 42,
+          project_name: "Customer Project",
+          project_revision: 8,
           change_set_id: CHANGE_SET_ID,
           starting_revision: 3,
         },
@@ -1851,29 +1852,29 @@ describe("stageApprovedManifest", () => {
     const stageBatchId = "40000000-0000-4000-8000-000000000050";
     const mcp: McpToolClient = {
       async callTool(name, input) {
-        if (name === "get_model_change_set") {
-          return changeSetResponse("model", 3, input.dataset);
+        if (name === "get_project_change_set") {
+          return changeSetResponse("project", 3, input.dataset);
         }
-        if (name === "begin_model_stage_batch") {
+        if (name === "begin_project_stage_batch") {
           expect(input.payload_mode).toBe("json_fragments");
           expect(input.total_payload_bytes).toBeGreaterThan(1_000_000);
           expect(input.total_chunk_count).toBeLessThanOrEqual(64);
           totalChunkCount = Number(input.total_chunk_count);
-          return beginStageResponse("model", input, stageBatchId);
+          return beginStageResponse("project", input, stageBatchId);
         }
-        if (name === "put_model_stage_chunk") {
+        if (name === "put_project_stage_chunk") {
           expect(input.payload_mode).toBe("json_fragments");
           expect(input.records).toBeUndefined();
           const fragment = Buffer.from(String(input.payload_fragment_base64), "base64");
           expect(fragment.length).toBeLessThanOrEqual(1024 * 1024);
           fragments.push(fragment);
-          return putStageResponse("model", input, totalChunkCount);
+          return putStageResponse("project", input, totalChunkCount);
         }
-        if (name === "commit_model_stage_batch") {
-          return commitStageResponse("model", input, "generated_code", 1, 4);
+        if (name === "commit_project_stage_batch") {
+          return commitStageResponse("project", input, "generated_code", 1, 4);
         }
-        if (name === "get_model_change_set_fingerprint") {
-          return fingerprintResponse("model", 4, { generated_code: records });
+        if (name === "get_project_change_set_fingerprint") {
+          return fingerprintResponse("project", 4, { generated_code: records });
         }
         throw new Error(`Unexpected tool: ${name}`);
       },
@@ -1921,7 +1922,7 @@ describe("Atlas operation isolation",()=>{
     const file=join(fixture.session,".atlas/session.json");
     const state=JSON.parse(await readFile(file,"utf8"));state.active_task=null;
     await writeFile(file,JSON.stringify(state));
-    await writeFile(join(fixture.session,`.atlas/tasks/${TASK}.json`),JSON.stringify({schema_version:"1.0",outcome:"Still the same work",progress:"Another task is selected"}));
+    await writeFile(join(fixture.session,`.atlas/tasks/${TASK}.json`),JSON.stringify({schema_version:"2.0",outcome:"Still the same work",progress:"Another task is selected"}));
     const receipt=await stageApprovedManifest({manifestPath:fixture.manifestPath,expectedDigest:fixture.acceptedDigest},{workspaceRoots:[fixture.workspace],mcp:successfulMetadataClient()});
     const op=JSON.parse(await readFile(join(fixture.session,OP_PATH),"utf8"));
     expect(op.stage).toMatchObject(receipt);expect(op.stage_attempt.status).toBe("verified");

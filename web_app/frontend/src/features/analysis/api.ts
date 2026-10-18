@@ -1,7 +1,7 @@
 import { ApiError, type HttpRequest } from "../../core/http";
 import { METADATA_XLSX_MEDIA_TYPE } from "../metadata/api";
 import type { ReviewStatus } from "../../shared/contracts";
-import type { ModelInputScopeApi } from "../model_input_scope/api";
+import type { ProjectInputScopeApi } from "../project_input_scope/api";
 import type { WorkflowsApi } from "../workflows/api";
 
 export type AnalysisValidationState = "validated" | "unvalidated";
@@ -11,13 +11,13 @@ export type AnalysisReviewAction = "lock" | "unlock" | "deactivate" | "reactivat
 export interface AnalysisReviewCommand {
   record_ids: number[];
   action: AnalysisReviewAction;
-  expected_model_revision: number;
+  expected_project_revision: number;
 }
 
 export interface AnalysisReviewResult {
-  model_id: number;
-  model_change_set_id: string;
-  model_revision: number;
+  project_id: number;
+  project_change_set_id: string;
+  project_revision: number;
   action_count: number;
 }
 
@@ -69,8 +69,8 @@ export interface AnalysisFinding {
 }
 
 export interface AnalysisFindingPage {
-  model_id: number;
-  model_revision: number;
+  project_id: number;
+  project_revision: number;
   items: AnalysisFinding[];
   next_cursor: string | null;
 }
@@ -101,22 +101,22 @@ export interface AnalysisFindingDetail extends AnalysisFinding {
 }
 
 export interface AnalysisTransport {
-  exportAnalysis: (tenantId: number, modelId: number, revision: number, filters: AnalysisFilters) => Promise<{ blob: Blob; filename: string }>;
+  exportAnalysis: (tenantId: number, projectId: number, revision: number, filters: AnalysisFilters) => Promise<{ blob: Blob; filename: string }>;
   listAnalysisFindings: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     filters?: AnalysisFilters,
     pageSize?: number,
     cursor?: string,
   ) => Promise<AnalysisFindingPage>;
   readAnalysisFinding: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     analysisResultId: number,
   ) => Promise<AnalysisFindingDetail>;
   reviewAnalysisFindings: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     command: AnalysisReviewCommand,
     idempotencyKey: string,
   ) => Promise<AnalysisReviewResult>;
@@ -136,13 +136,13 @@ export type AnalysisApi = AnalysisTransport
     | "readWorkflowDraftReview"
     | "readWorkflowRun"
   >
-  & Pick<ModelInputScopeApi, "listModelInputScope">;
+  & Pick<ProjectInputScopeApi, "listProjectInputScope">;
 
 export function createAnalysisApi(request: HttpRequest): AnalysisTransport {
   return {
-    exportAnalysis: (tenantId, modelId, revision, filters) => request(`/api/v1/tenants/${tenantId}/models/${modelId}/analysis/export`, {
+    exportAnalysis: (tenantId, projectId, revision, filters) => request(`/api/v1/tenants/${tenantId}/projects/${projectId}/analysis/export`, {
       method: "POST", headers: { "content-type": "application/json", accept: METADATA_XLSX_MEDIA_TYPE },
-      body: JSON.stringify({ expected_model_revision: revision, filters: {
+      body: JSON.stringify({ expected_project_revision: revision, filters: {
         object_id: filters.objectId, validation_state: filters.validationState, status: filters.status,
         locked: filters.locked, show_inactive: filters.showInactive ?? false,
       } }),
@@ -150,7 +150,7 @@ export function createAnalysisApi(request: HttpRequest): AnalysisTransport {
       if (response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== METADATA_XLSX_MEDIA_TYPE) throw new ApiError(502, "invalid_response", null);
       return { blob: await response.blob(), filename: /filename="([A-Za-z0-9._-]{1,180}\.xlsx)"/.exec(response.headers.get("content-disposition") ?? "")?.[1] ?? "Analysis.xlsx" };
     }),
-    listAnalysisFindings: (tenantId, modelId, filters = {}, pageSize = 200, cursor) => {
+    listAnalysisFindings: (tenantId, projectId, filters = {}, pageSize = 200, cursor) => {
       const query = new URLSearchParams();
       if (filters.objectId) query.set("object_id", String(filters.objectId));
       if (filters.validationState) query.set("validation_state", filters.validationState);
@@ -160,16 +160,16 @@ export function createAnalysisApi(request: HttpRequest): AnalysisTransport {
       query.set("page_size", String(pageSize));
       if (cursor) query.set("cursor", cursor);
       return request<AnalysisFindingPage>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/analysis?${query}`,
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/analysis?${query}`,
       );
     },
-    readAnalysisFinding: (tenantId, modelId, analysisResultId) =>
+    readAnalysisFinding: (tenantId, projectId, analysisResultId) =>
       request<AnalysisFindingDetail>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/analysis/${analysisResultId}`,
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/analysis/${analysisResultId}`,
       ),
-    reviewAnalysisFindings: (tenantId, modelId, command, idempotencyKey) =>
+    reviewAnalysisFindings: (tenantId, projectId, command, idempotencyKey) =>
       request<AnalysisReviewResult>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/change-sets/review`,
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/change-sets/review`,
         {
           method: "POST",
           headers: { "content-type": "application/json", "Idempotency-Key": idempotencyKey },
@@ -180,13 +180,13 @@ export function createAnalysisApi(request: HttpRequest): AnalysisTransport {
 }
 
 export const analysisQueryKeys = {
-  findings: (tenantId: number, modelId: number, filters: unknown) => (
-    ["analysis-findings", tenantId, modelId, filters] as const
+  findings: (tenantId: number, projectId: number, filters: unknown) => (
+    ["analysis-findings", tenantId, projectId, filters] as const
   ),
-  runs: (tenantId: number, modelId: number, state: string) => (
-    ["analysis-runs", tenantId, modelId, state] as const
+  runs: (tenantId: number, projectId: number, state: string) => (
+    ["analysis-runs", tenantId, projectId, state] as const
   ),
-  endpointOptions: (tenantId: number, modelId: number) => (
-    ["analysis-endpoint-options", tenantId, modelId] as const
+  endpointOptions: (tenantId: number, projectId: number) => (
+    ["analysis-endpoint-options", tenantId, projectId] as const
   ),
 };

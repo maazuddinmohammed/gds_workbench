@@ -57,8 +57,8 @@ function safeToolErrorCode(content: unknown): string {
 }
 
 function couldHaveWritten(toolName: string): boolean {
-  return /^(stage|begin|put|commit)_(metadata|model)_/.test(toolName) ||
-    /^(create|validate|apply|archive)_(metadata|model)_change_set$/.test(toolName) ||
+  return /^(stage|begin|put|commit)_(metadata|project)_/.test(toolName) ||
+    /^(create|validate|apply|archive)_(metadata|project)_change_set$/.test(toolName) ||
     /^(acquire|renew|release|override)_tenant_lock$/.test(toolName);
 }
 

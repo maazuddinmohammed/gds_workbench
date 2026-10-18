@@ -8,14 +8,21 @@ from typing import Any, LiteralString, cast
 from gds_etl_workbench.application.mapping_context import project_mapping_inputs
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.mapping import assess_mapping_readiness
-from gds_workbench_api.features.mapping.preparation_contracts import MappingModeledEntity
-from gds_workbench_api.features.workflows.authoring.downstream_contracts import CONTRACTS
+from gds_workbench_api.features.mapping.preparation_contracts import (
+    MappingModeledEntity,
+)
+from gds_workbench_api.features.workflows.authoring.downstream_contracts import (
+    CONTRACTS,
+)
 from jsonschema import Draft202012Validator
 from psycopg.types.json import Jsonb
 
 from tests.mcp.conftest import DisposablePostgres
-from tests.web_backend.test_database_mapping_source_context import _load, _seed_mapping_scope
-from tests.web_backend.test_database_model_change_sets import _required_id
+from tests.web_backend.test_database_mapping_source_context import (
+    _load,
+    _seed_mapping_scope,
+)
+from tests.web_backend.test_database_project_change_sets import _required_id
 
 
 async def test_logical_peer_lookup_metadata_is_authorized_and_invalidates_code(
@@ -30,36 +37,60 @@ async def test_logical_peer_lookup_metadata_is_authorized_and_invalidates_code(
     )
     with web_postgres_database.connect_owner() as connection:
         connection.execute(
-            "UPDATE model.model SET logical_schemas = %s WHERE model_id = %s",
-            (schemas, scope.plan.model_id),
+            "UPDATE project.project SET logical_schemas = %s WHERE project_id = %s",
+            (schemas, scope.plan.project_id),
         )
-        foreign_model_id = _required_id(
+        foreign_project_id = _required_id(
             connection.execute(
-                "INSERT INTO model.model (tenant_id,model_name,logical_schemas) "
-                "VALUES (%s,'Lookup isolation',%s) RETURNING model_id",
+                "INSERT INTO project.project (tenant_id,project_name,logical_schemas) "
+                "VALUES (%s,'Lookup isolation',%s) RETURNING project_id",
                 (scope.tenant_id, schemas),
             ).fetchone(),
-            "model_id",
+            "project_id",
         )
         ids: dict[str, int] = {}
-        for name, model_id, status, source_system_id, has_document in (
-            ("Customer", scope.plan.model_id, "active", scope.source_system_id, True),
-            ("Inactive", scope.plan.model_id, "inactive", scope.source_system_id, True),
-            ("Unmapped", scope.plan.model_id, "active", scope.source_system_id, False),
-            ("OtherSystem", scope.plan.model_id, "active", scope.other_system_id, True),
-            ("OtherModel", foreign_model_id, "active", scope.source_system_id, True),
+        for name, project_id, status, source_system_id, has_document in (
+            ("Customer", scope.plan.project_id, "active", scope.source_system_id, True),
+            (
+                "Inactive",
+                scope.plan.project_id,
+                "inactive",
+                scope.source_system_id,
+                True,
+            ),
+            (
+                "Unmapped",
+                scope.plan.project_id,
+                "active",
+                scope.source_system_id,
+                False,
+            ),
+            (
+                "OtherSystem",
+                scope.plan.project_id,
+                "active",
+                scope.other_system_id,
+                True,
+            ),
+            (
+                "OtherProject",
+                foreign_project_id,
+                "active",
+                scope.source_system_id,
+                True,
+            ),
         ):
             entity_id = _required_id(
                 connection.execute(
                     """
                     INSERT INTO workflow.logical_entity (
-                        model_id,logical_entity_schema_name,logical_entity_name,
+                        project_id,logical_entity_schema_name,logical_entity_name,
                         logical_entity_definition,logical_entity_type,
                         logical_entity_grain,logical_entity_status
                     ) VALUES (%s,'lookups',%s,'Customer lookup.','core','One customer.',%s)
                     RETURNING logical_entity_id
                     """,
-                    (model_id, name, status),
+                    (project_id, name, status),
                 ).fetchone(),
                 "logical_entity_id",
             )
@@ -67,28 +98,30 @@ async def test_logical_peer_lookup_metadata_is_authorized_and_invalidates_code(
             connection.execute(
                 """
                 INSERT INTO workflow.logical_attribute (
-                    model_id,logical_entity_id,logical_attribute_name,
+                    project_id,logical_entity_id,logical_attribute_name,
                     logical_attribute_definition,logical_attribute_data_type,
                     logical_attribute_ordinal_position,logical_attribute_is_surrogate_key,
                     logical_attribute_is_nullable
                 ) VALUES (%s,%s,'CustomerKey','Customer surrogate key.','bigint',1,TRUE,FALSE)
                 """,
-                (model_id, entity_id),
+                (project_id, entity_id),
             )
             mapping_id = _required_id(
                 connection.execute(
                     """
                     INSERT INTO workflow.mapping_object (
-                        model_id,modeled_entity_type,logical_entity_id,
+                        project_id,modeled_entity_type,logical_entity_id,
                         source_system_id,mapping_transformation_document
                     ) VALUES (%s,'logical_entity',%s,%s,%s)
                     RETURNING mapping_object_id
                     """,
                     (
-                        model_id,
+                        project_id,
                         entity_id,
                         source_system_id,
-                        Jsonb({"steps": ["Read the Customer source."]}) if has_document else None,
+                        Jsonb({"steps": ["Read the Customer source."]})
+                        if has_document
+                        else None,
                     ),
                 ).fetchone(),
                 "mapping_object_id",
@@ -96,15 +129,17 @@ async def test_logical_peer_lookup_metadata_is_authorized_and_invalidates_code(
             connection.execute(
                 """
                 INSERT INTO workflow.mapping_attribute (
-                    mapping_object_id,model_id,modeled_entity_type,logical_entity_id,
+                    mapping_object_id,project_id,modeled_entity_type,logical_entity_id,
                     logical_attribute_id,attribute_mapping_transformation_document
-                ) SELECT %s,model_id,'logical_entity',logical_entity_id,
+                ) SELECT %s,project_id,'logical_entity',logical_entity_id,
                          logical_attribute_id,%s
                     FROM workflow.logical_attribute WHERE logical_entity_id=%s
                 """,
                 (
                     mapping_id,
-                    Jsonb({"transformation": "source.CustomerKey"}) if has_document else None,
+                    Jsonb({"transformation": "source.CustomerKey"})
+                    if has_document
+                    else None,
                     entity_id,
                 ),
             )
@@ -128,14 +163,22 @@ async def test_logical_peer_lookup_metadata_is_authorized_and_invalidates_code(
         async with runtime.read_transaction() as transaction:
             sources = await transaction.fetch_all(
                 "SELECT * FROM workflow.list_mapping_source_objects(%s,%s,'logical_entity',%s)",
-                (scope.plan.model_id, scope.logical_entity_id, scope.source_system_id),
+                (
+                    scope.plan.project_id,
+                    scope.logical_entity_id,
+                    scope.source_system_id,
+                ),
             )
-        modeled_sources = [row for row in sources if row["source_logical_entity_id"] is not None]
+        modeled_sources = [
+            row for row in sources if row["source_logical_entity_id"] is not None
+        ]
         assert len(modeled_sources) == 1
         assert modeled_sources[0]["source_logical_entity_id"] == ids["Customer"]
         assert modeled_sources[0]["source_object_id"] is None
         assert modeled_sources[0]["role"] == "lookup"
-        assert {row["source_object_id"] for row in sources if row["source_object_id"]} == {
+        assert {
+            row["source_object_id"] for row in sources if row["source_object_id"]
+        } == {
             scope.source_object_id,
             scope.bronze_object_id,
         }
@@ -146,7 +189,7 @@ async def test_logical_peer_lookup_metadata_is_authorized_and_invalidates_code(
                     "SELECT * FROM workflow.list_code_generation_target_context("
                     "%s,'logical_entity',NULL) "
                     "WHERE modeled_entity_id=%s",
-                    (scope.plan.model_id, scope.logical_entity_id),
+                    (scope.plan.project_id, scope.logical_entity_id),
                 )
             assert row is not None
             return row
@@ -155,9 +198,14 @@ async def test_logical_peer_lookup_metadata_is_authorized_and_invalidates_code(
         projected = project_mapping_inputs(initial["source_context"])
         for name, value in projected.items():
             validator = cast(
-                Any, Draft202012Validator(CONTRACTS["code_generation"][name]["value_schema"])
+                Any,
+                Draft202012Validator(
+                    CONTRACTS["code_generation"][name]["value_schema"]
+                ),
             )
-            assert validator.is_valid(value), f"Code prompt input schema mismatch: {name}"
+            assert validator.is_valid(value), (
+                f"Code prompt input schema mismatch: {name}"
+            )
         lookup = next(
             row["object"]
             for row in initial["source_context"]["physical_sources"]
@@ -165,9 +213,11 @@ async def test_logical_peer_lookup_metadata_is_authorized_and_invalidates_code(
         )
         assert "object_id" not in lookup
         assert lookup["modeled_entity_id"] == ids["Customer"]
-        assert lookup["object_schema"] == lookup["logical_entity_schema_name"] == "lookups"
+        assert (
+            lookup["object_schema"] == lookup["logical_entity_schema_name"] == "lookups"
+        )
         assert lookup["object_name"] == lookup["logical_entity_name"] == "Customer"
-        assert lookup["tenant_catalog"] == f"shared_{scope.plan.model_id}"
+        assert lookup["tenant_catalog"] == f"shared_{scope.plan.project_id}"
         assert lookup["source_tenant_id"] == scope.tenant_id
         assert lookup["attributes"][0]["attribute_name"] == "CustomerKey"
         assert lookup["attributes"][0]["is_surrogate_key"] is True
@@ -189,7 +239,10 @@ async def test_logical_peer_lookup_metadata_is_authorized_and_invalidates_code(
             assert changed["code_input_digest"] != prior["code_input_digest"]
             assert await current() == changed
             prior = changed
-        assert all(row["role"] != "lookup" for row in prior["source_context"]["physical_sources"])
+        assert all(
+            row["role"] != "lookup"
+            for row in prior["source_context"]["physical_sources"]
+        )
     finally:
         await runtime.close()
 
@@ -210,47 +263,47 @@ async def test_dimensional_peer_lookup_uses_gold_schema_and_tracks_changes(
             connection.execute(
                 """
                 INSERT INTO workflow.dimensional_entity (
-                    model_id,dimensional_entity_schema_name,dimensional_entity_name,
+                    project_id,dimensional_entity_schema_name,dimensional_entity_name,
                     dimensional_entity_definition,dimensional_entity_type
                 ) VALUES (%s,'gold','Customer','Customer dimension.','dimension')
                 RETURNING dimensional_entity_id
                 """,
-                (scope.plan.model_id,),
+                (scope.plan.project_id,),
             ).fetchone(),
             "dimensional_entity_id",
         )
         connection.execute(
             """
             INSERT INTO workflow.dimensional_attribute (
-                model_id,dimensional_entity_id,dimensional_attribute_name,
+                project_id,dimensional_entity_id,dimensional_attribute_name,
                 dimensional_attribute_definition,dimensional_attribute_data_type,
                 dimensional_attribute_ordinal_position,dimensional_attribute_role,
                 dimensional_attribute_key_role,dimensional_attribute_is_nullable
             ) VALUES (%s,%s,'CustomerKey','Customer surrogate key.','bigint',
                       1,'key','surrogate',FALSE)
             """,
-            (scope.plan.model_id, lookup_id),
+            (scope.plan.project_id, lookup_id),
         )
         for entity_id in (target_id, lookup_id):
             mapping_id = _required_id(
                 connection.execute(
                     """
                     INSERT INTO workflow.mapping_object (
-                        model_id,modeled_entity_type,dimensional_entity_id,
+                        project_id,modeled_entity_type,dimensional_entity_id,
                         source_system_id,mapping_transformation_document
                     ) VALUES (%s,'dimensional_entity',%s,%s,'{}'::JSONB)
                     RETURNING mapping_object_id
                     """,
-                    (scope.plan.model_id, entity_id, scope.source_system_id),
+                    (scope.plan.project_id, entity_id, scope.source_system_id),
                 ).fetchone(),
                 "mapping_object_id",
             )
             connection.execute(
                 """
                 INSERT INTO workflow.mapping_attribute (
-                    mapping_object_id,model_id,modeled_entity_type,dimensional_entity_id,
+                    mapping_object_id,project_id,modeled_entity_type,dimensional_entity_id,
                     dimensional_attribute_id,attribute_mapping_transformation_document
-                ) SELECT %s,model_id,'dimensional_entity',dimensional_entity_id,
+                ) SELECT %s,project_id,'dimensional_entity',dimensional_entity_id,
                          dimensional_attribute_id,'{}'::JSONB
                     FROM workflow.dimensional_attribute WHERE dimensional_entity_id=%s
                 """,
@@ -262,9 +315,13 @@ async def test_dimensional_peer_lookup_uses_gold_schema_and_tracks_changes(
         (source.object.entity_type, source.object.entity_id)
         for source in mapping_context.sources
         if isinstance(source.object, MappingModeledEntity)
-    } == {("logical_entity", scope.logical_entity_id), ("dimensional_entity", lookup_id)}
+    } == {
+        ("logical_entity", scope.logical_entity_id),
+        ("dimensional_entity", lookup_id),
+    }
     assert assess_mapping_readiness(
-        plan=scope.plan.model_copy(update={"operation": "extend"}), context=mapping_context
+        plan=scope.plan.model_copy(update={"operation": "extend"}),
+        context=mapping_context,
     ).ready
 
     runtime = WebPostgresDatabase(
@@ -282,7 +339,7 @@ async def test_dimensional_peer_lookup_uses_gold_schema_and_tracks_changes(
                     "SELECT * FROM workflow.list_code_generation_target_context("
                     "%s,'dimensional_entity',NULL) "
                     "WHERE modeled_entity_id=%s",
-                    (scope.plan.model_id, target_id),
+                    (scope.plan.project_id, target_id),
                 )
             assert row is not None
             return row
@@ -291,9 +348,14 @@ async def test_dimensional_peer_lookup_uses_gold_schema_and_tracks_changes(
         projected = project_mapping_inputs(initial["source_context"])
         for name, value in projected.items():
             validator = cast(
-                Any, Draft202012Validator(CONTRACTS["code_generation"][name]["value_schema"])
+                Any,
+                Draft202012Validator(
+                    CONTRACTS["code_generation"][name]["value_schema"]
+                ),
             )
-            assert validator.is_valid(value), f"Code prompt input schema mismatch: {name}"
+            assert validator.is_valid(value), (
+                f"Code prompt input schema mismatch: {name}"
+            )
         lookup = next(
             row["object"]
             for row in initial["source_context"]["physical_sources"]
@@ -301,9 +363,13 @@ async def test_dimensional_peer_lookup_uses_gold_schema_and_tracks_changes(
         )
         assert "object_id" not in lookup
         assert lookup["modeled_entity_id"] == lookup_id
-        assert lookup["object_schema"] == lookup["dimensional_entity_schema_name"] == "gold"
+        assert (
+            lookup["object_schema"]
+            == lookup["dimensional_entity_schema_name"]
+            == "gold"
+        )
         assert lookup["object_name"] == lookup["dimensional_entity_name"] == "Customer"
-        assert lookup["tenant_catalog"] == f"shared_{scope.plan.model_id}"
+        assert lookup["tenant_catalog"] == f"shared_{scope.plan.project_id}"
         assert lookup["zone_code"] == "gold"
         assert lookup["attributes"][0]["dimensional_attribute_name"] == "CustomerKey"
         assert lookup["attributes"][0]["is_surrogate_key"] is True

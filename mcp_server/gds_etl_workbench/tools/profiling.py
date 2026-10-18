@@ -20,8 +20,8 @@ def safe_error(error: Exception) -> NoReturn:
         raise ValueError(f"{error.code}: {error.message}") from None
     message = str(getattr(getattr(error, "diag", None), "message_primary", ""))
     errors = {
-        "model_locked": "Model is locked. Only a human can unlock it.",
-        "stale_model_revision": "Refresh the Model Snapshot and reassess before retrying.",
+        "project_locked": "Project is locked. Only a human can unlock it.",
+        "stale_project_revision": "Refresh the Project Snapshot and reassess before retrying.",
         "profiling_batch_ids_required": "Provide batch IDs for all selected batched Objects.",
         "profiling_protected_scope": "Selected scope has protected or uncertain masking lineage.",
         "profiling_request_conflict": "Request ID was already used for different inputs.",
@@ -35,7 +35,7 @@ def safe_error(error: Exception) -> NoReturn:
         if message == code or message.startswith(code + ":"):
             raise ValueError(f"{code}: {explanation}") from None
     raise ValueError(
-        "profiling_request_failed: Check Model scope, revision, access, and Tenant Lock."
+        "profiling_request_failed: Check Project scope, revision, access, and Tenant Lock."
     ) from None
 
 
@@ -48,25 +48,26 @@ def register_profiling_tools(
 ) -> None:
     @server.tool(
         description=(
-            "Start deterministic profiling for selected active applied Model Input Scope Objects. "
+            "Start deterministic profiling for selected active applied Project Input "
+            "Scope Objects. "
             "The backend builds SQL, executes through GDS Connection values, and saves profiles. "
             "Batch IDs are mandatory when any selected Object declares a batch Attribute. "
             "Reuse request_id for an identical retry; use the current Snapshot revision. "
-            "Poll status, then refresh the Model Snapshot after completion. No SQL fallback."
+            "Poll status, then refresh the Project Snapshot after completion. No SQL fallback."
         ),
         annotations=ToolAnnotations(
             read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=True
         ),
-        meta={"gds/toolPolicy": ToolPolicy.TENANT_MODEL_WRITE.value},
+        meta={"gds/toolPolicy": ToolPolicy.TENANT_PROJECT_WRITE.value},
         structured_output=True,
     )
     async def start_profiling_run(
         ctx: Context[None],
-        model_id: Annotated[int, Field(gt=0)],
+        project_id: Annotated[int, Field(gt=0)],
         selected_object_ids: Annotated[
             list[Annotated[int, Field(gt=0)]], Field(min_length=1, max_length=500)
         ],
-        expected_model_revision: Annotated[int, Field(gt=0)],
+        expected_project_revision: Annotated[int, Field(gt=0)],
         request_id: UUID,
         batch_ids: Annotated[
             list[Annotated[str, Field(min_length=1, max_length=4000)]] | None,
@@ -79,9 +80,9 @@ def register_profiling_tools(
         try:
             return await service.start(
                 identity_provider.request_principal(ctx.request_context.request),
-                model_id=model_id,
+                project_id=project_id,
                 selected_object_ids=selected_object_ids,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 request_id=request_id,
                 batch_ids=batch_ids,
                 environment_code=environment_code,
@@ -92,7 +93,7 @@ def register_profiling_tools(
     @server.tool(
         description=(
             "Read profiling state and progress. Completed means profiles have been saved; "
-            "refresh the Model Snapshot."
+            "refresh the Project Snapshot."
         ),
         annotations=ToolAnnotations(
             read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False
@@ -124,7 +125,7 @@ def register_profiling_tools(
             idempotent_hint=True,
             open_world_hint=False,
         ),
-        meta={"gds/toolPolicy": ToolPolicy.TENANT_MODEL_WRITE.value},
+        meta={"gds/toolPolicy": ToolPolicy.TENANT_PROJECT_WRITE.value},
         structured_output=True,
     )
     async def cancel_profiling_run(
@@ -141,13 +142,13 @@ def register_profiling_tools(
             safe_error(error)
 
     for name, policy in (
-        ("start_profiling_run", ToolPolicy.TENANT_MODEL_WRITE),
+        ("start_profiling_run", ToolPolicy.TENANT_PROJECT_WRITE),
         ("get_profiling_run_status", ToolPolicy.TENANT_READ),
-        ("cancel_profiling_run", ToolPolicy.TENANT_MODEL_WRITE),
+        ("cancel_profiling_run", ToolPolicy.TENANT_PROJECT_WRITE),
     ):
         audit.register_tool(
             name,
             policy=policy,
             summarize_input=lambda _: {},
-            retain_arguments=("model_id", "run_id", "schema_version"),
+            retain_arguments=("project_id", "run_id", "schema_version"),
         )

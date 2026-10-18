@@ -4,52 +4,52 @@
 from uuid import uuid4
 
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.code_generation import (
     CodeGenerationTargetFilters,
     DatabaseCodeGenerationService,
 )
-from gds_workbench_api.features.model_change_sets.contracts import (
-    CreateModelChangeSetRequest,
+from gds_workbench_api.features.project_change_sets.contracts import (
+    CreateProjectChangeSetRequest,
     ExpectedDraftRevisionRequest,
-    StageModelChangeSetRequest,
+    StageProjectChangeSetRequest,
 )
-from gds_workbench_api.features.model_change_sets.service import (
-    DatabaseModelChangeSetService,
+from gds_workbench_api.features.project_change_sets.service import (
+    DatabaseProjectChangeSetService,
 )
 
 from tests.mcp.conftest import DisposablePostgres
-from tests.mcp.model_test_fixtures import complete_model_graph
-from tests.mcp.test_database_model_entity_order import entity_layer_graph
-from tests.mcp.test_database_model_change_set_round_trip import (
+from tests.mcp.project_test_fixtures import complete_project_graph
+from tests.mcp.test_database_project_change_set_round_trip import (
     StaticIdentityProvider,
     _acquire_tenant_lock,
     _replace_codes,
-    _seed_model_foundation,
+    _seed_project_foundation,
 )
+from tests.mcp.test_database_project_entity_order import entity_layer_graph
 
 
 async def test_populated_code_target_and_artifact_reads_keep_public_target_shape(
     web_postgres_database: DisposablePostgres,
 ) -> None:
     prefix = f"CODE_REVIEW_{uuid4().hex}"
-    model_id, tenant_id = _seed_model_foundation(
+    project_id, tenant_id = _seed_project_foundation(
         web_postgres_database, code_prefix=prefix
     )
     _acquire_tenant_lock(web_postgres_database, tenant_id)
     with web_postgres_database.connect_owner() as connection:
         connection.execute(
-            "INSERT INTO model.model_input_scope(model_id,object_id) "
+            "INSERT INTO project.project_input_scope(project_id,object_id) "
             "SELECT %s,object_id FROM core.object WHERE source_tenant_id=%s "
             "AND object_schema IN ('src','bronze')",
-            (model_id, tenant_id),
+            (project_id, tenant_id),
         )
     graph = entity_layer_graph(prefix)
-    complete = _replace_codes(complete_model_graph(), code_prefix=prefix)
+    complete = _replace_codes(complete_project_graph(), code_prefix=prefix)
     for dataset in ("generated_code", "generated_code_source_system"):
         graph[dataset] = complete[dataset]
-    graph.pop("model_input_scope")
+    graph.pop("project_input_scope")
     database = WebPostgresDatabase(
         dsn=web_postgres_database.web_runtime_dsn(),
         pool_min=1,
@@ -58,7 +58,7 @@ async def test_populated_code_target_and_artifact_reads_keep_public_target_shape
     )
     principal = StaticIdentityProvider().request_principal(None)
     authorizer = AuthorizationService()
-    drafts = DatabaseModelChangeSetService(database=database, authorizer=authorizer)
+    drafts = DatabaseProjectChangeSetService(database=database, authorizer=authorizer)
     code = DatabaseCodeGenerationService(
         database=database,
         authorizer=authorizer,
@@ -69,19 +69,19 @@ async def test_populated_code_target_and_artifact_reads_keep_public_target_shape
         created = await drafts.create_or_resume(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
-            command=CreateModelChangeSetRequest(expected_model_revision=1),
+            project_id=project_id,
+            command=CreateProjectChangeSetRequest(expected_project_revision=1),
             idempotency_key=uuid4(),
         )
         staged = await drafts.stage(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
-            change_set_id=created.model_change_set_id,
-            command=StageModelChangeSetRequest(
+            project_id=project_id,
+            change_set_id=created.project_change_set_id,
+            command=StageProjectChangeSetRequest(
                 expected_draft_revision=created.draft_revision,
                 changes=[
-                    StageModelChange(dataset=key, records=rows)
+                    StageProjectChange(dataset=key, records=rows)
                     for key, rows in graph.items()
                 ],
             ),
@@ -93,8 +93,8 @@ async def test_populated_code_target_and_artifact_reads_keep_public_target_shape
         validated = await drafts.validate(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
-            change_set_id=created.model_change_set_id,
+            project_id=project_id,
+            change_set_id=created.project_change_set_id,
             command=command,
             idempotency_key=uuid4(),
         )
@@ -102,15 +102,15 @@ async def test_populated_code_target_and_artifact_reads_keep_public_target_shape
         await drafts.apply(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
-            change_set_id=created.model_change_set_id,
+            project_id=project_id,
+            change_set_id=created.project_change_set_id,
             command=command,
             idempotency_key=uuid4(),
         )
         page = await code.list_targets(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=CodeGenerationTargetFilters(),
             page_size=50,
             cursor=None,
@@ -125,7 +125,7 @@ async def test_populated_code_target_and_artifact_reads_keep_public_target_shape
         artifact = await code.read_artifact(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             generated_sql_artifact_id=target.artifacts[0].generated_sql_artifact_id,
         )
         assert artifact.target == target.target

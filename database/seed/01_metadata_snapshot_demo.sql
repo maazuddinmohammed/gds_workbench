@@ -63,15 +63,15 @@ INSERT INTO reference.process_type (
 VALUES ('Notebook', 'Notebook-backed metadata process')
 ON CONFLICT DO NOTHING;
 
-INSERT INTO core.project (
-    project_code,
-    project_name,
-    project_description
+INSERT INTO core.lane (
+    lane_code,
+    lane_name,
+    lane_description
 )
-VALUES ('DEMO_PROJECT', 'Metadata Snapshot Demo', 'Test-only snapshot project');
+VALUES ('DEMO_LANE', 'Metadata Snapshot Demo', 'Test-only snapshot lane');
 
 INSERT INTO core.tenant (
-    project_id,
+    lane_id,
     tenant_code,
     tenant_name,
     tenant_description,
@@ -79,18 +79,18 @@ INSERT INTO core.tenant (
     gds_admin_catalog,
     tenant_visibility
 )
-SELECT project_id,
+SELECT lane_id,
        'DEMO_TENANT',
        'Metadata Snapshot Demo Tenant',
        'Private Tenant used for Metadata Snapshot testing',
        'demo_tenant_catalog',
        'demo_tenant_admin',
        'private'
-  FROM core.project
- WHERE project_code = 'DEMO_PROJECT';
+  FROM core.lane
+ WHERE lane_code = 'DEMO_LANE';
 
 INSERT INTO core.tenant (
-    project_id,
+    lane_id,
     tenant_code,
     tenant_name,
     tenant_description,
@@ -98,15 +98,15 @@ INSERT INTO core.tenant (
     gds_admin_catalog,
     tenant_visibility
 )
-SELECT project_id,
+SELECT lane_id,
        'DEMO_GDS_TENANT',
        'Metadata Snapshot Demo Global Store',
        'Global-data-store Tenant used for Metadata Snapshot testing',
        'demo_gds_catalog',
        'demo_gds_admin',
        'private'
-  FROM core.project
- WHERE project_code = 'DEMO_PROJECT';
+  FROM core.lane
+ WHERE lane_code = 'DEMO_LANE';
 
 INSERT INTO core.system (
     system_code,

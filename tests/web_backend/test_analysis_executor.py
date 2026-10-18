@@ -11,7 +11,7 @@ from typing import Any, cast
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
 from gds_etl_workbench.domain.authorization import (
     ActorKind,
     RequestPrincipal,
@@ -91,10 +91,10 @@ def _plan(
     return AgentRunPlan.model_validate(
         {
             "workflow_run_id": 1048,
-            "model_id": 18,
+            "project_id": 18,
             "correlation_id": UUID("33333333-3333-3333-3333-333333333333"),
-            "model_revision": 7,
-            "model_workflow": "analysis",
+            "project_revision": 7,
+            "project_workflow": "analysis",
             "workflow_execution_mode": mode,
             "modeled_entity_type": None,
             "selected_scope_digest": "a" * 64,
@@ -198,16 +198,16 @@ def _context_bundle(
     context = AgentAuthoringContext.model_validate(
         {
             "workflow_run_id": 1048,
-            "model_id": 18,
-            "model_name": "Customer Model",
-            "model_revision": 7,
-            "model_workflow": "analysis",
+            "project_id": 18,
+            "project_name": "Customer Project",
+            "project_revision": 7,
+            "project_workflow": "analysis",
             "workflow_execution_mode": mode,
             "modeled_entity_type": None,
             "selected_scope_digest": "a" * 64,
-            "model_details": {
-                "model_name": "Customer Model",
-                "model_description": None,
+            "project_details": {
+                "project_name": "Customer Project",
+                "project_description": None,
                 "silver_model_naming_instructions": None,
                 "silver_model_audit_columns_template": None,
                 "gold_model_naming_instructions": None,
@@ -220,7 +220,16 @@ def _context_bundle(
             ),
             "profiles": (),
             "analysis_relationships": (),
-            "assertion": {"documents": (), "records": ()},
+            "context": {
+                "records": (),
+                "groups": (),
+                "types": [
+                    {
+                        "context_type_name": "Business Requirement",
+                        "context_type_description": "Required business outcomes.",
+                    }
+                ],
+            },
             "applied": {
                 "conceptual": None,
                 "logical": None,
@@ -304,7 +313,7 @@ class _Authorizer:
         *,
         tenant_id: int,
         policy: ToolPolicy,
-        model_id: int | None = None,
+        project_id: int | None = None,
     ) -> object:
         assert principal == _principal()
         self.calls.append((tenant_id, policy))
@@ -320,10 +329,10 @@ class _PlanRepository:
         transaction: ReadTransaction,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
     ) -> AgentRunPlan:
-        del transaction, tenant_id, model_id, workflow_run_id
+        del transaction, tenant_id, project_id, workflow_run_id
         return self.plan
 
 
@@ -363,8 +372,8 @@ class _AgentExecutor:
 
 @dataclass
 class _Handoff(RetainingHandoff):
-    calls: list[tuple[StageModelChange, ...]] = field(
-        default_factory=lambda: list[tuple[StageModelChange, ...]]()
+    calls: list[tuple[StageProjectChange, ...]] = field(
+        default_factory=lambda: list[tuple[StageProjectChange, ...]]()
     )
     final_events: list[AgentWorkflowEvent] = field(
         default_factory=lambda: list[AgentWorkflowEvent]()
@@ -376,7 +385,7 @@ class _Handoff(RetainingHandoff):
         principal: RequestPrincipal,
         *,
         workflow_run_claim_token: UUID,
-        changes: tuple[StageModelChange, ...],
+        changes: tuple[StageProjectChange, ...],
         final_event: AgentWorkflowEvent,
         **_: object,
     ) -> WorkflowChangeSetFinalizationResult:
@@ -388,9 +397,9 @@ class _Handoff(RetainingHandoff):
             raise self.finalization_error
         return WorkflowChangeSetFinalizationResult(
             handoff=WorkflowChangeSetHandoffResult(
-                model_id=18,
+                project_id=18,
                 workflow_run_id=1048,
-                model_change_set_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+                project_change_set_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
                 replayed=False,
                 draft_revision=2,
                 candidate_digest="c" * 64,
@@ -418,28 +427,28 @@ class _NoOp:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         workflow_run_claim_token: UUID,
         request: AuthoringNoOpRequest,
     ) -> AuthoringNoOpReceipt:
         assert principal == _principal()
         assert tenant_id == 7
-        assert model_id == 18
+        assert project_id == 18
         assert workflow_run_claim_token == _CLAIM_TOKEN
         self.requests.append(request)
         if self.completion_error is not None:
             raise self.completion_error
         return AuthoringNoOpReceipt(
-            model_id=model_id,
-            model_revision=request.expected_model_revision,
+            project_id=project_id,
+            project_revision=request.expected_project_revision,
             workflow_run_id=workflow_run_id,
             workflow_run_state=(
                 "completed_with_repair"
                 if request.final_event.attempt > 1
                 else "completed"
             ),
-            model_workflow=request.expected_workflow,
+            project_workflow=request.expected_workflow,
             workflow_execution_mode=request.expected_execution_mode,
             correlation_id=request.expected_correlation_id,
             candidate_digest=request.candidate_digest,
@@ -462,21 +471,21 @@ class _Lifecycle:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         expected_workflow: str,
         expected_execution_mode: str | None,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart:
         self.starts.append(
             (
                 principal,
                 tenant_id,
-                model_id,
+                project_id,
                 workflow_run_id,
                 expected_workflow,
                 expected_execution_mode,
-                expected_model_revision,
+                expected_project_revision,
             )
         )
         return AgentWorkflowRunStart(
@@ -484,7 +493,7 @@ class _Lifecycle:
             workflow_run_id=workflow_run_id,
             workflow_run_state="running",
             started_at=datetime(2026, 8, 24, 10, tzinfo=UTC),
-            model_revision=expected_model_revision,
+            project_revision=expected_project_revision,
         )
 
     events: list[AgentWorkflowEvent] = field(
@@ -588,15 +597,15 @@ async def test_start_binds_analysis_workflow_without_executing(
     result = await service.start(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
         expected_execution_mode=mode,
-        expected_model_revision=7,
+        expected_project_revision=7,
     )
 
     assert lifecycle.starts == [(principal, 7, 18, 1048, "analysis", mode, 7)]
     assert result.workflow_run_id == 1048
-    assert result.model_revision == 7
+    assert result.project_revision == 7
     assert database.isolations == []
     assert authorizer.calls == []
     assert handoff.calls == []
@@ -619,15 +628,15 @@ async def test_analysis_inference_hands_off_one_validated_draft(
     result = await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
     assert result is not None
     assert database.isolations == [ReadIsolation.REPEATABLE_READ]
-    assert authorizer.calls == [(7, ToolPolicy.TENANT_MODEL_WRITE)]
+    assert authorizer.calls == [(7, ToolPolicy.TENANT_PROJECT_WRITE)]
     request = agent.requests[0]
     assert (request.workflow, request.stage, request.execution_mode) == (
         "analysis_inference",
@@ -642,7 +651,7 @@ async def test_analysis_inference_hands_off_one_validated_draft(
             "get_objects",
             "get_object_details",
             "get_object_relationships",
-            "get_modeling_assertions",
+            "get_context_records",
         )
         assert request.context == {
             "original_context": _context_bundle(mode=execution_mode).embedded_context,
@@ -681,9 +690,9 @@ async def test_empty_analysis_inference_completes_without_a_change_set(
     result = await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -726,9 +735,9 @@ async def test_analysis_no_op_error_never_marks_the_run_failed(
         await service.execute_started(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
         )
 
@@ -748,9 +757,9 @@ async def test_analysis_inference_repairs_against_immutable_context() -> None:
     await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -771,9 +780,9 @@ async def test_analysis_inference_fails_safely_without_partial_handoff() -> None
         await service.execute_started(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
         )
 
@@ -801,9 +810,9 @@ async def test_analysis_finalizer_error_never_marks_the_run_failed(
         await service.execute_started(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
         )
 
@@ -826,9 +835,9 @@ async def test_analysis_inference_rejects_the_wrong_stage_path() -> None:
         await service.execute_started(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
         )
 

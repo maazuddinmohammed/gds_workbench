@@ -1,36 +1,36 @@
-"""Applied Profiling and Analysis queries for one governed Model."""
+"""Applied Profiling and Analysis queries for one governed Project."""
 
 from __future__ import annotations
 
 from typing import LiteralString
 
 _CURRENT_ATTRIBUTE_SCOPE_SQL: LiteralString = """
-WITH requested_model AS (
-    SELECT %s::BIGINT AS model_id
+WITH requested_project AS (
+    SELECT %s::BIGINT AS project_id
 ),
 eligible_attributes AS MATERIALIZED (
     SELECT eligibility.*
-      FROM requested_model
-      CROSS JOIN LATERAL workflow.list_model_attribute_eligibility(
-          requested_model.model_id
+      FROM requested_project
+      CROSS JOIN LATERAL workflow.list_project_attribute_eligibility(
+          requested_project.project_id
       ) AS eligibility
 )
 """
 
 # Complete snapshots retain owned inactive evidence; workflow inputs stay eligible.
 _HISTORICAL_ATTRIBUTE_SCOPE_SQL: LiteralString = """
-WITH requested_model AS (
-    SELECT %s::BIGINT AS model_id
+WITH requested_project AS (
+    SELECT %s::BIGINT AS project_id
 ),
 eligible_attributes AS MATERIALIZED (
-    SELECT model.model_id, object.object_id, attribute.attribute_id,
-           TRUE AS is_model_input_eligible
-      FROM requested_model
-      JOIN model.model AS model USING (model_id)
-      JOIN core.object AS object ON object.source_tenant_id = model.tenant_id
+    SELECT project.project_id, object.object_id, attribute.attribute_id,
+           TRUE AS is_project_input_eligible
+      FROM requested_project
+      JOIN project.project AS project USING (project_id)
+      JOIN core.object AS object ON object.source_tenant_id = project.tenant_id
         OR (object.source_tenant_id = ANY(%s::BIGINT[])
-            AND EXISTS (SELECT 1 FROM model.model_input_scope AS retained_scope
-                         WHERE retained_scope.model_id = model.model_id
+            AND EXISTS (SELECT 1 FROM project.project_input_scope AS retained_scope
+                         WHERE retained_scope.project_id = project.project_id
                            AND retained_scope.object_id = object.object_id))
       JOIN core.attribute AS attribute ON attribute.object_id = object.object_id
 )
@@ -62,8 +62,8 @@ SELECT profile.object_id,
   JOIN eligible_attributes AS eligible_attribute
     ON eligible_attribute.object_id = profile.object_id
    AND eligible_attribute.attribute_id = profile.attribute_id
-   AND eligible_attribute.model_id = profile.model_id
-   AND eligible_attribute.is_model_input_eligible
+   AND eligible_attribute.project_id = profile.project_id
+   AND eligible_attribute.is_project_input_eligible
   JOIN core.object AS object_record
     ON object_record.object_id = profile.object_id
   JOIN core.connection AS connection
@@ -123,13 +123,13 @@ SELECT result.analysis_result_id,
   JOIN eligible_attributes AS eligible_from_attribute
     ON eligible_from_attribute.object_id = result.from_object_id
    AND eligible_from_attribute.attribute_id = result.from_attribute_id
-   AND eligible_from_attribute.model_id = result.model_id
-   AND eligible_from_attribute.is_model_input_eligible
+   AND eligible_from_attribute.project_id = result.project_id
+   AND eligible_from_attribute.is_project_input_eligible
   JOIN eligible_attributes AS eligible_to_attribute
     ON eligible_to_attribute.object_id = result.to_object_id
    AND eligible_to_attribute.attribute_id = result.to_attribute_id
-   AND eligible_to_attribute.model_id = result.model_id
-   AND eligible_to_attribute.is_model_input_eligible
+   AND eligible_to_attribute.project_id = result.project_id
+   AND eligible_to_attribute.is_project_input_eligible
   JOIN core.object AS from_object
     ON from_object.object_id = result.from_object_id
   JOIN core.connection AS from_connection

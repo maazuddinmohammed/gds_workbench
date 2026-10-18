@@ -98,7 +98,7 @@ async def test_create_snapshot_download_caps_expiry_at_snapshot_retention() -> N
 
     download = await create_snapshot_download(
         store,
-        snapshot_kind="model",
+        snapshot_kind="project",
         tenant_id=42,
         scope_id=42,
         schema_version="2.0",
@@ -113,7 +113,7 @@ async def test_create_snapshot_download_caps_expiry_at_snapshot_retention() -> N
     assert download.expires_at == now + timedelta(minutes=5)
     assert store.read_calls == [
         {
-            "snapshot_kind": "model",
+            "snapshot_kind": "project",
             "tenant_id": 42,
             "scope_id": 42,
             "schema_version": "2.0",

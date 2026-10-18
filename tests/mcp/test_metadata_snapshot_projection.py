@@ -5,13 +5,13 @@ from datetime import date
 from typing import Any, cast
 
 from gds_etl_workbench.application.metadata_snapshot.archive import encode_dataset
-from gds_etl_workbench.application.metadata_snapshot.projection import project_id_free_rows
+from gds_etl_workbench.application.metadata_snapshot.projection import lane_id_free_rows
 from gds_etl_workbench.domain.snapshots.metadata import DATASETS
 
 
-def test_projection_resolves_ids_and_every_projected_row_matches_its_model() -> None:
+def test_projection_resolves_ids_and_every_projected_row_matches_its_project() -> None:
     raw = _raw_rows()
-    projected = project_id_free_rows(raw)
+    projected = lane_id_free_rows(raw)
     encoded = {
         definition.name: encode_dataset(definition, projected[definition.name])
         for definition in DATASETS
@@ -24,7 +24,7 @@ def test_projection_resolves_ids_and_every_projected_row_matches_its_model() -> 
         for row in _decode(dataset.rows_jsonl)
     )
     tenant = _decode(encoded["tenant"].rows_jsonl)[0]
-    assert tenant["project_code"] == "PROJECT"
+    assert tenant["lane_code"] == "PROJECT"
     assert tenant["gds_connection_code"] == "GDS"
     process = _decode(encoded["process"].rows_jsonl)[0]
     assert process["object_connection_code"] == "GDS"
@@ -38,7 +38,7 @@ def test_projection_preserves_inferred_type_and_attribute_lock() -> None:
             for attribute in raw[definition.name]:
                 attribute["attribute_inferred_data_type"] = "decimal(18,2)"
                 attribute["is_locked"] = True
-    projected = project_id_free_rows(raw)
+    projected = lane_id_free_rows(raw)
 
     for definition in DATASETS:
         if definition.record_type == "attribute":
@@ -49,7 +49,9 @@ def test_projection_preserves_inferred_type_and_attribute_lock() -> None:
 
 
 def _decode(content: bytes) -> list[dict[str, Any]]:
-    return [cast(dict[str, Any], json.loads(line)) for line in content.decode().splitlines()]
+    return [
+        cast(dict[str, Any], json.loads(line)) for line in content.decode().splitlines()
+    ]
 
 
 def _raw_rows() -> dict[str, list[dict[str, object]]]:
@@ -89,7 +91,9 @@ def _raw_rows() -> dict[str, list[dict[str, object]]]:
                 "zone_description": None,
                 "is_active": True,
             }
-            for zone_id, zone_code in enumerate(("source", "bronze", "silver", "gold"), start=20)
+            for zone_id, zone_code in enumerate(
+                ("source", "bronze", "silver", "gold"), start=20
+            )
         ],
         "chunk_type": [
             {
@@ -156,19 +160,19 @@ def _raw_rows() -> dict[str, list[dict[str, object]]]:
     return cast(
         dict[str, list[dict[str, object]]],
         {
-            "project": [
+            "lane": [
                 {
-                    "project_id": 1,
-                    "project_code": "PROJECT",
-                    "project_name": "Project",
-                    "project_description": None,
+                    "lane_id": 1,
+                    "lane_code": "PROJECT",
+                    "lane_name": "Lane",
+                    "lane_description": None,
                     "is_active": True,
                 }
             ],
             "tenant": [
                 {
                     "tenant_id": 2,
-                    "project_id": 1,
+                    "lane_id": 1,
                     "tenant_code": "TENANT",
                     "tenant_name": "Tenant",
                     "tenant_description": None,

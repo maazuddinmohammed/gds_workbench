@@ -13,15 +13,15 @@ DECLARE
     v_databricks_function_count INTEGER;
     v_application_web_function_count INTEGER;
     v_application_web_function_signatures TEXT[] := ARRAY[
-        'application.set_model_lock(uuid,uuid,bigint,bigint,bigint,boolean)',
-        'application.review_model_enrichment(uuid,uuid,bigint,bigint,bigint,character varying,character varying,jsonb,uuid)',
-        'application.delete_model_records(uuid,uuid,bigint,bigint,bigint,uuid,jsonb)',
-        'application.authorize_model_record_review(uuid,uuid,character varying,bigint,bigint)',
-        'application.add_model_input_scope_objects(uuid,uuid,bigint,bigint,bigint,bigint[])',
-        'application.archive_model(uuid,uuid,character varying,bigint,bigint)',
+        'application.set_project_lock(uuid,uuid,bigint,bigint,bigint,boolean)',
+        'application.review_project_enrichment(uuid,uuid,bigint,bigint,bigint,character varying,character varying,jsonb,uuid)',
+        'application.delete_project_records(uuid,uuid,bigint,bigint,bigint,uuid,jsonb)',
+        'application.authorize_project_record_review(uuid,uuid,character varying,bigint,bigint)',
+        'application.add_project_input_scope_objects(uuid,uuid,bigint,bigint,bigint,bigint[])',
+        'application.archive_project(uuid,uuid,character varying,bigint,bigint)',
         'application.set_principal_last_tenant(uuid,uuid,character varying,bigint)',
-        'application.create_model(uuid,uuid,character varying,bigint,character varying,character varying,jsonb,jsonb,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer,bigint,character varying,character varying,integer,integer,boolean,boolean)',
-        'application.update_model(uuid,uuid,character varying,bigint,bigint,character varying,character varying,jsonb,jsonb,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer,bigint,character varying,character varying,integer,integer,boolean,boolean)',
+        'application.create_project(uuid,uuid,character varying,bigint,character varying,character varying,jsonb,jsonb,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer,bigint,character varying,character varying,integer,integer,boolean,boolean)',
+        'application.update_project(uuid,uuid,character varying,bigint,bigint,character varying,character varying,jsonb,jsonb,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer,bigint,character varying,character varying,integer,integer,boolean,boolean)',
         'application.save_prompt_template(uuid,uuid,character varying,bigint,bigint,character varying,bigint,character varying,character varying,text,boolean,timestamp with time zone)',
         'application.save_prompt_template_draft(uuid,uuid,character varying,bigint,bigint,text,text,text,timestamp with time zone,text[])',
         'application.transition_prompt_template_version(uuid,uuid,character varying,bigint,character varying,character varying)',
@@ -55,13 +55,13 @@ DECLARE
         'application.persist_profiling_results(uuid,uuid,character varying,bigint,bigint,jsonb)'
     ];
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='model' AND table_name='model'
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='project' AND table_name='project'
         AND column_name='is_locked' AND data_type='boolean' AND is_nullable='NO')
-       OR has_column_privilege('gds_app_write','model.model','is_locked','UPDATE')
-       OR has_column_privilege('gds_web_write','model.model','is_locked','UPDATE')
-       OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='model.model'::REGCLASS
-           AND tgname='aa_model_write_fence' AND tgenabled='O') THEN
-        RAISE EXCEPTION 'Model lock contract is unavailable';
+       OR has_column_privilege('gds_app_write','project.project','is_locked','UPDATE')
+       OR has_column_privilege('gds_web_write','project.project','is_locked','UPDATE')
+       OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='project.project'::REGCLASS
+           AND tgname='aa_project_write_fence' AND tgenabled='O') THEN
+        RAISE EXCEPTION 'Project lock contract is unavailable';
     END IF;
     IF NOT (EXISTS (
         SELECT 1 FROM information_schema.columns
@@ -91,7 +91,7 @@ BEGIN
       INTO v_schema_count
      FROM pg_catalog.pg_namespace AS namespace_record
      WHERE namespace_record.nspname IN (
-               'reference', 'core', 'security', 'model', 'workflow',
+               'reference', 'core', 'security', 'project', 'workflow',
                'application', 'mcp'
            );
 
@@ -139,10 +139,10 @@ BEGIN
           FROM pg_catalog.pg_constraint AS constraint_record
          WHERE constraint_record.conrelid =
                'application.workflow_run'::REGCLASS
-           AND constraint_record.conname = 'fk_workflow_run_model'
+           AND constraint_record.conname = 'fk_workflow_run_project'
            AND constraint_record.contype = 'f'
            AND pg_catalog.pg_get_constraintdef(constraint_record.oid) =
-               'FOREIGN KEY (model_id, tenant_id) REFERENCES model.model(model_id, tenant_id)'
+               'FOREIGN KEY (project_id, tenant_id) REFERENCES project.project(project_id, tenant_id)'
     ) OR NOT EXISTS (
         SELECT 1
           FROM information_schema.columns AS column_record
@@ -292,7 +292,7 @@ BEGIN
           FROM information_schema.columns AS column_record
          WHERE column_record.table_schema = 'application'
            AND column_record.table_name = 'workflow_run'
-           AND column_record.column_name = 'model_revision'
+           AND column_record.column_name = 'project_revision'
            AND column_record.data_type = 'bigint'
            AND column_record.is_nullable = 'NO'
     ) OR (
@@ -333,7 +333,7 @@ BEGIN
           JOIN pg_catalog.pg_namespace AS namespace_record
             ON namespace_record.oid = function_record.pronamespace
          WHERE namespace_record.nspname = 'workflow'
-           AND function_record.proname = 'list_model_input_sources'
+           AND function_record.proname = 'list_project_input_sources'
            AND oidvectortypes(function_record.proargtypes) = 'bigint'
            AND function_record.provolatile = 's'
            AND NOT function_record.prosecdef
@@ -358,7 +358,7 @@ BEGIN
           JOIN pg_catalog.pg_namespace AS namespace_record
             ON namespace_record.oid = function_record.pronamespace
          WHERE namespace_record.nspname = 'workflow'
-           AND function_record.proname = 'is_assertion_only_mapping_target'
+           AND function_record.proname = 'is_context_only_mapping_target'
            AND oidvectortypes(function_record.proargtypes) =
                'bigint, bigint, character varying'
            AND function_record.provolatile = 's'
@@ -399,9 +399,9 @@ BEGIN
                    'mapping_operation',
                    'mapping_coverage_mode',
                    'mapping_route',
-                   'authoring_no_op_base_model_revision',
+                   'authoring_no_op_base_project_revision',
                    'authoring_no_op_candidate_digest',
-                   'authoring_no_op_model_event_log_id'
+                   'authoring_no_op_project_event_log_id'
                )
            AND column_record.is_nullable = 'YES'
     ) <> 9 OR NOT EXISTS (
@@ -412,7 +412,7 @@ BEGIN
                'fk_workflow_run_authoring_no_op_event'
            AND constraint_record.conrelid =
                'application.workflow_run'::regclass
-           AND constraint_record.confrelid = 'model.model_event_log'::regclass
+           AND constraint_record.confrelid = 'project.project_event_log'::regclass
            AND constraint_record.confdeltype = 'a'
     ) OR NOT EXISTS (
         SELECT 1
@@ -429,7 +429,7 @@ BEGIN
            AND column_record.table_name = 'workflow_run_object_selection'
            AND column_record.column_name IN (
                    'workflow_run_id',
-                   'model_id',
+                   'project_id',
                    'object_id',
                    'selection_order'
                )
@@ -441,7 +441,7 @@ BEGIN
            AND column_record.table_name = 'workflow_run_system_selection'
            AND column_record.column_name IN (
                    'workflow_run_id',
-                   'model_id',
+                   'project_id',
                    'system_id',
                    'system_code',
                    'selection_order'
@@ -455,7 +455,7 @@ BEGIN
                'workflow_run_mapping_target_selection'
            AND column_record.column_name IN (
                    'workflow_run_id',
-                   'model_id',
+                   'project_id',
                    'workflow_run_entity_selection_id',
                    'source_system_id',
                    'selection_order'
@@ -476,7 +476,7 @@ BEGIN
         SELECT 1
           FROM information_schema.columns AS column_record
          WHERE column_record.table_schema = 'mcp'
-           AND column_record.table_name = 'model_change_set'
+           AND column_record.table_name = 'project_change_set'
            AND column_record.column_name = 'workflow_run_id'
            AND column_record.data_type = 'bigint'
            AND column_record.is_nullable = 'YES'
@@ -485,7 +485,7 @@ BEGIN
          FROM pg_catalog.pg_constraint AS constraint_record
          WHERE constraint_record.contype = 'f'
            AND constraint_record.conname = 'fk_change_set_workflow_run'
-           AND constraint_record.conrelid = 'mcp.model_change_set'::regclass
+           AND constraint_record.conrelid = 'mcp.project_change_set'::regclass
            AND constraint_record.confrelid = 'application.workflow_run'::regclass
            AND (
                SELECT array_agg(attribute.attname ORDER BY key.position)
@@ -494,7 +494,7 @@ BEGIN
                  JOIN pg_catalog.pg_attribute AS attribute
                    ON attribute.attrelid = constraint_record.conrelid
                   AND attribute.attnum = key.attnum
-           ) = ARRAY['workflow_run_id', 'model_id']::name[]
+           ) = ARRAY['workflow_run_id', 'project_id']::name[]
            AND (
                SELECT array_agg(attribute.attname ORDER BY key.position)
                  FROM unnest(constraint_record.confkey) WITH ORDINALITY
@@ -502,14 +502,14 @@ BEGIN
                  JOIN pg_catalog.pg_attribute AS attribute
                    ON attribute.attrelid = constraint_record.confrelid
                   AND attribute.attnum = key.attnum
-           ) = ARRAY['workflow_run_id', 'model_id']::name[]
+           ) = ARRAY['workflow_run_id', 'project_id']::name[]
            AND constraint_record.confdeltype = 'a'
     ) OR NOT EXISTS (
         SELECT 1
          FROM pg_catalog.pg_constraint AS constraint_record
          WHERE constraint_record.contype = 'u'
            AND constraint_record.conname = 'uq_change_set_workflow_run'
-           AND constraint_record.conrelid = 'mcp.model_change_set'::regclass
+           AND constraint_record.conrelid = 'mcp.project_change_set'::regclass
            AND (
                SELECT array_agg(attribute.attname ORDER BY key.position)
                  FROM unnest(constraint_record.conkey) WITH ORDINALITY
@@ -525,19 +525,19 @@ BEGIN
             ON function_record.oid = trigger_record.tgfoid
           JOIN pg_catalog.pg_namespace AS function_namespace
             ON function_namespace.oid = function_record.pronamespace
-         WHERE trigger_record.tgrelid = 'mcp.model_change_set'::regclass
-           AND trigger_record.tgname = 'guard_model_change_set_workflow_binding'
+         WHERE trigger_record.tgrelid = 'mcp.project_change_set'::regclass
+           AND trigger_record.tgname = 'guard_project_change_set_workflow_binding'
            AND trigger_record.tgenabled = 'O'
            AND NOT trigger_record.tgisinternal
            AND function_namespace.nspname = 'mcp'
            AND function_record.proname =
-               'guard_model_change_set_workflow_binding'
+               'guard_project_change_set_workflow_binding'
            AND NOT function_record.prosecdef
            AND function_record.proconfig =
                ARRAY['search_path=pg_catalog']::TEXT[]
     ) THEN
         RAISE EXCEPTION
-            'Model Change Set Workflow Run binding contract is invalid';
+            'Project Change Set Workflow Run binding contract is invalid';
     END IF;
 
     SELECT count(*)
@@ -703,7 +703,7 @@ BEGIN
          WHERE constraint_record.conrelid =
                'workflow.generated_code'::REGCLASS
            AND constraint_record.conname IN (
-                   'fk_generated_code_model',
+                   'fk_generated_code_project',
                    'fk_generated_code_logical_entity',
                    'fk_generated_code_dimensional_entity',
                    'ck_generated_code_typed_entity',
@@ -730,7 +730,7 @@ BEGIN
          WHERE constraint_record.conrelid =
                'workflow.validation_group'::REGCLASS
            AND constraint_record.conname IN (
-                   'fk_validation_group_model_tenant',
+                   'fk_validation_group_project_tenant',
                    'fk_validation_group_system',
                    'fk_validation_group_workflow_run',
                    'ck_validation_group_digests'
@@ -757,7 +757,7 @@ BEGIN
         SELECT count(*)
           FROM information_schema.columns AS column_record
          WHERE column_record.table_schema = 'mcp'
-           AND column_record.table_name = 'model_change_set'
+           AND column_record.table_name = 'project_change_set'
            AND column_record.column_name IN (
                    'code_generation_document', 'validation_document'
                )
@@ -798,12 +798,12 @@ BEGIN
     IF EXISTS (
         SELECT 1
           FROM (VALUES
-              ('object_enrichment', 'model_id', 'bigint', 'NO'),
+              ('object_enrichment', 'project_id', 'bigint', 'NO'),
               ('object_enrichment', 'object_id', 'bigint', 'NO'),
               ('object_enrichment', 'object_description', 'text', 'YES'),
               ('object_enrichment', 'workflow_run_id', 'bigint', 'YES'),
               ('object_enrichment', 'is_locked', 'boolean', 'NO'),
-              ('attribute_enrichment', 'model_id', 'bigint', 'NO'),
+              ('attribute_enrichment', 'project_id', 'bigint', 'NO'),
               ('attribute_enrichment', 'attribute_id', 'bigint', 'NO'),
               ('attribute_enrichment', 'object_id', 'bigint', 'NO'),
               ('attribute_enrichment', 'attribute_description', 'text', 'YES'),
@@ -830,12 +830,12 @@ BEGIN
         SELECT 1
           FROM (VALUES
               ('workflow.object_enrichment', 'object_enrichment_pkey', 'p'),
-              ('workflow.object_enrichment', 'fk_object_enrichment_model', 'f'),
+              ('workflow.object_enrichment', 'fk_object_enrichment_project', 'f'),
               ('workflow.object_enrichment', 'fk_object_enrichment_scope', 'f'),
               ('workflow.object_enrichment', 'fk_object_enrichment_workflow_run', 'f'),
               ('workflow.object_enrichment', 'ck_object_enrichment_description', 'c'),
               ('workflow.attribute_enrichment', 'attribute_enrichment_pkey', 'p'),
-              ('workflow.attribute_enrichment', 'fk_attribute_enrichment_model', 'f'),
+              ('workflow.attribute_enrichment', 'fk_attribute_enrichment_project', 'f'),
               ('workflow.attribute_enrichment', 'fk_attribute_enrichment_scope', 'f'),
               ('workflow.attribute_enrichment', 'fk_attribute_enrichment_attribute', 'f'),
               ('workflow.attribute_enrichment', 'fk_attribute_enrichment_workflow_run', 'f'),
@@ -849,7 +849,7 @@ BEGIN
             OR actual.contype::TEXT <> expected.constraint_type
             OR NOT actual.convalidated
     ) THEN
-        RAISE EXCEPTION 'Model enrichment storage contract is invalid';
+        RAISE EXCEPTION 'Project enrichment storage contract is invalid';
     END IF;
 
     IF EXISTS (
@@ -864,7 +864,7 @@ BEGIN
                 'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
             )
     ) THEN
-        RAISE EXCEPTION 'Model enrichment runtime privileges are invalid';
+        RAISE EXCEPTION 'Project enrichment runtime privileges are invalid';
     END IF;
 
     IF NOT EXISTS (
@@ -1027,7 +1027,7 @@ BEGIN
     IF EXISTS (
         SELECT 1
           FROM unnest(ARRAY[
-                   'reference', 'core', 'security', 'model', 'workflow',
+                   'reference', 'core', 'security', 'project', 'workflow',
                    'application', 'mcp'
                ]) AS schema_name(value)
          WHERE has_schema_privilege('public', schema_name.value, 'USAGE')
@@ -1038,7 +1038,7 @@ BEGIN
     IF EXISTS (
         SELECT 1
           FROM unnest(ARRAY[
-                   'reference', 'core', 'security', 'model', 'workflow', 'mcp'
+                   'reference', 'core', 'security', 'project', 'workflow', 'mcp'
                ]) AS schema_name(value)
          WHERE NOT has_schema_privilege(
                    'gds_app_write', schema_name.value, 'USAGE'
@@ -1050,7 +1050,7 @@ BEGIN
     IF EXISTS (
         SELECT 1
           FROM unnest(ARRAY[
-                   'reference', 'core', 'security', 'model', 'workflow',
+                   'reference', 'core', 'security', 'project', 'workflow',
                    'application', 'mcp'
                ]) AS schema_name(value)
          WHERE NOT has_schema_privilege(
@@ -1060,7 +1060,7 @@ BEGIN
         RAISE EXCEPTION 'gds_web_write release schema usage is invalid';
     END IF;
 
-    IF NOT has_table_privilege('gds_app_write', 'core.project', 'SELECT')
+    IF NOT has_table_privilege('gds_app_write', 'core.lane', 'SELECT')
        OR NOT has_table_privilege('gds_app_write', 'core.tenant', 'SELECT')
        OR NOT has_table_privilege('gds_app_write', 'core.object', 'SELECT')
        OR NOT has_table_privilege('gds_app_write', 'core.attribute', 'SELECT')
@@ -1085,12 +1085,12 @@ BEGIN
                       'default_reasoning_effort_code',
                       'default_max_turns',
                       'default_validation_retry_count',
-                      'model_name'
-                  ]) AS web_only_model_column(name)
+                      'project_name'
+                  ]) AS web_only_project_column(name)
             WHERE has_column_privilege(
                       'gds_app_write',
-                      'model.model',
-                      web_only_model_column.name,
+                      'project.project',
+                      web_only_project_column.name,
                       'UPDATE'
                   )
        )
@@ -1100,9 +1100,9 @@ BEGIN
                       'workflow.generated_code',
                       'workflow.validation_group',
                       'workflow.validation_check'
-                  ]) AS new_model_section_table(name)
+                  ]) AS new_project_section_table(name)
             WHERE NOT has_table_privilege(
-                      'gds_app_write', new_model_section_table.name,
+                      'gds_app_write', new_project_section_table.name,
                       'SELECT,INSERT,UPDATE'
                   )
                OR EXISTS (
@@ -1112,7 +1112,7 @@ BEGIN
                               'TRIGGER', 'MAINTAIN'
                           ]) AS forbidden_privilege(name)
                     WHERE has_table_privilege(
-                              'gds_app_write', new_model_section_table.name,
+                              'gds_app_write', new_project_section_table.name,
                               forbidden_privilege.name
                           )
                   )
@@ -1142,8 +1142,8 @@ BEGIN
        OR EXISTS (
            SELECT 1
              FROM unnest(ARRAY[
-                      'model.modeling_assertion_document',
-                      'model.modeling_assertion_record',
+                      'project.context_group',
+                      'project.context_record',
                       'workflow.analysis_result',
                       'workflow.generated_code',
                       'workflow.mapping_attribute',
@@ -1185,21 +1185,21 @@ BEGIN
                   )
        )
        OR NOT has_table_privilege(
-              'gds_web_write', 'mcp.model_change_set',
+              'gds_web_write', 'mcp.project_change_set',
               'SELECT,INSERT,UPDATE'
           )
        OR NOT has_table_privilege(
-              'gds_web_write', 'mcp.model_stage_batch',
+              'gds_web_write', 'mcp.project_stage_batch',
               'SELECT,INSERT,UPDATE'
           )
        OR NOT has_table_privilege(
-              'gds_web_write', 'mcp.model_stage_chunk', 'SELECT,INSERT'
+              'gds_web_write', 'mcp.project_stage_chunk', 'SELECT,INSERT'
           )
        OR NOT has_table_privilege(
-              'gds_web_write', 'mcp.model_stage_payload_chunk', 'SELECT,INSERT'
+              'gds_web_write', 'mcp.project_stage_payload_chunk', 'SELECT,INSERT'
           )
        OR NOT has_table_privilege(
-              'gds_web_write', 'mcp.model_change_set_event', 'SELECT,INSERT'
+              'gds_web_write', 'mcp.project_change_set_event', 'SELECT,INSERT'
           )
        OR EXISTS (
            SELECT 1
@@ -1222,9 +1222,9 @@ BEGIN
        OR EXISTS (
            SELECT 1
              FROM unnest(ARRAY[
-                      'mcp.model_stage_chunk',
-                      'mcp.model_stage_payload_chunk',
-                      'mcp.model_change_set_event'
+                      'mcp.project_stage_chunk',
+                      'mcp.project_stage_payload_chunk',
+                      'mcp.project_change_set_event'
                   ]) AS insert_only_table(name)
             CROSS JOIN unnest(ARRAY[
                       'UPDATE', 'DELETE', 'TRUNCATE'
@@ -1253,8 +1253,8 @@ BEGIN
             CROSS JOIN unnest(ARRAY[
                 'gds_app_write', 'gds_web_write'
             ]) AS materializer_role(name)
-            WHERE namespace_record.nspname = 'model'
-              AND relation.relname = 'model_revision_transaction'
+            WHERE namespace_record.nspname = 'project'
+              AND relation.relname = 'project_revision_transaction'
               AND has_table_privilege(
                       materializer_role.name,
                       relation.oid,
@@ -1273,8 +1273,8 @@ BEGIN
             CROSS JOIN unnest(ARRAY[
                 'gds_app_write', 'gds_web_write'
             ]) AS materializer_role(name)
-            WHERE namespace_record.nspname = 'model'
-              AND relation.relname = 'model_revision_transaction'
+            WHERE namespace_record.nspname = 'project'
+              AND relation.relname = 'project_revision_transaction'
               AND attribute.attnum > 0
               AND NOT attribute.attisdropped
               AND has_column_privilege(
@@ -1293,10 +1293,10 @@ BEGIN
                       'dimensional_coverage_threshold_percent',
                       'logical_enforce_coverage_threshold',
                       'dimensional_enforce_coverage_threshold',
-                      'model_description',
+                      'project_description',
                       'logical_schemas',
                       'dimensional_schemas',
-                      'model_revision',
+                      'project_revision',
                       'silver_model_naming_instructions',
                       'silver_model_audit_columns_template',
                       'gold_model_naming_instructions',
@@ -1304,10 +1304,10 @@ BEGIN
                       'gold_model_audit_columns_template',
                       'updated_time',
                       'updated_by'
-                  ]) AS materializer_model_column(name)
+                  ]) AS materializer_project_column(name)
             WHERE NOT has_column_privilege(
-                      'gds_web_write', 'model.model',
-                      materializer_model_column.name, 'UPDATE'
+                      'gds_web_write', 'project.project',
+                      materializer_project_column.name, 'UPDATE'
                   )
        )
        OR EXISTS (
@@ -1319,11 +1319,11 @@ BEGIN
                       'default_reasoning_effort_code',
                       'default_max_turns',
                       'default_validation_retry_count',
-                      'model_name'
-                  ]) AS web_only_model_column(name)
+                      'project_name'
+                  ]) AS web_only_project_column(name)
             WHERE has_column_privilege(
-                      'gds_web_write', 'model.model',
-                      web_only_model_column.name, 'UPDATE'
+                      'gds_web_write', 'project.project',
+                      web_only_project_column.name, 'UPDATE'
                   )
        )
        ) THEN
@@ -1570,10 +1570,10 @@ BEGIN
         SELECT 1
           FROM unnest(ARRAY[
                    'workflow.list_tenant_visible_objects(bigint)',
-                   'workflow.list_model_object_eligibility(bigint)',
-                   'workflow.list_model_attribute_eligibility(bigint)',
-                   'workflow.list_model_input_sources(bigint)',
-                   'workflow.is_assertion_only_mapping_target(bigint,bigint,character varying)',
+                   'workflow.list_project_object_eligibility(bigint)',
+                   'workflow.list_project_attribute_eligibility(bigint)',
+                   'workflow.list_project_input_sources(bigint)',
+                   'workflow.is_context_only_mapping_target(bigint,bigint,character varying)',
                    'workflow.list_mapping_source_objects(bigint,bigint,character varying,bigint)',
                    'workflow.list_code_generation_target_context(bigint,character varying,character varying)'
                ]) AS web_workflow_function(signature)
@@ -1596,7 +1596,7 @@ BEGIN
            AND NOT EXISTS (
                    SELECT 1
                      FROM unnest(ARRAY[
-                              'mcp.apply_model_enrichment_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character varying)',
+                              'mcp.apply_project_enrichment_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character varying)',
                               'mcp.create_metadata_change_set(uuid,uuid,character varying,bigint,uuid,uuid)',
                               'mcp.stage_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,jsonb,uuid)',
                               'mcp.get_metadata_change_set(uuid,uuid,character varying,bigint,uuid)',
@@ -1622,7 +1622,7 @@ BEGIN
            AND NOT EXISTS (
                    SELECT 1
                      FROM unnest(ARRAY[
-                              'mcp.apply_model_enrichment_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character varying)',
+                              'mcp.apply_project_enrichment_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character varying)',
                               'mcp.create_metadata_change_set(uuid,uuid,character varying,bigint,uuid,uuid)',
                               'mcp.stage_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,jsonb,uuid)',
                               'mcp.begin_metadata_stage_batch(uuid,uuid,character varying,bigint,uuid,bigint,uuid,character varying,integer,integer,character,uuid)',

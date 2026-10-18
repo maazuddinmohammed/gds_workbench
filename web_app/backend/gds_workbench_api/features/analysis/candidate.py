@@ -6,8 +6,8 @@ import json
 from copy import deepcopy
 from typing import Annotated, cast
 
-from gds_etl_workbench.application.change_sets.model import StageModelChange
-from gds_etl_workbench.application.change_sets.model_validation import (
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
+from gds_etl_workbench.application.change_sets.project_validation import (
     validate_staged_records,
 )
 from gds_etl_workbench.domain.errors import InvalidRequestError
@@ -20,7 +20,7 @@ from gds_etl_workbench.domain.modeling_records import (
     Name400,
     NonblankText,
     PhysicalAttributeKey,
-    normalize_model_key_value,
+    normalize_project_key_value,
 )
 from pydantic import (
     BaseModel,
@@ -34,7 +34,7 @@ from pydantic import (
 from gds_workbench_api.features.workflows.authoring.repair import (
     AgentCandidateValidation,
     AgentValidationIssue,
-    model_validation_issues,
+    project_validation_issues,
 )
 
 
@@ -104,7 +104,7 @@ class AnalysisInferenceCandidateValidator:
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
         return AgentCandidateValidation(issues=self._normalize(candidate).issues)
 
-    def parse_validated(self, candidate: JsonValue) -> tuple[StageModelChange, ...]:
+    def parse_validated(self, candidate: JsonValue) -> tuple[StageProjectChange, ...]:
         normalized = self._normalize(candidate)
         if normalized.issues:
             raise InvalidRequestError("The Analysis inference candidate is invalid.")
@@ -115,7 +115,7 @@ class AnalysisInferenceCandidateValidator:
         ]
         if not changed:
             return ()
-        return (StageModelChange(dataset="analysis_result", records=changed),)
+        return (StageProjectChange(dataset="analysis_result", records=changed),)
 
     def _normalize(self, candidate: JsonValue) -> _NormalizedCandidate:
         parsed = _parse_candidate(candidate)
@@ -170,12 +170,12 @@ class AnalysisInferenceCandidateValidator:
                 )
             raw_records.append(merged)
 
-        records, model_issues = validate_staged_records(
+        records, project_issues = validate_staged_records(
             "analysis_result",
             raw_records,
         )
         candidate_indexes = tuple(index for index, _ in seen.values())
-        for issue in model_validation_issues(model_issues):
+        for issue in project_validation_issues(project_issues):
             path = issue.path
             if len(path) > 1 and isinstance(path[1], int):
                 path = ("relationships", candidate_indexes[path[1]], *path[2:])
@@ -221,7 +221,7 @@ def _merge_record(
 ) -> dict[str, object]:
     merged = cast(dict[str, object], candidate.model_dump(mode="json"))
     merged["relationship_kind"] = (
-        normalize_model_key_value(candidate.relationship_kind)
+        normalize_project_key_value(candidate.relationship_kind)
         if existing is None
         else existing.relationship_kind
     )
@@ -242,7 +242,7 @@ def _relationship_key(
     return (
         *_endpoint_key(record, "from"),
         *_endpoint_key(record, "to"),
-        normalize_model_key_value(record.relationship_kind),
+        normalize_project_key_value(record.relationship_kind),
     )
 
 
@@ -251,7 +251,7 @@ def _endpoint_key(
     endpoint: str,
 ) -> tuple[str, ...]:
     return tuple(
-        normalize_model_key_value(getattr(record, f"{endpoint}_{field}"))
+        normalize_project_key_value(getattr(record, f"{endpoint}_{field}"))
         for field in (
             "tenant_code",
             "system_code",
@@ -265,7 +265,7 @@ def _endpoint_key(
 
 def _attribute_key(record: PhysicalAttributeKey) -> tuple[str, ...]:
     return tuple(
-        normalize_model_key_value(getattr(record, field))
+        normalize_project_key_value(getattr(record, field))
         for field in (
             "tenant_code",
             "system_code",

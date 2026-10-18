@@ -6,16 +6,16 @@ from collections.abc import Callable, Sequence
 from copy import deepcopy
 from typing import cast
 
-from gds_etl_workbench.application.change_sets.model import StageModelChange
-from gds_etl_workbench.application.change_sets.model_validation import (
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
+from gds_etl_workbench.application.change_sets.project_validation import (
     validate_staged_records,
 )
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
-    AttributeAssertionSourceRecord,
+    AttributeContextSourceRecord,
     AttributeLogicalSourceRecord,
-    DimensionalAssertionSourceRecord,
     DimensionalAttributeRecord,
+    DimensionalContextSourceRecord,
     DimensionalEntityRecord,
     DimensionalLogicalEntitySourceRecord,
     DimensionalRelationshipRecord,
@@ -23,22 +23,22 @@ from gds_etl_workbench.domain.modeling_records import (
     LogicalAttributeKey,
     LogicalEntityKey,
     SubmodelMembershipRecord,
-    normalize_model_key_value,
+    normalize_project_key_value,
 )
-from gds_etl_workbench.domain.snapshots.model import DimensionalSection
+from gds_etl_workbench.domain.snapshots.project import DimensionalSection
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from gds_workbench_api.features.workflows.authoring.repair import (
     MAX_COVERAGE_SOURCE_REFS,
     AgentCandidateValidation,
     AgentValidationIssue,
-    enrich_agent_output_model_definitions,
-    model_validation_issues,
+    enrich_agent_output_project_definitions,
     parse_pydantic_candidate,
+    project_validation_issues,
 )
 
-type _EntitySource = DimensionalLogicalEntitySourceRecord | DimensionalAssertionSourceRecord
-type _AttributeSource = AttributeLogicalSourceRecord | AttributeAssertionSourceRecord
+type _EntitySource = DimensionalLogicalEntitySourceRecord | DimensionalContextSourceRecord
+type _AttributeSource = AttributeLogicalSourceRecord | AttributeContextSourceRecord
 
 
 class _DimensionalCandidate(BaseModel):
@@ -80,7 +80,7 @@ class DimensionalCandidateValidator:
         *,
         selected_entity_keys: tuple[LogicalEntityKey, ...],
         selected_attribute_keys: tuple[LogicalAttributeKey, ...],
-        assertion_record_keys: tuple[str, ...],
+        context_record_ids: tuple[str, ...],
         applied: DimensionalSection | None,
         coverage_threshold_percent: int = 60,
     ) -> None:
@@ -100,13 +100,13 @@ class DimensionalCandidateValidator:
         self._selected_attribute_keys = {
             _logical_attribute_key(item) for item in selected_attribute_keys
         }
-        self._assertion_record_keys = {
-            normalize_model_key_value(item) for item in assertion_record_keys
+        self._context_record_ids = {
+            normalize_project_key_value(item) for item in context_record_ids
         }
         if (
             len(self._selected_entity_keys) != len(selected_entity_keys)
             or len(self._selected_attribute_keys) != len(selected_attribute_keys)
-            or len(self._assertion_record_keys) != len(assertion_record_keys)
+            or len(self._context_record_ids) != len(context_record_ids)
         ):
             raise ValueError("Dimensional candidate evidence keys must be unique")
 
@@ -174,13 +174,13 @@ class DimensionalCandidateValidator:
             "evidence and enabled readers.\n"
             "5. Recount distinct selected Logical Entities across active proposed and "
             "retained support, and resolve every other validation issue. Repeated "
-            "references, unselected sources, Assertion-only support and Attribute-only "
+            "references, unselected sources, Context-only support and Attribute-only "
             "mappings do not increase Entity coverage. Keep unsupported gaps unresolved "
             "using existing definition/rationale fields where appropriate. Return only "
             "the candidate JSON; do not add a coverage report or new output fields."
         )
         _set_lock_fields_false(schema)
-        enrich_agent_output_model_definitions(schema)
+        enrich_agent_output_project_definitions(schema)
         return schema
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
@@ -225,12 +225,12 @@ class DimensionalCandidateValidator:
             ),
         )
 
-    def parse_validated(self, candidate: JsonValue) -> tuple[StageModelChange, ...]:
+    def parse_validated(self, candidate: JsonValue) -> tuple[StageProjectChange, ...]:
         normalized = self._normalize(candidate)
         if normalized.issues:
             raise InvalidRequestError("The Dimensional candidate is invalid.")
 
-        changes: list[StageModelChange] = []
+        changes: list[StageProjectChange] = []
         changed_submodels = [
             record.model_dump(mode="json")
             for record in normalized.submodels
@@ -253,17 +253,19 @@ class DimensionalCandidateValidator:
         ]
         if changed_submodels:
             changes.append(
-                StageModelChange(dataset="dimensional_submodel", records=changed_submodels)
+                StageProjectChange(dataset="dimensional_submodel", records=changed_submodels)
             )
         if changed_entities:
-            changes.append(StageModelChange(dataset="dimensional_entity", records=changed_entities))
+            changes.append(
+                StageProjectChange(dataset="dimensional_entity", records=changed_entities)
+            )
         if changed_attributes:
             changes.append(
-                StageModelChange(dataset="dimensional_attribute", records=changed_attributes)
+                StageProjectChange(dataset="dimensional_attribute", records=changed_attributes)
             )
         if changed_relationships:
             changes.append(
-                StageModelChange(
+                StageProjectChange(
                     dataset="dimensional_relationship",
                     records=changed_relationships,
                 )
@@ -309,13 +311,11 @@ class DimensionalCandidateValidator:
                     message = "Logical Entity source must belong to this immutable run selection."
                 else:
                     valid = (
-                        normalize_model_key_value(
-                            source.assertion_record.modeling_assertion_record_key
-                        )
-                        in self._assertion_record_keys
+                        normalize_project_key_value(source.context_record.context_record_id)
+                        in self._context_record_ids
                     )
-                    code = "candidate.assertion_unavailable"
-                    message = "Assertion source must exist in this immutable run context."
+                    code = "candidate.context_unavailable"
+                    message = "Context source must exist in this immutable run context."
                 if not valid:
                     issues.append(
                         AgentValidationIssue(
@@ -362,13 +362,11 @@ class DimensionalCandidateValidator:
                     )
                 else:
                     valid = (
-                        normalize_model_key_value(
-                            source.assertion_record.modeling_assertion_record_key
-                        )
-                        in self._assertion_record_keys
+                        normalize_project_key_value(source.context_record.context_record_id)
+                        in self._context_record_ids
                     )
-                    code = "candidate.assertion_unavailable"
-                    message = "Assertion source must exist in this immutable run context."
+                    code = "candidate.context_unavailable"
+                    message = "Context source must exist in this immutable run context."
                 if not valid:
                     issues.append(
                         AgentValidationIssue(
@@ -412,7 +410,7 @@ class DimensionalCandidateValidator:
         typed_attributes = cast(tuple[DimensionalAttributeRecord, ...], attributes)
         typed_relationships = cast(tuple[DimensionalRelationshipRecord, ...], relationships)
         issues.extend(
-            model_validation_issues(
+            project_validation_issues(
                 submodel_issues + entity_issues + attribute_issues + relationship_issues
             )
         )
@@ -461,7 +459,7 @@ class DimensionalCandidateValidator:
         attribute_keys.update(_attribute_key(record) for record in typed_attributes)
         for index, entity in enumerate(typed_entities):
             if any(
-                normalize_model_key_value(membership.submodel_name) not in submodel_keys
+                normalize_project_key_value(membership.submodel_name) not in submodel_keys
                 for membership in entity.submodels
             ):
                 issues.append(
@@ -473,8 +471,8 @@ class DimensionalCandidateValidator:
                 )
         for index, attribute in enumerate(typed_attributes):
             if (
-                normalize_model_key_value(attribute.dimensional_entity_schema_name),
-                normalize_model_key_value(attribute.dimensional_entity_name),
+                normalize_project_key_value(attribute.dimensional_entity_schema_name),
+                normalize_project_key_value(attribute.dimensional_entity_name),
             ) not in entity_keys:
                 issues.append(
                     AgentValidationIssue(
@@ -486,14 +484,14 @@ class DimensionalCandidateValidator:
         for index, relationship in enumerate(typed_relationships):
             endpoints = (
                 (
-                    normalize_model_key_value(relationship.from_dimensional_entity_schema_name),
-                    normalize_model_key_value(relationship.from_dimensional_entity_name),
-                    normalize_model_key_value(relationship.from_dimensional_attribute_name),
+                    normalize_project_key_value(relationship.from_dimensional_entity_schema_name),
+                    normalize_project_key_value(relationship.from_dimensional_entity_name),
+                    normalize_project_key_value(relationship.from_dimensional_attribute_name),
                 ),
                 (
-                    normalize_model_key_value(relationship.to_dimensional_entity_schema_name),
-                    normalize_model_key_value(relationship.to_dimensional_entity_name),
-                    normalize_model_key_value(relationship.to_dimensional_attribute_name),
+                    normalize_project_key_value(relationship.to_dimensional_entity_schema_name),
+                    normalize_project_key_value(relationship.to_dimensional_entity_name),
+                    normalize_project_key_value(relationship.to_dimensional_attribute_name),
                 ),
             )
             if any(endpoint not in attribute_keys for endpoint in endpoints):
@@ -685,21 +683,21 @@ def _set_lock_fields_false(value: JsonValue) -> None:
 
 
 def _submodel_key(record: DimensionalSubmodelRecord) -> str:
-    return normalize_model_key_value(record.dimensional_submodel_name)
+    return normalize_project_key_value(record.dimensional_submodel_name)
 
 
 def _entity_key(record: DimensionalEntityRecord) -> tuple[str, str]:
     return (
-        normalize_model_key_value(record.dimensional_entity_schema_name),
-        normalize_model_key_value(record.dimensional_entity_name),
+        normalize_project_key_value(record.dimensional_entity_schema_name),
+        normalize_project_key_value(record.dimensional_entity_name),
     )
 
 
 def _attribute_key(record: DimensionalAttributeRecord) -> tuple[str, str, str]:
     return (
-        normalize_model_key_value(record.dimensional_entity_schema_name),
-        normalize_model_key_value(record.dimensional_entity_name),
-        normalize_model_key_value(record.dimensional_attribute_name),
+        normalize_project_key_value(record.dimensional_entity_schema_name),
+        normalize_project_key_value(record.dimensional_entity_name),
+        normalize_project_key_value(record.dimensional_attribute_name),
     )
 
 
@@ -707,27 +705,27 @@ def _relationship_key(
     record: DimensionalRelationshipRecord,
 ) -> tuple[str, ...]:
     return (
-        normalize_model_key_value(record.from_dimensional_entity_schema_name),
-        normalize_model_key_value(record.from_dimensional_entity_name),
-        normalize_model_key_value(record.from_dimensional_attribute_name),
-        normalize_model_key_value(record.to_dimensional_entity_schema_name),
-        normalize_model_key_value(record.to_dimensional_entity_name),
-        normalize_model_key_value(record.to_dimensional_attribute_name),
-        normalize_model_key_value(record.dimensional_relationship_kind),
-        normalize_model_key_value(record.dimensional_relationship_role_name or ""),
+        normalize_project_key_value(record.from_dimensional_entity_schema_name),
+        normalize_project_key_value(record.from_dimensional_entity_name),
+        normalize_project_key_value(record.from_dimensional_attribute_name),
+        normalize_project_key_value(record.to_dimensional_entity_schema_name),
+        normalize_project_key_value(record.to_dimensional_entity_name),
+        normalize_project_key_value(record.to_dimensional_attribute_name),
+        normalize_project_key_value(record.dimensional_relationship_kind),
+        normalize_project_key_value(record.dimensional_relationship_role_name or ""),
     )
 
 
 def _membership_key(record: SubmodelMembershipRecord) -> tuple[str, ...]:
-    return (normalize_model_key_value(record.submodel_name),)
+    return (normalize_project_key_value(record.submodel_name),)
 
 
 def _entity_source_key(record: _EntitySource) -> tuple[str, ...]:
     if isinstance(record, DimensionalLogicalEntitySourceRecord):
         return ("logical_entity", *_logical_entity_key(record.source_logical_entity))
     return (
-        "assertion",
-        normalize_model_key_value(record.assertion_record.modeling_assertion_record_key),
+        "context_record",
+        normalize_project_key_value(record.context_record.context_record_id),
     )
 
 
@@ -735,28 +733,31 @@ def _attribute_source_key(record: _AttributeSource) -> tuple[str, ...]:
     if isinstance(record, AttributeLogicalSourceRecord):
         return ("logical_attribute", *_logical_attribute_key(record.source_logical_attribute))
     return (
-        "assertion",
-        normalize_model_key_value(record.assertion_record.modeling_assertion_record_key),
+        "context_record",
+        normalize_project_key_value(record.context_record.context_record_id),
     )
 
 
 def _nested_source_key(record: object) -> tuple[str, ...]:
-    if isinstance(record, (DimensionalLogicalEntitySourceRecord, DimensionalAssertionSourceRecord)):
+    if isinstance(record, (DimensionalLogicalEntitySourceRecord, DimensionalContextSourceRecord)):
         return _entity_source_key(record)
-    if isinstance(record, (AttributeLogicalSourceRecord, AttributeAssertionSourceRecord)):
+    if isinstance(record, (AttributeLogicalSourceRecord, AttributeContextSourceRecord)):
         return _attribute_source_key(record)
     raise TypeError("Unsupported Dimensional nested source")
 
 
 def _logical_entity_key(record: LogicalEntityKey) -> tuple[str, str]:
     return (
-        normalize_model_key_value(record.logical_entity_schema_name),
-        normalize_model_key_value(record.logical_entity_name),
+        normalize_project_key_value(record.logical_entity_schema_name),
+        normalize_project_key_value(record.logical_entity_name),
     )
 
 
 def _logical_attribute_key(record: LogicalAttributeKey) -> tuple[str, str, str]:
-    return (*_logical_entity_key(record), normalize_model_key_value(record.logical_attribute_name))
+    return (
+        *_logical_entity_key(record),
+        normalize_project_key_value(record.logical_attribute_name),
+    )
 
 
 __all__ = ["DimensionalCandidateValidator"]

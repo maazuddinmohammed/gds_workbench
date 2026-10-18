@@ -17,10 +17,10 @@ def _stage_row(
 ) -> dict[str, Any]:
     return {
         "workflow_run_id": 1048,
-        "model_id": 18,
+        "project_id": 18,
         "correlation_id": UUID("33333333-3333-3333-3333-333333333333"),
-        "model_revision": 7,
-        "model_workflow": "conceptual",
+        "project_revision": 7,
+        "project_workflow": "conceptual",
         "workflow_execution_mode": "one_shot",
         "modeled_entity_type": None,
         "selected_scope_digest": "a" * 64,
@@ -36,7 +36,7 @@ def _stage_row(
         "workflow_stage_order": 10,
         "prompt_template_version_id": 81,
         "prompt_template_digest": "b" * 64,
-        "system_prompt_template": "sensitive system {{model_name}}",
+        "system_prompt_template": "sensitive system {{project_name}}",
         "instruction_prompt_template": "sensitive instruction {{stage_context}}",
         "tool_instruction_prompt_template": None,
         "expected_stage_count": 1,
@@ -63,7 +63,7 @@ class PlanTransaction:
             rows
             if rows is not None
             else [
-                _stage_row(variable_id=1, variable_name="model_name"),
+                _stage_row(variable_id=1, variable_name="project_name"),
                 _stage_row(variable_id=2, variable_name="stage_context"),
             ]
         )
@@ -97,18 +97,18 @@ async def test_repository_loads_frozen_prompts_variables_and_exact_selection() -
     plan = await PostgresAgentRunPlanRepository().load(
         PlanTransaction(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
     )
 
     assert plan.workflow_run_id == 1048
     assert plan.correlation_id == UUID("33333333-3333-3333-3333-333333333333")
-    assert plan.model_revision == 7
+    assert plan.project_revision == 7
     assert plan.selected_object_ids == (501, 502)
     assert plan.selection.model_code == "foundry-primary"
     assert [stage.stage_code for stage in plan.stages] == ["candidate_authoring"]
     assert [variable.name for variable in plan.stages[0].variables] == [
-        "model_name",
+        "project_name",
         "stage_context",
     ]
     representation = repr(plan)
@@ -123,7 +123,7 @@ async def test_repository_loads_exact_validation_system_selection_without_object
     row = _stage_row(variable_id=1, variable_name="stage_context")
     row.update(
         {
-            "model_workflow": "validation",
+            "project_workflow": "validation",
             "workflow_execution_mode": None,
             "workflow_stage_code": "validation_generation",
         }
@@ -138,11 +138,11 @@ async def test_repository_loads_exact_validation_system_selection_without_object
             ],
         ),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
     )
 
-    assert plan.model_workflow == "validation"
+    assert plan.project_workflow == "validation"
     assert plan.selected_object_ids == ()
     assert plan.selected_system_codes == ("erp", "crm")
 
@@ -156,7 +156,7 @@ async def test_repository_rejects_incomplete_prompt_stage_coverage_safely() -> N
         await PostgresAgentRunPlanRepository().load(
             PlanTransaction(rows=rows),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
         )
 
@@ -170,7 +170,7 @@ async def test_repository_rejects_changed_or_incomplete_object_selection() -> No
         await PostgresAgentRunPlanRepository().load(
             PlanTransaction(selection=[{"object_id": 501, "selection_order": 1}]),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
         )
 
@@ -180,7 +180,7 @@ async def test_repository_rejects_changed_or_incomplete_object_selection() -> No
 @pytest.mark.asyncio
 async def test_repository_rejects_inconsistent_frozen_correlation() -> None:
     rows = [
-        _stage_row(variable_id=1, variable_name="model_name"),
+        _stage_row(variable_id=1, variable_name="project_name"),
         _stage_row(variable_id=2, variable_name="stage_context"),
     ]
     rows[1]["correlation_id"] = UUID("44444444-4444-4444-4444-444444444444")
@@ -189,7 +189,7 @@ async def test_repository_rejects_inconsistent_frozen_correlation() -> None:
         await PostgresAgentRunPlanRepository().load(
             PlanTransaction(rows=rows),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
         )
 
@@ -199,7 +199,7 @@ async def test_repository_rejects_inconsistent_frozen_correlation() -> None:
 @pytest.mark.asyncio
 async def test_plan_freezes_tool_permissions_and_rejects_inconsistent_rows() -> None:
     rows = [
-        _stage_row(variable_id=1, variable_name="model_name"),
+        _stage_row(variable_id=1, variable_name="project_name"),
         _stage_row(variable_id=2, variable_name="stage_context"),
     ]
     for row in rows:
@@ -208,7 +208,7 @@ async def test_plan_freezes_tool_permissions_and_rejects_inconsistent_rows() -> 
     plan = await PostgresAgentRunPlanRepository().load(
         PlanTransaction(rows=rows),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
     )
     assert plan.stages[0].agent_tool_names == ("get_agent_context_dataset",)
@@ -217,27 +217,47 @@ async def test_plan_freezes_tool_permissions_and_rejects_inconsistent_rows() -> 
         await PostgresAgentRunPlanRepository().load(
             PlanTransaction(rows=rows),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
         )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("workflow,count", [("conceptual", 50_001), ("validation", 1001)])
-async def test_run_plan_keeps_complete_large_selection(workflow: str, count: int) -> None:
+@pytest.mark.parametrize(
+    "workflow,count", [("conceptual", 50_001), ("validation", 1001)]
+)
+async def test_run_plan_keeps_complete_large_selection(
+    workflow: str, count: int
+) -> None:
     row = _stage_row(variable_id=None)
-    row.update(model_workflow=workflow, selected_scope_count=count)
+    row.update(project_workflow=workflow, selected_scope_count=count)
     if workflow == "validation":
-        row.update(workflow_execution_mode=None, workflow_stage_code="validation_generation")
-    objects = [
-        {"object_id": index, "selection_order": index} for index in range(1, count + 1)
-    ] if workflow != "validation" else []
-    systems = [
-        {"system_code": f"system_{index}", "selection_order": index}
-        for index in range(1, count + 1)
-    ] if workflow == "validation" else []
+        row.update(
+            workflow_execution_mode=None, workflow_stage_code="validation_generation"
+        )
+    objects = (
+        [
+            {"object_id": index, "selection_order": index}
+            for index in range(1, count + 1)
+        ]
+        if workflow != "validation"
+        else []
+    )
+    systems = (
+        [
+            {"system_code": f"system_{index}", "selection_order": index}
+            for index in range(1, count + 1)
+        ]
+        if workflow == "validation"
+        else []
+    )
     plan = await PostgresAgentRunPlanRepository().load(
         PlanTransaction(rows=[row], selection=objects, system_selection=systems),
-        tenant_id=7, model_id=18, workflow_run_id=1048,
+        tenant_id=7,
+        project_id=18,
+        workflow_run_id=1048,
     )
-    assert len(plan.selected_object_ids if objects else plan.selected_system_codes) == count
+    assert (
+        len(plan.selected_object_ids if objects else plan.selected_system_codes)
+        == count
+    )

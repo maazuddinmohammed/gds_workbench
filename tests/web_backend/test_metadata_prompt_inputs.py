@@ -122,7 +122,7 @@ def plan(
     )
     return original.model_copy(
         update={
-            "model_workflow": "metadata_enrichment",
+            "project_workflow": "metadata_enrichment",
             "workflow_execution_mode": "one_shot",
             "stages": (stage,),
         }
@@ -131,7 +131,7 @@ def plan(
 
 def contract(name: str) -> PromptInputContract:
     result = get_prompt_input_contract(
-        model_workflow="metadata_enrichment",
+        project_workflow="metadata_enrichment",
         workflow_execution_mode="one_shot",
         stage_code="candidate_authoring",
         resolver_key=f"{PREFIX}.inputs.{name}",
@@ -330,7 +330,7 @@ def test_catalog_cannot_resolve_inputs_on_an_unregistered_stage_or_mode() -> Non
     lookup = get_prompt_input_contract
     assert (
         lookup(
-            model_workflow="metadata_enrichment",
+            project_workflow="metadata_enrichment",
             workflow_execution_mode="tool_assisted",
             stage_code="candidate_authoring",
             resolver_key=REQUESTS,
@@ -339,7 +339,7 @@ def test_catalog_cannot_resolve_inputs_on_an_unregistered_stage_or_mode() -> Non
     )
     assert (
         lookup(
-            model_workflow="logical",
+            project_workflow="logical",
             workflow_execution_mode="one_shot",
             stage_code="candidate_authoring",
             resolver_key=REQUESTS,
@@ -348,7 +348,7 @@ def test_catalog_cannot_resolve_inputs_on_an_unregistered_stage_or_mode() -> Non
     )
     assert (
         lookup(
-            model_workflow="metadata_enrichment",
+            project_workflow="metadata_enrichment",
             workflow_execution_mode="one_shot",
             stage_code="arbitrary",
             resolver_key=REQUESTS,
@@ -448,7 +448,7 @@ async def test_both_prompt_reads_expose_fixed_help_and_preserve_stored_legacy_va
         async def catalog_rows(self: Any, query: Any, parameters: Any = ()) -> Any:
             base = (await original(self, query, parameters))[0]
             base.update(
-                model_workflow="metadata_enrichment",
+                project_workflow="metadata_enrichment",
                 workflow_stage_code="candidate_authoring",
             )
             return [
@@ -466,7 +466,7 @@ async def test_both_prompt_reads_expose_fixed_help_and_preserve_stored_legacy_va
             row = await original_one(self, query, parameters)
             if row and "prompt_template_id" in row:
                 row.update(
-                    model_workflow="metadata_enrichment",
+                    project_workflow="metadata_enrichment",
                     workflow_stage_code="candidate_authoring",
                 )
             return row

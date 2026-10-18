@@ -290,7 +290,9 @@ async def test_database_lock_operations_call_only_governed_functions() -> None:
     )
     await service.renew(_principal(), tenant_id=7, duration_minutes=120)
     await service.release(_principal(), tenant_id=7)
-    overridden = await service.override(_principal(), tenant_id=7, reason="Owner is unavailable")
+    overridden = await service.override(
+        _principal(), tenant_id=7, reason="Owner is unavailable"
+    )
 
     identity = (
         UUID("11111111-1111-1111-1111-111111111111"),

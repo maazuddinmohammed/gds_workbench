@@ -9,7 +9,7 @@ from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation, WriteTransaction
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-type ModelWorkflow = Literal[
+type ProjectWorkflow = Literal[
     "profiling",
     "analysis",
     "conceptual",
@@ -33,9 +33,9 @@ class WorkflowExecutionClaim(BaseModel):
 
     workflow_run_id: int = Field(gt=0)
     tenant_id: int = Field(gt=0)
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
-    model_workflow: ModelWorkflow
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
+    project_workflow: ProjectWorkflow
     workflow_execution_mode: WorkflowExecutionMode | None = None
     correlation_id: UUID
     actor_principal_type: Literal["user", "service_principal"]
@@ -48,11 +48,11 @@ class WorkflowExecutionClaim(BaseModel):
 
     @model_validator(mode="after")
     def validate_execution_shape(self) -> Self:
-        if self.model_workflow == "metadata_enrichment" and (
+        if self.project_workflow == "metadata_enrichment" and (
             self.workflow_execution_mode != "one_shot"
         ):
             raise ValueError("Metadata enrichment requires one-shot execution")
-        requires_mode = self.model_workflow in {
+        requires_mode = self.project_workflow in {
             "conceptual",
             "logical",
             "dimensional",
@@ -60,7 +60,7 @@ class WorkflowExecutionClaim(BaseModel):
         }
         if requires_mode and self.workflow_execution_mode is None:
             raise ValueError("The claimed Workflow Run requires an execution mode")
-        if self.model_workflow in {"profiling", "code_generation", "validation"} and (
+        if self.project_workflow in {"profiling", "code_generation", "validation"} and (
             self.workflow_execution_mode is not None
         ):
             raise ValueError("The claimed Workflow Run cannot use an execution mode")
@@ -93,15 +93,15 @@ class WorkflowExecutor(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
     ) -> object: ...
 
 
 __all__ = [
-    "ModelWorkflow",
+    "ProjectWorkflow",
     "WorkflowExecutionClaim",
     "WorkflowExecutionDatabase",
     "WorkflowExecutionMode",

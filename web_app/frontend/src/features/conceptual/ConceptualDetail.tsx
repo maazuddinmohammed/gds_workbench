@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
@@ -13,41 +13,45 @@ import { formatRequiredDateTime as formatDateTime } from "../../shared/presentat
 import { conceptualQueryKeys, type ConceptualApi } from "./api";
 
 export function ConceptualObjectDetailPage({
+  actions,
   api,
   tenantId,
-  modelId,
+  projectId,
   objectId,
 }: {
+  actions?: ReactNode;
   api: ConceptualApi;
   tenantId: number;
-  modelId: number;
+  projectId: number;
   objectId: number;
 }) {
   const query = useQuery({
-    queryKey: conceptualQueryKeys.object(tenantId, modelId, objectId),
-    queryFn: () => api.readConceptualObject(tenantId, modelId, objectId),
+    queryKey: conceptualQueryKeys.object(tenantId, projectId, objectId),
+    queryFn: () => api.readConceptualObject(tenantId, projectId, objectId),
   });
   if (query.isPending) return <DetailState label="Loading Conceptual Object…" />;
   if (query.isError) {
     return <DetailState label={detailErrorLabel(query.error, "Object")} error />;
   }
-  return <ConceptualObjectView tenantId={tenantId} modelId={modelId} object={query.data} />;
+  return <ConceptualObjectView actions={actions} tenantId={tenantId} projectId={projectId} object={query.data} />;
 }
 
 export function ConceptualRelationshipDetailPage({
+  actions,
   api,
   tenantId,
-  modelId,
+  projectId,
   relationshipId,
 }: {
+  actions?: ReactNode;
   api: ConceptualApi;
   tenantId: number;
-  modelId: number;
+  projectId: number;
   relationshipId: number;
 }) {
   const query = useQuery({
-    queryKey: conceptualQueryKeys.relationship(tenantId, modelId, relationshipId),
-    queryFn: () => api.readConceptualRelationship(tenantId, modelId, relationshipId),
+    queryKey: conceptualQueryKeys.relationship(tenantId, projectId, relationshipId),
+    queryFn: () => api.readConceptualRelationship(tenantId, projectId, relationshipId),
   });
   if (query.isPending) return <DetailState label="Loading Conceptual Relationship…" />;
   if (query.isError) {
@@ -55,34 +59,36 @@ export function ConceptualRelationshipDetailPage({
   }
   return (
     <ConceptualRelationshipView
+      actions={actions}
       tenantId={tenantId}
-      modelId={modelId}
+      projectId={projectId}
       relationship={query.data}
     />
   );
 }
 
 function ConceptualObjectView({
+  actions,
   tenantId,
-  modelId,
+  projectId,
   object,
 }: {
+  actions?: ReactNode;
   tenantId: number;
-  modelId: number;
+  projectId: number;
   object: ConceptualObjectDetail;
 }) {
   return (
     <article className="workflow-detail-page conceptual-detail-page modeled-detail-page page-enter">
       <DetailHeader
+        actions={actions}
         tenantId={tenantId}
-        modelId={modelId}
-        eyebrow={`Conceptual Object ${object.conceptual_object_id}`}
+        projectId={projectId}
         title={object.conceptual_object_name}
         status={object.conceptual_object_status}
         locked={object.conceptual_object_is_locked}
       />
-      <section className="detail-section detail-primary" aria-labelledby="conceptual-object-overview">
-        <header><h2 id="conceptual-object-overview">Object definition</h2></header>
+      <section className="detail-section detail-primary" aria-label="Object definition">
         <dl className="modeled-detail-fields">
           <div className="is-definition"><dt>Definition</dt><dd>{object.conceptual_object_definition}</dd></div>
           <Fact label="Grain" value={object.conceptual_object_grain} />
@@ -105,26 +111,27 @@ function ConceptualObjectView({
 }
 
 function ConceptualRelationshipView({
+  actions,
   tenantId,
-  modelId,
+  projectId,
   relationship,
 }: {
+  actions?: ReactNode;
   tenantId: number;
-  modelId: number;
+  projectId: number;
   relationship: ConceptualRelationshipDetail;
 }) {
   return (
     <article className="workflow-detail-page conceptual-detail-page modeled-detail-page page-enter">
       <DetailHeader
+        actions={actions}
         tenantId={tenantId}
-        modelId={modelId}
-        eyebrow={`Conceptual Relationship ${relationship.conceptual_relationship_id}`}
+        projectId={projectId}
         title={relationship.conceptual_relationship_name}
         status={relationship.conceptual_relationship_status}
         locked={relationship.conceptual_relationship_is_locked}
       />
-      <section className="detail-section detail-primary" aria-labelledby="conceptual-relationship-overview">
-        <header><h2 id="conceptual-relationship-overview">Relationship definition</h2></header>
+      <section className="detail-section detail-primary" aria-label="Relationship definition">
         <dl className="modeled-detail-fields">
           <div className="is-definition"><dt>Definition</dt><dd>{relationship.conceptual_relationship_definition}</dd></div>
           <Fact label="From Object" value={relationship.from_conceptual_object_name} />
@@ -151,16 +158,16 @@ function ConceptualRelationshipView({
 }
 
 function DetailHeader({
+  actions,
   tenantId,
-  modelId,
-  eyebrow,
+  projectId,
   title,
   status,
   locked,
 }: {
+  actions?: ReactNode;
   tenantId: number;
-  modelId: number;
-  eyebrow: string;
+  projectId: number;
   title: string;
   status: string;
   locked: boolean;
@@ -169,16 +176,15 @@ function DetailHeader({
   useEffect(() => heading.current?.focus(), []);
   return (
     <header className="workflow-detail-header">
-      <div>
+      <div className="workspace-record-heading">
         <Link
           className="text-action"
           aria-label="Back to Conceptual"
-          to="/tenants/$tenantId/models/$modelId/conceptual"
-          params={{ tenantId: String(tenantId), modelId: String(modelId) }}
+          to="/tenants/$tenantId/projects/$projectId/conceptual"
+          params={{ tenantId: String(tenantId), projectId: String(projectId) }}
         >
           ← Back to Conceptual
         </Link>
-        <p className="eyebrow">{eyebrow}</p>
         <div className="conceptual-detail-title">
           <h1 ref={heading} tabIndex={-1}>{title}</h1>
           <div className="detail-badge-stack">
@@ -189,6 +195,7 @@ function DetailHeader({
           </div>
         </div>
       </div>
+      {actions}
     </header>
   );
 }
@@ -207,13 +214,13 @@ function SupportEvidence({ supports }: { supports: ConceptualSupport[] }) {
         <div className="workflow-table-scroll table-scroll" role="region" aria-label="Scrollable Support evidence" tabIndex={0}>
           <table aria-label="Support evidence">
             <thead>
-              <tr><th>Schema</th><th>Object / assertion</th><th>Rationale</th><th>Role</th><th>Confidence</th><th>Status</th><th>Details</th></tr>
+              <tr><th>Schema</th><th>Object / context</th><th>Rationale</th><th>Role</th><th>Confidence</th><th>Status</th><th>Details</th></tr>
             </thead>
             <tbody>
               {supports.map((support) => {
                 const name = support.support_source_type === "object"
                   ? `${support.source_object.object_schema}.${support.source_object.object_name}`
-                  : support.assertion_record.modeling_assertion_record_key;
+                  : support.context_record.context_group_name;
                 const expanded = expandedSupportId === support.conceptual_support_id;
                 const detailId = `conceptual-support-${support.conceptual_support_id}`;
                 return (
@@ -223,7 +230,7 @@ function SupportEvidence({ supports }: { supports: ConceptualSupport[] }) {
                       <td>
                         <strong>{support.support_source_type === "object" ? support.source_object.object_name : name}</strong>
                         <small className="modeled-source-role">
-                          {support.support_source_type === "object" ? "Physical Object" : "Modeling Assertion"}
+                          {support.support_source_type === "object" ? "Physical Object" : "Context record"}
                         </small>
                       </td>
                       <td className="modeled-source-rationale">{support.support_reason}</td>
@@ -262,16 +269,11 @@ function SupportEvidence({ supports }: { supports: ConceptualSupport[] }) {
                             </>
                           ) : (
                             <>
-                              <Fact label="Assertion" value={support.assertion_record.modeling_assertion_text} />
-                              <Fact label="Document" value={support.assertion_record.modeling_assertion_document_name} />
-                              <Fact label="Type" value={humanize(support.assertion_record.modeling_assertion_record_type)} />
-                              <Fact
-                                label="Assertion confidence"
-                                value={support.assertion_record.modeling_assertion_confidence
-                                  ? humanize(support.assertion_record.modeling_assertion_confidence)
-                                  : "Not recorded"}
-                              />
-                              <Fact label="Assertion status" value={humanize(support.assertion_record.modeling_assertion_record_status)} />
+                              <Fact label="Context" value={support.context_record.context_text} />
+                              <Fact label="Group" value={support.context_record.context_group_name} />
+                              <Fact label="Type" value={support.context_record.context_type_name} />
+                              <Fact label="Source reference" value={support.context_record.source_reference ?? "Not recorded"} />
+                              <Fact label="Context status" value={humanize(support.context_record.status)} />
                             </>
                           )}
                         </dl>

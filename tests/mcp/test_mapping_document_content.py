@@ -4,19 +4,19 @@ from copy import deepcopy
 
 import pytest
 
-from gds_etl_workbench.application.change_sets.model_validation import (
+from gds_etl_workbench.application.change_sets.project_validation import (
     validate_future_graph,
 )
 from gds_etl_workbench.domain.modeling_records import has_mapping_transformation_content
-from gds_etl_workbench.domain.snapshots.model import ModelChangeSetDataset
-from tests.mcp.model_test_fixtures import (
-    complete_model_graph,
+from gds_etl_workbench.domain.snapshots.project import ProjectChangeSetDataset
+from tests.mcp.project_test_fixtures import (
+    complete_project_graph,
     complete_physical_scope,
-    empty_model_snapshot,
+    empty_project_snapshot,
     snapshot_from_graph,
 )
 
-MAPPING_FIELDS: tuple[tuple[ModelChangeSetDataset, str, str], ...] = (
+MAPPING_FIELDS: tuple[tuple[ProjectChangeSetDataset, str, str], ...] = (
     ("mapping_object", "mapping_transformation_document", "object_mapping_status"),
     (
         "mapping_attribute",
@@ -34,14 +34,17 @@ EMPTY_DOCUMENTS: list[dict[str, object]] = [
 @pytest.mark.parametrize(("dataset", "field", "status"), MAPPING_FIELDS)
 @pytest.mark.parametrize("document", EMPTY_DOCUMENTS)
 def test_new_or_changed_empty_mapping_requires_explicit_null(
-    dataset: ModelChangeSetDataset, field: str, status: str, document: dict[str, object]
+    dataset: ProjectChangeSetDataset,
+    field: str,
+    status: str,
+    document: dict[str, object],
 ) -> None:
-    graph = complete_model_graph()
+    graph = complete_project_graph()
     changed = deepcopy(graph[dataset][0])
     changed[field] = document
     for existing in (True, False):
-        snapshot = snapshot_from_graph(graph) if existing else empty_model_snapshot()
-        staged: dict[ModelChangeSetDataset, list[dict[str, object]]] = (
+        snapshot = snapshot_from_graph(graph) if existing else empty_project_snapshot()
+        staged: dict[ProjectChangeSetDataset, list[dict[str, object]]] = (
             {dataset: [changed]}
             if existing
             else {**graph, dataset: [changed, *graph[dataset][1:]]}
@@ -71,7 +74,7 @@ def test_new_or_changed_empty_mapping_requires_explicit_null(
 def test_unchanged_historical_empty_documents_keep_code_authoring_compatibility() -> (
     None
 ):
-    graph = complete_model_graph()
+    graph = complete_project_graph()
     for dataset, field, _ in MAPPING_FIELDS:
         for record in graph[dataset]:
             record[field] = {"old_empty_template": [None, {}]}
@@ -101,9 +104,9 @@ def test_recursive_empty_content_is_missing(value: object) -> None:
 @pytest.mark.parametrize(("dataset", "field", "status"), MAPPING_FIELDS)
 @pytest.mark.parametrize("value", [False, 0])
 def test_active_custom_mapping_can_keep_false_or_zero_rules(
-    dataset: ModelChangeSetDataset, field: str, status: str, value: bool | int
+    dataset: ProjectChangeSetDataset, field: str, status: str, value: bool | int
 ) -> None:
-    graph = complete_model_graph()
+    graph = complete_project_graph()
     changed = deepcopy(graph[dataset][0])
     changed[field] = {"custom_rule": value}
     result = validate_future_graph(

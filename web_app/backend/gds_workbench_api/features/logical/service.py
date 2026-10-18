@@ -6,9 +6,9 @@ import logging
 from uuid import UUID
 
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.model import StageModelChange
-from gds_etl_workbench.application.change_sets.model_validation import (
-    ModelValidationIssue,
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
+from gds_etl_workbench.application.change_sets.project_validation import (
+    ProjectValidationIssue,
     validate_future_graph,
 )
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
@@ -60,7 +60,7 @@ from gds_workbench_api.features.workflows.authoring.repair import (
     AgentContextPolicy,
     AgentExecutor,
     load_default_agent_context_policy,
-    model_validation_issues,
+    project_validation_issues,
 )
 from gds_workbench_api.features.workflows.authoring.stage_runner import (
     AgentStageRunner,
@@ -126,19 +126,19 @@ class LogicalWorkflow:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         expected_execution_mode: WorkflowExecutionMode,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart:
         return await self._lifecycle.start(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             workflow_run_id=workflow_run_id,
             expected_workflow="logical",
             expected_execution_mode=expected_execution_mode,
-            expected_model_revision=expected_model_revision,
+            expected_project_revision=expected_project_revision,
         )
 
     async def execute_started(
@@ -146,13 +146,13 @@ class LogicalWorkflow:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
     ) -> LogicalExecutionResult:
         finalization_attempted = False
-        changes: tuple[StageModelChange, ...] = ()
+        changes: tuple[StageProjectChange, ...] = ()
         recovery_context: tuple[LogicalCandidateValidator, AgentContextBundle] | None = None
         try:
             async with self._database.write_transaction(
@@ -162,20 +162,20 @@ class LogicalWorkflow:
                     transaction,
                     principal,
                     tenant_id=tenant_id,
-                    policy=ToolPolicy.TENANT_MODEL_WRITE,
-                    model_id=model_id,
+                    policy=ToolPolicy.TENANT_PROJECT_WRITE,
+                    project_id=project_id,
                 )
                 plan = await self._plan_repository.load(
                     transaction,
                     tenant_id=tenant_id,
-                    model_id=model_id,
+                    project_id=project_id,
                     workflow_run_id=workflow_run_id,
                 )
                 self._validate_plan(
                     plan,
-                    model_id=model_id,
+                    project_id=project_id,
                     workflow_run_id=workflow_run_id,
-                    expected_model_revision=expected_model_revision,
+                    expected_project_revision=expected_project_revision,
                 )
                 context = await self._context_repository.load(
                     transaction,
@@ -191,7 +191,7 @@ class LogicalWorkflow:
                 lifecycle=self._lifecycle,
                 principal=principal,
                 workflow_run_id=workflow_run_id,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 workflow_run_claim_token=workflow_run_claim_token,
             )
             await progress.append(
@@ -218,7 +218,7 @@ class LogicalWorkflow:
                 changes = project_logical_audit_policy(
                     changes=validator.parse_validated(value),
                     applied=context.context.applied.logical,
-                    raw_template=context.context.model_details.silver_model_audit_columns_template,
+                    raw_template=context.context.project_details.silver_model_audit_columns_template,
                 )
                 checked = validate_future_graph(
                     snapshot=snapshot,
@@ -227,7 +227,7 @@ class LogicalWorkflow:
                 )
                 coverage_issues = validator.validate_coverage(value)
                 return AgentCandidateValidation(
-                    issues=model_validation_issues(checked.issues) + coverage_issues
+                    issues=project_validation_issues(checked.issues) + coverage_issues
                 )
 
             resolver_values: dict[str, object] = {
@@ -236,9 +236,9 @@ class LogicalWorkflow:
                 ): context.embedded_context,
                 "workflow.validation_failures": [],
             }
-            resolver_values["model.naming_instructions"] = effective_naming_instructions(
+            resolver_values["project.naming_instructions"] = effective_naming_instructions(
                 "logical",
-                context.context.model_details.silver_model_naming_instructions,
+                context.context.project_details.silver_model_naming_instructions,
             )
             coverage_warning: str | None = None
             try:
@@ -261,7 +261,7 @@ class LogicalWorkflow:
                 # The shared runner attaches a checked candidate only after all attempts.
                 # Only advisory coverage may fall short; all other validation blocks.
                 if (
-                    context.context.model_details.logical_enforce_coverage_threshold
+                    context.context.project_details.logical_enforce_coverage_threshold
                     or error.candidate is None
                     or not error.issues
                     or any(
@@ -282,21 +282,21 @@ class LogicalWorkflow:
             changes = project_logical_audit_policy(
                 changes=changes,
                 applied=context.context.applied.logical,
-                raw_template=(context.context.model_details.silver_model_audit_columns_template),
+                raw_template=(context.context.project_details.silver_model_audit_columns_template),
             )
             if not changes:
                 finalization_attempted = True
                 return await self._no_op.complete(
                     principal,
                     tenant_id=tenant_id,
-                    model_id=model_id,
+                    project_id=project_id,
                     workflow_run_id=workflow_run_id,
                     workflow_run_claim_token=workflow_run_claim_token,
                     request=AuthoringNoOpRequest(
                         expected_workflow="logical",
                         expected_execution_mode=execution_mode,
                         expected_correlation_id=plan.correlation_id,
-                        expected_model_revision=expected_model_revision,
+                        expected_project_revision=expected_project_revision,
                         candidate_digest=authoring_no_op_candidate_digest(plan),
                         final_event=progress.event(
                             attempt=final_attempt,
@@ -320,10 +320,10 @@ class LogicalWorkflow:
             finalization = await self._handoff.finalize(
                 principal,
                 tenant_id=tenant_id,
-                model_id=model_id,
+                project_id=project_id,
                 workflow_run_id=workflow_run_id,
                 expected_workflow="logical",
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 workflow_run_claim_token=workflow_run_claim_token,
                 changes=changes,
                 final_event=progress.event(
@@ -360,11 +360,11 @@ class LogicalWorkflow:
                     changes=recovery_validator.parse_validated(error.candidate),
                     applied=recovery_bundle.context.applied.logical,
                     raw_template=(
-                        recovery_bundle.context.model_details.silver_model_audit_columns_template
+                        recovery_bundle.context.project_details.silver_model_audit_columns_template
                     ),
                 )
                 retention_issues = tuple(
-                    ModelValidationIssue(
+                    ProjectValidationIssue(
                         code=issue.code.removeprefix("candidate."),
                         dataset=str(issue.path[0]) if issue.path else "logical",
                         record_number=(
@@ -382,10 +382,10 @@ class LogicalWorkflow:
                     await self._handoff.retain_failed_candidate(
                         principal,
                         tenant_id=tenant_id,
-                        model_id=model_id,
+                        project_id=project_id,
                         workflow_run_id=workflow_run_id,
                         expected_workflow="logical",
-                        expected_model_revision=expected_model_revision,
+                        expected_project_revision=expected_project_revision,
                         workflow_run_claim_token=workflow_run_claim_token,
                         changes=changes,
                         issues=retention_issues,
@@ -397,7 +397,7 @@ class LogicalWorkflow:
                 except Exception as retention_error:
                     _logger.warning(
                         "Rejected Workflow draft retention remains pending.",
-                        extra={"workflow_run_id": workflow_run_id, "model_id": model_id},
+                        extra={"workflow_run_id": workflow_run_id, "project_id": project_id},
                     )
                     raise _safe_execution_error(
                         retention_error,
@@ -413,7 +413,7 @@ class LogicalWorkflow:
                     "Logical Workflow Run finalization remains pending.",
                     extra={
                         "workflow_run_id": workflow_run_id,
-                        "model_id": model_id,
+                        "project_id": project_id,
                         "failure_code": safe_error.code[:100],
                     },
                 )
@@ -422,7 +422,7 @@ class LogicalWorkflow:
                     await self._lifecycle.fail(
                         principal,
                         workflow_run_id=workflow_run_id,
-                        expected_model_revision=expected_model_revision,
+                        expected_project_revision=expected_project_revision,
                         workflow_run_claim_token=workflow_run_claim_token,
                         failure_code=safe_error.code[:100],
                         safe_failure_message=safe_error.message[:2000],
@@ -432,7 +432,7 @@ class LogicalWorkflow:
                         "Logical failure state could not be persisted.",
                         extra={
                             "workflow_run_id": workflow_run_id,
-                            "model_id": model_id,
+                            "project_id": project_id,
                             "failure_code": safe_error.code[:100],
                         },
                     )
@@ -442,9 +442,9 @@ class LogicalWorkflow:
     def _validate_plan(
         plan: AgentRunPlan,
         *,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> None:
         stage_codes = tuple(stage.stage_code for stage in plan.stages)
         mode_path_is_valid = plan.workflow_execution_mode in (
@@ -452,10 +452,10 @@ class LogicalWorkflow:
             "tool_assisted",
         ) and stage_codes == ("candidate_authoring",)
         if (
-            plan.model_id != model_id
+            plan.project_id != project_id
             or plan.workflow_run_id != workflow_run_id
-            or plan.model_revision != expected_model_revision
-            or plan.model_workflow != "logical"
+            or plan.project_revision != expected_project_revision
+            or plan.project_workflow != "logical"
             or plan.modeled_entity_type is not None
             or not mode_path_is_valid
         ):
@@ -485,15 +485,15 @@ def _candidate_validator(context: AgentContextBundle) -> LogicalCandidateValidat
         for selected in context.context.selected_objects
         for attribute in selected.attributes
     )
-    assertion_keys = tuple(
-        record.modeling_assertion_record_key for record in context.context.assertion.records
+    context_record_ids = tuple(
+        record.context_record_id for record in context.context.context.records
     )
     return LogicalCandidateValidator(
         selected_object_keys=selected_objects,
         selected_attribute_keys=selected_attributes,
-        assertion_record_keys=assertion_keys,
+        context_record_ids=context_record_ids,
         applied=context.context.applied.logical,
-        coverage_threshold_percent=context.context.model_details.logical_coverage_threshold_percent,
+        coverage_threshold_percent=context.context.project_details.logical_coverage_threshold_percent,
     )
 
 

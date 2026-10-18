@@ -11,7 +11,7 @@
     return Boolean(
       loaded &&
         !stale &&
-        task?.schema_version === "1.0" && typeof task.outcome === "string",
+        task?.schema_version === "2.0" && typeof task.outcome === "string",
     );
   }
 
@@ -20,7 +20,7 @@
       hasSnapshot &&
         !dirty &&
         !stale &&
-        task?.schema_version === "1.0" && typeof task.outcome === "string",
+        task?.schema_version === "2.0" && typeof task.outcome === "string",
     );
   }
 

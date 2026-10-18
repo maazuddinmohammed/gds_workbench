@@ -7,16 +7,16 @@ schema in docs is authoritative.
 
 ## Boundaries
 
-The public surface provides Tenant/Model/metadata reads, governed Tenant Lock
-operations, Metadata/Model Snapshot creation, Change Set lifecycles and bounded
+The public surface provides Tenant/Project/metadata reads, governed Tenant Lock
+operations, Metadata/Project Snapshot creation, Change Set lifecycles and bounded
 Databricks SQL preflight. It exposes no MCP prompts/resources, foundational CRUD,
 individual graph mutation, arbitrary PostgreSQL, credential reads, uploads or code
 execution. Atlas owns interaction and local review.
 
-Metadata Change Sets own physical registration. Model Change Sets own scope and
-authored Model sections, including Entity-owned Mapping, Code and Validation.
+Metadata Change Sets own physical registration. Project Change Sets own scope and
+authored Project sections, including Entity-owned Mapping, Code and Validation.
 Apply stores definitions; it does not execute/deploy generated artifacts. Target
-registration remains an optional Metadata handoff. A changed Model revision requires
+registration remains an optional Metadata handoff. A changed Project revision requires
 a fresh Snapshot and reassessment. Dataset descriptions and snapshot contracts are
 available through the registered describe tools.
 
@@ -31,9 +31,9 @@ exact SQL limits; credentials and raw submitted SQL never enter audit logs.
 
 Snapshot ZIPs share one configured private container. New uploads use
 `metadata/<tenant_id>/YYYYMMDD/<snapshot_id>.zip` or
-`model/<tenant_id>/YYYYMMDD/<snapshot_id>.zip`. The date is the snapshot creation
-date in UTC; Model Tenant ownership comes from the authorized Model record.
-Model ID remains in the Blob metadata and download filename. Files inside the
+`project/<tenant_id>/YYYYMMDD/<snapshot_id>.zip`. The date is the snapshot creation
+date in UTC; Project Tenant ownership comes from the authorized Project record.
+Project ID remains in the Blob metadata and download filename. Files inside the
 ZIP retain their existing structure. Existing Blobs and issued download URLs
 are unaffected; no archives are moved.
 
@@ -69,16 +69,16 @@ approved external rollout. Building locally does not deploy anything.
 
 ### Profiling runs
 
-`start_profiling_run(model_id, selected_object_ids, expected_model_revision, request_id,
+`start_profiling_run(project_id, selected_object_ids, expected_project_revision, request_id,
 batch_ids?, environment_code="dev")` starts deterministic server profiling.
 `get_profiling_run_status(run_id)` reports progress and saved counts;
 `cancel_profiling_run(run_id)` revokes the claim and requests statement cancellation.
 Use a fresh UUID per request, preserving it for identical retries. Batch IDs are a
 shared string list, required for selected batched Objects. The server resolves
 Source/Bronze relations and GDS Connection values; no SQL or credentials travel
-through these tool arguments/results. Refresh the Model Snapshot after completion.
+through these tool arguments/results. Refresh the Project Snapshot after completion.
 
 Every MCP process runs a lease-based worker. PostgreSQL claims prevent duplicate
 execution across processes and separate MCP Profiling from web workers. Runs
 survive process restarts; expired claims can be recovered up to five times. Only
-complete, current, authorized results commit. Model and Tenant Lock rules apply.
+complete, current, authorized results commit. Project and Tenant Lock rules apply.

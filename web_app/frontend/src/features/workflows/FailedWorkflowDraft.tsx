@@ -1,16 +1,16 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { NormalizedJson } from "../assertions/NormalizedJson";
+import { NormalizedJson } from "../../shared/NormalizedJson";
 import type { WorkflowDraftReview, WorkflowRunDetail, WorkflowRunMonitorApi } from "./api";
 
 /** Inspect canonical staged records only; provider responses never enter this view. */
 export function FailedWorkflowDraft({
-  api, tenantId, modelId, run, review, isPending, isError, expired,
+  api, tenantId, projectId, run, review, isPending, isError, expired,
 }: {
   api: WorkflowRunMonitorApi;
   tenantId: number;
-  modelId: number;
+  projectId: number;
   run: WorkflowRunDetail;
   review: WorkflowDraftReview | null;
   isPending: boolean;
@@ -20,8 +20,8 @@ export function FailedWorkflowDraft({
   const [dataset, setDataset] = useState("");
   const [recordNumber, setRecordNumber] = useState(1);
   const matches = (candidate: WorkflowDraftReview | null | undefined) => Boolean(candidate
-    && candidate.model_id === modelId
-    && candidate.model_change_set_id === run.model_change_set_id
+    && candidate.project_id === projectId
+    && candidate.project_change_set_id === run.project_change_set_id
     && candidate.draft_revision === run.draft_revision
     && candidate.status === "active"
     && candidate.candidate_digest === null
@@ -29,10 +29,10 @@ export function FailedWorkflowDraft({
     && Date.parse(candidate.expires_at) > Date.now());
   const available = !isError && !isPending && !expired && matches(review);
   const recordsQuery = useQuery({
-    queryKey: ["workflow-draft-records", tenantId, modelId,
-      run.model_change_set_id, run.draft_revision, dataset],
+    queryKey: ["workflow-draft-records", tenantId, projectId,
+      run.project_change_set_id, run.draft_revision, dataset],
     queryFn: () => api.readWorkflowDraftReview(
-      tenantId, modelId, run.model_change_set_id ?? "", dataset,
+      tenantId, projectId, run.project_change_set_id ?? "", dataset,
     ),
     enabled: available && Boolean(dataset),
   });

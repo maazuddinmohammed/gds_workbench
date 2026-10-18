@@ -72,11 +72,11 @@ function identity(value, label) {
 function session(root) {
   const document = read(root, ".atlas/session.json");
   const state = document.value;
-  if (!object(state) || state.schema_version !== "1.0") throw Error("Invalid Atlas session version.");
+  if (!object(state) || state.schema_version !== "2.0") throw Error("Invalid Atlas session version.");
   identity(state.tenant, "Tenant");
-  if (state.model !== null && (!object(state.model) || !Number.isSafeInteger(state.model.id) ||
-      state.model.id < 1 || typeof state.model.name !== "string" || !state.model.name.trim())) {
-    throw Error("Invalid active Model identity.");
+  if (state.project !== null && (!object(state.project) || !Number.isSafeInteger(state.project.id) ||
+      state.project.id < 1 || typeof state.project.name !== "string" || !state.project.name.trim())) {
+    throw Error("Invalid active Project identity.");
   }
   if (state.active_task !== null && !uuid.test(state.active_task ?? "")) throw Error("Invalid active task ID.");
   if (state.sql !== undefined && (!object(state.sql) || !["never", "essential", "proactive"].includes(state.sql.policy) ||
@@ -91,23 +91,23 @@ function session(root) {
         (owner.id === state.tenant.id && owner.code !== state.tenant.code)) throw Error("Metadata owner registry conflicts with workspace identity.");
   }
   if (state.refresh_required !== undefined && (!Array.isArray(state.refresh_required) || state.refresh_required.some((entry) =>
-    !object(entry) || !["metadata", "model"].includes(entry.area) || !Number.isSafeInteger(entry.owner_tenant_id) || entry.owner_tenant_id < 1))) {
+    !object(entry) || !["metadata", "project"].includes(entry.area) || !Number.isSafeInteger(entry.owner_tenant_id) || entry.owner_tenant_id < 1))) {
     throw Error("Invalid Snapshot refresh markers.");
   }
   return document;
 }
 
 function owner(state, area, selected) {
-  if (!["metadata", "model"].includes(area)) throw Error("--area must be metadata or model.");
+  if (!["metadata", "project"].includes(area)) throw Error("--area must be metadata or project.");
   const id = selected === undefined ? state.tenant.id : Number(selected);
   if (!Number.isSafeInteger(id) || id < 1) throw Error("--owner must be a positive Tenant ID.");
-  if (area === "model") {
-    if (id !== state.tenant.id) throw Error("Model ownership must match the primary Tenant.");
+  if (area === "project") {
+    if (id !== state.tenant.id) throw Error("Project ownership must match the primary Tenant.");
     return {id: state.tenant.id, code: state.tenant.code, root: "."};
   }
   if (id === state.tenant.id) return {id: state.tenant.id, code: state.tenant.code, root: "."};
   const result = state.metadata_owners?.[String(id)];
-  if (!result || !state.model) throw Error("Additional Metadata owner requires a selected Model and registered owner.");
+  if (!result || !state.project) throw Error("Additional Metadata owner requires a selected Project and registered owner.");
   return {id: result.id, code: result.code, root: result.root};
 }
 
@@ -115,7 +115,7 @@ function task(root, id) {
   if (!uuid.test(id ?? "")) throw Error("A task UUID is required.");
   const document = read(root, `.atlas/tasks/${id}.json`);
   const value = document.value;
-  if (!object(value) || value.schema_version !== "1.0" || typeof value.outcome !== "string" || !value.outcome.trim() ||
+  if (!object(value) || value.schema_version !== "2.0" || typeof value.outcome !== "string" || !value.outcome.trim() ||
       (value.progress !== undefined && typeof value.progress !== "string") ||
       (value.inputs !== undefined && !object(value.inputs)) ||
       ["work", "evidence"].some((key) => value[key] !== undefined && (!Array.isArray(value[key]) || value[key].some((entry) =>
@@ -126,11 +126,11 @@ function task(root, id) {
 }
 
 function operation(root, state, area, selectedOwner) {
-  const relative = area === "model" ? state.operations?.model : state.operations?.metadata?.[String(selectedOwner.id)];
+  const relative = area === "project" ? state.operations?.project : state.operations?.metadata?.[String(selectedOwner.id)];
   if (!relative) throw Error("A digest-bound acknowledgement is required first.");
   const document = read(root, relative);
   const value = document.value;
-  if (!object(value) || value.schema_version !== "1.0" || !uuid.test(value.id ?? "") || !uuid.test(value.task_id ?? "") ||
+  if (!object(value) || value.schema_version !== "2.0" || !uuid.test(value.id ?? "") || !uuid.test(value.task_id ?? "") ||
       relative !== `.atlas/tasks/${value.task_id}.evidence/${value.id}.json` || value.area !== area ||
       value.owner?.id !== selectedOwner.id || value.owner?.code !== selectedOwner.code || value.owner?.root !== selectedOwner.root ||
       !digest.test(value.local_digest ?? "")) throw Error("Operation evidence does not match its owner/area/path.");

@@ -12,8 +12,7 @@ from gds_etl_workbench.infrastructure.postgres import ReadIsolation, ReadTransac
 
 from gds_workbench_api.features.dimensional.read_contracts import (
     MAX_DETAIL_ROWS,
-    DimensionalAssertionSource,
-    DimensionalAttributeAssertionSource,
+    DimensionalAttributeContextSource,
     DimensionalAttributeDetail,
     DimensionalAttributeFilters,
     DimensionalAttributeLogicalSource,
@@ -21,6 +20,7 @@ from gds_workbench_api.features.dimensional.read_contracts import (
     DimensionalAttributePage,
     DimensionalAttributeSource,
     DimensionalAttributeSummary,
+    DimensionalContextSource,
     DimensionalDetailLimitExceededError,
     DimensionalLogicalEntitySource,
     DimensionalObjectDetail,
@@ -36,14 +36,14 @@ from gds_workbench_api.features.dimensional.read_contracts import (
     DimensionalSubmodelMembership,
 )
 from gds_workbench_api.features.logical import ModeledFilters
-from gds_workbench_api.features.models import ModelNotFoundError
+from gds_workbench_api.features.projects import ProjectNotFoundError
 
-_MODEL_HEADER_SQL: LiteralString = """
-SELECT target_model.model_revision
-  FROM model.model AS target_model
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+_PROJECT_HEADER_SQL: LiteralString = """
+SELECT target_project.project_revision
+  FROM project.project AS target_project
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
 """
 
 _DIMENSIONAL_OBJECTS_SQL: LiteralString = """
@@ -59,11 +59,11 @@ SELECT entity.dimensional_entity_id,
        entity.dimensional_entity_is_locked,
        entity.updated_time AS updated_at
   FROM workflow.dimensional_entity AS entity
-  JOIN model.model AS target_model
-    ON target_model.model_id = entity.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+  JOIN project.project AS target_project
+    ON target_project.project_id = entity.project_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND (%s::VARCHAR IS NULL OR entity.dimensional_entity_status = %s)
    AND (%s::BOOLEAN IS NULL OR entity.dimensional_entity_is_locked = %s)
    AND (
@@ -99,11 +99,11 @@ SELECT entity.dimensional_entity_id,
        entity.created_time AS created_at,
        entity.updated_time AS updated_at
   FROM workflow.dimensional_entity AS entity
-  JOIN model.model AS target_model
-    ON target_model.model_id = entity.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+  JOIN project.project AS target_project
+    ON target_project.project_id = entity.project_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND entity.dimensional_entity_id = %s
 """
 
@@ -119,15 +119,15 @@ SELECT membership.dimensional_entity_submodel_id,
   FROM workflow.dimensional_entity_submodel AS membership
   JOIN workflow.dimensional_entity AS entity
     ON entity.dimensional_entity_id = membership.dimensional_entity_id
-   AND entity.model_id = membership.model_id
+   AND entity.project_id = membership.project_id
   JOIN workflow.dimensional_submodel AS submodel
     ON submodel.dimensional_submodel_id = membership.dimensional_submodel_id
-   AND submodel.model_id = membership.model_id
-  JOIN model.model AS target_model
-    ON target_model.model_id = membership.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+   AND submodel.project_id = membership.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = membership.project_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND membership.dimensional_entity_id = %s
  ORDER BY lower(btrim(submodel.dimensional_submodel_name)),
           membership.dimensional_entity_submodel_id
@@ -148,33 +148,34 @@ SELECT source.dimensional_entity_source_mapping_id,
        logical_source.logical_entity_id AS source_logical_entity_id,
        logical_source.logical_entity_schema_name AS source_logical_entity_schema_name,
        logical_source.logical_entity_name AS source_logical_entity_name,
-       assertion_record.modeling_assertion_record_id,
-       assertion_record.modeling_assertion_record_key,
-       assertion_document.modeling_assertion_document_name,
-       assertion_record.modeling_assertion_record_type,
-       assertion_record.modeling_assertion_text,
-       assertion_record.modeling_assertion_confidence,
-       assertion_record.modeling_assertion_record_status
+       context_record.context_record_id::TEXT AS context_record_id,
+       context_group.name AS context_group_name,
+       context_type.name AS context_type_name,
+       context_record.context_text,
+       context_record.source_reference,
+       context_record.status AS context_record_status
   FROM workflow.dimensional_entity_source_mapping AS source
   JOIN workflow.dimensional_entity AS entity
     ON entity.dimensional_entity_id = source.dimensional_entity_id
-   AND entity.model_id = source.model_id
-  JOIN model.model AS target_model
-    ON target_model.model_id = source.model_id
+   AND entity.project_id = source.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = source.project_id
   LEFT JOIN workflow.logical_entity AS logical_source
     ON logical_source.logical_entity_id = source.source_logical_entity_id
-   AND logical_source.model_id = source.model_id
-  LEFT JOIN model.modeling_assertion_record AS assertion_record
-    ON assertion_record.modeling_assertion_record_id
-       = source.modeling_assertion_record_id
-   AND assertion_record.model_id = source.model_id
-  LEFT JOIN model.modeling_assertion_document AS assertion_document
-    ON assertion_document.modeling_assertion_document_id
-       = assertion_record.modeling_assertion_document_id
-   AND assertion_document.model_id = assertion_record.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+   AND logical_source.project_id = source.project_id
+  LEFT JOIN project.context_record AS context_record
+    ON context_record.context_record_id
+       = source.context_record_id
+   AND context_record.project_id = source.project_id
+  LEFT JOIN project.context_group AS context_group
+    ON context_group.context_group_id
+       = context_record.context_group_id
+   AND context_group.project_id = context_record.project_id
+  LEFT JOIN reference.context_type AS context_type
+    ON context_type.context_type_id = context_group.context_type_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND source.dimensional_entity_id = %s
  ORDER BY source.dimensional_entity_source_mapping_id
  LIMIT %s
@@ -204,12 +205,12 @@ SELECT attribute.dimensional_attribute_id,
   FROM workflow.dimensional_attribute AS attribute
   JOIN workflow.dimensional_entity AS entity
     ON entity.dimensional_entity_id = attribute.dimensional_entity_id
-   AND entity.model_id = attribute.model_id
-  JOIN model.model AS target_model
-    ON target_model.model_id = attribute.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+   AND entity.project_id = attribute.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = attribute.project_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND (%s::VARCHAR IS NULL OR attribute.dimensional_attribute_status = %s)
    AND (%s::BOOLEAN IS NULL OR attribute.dimensional_attribute_is_locked = %s)
    AND (
@@ -257,12 +258,12 @@ SELECT attribute.dimensional_attribute_id,
   FROM workflow.dimensional_attribute AS attribute
   JOIN workflow.dimensional_entity AS entity
     ON entity.dimensional_entity_id = attribute.dimensional_entity_id
-   AND entity.model_id = attribute.model_id
-  JOIN model.model AS target_model
-    ON target_model.model_id = attribute.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+   AND entity.project_id = attribute.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = attribute.project_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND attribute.dimensional_attribute_id = %s
 """
 
@@ -282,38 +283,39 @@ SELECT source.dimensional_attribute_source_mapping_id,
        logical_source.logical_entity_name AS source_logical_entity_name,
        logical_attribute.logical_attribute_id AS source_logical_attribute_id,
        logical_attribute.logical_attribute_name AS source_logical_attribute_name,
-       assertion_record.modeling_assertion_record_id,
-       assertion_record.modeling_assertion_record_key,
-       assertion_document.modeling_assertion_document_name,
-       assertion_record.modeling_assertion_record_type,
-       assertion_record.modeling_assertion_text,
-       assertion_record.modeling_assertion_confidence,
-       assertion_record.modeling_assertion_record_status
+       context_record.context_record_id::TEXT AS context_record_id,
+       context_group.name AS context_group_name,
+       context_type.name AS context_type_name,
+       context_record.context_text,
+       context_record.source_reference,
+       context_record.status AS context_record_status
   FROM workflow.dimensional_attribute_source_mapping AS source
   JOIN workflow.dimensional_attribute AS attribute
     ON attribute.dimensional_attribute_id = source.dimensional_attribute_id
    AND attribute.dimensional_entity_id = source.dimensional_entity_id
-   AND attribute.model_id = source.model_id
-  JOIN model.model AS target_model
-    ON target_model.model_id = source.model_id
+   AND attribute.project_id = source.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = source.project_id
   LEFT JOIN workflow.logical_entity AS logical_source
     ON logical_source.logical_entity_id = source.source_logical_entity_id
-   AND logical_source.model_id = source.model_id
+   AND logical_source.project_id = source.project_id
   LEFT JOIN workflow.logical_attribute AS logical_attribute
     ON logical_attribute.logical_attribute_id = source.source_logical_attribute_id
    AND logical_attribute.logical_entity_id = source.source_logical_entity_id
-   AND logical_attribute.model_id = source.model_id
-  LEFT JOIN model.modeling_assertion_record AS assertion_record
-    ON assertion_record.modeling_assertion_record_id
-       = source.modeling_assertion_record_id
-   AND assertion_record.model_id = source.model_id
-  LEFT JOIN model.modeling_assertion_document AS assertion_document
-    ON assertion_document.modeling_assertion_document_id
-       = assertion_record.modeling_assertion_document_id
-   AND assertion_document.model_id = assertion_record.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+   AND logical_attribute.project_id = source.project_id
+  LEFT JOIN project.context_record AS context_record
+    ON context_record.context_record_id
+       = source.context_record_id
+   AND context_record.project_id = source.project_id
+  LEFT JOIN project.context_group AS context_group
+    ON context_group.context_group_id
+       = context_record.context_group_id
+   AND context_group.project_id = context_record.project_id
+  LEFT JOIN reference.context_type AS context_type
+    ON context_type.context_type_id = context_group.context_type_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND source.dimensional_attribute_id = %s
  ORDER BY source.dimensional_attribute_source_mapping_id
  LIMIT %s
@@ -350,28 +352,28 @@ SELECT relationship.dimensional_relationship_id,
   JOIN workflow.dimensional_entity AS from_entity
     ON from_entity.dimensional_entity_id
        = relationship.dimensional_relationship_from_entity_id
-   AND from_entity.model_id = relationship.model_id
+   AND from_entity.project_id = relationship.project_id
   JOIN workflow.dimensional_attribute AS from_attribute
     ON from_attribute.dimensional_attribute_id
        = relationship.dimensional_relationship_from_attribute_id
    AND from_attribute.dimensional_entity_id
        = relationship.dimensional_relationship_from_entity_id
-   AND from_attribute.model_id = relationship.model_id
+   AND from_attribute.project_id = relationship.project_id
   JOIN workflow.dimensional_entity AS to_entity
     ON to_entity.dimensional_entity_id
        = relationship.dimensional_relationship_to_entity_id
-   AND to_entity.model_id = relationship.model_id
+   AND to_entity.project_id = relationship.project_id
   JOIN workflow.dimensional_attribute AS to_attribute
     ON to_attribute.dimensional_attribute_id
        = relationship.dimensional_relationship_to_attribute_id
    AND to_attribute.dimensional_entity_id
        = relationship.dimensional_relationship_to_entity_id
-   AND to_attribute.model_id = relationship.model_id
-  JOIN model.model AS target_model
-    ON target_model.model_id = relationship.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+   AND to_attribute.project_id = relationship.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = relationship.project_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND (%s::VARCHAR IS NULL OR relationship.dimensional_relationship_status = %s)
    AND (%s::BOOLEAN IS NULL OR relationship.dimensional_relationship_is_locked = %s)
    AND (
@@ -430,28 +432,28 @@ SELECT relationship.dimensional_relationship_id,
   JOIN workflow.dimensional_entity AS from_entity
     ON from_entity.dimensional_entity_id
        = relationship.dimensional_relationship_from_entity_id
-   AND from_entity.model_id = relationship.model_id
+   AND from_entity.project_id = relationship.project_id
   JOIN workflow.dimensional_attribute AS from_attribute
     ON from_attribute.dimensional_attribute_id
        = relationship.dimensional_relationship_from_attribute_id
    AND from_attribute.dimensional_entity_id
        = relationship.dimensional_relationship_from_entity_id
-   AND from_attribute.model_id = relationship.model_id
+   AND from_attribute.project_id = relationship.project_id
   JOIN workflow.dimensional_entity AS to_entity
     ON to_entity.dimensional_entity_id
        = relationship.dimensional_relationship_to_entity_id
-   AND to_entity.model_id = relationship.model_id
+   AND to_entity.project_id = relationship.project_id
   JOIN workflow.dimensional_attribute AS to_attribute
     ON to_attribute.dimensional_attribute_id
        = relationship.dimensional_relationship_to_attribute_id
    AND to_attribute.dimensional_entity_id
        = relationship.dimensional_relationship_to_entity_id
-   AND to_attribute.model_id = relationship.model_id
-  JOIN model.model AS target_model
-    ON target_model.model_id = relationship.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+   AND to_attribute.project_id = relationship.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = relationship.project_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND relationship.dimensional_relationship_id = %s
 """
 
@@ -462,7 +464,7 @@ class DimensionalService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: ModeledFilters,
         page_size: int,
         cursor: str | None,
@@ -473,7 +475,7 @@ class DimensionalService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         dimensional_entity_id: int,
     ) -> DimensionalObjectDetail: ...
 
@@ -482,7 +484,7 @@ class DimensionalService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: DimensionalAttributeFilters,
         page_size: int,
         cursor: str | None,
@@ -493,7 +495,7 @@ class DimensionalService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         dimensional_attribute_id: int,
     ) -> DimensionalAttributeDetail: ...
 
@@ -502,7 +504,7 @@ class DimensionalService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: DimensionalRelationshipFilters,
         page_size: int,
         cursor: str | None,
@@ -513,7 +515,7 @@ class DimensionalService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         dimensional_relationship_id: int,
     ) -> DimensionalRelationshipDetail: ...
 
@@ -543,13 +545,13 @@ class DatabaseDimensionalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: ModeledFilters,
         page_size: int,
         cursor: str | None,
     ) -> DimensionalObjectPage:
         filter_digest = sha256(filters.model_dump_json().encode()).hexdigest()
-        collection = f"web_dimensional_objects:{tenant_id}:{model_id}:{page_size}:{filter_digest}"
+        collection = f"web_dimensional_objects:{tenant_id}:{project_id}:{page_size}:{filter_digest}"
         offset = self._cursors.decode(cursor, collection=collection)
         async with self._database.read_transaction(
             isolation=ReadIsolation.REPEATABLE_READ
@@ -559,14 +561,14 @@ class DatabaseDimensionalService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
-            header = await transaction.fetch_one(_MODEL_HEADER_SQL, (tenant_id, model_id))
+            header = await transaction.fetch_one(_PROJECT_HEADER_SQL, (tenant_id, project_id))
             if header is None:
-                raise ModelNotFoundError()
+                raise ProjectNotFoundError()
             rows = await transaction.fetch_all(
                 _DIMENSIONAL_OBJECTS_SQL,
-                _list_parameters(tenant_id, model_id, filters, page_size, offset),
+                _list_parameters(tenant_id, project_id, filters, page_size, offset),
             )
 
         next_cursor = None
@@ -576,8 +578,8 @@ class DatabaseDimensionalService:
                 offset=offset + page_size,
             )
         return DimensionalObjectPage(
-            model_id=model_id,
-            model_revision=header["model_revision"],
+            project_id=project_id,
+            project_revision=header["project_revision"],
             items=tuple(DimensionalObjectSummary.model_validate(row) for row in rows[:page_size]),
             next_cursor=next_cursor,
         )
@@ -587,7 +589,7 @@ class DatabaseDimensionalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         dimensional_entity_id: int,
     ) -> DimensionalObjectDetail:
         async with self._database.read_transaction(
@@ -598,21 +600,21 @@ class DatabaseDimensionalService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
             row = await transaction.fetch_one(
                 _DIMENSIONAL_OBJECT_DETAIL_SQL,
-                (tenant_id, model_id, dimensional_entity_id),
+                (tenant_id, project_id, dimensional_entity_id),
             )
             if row is None:
                 raise DimensionalObjectNotFoundError()
             submodel_rows = await transaction.fetch_all(
                 _DIMENSIONAL_OBJECT_SUBMODELS_SQL,
-                (tenant_id, model_id, dimensional_entity_id, MAX_DETAIL_ROWS + 1),
+                (tenant_id, project_id, dimensional_entity_id, MAX_DETAIL_ROWS + 1),
             )
             source_rows = await transaction.fetch_all(
                 DIMENSIONAL_OBJECT_SOURCES_SQL,
-                (tenant_id, model_id, dimensional_entity_id, MAX_DETAIL_ROWS + 1),
+                (tenant_id, project_id, dimensional_entity_id, MAX_DETAIL_ROWS + 1),
             )
         if len(submodel_rows) > MAX_DETAIL_ROWS or len(source_rows) > MAX_DETAIL_ROWS:
             raise DimensionalDetailLimitExceededError()
@@ -632,14 +634,14 @@ class DatabaseDimensionalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: DimensionalAttributeFilters,
         page_size: int,
         cursor: str | None,
     ) -> DimensionalAttributePage:
         filter_digest = sha256(filters.model_dump_json().encode()).hexdigest()
         collection = (
-            f"web_dimensional_attributes:{tenant_id}:{model_id}:{page_size}:{filter_digest}"
+            f"web_dimensional_attributes:{tenant_id}:{project_id}:{page_size}:{filter_digest}"
         )
         offset = self._cursors.decode(cursor, collection=collection)
         async with self._database.read_transaction(
@@ -650,17 +652,17 @@ class DatabaseDimensionalService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
-            header = await transaction.fetch_one(_MODEL_HEADER_SQL, (tenant_id, model_id))
+            header = await transaction.fetch_one(_PROJECT_HEADER_SQL, (tenant_id, project_id))
             if header is None:
-                raise ModelNotFoundError()
+                raise ProjectNotFoundError()
             rows = await transaction.fetch_all(
                 _DIMENSIONAL_ATTRIBUTES_SQL,
                 (
                     *_list_parameters(
                         tenant_id,
-                        model_id,
+                        project_id,
                         filters,
                         page_size,
                         offset,
@@ -679,8 +681,8 @@ class DatabaseDimensionalService:
                 offset=offset + page_size,
             )
         return DimensionalAttributePage(
-            model_id=model_id,
-            model_revision=header["model_revision"],
+            project_id=project_id,
+            project_revision=header["project_revision"],
             items=tuple(
                 DimensionalAttributeSummary.model_validate(row) for row in rows[:page_size]
             ),
@@ -692,7 +694,7 @@ class DatabaseDimensionalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         dimensional_attribute_id: int,
     ) -> DimensionalAttributeDetail:
         async with self._database.read_transaction(
@@ -703,17 +705,17 @@ class DatabaseDimensionalService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
             row = await transaction.fetch_one(
                 _DIMENSIONAL_ATTRIBUTE_DETAIL_SQL,
-                (tenant_id, model_id, dimensional_attribute_id),
+                (tenant_id, project_id, dimensional_attribute_id),
             )
             if row is None:
                 raise DimensionalAttributeNotFoundError()
             source_rows = await transaction.fetch_all(
                 DIMENSIONAL_ATTRIBUTE_SOURCES_SQL,
-                (tenant_id, model_id, dimensional_attribute_id, MAX_DETAIL_ROWS + 1),
+                (tenant_id, project_id, dimensional_attribute_id, MAX_DETAIL_ROWS + 1),
             )
         if len(source_rows) > MAX_DETAIL_ROWS:
             raise DimensionalDetailLimitExceededError()
@@ -730,14 +732,14 @@ class DatabaseDimensionalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: DimensionalRelationshipFilters,
         page_size: int,
         cursor: str | None,
     ) -> DimensionalRelationshipPage:
         filter_digest = sha256(filters.model_dump_json().encode()).hexdigest()
         collection = (
-            f"web_dimensional_relationships:{tenant_id}:{model_id}:{page_size}:{filter_digest}"
+            f"web_dimensional_relationships:{tenant_id}:{project_id}:{page_size}:{filter_digest}"
         )
         offset = self._cursors.decode(cursor, collection=collection)
         async with self._database.read_transaction(
@@ -748,17 +750,17 @@ class DatabaseDimensionalService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
-            header = await transaction.fetch_one(_MODEL_HEADER_SQL, (tenant_id, model_id))
+            header = await transaction.fetch_one(_PROJECT_HEADER_SQL, (tenant_id, project_id))
             if header is None:
-                raise ModelNotFoundError()
+                raise ProjectNotFoundError()
             rows = await transaction.fetch_all(
                 _DIMENSIONAL_RELATIONSHIPS_SQL,
                 (
                     *_list_parameters(
                         tenant_id,
-                        model_id,
+                        project_id,
                         filters,
                         page_size,
                         offset,
@@ -778,8 +780,8 @@ class DatabaseDimensionalService:
                 offset=offset + page_size,
             )
         return DimensionalRelationshipPage(
-            model_id=model_id,
-            model_revision=header["model_revision"],
+            project_id=project_id,
+            project_revision=header["project_revision"],
             items=tuple(
                 DimensionalRelationshipSummary.model_validate(row) for row in rows[:page_size]
             ),
@@ -791,7 +793,7 @@ class DatabaseDimensionalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         dimensional_relationship_id: int,
     ) -> DimensionalRelationshipDetail:
         async with self._database.read_transaction(
@@ -802,11 +804,11 @@ class DatabaseDimensionalService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
             row = await transaction.fetch_one(
                 _DIMENSIONAL_RELATIONSHIP_DETAIL_SQL,
-                (tenant_id, model_id, dimensional_relationship_id),
+                (tenant_id, project_id, dimensional_relationship_id),
             )
         if row is None:
             raise DimensionalRelationshipNotFoundError()
@@ -815,14 +817,14 @@ class DatabaseDimensionalService:
 
 def _list_parameters(
     tenant_id: int,
-    model_id: int,
+    project_id: int,
     filters: ModeledFilters,
     page_size: int,
     offset: int,
 ) -> tuple[object, ...]:
     return (
         tenant_id,
-        model_id,
+        project_id,
         filters.status,
         filters.status,
         filters.locked,
@@ -862,20 +864,19 @@ def _normalize_object_source(row: Mapping[str, object]) -> DimensionalObjectSour
             },
             strict=False,
         )
-    if row["support_source_type"] != "assertion":
+    if row["support_source_type"] != "context_record":
         raise ValueError("Dimensional Object Source has an unsupported source type")
-    return DimensionalAssertionSource.model_validate(
+    return DimensionalContextSource.model_validate(
         {
             **common,
-            "support_source_type": "assertion",
-            "assertion_record": {
-                "modeling_assertion_record_id": row["modeling_assertion_record_id"],
-                "modeling_assertion_record_key": row["modeling_assertion_record_key"],
-                "modeling_assertion_document_name": row["modeling_assertion_document_name"],
-                "modeling_assertion_record_type": row["modeling_assertion_record_type"],
-                "modeling_assertion_text": row["modeling_assertion_text"],
-                "modeling_assertion_confidence": row["modeling_assertion_confidence"],
-                "modeling_assertion_record_status": row["modeling_assertion_record_status"],
+            "support_source_type": "context_record",
+            "context_record": {
+                "context_record_id": row["context_record_id"],
+                "context_group_name": row["context_group_name"],
+                "context_type_name": row["context_type_name"],
+                "context_text": row["context_text"],
+                "source_reference": row["source_reference"],
+                "status": row["context_record_status"],
             },
         },
         strict=False,
@@ -909,20 +910,19 @@ def _normalize_attribute_source(row: Mapping[str, object]) -> DimensionalAttribu
             },
             strict=False,
         )
-    if row["support_source_type"] != "assertion":
+    if row["support_source_type"] != "context_record":
         raise ValueError("Dimensional Attribute Source has an unsupported source type")
-    return DimensionalAttributeAssertionSource.model_validate(
+    return DimensionalAttributeContextSource.model_validate(
         {
             **common,
-            "support_source_type": "assertion",
-            "assertion_record": {
-                "modeling_assertion_record_id": row["modeling_assertion_record_id"],
-                "modeling_assertion_record_key": row["modeling_assertion_record_key"],
-                "modeling_assertion_document_name": row["modeling_assertion_document_name"],
-                "modeling_assertion_record_type": row["modeling_assertion_record_type"],
-                "modeling_assertion_text": row["modeling_assertion_text"],
-                "modeling_assertion_confidence": row["modeling_assertion_confidence"],
-                "modeling_assertion_record_status": row["modeling_assertion_record_status"],
+            "support_source_type": "context_record",
+            "context_record": {
+                "context_record_id": row["context_record_id"],
+                "context_group_name": row["context_group_name"],
+                "context_type_name": row["context_type_name"],
+                "context_text": row["context_text"],
+                "source_reference": row["source_reference"],
+                "status": row["context_record_status"],
             },
         },
         strict=False,

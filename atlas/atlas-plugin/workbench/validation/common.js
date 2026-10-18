@@ -62,7 +62,7 @@
   }
 
   function normalized(value) {
-    return core.normalize("model", "value", value);
+    return core.normalize("project", "value", value);
   }
 
   function sameNormalized(left, right) {
@@ -75,8 +75,8 @@
   }
 
   function sourceKey(source) {
-    if (source?.support_source_type === "assertion") {
-      return ["assertion", normalized(source.assertion_record?.modeling_assertion_record_key)];
+    if (source?.support_source_type === "context_record") {
+      return ["context_record", normalized(source.context_record?.context_record_id)];
     }
     if (["logical_entity", "logical_attribute"].includes(source?.support_source_type)) {
       const logical = source.source_logical_entity || source.source_logical_attribute;
@@ -96,24 +96,16 @@
     return new Set(keys).size === keys.length;
   }
 
-  const FORBIDDEN_ASSERTION_KEYS = new Set([
-    "binary_content", "connection_string", "content", "credentials", "file_content",
-    "payload", "physical_rows", "prompt", "raw", "raw_content", "raw_physical_rows", "rows",
-    "raw_prompt", "raw_rows", "secret", "token", "tool_output", "workbook_content",
-    "worksheet_content",
-  ]);
-
   const SUPPORTED_RECORD_RULES = new Set([
     "tenant_gds_connection_key",
     "ingestion_object_endpoints",
     "ingestion_attribute_endpoints",
     "copy_record_limit",
-    "model_details_policy",
+    "project_details_policy",
     "enrichment_text",
     "profiling_profile",
     "analysis_result",
-    "modeling_assertion_document",
-    "modeling_assertion_record",
+    "context_record",
     "conceptual_object",
     "conceptual_relationship",
     "logical_entity",
@@ -128,42 +120,6 @@
     "validation_group",
     "validation_check",
   ]);
-
-  function assertionJsonIssues(value, maximumBytes, location) {
-    const issues = [];
-    if (jsonBytes(value) > maximumBytes) issues.push(`${location}: JSON value is too large`);
-    let nodes = 0;
-    const pending = [[value, 0]];
-    while (pending.length) {
-      const [item, depth] = pending.pop();
-      nodes += 1;
-      if (nodes > 4096 || depth > 12) {
-        issues.push(`${location}: JSON value is too complex`);
-        break;
-      }
-      if (typeof item === "string" && [...item].length > 32768) {
-        issues.push(`${location}: JSON value contains an oversized string`);
-      } else if (Array.isArray(item)) {
-        item.forEach((child) => pending.push([child, depth + 1]));
-      } else if (item && typeof item === "object") {
-        for (const [key, child] of Object.entries(item)) {
-          const normalizedKey = key.trim().toLowerCase().replaceAll("-", "_");
-          const compact = normalizedKey.replaceAll("_", "");
-          if (
-            FORBIDDEN_ASSERTION_KEYS.has(normalizedKey) || compact.includes("secret") ||
-            compact.includes("credential") || compact.includes("connectionstring") ||
-            compact.includes("rawprompt") || compact.includes("rawrows") ||
-            compact.includes("tooloutput") || compact.includes("filecontent") ||
-            compact.includes("workbookcontent") || compact.includes("worksheetcontent")
-          ) {
-            issues.push(`${location}.${key}: prohibited raw content`);
-          }
-          pending.push([child, depth + 1]);
-        }
-      }
-    }
-    return issues;
-  }
 
   function validationLiteralMatches(resultType, value) {
     if (resultType === "boolean") return typeof value === "boolean";
@@ -218,7 +174,7 @@
           if (limit < -9223372036854775808n || limit > 9223372036854775807n) add("Copy source record limit must fit PostgreSQL BIGINT");
         } catch (_error) { add("Copy source record limit must fit PostgreSQL BIGINT"); }
       }
-    } else if (rule === "model_details_policy") {
+    } else if (rule === "project_details_policy") {
       for (const field of ["silver_model_naming_instructions", "gold_model_naming_instructions"]) {
         if (value[field] !== null && utf8Bytes(value[field]) > 32768) add(`${field} exceeds 32,768 UTF-8 bytes`);
       }
@@ -292,13 +248,8 @@
         }
       }
       if (sameNormalized(endpoint("from", true), endpoint("to", true))) add("Analysis endpoints must be different");
-    } else if (rule === "modeling_assertion_document") {
-      issues.push(...assertionJsonIssues(value.modeling_assertion_document_metadata, 65536, `${location}.modeling_assertion_document_metadata`));
-    } else if (rule === "modeling_assertion_record") {
-      if ([...value.modeling_assertion_text].length > 262144) add("Assertion Record text is too large");
-      issues.push(...assertionJsonIssues(value.modeling_assertion_details, 262144, `${location}.modeling_assertion_details`));
-      if (value.modeling_assertion_source_location !== null) issues.push(...assertionJsonIssues(value.modeling_assertion_source_location, 65536, `${location}.modeling_assertion_source_location`));
-      if (!uniqueNormalized(value.modeling_assertion_applicable_layers)) add("Assertion applicable layers must be unique");
+    } else if (rule === "context_record") {
+      if (typeof value.source_reference === "string" && new TextEncoder().encode(value.source_reference).length > 65536) add("Context source reference is too large");
     } else if (rule === "conceptual_object") {
       if (!uniqueNormalized(value.conceptual_object_aliases)) add("Conceptual Object aliases must be unique");
       if (!uniqueSources(value.supports)) add("Conceptual Object supports must be unique");
@@ -357,7 +308,7 @@
       else if (["equal", "not_equal"].includes(operator)) shape = resultType !== null && ((valueType === "literal" && comparison !== null && query === null) || (valueType === "query" && comparison === null && query !== null));
       else if (["greater_than", "greater_than_or_equal", "less_than", "less_than_or_equal"].includes(operator)) shape = ["integer", "decimal", "date", "timestamp"].includes(resultType) && ((valueType === "literal" && comparison !== null && query === null) || (valueType === "query" && comparison === null && query !== null));
       else shape = resultType !== null && valueType === "literal_list" && Array.isArray(comparison) && comparison.length >= 1 && comparison.length <= 10000 && query === null;
-      if (!shape) add("Validation assertion shape is invalid");
+      if (!shape) add("Validation context shape is invalid");
       const values = Array.isArray(comparison) ? comparison : [comparison];
       if (["literal", "literal_list"].includes(valueType) && !values.every((item) => validationLiteralMatches(resultType, item))) add("Validation comparison value does not match its result type");
     }
@@ -505,7 +456,7 @@
           );
         }
       }
-      // Pydantic runs these model-level rules only after field/schema validation.
+      // Pydantic runs these project-level rules only after field/schema validation.
       // Match that order and avoid evaluating incomplete records.
       if (!issues.length) issues.push(...validateRecordContract(value, schema, location));
     }
@@ -563,7 +514,7 @@
             ([field, fieldValue]) =>
               fieldValue === true && (field === "is_locked" || field.endsWith("_is_locked")),
           );
-          if (area === "model" && locked && core.stableStringify(original) !== core.stableStringify(record)) {
+          if (area === "project" && locked && core.stableStringify(original) !== core.stableStringify(record)) {
             issues.push({
               code: "locked_record",
               dataset: datasetName,

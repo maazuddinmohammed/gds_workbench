@@ -54,7 +54,9 @@ from tests.web_backend.test_agent_usage import (
 )
 
 
-@pytest.mark.parametrize("tools, reasoning", [(False, "default"), (False, "none"), (True, "none")])
+@pytest.mark.parametrize(
+    "tools, reasoning", [(False, "default"), (False, "none"), (True, "none")]
+)
 @pytest.mark.parametrize("timeout_seconds", [480, 900, 7200])
 async def test_real_sdk_uses_the_configured_model_request_timeout(
     monkeypatch: pytest.MonkeyPatch,
@@ -78,23 +80,30 @@ async def test_real_sdk_uses_the_configured_model_request_timeout(
             ("connect", "read", "write", "pool"), timeout_seconds
         )
         response_factory = _responses_response if tools else _response
-        return httpx2.Response(200, json=response_factory(None, tool=tools and sends == 1))
+        return httpx2.Response(
+            200, json=response_factory(None, tool=tools and sends == 1)
+        )
 
     monkeypatch.setattr(adapters, "ModelSettings", model_settings)
     request = _request(
-        tools=tools, model_code="foundry-gpt-5.6-luna" if reasoning == "none" else "foundry-primary"
+        tools=tools,
+        model_code="foundry-gpt-5.6-luna" if reasoning == "none" else "foundry-primary",
     )
     request = request.model_copy(
         update={
-            "selection": request.selection.model_copy(update={"reasoning_effort_code": reasoning})
+            "selection": request.selection.model_copy(
+                update={"reasoning_effort_code": reasoning}
+            )
         }
     )
-    result = await _router(monkeypatch, None, handler, timeout_seconds=timeout_seconds).execute(
-        request
-    )
+    result = await _router(
+        monkeypatch, None, handler, timeout_seconds=timeout_seconds
+    ).execute(request)
     assert result.candidate == {"result": "valid"}
     assert sends == (2 if tools else 1)
-    assert settings_seen and all(item.timeout == timeout_seconds for item in settings_seen)
+    assert settings_seen and all(
+        item.timeout == timeout_seconds for item in settings_seen
+    )
 
 
 @pytest.mark.parametrize("tools, retry", [(True, False), (False, True), (True, True)])
@@ -106,7 +115,9 @@ async def test_real_sdk_refreshes_expired_credentials_after_an_hour(
     elapsed_seconds = 0
     sends = 0
 
-    async def authenticate(_self: FixtureAuthentication) -> adapters.OpenAIProviderCredentials:
+    async def authenticate(
+        _self: FixtureAuthentication,
+    ) -> adapters.OpenAIProviderCredentials:
         return adapters.OpenAIProviderCredentials(
             api_key=SecretStr(f"fixture-token-{elapsed_seconds // 3600}"),
             base_url="https://fixture.services.ai.azure.com/openai/v1/",
@@ -115,7 +126,10 @@ async def test_real_sdk_refreshes_expired_credentials_after_an_hour(
     def handler(request: httpx2.Request) -> httpx2.Response:
         nonlocal elapsed_seconds, sends
         sends += 1
-        if request.headers["authorization"] != f"Bearer fixture-token-{elapsed_seconds // 3600}":
+        if (
+            request.headers["authorization"]
+            != f"Bearer fixture-token-{elapsed_seconds // 3600}"
+        ):
             return httpx2.Response(401, json={"error": {"code": "expired_token"}})
         response_factory = _responses_response if tools else _response
         if sends == 1:
@@ -144,7 +158,9 @@ async def test_real_sdk_redacts_authentication_failure_during_a_later_tool_turn(
 ) -> None:
     sends = 0
 
-    async def authenticate(_self: FixtureAuthentication) -> adapters.OpenAIProviderCredentials:
+    async def authenticate(
+        _self: FixtureAuthentication,
+    ) -> adapters.OpenAIProviderCredentials:
         if sends:
             raise ClientAuthenticationError(message="private-refresh-marker")
         return adapters.OpenAIProviderCredentials(
@@ -237,7 +253,9 @@ async def test_real_sdk_rejects_truncation_before_candidate_or_tool_acceptance(
     tool_calls = 0
 
     class Catalog(FixtureCatalog):
-        def invoke(self, tool_name: str, arguments: Mapping[str, JsonValue]) -> JsonValue:
+        def invoke(
+            self, tool_name: str, arguments: Mapping[str, JsonValue]
+        ) -> JsonValue:
             nonlocal tool_calls
             tool_calls += 1
             return super().invoke(tool_name, arguments)
@@ -245,7 +263,9 @@ async def test_real_sdk_rejects_truncation_before_candidate_or_tool_acceptance(
     def handler(request: httpx2.Request) -> httpx2.Response:
         nonlocal sends
         sends += 1
-        assert request.url.path.endswith("/responses" if output == "tool" else "/chat/completions")
+        assert request.url.path.endswith(
+            "/responses" if output == "tool" else "/chat/completions"
+        )
         if output == "tool":
             payload = _responses_response(
                 {"input_tokens": 10, "output_tokens": 2, "total_tokens": 12}, tool=True
@@ -255,7 +275,9 @@ async def test_real_sdk_rejects_truncation_before_candidate_or_tool_acceptance(
         else:
             payload = _response(
                 {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12},
-                content='{"result":' if output == "partial_json" else '{"result":"valid"}',
+                content='{"result":'
+                if output == "partial_json"
+                else '{"result":"valid"}',
             )
             choices = cast(list[dict[str, object]], payload["choices"])
             choices[0]["finish_reason"] = "length"
@@ -282,7 +304,9 @@ async def test_real_sdk_preserves_safe_tool_errors_and_redacts_unexpected_tool_e
     sends = 0
 
     class Catalog(FixtureCatalog):
-        def invoke(self, tool_name: str, arguments: Mapping[str, JsonValue]) -> JsonValue:
+        def invoke(
+            self, tool_name: str, arguments: Mapping[str, JsonValue]
+        ) -> JsonValue:
             if safe_failure:
                 raise AgentContextToolRequestError()
             raise RuntimeError("private-marker")
@@ -313,7 +337,9 @@ async def test_real_sdk_turn_exhaustion_is_distinct_from_provider_failure(
         return httpx2.Response(200, json=_responses_response(None, tool=True))
 
     with pytest.raises(WorkbenchError) as captured:
-        await _router(monkeypatch, None, handler).execute(_request(tools=True, max_turns=1))
+        await _router(monkeypatch, None, handler).execute(
+            _request(tools=True, max_turns=1)
+        )
     assert captured.value.code == "agent_turn_limit_exceeded"
 
 
@@ -350,7 +376,9 @@ async def test_real_sdk_rejects_filtered_output_even_when_json_is_valid(
 ) -> None:
     def handler(_: httpx2.Request) -> httpx2.Response:
         payload = _response(None)
-        cast(list[dict[str, object]], payload["choices"])[0]["finish_reason"] = "content_filter"
+        cast(list[dict[str, object]], payload["choices"])[0]["finish_reason"] = (
+            "content_filter"
+        )
         return httpx2.Response(200, json=payload)
 
     with pytest.raises(WorkbenchError) as captured:
@@ -358,7 +386,9 @@ async def test_real_sdk_rejects_filtered_output_even_when_json_is_valid(
     assert captured.value.code == "agent_output_refused"
 
 
-def test_unlimited_catalog_is_not_wrapped_and_prompts_have_no_character_ceiling() -> None:
+def test_unlimited_catalog_is_not_wrapped_and_prompts_have_no_character_ceiling() -> (
+    None
+):
     class Catalog(FixtureCatalog):
         max_cumulative_result_bytes = None
 
@@ -416,7 +446,9 @@ async def test_every_authoring_workflow_persists_safe_stage_failure_without_hand
         )
     elif workflow == "code_generation":
         agent = code_generation._AgentExecutor(responses=[])
-        service, _, _, handoff, _no_op, lifecycle = code_generation._service(executor=agent)
+        service, _, _, handoff, _no_op, lifecycle = code_generation._service(
+            executor=agent
+        )
     elif workflow == "validation":
         service, _, agent, handoff, _no_op, lifecycle = validation._service(
             context=validation._context()
@@ -440,9 +472,9 @@ async def test_every_authoring_workflow_persists_safe_stage_failure_without_hand
         await service.execute_started(
             analysis._principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=claim_token,
         )
     assert captured.value is error
@@ -464,7 +496,11 @@ async def test_every_authoring_workflow_persists_safe_stage_failure_without_hand
 async def test_local_fake_downstream_readers_are_optional_and_use_returned_evidence(
     workflow: str, enabled: bool
 ) -> None:
-    tool_name = "get_code_source_systems" if workflow == "code_generation" else "get_current_code"
+    tool_name = (
+        "get_code_source_systems"
+        if workflow == "code_generation"
+        else "get_current_code"
+    )
     calls: list[str] = []
 
     class Catalog:
@@ -498,7 +534,9 @@ async def test_local_fake_downstream_readers_are_optional_and_use_returned_evide
     request = _request(tools=True).model_copy(
         update={
             "workflow": workflow,
-            "stage": "sql_generation" if workflow == "code_generation" else "validation_generation",
+            "stage": "sql_generation"
+            if workflow == "code_generation"
+            else "validation_generation",
             "allowed_tool_names": (tool_name,) if enabled else (),
             "local_tool_catalog": Catalog(),
             "context": {

@@ -1,6 +1,6 @@
 # Dimensional design
 
-Shared method for Guided and Grill Me. [Context](context.md) defines eligible inputs; [Dimensional records](../model/dimensional.md) defines fields/sources. Use [naming](../model/naming.md) and [keys/audit](../model/keys-and-audit.md) rather than copying their policies here.
+Shared method for Guided and Grill Me. [Context](context.md) defines eligible inputs; [Dimensional records](../project/dimensional.md) defines fields/sources. Use [naming](../project/naming.md) and [keys/audit](../project/keys-and-audit.md) rather than copying their policies here.
 
 ## Process and grain first
 
@@ -19,7 +19,7 @@ This sequence follows [Kimball's four design decisions](https://www.kimballgroup
 - Reuse a shared dimension only when meaning, business identity, values and relevant history agree. Matching names, column layouts or IDs across Systems do not prove conformance. Keep distinct identities until the reconciliation rule is known. See [conformed dimensions](https://www.kimballgroup.com/data-warehouse-business-intelligence-resources/kimball-techniques/dimensional-modeling-techniques/conformed-dimension/).
 - Reuse one dimension for genuine roles, with distinct FK Attributes, relationship roles and query aliases—for example OrderDate and ShipDate. Do not copy the dimension's rows/definition for each role. See [role-playing dimensions](https://www.kimballgroup.com/data-warehouse-business-intelligence-resources/kimball-techniques/dimensional-modeling-techniques/role-playing-dimension/).
 - A transaction identifier with no independent descriptive context may remain a degenerate dimension Attribute on the fact. A repeated label or low-cardinality field alone does not justify another table. Retain useful business descriptors and identifiers without forcing arbitrary dimension-count targets.
-- Compare processes with a compact process-to-dimension view when it helps reveal reuse or incompatible meanings. Keep it in existing task/review context, not a new required Model dataset. Reuse Entities through Submodel memberships rather than creating process-specific copies.
+- Compare processes with a compact process-to-dimension view when it helps reveal reuse or incompatible meanings. Keep it in existing task/review context, not a new required Project dataset. Reuse Entities through Submodel memberships rather than creating process-specific copies.
 
 ## Facts and measures
 
@@ -28,7 +28,7 @@ This sequence follows [Kimball's four design decisions](https://www.kimballgroup
 | Transaction | One business event at the declared detail; preserve event identity and timestamp meaning. |
 | Periodic snapshot | One reporting entity at a defined period boundary; define cadence, as-of meaning and required population, including no-activity cases. |
 | Accumulating snapshot | One process occurrence updated across known milestones; define milestone roles, repeated events and completion/reopening behavior. |
-| Factless | An event, coverage or eligibility relationship without numeric measures; define exactly what a row counts. Do not invent a measure merely to fill the model. |
+| Factless | An event, coverage or eligibility relationship without numeric measures; define exactly what a row counts. Do not invent a measure merely to fill the project. |
 
 Choose the pattern from behavior, not its table name. The first three have different time/row semantics; see [Kimball fact-table patterns](https://www.kimballgroup.com/2008/11/fact-tables/). Factless is an additional supported Atlas fact-type value; it does not by itself specify whether rows mean events or coverage.
 
@@ -42,15 +42,15 @@ The schema requires aggregation fields for measures and a basis for semi/non-add
 2. Apply [history and lookup rules](history.md) to current versus event-time membership, late arrivals and corrections. Resolve essential business decisions before dependent Mapping; keep unverified execution support explicit.
 3. Introduce a bridge only for meaningful multiple membership at the stated grain. Declare one bridge row, membership identity, applicable time and how filtering/aggregation avoids double counting. Allocation weights are used only when the business defines allocation; never invent equal weights. See [multivalued dimensions and bridges](https://www.kimballgroup.com/data-warehouse-business-intelligence-resources/kimball-techniques/dimensional-modeling-techniques/multivalued-dimension-bridge-table/).
 4. Review joins for row multiplication and loss. Avoid joining unrelated atomic facts just on shared dimension keys; compare their separately aggregated results at a compatible grain. See [fact-to-fact join guidance](https://www.kimballgroup.com/data-warehouse-business-intelligence-resources/kimball-techniques/dimensional-modeling-techniques/multipass-sql/).
-5. Set model dependency order from known lookups and relationships; retain cycles/repeated-pass needs explicitly. It is not a Process schedule or permission to execute code. SQL evidence is optional under [query scope](../query-scope.md), including explicit batch choices and qualified coordinates.
+5. Set project dependency order from known lookups and relationships; retain cycles/repeated-pass needs explicitly. It is not a Process schedule or permission to execute code. SQL evidence is optional under [query scope](../query-scope.md), including explicit batch choices and qualified coordinates.
 
 ## Lineage, standalone structures and Submodels
 
 - Trace derived Entity/Attribute sources to applied Logical Entities/Attributes using schema-qualified keys. Every Attribute's Logical source needs its corresponding Logical Entity source on the Dimensional Entity; source ordering is not executable transformation logic.
 - Use multiple real contributors where needed, with concise contribution roles/rationale. Do not duplicate the same source key merely to label a second role. Keep reconciliation or generation decisions available for later Mapping.
-- Calendar, constant/reference sets and other justified generated structures can have empty sources. Define calendar grain/range/fiscal rules or the constant values/meanings and change ownership. Use an applicable [Assertion](../model/assertions.md) when useful, never just to satisfy an imagined support requirement. Do not fabricate an Object or System.
+- Calendar, constant/reference sets and other justified generated structures can have empty sources. Define calendar grain/range/fiscal rules or the constant values/meanings and change ownership. Use an applicable [Context](../project/context.md) when useful, never just to satisfy an imagined support requirement. Do not fabricate an Object or System.
 - A source-less design still needs a supported population/provenance path before executable Mapping/Code. Current Mapping requires a real source-System context; do not hide this gap with a fake `SourceSystemID` or promise unsupported execution.
-- Group Submodels around useful business processes. One small cohesive model may need no split; avoid one group per table/System or speculative empty groups. Share each dimension through memberships, preserving cross-process relationships and active/locked state.
+- Group Submodels around useful business processes. One small cohesive project may need no split; avoid one group per table/System or speculative empty groups. Share each dimension through memberships, preserving cross-process relationships and active/locked state.
 - Account for selected Silver contributions as represented, context-only, excluded with reason or unresolved. Completeness means the requested analytical outcome and useful lineage, not copying every source field into Gold.
 
 ## Quality checks

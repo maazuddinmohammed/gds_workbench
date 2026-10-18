@@ -59,7 +59,7 @@
 .validation-check-table-scroll .validation-name-column { width: 20rem; }
 .validation-check-table-scroll .validation-description-column { width: 26rem; }
 .validation-check-table-scroll .validation-category-column { width: 12rem; }
-.validation-check-table-scroll .validation-assertion-column { width: 20rem; }
+.validation-check-table-scroll .validation-context-column { width: 20rem; }
 .validation-check-table-scroll .validation-state-column { width: 7rem; }
 .validation-check-table-scroll.ledger-grid td { vertical-align: top; white-space: normal; overflow-wrap: anywhere; }
 .validation-check-table-scroll { scrollbar-color: var(--line-strong) var(--soft); }

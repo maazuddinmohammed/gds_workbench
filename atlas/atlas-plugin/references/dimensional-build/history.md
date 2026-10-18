@@ -1,10 +1,10 @@
 # Dimension history and lookup
 
-Use when Dimensional Build, Mapping or Code needs changing-value or temporal behavior. [Dimensional records](../model/dimensional.md) owns accepted fields; [keys/audit](../model/keys-and-audit.md) owns shared columns. The user confirms Type 1 and Type 2 support and framework population of Type 2 fields using the natural keys. Select behavior from requirements and use the actual configured column names/types.
+Use when Dimensional Build, Mapping or Code needs changing-value or temporal behavior. [Dimensional records](../project/dimensional.md) owns accepted fields; [keys/audit](../project/keys-and-audit.md) owns shared columns. The user confirms Type 1 and Type 2 support and framework population of Type 2 fields using the natural keys. Select behavior from requirements and use the actual configured column names/types.
 
 ## Select behavior from analytical needs
 
-Ask only when the existing model, requirements and user decisions do not resolve the answer. A useful question is: "After CustomerSegment changes, should earlier sales report the segment at sale time, the current segment, or support both?" That requirement determines the design; there is no global Type 2 default.
+Ask only when the existing project, requirements and user decisions do not resolve the answer. A useful question is: "After CustomerSegment changes, should earlier sales report the segment at sale time, the current segment, or support both?" That requirement determines the design; there is no global Type 2 default.
 
 | Attribute change behavior | Meaning / required decision |
 |---|---|
@@ -27,15 +27,15 @@ Before completing the affected design, resolve:
 - How late/missing members, unknown versus not-applicable values, corrections and backdated changes are handled. Do not invent a sentinel key, discard a fact or substitute an arbitrary current row.
 - The technical columns' actual names/types/nullability. The framework supplies the Type 2 fields; use the configured contract without inventing placeholder values.
 
-These are decision criteria, not a mandatory interview checklist or new payload fields. Put concise rules in existing Entity/Attribute definitions, relationship basis and source rationale; preserve the full executable decision for later Mapping. Use an Assertion only for a reusable attributable rule that benefits from one.
+These are decision criteria, not a mandatory interview checklist or new payload fields. Put concise rules in existing Entity/Attribute definitions, relationship basis and source rationale; preserve the full executable decision for later Mapping. Use a Context only for a reusable attributable rule that benefits from one.
 
 ## Technical columns and framework boundary
 
 History columns are additional modeled Attributes, separate from the confirmed audit block. Do not repurpose `IsActive`, `CreatedDate` or `UpdatedDate` as version markers without an explicit consumer contract. A technical Attribute is not automatically a framework-generated or SQL-omitted field.
 
-Current backend `features/dimensional/policy.py` can project configured effective-from, effective-to and current-marker columns when a dimension has an active nontechnical `historize` Attribute. That creates model columns; the external framework populates them at load time using natural keys. Surrogate placement and fact/bridge coverage still need the alignment recorded in [keys/audit](../model/keys-and-audit.md#population-boundary-and-implementation-alignment).
+Current backend `features/dimensional/policy.py` can project configured effective-from, effective-to and current-marker columns when a dimension has an active nontechnical `historize` Attribute. That creates project columns; the external framework populates them at load time using natural keys. Surrogate placement and fact/bridge coverage still need the alignment recorded in [keys/audit](../project/keys-and-audit.md#population-boundary-and-implementation-alignment).
 
-The existing GDS seed template defines the following. Resolve the actual Model configuration before use; seed values do not prove deployment or override a supplied framework convention.
+The existing GDS seed template defines the following. Resolve the actual Project configuration before use; seed values do not prove deployment or override a supplied framework convention.
 
 | Purpose | Seed name | Type / nullability |
 |---|---|---|
@@ -45,9 +45,9 @@ The existing GDS seed template defines the following. Resolve the actual Model c
 
 `IsActive` remains in the shared audit block. Its presence is not sufficient reason to substitute it for `IsCurrent`. The Type 2 field names above come from `database/seed/04_application_reference.sql`; actual clock and boundary behavior must agree with the consumer.
 
-Retain these history Attributes in the Model, target metadata and DDL. In each applicable Attribute Mapping, state "Framework-populated Type 2 field; omitted from transformation SQL." Do not invent source lineage, timestamp/boolean expressions or SQL that maintains these values. This adds the configured Type 2 fields to the own-surrogate/nine-audit exclusions; other technical fields still follow their explicit population rule.
+Retain these history Attributes in the Project, target metadata and DDL. In each applicable Attribute Mapping, state "Framework-populated Type 2 field; omitted from transformation SQL." Do not invent source lineage, timestamp/boolean expressions or SQL that maintains these values. This adds the configured Type 2 fields to the own-surrogate/nine-audit exclusions; other technical fields still follow their explicit population rule.
 
-Preserve the complete natural/business-key tuple, including source namespace where required, through Model, target metadata and Mapping. Transformation SQL supplies the mapped business-key values; the generated surrogate is not a substitute for the framework's natural-key matching. Explain current-member identity separately from version identity: repeating a natural key across historical versions is intentional. Framework-owned version maintenance does not decide a fact's current-versus-event-time dimension lookup; that analytical rule still belongs in Mapping.
+Preserve the complete natural/business-key tuple, including source namespace where required, through Project, target metadata and Mapping. Transformation SQL supplies the mapped business-key values; the generated surrogate is not a substitute for the framework's natural-key matching. Explain current-member identity separately from version identity: repeating a natural key across historical versions is intentional. Framework-owned version maintenance does not decide a fact's current-versus-event-time dimension lookup; that analytical rule still belongs in Mapping.
 
 If a particular history requirement exceeds the confirmed consumer behavior, keep that requirement and execution gap explicit. Continue independent modeling work; do not silently flatten history, claim load readiness or invent a second executable artifact. Do not re-ask the settled Type 1/Type 2 capability or history-field population questions.
 

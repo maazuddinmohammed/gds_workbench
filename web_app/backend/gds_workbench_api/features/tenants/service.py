@@ -68,7 +68,7 @@ SELECT system.system_id,
        system_type.system_type_name,
        count(DISTINCT connection.connection_id)::INTEGER AS connection_count,
        count(DISTINCT object.object_id)::INTEGER AS registered_object_count,
-       count(DISTINCT model.model_id)::INTEGER AS active_model_count,
+       count(DISTINCT project.project_id)::INTEGER AS active_project_count,
        max(object.updated_time) AS last_metadata_update_time
   FROM core.connection AS connection
   JOIN core.system AS system
@@ -80,13 +80,13 @@ SELECT system.system_id,
   LEFT JOIN core.object AS object
     ON object.connection_id = connection.connection_id
    AND object.is_active
-  LEFT JOIN model.model_input_scope AS scope
+  LEFT JOIN project.project_input_scope AS scope
     ON scope.object_id = object.object_id
    AND scope.is_active
-  LEFT JOIN model.model AS model
-    ON model.model_id = scope.model_id
-   AND model.tenant_id = %s
-   AND model.is_active
+  LEFT JOIN project.project AS project
+    ON project.project_id = scope.project_id
+   AND project.tenant_id = %s
+   AND project.is_active
  WHERE connection.tenant_id = %s
    AND connection.is_active
  GROUP BY system.system_id,

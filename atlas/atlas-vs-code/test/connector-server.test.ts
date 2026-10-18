@@ -12,7 +12,7 @@ async function connect() {
   const root = await mkdtemp(join(tmpdir(), "atlas-connector-"));
   await mkdir(join(root, ".atlas", "temp"), { recursive: true });
   const mcp = { callTool: vi.fn(async (_name: string, _input: Record<string, unknown>): Promise<unknown> => ({ tenants: [{ private_fixture: true }] })),
-    listTools: vi.fn(async () => ["list_tenants", "apply_model_change_set", "stage_model_change_set", "arbitrary_sql"].map(name => ({
+    listTools: vi.fn(async () => ["list_tenants", "apply_project_change_set", "stage_project_change_set", "arbitrary_sql"].map(name => ({
       name, inputSchema: { type: "object" as const },
     }))) };
   const server = createConnectorServer(mcp, resolveStageProfile("local", "http://127.0.0.1:8000/mcp"), root);
@@ -26,9 +26,9 @@ test("only reviewed remote tools and the two local tools are exposed", async () 
   const f = await connect();
   try {
     const names = (await f.client.listTools()).tools.map(tool => tool.name);
-    expect(names).toEqual(["atlas_checkStageRunner", "atlas_stageApprovedManifest", "list_tenants", "apply_model_change_set"]);
+    expect(names).toEqual(["atlas_checkStageRunner", "atlas_stageApprovedManifest", "list_tenants", "apply_project_change_set"]);
     expect([...REMOTE_TOOLS].some(name => /^(stage|begin|put|commit)_/.test(name))).toBe(false);
-    const rejected = await f.client.callTool({ name: "stage_model_change_set", arguments: { records: [] } });
+    const rejected = await f.client.callTool({ name: "stage_project_change_set", arguments: { records: [] } });
     expect(rejected.isError).toBe(true); expect(f.mcp.callTool).not.toHaveBeenCalled();
   } finally { await f.close(); }
 });
@@ -68,9 +68,9 @@ test("remote requests preserve arguments and structured results, without leaking
   const f = await connect();
   try {
     f.mcp.callTool.mockResolvedValue({ status: "applied", draft_revision: 3 });
-    const input = { model_id: 7, expected_draft_revision: 3 };
-    const result = await f.client.callTool({ name: "apply_model_change_set", arguments: input });
-    expect(f.mcp.callTool).toHaveBeenCalledWith("apply_model_change_set", input);
+    const input = { project_id: 7, expected_draft_revision: 3 };
+    const result = await f.client.callTool({ name: "apply_project_change_set", arguments: input });
+    expect(f.mcp.callTool).toHaveBeenCalledWith("apply_project_change_set", input);
     expect(result.structuredContent).toEqual({ status: "applied", draft_revision: 3 });
     f.mcp.callTool.mockRejectedValue(new Error("private-provider-diagnostic"));
     const failure = await f.client.callTool({ name: "list_tenants" });

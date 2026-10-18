@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createApiClient } from "../../api";
 import { WorkbenchApp, createWorkbenchRouter } from "../../app";
 import type {
-  ModelPromptAssignmentState,
+  ProjectPromptAssignmentState,
   PromptAssignmentTarget,
   PromptStageCatalog,
   PromptTemplateDetail,
@@ -365,24 +365,24 @@ describe("governed Prompts experience", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("shows effective Model provenance and changes only a lock-gated Model override", async () => {
+  it("shows effective Project provenance and changes only a lock-gated Project override", async () => {
     const fetcher = promptFetchStub();
     const user = userEvent.setup();
     const view = render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/settings/prompts"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/settings/prompts"] }),
     })} />);
 
-    const table = await screen.findByRole("table", { name: "Effective Model Prompt assignments" });
+    const table = await screen.findByRole("table", { name: "Effective Project Prompt assignments" });
     expect(within(table).getByText("Tenant entity review")).toBeVisible();
-    expect(within(table).getAllByText("Model override")[0]).toBeVisible();
+    expect(within(table).getAllByText("Project override")[0]).toBeVisible();
     const audit = within(table).getByLabelText("Entity review Prompt details");
     expect(within(table).getByText("logical.entity_review", { exact: true })).not.toBeVisible();
     await user.click(audit);
     expect(within(table).getByText("logical.entity_review", { exact: true })).toBeVisible();
     expect(within(table).getByText(digestC, { exact: true })).toBeVisible();
     await user.click(audit);
-    expect(screen.getByText("Global defaults are read-only. Model overrides use active, published Tenant versions.")).toBeVisible();
+    expect(screen.getByText("Global defaults are read-only. Project overrides use active, published Tenant versions.")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Configure Entity review Prompt" }));
     const dialog = await screen.findByRole("dialog", { name: "Entity review" });
     expect(within(dialog).getByRole("button", {
@@ -392,7 +392,7 @@ describe("governed Prompts experience", () => {
     await user.click(within(dialog).getByRole("button", { name: "Save assignment" }));
 
     const assignmentCall = await waitForCall(fetcher, (input, init) => (
-      input.endsWith("/prompts/models/18/assignments/4") && init?.method === "PUT"
+      input.endsWith("/prompts/projects/18/assignments/4") && init?.method === "PUT"
     ));
     expect(JSON.parse(String(assignmentCall[1]?.body))).toEqual({
       prompt_template_version_id: null,
@@ -404,9 +404,9 @@ describe("governed Prompts experience", () => {
 
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(promptFetchStub({ hasLock: false })),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/settings/prompts"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/settings/prompts"] }),
     })} />);
-    await screen.findByRole("table", { name: "Effective Model Prompt assignments" });
+    await screen.findByRole("table", { name: "Effective Project Prompt assignments" });
     expect(screen.getByText("Tenant Lock required to assign Prompts")).toBeVisible();
     expect(screen.getByRole("button", { name: "Configure Entity review Prompt" })).toBeDisabled();
   });
@@ -456,9 +456,9 @@ function promptFetchStub(options: {
   promptWorkflow?: PromptWorkflow;
 } = {}) {
   let detail = structuredClone(promptDetail);
-  if (options.promptWorkflow) detail.template = { ...detail.template, model_workflow: options.promptWorkflow, workflow_execution_mode: null };
+  if (options.promptWorkflow) detail.template = { ...detail.template, project_workflow: options.promptWorkflow, workflow_execution_mode: null };
   let createdDetail = structuredClone(newPromptDetail);
-  let modelAssignment = structuredClone(modelAssignmentState);
+  let projectAssignment = structuredClone(projectAssignmentState);
   return vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input);
     const method = init?.method ?? "GET";
@@ -472,7 +472,7 @@ function promptFetchStub(options: {
         },
       });
     }
-    if (url === "/api/v1/tenants/7/models/18") return jsonResponse(modelDetail);
+    if (url === "/api/v1/tenants/7/projects/18") return jsonResponse(projectDetail);
     if (url === "/api/v1/tenants/7/prompts/stages") {
       if (options.pendingLibrary) return await new Promise<Response>(() => undefined);
       if (options.libraryStatus) return libraryFailure(options.libraryStatus);
@@ -579,20 +579,20 @@ function promptFetchStub(options: {
       const version = transitionVersion(detail, "retired");
       return jsonResponse(version);
     }
-    if (url === "/api/v1/tenants/7/prompts/models/18/assignments" && method === "GET") {
-      return jsonResponse({ tenant_id: 7, model_id: 18, items: [modelAssignment] });
+    if (url === "/api/v1/tenants/7/prompts/projects/18/assignments" && method === "GET") {
+      return jsonResponse({ tenant_id: 7, project_id: 18, items: [projectAssignment] });
     }
-    if (url === "/api/v1/tenants/7/prompts/models/18/assignments/4" && method === "PUT") {
+    if (url === "/api/v1/tenants/7/prompts/projects/18/assignments/4" && method === "PUT") {
       const body = JSON.parse(String(init?.body)) as { prompt_template_version_id: number | null };
-      modelAssignment = body.prompt_template_version_id === null
+      projectAssignment = body.prompt_template_version_id === null
         ? {
-            ...modelAssignment,
-            model_assignment: null,
+            ...projectAssignment,
+            project_assignment: null,
             effective_source: "global_default",
             effective_assignment: globalAssignment,
           }
-        : modelAssignment;
-      return jsonResponse(modelAssignment);
+        : projectAssignment;
+      return jsonResponse(projectAssignment);
     }
     return new Response(null, { status: 404 });
   });
@@ -672,7 +672,7 @@ const tenantHome = {
     is_locked: true,
     owner_display_name: "Maaz",
     owned_by_current_principal: true,
-    purpose: "Model settings",
+    purpose: "Project settings",
     acquired_at: "2026-08-24T11:00:00Z",
     expires_at: "2026-08-24T13:00:00Z",
   },
@@ -680,13 +680,13 @@ const tenantHome = {
   systems: [],
 };
 
-const modelDetail = {
-  model_id: 18,
+const projectDetail = {
+  project_id: 18,
   tenant_id: 7,
-  model_name: "Customer 360",
-  model_description: "Governed customer model",
-  model_revision: 18,
-  model_input_scope_object_count: 4,
+  project_name: "Customer 360",
+  project_description: "Governed customer project",
+  project_revision: 18,
+  project_input_scope_object_count: 4,
   logical_schemas: [], dimensional_schemas: [], silver_model_naming_instructions: null,
   silver_model_audit_columns_template: null,
   gold_model_naming_instructions: null,
@@ -706,7 +706,7 @@ const promptStageCatalog: PromptStageCatalog = {
   tenant_id: 7,
   items: [{
     workflow_stage_id: 4,
-    model_workflow: "logical",
+    project_workflow: "logical",
     workflow_execution_mode: "tool_assisted",
     workflow_stage_code: "entity_review",
     workflow_stage_name: "Entity review",
@@ -727,7 +727,7 @@ const promptStageCatalog: PromptStageCatalog = {
 const tenantTemplateSummary: PromptTemplateSummary = {
   prompt_template_id: 31,
   workflow_stage_id: 4,
-  model_workflow: "logical",
+  project_workflow: "logical",
   workflow_execution_mode: "tool_assisted",
   workflow_stage_code: "entity_review",
   workflow_stage_name: "Entity review",
@@ -842,7 +842,7 @@ const globalAssignment: PromptAssignmentTarget = {
 
 const tenantAssignment: PromptAssignmentTarget = {
   prompt_assignment_id: 501,
-  prompt_assignment_scope: "model_default",
+  prompt_assignment_scope: "project_default",
   prompt_template_version_id: 90,
   prompt_template_version_number: 1,
   prompt_template_digest: digestC,
@@ -854,15 +854,15 @@ const tenantAssignment: PromptAssignmentTarget = {
   assigned_at: "2026-08-24T10:00:00Z",
 };
 
-const modelAssignmentState: ModelPromptAssignmentState = {
+const projectAssignmentState: ProjectPromptAssignmentState = {
   workflow_stage_id: 4,
-  model_workflow: "logical",
+  project_workflow: "logical",
   workflow_execution_mode: "tool_assisted",
   workflow_stage_code: "entity_review",
   workflow_stage_name: "Entity review",
   workflow_stage_order: 1,
-  model_assignment: tenantAssignment,
+  project_assignment: tenantAssignment,
   global_assignment: globalAssignment,
-  effective_source: "model_default",
+  effective_source: "project_default",
   effective_assignment: tenantAssignment,
 };

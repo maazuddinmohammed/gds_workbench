@@ -76,7 +76,7 @@ class TenantSystemRecord(BaseModel):
     system_type_name: str = Field(min_length=1, max_length=200)
     connection_count: int = Field(ge=0)
     registered_object_count: int = Field(ge=0)
-    active_model_count: int = Field(ge=0)
+    active_project_count: int = Field(ge=0)
     last_metadata_update_time: datetime | None = None
 
 

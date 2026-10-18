@@ -24,9 +24,9 @@ async def test_tenant_entry_round_trip_uses_only_the_web_runtime_role(
     with web_postgres_database.connect_owner() as connection:
         project = connection.execute(
             """
-            INSERT INTO core.project (project_code, project_name)
+            INSERT INTO core.lane (lane_code, lane_name)
             VALUES (%s, %s)
-            RETURNING project_id
+            RETURNING lane_id
             """,
             (f"web_project_{suffix}", f"Web Project {suffix}"),
         ).fetchone()
@@ -34,7 +34,7 @@ async def test_tenant_entry_round_trip_uses_only_the_web_runtime_role(
         tenant = connection.execute(
             """
             INSERT INTO core.tenant (
-                project_id,
+                lane_id,
                 tenant_code,
                 tenant_name,
                 tenant_catalog,
@@ -43,7 +43,7 @@ async def test_tenant_entry_round_trip_uses_only_the_web_runtime_role(
             RETURNING tenant_id
             """,
             (
-                project["project_id"],
+                project["lane_id"],
                 f"WEB_{suffix}",
                 f"Web Tenant {suffix}",
                 f"web_catalog_{suffix}",
@@ -143,9 +143,9 @@ async def test_tenant_entry_pages_only_non_global_data_store_owner_tenants(
     with web_postgres_database.connect_owner() as connection:
         project = connection.execute(
             """
-            INSERT INTO core.project (project_code, project_name)
+            INSERT INTO core.lane (lane_code, lane_name)
             VALUES (%s, %s)
-            RETURNING project_id
+            RETURNING lane_id
             """,
             (f"web_selector_project_{suffix}", f"Web Selector Project {suffix}"),
         ).fetchone()
@@ -180,7 +180,7 @@ async def test_tenant_entry_pages_only_non_global_data_store_owner_tenants(
         tenant_rows = connection.execute(
             """
             INSERT INTO core.tenant (
-                project_id,
+                lane_id,
                 tenant_code,
                 tenant_name,
                 tenant_catalog,
@@ -192,22 +192,22 @@ async def test_tenant_entry_pages_only_non_global_data_store_owner_tenants(
             RETURNING tenant_id, tenant_code
             """,
             (
-                project["project_id"],
+                project["lane_id"],
                 f"WEB_SELECTOR_GDS_{suffix}",
                 f"!00 Web Selector Global Data Store {suffix}",
                 f"web_selector_gds_catalog_{suffix}",
                 f"web_selector_gds_admin_{suffix}",
-                project["project_id"],
+                project["lane_id"],
                 f"WEB_SELECTOR_INACTIVE_GDS_{suffix}",
                 f"!01 Web Selector Inactive Global Data Store {suffix}",
                 f"web_selector_inactive_gds_catalog_{suffix}",
                 f"web_selector_inactive_gds_admin_{suffix}",
-                project["project_id"],
+                project["lane_id"],
                 f"WEB_SELECTOR_A_{suffix}",
                 f"!10 Web Selector Tenant {suffix}",
                 f"web_selector_a_catalog_{suffix}",
                 f"web_selector_a_admin_{suffix}",
-                project["project_id"],
+                project["lane_id"],
                 f"WEB_SELECTOR_B_{suffix}",
                 f"!11 Web Selector Tenant {suffix}",
                 f"web_selector_b_catalog_{suffix}",
@@ -216,7 +216,9 @@ async def test_tenant_entry_pages_only_non_global_data_store_owner_tenants(
         ).fetchall()
         tenant_by_code = {row["tenant_code"]: row for row in tenant_rows}
         gds_owner_tenant = tenant_by_code[f"WEB_SELECTOR_GDS_{suffix}"]
-        inactive_gds_owner_tenant = tenant_by_code[f"WEB_SELECTOR_INACTIVE_GDS_{suffix}"]
+        inactive_gds_owner_tenant = tenant_by_code[
+            f"WEB_SELECTOR_INACTIVE_GDS_{suffix}"
+        ]
         regular_tenant_a = tenant_by_code[f"WEB_SELECTOR_A_{suffix}"]
         regular_tenant_b = tenant_by_code[f"WEB_SELECTOR_B_{suffix}"]
         system = connection.execute(
@@ -358,5 +360,9 @@ async def test_tenant_entry_pages_only_non_global_data_store_owner_tenants(
     shared_visible_tenant_ids = {row["tenant_id"] for row in shared_visible_rows}
     assert gds_owner_tenant["tenant_id"] in shared_visible_tenant_ids
     assert inactive_gds_owner_tenant["tenant_id"] in shared_visible_tenant_ids
-    assert [item.tenant_id for item in first_page.items] == [regular_tenant_a["tenant_id"]]
-    assert [item.tenant_id for item in second_page.items] == [regular_tenant_b["tenant_id"]]
+    assert [item.tenant_id for item in first_page.items] == [
+        regular_tenant_a["tenant_id"]
+    ]
+    assert [item.tenant_id for item in second_page.items] == [
+        regular_tenant_b["tenant_id"]
+    ]

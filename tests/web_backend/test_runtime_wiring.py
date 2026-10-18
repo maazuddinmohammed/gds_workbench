@@ -61,82 +61,95 @@ def test_runtime_factory_owns_the_database_lifecycle() -> None:
             "GDS_WEB_CURSOR_SIGNING_KEY": "development-only-key-32-bytes-long",
             "GDS_WEB_DATABRICKS_ENVIRONMENT_CODE": "TEST",
             "GDS_WEB_LOCAL_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
-            "GDS_WEB_LOCAL_PRINCIPAL_OBJECT_ID": ("22222222-2222-2222-2222-222222222222"),
+            "GDS_WEB_LOCAL_PRINCIPAL_OBJECT_ID": (
+                "22222222-2222-2222-2222-222222222222"
+            ),
         }
     )
     database = LifecycleDatabase()
 
     app = create_runtime_app(settings=settings, database=database)
-    assert "/api/v1/tenants/{tenant_id}/models/{model_id}/input-scope" in app.openapi()["paths"]
+    assert (
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/input-scope"
+        in app.openapi()["paths"]
+    )
     assert "/api/v1/tenants/{tenant_id}/lock/acquire" in app.openapi()["paths"]
     assert "/api/v1/tenants/{tenant_id}/metadata/datasets" in app.openapi()["paths"]
     assert "/api/v1/tenants/{tenant_id}/metadata-change-sets" in app.openapi()["paths"]
     assert "/api/v1/tenants/{tenant_id}/prompts/stages" in app.openapi()["paths"]
     assert "/api/v1/tenants/{tenant_id}/output-templates" in app.openapi()["paths"]
-    assert "/api/v1/tenants/{tenant_id}/models/{model_id}/profiling" in app.openapi()["paths"]
     assert (
-        "/api/v1/tenants/{tenant_id}/models/{model_id}/profiling/runs/{workflow_run_id}/execute"
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/profiling"
         in app.openapi()["paths"]
     )
     assert (
-        "/api/v1/tenants/{tenant_id}/models/{model_id}/conceptual/objects" in app.openapi()["paths"]
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/profiling/runs/{workflow_run_id}/execute"
+        in app.openapi()["paths"]
     )
     assert (
-        "/api/v1/tenants/{tenant_id}/models/{model_id}/analysis/"
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/conceptual/objects"
+        in app.openapi()["paths"]
+    )
+    assert (
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/analysis/"
         "inference-runs/{workflow_run_id}/execute" in app.openapi()["paths"]
     )
     assert (
-        "/api/v1/tenants/{tenant_id}/models/{model_id}/analysis/"
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/analysis/"
         "validation-runs/{workflow_run_id}/execute" in app.openapi()["paths"]
     )
     assert (
-        "/api/v1/tenants/{tenant_id}/models/{model_id}/conceptual/"
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/conceptual/"
         "runs/{workflow_run_id}/execute" in app.openapi()["paths"]
     )
     assert (
-        "/api/v1/tenants/{tenant_id}/models/{model_id}/runs/"
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/runs/"
         "{workflow_run_id}/draft/apply" in app.openapi()["paths"]
     )
     assert (
-        "/api/v1/tenants/{tenant_id}/models/{model_id}/assertions/documents"
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/context/groups"
         in app.openapi()["paths"]
     )
     assert (
-        "/api/v1/tenants/{tenant_id}/models/{model_id}/logical/entities" in app.openapi()["paths"]
-    )
-    assert (
-        "/api/v1/tenants/{tenant_id}/models/{model_id}/logical/"
-        "runs/{workflow_run_id}/execute" in app.openapi()["paths"]
-    )
-    assert (
-        "/api/v1/tenants/{tenant_id}/models/{model_id}/dimensional/objects"
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/logical/entities"
         in app.openapi()["paths"]
     )
     assert (
-        "/api/v1/tenants/{tenant_id}/models/{model_id}/dimensional/"
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/logical/"
         "runs/{workflow_run_id}/execute" in app.openapi()["paths"]
     )
     assert (
-        "/api/v1/tenants/{tenant_id}/models/{model_id}/mapping/dependencies"
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/dimensional/objects"
+        in app.openapi()["paths"]
+    )
+    assert (
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/dimensional/"
+        "runs/{workflow_run_id}/execute" in app.openapi()["paths"]
+    )
+    assert (
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/mapping/dependencies"
         not in app.openapi()["paths"]
     )
     assert (
-        "/api/v1/tenants/{tenant_id}/models/{model_id}/mapping/generation-targets"
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/mapping/generation-targets"
         in app.openapi()["paths"]
     )
     assert (
-        "/api/v1/tenants/{tenant_id}/models/{model_id}/mapping/"
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/mapping/"
         "runs/{workflow_run_id}/execute" in app.openapi()["paths"]
     )
     assert (
-        "/api/v1/tenants/{tenant_id}/models/{model_id}/code-generation/targets"
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/code-generation/targets"
         in app.openapi()["paths"]
     )
     assert (
-        "/api/v1/tenants/{tenant_id}/models/{model_id}/code-generation/"
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/code-generation/"
         "runs/{workflow_run_id}/execute" in app.openapi()["paths"]
     )
-    assert "/api/v1/tenants/{tenant_id}/models/{model_id}/overview" in app.openapi()["paths"]
+    assert (
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/overview"
+        in app.openapi()["paths"]
+    )
 
     with TestClient(app, base_url="http://localhost:8000") as client:
         response = client.get("/readyz")

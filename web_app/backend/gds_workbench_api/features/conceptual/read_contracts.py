@@ -13,6 +13,8 @@ from pydantic import (
     model_validator,
 )
 
+from gds_workbench_api.features.context.contracts import ContextRecordReference
+
 type ConceptualStatus = Literal["active", "inactive", "deprecated"]
 type Confidence = Literal["low", "medium", "high"]
 type ConceptualCardinality = Literal[
@@ -64,8 +66,8 @@ class ConceptualObjectSummary(ContractModel):
 
 
 class ConceptualObjectPage(ContractModel):
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     items: tuple[ConceptualObjectSummary, ...] = Field(max_length=200)
     next_cursor: str | None = Field(default=None, max_length=2048)
 
@@ -87,8 +89,8 @@ class ConceptualRelationshipSummary(ContractModel):
 
 
 class ConceptualRelationshipPage(ContractModel):
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     items: tuple[ConceptualRelationshipSummary, ...] = Field(max_length=200)
     next_cursor: str | None = Field(default=None, max_length=2048)
 
@@ -100,16 +102,6 @@ class PhysicalObjectReference(ContractModel):
     connection_code: str = Field(min_length=1, max_length=100)
     object_schema: str = Field(min_length=1, max_length=400)
     object_name: str = Field(min_length=1, max_length=400)
-
-
-class AssertionRecordReference(ContractModel):
-    modeling_assertion_record_id: int = Field(gt=0)
-    modeling_assertion_record_key: str = Field(min_length=1, max_length=100)
-    modeling_assertion_document_name: str = Field(min_length=1, max_length=255)
-    modeling_assertion_record_type: str = Field(min_length=1, max_length=100)
-    modeling_assertion_text: str = Field(min_length=1)
-    modeling_assertion_confidence: Confidence | None = None
-    modeling_assertion_record_status: ConceptualStatus
 
 
 class ConceptualSupportBase(ContractModel):
@@ -130,13 +122,13 @@ class ConceptualObjectSupport(ConceptualSupportBase):
     source_object: PhysicalObjectReference
 
 
-class ConceptualAssertionSupport(ConceptualSupportBase):
-    support_source_type: Literal["assertion"]
-    assertion_record: AssertionRecordReference
+class ConceptualContextSupport(ConceptualSupportBase):
+    support_source_type: Literal["context_record"]
+    context_record: ContextRecordReference
 
 
 type ConceptualSupport = Annotated[
-    ConceptualObjectSupport | ConceptualAssertionSupport,
+    ConceptualObjectSupport | ConceptualContextSupport,
     Field(discriminator="support_source_type"),
 ]
 

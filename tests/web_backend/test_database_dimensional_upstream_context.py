@@ -18,9 +18,9 @@ from gds_workbench_api.features.workflows.authoring.context_inputs import OBJECT
 from psycopg.types.json import Jsonb
 
 from tests.mcp.conftest import DisposablePostgres
-from tests.mcp.enrichment_test_support import seed_model_enrichment
+from tests.mcp.enrichment_test_support import seed_project_enrichment
 from tests.web_backend.test_database_mapping_source_context import _seed_mapping_scope
-from tests.web_backend.test_database_model_change_sets import _required_id
+from tests.web_backend.test_database_project_change_sets import _required_id
 from tests.web_backend.test_dimensional_executor import _plan
 
 
@@ -34,61 +34,61 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
     foreign = _seed_mapping_scope(database, dimensional=False)
     with database.connect_owner() as connection:
         connection.execute(
-            "UPDATE model.model SET logical_entity_scd_type='type_1', "
-            "dimensional_entity_scd_type='type_2' WHERE model_id=%s",
-            (scope.plan.model_id,),
+            "UPDATE project.project SET logical_entity_scd_type='type_1', "
+            "dimensional_entity_scd_type='type_2' WHERE project_id=%s",
+            (scope.plan.project_id,),
         )
-        other_model_id = _required_id(
+        other_project_id = _required_id(
             connection.execute(
-                """INSERT INTO model.model (tenant_id, model_name, logical_schemas)
+                """INSERT INTO project.project (tenant_id, project_name, logical_schemas)
                VALUES (%s,%s,'[{"schema_name":"silver","description":null}]')
-               RETURNING model_id""",
-                (scope.tenant_id, f"Other support model {uuid4().hex}"),
+               RETURNING project_id""",
+                (scope.tenant_id, f"Other support project {uuid4().hex}"),
             ).fetchone(),
-            "model_id",
+            "project_id",
         )
         extra_entity_ids: dict[str, int] = {}
-        for name, model_id in (
-            ("Unselected", scope.plan.model_id),
-            ("OtherModel", other_model_id),
+        for name, project_id in (
+            ("Unselected", scope.plan.project_id),
+            ("OtherProject", other_project_id),
         ):
             extra_entity_ids[name] = _required_id(
                 connection.execute(
                     """INSERT INTO workflow.logical_entity (
-                    model_id,logical_entity_schema_name,logical_entity_name,
+                    project_id,logical_entity_schema_name,logical_entity_name,
                     logical_entity_definition,logical_entity_type,logical_entity_grain)
                     VALUES (%s,'silver',%s,'Unselected contextual entity.','core','One row.')
                     RETURNING logical_entity_id""",
-                    (model_id, name),
+                    (project_id, name),
                 ).fetchone(),
                 "logical_entity_id",
             )
-        for name, model_id, entity_id, physical_active, support_status in (
+        for name, project_id, entity_id, physical_active, support_status in (
             (
                 "inactive_support",
-                scope.plan.model_id,
+                scope.plan.project_id,
                 scope.logical_entity_id,
                 True,
                 "inactive",
             ),
             (
                 "inactive_object",
-                scope.plan.model_id,
+                scope.plan.project_id,
                 scope.logical_entity_id,
                 False,
                 "active",
             ),
             (
                 "unselected_entity",
-                scope.plan.model_id,
+                scope.plan.project_id,
                 extra_entity_ids["Unselected"],
                 True,
                 "active",
             ),
             (
-                "other_model",
-                other_model_id,
-                extra_entity_ids["OtherModel"],
+                "other_project",
+                other_project_id,
+                extra_entity_ids["OtherProject"],
                 True,
                 "active",
             ),
@@ -113,15 +113,15 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
                 (object_id,),
             )
             connection.execute(
-                "INSERT INTO model.model_input_scope (model_id, object_id) VALUES (%s,%s)",
-                (model_id, object_id),
+                "INSERT INTO project.project_input_scope (project_id, object_id) VALUES (%s,%s)",
+                (project_id, object_id),
             )
             connection.execute(
                 """INSERT INTO workflow.logical_entity_source_mapping (
-                    model_id,logical_entity_id,support_source_type,source_object_id,
+                    project_id,logical_entity_id,support_source_type,source_object_id,
                     logical_entity_source_mapping_rationale,logical_entity_source_mapping_status)
                     VALUES (%s,%s,'object',%s,'Excluded support fixture.',%s)""",
-                (model_id, entity_id, object_id, support_status),
+                (project_id, entity_id, object_id, support_status),
             )
         connection.execute(
             """UPDATE core.object SET object_description='Enriched supported order source.'
@@ -134,31 +134,31 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
                    attribute_inferred_data_type='BIGINT' WHERE object_id=ANY(%s)""",
             ([scope.bronze_object_id, scope.source_object_id],),
         )
-        seed_model_enrichment(connection, scope.plan.model_id)
+        seed_project_enrichment(connection, scope.plan.project_id)
         connection.execute(
-            """INSERT INTO workflow.attribute_profile (model_id, object_id, attribute_id,
+            """INSERT INTO workflow.attribute_profile (project_id, object_id, attribute_id,
                 source_context_digest, row_count, non_null_count, null_count, distinct_count,
                 percent_populated, percent_duplicates)
                 SELECT %s,object_id,attribute_id,%s,10,10,0,8,100,20
                   FROM core.attribute WHERE object_id=%s""",
-            (scope.plan.model_id, "a" * 64, scope.bronze_object_id),
+            (scope.plan.project_id, "a" * 64, scope.bronze_object_id),
         )
         connection.execute(
             """INSERT INTO workflow.analysis_result (
-                model_id,from_object_id,from_attribute_id,to_object_id,to_attribute_id,
+                project_id,from_object_id,from_attribute_id,to_object_id,to_attribute_id,
                 relationship_kind,relationship_confidence,relationship_basis)
                 SELECT %s,source.object_id,source.attribute_id,target.object_id,target.attribute_id,
                        'reference','high','Stored source-to-Bronze relationship.'
                   FROM core.attribute source CROSS JOIN core.attribute target
                  WHERE source.object_id=%s AND target.object_id=%s""",
-            (scope.plan.model_id, scope.source_object_id, scope.bronze_object_id),
+            (scope.plan.project_id, scope.source_object_id, scope.bronze_object_id),
         )
-        model_row = connection.execute(
-            "SELECT model_revision FROM model.model WHERE model_id=%s",
-            (scope.plan.model_id,),
+        project_row = connection.execute(
+            "SELECT project_revision FROM project.project WHERE project_id=%s",
+            (scope.plan.project_id,),
         ).fetchone()
-        assert model_row is not None
-        revision = _required_id(model_row, "model_revision")
+        assert project_row is not None
+        revision = _required_id(project_row, "project_revision")
         connection.execute(
             """UPDATE application.workflow_run
                SET workflow_run_state='completed', completed_time=CURRENT_TIMESTAMP
@@ -168,12 +168,12 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
         run_id = _required_id(
             connection.execute(
                 """INSERT INTO application.workflow_run (
-                tenant_id,model_id,model_revision,model_workflow,workflow_execution_mode,
+                tenant_id,project_id,project_revision,project_workflow,workflow_execution_mode,
                 actor_principal_id,actor_entra_principal_identity_id,
                 agent_sdk_code,agent_provider_code,agent_model_code,reasoning_effort_code,
                 max_turns,validation_retry_count,selected_scope_digest,selected_scope_count,
                 workflow_run_state,correlation_id,started_time,modeled_entity_type)
-                SELECT tenant_id,model_id,%s,'dimensional',%s,
+                SELECT tenant_id,project_id,%s,'dimensional',%s,
                        actor_principal_id,actor_entra_principal_identity_id,
                        agent_sdk_code,agent_provider_code,agent_model_code,reasoning_effort_code,
                        max_turns,validation_retry_count,selected_scope_digest,1,
@@ -186,9 +186,9 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
         )
         connection.execute(
             """INSERT INTO application.workflow_run_entity_selection (
-                workflow_run_id,model_id,modeled_entity_type,modeled_entity_id,
+                workflow_run_id,project_id,modeled_entity_type,modeled_entity_id,
                 modeled_entity_schema_name,modeled_entity_name,selection_order)
-                SELECT %s,model_id,modeled_entity_type,modeled_entity_id,
+                SELECT %s,project_id,modeled_entity_type,modeled_entity_id,
                        modeled_entity_schema_name,modeled_entity_name,selection_order
                   FROM application.workflow_run_entity_selection WHERE workflow_run_id=%s""",
             (run_id, scope.plan.workflow_run_id),
@@ -240,8 +240,8 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
                 tenant_id=scope.tenant_id,
                 plan=_plan(mode=mode).model_copy(
                     update={
-                        "model_id": scope.plan.model_id,
-                        "model_revision": revision,
+                        "project_id": scope.plan.project_id,
+                        "project_revision": revision,
                         "workflow_run_id": run_id,
                         "selected_entity_ids": (scope.logical_entity_id,),
                     }
@@ -249,8 +249,8 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
             )
     finally:
         await runtime.close()
-    assert result.context.model_details.logical_entity_scd_type == "type_1"
-    assert result.context.model_details.dimensional_entity_scd_type == "type_2"
+    assert result.context.project_details.logical_entity_scd_type == "type_1"
+    assert result.context.project_details.dimensional_entity_scd_type == "type_2"
     assert result.context.selected_objects == ()
     assert len(result.context.selected_logical_entities) == 1
     assert len(result.context.supporting_objects) == 2
@@ -272,7 +272,7 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
     }
     assert result.snapshot is not None
     assert all(
-        group.object.source_tenant_code == result.snapshot.model_tenant_code
+        group.object.source_tenant_code == result.snapshot.project_tenant_code
         for group in result.context.supporting_objects
     )
     values = (

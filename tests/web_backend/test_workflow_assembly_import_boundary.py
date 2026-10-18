@@ -20,7 +20,10 @@ def test_web_and_shared_rules_do_not_import_mcp_tool_or_identity_adapters() -> N
     violations: list[str] = []
     packages = [
         _WEB_PACKAGE,
-        *(_SHARED_PACKAGE / name for name in ("application", "domain", "infrastructure")),
+        *(
+            _SHARED_PACKAGE / name
+            for name in ("application", "domain", "infrastructure")
+        ),
     ]
     for path in sorted(path for package in packages for path in package.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -36,7 +39,9 @@ def test_web_and_shared_rules_do_not_import_mcp_tool_or_identity_adapters() -> N
             for alias in node.names
         )
         for module in imported:
-            if any(module == root or module.startswith(f"{root}.") for root in forbidden):
+            if any(
+                module == root or module.startswith(f"{root}.") for root in forbidden
+            ):
                 violations.append(f"{path.relative_to(_ROOT)}: {module}")
 
     assert violations == []
@@ -71,21 +76,21 @@ def reject_mcp(name, globals=None, locals=None, fromlist=(), level=0):
 builtins.__import__ = reject_mcp
 
 from gds_etl_workbench.application.change_sets.metadata import CHANGE_SET_DATASETS
-from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
 from gds_workbench_api.features.metadata_change_sets.service import (
     DatabaseMetadataChangeSetService,
 )
-from gds_workbench_api.features.model_change_sets.service import DatabaseModelChangeSetService
+from gds_workbench_api.features.project_change_sets.service import DatabaseProjectChangeSetService
 from gds_workbench_api.features.workflows.execution.assembly import (
     WorkflowRuntimeServices,
     create_workflow_runtime_services,
 )
 
-assert StageModelChange.__module__ == "gds_etl_workbench.application.change_sets.model"
+assert StageProjectChange.__module__ == "gds_etl_workbench.application.change_sets.project"
 assert "source_object" in CHANGE_SET_DATASETS
 assert WorkflowRuntimeServices.__module__.endswith("workflows.execution.assembly")
 assert callable(create_workflow_runtime_services)
-assert DatabaseMetadataChangeSetService and DatabaseModelChangeSetService
+assert DatabaseMetadataChangeSetService and DatabaseProjectChangeSetService
 assert not any(
     name == root or name.startswith(root + ".")
     for name in sys.modules for root in forbidden

@@ -19,19 +19,19 @@ describe("stylesheet Module manifest", () => {
     expect(stylesheetManifest).toBe(
       [
         '@import "./styles/foundation.css";',
-        '@import "./styles/models-scope.css";',
-        '@import "./styles/analysis-assertions-modeled.css";',
+        '@import "./styles/projects-scope.css";',
+        '@import "./styles/analysis-context-modeled.css";',
         '@import "./styles/profiling.css";',
         '@import "./styles/metadata.css";',
         '@import "./styles/metadata-catalog.css";',
         '@import "./styles/tenant-entry.css";',
         '@import "./styles/tenant-workspace.css";',
-        '@import "./styles/model-workspace-overrides.css";',
+        '@import "./styles/project-workspace-overrides.css";',
         '@import "./styles/code-generation.css";',
         '@import "./styles/validation.css";',
         '@import "./styles/prompts.css";',
         '@import "./styles/workflow-runs.css";',
-        '@import "./styles/model-targets.css";',
+        '@import "./styles/project-targets.css";',
         '@import "./shared/select-controls.css";',
         '@import "./styles/workflow-command-center.css";',
         '@import "./styles/ledger-grid.css";',
@@ -71,14 +71,20 @@ describe("Shared workspace design", () => {
     surface.innerHTML = `<div class="app-shell">
       <div class="brand"><strong>ATLAS</strong></div>
       <aside class="sidebar"><a class="nav-item is-active" data-check>Home</a></aside>
-      <main class="workspace workspace-model"><div class="model-workspace">
-        <div class="model-overview"><strong data-check>Overview</strong></div>
-        <div class="model-settings-page"><label data-check>Name</label>
+      <main class="workspace workspace-project"><div class="project-workspace">
+        <div class="project-overview"><strong data-check>Overview</strong></div>
+        <div class="project-settings-page"><label data-check>Name</label>
           <nav class="workspace-tabs"><a class="is-active" data-check>Definition</a></nav></div>
         <div class="scope-page"><label data-check>Zone</label></div>
         <div class="workflow-command-center"><nav class="workflow-tabs"><button class="is-active" data-check>Entities</button></nav></div>
         <div class="ledger-grid"><table><thead><tr><th data-check>Column</th></tr></thead></table></div>
         <div class="prompts-workspace"><h1 data-check>Prompts</h1></div>
+        <article class="workflow-detail-page modeled-detail-page">
+          <section class="detail-section"><header><h2 data-section-heading>Entity definition</h2></header></section>
+          <section class="mapping-transformation-panel"><header><h2 data-section-heading>Entity transformation</h2></header></section>
+          <section class="workspace-sql"><header><h2 data-section-heading>Stored SQL</h2></header></section>
+          <details class="workspace-detail-disclosure"><summary><h2 data-section-heading>SQL details</h2></summary></details>
+        </article>
       </div></main>
       <main class="metadata-catalog"><header class="metadata-catalog-titlebar"><h1 data-check>Metadata</h1></header>
         <button class="button button-small" data-check>Reference</button></main>
@@ -90,6 +96,12 @@ describe("Shared workspace design", () => {
         expect(getComputedStyle(element).fontWeight, element.textContent).toBe(element.tagName === "H1" ? "700" : weight);
       }
       expect(getComputedStyle(surface.querySelector(".brand strong")).fontWeight).not.toBe(weight);
+      for (const heading of surface.querySelectorAll("[data-section-heading]")) {
+        const headingStyle = getComputedStyle(heading);
+        expect(headingStyle.fontWeight, heading.textContent).toBe("600");
+        expect(headingStyle.fontSize, heading.textContent).toBe("1rem");
+        expect(headingStyle.color, heading.textContent).toBe("rgb(12, 35, 60)");
+      }
       const settingsTab = getComputedStyle(surface.querySelector(".workspace-tabs a"));
       const workflowTab = getComputedStyle(surface.querySelector(".workflow-tabs button"));
       for (const property of ["fontSize", "padding", "borderColor", "backgroundColor", "minHeight"]) {

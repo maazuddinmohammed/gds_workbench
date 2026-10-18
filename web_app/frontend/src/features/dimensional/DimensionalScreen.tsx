@@ -1,82 +1,66 @@
-import { DdlExportButton } from "../model_targets/DdlExportButton";
+import { DdlExportButton } from "../project_targets/DdlExportButton";
 import { WorkflowCommandCenter, WorkflowCommandTools, WorkflowMenu } from "../workflows/WorkflowCommandCenter";
-import { ModelLayerActions } from "../model_record_review/ModelLayerActions";
-import { TargetExportButton } from "../model_targets/TargetExportDialog";
-import { ModelRecordHistory } from "../model_record_review/ModelRecordHistory";
-import { ModelRecordReview } from "../model_record_review/ModelRecordReview";
+import { ProjectLayerActions } from "../project_record_review/ProjectLayerActions";
+import { TargetExportButton } from "../project_targets/TargetExportDialog";
+import { ProjectRecordHistory } from "../project_record_review/ProjectRecordHistory";
+import { ProjectRecordReview } from "../project_record_review/ProjectRecordReview";
 import { useState } from "react";
 import { useInfiniteQuery, useIsFetching, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError } from "../../core/http";
 import type {
-  DimensionalAttributeFilters,
   DimensionalFilters,
   DimensionalRelationshipFilters,
 } from "./api";
-import type { ModelDetail } from "../models/api";
+import type { ProjectDetail } from "../projects/api";
 import { dimensionalQueryKeys, type DimensionalApi } from "./api";
 import {
-  DimensionalAttributesLedger,
-  DimensionalObjectsLedger,
+  DimensionalEntitiesLedger,
   DimensionalRelationshipsLedger,
 } from "./DimensionalLedgers";
 import { WorkflowRunDialog } from "../workflows/WorkflowRunDialog";
 import { WorkflowRunMonitor } from "../workflows/WorkflowRunMonitor";
 
-type DimensionalView = "objects" | "attributes" | "relationships" | "submodels";
+type DimensionalView = "entities" | "relationships" | "submodels";
 
 export function DimensionalScreen({
   api,
   tenantId,
-  model,
+  project,
   hasTenantLock,
   canDelete = false,
 }: {
   api: DimensionalApi;
   tenantId: number;
-  model: ModelDetail;
+  project: ProjectDetail;
   hasTenantLock: boolean;
   canDelete?: boolean;
 }) {
   const queryClient = useQueryClient();
-  const [view, setView] = useState<DimensionalView>("objects");
+  const [view, setView] = useState<DimensionalView>("entities");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [recentRunId, setRecentRunId] = useState<number | null>(null);
   const [objectFilters, setObjectFilters] = useState<DimensionalFilters>({ status: "active" });
-  const [attributeFilters, setAttributeFilters] = useState<DimensionalAttributeFilters>({ status: "active" });
   const [relationshipFilters, setRelationshipFilters] = useState<DimensionalRelationshipFilters>({ status: "active" });
   const objectsQuery = useInfiniteQuery({
-    queryKey: dimensionalQueryKeys.objects(tenantId, model.model_id, objectFilters),
+    queryKey: dimensionalQueryKeys.objects(tenantId, project.project_id, objectFilters),
     queryFn: ({ pageParam }) => api.listDimensionalObjects(
       tenantId,
-      model.model_id,
+      project.project_id,
       objectFilters,
       200,
       pageParam,
     ),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
-    enabled: view === "objects",
-  });
-  const attributesQuery = useInfiniteQuery({
-    queryKey: dimensionalQueryKeys.attributes(tenantId, model.model_id, attributeFilters),
-    queryFn: ({ pageParam }) => api.listDimensionalAttributes(
-      tenantId,
-      model.model_id,
-      attributeFilters,
-      200,
-      pageParam,
-    ),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
-    enabled: view === "attributes",
+    enabled: view === "entities",
   });
   const relationshipsQuery = useInfiniteQuery({
-    queryKey: dimensionalQueryKeys.relationships(tenantId, model.model_id, relationshipFilters),
+    queryKey: dimensionalQueryKeys.relationships(tenantId, project.project_id, relationshipFilters),
     queryFn: ({ pageParam }) => api.listDimensionalRelationships(
       tenantId,
-      model.model_id,
+      project.project_id,
       relationshipFilters,
       200,
       pageParam,
@@ -86,46 +70,43 @@ export function DimensionalScreen({
     enabled: view === "relationships",
   });
 
-  const activeReviewQuery = view === "objects" ? objectsQuery : view === "attributes" ? attributesQuery : relationshipsQuery;
-  const submodelsFetching = useIsFetching({ queryKey: ["model-record-history", tenantId, model.model_id, "dimensional_submodel"] }) > 0;
+  const activeReviewQuery = view === "entities" ? objectsQuery : relationshipsQuery;
+  const submodelsFetching = useIsFetching({ queryKey: ["project-record-history", tenantId, project.project_id, "dimensional_submodel"] }) > 0;
   const refreshing = view === "submodels" ? submodelsFetching : activeReviewQuery.isFetching;
   const refresh = async () => {
     setSelectedIds(new Set());
     await Promise.all([
       view === "submodels"
-        ? queryClient.invalidateQueries({ queryKey: ["model-record-history", tenantId, model.model_id, "dimensional_submodel"] })
-        : view === "objects"
+        ? queryClient.invalidateQueries({ queryKey: ["project-record-history", tenantId, project.project_id, "dimensional_submodel"] })
+        : view === "entities"
         ? objectsQuery.refetch()
-        : view === "attributes"
-          ? attributesQuery.refetch()
-          : relationshipsQuery.refetch(),
-      queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
+        : relationshipsQuery.refetch(),
+      queryClient.invalidateQueries({ queryKey: ["project", tenantId, project.project_id] }),
       queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
     ]);
   };
   const invalidateLedgers = async () => {
     await Promise.all([
       queryClient.invalidateQueries({
-        queryKey: ["dimensional-objects", tenantId, model.model_id],
+        queryKey: ["dimensional-objects", tenantId, project.project_id],
       }),
       queryClient.invalidateQueries({
-        queryKey: ["dimensional-attributes", tenantId, model.model_id],
+        queryKey: ["dimensional-attributes", tenantId, project.project_id],
       }),
       queryClient.invalidateQueries({
-        queryKey: ["dimensional-relationships", tenantId, model.model_id],
+        queryKey: ["dimensional-relationships", tenantId, project.project_id],
       }),
     ]);
   };
 
   return (
-    <WorkflowCommandCenter filterCount={Object.values(view === "objects" ? objectFilters : view === "attributes" ? attributeFilters : relationshipFilters).filter(Boolean).length} className="dimensional-page page-enter">
-      <header className="workflow-commandbar model-section-toolbar dimensional-commandbar">
-        <h1 className="model-section-title sr-only">Dimensional</h1>
+    <WorkflowCommandCenter filterCount={Object.values(view === "entities" ? objectFilters : relationshipFilters).filter(Boolean).length} className="dimensional-page page-enter">
+      <header className="workflow-commandbar project-section-toolbar dimensional-commandbar">
+        <h1 className="project-section-title sr-only">Dimensional</h1>
         <div className="workflow-command-context">
           <nav className="workflow-tabs" aria-label="Dimensional views">
             {([
-              ["objects", "Objects", objectsQuery],
-              ["attributes", "Attributes", attributesQuery],
+              ["entities", "Entities", objectsQuery],
               ["relationships", "Relationships", relationshipsQuery],
               ["submodels", "Submodels", null],
             ] as const).map(([nextView, label, query]) => (
@@ -148,9 +129,9 @@ export function DimensionalScreen({
         <div className="workflow-command-actions">
           <WorkflowCommandTools filters={view !== "submodels"} />
           <WorkflowMenu>
-          <ModelLayerActions api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} hasTenantLock={hasTenantLock} canDelete={canDelete} layer="dimensional" onApplied={() => setSelectedIds(new Set())} />
-          <TargetExportButton api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} layer="dimensional" entityIds={view === "objects" && selectedIds.size ? [...selectedIds] : undefined} />
-          <DdlExportButton api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} layer="dimensional" entityIds={view === "objects" && selectedIds.size ? [...selectedIds] : undefined} />
+          <ProjectLayerActions api={api} tenantId={tenantId} projectId={project.project_id} projectRevision={project.project_revision} hasTenantLock={hasTenantLock} canDelete={canDelete} layer="dimensional" onApplied={() => setSelectedIds(new Set())} />
+          <TargetExportButton api={api} tenantId={tenantId} projectId={project.project_id} projectRevision={project.project_revision} layer="dimensional" entityIds={view === "entities" && selectedIds.size ? [...selectedIds] : undefined} />
+          <DdlExportButton api={api} tenantId={tenantId} projectId={project.project_id} projectRevision={project.project_revision} layer="dimensional" entityIds={view === "entities" && selectedIds.size ? [...selectedIds] : undefined} />
           </WorkflowMenu>
           <button className="button button-secondary button-small" type="button" disabled={refreshing} onClick={() => void refresh()}>
             {refreshing ? "Refreshing…" : "Refresh"}
@@ -169,51 +150,42 @@ export function DimensionalScreen({
       <WorkflowRunMonitor
         api={api}
         tenantId={tenantId}
-        modelId={model.model_id}
-        modelRevision={model.model_revision}
+        projectId={project.project_id}
+        projectRevision={project.project_revision}
         workflow="dimensional"
         hasTenantLock={hasTenantLock}
         focusRunId={recentRunId}
         onApplied={invalidateLedgers}
       />
-      {view === "submodels" ? <ModelRecordHistory
-        api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision}
+      {view === "submodels" ? <ProjectRecordHistory
+        api={api} tenantId={tenantId} projectId={project.project_id} projectRevision={project.project_revision}
         dataset="dimensional_submodel" label="Dimensional Submodels" hasTenantLock={hasTenantLock}
         showHeader={false} actions={canDelete ? ["lock", "unlock", "deactivate", "reactivate", "delete"] : ["lock", "unlock", "deactivate", "reactivate"]}
       /> : <>
-      <ModelRecordReview
+      <ProjectRecordReview
         actions={canDelete ? ["lock", "unlock", "deactivate", "reactivate", "delete"] : ["lock", "unlock", "deactivate", "reactivate"]}
-        api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision}
-        dataset={view === "objects" ? "dimensional_entity" : view === "attributes" ? "dimensional_attribute" : "dimensional_relationship"}
+        api={api} tenantId={tenantId} projectId={project.project_id} projectRevision={project.project_revision}
+        dataset={view === "entities" ? "dimensional_entity" : "dimensional_relationship"}
         selectedIds={selectedIds} hasTenantLock={hasTenantLock}
-        disabled={activeReviewQuery.isPending || activeReviewQuery.isError || activeReviewQuery.data?.pages.some((page) => page.model_revision !== model.model_revision) === true}
+        disabled={activeReviewQuery.isPending || activeReviewQuery.isError || activeReviewQuery.data?.pages.some((page) => page.project_revision !== project.project_revision) === true}
         onApplied={async () => { setSelectedIds(new Set()); await queryClient.invalidateQueries({ predicate: (query) => query.queryKey[1] === tenantId }); }}
       />
-      {view === "objects" ? <DimensionalObjectsLedger
+      {view === "entities" ? <DimensionalEntitiesLedger
         selectedIds={selectedIds} onSelectionChange={setSelectedIds}
         tenantId={tenantId}
-        modelId={model.model_id}
+        projectId={project.project_id}
         items={objectsQuery.data?.pages.flatMap((page) => page.items) ?? []}
         filters={objectFilters}
-        state={queryState(objectsQuery, model.model_revision)}
+        state={queryState(objectsQuery, project.project_revision)}
         onApplyFilters={(next) => { setSelectedIds(new Set()); setObjectFilters(next); }}
         onLoadMore={() => void objectsQuery.fetchNextPage()}
-      /> : view === "attributes" ? <DimensionalAttributesLedger
-        selectedIds={selectedIds} onSelectionChange={setSelectedIds}
-        tenantId={tenantId}
-        modelId={model.model_id}
-        items={attributesQuery.data?.pages.flatMap((page) => page.items) ?? []}
-        filters={attributeFilters}
-        state={queryState(attributesQuery, model.model_revision)}
-        onApplyFilters={(next) => { setSelectedIds(new Set()); setAttributeFilters(next); }}
-        onLoadMore={() => void attributesQuery.fetchNextPage()}
       /> : <DimensionalRelationshipsLedger
         selectedIds={selectedIds} onSelectionChange={setSelectedIds}
         tenantId={tenantId}
-        modelId={model.model_id}
+        projectId={project.project_id}
         items={relationshipsQuery.data?.pages.flatMap((page) => page.items) ?? []}
         filters={relationshipFilters}
-        state={queryState(relationshipsQuery, model.model_revision)}
+        state={queryState(relationshipsQuery, project.project_revision)}
         onApplyFilters={(next) => { setSelectedIds(new Set()); setRelationshipFilters(next); }}
         onLoadMore={() => void relationshipsQuery.fetchNextPage()}
       />}
@@ -222,22 +194,22 @@ export function DimensionalScreen({
         <WorkflowRunDialog
           api={api}
           tenantId={tenantId}
-          model={model}
+          project={project}
           kind="inference"
           workflow="dimensional"
           logicalEntitySource={api}
-          executeCreated={(workflowRunId, executionMode, expectedModelRevision) => api.executeDimensionalRun(
+          executeCreated={(workflowRunId, executionMode, expectedProjectRevision) => api.executeDimensionalRun(
             tenantId,
-            model.model_id,
+            project.project_id,
             workflowRunId,
             executionMode,
-            expectedModelRevision,
+            expectedProjectRevision,
           ).then(() => undefined)}
           onClose={() => setRunDialogOpen(false)}
           onCreated={async (workflowRunId) => {
             setRecentRunId(workflowRunId);
             await Promise.all([
-              queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
+              queryClient.invalidateQueries({ queryKey: ["project", tenantId, project.project_id] }),
               queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
             ]);
           }}
@@ -252,18 +224,18 @@ function queryState(
     isPending: boolean;
     isError: boolean;
     error: Error | null;
-    data: { pages: { model_revision: number }[] } | undefined;
+    data: { pages: { project_revision: number }[] } | undefined;
     hasNextPage: boolean;
     isFetchingNextPage: boolean;
   },
-  modelRevision: number,
+  projectRevision: number,
 ) {
   return {
     isLoading: query.isPending,
     isError: query.isError,
     isDenied: query.error instanceof ApiError && query.error.status === 403,
     revisionMismatch: query.data !== undefined
-      && query.data.pages.some((page) => page.model_revision !== modelRevision),
+      && query.data.pages.some((page) => page.project_revision !== projectRevision),
     hasMore: query.hasNextPage,
     isLoadingMore: query.isFetchingNextPage,
   };

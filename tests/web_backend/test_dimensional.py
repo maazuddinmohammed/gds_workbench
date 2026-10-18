@@ -1,4 +1,3 @@
-from gds_workbench_api.features.dimensional.read_contracts import LogicalEntityReference, LogicalAttributeReference
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -10,13 +9,13 @@ from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_workbench_api.features.dimensional import (
     DimensionalAttributeDetail,
     DimensionalAttributeFilters,
-    DimensionalAttributePage,
     DimensionalAttributeLogicalSource,
+    DimensionalAttributePage,
     DimensionalAttributeSummary,
+    DimensionalLogicalEntitySource,
     DimensionalObjectDetail,
     DimensionalObjectPage,
     DimensionalObjectSummary,
-    DimensionalLogicalEntitySource,
     DimensionalRelationshipDetail,
     DimensionalRelationshipFilters,
     DimensionalRelationshipPage,
@@ -24,6 +23,10 @@ from gds_workbench_api.features.dimensional import (
     DimensionalSubmodelMembership,
     ModeledFilters,
     create_dimensional_router,
+)
+from gds_workbench_api.features.dimensional.read_contracts import (
+    LogicalAttributeReference,
+    LogicalEntityReference,
 )
 
 
@@ -35,17 +38,17 @@ class StaticDimensionalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: ModeledFilters,
         page_size: int,
         cursor: str | None,
     ) -> DimensionalObjectPage:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, page_size, cursor) == (7, 18, 25, None)
+        assert (tenant_id, project_id, page_size, cursor) == (7, 18, 25, None)
         self.filters = filters
         return DimensionalObjectPage(
-            model_id=18,
-            model_revision=4,
+            project_id=18,
+            project_revision=4,
             items=(self._object(),),
             next_cursor=None,
         )
@@ -55,11 +58,11 @@ class StaticDimensionalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         dimensional_entity_id: int,
     ) -> DimensionalObjectDetail:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, dimensional_entity_id) == (7, 18, 101)
+        assert (tenant_id, project_id, dimensional_entity_id) == (7, 18, 101)
         item = self._object()
         return DimensionalObjectDetail(
             **item.model_dump(),
@@ -83,7 +86,11 @@ class StaticDimensionalService:
                     dimensional_entity_source_mapping_id=401,
                     workflow_run_id=None,
                     support_source_type="logical_entity",
-                    source_logical_entity=LogicalEntityReference(logical_entity_id=501, logical_entity_schema_name="silver_sales", logical_entity_name="order"),
+                    source_logical_entity=LogicalEntityReference(
+                        logical_entity_id=501,
+                        logical_entity_schema_name="silver_sales",
+                        logical_entity_name="order",
+                    ),
                     source_role="fact_source",
                     source_order=1,
                     rationale="Supplies the fact grain.",
@@ -100,7 +107,8 @@ class StaticDimensionalService:
         return DimensionalObjectSummary(
             dimensional_entity_id=101,
             workflow_run_id=None,
-            dimensional_entity_schema_name="gold", dimensional_entity_name="Fact Order",
+            dimensional_entity_schema_name="gold",
+            dimensional_entity_name="Fact Order",
             dimensional_entity_type="fact",
             dimensional_fact_type="transaction",
             dimensional_entity_dependency_order=0,
@@ -115,7 +123,7 @@ class StaticDimensionalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: DimensionalAttributeFilters,
         page_size: int,
         cursor: str | None,
@@ -127,8 +135,8 @@ class StaticDimensionalService:
             dimensional_entity_id=101,
         )
         return DimensionalAttributePage(
-            model_id=18,
-            model_revision=4,
+            project_id=18,
+            project_revision=4,
             items=(self._attribute(),),
             next_cursor=None,
         )
@@ -138,11 +146,11 @@ class StaticDimensionalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         dimensional_attribute_id: int,
     ) -> DimensionalAttributeDetail:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, dimensional_attribute_id) == (7, 18, 701)
+        assert (tenant_id, project_id, dimensional_attribute_id) == (7, 18, 701)
         item = self._attribute()
         return DimensionalAttributeDetail(
             **item.model_dump(),
@@ -155,7 +163,13 @@ class StaticDimensionalService:
                     workflow_run_id=None,
                     dimensional_entity_source_mapping_id=401,
                     support_source_type="logical_attribute",
-                    source_logical_attribute=LogicalAttributeReference(logical_entity_id=501, logical_entity_schema_name="silver_sales", logical_entity_name="order", logical_attribute_id=502, logical_attribute_name="order_amount"),
+                    source_logical_attribute=LogicalAttributeReference(
+                        logical_entity_id=501,
+                        logical_entity_schema_name="silver_sales",
+                        logical_entity_name="order",
+                        logical_attribute_id=502,
+                        logical_attribute_name="order_amount",
+                    ),
                     source_order=1,
                     rationale="Maps the governed amount.",
                     status="active",
@@ -172,7 +186,8 @@ class StaticDimensionalService:
             dimensional_attribute_id=701,
             workflow_run_id=None,
             dimensional_entity_id=101,
-            dimensional_entity_schema_name="gold", dimensional_entity_name="Fact Order",
+            dimensional_entity_schema_name="gold",
+            dimensional_entity_name="Fact Order",
             dimensional_attribute_name="Order Amount",
             dimensional_attribute_data_type="DECIMAL(18,2)",
             dimensional_attribute_is_nullable=False,
@@ -195,7 +210,7 @@ class StaticDimensionalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: DimensionalRelationshipFilters,
         page_size: int,
         cursor: str | None,
@@ -207,8 +222,8 @@ class StaticDimensionalService:
             dimensional_entity_id=101,
         )
         return DimensionalRelationshipPage(
-            model_id=18,
-            model_revision=4,
+            project_id=18,
+            project_revision=4,
             items=(self._relationship(),),
             next_cursor=None,
         )
@@ -218,11 +233,11 @@ class StaticDimensionalService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         dimensional_relationship_id: int,
     ) -> DimensionalRelationshipDetail:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, dimensional_relationship_id) == (7, 18, 901)
+        assert (tenant_id, project_id, dimensional_relationship_id) == (7, 18, 901)
         relationship = self._relationship()
         return DimensionalRelationshipDetail(
             **relationship.model_dump(),
@@ -238,11 +253,13 @@ class StaticDimensionalService:
             dimensional_relationship_id=901,
             workflow_run_id=None,
             from_dimensional_entity_id=101,
-            from_dimensional_entity_schema_name="gold", from_dimensional_entity_name="Fact Order",
+            from_dimensional_entity_schema_name="gold",
+            from_dimensional_entity_name="Fact Order",
             from_dimensional_attribute_id=702,
             from_dimensional_attribute_name="Customer Key",
             to_dimensional_entity_id=102,
-            to_dimensional_entity_schema_name="gold", to_dimensional_entity_name="Dim Customer",
+            to_dimensional_entity_schema_name="gold",
+            to_dimensional_entity_name="Dim Customer",
             to_dimensional_attribute_id=703,
             to_dimensional_attribute_name="Customer Key",
             dimensional_relationship_name="Order to Customer",
@@ -277,7 +294,7 @@ def test_dimensional_object_collection_and_detail_are_normalized() -> None:
 
     with TestClient(app) as client:
         collection = client.get(
-            "/api/v1/tenants/7/models/18/dimensional/objects",
+            "/api/v1/tenants/7/projects/18/dimensional/objects",
             params={
                 "status": "INACTIVE",
                 "locked": "false",
@@ -285,7 +302,7 @@ def test_dimensional_object_collection_and_detail_are_normalized() -> None:
                 "page_size": "25",
             },
         )
-        detail = client.get("/api/v1/tenants/7/models/18/dimensional/objects/101")
+        detail = client.get("/api/v1/tenants/7/projects/18/dimensional/objects/101")
 
     assert collection.status_code == 200
     assert service.filters == ModeledFilters(
@@ -302,7 +319,9 @@ def test_dimensional_object_collection_and_detail_are_normalized() -> None:
     assert "prompt" not in detail.text
 
 
-def test_dimensional_attribute_collection_and_detail_return_normalized_sources() -> None:
+def test_dimensional_attribute_collection_and_detail_return_normalized_sources() -> (
+    None
+):
     app = FastAPI()
     app.include_router(
         create_dimensional_router(
@@ -313,22 +332,26 @@ def test_dimensional_attribute_collection_and_detail_return_normalized_sources()
 
     with TestClient(app) as client:
         collection = client.get(
-            "/api/v1/tenants/7/models/18/dimensional/attributes",
+            "/api/v1/tenants/7/projects/18/dimensional/attributes",
             params={
                 "status": "ACTIVE",
                 "name_exact": " Order Amount ",
                 "dimensional_entity_id": "101",
             },
         )
-        detail = client.get("/api/v1/tenants/7/models/18/dimensional/attributes/701")
+        detail = client.get("/api/v1/tenants/7/projects/18/dimensional/attributes/701")
 
     assert collection.status_code == 200
     assert collection.json()["items"][0]["dimensional_attribute_role"] == "measure"
     assert detail.status_code == 200
-    assert detail.json()["sources"][0]["source_logical_attribute"]["logical_attribute_name"] == ("order_amount")
+    assert detail.json()["sources"][0]["source_logical_attribute"][
+        "logical_attribute_name"
+    ] == ("order_amount")
 
 
-def test_dimensional_relationship_collection_and_detail_return_named_endpoints() -> None:
+def test_dimensional_relationship_collection_and_detail_return_named_endpoints() -> (
+    None
+):
     app = FastAPI()
     app.include_router(
         create_dimensional_router(
@@ -339,14 +362,16 @@ def test_dimensional_relationship_collection_and_detail_return_named_endpoints()
 
     with TestClient(app) as client:
         collection = client.get(
-            "/api/v1/tenants/7/models/18/dimensional/relationships",
+            "/api/v1/tenants/7/projects/18/dimensional/relationships",
             params={
                 "status": "INACTIVE",
                 "locked": "true",
                 "dimensional_entity_id": "101",
             },
         )
-        detail = client.get("/api/v1/tenants/7/models/18/dimensional/relationships/901")
+        detail = client.get(
+            "/api/v1/tenants/7/projects/18/dimensional/relationships/901"
+        )
 
     assert collection.status_code == 200
     item = collection.json()["items"][0]

@@ -24,7 +24,9 @@ class RecordingSessionService:
         )
 
 
-def test_authentication_dependencies_are_isolated_between_apps_and_ignore_query_identity() -> None:
+def test_authentication_dependencies_are_isolated_between_apps_and_ignore_query_identity() -> (
+    None
+):
     first_service = RecordingSessionService()
     second_service = RecordingSessionService()
     first = create_app(
@@ -46,7 +48,10 @@ def test_authentication_dependencies_are_isolated_between_apps_and_ignore_query_
     with TestClient(first) as first_client, TestClient(second) as second_client:
         for client in (first_client, second_client, first_client):
             assert (
-                client.get("/api/v1/session?principal=forged&actor_kind=service").status_code == 200
+                client.get(
+                    "/api/v1/session?principal=forged&actor_kind=service"
+                ).status_code
+                == 200
             )
     assert [p.entra_object_id for p in first_service.principals] == [
         UUID(int=2),

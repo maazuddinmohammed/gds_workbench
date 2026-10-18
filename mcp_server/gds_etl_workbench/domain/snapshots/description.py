@@ -16,11 +16,11 @@ type AcceptedValueKind = Literal[
 ]
 
 
-class DescriptionModel(BaseModel):
+class DescriptionProject(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
-class DatasetColumnReference(DescriptionModel):
+class DatasetColumnReference(DescriptionProject):
     record_type: str
     datasets: tuple[str, ...]
     column: str
@@ -29,14 +29,14 @@ class DatasetColumnReference(DescriptionModel):
     nullable: bool
 
 
-class DatasetColumnAcceptedValues(DescriptionModel):
+class DatasetColumnAcceptedValues(DescriptionProject):
     kind: AcceptedValueKind
     values: tuple[JsonScalar, ...]
     references: tuple[DatasetColumnReference, ...]
     constraints: dict[str, object]
 
 
-class DatasetColumnDescription(DescriptionModel):
+class DatasetColumnDescription(DescriptionProject):
     name: str
     data_types: tuple[str, ...]
     required: bool
@@ -47,7 +47,7 @@ class DatasetColumnDescription(DescriptionModel):
     examples: tuple[JsonScalar, ...]
 
 
-class DatasetDescription(DescriptionModel):
+class DatasetDescription(DescriptionProject):
     population_rules: tuple[str, ...]
     columns: tuple[DatasetColumnDescription, ...]
 

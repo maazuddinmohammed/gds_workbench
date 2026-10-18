@@ -46,22 +46,22 @@ async def test_mapping_and_code_reads_round_trip_through_web_role(
     entra_object_id = uuid4()
     suffix = uuid4().hex
     with web_postgres_database.connect_owner() as connection:
-        project_id = _required_id(
+        lane_id = _required_id(
             connection.execute(
                 """
-                INSERT INTO core.project (project_code, project_name)
+                INSERT INTO core.lane (lane_code, lane_name)
                 VALUES (%s, %s)
-                RETURNING project_id
+                RETURNING lane_id
                 """,
                 (f"map_code_{suffix}", f"Mapping Code Project {suffix}"),
             ).fetchone(),
-            "project_id",
+            "lane_id",
         )
         tenant_id = _required_id(
             connection.execute(
                 """
                 INSERT INTO core.tenant (
-                    project_id,
+                    lane_id,
                     tenant_code,
                     tenant_name,
                     tenant_catalog,
@@ -70,7 +70,7 @@ async def test_mapping_and_code_reads_round_trip_through_web_role(
                 RETURNING tenant_id
                 """,
                 (
-                    project_id,
+                    lane_id,
                     f"MAP_CODE_{suffix}",
                     f"Mapping Code Tenant {suffix}",
                     f"map_code_catalog_{suffix}",
@@ -118,16 +118,16 @@ async def test_mapping_and_code_reads_round_trip_through_web_role(
             """,
             (tenant_id, principal_id, principal_id),
         )
-        model_id = _required_id(
+        project_id = _required_id(
             connection.execute(
                 """
-                INSERT INTO model.model (tenant_id, model_name)
+                INSERT INTO project.project (tenant_id, project_name)
                 VALUES (%s, %s)
-                RETURNING model_id
+                RETURNING project_id
                 """,
-                (tenant_id, f"Mapping Code Model {suffix}"),
+                (tenant_id, f"Mapping Code Project {suffix}"),
             ).fetchone(),
-            "model_id",
+            "project_id",
         )
 
     database = WebPostgresDatabase(
@@ -157,7 +157,7 @@ async def test_mapping_and_code_reads_round_trip_through_web_role(
         objects = await mapping_service.list_objects(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=MappingFilters(),
             page_size=25,
             cursor=None,
@@ -165,7 +165,7 @@ async def test_mapping_and_code_reads_round_trip_through_web_role(
         attributes = await mapping_service.list_attributes(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=MappingAttributeFilters(),
             page_size=25,
             cursor=None,
@@ -173,7 +173,7 @@ async def test_mapping_and_code_reads_round_trip_through_web_role(
         targets = await code_service.list_targets(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=CodeGenerationTargetFilters(),
             page_size=25,
             cursor=None,
@@ -182,35 +182,35 @@ async def test_mapping_and_code_reads_round_trip_through_web_role(
         assert objects.items == ()
         assert attributes.items == ()
         assert targets.items == ()
-        assert objects.model_revision == attributes.model_revision
-        assert attributes.model_revision == targets.model_revision
+        assert objects.project_revision == attributes.project_revision
+        assert attributes.project_revision == targets.project_revision
 
         with pytest.raises(MappingObjectNotFoundError):
             await mapping_service.read_object(
                 principal,
                 tenant_id=tenant_id,
-                model_id=model_id,
+                project_id=project_id,
                 mapping_object_id=1,
             )
         with pytest.raises(MappingAttributeNotFoundError):
             await mapping_service.read_attribute(
                 principal,
                 tenant_id=tenant_id,
-                model_id=model_id,
+                project_id=project_id,
                 mapping_attribute_id=1,
             )
         with pytest.raises(GeneratedSqlArtifactNotFoundError):
             await code_service.read_artifact(
                 principal,
                 tenant_id=tenant_id,
-                model_id=model_id,
+                project_id=project_id,
                 generated_sql_artifact_id=1,
             )
         with pytest.raises(GeneratedSqlArtifactNotFoundError):
             await code_service.read_artifacts_for_download(
                 principal,
                 tenant_id=tenant_id,
-                model_id=model_id,
+                project_id=project_id,
                 generated_sql_artifact_ids=(1,),
             )
     finally:

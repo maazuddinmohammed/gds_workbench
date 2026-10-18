@@ -32,20 +32,20 @@ class _StaticCodeGenerationWorkflowService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart:
         del principal
         self.starts.append(
-            (tenant_id, model_id, workflow_run_id, expected_model_revision)
+            (tenant_id, project_id, workflow_run_id, expected_project_revision)
         )
         return AgentWorkflowRunStart(
             changed=self.changed,
             workflow_run_id=workflow_run_id,
             workflow_run_state="running",
             started_at=datetime(2026, 8, 24, 10, tzinfo=UTC),
-            model_revision=expected_model_revision,
+            project_revision=expected_project_revision,
         )
 
     async def execute_started(
@@ -53,13 +53,13 @@ class _StaticCodeGenerationWorkflowService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> None:
         del principal
         self.executions.append(
-            (tenant_id, model_id, workflow_run_id, expected_model_revision)
+            (tenant_id, project_id, workflow_run_id, expected_project_revision)
         )
 
 
@@ -81,26 +81,26 @@ def test_execute_endpoint_starts_without_process_local_execution() -> None:
 
     with _client(service) as client:
         response = client.post(
-            "/api/v1/tenants/7/models/18/code-generation/runs/1048/execute",
-            json={"expected_model_revision": 4},
+            "/api/v1/tenants/7/projects/18/code-generation/runs/1048/execute",
+            json={"expected_project_revision": 4},
         )
 
     assert response.status_code == 202
     assert (
         ExecuteCodeGenerationRunRequest.model_validate(
-            {"expected_model_revision": 4}, strict=True
-        ).expected_model_revision
+            {"expected_project_revision": 4}, strict=True
+        ).expected_project_revision
         == 4
     )
     assert set(ExecuteCodeGenerationRunRequest.model_fields) == {
-        "expected_model_revision"
+        "expected_project_revision"
     }
     assert response.json() == {
         "changed": True,
         "workflow_run_id": 1048,
         "workflow_run_state": "running",
         "started_at": "2026-08-24T10:00:00Z",
-        "model_revision": 4,
+        "project_revision": 4,
     }
     assert "workflow_run_claim_token" not in response.text
     assert service.starts == [(7, 18, 1048, 4)]
@@ -112,8 +112,8 @@ def test_execute_endpoint_does_not_duplicate_an_already_started_run() -> None:
 
     with _client(service) as client:
         response = client.post(
-            "/api/v1/tenants/7/models/18/code-generation/runs/1048/execute",
-            json={"expected_model_revision": 4},
+            "/api/v1/tenants/7/projects/18/code-generation/runs/1048/execute",
+            json={"expected_project_revision": 4},
         )
 
     assert response.status_code == 200

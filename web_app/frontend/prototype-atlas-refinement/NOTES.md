@@ -7,7 +7,7 @@ Implementation approved and applied to the web app, Workbench and icon assets on
 ## Directions
 
 - Paper / Arch: white masthead, blue identity and headings, quiet side navigation.
-- Ink / Monogram: KPMG-blue masthead, vertical model navigation, contextual inspector. Recommended for strongest corporate expression.
+- Ink / Monogram: KPMG-blue masthead, vertical project navigation, contextual inspector. Recommended for strongest corporate expression.
 - Editorial / Meridian: horizontal navigation, cool canvas, broad white ledger and blue headings.
 
 Theme and logo can be mixed independently. Every direction includes web, local Workbench, tenant entry, logo specimens and reference rationale. URL parameters retain the current review choice; fixture edits are temporary.

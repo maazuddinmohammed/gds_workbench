@@ -1,6 +1,6 @@
 # Modeling decision format
 
-Capture in an existing definition/basis, task evidence or applicable governed Assertion; no separate decision ledger is required.
+Capture in an existing definition/basis, task evidence or applicable governed Context; no separate decision ledger is required.
 
 - Decision and affected canonical record identities.
 - Business question and intended grain/identity/behavior.
@@ -9,4 +9,4 @@ Capture in an existing definition/basis, task evidence or applicable governed As
 - Consequences for relationships, Mapping, Code, checks and registrations.
 - Remaining uncertainty and any condition requiring reconsideration.
 
-Do not manufacture historical rationale, attach an Assertion to every answer, or promote one Model's convention into a universal plugin rule.
+Do not manufacture historical rationale, attach a Context to every answer, or promote one Project's convention into a universal plugin rule.

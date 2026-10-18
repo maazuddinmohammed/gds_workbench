@@ -248,10 +248,10 @@
   function validateCodeRecords(loaded) {
     const value = loaded.get("generated_code");
     if (!value) return [];
-    const originals = new Map(value.baseline.map(record => [core.stableStringify(core.key("model", value.definition, record)), record]));
+    const originals = new Map(value.baseline.map(record => [core.stableStringify(core.key("project", value.definition, record)), record]));
     const issues = [];
     value.pending.forEach((record,index) => {
-      const original = originals.get(core.stableStringify(core.key("model", value.definition, record)));
+      const original = originals.get(core.stableStringify(core.key("project", value.definition, record)));
       if ((record.code_storage_type ?? "table") !== "table" || record.artifact_type !== "sql_file" || core.active(record) !== true || core.stableStringify(original) === core.stableStringify(record)) return;
       for (const failure of validateGeneratedSql(record.generated_code_content)) issues.push({...failure, dataset:"generated_code", record:index+1,field:"generated_code_content"});
     });

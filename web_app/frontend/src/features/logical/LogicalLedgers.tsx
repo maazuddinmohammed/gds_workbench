@@ -1,5 +1,5 @@
 import { WorkflowFilters } from "../workflows/WorkflowCommandCenter";
-import { reviewSelectionColumn } from "../model_record_review/selection";
+import { reviewSelectionColumn } from "../project_record_review/selection";
 import { useMemo, type ReactNode } from "react";
 import { useForm } from "@tanstack/react-form";
 import { Link } from "@tanstack/react-router";
@@ -30,7 +30,7 @@ interface LedgerState {
 
 export function LogicalEntitiesLedger({
   tenantId,
-  modelId,
+  projectId,
   items,
   filters,
   submodels,
@@ -41,7 +41,7 @@ export function LogicalEntitiesLedger({
   onLoadMore,
 }: {
   tenantId: number;
-  modelId: number;
+  projectId: number;
   items: LogicalEntity[];
   filters: LogicalEntityFilters;
   submodels: LogicalSubmodel[];
@@ -97,10 +97,10 @@ export function LogicalEntitiesLedger({
         <Link
           className="text-action"
           aria-label={`Open Logical Entity ${row.original.logical_entity_id}`}
-          to="/tenants/$tenantId/models/$modelId/logical/entities/$entityId"
+          to="/tenants/$tenantId/projects/$projectId/logical/entities/$entityId"
           params={{
             tenantId: String(tenantId),
-            modelId: String(modelId),
+            projectId: String(projectId),
             entityId: String(row.original.logical_entity_id),
           }}
         >
@@ -108,7 +108,7 @@ export function LogicalEntitiesLedger({
         </Link>
       ),
     },
-  ], [items, selectedIds, onSelectionChange, modelId, tenantId]);
+  ], [items, selectedIds, onSelectionChange, projectId, tenantId]);
   const table = useReactTable({ data: items, columns, getCoreRowModel: getCoreRowModel() });
 
   return (
@@ -127,7 +127,7 @@ export function LogicalEntitiesLedger({
         </div>
       ) : state.revisionMismatch ? (
         <div className="surface-state is-error" role="alert">
-          The Model changed while Logical Entities were loading. Refresh to reconcile revisions.
+          The Project changed while Logical Entities were loading. Refresh to reconcile revisions.
         </div>
       ) : items.length === 0 ? (
         <div className="empty-state compact">No Logical Entities match these filters.</div>
@@ -312,7 +312,7 @@ function LogicalEntityFilterBar({
 
 export function LogicalRelationshipsLedger({
   tenantId,
-  modelId,
+  projectId,
   items,
   filters,
   state,
@@ -321,7 +321,7 @@ export function LogicalRelationshipsLedger({
   onLoadMore,
 }: {
   tenantId: number;
-  modelId: number;
+  projectId: number;
   items: LogicalRelationship[];
   filters: LogicalRelationshipFilters;
   state: LedgerState;
@@ -379,10 +379,10 @@ export function LogicalRelationshipsLedger({
         <Link
           className="text-action"
           aria-label={`Open Logical Relationship ${row.original.logical_relationship_id}`}
-          to="/tenants/$tenantId/models/$modelId/logical/relationships/$relationshipId"
+          to="/tenants/$tenantId/projects/$projectId/logical/relationships/$relationshipId"
           params={{
             tenantId: String(tenantId),
-            modelId: String(modelId),
+            projectId: String(projectId),
             relationshipId: String(row.original.logical_relationship_id),
           }}
         >
@@ -390,7 +390,7 @@ export function LogicalRelationshipsLedger({
         </Link>
       ),
     },
-  ], [items, selectedIds, onSelectionChange, modelId, tenantId]);
+  ], [items, selectedIds, onSelectionChange, projectId, tenantId]);
   return (
     <LogicalLedgerSurface
       tableLabel="Logical Relationships"
@@ -412,7 +412,7 @@ export function LogicalRelationshipsLedger({
 
 export function LogicalSubmodelsLedger({
   tenantId,
-  modelId,
+  projectId,
   items,
   filters,
   state,
@@ -421,7 +421,7 @@ export function LogicalSubmodelsLedger({
   onLoadMore,
 }: {
   tenantId: number;
-  modelId: number;
+  projectId: number;
   items: LogicalSubmodel[];
   filters: LogicalFilters;
   state: LedgerState;
@@ -456,10 +456,10 @@ export function LogicalSubmodelsLedger({
         <Link
           className="text-action"
           aria-label={`Open Logical Submodel ${row.original.logical_submodel_id}`}
-          to="/tenants/$tenantId/models/$modelId/logical/submodels/$submodelId"
+          to="/tenants/$tenantId/projects/$projectId/logical/submodels/$submodelId"
           params={{
             tenantId: String(tenantId),
-            modelId: String(modelId),
+            projectId: String(projectId),
             submodelId: String(row.original.logical_submodel_id),
           }}
         >
@@ -467,7 +467,7 @@ export function LogicalSubmodelsLedger({
         </Link>
       ),
     },
-  ], [items, selectedIds, onSelectionChange, modelId, tenantId]);
+  ], [items, selectedIds, onSelectionChange, projectId, tenantId]);
   return (
     <LogicalLedgerSurface
       tableLabel="Logical Submodels"
@@ -636,7 +636,7 @@ function LogicalLedgerSurface<T>({
         </div>
       ) : state.revisionMismatch ? (
         <div className="surface-state is-error" role="alert">
-          The Model changed while {tableLabel} were loading. Refresh to reconcile revisions.
+          The Project changed while {tableLabel} were loading. Refresh to reconcile revisions.
         </div>
       ) : items.length === 0 ? (
         <div className="empty-state compact">No {tableLabel} match these filters.</div>

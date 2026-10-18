@@ -20,7 +20,7 @@ authority. Authentication is separate from PostgreSQL authorization.
 | --- | --- | --- |
 | Tenant Read | Viewer or global-Tenant visibility | No |
 | Tenant Metadata Write | Developer | Yes |
-| Tenant Model Write | Architect | Yes |
+| Tenant Project Write | Architect | Yes |
 | Tenant Lock Manage | Developer | No existing lock required |
 | Super Admin Only | Explicit Super Admin | Still required by ordinary write operations |
 
@@ -39,7 +39,7 @@ Public conflict details expose only bounded display/timing context.
 
 Workflow Run exclusivity and worker claims are separate from Tenant Locks. Final
 writes recheck the live claim and frozen revision. Tokens remain internal; only
-safe digests and bounded state enter storage/read models. Idempotent retries reuse
+safe digests and bounded state enter storage/read projects. Idempotent retries reuse
 the original operation identity rather than creating duplicate work.
 
 ## Local mode and external boundaries

@@ -7,7 +7,7 @@
 .workflow-command-center .workflow-command-actions .button { min-height: 2.2rem; }
 .command-count { display: inline-grid; place-items: center; min-width: 1.25rem; padding: .08rem .3rem; border-radius: .3rem; background: var(--accent-soft); font-size: .65rem; font-variant-numeric: tabular-nums; font-weight: 600; }
 .workflow-command-center .mapping-layer-header > span,
-.workflow-command-center .model-layer-tabs > span { display: none; }
+.workflow-command-center .project-layer-tabs > span { display: none; }
 .workflow-command-center .workflow-surface { border-top: 0; }
 .workflow-filter-panel[hidden] { display: none; }
 .workflow-filter-toggle svg,.workflow-activity-toggle svg,.workflow-command-menu summary svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
@@ -18,7 +18,7 @@
 .workflow-command-menu summary::-webkit-details-marker { display: none; }
 .workflow-command-menu-content { position: absolute; right: 0; top: calc(100% + .45rem); z-index: 12; min-width: 13rem; padding: .4rem; border: 1px solid var(--line); border-radius: var(--radius-medium); background: var(--surface); box-shadow: var(--shadow-soft); }
 .workflow-command-menu-content > button { width: 100%; justify-content: flex-start; margin: 0; border-color: transparent; color: var(--ink); background: transparent; box-shadow: none; text-align: left; }
-.workflow-command-menu-content > .model-delete-action { color: var(--red); }
+.workflow-command-menu-content > .project-delete-action { color: var(--red); }
 .workflow-command-menu-content > button:hover:not(:disabled) { background: var(--soft); }
 .workflow-activity-panel { position: fixed; inset: 0 0 0 auto; z-index: 35; display: flex; flex-direction: column; width: min(57rem, calc(100vw - 2rem)); border-left: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow-float); animation: activity-arrive 160ms var(--ease-fluid); }
 .workflow-activity-panel.is-wide { width: calc(100vw - 2rem); }
@@ -64,8 +64,8 @@
 .workflow-activity-body .profiling-run-inline { padding: 1.2rem; }
 .workflow-activity-body .run-filterbar { grid-template-columns: 1fr; padding: .75rem; }
 .workflow-activity-body .run-filterbar > span { font-size: .65rem; }
-.model-lock-control { display: inline-flex; gap: .4rem; align-items: center; cursor: pointer; font: inherit; }
-.model-lock-control svg { width: .9rem; height: .9rem; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.project-lock-control { display: inline-flex; gap: .4rem; align-items: center; cursor: pointer; font: inherit; }
+.project-lock-control svg { width: .9rem; height: .9rem; fill: none; stroke: currentColor; stroke-width: 1.6; }
 .tenant-lock-dialog { width: min(48rem, calc(100vw - 2rem)); max-height: 90vh; padding: 1.25rem; border: 1px solid var(--line); border-radius: .375rem; color: var(--ink); background: var(--surface); box-shadow: var(--shadow-float); }
 .tenant-lock-dialog::backdrop { background: rgb(23 32 42 / 28%); }
 .tenant-lock-dialog > .panel-close { float: right; position: relative; z-index: 1; }
@@ -73,9 +73,9 @@
 .tenant-lock-dialog .lock-heading h1 { font-size: 1.2rem; }
 .tenant-lock-dialog .lock-heading p,.tenant-lock-dialog .eyebrow-light,.tenant-lock-dialog .detail-label { color: var(--muted); }
 
-.model-workspace > .workflow-command-center { padding-top: 1.25rem; }
-.model-lock-control { min-height: 2.1rem; padding: .35rem .65rem; border: 1px solid var(--line); border-radius: var(--radius-small); background: var(--soft); color: var(--muted); }
-.model-lock-control.is-held { border-color: var(--line-strong); color: var(--green); background: var(--green-soft); }
+.project-workspace > .workflow-command-center { padding-top: 1.25rem; }
+.project-lock-control { min-height: 2.1rem; padding: .35rem .65rem; border: 1px solid var(--line); border-radius: var(--radius-small); background: var(--soft); color: var(--muted); }
+.project-lock-control.is-held { border-color: var(--line-strong); color: var(--green); background: var(--green-soft); }
 .workflow-activity-body [hidden] { display: none !important; }
 .tenant-lock-dialog .lock-heading { padding: 1rem .5rem 1.25rem; }
 .tenant-lock-dialog .lock-details { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr); margin: 0 .5rem; padding: 1.2rem 0; border-color: var(--line); }

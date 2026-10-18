@@ -9,7 +9,7 @@ from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.conceptual import (
-    ConceptualAssertionSupport,
+    ConceptualContextSupport,
     ConceptualFilters,
     DatabaseConceptualService,
 )
@@ -39,22 +39,22 @@ async def test_conceptual_review_reads_round_trip_through_the_web_role(
     entra_object_id = uuid4()
     suffix = uuid4().hex
     with web_postgres_database.connect_owner() as connection:
-        project_id = _required_id(
+        lane_id = _required_id(
             connection.execute(
                 """
-                INSERT INTO core.project (project_code, project_name)
+                INSERT INTO core.lane (lane_code, lane_name)
                 VALUES (%s, %s)
-                RETURNING project_id
+                RETURNING lane_id
                 """,
                 (f"conceptual_{suffix}", f"Conceptual Project {suffix}"),
             ).fetchone(),
-            "project_id",
+            "lane_id",
         )
         tenant_id = _required_id(
             connection.execute(
                 """
                 INSERT INTO core.tenant (
-                    project_id,
+                    lane_id,
                     tenant_code,
                     tenant_name,
                     tenant_catalog,
@@ -63,7 +63,7 @@ async def test_conceptual_review_reads_round_trip_through_the_web_role(
                 RETURNING tenant_id
                 """,
                 (
-                    project_id,
+                    lane_id,
                     f"CONCEPTUAL_{suffix}",
                     f"Conceptual Tenant {suffix}",
                     f"conceptual_catalog_{suffix}",
@@ -111,59 +111,51 @@ async def test_conceptual_review_reads_round_trip_through_the_web_role(
             """,
             (tenant_id, principal_id, principal_id),
         )
-        model_id = _required_id(
+        project_id = _required_id(
             connection.execute(
                 """
-                INSERT INTO model.model (tenant_id, model_name)
+                INSERT INTO project.project (tenant_id, project_name)
                 VALUES (%s, %s)
-                RETURNING model_id
+                RETURNING project_id
                 """,
                 (tenant_id, f"Conceptual Review {suffix}"),
             ).fetchone(),
-            "model_id",
+            "project_id",
         )
-        document_id = _required_id(
+        context_group_id = _required_id(
             connection.execute(
                 """
-                INSERT INTO model.modeling_assertion_document (
-                    model_id,
-                    modeling_assertion_document_name
-                ) VALUES (%s, %s)
-                RETURNING modeling_assertion_document_id
+                INSERT INTO project.context_group (
+                    project_id,
+                    name, context_type_id
+                ) VALUES (%s, %s, (SELECT context_type_id FROM reference.context_type
+                                     WHERE name = 'Business Requirement'))
+                RETURNING context_group_id
                 """,
-                (model_id, f"Customer rules {suffix}"),
+                (project_id, f"Customer rules {suffix}"),
             ).fetchone(),
-            "modeling_assertion_document_id",
+            "context_group_id",
         )
-        assertion_id = _required_id(
-            connection.execute(
-                """
-                INSERT INTO model.modeling_assertion_record (
-                    model_id,
-                    modeling_assertion_document_id,
-                    modeling_assertion_record_key,
-                    modeling_assertion_record_type,
-                    modeling_assertion_text,
-                    modeling_assertion_applicable_layers,
-                    modeling_assertion_confidence
-                ) VALUES (%s, %s, %s, 'relationship_rule', %s,
-                          ARRAY['conceptual'], 'high')
-                RETURNING modeling_assertion_record_id
-                """,
-                (
-                    model_id,
-                    document_id,
-                    f"customer.rule-{suffix}",
-                    "Each Order belongs to one Customer.",
-                ),
-            ).fetchone(),
-            "modeling_assertion_record_id",
+        context_record_id = str(uuid4())
+        connection.execute(
+            """
+            INSERT INTO project.context_record (
+                project_id, context_group_id, context_record_id, context_text
+            ) VALUES (%s, %s, %s::UUID, %s)
+            """,
+            (
+                project_id,
+                context_group_id,
+                context_record_id,
+                "Each Order belongs to one Customer.",
+            ),
         )
+
         customer_id = _required_id(
             connection.execute(
                 """
                 INSERT INTO workflow.conceptual_object (
-                    model_id,
+                    project_id,
                     conceptual_object_name,
                     conceptual_object_definition,
                     conceptual_object_type,
@@ -175,7 +167,7 @@ async def test_conceptual_review_reads_round_trip_through_the_web_role(
                           ARRAY['Client'], 'active')
                 RETURNING conceptual_object_id
                 """,
-                (model_id,),
+                (project_id,),
             ).fetchone(),
             "conceptual_object_id",
         )
@@ -183,7 +175,7 @@ async def test_conceptual_review_reads_round_trip_through_the_web_role(
             connection.execute(
                 """
                 INSERT INTO workflow.conceptual_object (
-                    model_id,
+                    project_id,
                     conceptual_object_name,
                     conceptual_object_definition,
                     conceptual_object_type,
@@ -192,7 +184,7 @@ async def test_conceptual_review_reads_round_trip_through_the_web_role(
                           'business_event', 'One submitted Order')
                 RETURNING conceptual_object_id
                 """,
-                (model_id,),
+                (project_id,),
             ).fetchone(),
             "conceptual_object_id",
         )
@@ -200,7 +192,7 @@ async def test_conceptual_review_reads_round_trip_through_the_web_role(
             connection.execute(
                 """
                 INSERT INTO workflow.conceptual_relationship (
-                    model_id,
+                    project_id,
                     from_conceptual_object_id,
                     to_conceptual_object_id,
                     conceptual_relationship_name,
@@ -217,39 +209,39 @@ async def test_conceptual_review_reads_round_trip_through_the_web_role(
                           'active')
                 RETURNING conceptual_relationship_id
                 """,
-                (model_id, customer_id, order_id),
+                (project_id, customer_id, order_id),
             ).fetchone(),
             "conceptual_relationship_id",
         )
         connection.execute(
             """
             INSERT INTO workflow.conceptual_support (
-                model_id,
+                project_id,
                 supported_artifact_type,
                 conceptual_object_id,
                 support_source_type,
-                modeling_assertion_record_id,
+                context_record_id,
                 conceptual_support_role,
                 conceptual_support_reason
-            ) VALUES (%s, 'conceptual_object', %s, 'assertion', %s,
-                      'business_rule', 'The Assertion defines Customer grain.')
+            ) VALUES (%s, 'conceptual_object', %s, 'context_record', %s,
+                      'business_rule', 'The Context record defines Customer grain.')
             """,
-            (model_id, customer_id, assertion_id),
+            (project_id, customer_id, context_record_id),
         )
         connection.execute(
             """
             INSERT INTO workflow.conceptual_support (
-                model_id,
+                project_id,
                 supported_artifact_type,
                 conceptual_relationship_id,
                 support_source_type,
-                modeling_assertion_record_id,
+                context_record_id,
                 conceptual_support_role,
                 conceptual_support_reason
-            ) VALUES (%s, 'conceptual_relationship', %s, 'assertion', %s,
-                      'cardinality', 'The Assertion defines the relationship.')
+            ) VALUES (%s, 'conceptual_relationship', %s, 'context_record', %s,
+                      'cardinality', 'The Context record defines the relationship.')
             """,
-            (model_id, relationship_id, assertion_id),
+            (project_id, relationship_id, context_record_id),
         )
 
     database = WebPostgresDatabase(
@@ -274,7 +266,7 @@ async def test_conceptual_review_reads_round_trip_through_the_web_role(
         objects = await service.list_objects(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=ConceptualFilters(
                 status="active",
                 name_prefix="cust",
@@ -285,13 +277,13 @@ async def test_conceptual_review_reads_round_trip_through_the_web_role(
         object_detail = await service.read_object(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             conceptual_object_id=customer_id,
         )
         relationships = await service.list_relationships(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=ConceptualFilters(
                 status="active",
                 name_exact="customer places order",
@@ -302,7 +294,7 @@ async def test_conceptual_review_reads_round_trip_through_the_web_role(
         relationship_detail = await service.read_relationship(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             conceptual_relationship_id=relationship_id,
         )
     finally:
@@ -310,9 +302,9 @@ async def test_conceptual_review_reads_round_trip_through_the_web_role(
 
     assert [item.conceptual_object_name for item in objects.items] == ["Customer"]
     assert object_detail.workflow_run_id is None
-    assert isinstance(object_detail.supports[0], ConceptualAssertionSupport)
+    assert isinstance(object_detail.supports[0], ConceptualContextSupport)
     assert [item.conceptual_relationship_name for item in relationships.items] == [
         "Customer places Order"
     ]
     assert relationship_detail.workflow_run_id is None
-    assert isinstance(relationship_detail.supports[0], ConceptualAssertionSupport)
+    assert isinstance(relationship_detail.supports[0], ConceptualContextSupport)

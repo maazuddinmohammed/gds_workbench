@@ -46,8 +46,8 @@ class LifecycleTransaction:
             if self.claim_assertion_fails:
                 return None
             return {"assert_workflow_run_claim": None}
-        if "target_model.model_revision" in query:
-            return {"model_revision": 7}
+        if "target_project.project_revision" in query:
+            return {"project_revision": 7}
         if "start_workflow_run" in query:
             if self.start_error is not None:
                 raise RuntimeError(self.start_error)
@@ -58,7 +58,7 @@ class LifecycleTransaction:
                 "started_at": datetime(2026, 8, 24, 10, tzinfo=UTC),
             }
         if "append_workflow_run_event" in query:
-            return {"model_event_log_id": 91}
+            return {"project_event_log_id": 91}
         if "complete_workflow_run" in query:
             return {
                 "changed": True,
@@ -102,16 +102,16 @@ async def test_lifecycle_uses_governed_functions_with_server_identity() -> None:
     started = await lifecycle.start(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
         expected_workflow="conceptual",
         expected_execution_mode="one_shot",
-        expected_model_revision=7,
+        expected_project_revision=7,
     )
     await lifecycle.append_event(
         _principal(),
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
         event=AgentWorkflowEvent(
             sequence=2,
@@ -127,7 +127,7 @@ async def test_lifecycle_uses_governed_functions_with_server_identity() -> None:
     completed = await lifecycle.complete(
         _principal(),
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
         finding_count=12,
     )
@@ -176,11 +176,11 @@ async def test_lifecycle_maps_tenant_workflow_conflict() -> None:
         await lifecycle.start(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
             expected_workflow="conceptual",
             expected_execution_mode="one_shot",
-            expected_model_revision=7,
+            expected_project_revision=7,
         )
 
 
@@ -192,7 +192,7 @@ async def test_lifecycle_failure_is_safe_and_bounded() -> None:
     result = await lifecycle.fail(
         _principal(),
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
         failure_code="agent_candidate_validation_failed",
         safe_failure_message="Candidate validation failed.",
@@ -218,7 +218,7 @@ async def test_lifecycle_claim_fence_rejection_stops_before_mutation(
             await lifecycle.append_event(
                 _principal(),
                 workflow_run_id=1048,
-                expected_model_revision=7,
+                expected_project_revision=7,
                 workflow_run_claim_token=_CLAIM_TOKEN,
                 event=AgentWorkflowEvent(
                     sequence=2,
@@ -233,7 +233,7 @@ async def test_lifecycle_claim_fence_rejection_stops_before_mutation(
             await lifecycle.complete(
                 _principal(),
                 workflow_run_id=1048,
-                expected_model_revision=7,
+                expected_project_revision=7,
                 workflow_run_claim_token=_CLAIM_TOKEN,
                 finding_count=1,
             )
@@ -241,7 +241,7 @@ async def test_lifecycle_claim_fence_rejection_stops_before_mutation(
             await lifecycle.fail(
                 _principal(),
                 workflow_run_id=1048,
-                expected_model_revision=7,
+                expected_project_revision=7,
                 workflow_run_claim_token=_CLAIM_TOKEN,
                 failure_code="agent_candidate_validation_failed",
                 safe_failure_message="Candidate validation failed.",

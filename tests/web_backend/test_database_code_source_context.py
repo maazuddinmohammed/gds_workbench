@@ -21,13 +21,13 @@ from gds_workbench_api.prompt_rendering import PromptVariableDefinition
 from jsonschema import Draft202012Validator
 
 from tests.mcp.conftest import DisposablePostgres
-from tests.mcp.enrichment_test_support import seed_model_enrichment
+from tests.mcp.enrichment_test_support import seed_project_enrichment
 from tests.web_backend.test_code_generation_context import _plan
 from tests.web_backend.test_database_mapping_source_context import (
     _load,
     _seed_mapping_scope,
 )
-from tests.web_backend.test_database_model_change_sets import _required_id
+from tests.web_backend.test_database_project_change_sets import _required_id
 
 
 @pytest.mark.parametrize("dimensional", [False, True], ids=["logical", "dimensional"])
@@ -37,20 +37,20 @@ async def test_code_and_validation_track_entity_and_source_metadata(
 ) -> None:
     scope = _seed_mapping_scope(web_postgres_database, dimensional=dimensional)
     with web_postgres_database.connect_owner() as connection:
-        seed_model_enrichment(connection, scope.plan.model_id)
+        seed_project_enrichment(connection, scope.plan.project_id)
     if dimensional:
         with web_postgres_database.connect_owner() as connection:
             mapping_id = _required_id(
                 connection.execute(
                     """
                     INSERT INTO workflow.mapping_object (
-                        model_id, modeled_entity_type, dimensional_entity_id, source_system_id,
+                        project_id, modeled_entity_type, dimensional_entity_id, source_system_id,
                         mapping_transformation_document
                     ) VALUES (%s, 'dimensional_entity', %s, %s, '{}'::JSONB)
                     RETURNING mapping_object_id
                     """,
                     (
-                        scope.plan.model_id,
+                        scope.plan.project_id,
                         scope.plan.pair.modeled_entity_id,
                         scope.source_system_id,
                     ),
@@ -60,14 +60,14 @@ async def test_code_and_validation_track_entity_and_source_metadata(
             connection.execute(
                 """
                 INSERT INTO workflow.mapping_attribute (
-                    mapping_object_id, model_id, modeled_entity_type, dimensional_entity_id,
+                    mapping_object_id, project_id, modeled_entity_type, dimensional_entity_id,
                     dimensional_attribute_id, attribute_mapping_transformation_document
-                ) SELECT %s, model_id, 'dimensional_entity', dimensional_entity_id,
+                ) SELECT %s, project_id, 'dimensional_entity', dimensional_entity_id,
                          dimensional_attribute_id, '{}'::JSONB
                     FROM workflow.dimensional_attribute
-                   WHERE model_id = %s AND dimensional_entity_id = %s
+                   WHERE project_id = %s AND dimensional_entity_id = %s
                 """,
-                (mapping_id, scope.plan.model_id, scope.plan.pair.modeled_entity_id),
+                (mapping_id, scope.plan.project_id, scope.plan.pair.modeled_entity_id),
             )
     mapping_context = await _load(web_postgres_database, scope)
     runtime = WebPostgresDatabase(
@@ -87,7 +87,7 @@ async def test_code_and_validation_track_entity_and_source_metadata(
                      WHERE modeled_entity_id = %s
                     """,
                     (
-                        scope.plan.model_id,
+                        scope.plan.project_id,
                         scope.plan.modeled_entity_type,
                         scope.plan.pair.modeled_entity_id,
                     ),
@@ -156,7 +156,7 @@ async def test_code_and_validation_track_entity_and_source_metadata(
             ]
             for name in input_contracts:
                 contract = get_prompt_input_contract(
-                    model_workflow="code_generation",
+                    project_workflow="code_generation",
                     workflow_execution_mode=runtime_plan.workflow_execution_mode,
                     stage_code="sql_generation",
                     resolver_key=prefix + name,
@@ -182,7 +182,7 @@ async def test_code_and_validation_track_entity_and_source_metadata(
         physical_source = source_context["physical_sources"][0]["object"]
         assert target["tenant_id"] == scope.placement_tenant_id != scope.tenant_id
         assert target["source_tenant_id"] == scope.tenant_id
-        assert target["tenant_catalog"] == f"shared_{scope.plan.model_id}"
+        assert target["tenant_catalog"] == f"shared_{scope.plan.project_id}"
         assert physical_source["tenant_id"] == scope.placement_tenant_id
         assert physical_source["source_tenant_id"] == scope.tenant_id
         for object_record in (target, physical_source):
@@ -195,12 +195,12 @@ async def test_code_and_validation_track_entity_and_source_metadata(
             connection.execute(
                 """
                 INSERT INTO workflow.generated_code (
-                    model_id, modeled_entity_type, logical_entity_id, dimensional_entity_id,
+                    project_id, modeled_entity_type, logical_entity_id, dimensional_entity_id,
                     artifact_name, artifact_type, generated_code_content, code_input_digest
                 ) VALUES (%s, %s, %s, %s, 'orders.sql', 'sql_file', 'SELECT 1', %s)
                 """,
                 (
-                    scope.plan.model_id,
+                    scope.plan.project_id,
                     scope.plan.modeled_entity_type,
                     None if dimensional else scope.plan.pair.modeled_entity_id,
                     scope.plan.pair.modeled_entity_id if dimensional else None,
@@ -210,11 +210,11 @@ async def test_code_and_validation_track_entity_and_source_metadata(
             connection.execute(
                 """
                 INSERT INTO workflow.validation_group (
-                    model_id, tenant_id, system_id, validation_group_name, mapping_context_digest
+                    project_id, tenant_id, system_id, validation_group_name, mapping_context_digest
                 ) VALUES (%s, %s, %s, 'Metadata freshness fixture', %s)
                 """,
                 (
-                    scope.plan.model_id,
+                    scope.plan.project_id,
                     scope.tenant_id,
                     scope.source_system_id,
                     "a" * 64,
@@ -222,7 +222,7 @@ async def test_code_and_validation_track_entity_and_source_metadata(
             )
         async with runtime.read_transaction() as transaction:
             validation_before = await transaction.fetch_all(
-                _CURRENT_CONTEXT_SQL, (scope.tenant_id, scope.plan.model_id)
+                _CURRENT_CONTEXT_SQL, (scope.tenant_id, scope.plan.project_id)
             )
         assert (
             len(
@@ -305,9 +305,9 @@ async def test_code_and_validation_track_entity_and_source_metadata(
             with web_postgres_database.connect_owner() as connection:
                 connection.execute(query, (record_id,))
                 assert connection.execute(
-                    "SELECT model_revision FROM model.model WHERE model_id = %s",
-                    (scope.plan.model_id,),
-                ).fetchone() == {"model_revision": 1}
+                    "SELECT project_revision FROM project.project WHERE project_id = %s",
+                    (scope.plan.project_id,),
+                ).fetchone() == {"project_revision": 1}
             changed = await current()
             assert changed["code_input_digest"] != prior["code_input_digest"]
             assert await current() == changed
@@ -334,7 +334,7 @@ async def test_code_and_validation_track_entity_and_source_metadata(
         )
         async with runtime.read_transaction() as transaction:
             validation_after = await transaction.fetch_all(
-                _CURRENT_CONTEXT_SQL, (scope.tenant_id, scope.plan.model_id)
+                _CURRENT_CONTEXT_SQL, (scope.tenant_id, scope.plan.project_id)
             )
         stale = next(
             row

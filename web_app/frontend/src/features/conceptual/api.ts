@@ -1,13 +1,13 @@
-import type { ModelTargetsTransport } from "../model_targets/api";
+import type { ProjectTargetsTransport } from "../project_targets/api";
 import type { HttpRequest } from "../../core/http";
 import type {
   ModelingCardinality,
   ModelingConfidence,
   ReviewStatus,
 } from "../../shared/contracts";
-import type { ModelInputScopeApi } from "../model_input_scope/api";
+import type { ProjectInputScopeApi } from "../project_input_scope/api";
 import type { WorkflowsApi } from "../workflows/api";
-import type { ModelRecordReviewApi } from "../model_record_review/api";
+import type { ProjectRecordReviewApi } from "../project_record_review/api";
 
 export type ConceptualStatus = ReviewStatus;
 export type ConceptualConfidence = ModelingConfidence;
@@ -32,8 +32,8 @@ export interface ConceptualObject {
 }
 
 export interface ConceptualObjectPage {
-  model_id: number;
-  model_revision: number;
+  project_id: number;
+  project_revision: number;
   items: ConceptualObject[];
   next_cursor: string | null;
 }
@@ -55,8 +55,8 @@ export interface ConceptualRelationship {
 }
 
 export interface ConceptualRelationshipPage {
-  model_id: number;
-  model_revision: number;
+  project_id: number;
+  project_revision: number;
   items: ConceptualRelationship[];
   next_cursor: string | null;
 }
@@ -70,14 +70,13 @@ export interface ConceptualPhysicalObjectReference {
   object_name: string;
 }
 
-export interface ConceptualAssertionReference {
-  modeling_assertion_record_id: number;
-  modeling_assertion_record_key: string;
-  modeling_assertion_document_name: string;
-  modeling_assertion_record_type: string;
-  modeling_assertion_text: string;
-  modeling_assertion_confidence: ConceptualConfidence | null;
-  modeling_assertion_record_status: ConceptualStatus;
+export interface ConceptualContextReference {
+  context_record_id: string;
+  context_group_name: string;
+  context_type_name: string;
+  context_text: string;
+  source_reference: string | null;
+  status: ConceptualStatus;
 }
 
 interface ConceptualSupportBase {
@@ -98,12 +97,12 @@ export interface ConceptualPhysicalSupport extends ConceptualSupportBase {
   source_object: ConceptualPhysicalObjectReference;
 }
 
-export interface ConceptualAssertionSupport extends ConceptualSupportBase {
-  support_source_type: "assertion";
-  assertion_record: ConceptualAssertionReference;
+export interface ConceptualContextSupport extends ConceptualSupportBase {
+  support_source_type: "context_record";
+  context_record: ConceptualContextReference;
 }
 
-export type ConceptualSupport = ConceptualPhysicalSupport | ConceptualAssertionSupport;
+export type ConceptualSupport = ConceptualPhysicalSupport | ConceptualContextSupport;
 
 export interface ConceptualObjectDetail extends ConceptualObject {
   conceptual_object_definition: string;
@@ -124,32 +123,32 @@ export interface ConceptualRelationshipDetail extends ConceptualRelationship {
 export interface ConceptualTransport {
   listConceptualObjects: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     filters?: ConceptualFilters,
     pageSize?: number,
     cursor?: string,
   ) => Promise<ConceptualObjectPage>;
   readConceptualObject: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     conceptualObjectId: number,
   ) => Promise<ConceptualObjectDetail>;
   listConceptualRelationships: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     filters?: ConceptualFilters,
     pageSize?: number,
     cursor?: string,
   ) => Promise<ConceptualRelationshipPage>;
   readConceptualRelationship: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     conceptualRelationshipId: number,
   ) => Promise<ConceptualRelationshipDetail>;
 }
 
-export type ConceptualApi = Pick<ModelTargetsTransport, "exportModelDdl"> & ConceptualTransport
-  & ModelRecordReviewApi
+export type ConceptualApi = Pick<ProjectTargetsTransport, "exportProjectDdl"> & ConceptualTransport
+  & ProjectRecordReviewApi
   & Pick<
     WorkflowsApi,
     | "applyWorkflowDraft"
@@ -162,54 +161,54 @@ export type ConceptualApi = Pick<ModelTargetsTransport, "exportModelDdl"> & Conc
     | "readWorkflowDraftReview"
     | "readWorkflowRun"
   >
-  & Pick<ModelInputScopeApi, "listModelInputScope">;
+  & Pick<ProjectInputScopeApi, "listProjectInputScope">;
 
 export function createConceptualApi(request: HttpRequest): ConceptualTransport {
   return {
-    listConceptualObjects: (tenantId, modelId, filters = {}, pageSize = 200, cursor) =>
+    listConceptualObjects: (tenantId, projectId, filters = {}, pageSize = 200, cursor) =>
       request<ConceptualObjectPage>(
-        conceptualCollectionPath(tenantId, modelId, "objects", filters, pageSize, cursor),
+        conceptualCollectionPath(tenantId, projectId, "objects", filters, pageSize, cursor),
       ),
-    readConceptualObject: (tenantId, modelId, conceptualObjectId) =>
+    readConceptualObject: (tenantId, projectId, conceptualObjectId) =>
       request<ConceptualObjectDetail>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/conceptual/objects/${conceptualObjectId}`,
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/conceptual/objects/${conceptualObjectId}`,
       ),
-    listConceptualRelationships: (tenantId, modelId, filters = {}, pageSize = 200, cursor) =>
+    listConceptualRelationships: (tenantId, projectId, filters = {}, pageSize = 200, cursor) =>
       request<ConceptualRelationshipPage>(
         conceptualCollectionPath(
           tenantId,
-          modelId,
+          projectId,
           "relationships",
           filters,
           pageSize,
           cursor,
         ),
       ),
-    readConceptualRelationship: (tenantId, modelId, conceptualRelationshipId) =>
+    readConceptualRelationship: (tenantId, projectId, conceptualRelationshipId) =>
       request<ConceptualRelationshipDetail>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/conceptual/relationships/${conceptualRelationshipId}`,
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/conceptual/relationships/${conceptualRelationshipId}`,
       ),
   };
 }
 
 export const conceptualQueryKeys = {
-  objects: (tenantId: number, modelId: number, filters: unknown) => (
-    ["conceptual-objects", tenantId, modelId, filters] as const
+  objects: (tenantId: number, projectId: number, filters: unknown) => (
+    ["conceptual-objects", tenantId, projectId, filters] as const
   ),
-  object: (tenantId: number, modelId: number, objectId: number) => (
-    ["conceptual-object", tenantId, modelId, objectId] as const
+  object: (tenantId: number, projectId: number, objectId: number) => (
+    ["conceptual-object", tenantId, projectId, objectId] as const
   ),
-  relationships: (tenantId: number, modelId: number, filters: unknown) => (
-    ["conceptual-relationships", tenantId, modelId, filters] as const
+  relationships: (tenantId: number, projectId: number, filters: unknown) => (
+    ["conceptual-relationships", tenantId, projectId, filters] as const
   ),
-  relationship: (tenantId: number, modelId: number, relationshipId: number) => (
-    ["conceptual-relationship", tenantId, modelId, relationshipId] as const
+  relationship: (tenantId: number, projectId: number, relationshipId: number) => (
+    ["conceptual-relationship", tenantId, projectId, relationshipId] as const
   ),
 };
 
 function conceptualCollectionPath(
   tenantId: number,
-  modelId: number,
+  projectId: number,
   collection: "objects" | "relationships",
   filters: ConceptualFilters,
   pageSize: number,
@@ -224,7 +223,7 @@ function conceptualCollectionPath(
   if (namePrefix) query.set("name_prefix", namePrefix);
   query.set("page_size", String(pageSize));
   if (cursor) query.set("cursor", cursor);
-  return `/api/v1/tenants/${tenantId}/models/${modelId}/conceptual/${collection}?${query}`;
+  return `/api/v1/tenants/${tenantId}/projects/${projectId}/conceptual/${collection}?${query}`;
 }
 
 function normalizeNaturalKeyFilter(value: string | undefined): string {

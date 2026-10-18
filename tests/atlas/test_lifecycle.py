@@ -188,31 +188,31 @@ def test_effective_reads_and_copy_preserve_proposals(tmp_path: Path) -> None:
     assert run("select", *args, "--where", "{}")["records"][0] == baseline
 
 
-def test_metadata_first_can_attach_model_and_resume_task(tmp_path: Path) -> None:
+def test_metadata_first_can_attach_project_and_resume_task(tmp_path: Path) -> None:
     root = tmp_path / "work"
     run("session-init", "--root", str(root), "--tenant", "DEMO", "--tenant-id", "1")
     first = run("task-add", "--session", str(root), "--outcome", "Initial metadata")
     run("task-add", "--session", str(root), "--outcome", "Later work")
     run("task-select", "--session", str(root), "--task", first["task"])
     run(
-        "model-select",
+        "project-select",
         "--session",
         str(root),
-        "--model-id",
+        "--project-id",
         "3",
-        "--model-name",
+        "--project-name",
         "Customers",
     )
     state = run("status", "--session", str(root))["session"]
     assert state["active_task"] == first["task"]
-    assert state["model"]["id"] == 3
+    assert state["project"]["id"] == 3
     run(
-        "model-select",
+        "project-select",
         "--session",
         str(root),
-        "--model-id",
+        "--project-id",
         "4",
-        "--model-name",
+        "--project-name",
         "Orders",
         success=False,
     )

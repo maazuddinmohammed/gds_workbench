@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from gds_etl_workbench.application.change_sets.model import load_model_physical_scope
-from gds_etl_workbench.application.model_read import ModelReadContext
-from gds_etl_workbench.application.model_snapshot import build_model_snapshot
+from gds_etl_workbench.application.change_sets.project import load_project_physical_scope
+from gds_etl_workbench.application.project_read import ProjectReadContext
+from gds_etl_workbench.application.project_snapshot import build_project_snapshot
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import AuthorizationDeniedError
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
@@ -47,9 +47,9 @@ class MappingReadinessService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> tuple[MappingPreparation, ...]:
         async with self._database.write_transaction(
             isolation=ReadIsolation.REPEATABLE_READ
@@ -58,8 +58,8 @@ class MappingReadinessService:
                 transaction,
                 principal,
                 tenant_id=tenant_id,
-                policy=ToolPolicy.TENANT_MODEL_WRITE,
-                model_id=model_id,
+                policy=ToolPolicy.TENANT_PROJECT_WRITE,
+                project_id=project_id,
             )
             source_tenants = authorization.readable_source_tenant_ids
             actor_principal_id = authorization.principal.principal_id
@@ -69,23 +69,23 @@ class MappingReadinessService:
                 transaction,
                 actor_principal_id=actor_principal_id,
                 tenant_id=tenant_id,
-                model_id=model_id,
+                project_id=project_id,
                 workflow_run_id=workflow_run_id,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
             )
             contexts = [
                 await self._context_repository.load(transaction, tenant_id=tenant_id, plan=plan)
                 for plan in plans
             ]
-            model = ModelReadContext(
+            project = ProjectReadContext(
                 tenant_id=tenant_id,
-                model_id=model_id,
-                model_name=contexts[0].authoring.model_name,
-                model_revision=expected_model_revision,
+                project_id=project_id,
+                project_name=contexts[0].authoring.project_name,
+                project_revision=expected_project_revision,
                 readable_source_tenant_ids=source_tenants,
             )
-            snapshot = await build_model_snapshot(transaction, model, enforce_row_limits=False)
-            physical_scope = await load_model_physical_scope(transaction, model)
+            snapshot = await build_project_snapshot(transaction, project, enforce_row_limits=False)
+            physical_scope = await load_project_physical_scope(transaction, project)
         preparations = [
             MappingPreparation(
                 plan=plan,
@@ -123,8 +123,8 @@ def assess_mapping_readiness(
 
     if (
         context.workflow_run_id != plan.workflow_run_id
-        or context.model_id != plan.model_id
-        or context.model_revision != plan.model_revision
+        or context.project_id != plan.project_id
+        or context.project_revision != plan.project_revision
         or context.correlation_id != plan.correlation_id
         or context.pair != plan.pair
         or context.modeled_entity_type != plan.modeled_entity_type

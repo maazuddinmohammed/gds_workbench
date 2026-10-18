@@ -232,7 +232,7 @@ def build_root_documents(encoded_datasets: Sequence[EncodedDataset]) -> RootDocu
         )
 
     catalog = {
-        "schema_version": "2.0",
+        "schema_version": "3.0",
         "snapshot_kind": "metadata",
         "row_format": "flat-json-lines",
         "database_ids_included": False,
@@ -332,7 +332,7 @@ def build_snapshot_archive(
         expanded_bytes: int,
     ) -> Mapping[str, object]:
         return {
-            "schema_version": "2.0",
+            "schema_version": "3.0",
             "snapshot_kind": "metadata",
             "snapshot_id": str(snapshot_id),
             "tenant_code": normalized_tenant_code,

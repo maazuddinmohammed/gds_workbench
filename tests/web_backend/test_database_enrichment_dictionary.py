@@ -1,4 +1,4 @@
-"""Model-local enrichment edit/read/export round trips on disposable PostgreSQL."""
+"""Project-local enrichment edit/read/export round trips on disposable PostgreSQL."""
 
 # pyright: reportPrivateUsage=false
 from io import BytesIO
@@ -31,7 +31,7 @@ from tests.mcp.test_database_workflow_run_lifecycle import seed_workflow_context
 
 
 @pytest.mark.asyncio
-async def test_edit_read_export_and_model_isolation(
+async def test_edit_read_export_and_project_isolation(
     web_postgres_database: DisposablePostgres,
 ) -> None:
     fixture = web_postgres_database
@@ -44,19 +44,19 @@ async def test_edit_read_export_and_model_isolation(
         before_attribute = connection.execute(
             "SELECT * FROM core.attribute WHERE attribute_id=%s", (attribute_id,)
         ).fetchone()
-        other_model = require_row(
+        other_project = require_row(
             connection.execute(
-                "INSERT INTO model.model(tenant_id,model_name) VALUES(%s,%s) RETURNING model_id",
+                "INSERT INTO project.project(tenant_id,project_name) VALUES(%s,%s) RETURNING project_id",
                 (context.tenant_id, f"Isolated {uuid4().hex}"),
             ).fetchone()
-        )["model_id"]
+        )["project_id"]
         connection.execute(
-            "INSERT INTO model.model_input_scope(model_id,object_id) VALUES(%s,%s)",
-            (other_model, object_id),
+            "INSERT INTO project.project_input_scope(project_id,object_id) VALUES(%s,%s)",
+            (other_project, object_id),
         )
         connection.execute(
-            "INSERT INTO workflow.attribute_profile(model_id,object_id,attribute_id,source_context_digest,row_count,non_null_count,null_count,blank_count,distinct_count) VALUES(%s,%s,%s,%s,10,10,0,0,10)",
-            (context.model_id, object_id, attribute_id, "a" * 64),
+            "INSERT INTO workflow.attribute_profile(project_id,object_id,attribute_id,source_context_digest,row_count,non_null_count,null_count,blank_count,distinct_count) VALUES(%s,%s,%s,%s,10,10,0,0,10)",
+            (context.project_id, object_id, attribute_id, "a" * 64),
         )
     database = WebPostgresDatabase(
         dsn=fixture.web_runtime_dsn(), pool_min=1, pool_max=2, pool_timeout_seconds=5
@@ -82,13 +82,13 @@ async def test_edit_read_export_and_model_isolation(
         await dictionary_service.read_input_scope_object(
             identity.request_principal(None),
             tenant_id=context.tenant_id,
-            model_id=context.model_id,
+            project_id=context.project_id,
             object_id=object_id,
         )
         async with httpx2.AsyncClient(
             transport=httpx2.ASGITransport(app=app), base_url="http://fixture.invalid"
         ) as client:
-            base = f"/api/v1/tenants/{context.tenant_id}/models/{context.model_id}/metadata-enrichment"
+            base = f"/api/v1/tenants/{context.tenant_id}/projects/{context.project_id}/metadata-enrichment"
             initial = await client.get(f"{base}/objects/{object_id}")
             assert initial.status_code == 200
             assert initial.json()["object_description"] is None
@@ -110,7 +110,7 @@ async def test_edit_read_export_and_model_isolation(
                         is_pii=None,
                     )
                 body: dict[str, Any] = {
-                    "expected_model_revision": context.model_revision,
+                    "expected_project_revision": context.project_revision,
                     "record_type": record_type,
                     "action": "edit",
                     "records": [edit],
@@ -182,9 +182,9 @@ async def test_edit_read_export_and_model_isolation(
                 assert tuple(cell.value for cell in profile[5:10]) == (10, 10, 0, 0, 10)
             finally:
                 workbook.close()
-            # A second Model sees no saved findings or profiling, despite sharing the Object.
+            # A second Project sees no saved findings or profiling, despite sharing the Object.
             other_base = base.replace(
-                f"/models/{context.model_id}/", f"/models/{other_model}/"
+                f"/projects/{context.project_id}/", f"/projects/{other_project}/"
             )
             other = await client.get(f"{other_base}/objects/{object_id}")
             assert other.status_code == 200
@@ -194,9 +194,9 @@ async def test_edit_read_export_and_model_isolation(
                 for value in other.json()["attributes"][0]["enrichment"].values()
             )
             assert other.json()["attributes"][0]["profile"] is None
-            # Parent Model lock protects child editing; SQL rejects stale Model revisions.
+            # Parent Project lock protects child editing; SQL rejects stale Project revisions.
             lock_body = {
-                "expected_model_revision": context.model_revision,
+                "expected_project_revision": context.project_revision,
                 "record_type": "object",
                 "action": "lock",
                 "records": [
@@ -224,7 +224,7 @@ async def test_edit_read_export_and_model_isolation(
                     headers={"Idempotency-Key": str(uuid4())},
                 )
             ).status_code == 409
-            body["expected_model_revision"] += 1
+            body["expected_project_revision"] += 1
             assert (
                 await client.post(
                     f"{base}/review",

@@ -108,11 +108,15 @@ async def test_new_inference_normalizes_only_agent_owned_fields() -> None:
 
     schema = validator.output_schema()
     relationships = cast(dict[str, JsonValue], schema["properties"])["relationships"]
-    items = cast(dict[str, JsonValue], cast(dict[str, JsonValue], relationships)["items"])
+    items = cast(
+        dict[str, JsonValue], cast(dict[str, JsonValue], relationships)["items"]
+    )
     reference = cast(str, items["$ref"])
     definition_name = reference.rsplit("/", 1)[-1]
     definition = cast(dict[str, JsonValue], schema["$defs"])[definition_name]
-    fields = cast(dict[str, JsonValue], cast(dict[str, JsonValue], definition)["properties"])
+    fields = cast(
+        dict[str, JsonValue], cast(dict[str, JsonValue], definition)["properties"]
+    )
     assert "relationship_basis" in fields
     assert "validation_result" not in fields
     assert "analysis_result_status" not in fields
@@ -122,7 +126,9 @@ async def test_new_inference_normalizes_only_agent_owned_fields() -> None:
 @pytest.mark.asyncio
 async def test_inference_preserves_validation_lifecycle_and_lock_fields() -> None:
     validator = _validator(applied=(_applied(),))
-    candidate: JsonValue = {"relationships": [_candidate(basis="Updated inference evidence.")]}
+    candidate: JsonValue = {
+        "relationships": [_candidate(basis="Updated inference evidence.")]
+    }
 
     assert (await validator.validate(candidate)).issues == ()
     stored = validator.parse_validated(candidate)[0].records[0]
@@ -137,7 +143,9 @@ async def test_inference_preserves_validation_lifecycle_and_lock_fields() -> Non
 @pytest.mark.asyncio
 async def test_locked_relationship_cannot_be_changed_by_inference() -> None:
     validator = _validator(applied=(_applied(locked=True),))
-    candidate: JsonValue = {"relationships": [_candidate(basis="Changed while locked.")]}
+    candidate: JsonValue = {
+        "relationships": [_candidate(basis="Changed while locked.")]
+    }
 
     validation = await validator.validate(candidate)
 
@@ -155,13 +163,17 @@ async def test_inference_rejects_endpoints_outside_immutable_selection() -> None
 
     validation = await validator.validate(candidate)
 
-    assert [issue.code for issue in validation.issues] == ["candidate.endpoint_outside_selection"]
+    assert [issue.code for issue in validation.issues] == [
+        "candidate.endpoint_outside_selection"
+    ]
 
 
 @pytest.mark.asyncio
 async def test_inference_rejects_unowned_fields_and_duplicate_identities() -> None:
     validator = _validator()
-    unowned: JsonValue = {"relationships": [_candidate(extra={"analysis_result_is_locked": True})]}
+    unowned: JsonValue = {
+        "relationships": [_candidate(extra={"analysis_result_is_locked": True})]
+    }
     duplicate: JsonValue = {
         "relationships": [_candidate(), _candidate(basis="Duplicate identity.")]
     }
@@ -182,7 +194,10 @@ async def test_empty_or_unchanged_inference_is_a_valid_noop() -> None:
     assert (await validator.validate({"relationships": []})).issues == ()
     assert validator.parse_validated({"relationships": []}) == ()
     assert (
-        validator.parse_validated({"relationships": [_candidate(basis="Original evidence.")]}) == ()
+        validator.parse_validated(
+            {"relationships": [_candidate(basis="Original evidence.")]}
+        )
+        == ()
     )
 
 
@@ -212,7 +227,9 @@ async def test_identical_inference_duplicates_produce_one_record(
     duplicate_fields: dict[str, JsonValue],
 ) -> None:
     validator = _validator()
-    candidate: JsonValue = {"relationships": [_candidate(), _candidate(extra=duplicate_fields)]}
+    candidate: JsonValue = {
+        "relationships": [_candidate(), _candidate(extra=duplicate_fields)]
+    }
 
     assert (await validator.validate(candidate)).issues == ()
     assert validator.parse_validated(candidate) == validator.parse_validated(
@@ -270,7 +287,9 @@ async def test_duplicate_broken_reference_still_fails_scope_validation() -> None
 
 @pytest.mark.asyncio
 async def test_lock_error_uses_original_index_after_duplicate_removal() -> None:
-    validator = _validator(applied=(_applied(locked=True, relationship_kind="association"),))
+    validator = _validator(
+        applied=(_applied(locked=True, relationship_kind="association"),)
+    )
     candidate: JsonValue = {
         "relationships": [
             _candidate(),
@@ -308,8 +327,12 @@ async def test_schema_error_uses_original_index_after_duplicate_removal() -> Non
 @pytest.mark.parametrize(
     "value", ["one_to_one", "one_to_many", "many_to_one", "many_to_many", "unknown"]
 )
-async def test_inference_owns_cardinality_without_creating_validation_evidence(value: str) -> None:
-    candidate: JsonValue = {"relationships": [_candidate(extra={"inferred_cardinality": value})]}
+async def test_inference_owns_cardinality_without_creating_validation_evidence(
+    value: str,
+) -> None:
+    candidate: JsonValue = {
+        "relationships": [_candidate(extra={"inferred_cardinality": value})]
+    }
     validator = _validator()
     assert not (await validator.validate(candidate)).issues
     stored = validator.parse_validated(candidate)[0].records[0]
@@ -320,18 +343,23 @@ async def test_inference_owns_cardinality_without_creating_validation_evidence(v
 @pytest.mark.asyncio
 @pytest.mark.parametrize("value", [None, "one-to-many", "", 1])
 async def test_inference_rejects_invalid_cardinality(value: JsonValue) -> None:
-    candidate: JsonValue = {"relationships": [_candidate(extra={"inferred_cardinality": value})]}
-    assert [issue.code for issue in (await _validator().validate(candidate)).issues] == [
-        "candidate.schema_invalid"
-    ]
+    candidate: JsonValue = {
+        "relationships": [_candidate(extra={"inferred_cardinality": value})]
+    }
+    assert [
+        issue.code for issue in (await _validator().validate(candidate)).issues
+    ] == ["candidate.schema_invalid"]
 
 
 @pytest.mark.asyncio
-async def test_inference_requires_explicit_cardinality_and_rejects_conflicting_duplicates() -> None:
+async def test_inference_requires_explicit_cardinality_and_rejects_conflicting_duplicates() -> (
+    None
+):
     missing = _candidate()
     missing.pop("inferred_cardinality")
     assert [
-        issue.code for issue in (await _validator().validate({"relationships": [missing]})).issues
+        issue.code
+        for issue in (await _validator().validate({"relationships": [missing]})).issues
     ] == ["candidate.schema_invalid"]
     duplicate: JsonValue = {
         "relationships": [
@@ -339,16 +367,19 @@ async def test_inference_requires_explicit_cardinality_and_rejects_conflicting_d
             _candidate(extra={"inferred_cardinality": "many_to_one"}),
         ]
     }
-    assert [issue.code for issue in (await _validator().validate(duplicate)).issues] == [
-        "candidate.relationship_duplicate"
-    ]
+    assert [
+        issue.code for issue in (await _validator().validate(duplicate)).issues
+    ] == ["candidate.relationship_duplicate"]
 
 
 @pytest.mark.asyncio
 async def test_cardinality_change_preserves_evidence_and_respects_lock() -> None:
     candidate: JsonValue = {
         "relationships": [
-            _candidate(basis="Original evidence.", extra={"inferred_cardinality": "many_to_one"})
+            _candidate(
+                basis="Original evidence.",
+                extra={"inferred_cardinality": "many_to_one"},
+            )
         ]
     }
     validator = _validator(applied=(_applied(),))

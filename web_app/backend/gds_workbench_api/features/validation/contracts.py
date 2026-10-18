@@ -2,11 +2,35 @@
 
 from typing import Literal
 
+from gds_etl_workbench.domain.errors import WorkbenchError
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 
 class _Contract(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+class ExportValidationRequest(_Contract):
+    """Export active checks in active layer/shared groups, preserving currentness."""
+
+    entity_type: Literal["logical_entity", "dimensional_entity"]
+    expected_project_revision: int = Field(gt=0)
+
+
+class ValidationBundleLimitExceededError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="validation_bundle_limit_exceeded",
+            message="The requested Validation checks exceed the safe bundle limit.",
+        )
+
+
+class ValidationExportEmptyError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="validation_export_empty",
+            message="No active Validation checks are available for this layer.",
+        )
 
 
 class ValidationEligibleSystem(_Contract):
@@ -19,8 +43,8 @@ class ValidationEligibleSystem(_Contract):
 
 
 class ValidationEligibleSystemCollection(_Contract):
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     items: tuple[ValidationEligibleSystem, ...]
     is_truncated: bool
 
@@ -82,8 +106,8 @@ class ValidationValidationGroup(_Contract):
 
 
 class ValidationLedger(_Contract):
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     groups: tuple[ValidationValidationGroup, ...] = Field(max_length=10_000)
 
 

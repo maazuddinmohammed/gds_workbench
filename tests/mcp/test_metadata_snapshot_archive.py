@@ -31,9 +31,9 @@ def encoded_datasets(*, include_project: bool = False) -> tuple[EncodedDataset, 
             DATASETS[0],
             [
                 {
-                    "project_code": "RISK",
-                    "project_name": "Risk Analytics",
-                    "project_description": None,
+                    "lane_code": "RISK",
+                    "lane_name": "Risk Analytics",
+                    "lane_description": None,
                     "is_active": True,
                 }
             ],
@@ -73,12 +73,14 @@ def test_snapshot_archive_manifest_hashes_counts_and_safe_members(
         assert all(".." not in name.split("/") and "\\" not in name for name in names)
         assert all(not info.is_dir() for info in infos)
         assert all(info.date_time == (1980, 1, 1, 0, 0, 0) for info in infos)
-        assert all(stat.S_IFMT(info.external_attr >> 16) == stat.S_IFREG for info in infos)
+        assert all(
+            stat.S_IFMT(info.external_attr >> 16) == stat.S_IFREG for info in infos
+        )
 
         assert manifest["snapshot_id"] == str(SNAPSHOT_ID)
         assert manifest["tenant_code"] == "TENANT"
         assert manifest["database_ids_included"] is False
-        assert manifest["schema_version"] == "2.0"
+        assert manifest["schema_version"] == "3.0"
         assert manifest["generated_at"] == "2026-08-11T16:00:00Z"
         assert "created_time" not in manifest
         assert manifest["available_until"] == "2026-08-12T16:00:00Z"
@@ -102,7 +104,9 @@ def test_snapshot_archive_manifest_hashes_counts_and_safe_members(
             assert member["sha256"] == hashlib.sha256(content).hexdigest()
         assert manifest["catalog"] == {
             "path": "catalog.json",
-            "sha256": hashlib.sha256(archive.read("metadata-snapshot/catalog.json")).hexdigest(),
+            "sha256": hashlib.sha256(
+                archive.read("metadata-snapshot/catalog.json")
+            ).hexdigest(),
         }
         assert manifest["schemas"] == {
             "directory": "schemas",

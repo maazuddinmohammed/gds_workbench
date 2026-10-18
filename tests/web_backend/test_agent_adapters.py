@@ -171,7 +171,10 @@ async def test_provider_json_format_errors_reach_bounded_validation_repair(
     assert "original_context" not in contexts[0]
     assert "original_context" not in contexts[1]
     assert contexts[1]["repair"]["previous_candidate"] == malformed
-    assert contexts[1]["repair"]["validation_issues"][0]["code"] == "candidate.output_schema_type"
+    assert (
+        contexts[1]["repair"]["validation_issues"][0]["code"]
+        == "candidate.output_schema_type"
+    )
     assert malformed not in repr(result)
 
 
@@ -231,7 +234,9 @@ async def test_openai_adapter_routes_exact_model_with_shared_provider_authentica
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("empty_tool_selection", (False, True), ids=("one-shot", "zero-tools"))
+@pytest.mark.parametrize(
+    "empty_tool_selection", (False, True), ids=("one-shot", "zero-tools")
+)
 async def test_openai_agents_adapter_disables_tracing_and_parses_json(
     monkeypatch: pytest.MonkeyPatch,
     empty_tool_selection: bool,
@@ -260,7 +265,9 @@ async def test_openai_agents_adapter_disables_tracing_and_parses_json(
         definitions: tuple[LocalAgentToolDefinition, ...] = ()
         max_cumulative_result_bytes = 1024
 
-        def invoke(self, tool_name: str, arguments: Mapping[str, JsonValue]) -> JsonValue:
+        def invoke(
+            self, tool_name: str, arguments: Mapping[str, JsonValue]
+        ) -> JsonValue:
             raise AssertionError("No tools are enabled")
 
     class FakeRunner:
@@ -479,7 +486,9 @@ async def test_foundry_authentication_uses_direct_entra_token(
 
     assert credentials.base_url == "https://fixture.openai.azure.com/openai/v1/"
     assert credentials.api_key.get_secret_value() == "never-log-this-foundry-token"
-    assert second_credentials.api_key.get_secret_value() == "never-log-this-foundry-token"
+    assert (
+        second_credentials.api_key.get_secret_value() == "never-log-this-foundry-token"
+    )
     assert captured == {
         "created": 1,
         "credential": {

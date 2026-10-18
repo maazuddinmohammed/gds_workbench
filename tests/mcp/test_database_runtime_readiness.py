@@ -11,7 +11,9 @@ if TYPE_CHECKING:
     from conftest import DisposablePostgres
 
 
-RUNTIME_INTEGRITY_SQL = Path(__file__).parents[2] / "database" / "19_runtime_integrity.sql"
+RUNTIME_INTEGRITY_SQL = (
+    Path(__file__).parents[2] / "database" / "19_runtime_integrity.sql"
+)
 VERIFY_INSTALL_SQL = Path(__file__).parents[2] / "database" / "20_verify_install.sql"
 
 
@@ -19,13 +21,13 @@ def test_runtime_integrity_sql_can_repair_grants_and_recheck_an_install(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
-        connection.execute("REVOKE USAGE ON SCHEMA model FROM gds_app_write")
+        connection.execute("REVOKE USAGE ON SCHEMA project FROM gds_app_write")
         connection.execute(
             """
             GRANT UPDATE (default_agent_sdk_code)
-                ON model.model TO gds_app_write;
+                ON project.project TO gds_app_write;
             GRANT INSERT
-                ON model.model_revision_transaction TO gds_app_write
+                ON project.project_revision_transaction TO gds_app_write
             """
         )
         connection.execute(
@@ -37,21 +39,21 @@ def test_runtime_integrity_sql_can_repair_grants_and_recheck_an_install(
         broken = connection.execute(
             """
             SELECT has_schema_privilege(
-                       'gds_app_write', 'model', 'USAGE'
-                   ) AS model_schema_usage,
+                       'gds_app_write', 'project', 'USAGE'
+                   ) AS project_schema_usage,
                    membership.admin_option,
                    membership.inherit_option,
                    membership.set_option,
                    has_column_privilege(
-                       'gds_app_write', 'model.model',
+                       'gds_app_write', 'project.project',
                        'default_agent_sdk_code', 'UPDATE'
                    ) AS web_agent_default_update,
                    has_column_privilege(
-                       'gds_app_write', 'model.model_input_scope',
-                       'model_id', 'INSERT'
-                   ) AS model_input_scope_insert,
+                       'gds_app_write', 'project.project_input_scope',
+                       'project_id', 'INSERT'
+                   ) AS project_input_scope_insert,
                    has_table_privilege(
-                       'gds_app_write', 'model.model_revision_transaction',
+                       'gds_app_write', 'project.project_revision_transaction',
                        'INSERT'
                    ) AS revision_transaction_insert
               FROM pg_auth_members AS membership
@@ -64,34 +66,36 @@ def test_runtime_integrity_sql_can_repair_grants_and_recheck_an_install(
             """
         ).fetchone()
         assert broken == {
-            "model_schema_usage": False,
+            "project_schema_usage": False,
             "admin_option": True,
             "inherit_option": True,
             "set_option": False,
             "web_agent_default_update": True,
-            "model_input_scope_insert": True,
+            "project_input_scope_insert": True,
             "revision_transaction_insert": True,
         }
 
-        connection.execute(cast(LiteralString, RUNTIME_INTEGRITY_SQL.read_text(encoding="utf-8")))
+        connection.execute(
+            cast(LiteralString, RUNTIME_INTEGRITY_SQL.read_text(encoding="utf-8"))
+        )
         repaired = connection.execute(
             """
             SELECT has_schema_privilege(
-                       'gds_app_write', 'model', 'USAGE'
-                   ) AS model_schema_usage,
+                       'gds_app_write', 'project', 'USAGE'
+                   ) AS project_schema_usage,
                    membership.admin_option,
                    membership.inherit_option,
                    membership.set_option,
                    has_column_privilege(
-                       'gds_app_write', 'model.model',
+                       'gds_app_write', 'project.project',
                        'default_agent_sdk_code', 'UPDATE'
                    ) AS web_agent_default_update,
                    has_column_privilege(
-                       'gds_app_write', 'model.model_input_scope',
-                       'model_id', 'INSERT'
-                   ) AS model_input_scope_insert,
+                       'gds_app_write', 'project.project_input_scope',
+                       'project_id', 'INSERT'
+                   ) AS project_input_scope_insert,
                    has_table_privilege(
-                       'gds_app_write', 'model.model_revision_transaction',
+                       'gds_app_write', 'project.project_revision_transaction',
                        'INSERT'
                    ) AS revision_transaction_insert
               FROM pg_auth_members AS membership
@@ -105,17 +109,19 @@ def test_runtime_integrity_sql_can_repair_grants_and_recheck_an_install(
         ).fetchone()
 
     assert repaired == {
-        "model_schema_usage": True,
+        "project_schema_usage": True,
         "admin_option": False,
         "inherit_option": False,
         "set_option": True,
         "web_agent_default_update": False,
-        "model_input_scope_insert": True,
+        "project_input_scope_insert": True,
         "revision_transaction_insert": False,
     }
 
     with postgres_database.connect_runtime() as connection:
-        contract = connection.execute("SELECT * FROM mcp.runtime_readiness()").fetchone()
+        contract = connection.execute(
+            "SELECT * FROM mcp.runtime_readiness()"
+        ).fetchone()
 
     assert contract is not None
     assert contract["runtime_role_ok"] is True
@@ -223,7 +229,9 @@ def test_runtime_integrity_revokes_an_unlisted_web_mcp_function(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
-        connection.execute("GRANT EXECUTE ON FUNCTION mcp.runtime_readiness() TO gds_web_write")
+        connection.execute(
+            "GRANT EXECUTE ON FUNCTION mcp.runtime_readiness() TO gds_web_write"
+        )
         connection.execute(
             cast(
                 LiteralString,
@@ -243,7 +251,7 @@ def test_runtime_integrity_revokes_an_unlisted_web_mcp_function(
     assert web_execute == {"allowed": False}
 
 
-def test_mcp_role_can_materialize_model_input_scope_but_not_revision_audit(
+def test_mcp_role_can_materialize_project_input_scope_but_not_revision_audit(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
@@ -251,10 +259,10 @@ def test_mcp_role_can_materialize_model_input_scope_but_not_revision_audit(
             """
             SELECT has_column_privilege(
                        'gds_app_write',
-                       'model.model',
+                       'project.project',
                        'silver_model_naming_instructions',
                        'UPDATE'
-                   ) AS model_policy_update,
+                   ) AS project_policy_update,
                    EXISTS (
                        SELECT 1
                          FROM unnest(ARRAY[
@@ -267,7 +275,7 @@ def test_mcp_role_can_materialize_model_input_scope_but_not_revision_audit(
                               ]) AS forbidden_column(name)
                         WHERE has_column_privilege(
                                   'gds_app_write',
-                                  'model.model',
+                                  'project.project',
                                   forbidden_column.name,
                                   'UPDATE'
                               )
@@ -276,36 +284,36 @@ def test_mcp_role_can_materialize_model_input_scope_but_not_revision_audit(
                        SELECT 1
                          FROM pg_attribute AS attribute
                         WHERE attribute.attrelid =
-                              'model.model_input_scope'::REGCLASS
+                              'project.project_input_scope'::REGCLASS
                           AND attribute.attnum > 0
                           AND NOT attribute.attisdropped
                           AND (
                               has_column_privilege(
                                   'gds_app_write',
-                                  'model.model_input_scope',
+                                  'project.project_input_scope',
                                   attribute.attname,
                                   'INSERT'
                               )
                               OR has_column_privilege(
                                   'gds_app_write',
-                                  'model.model_input_scope',
+                                  'project.project_input_scope',
                                   attribute.attname,
                                   'UPDATE'
                               )
                           )
-                   ) AS model_input_scope_mutation,
+                   ) AS project_input_scope_mutation,
                    has_table_privilege(
                        'gds_app_write',
-                       'model.model_revision_transaction',
+                       'project.project_revision_transaction',
                        'INSERT,UPDATE,DELETE,TRUNCATE'
                    ) AS revision_audit_mutation
             """
         ).fetchone()
 
     assert posture == {
-        "model_policy_update": True,
+        "project_policy_update": True,
         "web_agent_default_update": False,
-        "model_input_scope_mutation": True,
+        "project_input_scope_mutation": True,
         "revision_audit_mutation": False,
     }
 
@@ -325,7 +333,9 @@ async def test_runtime_readiness_checks_the_complete_mcp_database_contract(
     assert readiness.code == "ready"
 
     with postgres_database.connect_runtime() as connection:
-        contract = connection.execute("SELECT * FROM mcp.runtime_readiness()").fetchone()
+        contract = connection.execute(
+            "SELECT * FROM mcp.runtime_readiness()"
+        ).fetchone()
 
     assert contract == {
         "schema_version": "1.0.0",
@@ -370,15 +380,15 @@ async def test_runtime_readiness_rejects_a_missing_object_source_tenant_column(
 
 
 @pytest.mark.asyncio
-async def test_runtime_readiness_rejects_a_missing_canonical_model_policy_column(
+async def test_runtime_readiness_rejects_a_missing_canonical_project_policy_column(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
         connection.execute(
             """
-            ALTER TABLE model.model
+            ALTER TABLE project.project
             RENAME COLUMN gold_model_audit_columns_template
-            TO missing_gold_model_audit_columns_template
+            TO missing_gold_project_audit_columns_template
             """
         )
 
@@ -393,8 +403,8 @@ async def test_runtime_readiness_rejects_a_missing_canonical_model_policy_column
         with postgres_database.connect_owner() as connection:
             connection.execute(
                 """
-                ALTER TABLE model.model
-                RENAME COLUMN missing_gold_model_audit_columns_template
+                ALTER TABLE project.project
+                RENAME COLUMN missing_gold_project_audit_columns_template
                 TO gold_model_audit_columns_template
                 """
             )
@@ -407,8 +417,8 @@ async def test_runtime_readiness_rejects_a_missing_canonical_model_policy_column
 @pytest.mark.parametrize(
     ("schema_name", "relation_name"),
     [
-        ("mcp", "model_change_set"),
-        ("model", "modeling_assertion_record"),
+        ("mcp", "project_change_set"),
+        ("project", "context_record"),
         ("workflow", "mapping_object"),
     ],
 )
@@ -519,12 +529,12 @@ async def test_runtime_readiness_rejects_an_unlisted_mcp_group_function(
     "function_signature",
     [
         "workflow.list_tenant_visible_objects(BIGINT)",
-        "workflow.list_model_object_eligibility(BIGINT)",
-        "workflow.list_model_attribute_eligibility(BIGINT)",
+        "workflow.list_project_object_eligibility(BIGINT)",
+        "workflow.list_project_attribute_eligibility(BIGINT)",
         "workflow.list_code_generation_target_context(BIGINT, VARCHAR, VARCHAR)",
     ],
 )
-async def test_runtime_readiness_rejects_a_missing_model_read_grant(
+async def test_runtime_readiness_rejects_a_missing_project_read_grant(
     postgres_database: DisposablePostgres,
     function_signature: str,
 ) -> None:
@@ -559,7 +569,7 @@ async def test_runtime_readiness_rejects_missing_runtime_schema_usage(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
-        connection.execute("REVOKE USAGE ON SCHEMA model FROM gds_app_write")
+        connection.execute("REVOKE USAGE ON SCHEMA project FROM gds_app_write")
 
     try:
         database = postgres_database.create_runtime_adapter()
@@ -570,7 +580,7 @@ async def test_runtime_readiness_rejects_missing_runtime_schema_usage(
             await database.close()
     finally:
         with postgres_database.connect_owner() as connection:
-            connection.execute("GRANT USAGE ON SCHEMA model TO gds_app_write")
+            connection.execute("GRANT USAGE ON SCHEMA project TO gds_app_write")
 
     assert readiness.ready is False
     assert readiness.code == "database_role_invalid"
@@ -606,7 +616,7 @@ def test_verify_install_rejects_missing_runtime_schema_usage(
         pytest.raises(RaiseException, match="schema usage"),
         connection.transaction(),
     ):
-        connection.execute("REVOKE USAGE ON SCHEMA model FROM gds_app_write")
+        connection.execute("REVOKE USAGE ON SCHEMA project FROM gds_app_write")
         connection.execute(
             cast(
                 LiteralString,
@@ -625,8 +635,8 @@ def test_verify_install_rejects_mcp_revision_audit_column_mutation(
     ):
         connection.execute(
             """
-            GRANT INSERT (model_id, transaction_id)
-                ON model.model_revision_transaction TO gds_app_write
+            GRANT INSERT (project_id, transaction_id)
+                ON project.project_revision_transaction TO gds_app_write
             """
         )
         connection.execute(
@@ -707,7 +717,9 @@ def test_verify_install_rejects_an_unlisted_web_mcp_function(
         pytest.raises(RaiseException, match="runtime function privileges"),
         connection.transaction(),
     ):
-        connection.execute("GRANT EXECUTE ON FUNCTION mcp.runtime_readiness() TO gds_web_write")
+        connection.execute(
+            "GRANT EXECUTE ON FUNCTION mcp.runtime_readiness() TO gds_web_write"
+        )
         connection.execute(
             cast(
                 LiteralString,
@@ -742,8 +754,8 @@ def test_verify_install_rejects_an_unlisted_mcp_group_function(
     "function_signature",
     [
         "workflow.list_tenant_visible_objects(bigint)",
-        "workflow.list_model_object_eligibility(bigint)",
-        "workflow.list_model_attribute_eligibility(bigint)",
+        "workflow.list_project_object_eligibility(bigint)",
+        "workflow.list_project_attribute_eligibility(bigint)",
         "workflow.list_code_generation_target_context(bigint,character varying,character varying)",
     ],
 )

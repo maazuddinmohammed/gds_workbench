@@ -24,17 +24,17 @@ from gds_workbench_api.features.analysis.read_contracts import (
     ReviewContract,
 )
 from gds_workbench_api.features.metadata.contracts import MetadataWorkbookDownload
-from gds_workbench_api.features.models import ModelNotFoundError, ModelRevisionConflictError
+from gds_workbench_api.features.projects import ProjectNotFoundError, ProjectRevisionConflictError
 
 from .workbook import MAX_ANALYSIS_FINDINGS, AnalysisWorkbookBuildError, build_analysis_workbook
 
-_MODEL_HEADER_SQL: LiteralString = """
-SELECT target_model.model_id,
-       target_model.model_revision
-  FROM model.model AS target_model
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+_PROJECT_HEADER_SQL: LiteralString = """
+SELECT target_project.project_id,
+       target_project.project_revision
+  FROM project.project AS target_project
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
 """
 
 _ANALYSIS_FINDINGS_SQL: LiteralString = """
@@ -53,12 +53,12 @@ visible_objects AS (
       ) AS visible_object
 )
 ,
-target_model AS (
-    SELECT target_model.model_id
-      FROM model.model AS target_model
-     WHERE target_model.tenant_id = %s
-       AND target_model.model_id = %s
-       AND target_model.is_active
+target_project AS (
+    SELECT target_project.project_id
+      FROM project.project AS target_project
+     WHERE target_project.tenant_id = %s
+       AND target_project.project_id = %s
+       AND target_project.is_active
 )
 SELECT result.analysis_result_id,
        result.from_object_id,
@@ -108,23 +108,23 @@ SELECT result.analysis_result_id,
        result.analysis_result_status AS status,
        result.analysis_result_is_locked AS is_locked,
        result.updated_time AS updated_at
-  FROM target_model
+  FROM target_project
   JOIN workflow.analysis_result AS result
-    ON result.model_id = target_model.model_id
+    ON result.project_id = target_project.project_id
   LEFT JOIN workflow.attribute_profile AS from_profile
-    ON from_profile.model_id = result.model_id
+    ON from_profile.project_id = result.project_id
    AND from_profile.object_id = result.from_object_id
    AND from_profile.attribute_id = result.from_attribute_id
   LEFT JOIN workflow.attribute_profile AS to_profile
-    ON to_profile.model_id = result.model_id
+    ON to_profile.project_id = result.project_id
    AND to_profile.object_id = result.to_object_id
    AND to_profile.attribute_id = result.to_attribute_id
-  JOIN model.model_input_scope AS from_scope
-    ON from_scope.model_id = target_model.model_id
+  JOIN project.project_input_scope AS from_scope
+    ON from_scope.project_id = target_project.project_id
    AND from_scope.object_id = result.from_object_id
    AND from_scope.is_active
-  JOIN model.model_input_scope AS to_scope
-    ON to_scope.model_id = target_model.model_id
+  JOIN project.project_input_scope AS to_scope
+    ON to_scope.project_id = target_project.project_id
    AND to_scope.object_id = result.to_object_id
    AND to_scope.is_active
   JOIN visible_objects AS from_visible
@@ -208,12 +208,12 @@ visible_objects AS (
       ) AS visible_object
 )
 ,
-target_model AS (
-    SELECT target_model.model_id
-      FROM model.model AS target_model
-     WHERE target_model.tenant_id = %s
-       AND target_model.model_id = %s
-       AND target_model.is_active
+target_project AS (
+    SELECT target_project.project_id
+      FROM project.project AS target_project
+     WHERE target_project.tenant_id = %s
+       AND target_project.project_id = %s
+       AND target_project.is_active
 )
 SELECT result.analysis_result_id,
        result.from_object_id,
@@ -272,23 +272,23 @@ SELECT result.analysis_result_id,
        result.analysis_result_is_locked AS is_locked,
        result.created_time AS created_at,
        result.updated_time AS updated_at
-  FROM target_model
+  FROM target_project
   JOIN workflow.analysis_result AS result
-    ON result.model_id = target_model.model_id
+    ON result.project_id = target_project.project_id
   LEFT JOIN workflow.attribute_profile AS from_profile
-    ON from_profile.model_id = result.model_id
+    ON from_profile.project_id = result.project_id
    AND from_profile.object_id = result.from_object_id
    AND from_profile.attribute_id = result.from_attribute_id
   LEFT JOIN workflow.attribute_profile AS to_profile
-    ON to_profile.model_id = result.model_id
+    ON to_profile.project_id = result.project_id
    AND to_profile.object_id = result.to_object_id
    AND to_profile.attribute_id = result.to_attribute_id
-  JOIN model.model_input_scope AS from_scope
-    ON from_scope.model_id = target_model.model_id
+  JOIN project.project_input_scope AS from_scope
+    ON from_scope.project_id = target_project.project_id
    AND from_scope.object_id = result.from_object_id
    AND from_scope.is_active
-  JOIN model.model_input_scope AS to_scope
-    ON to_scope.model_id = target_model.model_id
+  JOIN project.project_input_scope AS to_scope
+    ON to_scope.project_id = target_project.project_id
    AND to_scope.object_id = result.to_object_id
    AND to_scope.is_active
   JOIN visible_objects AS from_visible
@@ -348,7 +348,7 @@ class AnalysisReviewService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: AnalysisFindingFilters,
         page_size: int,
         cursor: str | None,
@@ -359,9 +359,9 @@ class AnalysisReviewService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: AnalysisFindingFilters,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> MetadataWorkbookDownload: ...
 
     async def read_analysis_finding(
@@ -369,7 +369,7 @@ class AnalysisReviewService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         analysis_result_id: int,
     ) -> AnalysisFindingDetail: ...
 
@@ -382,9 +382,9 @@ class AnalysisReviewDatabase(Protocol):
     ) -> AbstractAsyncContextManager[ReadTransaction]: ...
 
 
-class _ModelHeader(ReviewContract):
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+class _ProjectHeader(ReviewContract):
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
 
 
 class DatabaseAnalysisReviewService:
@@ -404,7 +404,7 @@ class DatabaseAnalysisReviewService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: AnalysisFindingFilters,
         page_size: int,
         cursor: str | None,
@@ -413,7 +413,7 @@ class DatabaseAnalysisReviewService:
             json.dumps(
                 {
                     "filters": filters.model_dump(mode="json"),
-                    "model_id": model_id,
+                    "project_id": project_id,
                     "tenant_id": tenant_id,
                 },
                 separators=(",", ":"),
@@ -426,7 +426,7 @@ class DatabaseAnalysisReviewService:
         header, rows = await self._load_findings(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=filters,
             limit=page_size + 1,
             offset=offset,
@@ -439,8 +439,8 @@ class DatabaseAnalysisReviewService:
                 offset=offset + page_size,
             )
         return AnalysisFindingPage(
-            model_id=header.model_id,
-            model_revision=header.model_revision,
+            project_id=header.project_id,
+            project_revision=header.project_revision,
             items=tuple(_normalize_analysis_summary(row) for row in rows[:page_size]),
             next_cursor=next_cursor,
         )
@@ -450,7 +450,7 @@ class DatabaseAnalysisReviewService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: AnalysisFindingFilters,
         limit: int,
         offset: int,
@@ -463,20 +463,20 @@ class DatabaseAnalysisReviewService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
             header_row = await transaction.fetch_one(
-                _MODEL_HEADER_SQL,
-                (tenant_id, model_id),
+                _PROJECT_HEADER_SQL,
+                (tenant_id, project_id),
             )
             if header_row is None:
-                raise ModelNotFoundError()
+                raise ProjectNotFoundError()
             rows = await transaction.fetch_all(
                 _ANALYSIS_FINDINGS_SQL,
                 (
                     tenant_id,
                     tenant_id,
-                    model_id,
+                    project_id,
                     filters.object_id,
                     filters.object_id,
                     filters.object_id,
@@ -497,27 +497,27 @@ class DatabaseAnalysisReviewService:
                 ),
             )
 
-        return _ModelHeader.model_validate(header_row), rows
+        return _ProjectHeader.model_validate(header_row), rows
 
     async def export_analysis_findings(
         self,
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: AnalysisFindingFilters,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> MetadataWorkbookDownload:
         header, rows = await self._load_findings(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=filters,
             limit=MAX_ANALYSIS_FINDINGS + 1,
             offset=0,
         )
-        if header.model_revision != expected_model_revision:
-            raise ModelRevisionConflictError()
+        if header.project_revision != expected_project_revision:
+            raise ProjectRevisionConflictError()
         try:
             content = build_analysis_workbook(
                 findings=tuple(_normalize_analysis_summary(row) for row in rows)
@@ -526,7 +526,7 @@ class DatabaseAnalysisReviewService:
             raise InvalidRequestError(str(error)) from None
         return MetadataWorkbookDownload(
             content=content,
-            filename=f"gds_analysis__model_{model_id}__r{header.model_revision}.xlsx",
+            filename=f"gds_analysis__project_{project_id}__r{header.project_revision}.xlsx",
             sheet_count=1,
         )
 
@@ -535,7 +535,7 @@ class DatabaseAnalysisReviewService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         analysis_result_id: int,
     ) -> AnalysisFindingDetail:
         async with self._database.read_transaction(
@@ -546,17 +546,17 @@ class DatabaseAnalysisReviewService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
             header_row = await transaction.fetch_one(
-                _MODEL_HEADER_SQL,
-                (tenant_id, model_id),
+                _PROJECT_HEADER_SQL,
+                (tenant_id, project_id),
             )
             if header_row is None:
-                raise ModelNotFoundError()
+                raise ProjectNotFoundError()
             row = await transaction.fetch_one(
                 _ANALYSIS_FINDING_DETAIL_SQL,
-                (tenant_id, tenant_id, model_id, analysis_result_id),
+                (tenant_id, tenant_id, project_id, analysis_result_id),
             )
         if row is None:
             raise AnalysisFindingNotFoundError()

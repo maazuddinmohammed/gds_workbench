@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from typing import Any, Literal, LiteralString, Protocol, cast
 
-from gds_etl_workbench.application.change_sets.model_validation import (
+from gds_etl_workbench.application.change_sets.project_validation import (
     CodeGenerationTargetContext,
-    PhysicalModelCatalog,
+    PhysicalProjectCatalog,
     validation_code_context_digest,
     validation_mapping_context_digest,
 )
@@ -19,14 +19,14 @@ from gds_etl_workbench.domain.modeling_records import (
     GeneratedCodeRecord,
     ValidationCheckRecord,
     ValidationGroupRecord,
-    normalize_model_key_value,
+    normalize_project_key_value,
 )
-from gds_etl_workbench.domain.snapshots.model import ModelSnapshot
+from gds_etl_workbench.domain.snapshots.project import ProjectSnapshot
 from gds_etl_workbench.infrastructure.postgres import ReadTransaction
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 
 from gds_workbench_api.features.workflows.authoring.context import (
-    load_frozen_model_graph,
+    load_frozen_project_graph,
     reject_forbidden_provider_json,
 )
 from gds_workbench_api.features.workflows.authoring.plan import AgentRunPlan
@@ -38,21 +38,21 @@ SELECT tenant.tenant_code,
        selection.system_code,
        selection.selection_order
   FROM application.workflow_run AS run
-  JOIN model.model AS target_model
-    ON target_model.model_id = run.model_id
-   AND target_model.tenant_id = %s
-   AND target_model.is_active
-   AND target_model.model_revision = run.model_revision
+  JOIN project.project AS target_project
+    ON target_project.project_id = run.project_id
+   AND target_project.tenant_id = %s
+   AND target_project.is_active
+   AND target_project.project_revision = run.project_revision
   JOIN core.tenant AS tenant
-    ON tenant.tenant_id = target_model.tenant_id
+    ON tenant.tenant_id = target_project.tenant_id
    AND tenant.is_active
   JOIN application.workflow_run_system_selection AS selection
     ON selection.workflow_run_id = run.workflow_run_id
-   AND selection.model_id = run.model_id
- WHERE run.model_id = %s
+   AND selection.project_id = run.project_id
+ WHERE run.project_id = %s
    AND run.workflow_run_id = %s
-   AND run.model_revision = %s
-   AND run.model_workflow = 'validation'
+   AND run.project_revision = %s
+   AND run.project_workflow = 'validation'
    AND run.workflow_run_state = 'running'
  ORDER BY selection.selection_order,
           selection.workflow_run_system_selection_id
@@ -61,29 +61,29 @@ SELECT tenant.tenant_code,
 _TARGET_CONTEXT_SQL: LiteralString = """
 WITH requested_run AS MATERIALIZED (
     SELECT run.workflow_run_id,
-           run.model_id
+           run.project_id
       FROM application.workflow_run AS run
-      JOIN model.model AS target_model
-        ON target_model.model_id = run.model_id
-       AND target_model.tenant_id = %s
-       AND target_model.is_active
-       AND target_model.model_revision = run.model_revision
-     WHERE run.model_id = %s
+      JOIN project.project AS target_project
+        ON target_project.project_id = run.project_id
+       AND target_project.tenant_id = %s
+       AND target_project.is_active
+       AND target_project.project_revision = run.project_revision
+     WHERE run.project_id = %s
        AND run.workflow_run_id = %s
-       AND run.model_revision = %s
-       AND run.model_workflow = 'validation'
+       AND run.project_revision = %s
+       AND run.project_workflow = 'validation'
        AND run.workflow_run_state = 'running'
 ), selected_system AS MATERIALIZED (
     SELECT selection.system_id
       FROM requested_run AS run
       JOIN application.workflow_run_system_selection AS selection
         ON selection.workflow_run_id = run.workflow_run_id
-       AND selection.model_id = run.model_id
+       AND selection.project_id = run.project_id
 ), target_context AS MATERIALIZED (
     SELECT context.*
       FROM requested_run AS run
       JOIN LATERAL workflow.list_code_generation_target_context(
-          run.model_id,
+          run.project_id,
           'logical_entity',
           NULL
       ) AS context ON TRUE
@@ -91,7 +91,7 @@ WITH requested_run AS MATERIALIZED (
     SELECT context.*
       FROM requested_run AS run
       JOIN LATERAL workflow.list_code_generation_target_context(
-          run.model_id,
+          run.project_id,
           'dimensional_entity',
           NULL
       ) AS context ON TRUE
@@ -143,7 +143,7 @@ SELECT context.modeled_entity_id,
                ON system.system_id = source.source_system_id
             WHERE source.generated_code_id = artifact.generated_code_id
        ) AS assignment
-       WHERE artifact.model_id = context.model_id
+       WHERE artifact.project_id = context.project_id
                   AND artifact.modeled_entity_type = context.modeled_entity_type
                   AND coalesce(artifact.logical_entity_id, artifact.dimensional_entity_id) =
                       context.modeled_entity_id
@@ -166,18 +166,18 @@ SELECT context.modeled_entity_id,
 _APPLIED_VALIDATION_SQL: LiteralString = """
 WITH requested_run AS MATERIALIZED (
     SELECT run.workflow_run_id,
-           run.model_id,
-           target_model.tenant_id
+           run.project_id,
+           target_project.tenant_id
       FROM application.workflow_run AS run
-      JOIN model.model AS target_model
-        ON target_model.model_id = run.model_id
-       AND target_model.tenant_id = %s
-       AND target_model.is_active
-       AND target_model.model_revision = run.model_revision
-     WHERE run.model_id = %s
+      JOIN project.project AS target_project
+        ON target_project.project_id = run.project_id
+       AND target_project.tenant_id = %s
+       AND target_project.is_active
+       AND target_project.project_revision = run.project_revision
+     WHERE run.project_id = %s
        AND run.workflow_run_id = %s
-       AND run.model_revision = %s
-       AND run.model_workflow = 'validation'
+       AND run.project_revision = %s
+       AND run.project_workflow = 'validation'
        AND run.workflow_run_state = 'running'
 )
 SELECT tenant.tenant_code,
@@ -206,11 +206,11 @@ SELECT tenant.tenant_code,
   JOIN core.tenant AS tenant
     ON tenant.tenant_id = run.tenant_id
   JOIN workflow.validation_group AS validation_group
-    ON validation_group.model_id = run.model_id
+    ON validation_group.project_id = run.project_id
    AND validation_group.tenant_id = run.tenant_id
   JOIN application.workflow_run_system_selection AS selection
     ON selection.workflow_run_id = run.workflow_run_id
-   AND selection.model_id = run.model_id
+   AND selection.project_id = run.project_id
    AND selection.system_id = validation_group.system_id
   LEFT JOIN workflow.validation_check AS validation_check
     ON validation_check.validation_group_id = validation_group.validation_group_id
@@ -277,8 +277,8 @@ class ValidationSystemAuthoringContext(BaseModel):
 
 
 class ValidationExecutionContext(BaseModel):
-    snapshot: ModelSnapshot | None = Field(default=None, repr=False, exclude=True)
-    physical_scope: PhysicalModelCatalog | None = Field(default=None, repr=False, exclude=True)
+    snapshot: ProjectSnapshot | None = Field(default=None, repr=False, exclude=True)
+    physical_scope: PhysicalProjectCatalog | None = Field(default=None, repr=False, exclude=True)
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -296,7 +296,7 @@ class PostgresValidationContextRepository:
         plan: AgentRunPlan,
     ) -> ValidationExecutionContext:
         if (
-            plan.model_workflow != "validation"
+            plan.project_workflow != "validation"
             or plan.workflow_execution_mode is not None
             or not plan.selected_system_codes
             or plan.selected_object_ids
@@ -305,9 +305,9 @@ class PostgresValidationContextRepository:
             raise InvalidRequestError("The Validation run plan is invalid.")
         parameters = (
             tenant_id,
-            plan.model_id,
+            plan.project_id,
             plan.workflow_run_id,
-            plan.model_revision,
+            plan.project_revision,
         )
         system_rows = await transaction.fetch_all(_SYSTEM_SELECTION_SQL, parameters)
         target_rows = await transaction.fetch_all(_TARGET_CONTEXT_SQL, parameters)
@@ -319,7 +319,7 @@ class PostgresValidationContextRepository:
                 target_rows=target_rows,
                 applied_rows=applied_rows,
             )
-            snapshot, physical_scope = await load_frozen_model_graph(
+            snapshot, physical_scope = await load_frozen_project_graph(
                 cast(ReadTransaction, transaction), tenant_id=tenant_id, plan=plan
             )
             return context.model_copy(
@@ -361,7 +361,7 @@ def _assemble_context(
     generated_code = tuple(artifact for target in targets for artifact in target.generated_code)
     systems: list[ValidationSystemAuthoringContext] = []
     for position, system_code in enumerate(selected_systems, start=1):
-        normalized_system = normalize_model_key_value(system_code)
+        normalized_system = normalize_project_key_value(system_code)
         relevant_targets = tuple(
             target
             for target in targets
@@ -371,7 +371,8 @@ def _assemble_context(
             )
             and normalized_system
             in {
-                normalize_model_key_value(source_code) for source_code in target.source_system_codes
+                normalize_project_key_value(source_code)
+                for source_code in target.source_system_codes
             }
         )
         mapping_digest = validation_mapping_context_digest(digest_contexts, system_code)
@@ -387,16 +388,16 @@ def _assemble_context(
         system_groups = tuple(
             group
             for group in groups
-            if normalize_model_key_value(group.system_code) == normalized_system
+            if normalize_project_key_value(group.system_code) == normalized_system
         )
         group_names = {
-            normalize_model_key_value(group.validation_group_name) for group in system_groups
+            normalize_project_key_value(group.validation_group_name) for group in system_groups
         }
         system_checks = tuple(
             check
             for check in checks
-            if normalize_model_key_value(check.system_code) == normalized_system
-            and normalize_model_key_value(check.validation_group_name) in group_names
+            if normalize_project_key_value(check.system_code) == normalized_system
+            and normalize_project_key_value(check.validation_group_name) in group_names
         )
         current_group_names = tuple(
             group.validation_group_name
@@ -404,7 +405,7 @@ def _assemble_context(
             if group_witnesses.get(
                 (
                     normalized_system,
-                    normalize_model_key_value(group.validation_group_name),
+                    normalize_project_key_value(group.validation_group_name),
                 )
             )
             == (mapping_digest, code_digest)
@@ -425,7 +426,7 @@ def _assemble_context(
                     str(row["validation_group_name"])
                     for row in applied_rows
                     if row not in scoped_rows
-                    and normalize_model_key_value(str(row.get("system_code", "")))
+                    and normalize_project_key_value(str(row.get("system_code", "")))
                     == normalized_system
                 ),
                 tenant_code=tenant_code,
@@ -452,7 +453,7 @@ def _selected_systems(
         system_codes.append(_required_text(row, "system_code", maximum=100))
     if len(tenant_codes) != 1 or tuple(system_codes) != plan.selected_system_codes:
         raise InvalidRequestError("The Validation System selection changed.")
-    normalized = [normalize_model_key_value(code) for code in system_codes]
+    normalized = [normalize_project_key_value(code) for code in system_codes]
     if len(normalized) != len(set(normalized)):
         raise InvalidRequestError("The Validation System selection is ambiguous.")
     return next(iter(tenant_codes)), tuple(system_codes)
@@ -474,7 +475,7 @@ def validation_mapping_target_from_row(row: dict[str, Any]) -> ValidationMapping
     source_codes = tuple(
         _required_nested_text(source, "system_code", maximum=100) for source in sources
     )
-    if len({normalize_model_key_value(code) for code in source_codes}) != len(source_codes):
+    if len({normalize_project_key_value(code) for code in source_codes}) != len(source_codes):
         raise InvalidRequestError("The Validation Mapping context is ambiguous.")
     context = ValidationMappingTargetContext(
         modeled_entity_id=_positive_int(row, "modeled_entity_id"),
@@ -515,10 +516,10 @@ def _generated_code(
         )
         if (
             record.modeled_entity_type != context.modeled_entity_type
-            or normalize_model_key_value(record.modeled_entity_schema_name)
-            != normalize_model_key_value(context.modeled_entity_schema_name)
-            or normalize_model_key_value(record.modeled_entity_name)
-            != normalize_model_key_value(context.modeled_entity_name)
+            or normalize_project_key_value(record.modeled_entity_schema_name)
+            != normalize_project_key_value(context.modeled_entity_schema_name)
+            or normalize_project_key_value(record.modeled_entity_name)
+            != normalize_project_key_value(context.modeled_entity_name)
             or record.generated_code_status != "active"
         ):
             raise InvalidRequestError("The Validation Code context is unavailable.")
@@ -537,7 +538,7 @@ def _applied_validation(
     dict[tuple[str, str], tuple[str, str | None]],
 ]:
     normalized_systems = {
-        normalize_model_key_value(system_code) for system_code in selected_systems
+        normalize_project_key_value(system_code) for system_code in selected_systems
     }
     groups: dict[tuple[str, str], ValidationGroupRecord] = {}
     checks: dict[tuple[str, str, str], ValidationCheckRecord] = {}
@@ -546,8 +547,8 @@ def _applied_validation(
         row_tenant = _required_text(row, "tenant_code", maximum=100)
         system_code = _required_text(row, "system_code", maximum=100)
         if (
-            normalize_model_key_value(row_tenant) != normalize_model_key_value(tenant_code)
-            or normalize_model_key_value(system_code) not in normalized_systems
+            normalize_project_key_value(row_tenant) != normalize_project_key_value(tenant_code)
+            or normalize_project_key_value(system_code) not in normalized_systems
         ):
             continue
         group = ValidationGroupRecord.model_validate(
@@ -562,8 +563,8 @@ def _applied_validation(
             strict=True,
         )
         group_key = (
-            normalize_model_key_value(system_code),
-            normalize_model_key_value(group.validation_group_name),
+            normalize_project_key_value(system_code),
+            normalize_project_key_value(group.validation_group_name),
         )
         prior_group = groups.setdefault(group_key, group)
         if prior_group != group:
@@ -606,7 +607,7 @@ def _applied_validation(
         )
         check_key = (
             *group_key,
-            normalize_model_key_value(check.validation_check_name),
+            normalize_project_key_value(check.validation_check_name),
         )
         if check_key in checks:
             raise InvalidRequestError("The applied Validation context is ambiguous.")

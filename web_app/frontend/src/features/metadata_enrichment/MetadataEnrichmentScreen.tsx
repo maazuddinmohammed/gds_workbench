@@ -5,11 +5,11 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 
 import { ApiError } from "../../core/http";
 import { formatRequiredDateTime, zoneLabel } from "../../shared/presentation";
-import type { ModelDetail } from "../models/api";
-import type { ModelInputScopeApi, ModelInputScopeFilters, ModelInputScopeObject } from "../model_input_scope/api";
-import { ScopeFilterForm } from "../model_input_scope/ModelInputScopeScreen";
-import { useScopeFilterChoices } from "../model_input_scope/scopeFilterChoices";
-import type { ObjectAttribute } from "../model_input_scope/api";
+import type { ProjectDetail } from "../projects/api";
+import type { ProjectInputScopeApi, ProjectInputScopeFilters, ProjectInputScopeObject } from "../project_input_scope/api";
+import { ScopeFilterForm } from "../project_input_scope/ProjectInputScopeScreen";
+import { useScopeFilterChoices } from "../project_input_scope/scopeFilterChoices";
+import type { ObjectAttribute } from "../project_input_scope/api";
 import { WorkflowRunDialog } from "../workflows/WorkflowRunDialog";
 import { WorkflowTokenUsage } from "../workflows/WorkflowTokenUsage";
 import { RunStateBadge } from "../workflows/presentation";
@@ -17,13 +17,13 @@ import { workflowRunQueryKeys, type WorkflowCreationApi, type WorkflowRunMonitor
 import type { EnrichmentEditFields, ReviewEnrichmentCommand, MetadataEnrichmentTransport } from "./api";
 
 type EnrichmentApi = WorkflowCreationApi & WorkflowRunMonitorApi & MetadataEnrichmentTransport
-  & Pick<ModelInputScopeApi, "listModelInputScope" | "readModelInputScopeObject">
+  & Pick<ProjectInputScopeApi, "listProjectInputScope" | "readProjectInputScopeObject">
 ;
 type DescriptionRecord = { type: "object" | "attribute"; id: number; objectId: number; name: string; description: string | null; revision: string; truncated: boolean; attribute?: ObjectAttribute };
 type ReviewRequest = { command: ReviewEnrichmentCommand; key: string };
 
-export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }: {
-  api: EnrichmentApi; tenantId: number; model: ModelDetail; hasTenantLock: boolean;
+export function MetadataEnrichmentScreen({ api, tenantId, project, hasTenantLock }: {
+  api: EnrichmentApi; tenantId: number; project: ProjectDetail; hasTenantLock: boolean;
 }) {
   const client = useQueryClient();
   const [runDialog, setRunDialog] = useState<"object" | "attribute" | null>(null);
@@ -32,7 +32,7 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
   const [objectId, setObjectId] = useState<number | null>(null);
   const [attributePage, setAttributePage] = useState(0);
   const [editor, setEditor] = useState<DescriptionRecord | null>(null);
-  const [filters, setFilters] = useState<ModelInputScopeFilters>({});
+  const [filters, setFilters] = useState<ProjectInputScopeFilters>({});
   const [notice, setNotice] = useState("");
   const [refreshRequired, setRefreshRequired] = useState(false);
   const pendingReview = useRef<ReviewRequest | null>(null);
@@ -40,30 +40,30 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
   const editTrigger = useRef<HTMLElement | null>(null);
   const returnObject = useRef<number | null>(null);
   const objects = useInfiniteQuery({
-    queryKey: ["enrichment-objects", tenantId, model.model_id, filters],
-    queryFn: ({ pageParam }) => api.listEnrichmentObjects(tenantId, model.model_id, filters, 200, pageParam),
+    queryKey: ["enrichment-objects", tenantId, project.project_id, filters],
+    queryFn: ({ pageParam }) => api.listEnrichmentObjects(tenantId, project.project_id, filters, 200, pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.next_cursor ?? undefined,
   });
-  const sourceChoices = useScopeFilterChoices(api, tenantId, model.model_id, model.model_revision);
+  const sourceChoices = useScopeFilterChoices(api, tenantId, project.project_id, project.project_revision);
   const detail = useQuery({
-    queryKey: ["enrichment-object", tenantId, model.model_id, objectId],
-    queryFn: () => api.readEnrichmentObject(tenantId, model.model_id, objectId!), enabled: objectId !== null,
+    queryKey: ["enrichment-object", tenantId, project.project_id, objectId],
+    queryFn: () => api.readEnrichmentObject(tenantId, project.project_id, objectId!), enabled: objectId !== null,
   });
   const refreshMetadata = async () => {
-    await Promise.all(["enrichment-objects", "enrichment-object", "model-overview", "model-input-scope", "model-scope-filter-choices", "model-input-scope-object", "metadata-object", "metadata-objects", "metadata-rows", "workflow-run-enrichment-scope"]
+    await Promise.all(["enrichment-objects", "enrichment-object", "project-overview", "project-input-scope", "project-scope-filter-choices", "project-input-scope-object", "metadata-object", "metadata-objects", "metadata-rows", "workflow-run-enrichment-scope"]
       .map((prefix) => client.invalidateQueries({ queryKey: [prefix, tenantId] })));
   };
   const review = useMutation({
     mutationFn: async (request: ReviewRequest) => {
-      const receipt = await api.reviewEnrichment(tenantId, model.model_id, model.model_revision, request.command, request.key);
+      const receipt = await api.reviewEnrichment(tenantId, project.project_id, project.project_revision, request.command, request.key);
       const expected = new Set(request.command.records.map((item) => item.record_id));
       if (receipt.records.length !== expected.size || new Set(receipt.records.map((item) => item.record_id)).size !== expected.size
         || receipt.records.some((item) => !expected.has(item.record_id) || !/^[0-9a-f]{64}$/.test(item.review_revision))) throw new Error("Outcome unconfirmed");
       return receipt;
     },
     onSuccess: async () => {
-      pendingReview.current = null; setEditor(null); setSelectedIds(new Set()); setNotice("Model enrichment saved.");
+      pendingReview.current = null; setEditor(null); setSelectedIds(new Set()); setNotice("Project enrichment saved.");
       await refreshMetadata();
     },
     onError: (error) => {
@@ -73,14 +73,14 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
     },
   });
   const download = useMutation({ mutationFn: async () => {
-    const file = await api.exportEnrichment(tenantId, model.model_id);
+    const file = await api.exportEnrichment(tenantId, project.project_id);
     const url = URL.createObjectURL(file.blob);
     try { const link = document.createElement("a"); link.href = url; link.download = file.filename; document.body.append(link); link.click(); link.remove(); }
     finally { URL.revokeObjectURL(url); }
   }});
   const uncertain = review.isError && pendingReview.current !== null;
   const busy = review.isPending || uncertain;
-  const changed = objects.data?.pages.some((page) => page.model_revision !== model.model_revision) ?? false;
+  const changed = objects.data?.pages.some((page) => page.project_revision !== project.project_revision) ?? false;
   const current = !detail.isError && detail.data?.object_id === objectId ? detail.data : undefined;
   const rows = objects.isError || changed ? [] : objects.data?.pages.flatMap((page) => page.items) ?? [];
   const submitReview = (command: ReviewEnrichmentCommand) => {
@@ -101,7 +101,7 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
       editTrigger.current.focus(); editTrigger.current = null;
     }
   }, [editor, review.isPending, objects.isFetching, detail.isFetching]);
-  const recordActions = (object: ModelInputScopeObject, attribute?: ObjectAttribute) => {
+  const recordActions = (object: ProjectInputScopeObject, attribute?: ObjectAttribute) => {
     const record: DescriptionRecord = { type: attribute ? "attribute" : "object", id: attribute?.attribute_id ?? object.object_id,
       objectId: object.object_id, name: attribute?.attribute_name ?? object.object_name,
       description: attribute ? attribute.attribute_description : object.object_description ?? null,
@@ -140,8 +140,8 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
     : "Could not save. Check the record lock and your Tenant Lock, then refresh.";
 
   return <WorkflowCommandCenter enabled={objectId === null} filterCount={Object.values(filters).filter(Boolean).length} className="metadata-enrichment-screen page-enter">
-    <header className="workflow-commandbar model-section-toolbar">
-      <h1 className="model-section-title sr-only">Enrichment</h1>
+    <header className="workflow-commandbar project-section-toolbar">
+      <h1 className="project-section-title sr-only">Enrichment</h1>
       <div className="workflow-command-context">
         <span className={hasTenantLock ? "lock-context is-held" : "lock-context"}>
           {hasTenantLock ? "Tenant Lock held" : "Tenant Lock required to run"}
@@ -159,11 +159,11 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
       </div>
     </header>
     {objectId === null ? <>
-      <WorkflowRunMonitor api={api} enrichmentApi={api} tenantId={tenantId} modelId={model.model_id}
-        modelRevision={model.model_revision} workflow="metadata_enrichment" hasTenantLock={hasTenantLock}
+      <WorkflowRunMonitor api={api} enrichmentApi={api} tenantId={tenantId} projectId={project.project_id}
+        projectRevision={project.project_revision} workflow="metadata_enrichment" hasTenantLock={hasTenantLock}
         focusRunId={recentRunId} onApplied={refreshMetadata} />
       {selected.length > 0 ? lockControls : null}
-    </> : <EnrichmentHistory api={api} tenantId={tenantId} modelId={model.model_id} focusRunId={recentRunId} onRefresh={refresh} controls={lockControls} disabled={busy} />}
+    </> : <EnrichmentHistory api={api} tenantId={tenantId} projectId={project.project_id} focusRunId={recentRunId} onRefresh={refresh} controls={lockControls} disabled={busy} />}
     {!editor && review.isError ? <div role="alert"><p>{error}</p>{uncertain ? <button type="button" className="button button-secondary button-small" onClick={() => { if (pendingReview.current) review.mutate(pendingReview.current); }}>Retry same save</button> : null}</div> : null}
     {download.isError ? <p role="alert">Could not export the dictionary. Refresh and try again.</p> : null}
     {notice ? <p role="status">{notice}</p> : null}
@@ -173,7 +173,7 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
         setSelectedIds(new Set());
         setFilters(nextFilters);
       }} /></WorkflowFilters>
-      {objects.isPending ? <p className="surface-state" aria-busy="true">Loading metadata…</p> : objects.isError || changed ? <p className="surface-state" role="alert">Metadata is unavailable or the Model changed. Refresh to retry.</p> : <>
+      {objects.isPending ? <p className="surface-state" aria-busy="true">Loading metadata…</p> : objects.isError || changed ? <p className="surface-state" role="alert">Metadata is unavailable or the Project changed. Refresh to retry.</p> : <>
         <div className="workflow-table-scroll table-scroll"><table className="enrichment-metadata-table" aria-label="Object metadata"><thead><tr><th className="selection-cell">{checkbox()}</th><th>Source Tenant</th><th>Schema</th><th>Object</th><th>Object description</th><th>Zone</th><th>Attributes</th><th>Actions</th><th>Details</th></tr></thead>
           <tbody>{rows.map((object) => <tr key={object.object_id}><td className="selection-cell">{checkbox(object.object_id)}</td><td><strong>{object.source_tenant_code}</strong></td><td>{object.object_schema}</td><td><strong>{object.object_name}</strong>{object.is_locked ? <span className="metadata-lock-label">Locked</span> : null}</td><td className="enrichment-description">{object.object_description || <span className="field-help">No description</span>}</td><td>{zoneLabel(object.zone_code)}</td><td>{object.attribute_count}</td><td>{recordActions(object)}</td><td><button type="button" className="text-action" id={`enrichment-object-${object.object_id}`} disabled={busy} aria-label={`Show details for ${object.object_name}`} onClick={() => { returnObject.current = object.object_id; setObjectId(object.object_id); }}>Show details</button></td></tr>)}</tbody>
         </table></div>
@@ -182,9 +182,17 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
       </>}
     </section> : <section className="workflow-surface enrichment-object-detail" aria-label="Object metadata details">
       <button type="button" className="text-action" disabled={busy} onClick={() => setObjectId(null)}>← Back to Objects</button>
-      <header className="enrichment-detail-header"><div><small>{current?.object_schema}</small><h2 tabIndex={-1} ref={heading}>{current?.object_name ?? "Object details"}</h2></div>{current ? recordActions(current) : null}</header>
+      <header className="enrichment-detail-header">
+        <div className="workspace-record-heading">
+          <h2 tabIndex={-1} ref={heading}>{current?.object_name ?? "Object details"}</h2>
+          {current ? <dl className="workspace-identity-context" aria-label="Object identity">
+            <div><dt>Schema</dt><dd>{current.object_schema}</dd></div>
+          </dl> : null}
+          {current?.object_description ? <p>{current.object_description}</p> : null}
+        </div>
+        {current ? recordActions(current) : null}
+      </header>
       {detail.isPending ? <p aria-busy="true">Loading Attributes…</p> : !current ? <p role="alert">Object details unavailable. Refresh to retry.</p> : <>
-        <p className="enrichment-object-description">{current.object_description || "No description"}</p>
         {current.is_locked ? <p className="lock-context">Object enrichment locked. Unlock it to edit results.</p> : null}
         <div className="workflow-table-scroll table-scroll"><table className="enrichment-metadata-table" aria-label={`Attributes for ${current.object_name}`}><thead><tr><th className="selection-cell">{checkbox()}</th><th>Attribute</th><th>Position</th><th>Metadata type</th><th>Inferred type</th><th>Description</th><th>Natural key</th><th>Primary key</th><th>Nullable</th><th>PII</th><th>Actions</th></tr></thead><tbody>
           {current.attributes.slice(attributePage * 50, (attributePage + 1) * 50).map((attribute) => <tr key={attribute.attribute_id}><td className="selection-cell">{checkbox(attribute.attribute_id)}</td><td><strong>{attribute.attribute_name}</strong>{attribute.is_locked || !attribute.is_active ? <span className="metadata-lock-label">{!attribute.is_active ? "Inactive" : "Locked"}</span> : null}</td><td>{attribute.attribute_ordinal_position}</td><td>{attribute.attribute_data_type}</td><td>{attribute.attribute_inferred_data_type ?? <span className="field-help">Not inferred</span>}</td><td className="enrichment-description">{attribute.attribute_description || <span className="field-help">No description</span>}</td>{(["is_natural_key", "is_primary_key", "is_nullable", "is_pii"] as const).map((flag) => <td key={flag}>{attribute.enrichment?.[flag] == null ? "Unknown" : attribute.enrichment[flag] ? "Yes" : "No"}</td>)}<td>{recordActions(current, attribute)}</td></tr>)}
@@ -197,9 +205,9 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
     {editor ? <DescriptionEditor record={editor} busy={busy} uncertain={uncertain} canSave={hasTenantLock && !refreshRequired} error={review.isError ? error : null}
       onClose={() => setEditor(null)} onRetry={() => { if (pendingReview.current) review.mutate(pendingReview.current); }}
       onSave={(description, fields) => submitReview({ record_type: editor.type, action: "edit", records: [{ record_id: editor.id, expected_revision: editor.revision, description, ...fields }] })} /> : null}
-    {runDialog ? <WorkflowRunDialog api={{ ...api, listModelInputScope: api.listEnrichmentObjects }} tenantId={tenantId} model={model} kind="inference" workflow="metadata_enrichment" enrichmentTarget={runDialog} readEnrichmentObject={api.readEnrichmentObject} {...(current && runDialog === "attribute" ? { enrichmentObject: current } : {})} initialSelectedIds={[...selectedIds]}
-      executeCreated={async (runId, _mode, expectedModelRevision) => { await api.executeMetadataEnrichmentRun(tenantId, model.model_id, runId, expectedModelRevision); }}
-      onClose={() => setRunDialog(null)} onCreated={async (runId) => { setRecentRunId(runId); await client.invalidateQueries({ queryKey: workflowRunQueryKeys.recent(tenantId, model.model_id, "metadata_enrichment") }); }} /> : null}
+    {runDialog ? <WorkflowRunDialog api={{ ...api, listProjectInputScope: api.listEnrichmentObjects }} tenantId={tenantId} project={project} kind="inference" workflow="metadata_enrichment" enrichmentTarget={runDialog} readEnrichmentObject={api.readEnrichmentObject} {...(current && runDialog === "attribute" ? { enrichmentObject: current } : {})} initialSelectedIds={[...selectedIds]}
+      executeCreated={async (runId, _mode, expectedProjectRevision) => { await api.executeMetadataEnrichmentRun(tenantId, project.project_id, runId, expectedProjectRevision); }}
+      onClose={() => setRunDialog(null)} onCreated={async (runId) => { setRecentRunId(runId); await client.invalidateQueries({ queryKey: workflowRunQueryKeys.recent(tenantId, project.project_id, "metadata_enrichment") }); }} /> : null}
   </WorkflowCommandCenter>;
 }
 
@@ -278,16 +286,16 @@ function TechnicalDictionary({ attributes }: { attributes: ObjectAttribute[] }) 
   </section>;
 }
 
-function EnrichmentHistory({ api, tenantId, modelId, focusRunId, onRefresh, controls, disabled }: {
-  api: WorkflowRunMonitorApi; tenantId: number; modelId: number; focusRunId: number | null; onRefresh: () => Promise<void>; controls: React.ReactNode; disabled: boolean;
+function EnrichmentHistory({ api, tenantId, projectId, focusRunId, onRefresh, controls, disabled }: {
+  api: WorkflowRunMonitorApi; tenantId: number; projectId: number; focusRunId: number | null; onRefresh: () => Promise<void>; controls: React.ReactNode; disabled: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [runId, setRunId] = useState<number | null>(null);
-  const recent = useInfiniteQuery({ queryKey: workflowRunQueryKeys.recent(tenantId, modelId, "metadata_enrichment"),
-    queryFn: ({ pageParam }) => api.listWorkflowRuns(tenantId, modelId, "metadata_enrichment", "", 5, pageParam),
+  const recent = useInfiniteQuery({ queryKey: workflowRunQueryKeys.recent(tenantId, projectId, "metadata_enrichment"),
+    queryFn: ({ pageParam }) => api.listWorkflowRuns(tenantId, projectId, "metadata_enrichment", "", 5, pageParam),
     initialPageParam: undefined as string | undefined, getNextPageParam: (page) => page.next_cursor ?? undefined });
-  const detail = useQuery({ queryKey: workflowRunQueryKeys.detail(tenantId, modelId, runId ?? 0),
-    queryFn: () => api.readWorkflowRun(tenantId, modelId, runId!), enabled: runId !== null });
+  const detail = useQuery({ queryKey: workflowRunQueryKeys.detail(tenantId, projectId, runId ?? 0),
+    queryFn: () => api.readWorkflowRun(tenantId, projectId, runId!), enabled: runId !== null });
   useEffect(() => { if (focusRunId !== null) setExpanded(true); }, [focusRunId]);
   const rows = recent.data?.pages.flatMap((page) => page.items) ?? [];
   return <section className="enrichment-history" aria-label="Workflow history"><header className="workflow-run-monitor-header"><div><h2>Workflow history</h2>{!expanded && rows[0] ? <RunStateBadge state={rows[0].workflow_run_state} /> : null}</div><div className="workflow-run-monitor-actions">{controls}
@@ -296,7 +304,7 @@ function EnrichmentHistory({ api, tenantId, modelId, focusRunId, onRefresh, cont
   </div></header><div id="enrichment-run-history" hidden={!expanded}>
     {recent.isPending ? <p aria-busy="true">Loading runs…</p> : recent.isError ? <p role="alert">Workflow history unavailable. Refresh to retry.</p> : !rows.length ? <p className="empty-state compact">No enrichment runs yet.</p> : <div className="workflow-table-scroll table-scroll"><table aria-label="Enrichment runs"><thead><tr><th>Run</th><th>Status</th><th>Objects</th><th>Started</th><th>Details</th></tr></thead><tbody>
       {rows.map((run) => <Fragment key={run.workflow_run_id}><tr><td>Run {run.workflow_run_id}</td><td><RunStateBadge state={run.workflow_run_state} /></td><td>{run.selected_scope_count}</td><td>{formatRequiredDateTime(run.created_at)}</td><td><button className="text-action" type="button" aria-label={`Show run ${run.workflow_run_id} details`} aria-expanded={runId === run.workflow_run_id} onClick={() => setRunId(runId === run.workflow_run_id ? null : run.workflow_run_id)}>{runId === run.workflow_run_id ? "Hide details" : "Show details"}</button></td></tr>
-        {runId === run.workflow_run_id ? <tr><td colSpan={5}>{detail.isPending ? <p aria-busy="true">Loading run…</p> : detail.isError || detail.data?.model_workflow !== "metadata_enrichment" ? <p role="alert">Run details unavailable.</p> : <div className="enrichment-run-detail">{detail.data.failure_message ? <p role="alert">{detail.data.failure_message}</p> : null}<WorkflowTokenUsage usage={detail.data.token_usage} /></div>}</td></tr> : null}
+        {runId === run.workflow_run_id ? <tr><td colSpan={5}>{detail.isPending ? <p aria-busy="true">Loading run…</p> : detail.isError || detail.data?.project_workflow !== "metadata_enrichment" ? <p role="alert">Run details unavailable.</p> : <div className="enrichment-run-detail">{detail.data.failure_message ? <p role="alert">{detail.data.failure_message}</p> : null}<WorkflowTokenUsage usage={detail.data.token_usage} /></div>}</td></tr> : null}
       </Fragment>)}
     </tbody></table></div>}
     {recent.hasNextPage ? <button className="button button-secondary button-small" type="button" disabled={recent.isFetching} onClick={() => void recent.fetchNextPage()}>Load more runs</button> : null}

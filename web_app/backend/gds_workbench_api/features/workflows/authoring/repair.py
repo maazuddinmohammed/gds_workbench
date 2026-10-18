@@ -11,13 +11,13 @@ from importlib.resources import files
 from itertools import islice
 from typing import Literal, Protocol, cast
 
-from gds_etl_workbench.application.change_sets.contracts import MAX_MODEL_STAGE_PAYLOAD_BYTES
-from gds_etl_workbench.application.change_sets.model_validation import ModelValidationIssue
+from gds_etl_workbench.application.change_sets.contracts import MAX_PROJECT_STAGE_PAYLOAD_BYTES
+from gds_etl_workbench.application.change_sets.project_validation import ProjectValidationIssue
 from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_etl_workbench.domain.snapshots.model import (
+from gds_etl_workbench.domain.snapshots.project import (
     CHANGE_SET_DATASETS,
     DATASETS_BY_NAME,
-    build_model_dataset_schema,
+    build_project_dataset_schema,
 )
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
@@ -90,7 +90,7 @@ class AgentCandidateValidation(BaseModel):
 type AgentCandidateFinalValidation = Callable[[JsonValue], Awaitable[AgentCandidateValidation]]
 
 
-_MODEL_RECORD_DATASETS = {
+_PROJECT_RECORD_DATASETS = {
     definition.row_model.__name__: definition.name for definition in CHANGE_SET_DATASETS
 }
 _SEMANTIC_SCHEMA_KEYS = (
@@ -101,18 +101,18 @@ _SEMANTIC_SCHEMA_KEYS = (
 _MAX_PYDANTIC_VALIDATION_ISSUES = 100
 
 
-def enrich_agent_output_model_definitions(schema: dict[str, JsonValue]) -> None:
-    """Reuse exact Model field guidance without changing agent-output constraints."""
+def enrich_agent_output_project_definitions(schema: dict[str, JsonValue]) -> None:
+    """Reuse exact Project field guidance without changing agent-output constraints."""
 
     raw_definitions = schema.get("$defs")
     if not isinstance(raw_definitions, dict):
         return
     definitions = cast(dict[str, object], raw_definitions)
-    for definition_name, dataset in _MODEL_RECORD_DATASETS.items():
+    for definition_name, dataset in _PROJECT_RECORD_DATASETS.items():
         raw_definition = definitions.get(definition_name)
         if not isinstance(raw_definition, dict):
             continue
-        canonical = build_model_dataset_schema(DATASETS_BY_NAME[dataset])
+        canonical = build_project_dataset_schema(DATASETS_BY_NAME[dataset])
         definition = cast(dict[str, object], raw_definition)
         _copy_semantic_schema_guidance(definition, canonical)
         rules = canonical.get("x-gds-population-rules")
@@ -160,7 +160,7 @@ def _copy_semantic_schema_guidance(
 
 
 def parse_pydantic_candidate[CandidateT: BaseModel](
-    model: type[CandidateT],
+    project: type[CandidateT],
     candidate: JsonValue,
     *,
     maximum_issues: int = _MAX_PYDANTIC_VALIDATION_ISSUES,
@@ -179,7 +179,7 @@ def parse_pydantic_candidate[CandidateT: BaseModel](
     except TypeError, ValueError:
         return None, (_pydantic_fallback_issue(),)
     try:
-        return model.model_validate_json(raw, strict=True), ()
+        return project.model_validate_json(raw, strict=True), ()
     except ValidationError as error:
         issues = pydantic_validation_issues(error, maximum_issues=maximum_issues)
         return None, issues or (_pydantic_fallback_issue(),)
@@ -187,8 +187,8 @@ def parse_pydantic_candidate[CandidateT: BaseModel](
         return None, (_pydantic_fallback_issue(),)
 
 
-def model_validation_issues(
-    issues: tuple[ModelValidationIssue, ...],
+def project_validation_issues(
+    issues: tuple[ProjectValidationIssue, ...],
 ) -> tuple[AgentValidationIssue, ...]:
     return tuple(
         AgentValidationIssue(
@@ -370,7 +370,7 @@ class ValidationRepairRunner:
         candidate_byte_limit = (
             self._policy.max_candidate_bytes if max_candidate_bytes is None else max_candidate_bytes
         )
-        if not 1 <= candidate_byte_limit <= MAX_MODEL_STAGE_PAYLOAD_BYTES:
+        if not 1 <= candidate_byte_limit <= MAX_PROJECT_STAGE_PAYLOAD_BYTES:
             raise ValueError("max_candidate_bytes must fit the Stage payload envelope")
         original_context = deepcopy(request.context)
         context_limit = (

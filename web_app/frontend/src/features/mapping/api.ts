@@ -1,8 +1,8 @@
 import { METADATA_XLSX_MEDIA_TYPE } from "../metadata/api";
-import type { ModelRecordReviewApi, ModelRecordEditorApi } from "../model_record_review/api";
+import type { ProjectRecordReviewApi, ProjectRecordEditorApi } from "../project_record_review/api";
 import { ApiError, type HttpRequest } from "../../core/http";
 import type { JsonObject, ReviewStatus } from "../../shared/contracts";
-import type { ModelsApi } from "../models/api";
+import type { ProjectsApi } from "../projects/api";
 import type { WorkflowsApi } from "../workflows/api";
 
 export type MappingEntityType = "logical_entity" | "dimensional_entity";
@@ -70,7 +70,7 @@ export interface MappingGenerationTarget extends MappingModeledEntity {
 }
 
 export interface MappingGenerationPage {
-  model_id: number; model_revision: number; items: MappingGenerationTarget[]; next_cursor: string | null;
+  project_id: number; project_revision: number; items: MappingGenerationTarget[]; next_cursor: string | null;
 }
 
 export interface MappingObject {
@@ -85,8 +85,8 @@ export interface MappingObject {
 }
 
 export interface MappingObjectPage {
-  model_id: number;
-  model_revision: number;
+  project_id: number;
+  project_revision: number;
   items: MappingObject[];
   next_cursor: string | null;
 }
@@ -119,8 +119,8 @@ export interface MappingAttribute {
 }
 
 export interface MappingAttributePage {
-  model_id: number;
-  model_revision: number;
+  project_id: number;
+  project_revision: number;
   items: MappingAttribute[];
   next_cursor: string | null;
 }
@@ -143,30 +143,30 @@ export interface MappingAttributeDetail extends MappingAttribute {
 }
 
 export interface MappingTransport {
-  exportMapping: (tenantId: number, modelId: number, revision: number, entityType: MappingEntityType, systemCode: string) => Promise<{ blob: Blob; filename: string }>;
-  listMappingGenerationTargets: (tenantId: number, modelId: number, entityType: MappingEntityType, pageSize?: number, cursor?: string) => Promise<MappingGenerationPage>;
+  exportMapping: (tenantId: number, projectId: number, revision: number, entityType: MappingEntityType, systemCode: string) => Promise<{ blob: Blob; filename: string }>;
+  listMappingGenerationTargets: (tenantId: number, projectId: number, entityType: MappingEntityType, pageSize?: number, cursor?: string) => Promise<MappingGenerationPage>;
   listMappingObjects: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     filters?: MappingFilters,
     pageSize?: number,
     cursor?: string,
   ) => Promise<MappingObjectPage>;
   readMappingObject: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     mappingObjectId: number,
   ) => Promise<MappingObjectDetail>;
   listMappingAttributes: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     filters?: MappingFilters,
     pageSize?: number,
     cursor?: string,
   ) => Promise<MappingAttributePage>;
   readMappingAttribute: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     mappingAttributeId: number,
   ) => Promise<MappingAttributeDetail>;
   listOutputTemplates: (
@@ -178,9 +178,9 @@ export interface MappingTransport {
   ) => Promise<OutputTemplatePage>;
 }
 
-export type MappingApi = MappingTransport & ModelRecordReviewApi
-  & Pick<ModelRecordEditorApi, "readModelRecordEditor" | "saveModelRecord">
-  & Pick<ModelsApi, "listModels">
+export type MappingApi = MappingTransport & ProjectRecordReviewApi
+  & Pick<ProjectRecordEditorApi, "readProjectRecordEditor" | "saveProjectRecord">
+  & Pick<ProjectsApi, "listProjects">
   & Pick<
     WorkflowsApi,
     | "applyWorkflowDraft"
@@ -196,38 +196,38 @@ export type MappingApi = MappingTransport & ModelRecordReviewApi
 
 export function createMappingApi(request: HttpRequest): MappingTransport {
   return {
-    exportMapping: (tenantId, modelId, revision, entityType, systemCode) => request(`/api/v1/tenants/${tenantId}/models/${modelId}/mapping/export`, {
+    exportMapping: (tenantId, projectId, revision, entityType, systemCode) => request(`/api/v1/tenants/${tenantId}/projects/${projectId}/mapping/export`, {
       method: "POST", headers: { "content-type": "application/json", accept: METADATA_XLSX_MEDIA_TYPE },
-      body: JSON.stringify({ expected_model_revision: revision, entity_type: entityType, source_system_code: systemCode }),
+      body: JSON.stringify({ expected_project_revision: revision, entity_type: entityType, source_system_code: systemCode }),
     }, async (response) => {
       if (response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== METADATA_XLSX_MEDIA_TYPE) throw new ApiError(502, "invalid_response", null);
       return { blob: await response.blob(), filename: /filename="([A-Za-z0-9._-]{1,180}\.xlsx)"/.exec(response.headers.get("content-disposition") ?? "")?.[1] ?? "Mapping.xlsx" };
     }),
-    listMappingGenerationTargets: (tenantId, modelId, entityType, pageSize = 200, cursor) => {
+    listMappingGenerationTargets: (tenantId, projectId, entityType, pageSize = 200, cursor) => {
       const query = new URLSearchParams({
         entity_type: entityType,
         page_size: String(pageSize),
       });
       if (cursor) query.set("cursor", cursor);
       return request<MappingGenerationPage>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/mapping/generation-targets?${query}`,
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/mapping/generation-targets?${query}`,
       );
     },
-    listMappingObjects: (tenantId, modelId, filters = {}, pageSize = 200, cursor) =>
+    listMappingObjects: (tenantId, projectId, filters = {}, pageSize = 200, cursor) =>
       request<MappingObjectPage>(
-        mappingCollectionPath(tenantId, modelId, "objects", filters, pageSize, cursor),
+        mappingCollectionPath(tenantId, projectId, "objects", filters, pageSize, cursor),
       ),
-    readMappingObject: (tenantId, modelId, mappingObjectId) =>
+    readMappingObject: (tenantId, projectId, mappingObjectId) =>
       request<MappingObjectDetail>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/mapping/objects/${mappingObjectId}`,
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/mapping/objects/${mappingObjectId}`,
       ),
-    listMappingAttributes: (tenantId, modelId, filters = {}, pageSize = 200, cursor) =>
+    listMappingAttributes: (tenantId, projectId, filters = {}, pageSize = 200, cursor) =>
       request<MappingAttributePage>(
-        mappingCollectionPath(tenantId, modelId, "attributes", filters, pageSize, cursor),
+        mappingCollectionPath(tenantId, projectId, "attributes", filters, pageSize, cursor),
       ),
-    readMappingAttribute: (tenantId, modelId, mappingAttributeId) =>
+    readMappingAttribute: (tenantId, projectId, mappingAttributeId) =>
       request<MappingAttributeDetail>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/mapping/attributes/${mappingAttributeId}`,
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/mapping/attributes/${mappingAttributeId}`,
       ),
     listOutputTemplates: (tenantId, targetType, pageSize = 200, cursor, entityType) => {
       const query = new URLSearchParams({
@@ -245,23 +245,23 @@ export function createMappingApi(request: HttpRequest): MappingTransport {
 }
 
 export const mappingQueryKeys = {
-  objects: (tenantId: number, modelId: number, filters: unknown) => (
-    ["mapping-objects", tenantId, modelId, filters] as const
+  objects: (tenantId: number, projectId: number, filters: unknown) => (
+    ["mapping-objects", tenantId, projectId, filters] as const
   ),
-  object: (tenantId: number, modelId: number, mappingObjectId: number) => (
-    ["mapping-object", tenantId, modelId, mappingObjectId] as const
+  object: (tenantId: number, projectId: number, mappingObjectId: number) => (
+    ["mapping-object", tenantId, projectId, mappingObjectId] as const
   ),
-  attributes: (tenantId: number, modelId: number, filters: unknown) => (
-    ["mapping-attributes", tenantId, modelId, filters] as const
+  attributes: (tenantId: number, projectId: number, filters: unknown) => (
+    ["mapping-attributes", tenantId, projectId, filters] as const
   ),
-  attribute: (tenantId: number, modelId: number, mappingAttributeId: number) => (
-    ["mapping-attribute", tenantId, modelId, mappingAttributeId] as const
+  attribute: (tenantId: number, projectId: number, mappingAttributeId: number) => (
+    ["mapping-attribute", tenantId, projectId, mappingAttributeId] as const
   ),
-  runTargets: (tenantId: number, modelId: number, entityType: MappingEntityType) => (
-    ["mapping-run-targets", tenantId, modelId, entityType] as const
+  runTargets: (tenantId: number, projectId: number, entityType: MappingEntityType) => (
+    ["mapping-run-targets", tenantId, projectId, entityType] as const
   ),
-  outputTemplates: (tenantId: number, modelId: number, entityType: MappingEntityType) => (
-    ["mapping-output-templates", tenantId, modelId, entityType] as const
+  outputTemplates: (tenantId: number, projectId: number, entityType: MappingEntityType) => (
+    ["mapping-output-templates", tenantId, projectId, entityType] as const
   ),
 };
 
@@ -307,22 +307,22 @@ async function loadOutputTemplatesForTargetType(
 export async function loadMappingGenerationTargets(
   api: Pick<MappingTransport, "listMappingGenerationTargets">,
   tenantId: number,
-  modelId: number,
+  projectId: number,
   entityType: MappingEntityType,
-): Promise<{ modelRevision: number; items: MappingGenerationTarget[] }> {
+): Promise<{ projectRevision: number; items: MappingGenerationTarget[] }> {
   const items: MappingGenerationTarget[] = [];
   const seenCursors = new Set<string>();
   let cursor: string | undefined;
-  let modelRevision: number | null = null;
+  let projectRevision: number | null = null;
 
   for (;;) {
-    const response = await api.listMappingGenerationTargets(tenantId, modelId, entityType, 200, cursor);
-    if (modelRevision !== null && response.model_revision !== modelRevision) {
+    const response = await api.listMappingGenerationTargets(tenantId, projectId, entityType, 200, cursor);
+    if (projectRevision !== null && response.project_revision !== projectRevision) {
       throw new Error("Mapping target revision changed while loading");
     }
-    modelRevision = response.model_revision;
+    projectRevision = response.project_revision;
     items.push(...response.items);
-    if (!response.next_cursor) return { modelRevision, items };
+    if (!response.next_cursor) return { projectRevision, items };
     if (seenCursors.has(response.next_cursor)) {
       throw new Error("Mapping target cursor repeated");
     }
@@ -334,18 +334,18 @@ export async function loadMappingGenerationTargets(
 export async function loadMappingFilterSystems(
   api: Pick<MappingTransport, "listMappingGenerationTargets" | "listMappingObjects">,
   tenantId: number,
-  modelId: number,
+  projectId: number,
   entityType: MappingEntityType,
-): Promise<{ modelRevision: number; codes: string[] }> {
-  const targets = await loadMappingGenerationTargets(api, tenantId, modelId, entityType);
+): Promise<{ projectRevision: number; codes: string[] }> {
+  const targets = await loadMappingGenerationTargets(api, tenantId, projectId, entityType);
   const codes = new Map(targets.items.map((item) => [item.source_system.system_code.toLowerCase(), item.source_system.system_code]));
   const cursors = new Set<string>();
   let cursor: string | undefined;
   for (let page = 0; page < 250; page += 1) {
-    const saved = await api.listMappingObjects(tenantId, modelId, { entityType }, 200, cursor);
-    if (saved.model_revision !== targets.modelRevision) throw new Error("Mapping filter revision changed while loading");
+    const saved = await api.listMappingObjects(tenantId, projectId, { entityType }, 200, cursor);
+    if (saved.project_revision !== targets.projectRevision) throw new Error("Mapping filter revision changed while loading");
     for (const row of saved.items) codes.set(row.source_system.system_code.toLowerCase(), row.source_system.system_code);
-    if (!saved.next_cursor) return { modelRevision: targets.modelRevision, codes: [...codes.values()].sort((a, b) => a.localeCompare(b)) };
+    if (!saved.next_cursor) return { projectRevision: targets.projectRevision, codes: [...codes.values()].sort((a, b) => a.localeCompare(b)) };
     if (cursors.has(saved.next_cursor)) throw new Error("Mapping filter cursor repeated");
     cursors.add(saved.next_cursor); cursor = saved.next_cursor;
   }
@@ -354,7 +354,7 @@ export async function loadMappingFilterSystems(
 
 function mappingCollectionPath(
   tenantId: number,
-  modelId: number,
+  projectId: number,
   collection: "objects" | "attributes",
   filters: MappingFilters,
   pageSize: number,
@@ -370,7 +370,7 @@ function mappingCollectionPath(
   if (filters.mappingObjectId !== undefined) query.set("mapping_object_id", String(filters.mappingObjectId));
   query.set("page_size", String(pageSize));
   if (cursor) query.set("cursor", cursor);
-  return `/api/v1/tenants/${tenantId}/models/${modelId}/mapping/${collection}?${query}`;
+  return `/api/v1/tenants/${tenantId}/projects/${projectId}/mapping/${collection}?${query}`;
 }
 
 function normalizeNaturalKeyFilter(value: string | undefined): string {

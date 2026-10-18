@@ -135,7 +135,7 @@ def test_archive_round_trip_and_reproducibility(tmp_path: Path) -> None:
         "atlas-mapping",
         "atlas-code-generation",
         "atlas-verify",
-        "atlas-model-change",
+        "atlas-project-change",
         "atlas-metadata",
         "atlas-registration",
     }
@@ -305,9 +305,18 @@ def test_connector_archive_is_reproducible_and_excludes_user_state(tmp_path: Pat
         build_connector.build(first)
 
 
-@pytest.mark.parametrize("addition", [
-    "symlink", "private-file", "invalid-manifest", "unreviewed-font", "font-script", "font-stylesheet", "text-file",
-])
+@pytest.mark.parametrize(
+    "addition",
+    [
+        "symlink",
+        "private-file",
+        "invalid-manifest",
+        "unreviewed-font",
+        "font-script",
+        "font-stylesheet",
+        "text-file",
+    ],
+)
 def test_invalid_package_inputs_fail_before_writing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, addition: str
 ) -> None:

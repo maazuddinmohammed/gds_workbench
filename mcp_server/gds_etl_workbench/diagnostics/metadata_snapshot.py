@@ -37,7 +37,7 @@ from gds_etl_workbench.application.metadata_snapshot.sql import (
     COPY_GROUP_ROWS_SQL,
     COPY_ROWS_SQL,
     FOUNDATION_CONNECTION_ROWS_SQL,
-    FOUNDATION_PROJECT_ROWS_SQL,
+    FOUNDATION_LANE_ROWS_SQL,
     FOUNDATION_SYSTEM_ROWS_SQL,
     FOUNDATION_TENANT_ROWS_SQL,
     INGESTION_ATTRIBUTE_MAPPING_ROWS_SQL,
@@ -63,7 +63,7 @@ _DEPLOYMENT_ROOT = Path(__file__).resolve().parents[2]
 
 _RUNTIME_LOGIN = "gds_mcp_runtime"
 _RUNTIME_ROLE = "gds_app_write"
-_REQUIRED_SCHEMAS = ("reference", "core", "security", "model", "workflow", "mcp")
+_REQUIRED_SCHEMAS = ("reference", "core", "security", "project", "workflow", "mcp")
 _SNAPSHOT_RELATIONS = (
     "reference.system_type",
     "reference.connection_type",
@@ -73,7 +73,7 @@ _SNAPSHOT_RELATIONS = (
     "reference.file_type",
     "reference.data_operation",
     "reference.process_type",
-    "core.project",
+    "core.lane",
     "core.tenant",
     "core.system",
     "core.connection",
@@ -92,8 +92,8 @@ _SNAPSHOT_RELATIONS = (
     "security.principal",
     "security.entra_principal_identity",
     "security.tenant_principal_access",
-    "model.model",
-    "model.model_input_scope",
+    "project.project",
+    "project.project_input_scope",
 )
 
 _LOGIN_POSTURE_SQL: LiteralString = """
@@ -194,7 +194,7 @@ _SELECTION_STAGE_BY_QUERY = {
     FOUNDATION_CONNECTION_ROWS_SQL: "foundation_connection",
     CONNECTION_LOCATION_ROWS_SQL: "connection_location",
     FOUNDATION_TENANT_ROWS_SQL: "foundation_tenant",
-    FOUNDATION_PROJECT_ROWS_SQL: "foundation_project",
+    FOUNDATION_LANE_ROWS_SQL: "foundation_project",
     FOUNDATION_SYSTEM_ROWS_SQL: "foundation_system",
     **{query: f"reference_{dataset_name}" for dataset_name, query in REFERENCE_ROWS_SQL.items()},
 }

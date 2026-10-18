@@ -72,7 +72,7 @@
       {
         "name": "atlas_stageApprovedManifest",
         "displayName": "Stage Approved ATLAS Change Set",
-        "modelDescription": "Stages one digest-approved Atlas Metadata or Model Change Set from its local Stage request. Use only after local validation and user acknowledgement. Returns a bounded receipt and never returns payload records.",
+        "modelDescription": "Stages one digest-approved Atlas Metadata or Project Change Set from its local Stage request. Use only after local validation and user acknowledgement. Returns a bounded receipt and never returns payload records.",
         "canBeReferencedInPrompt": true,
         "toolReferenceName": "atlasStageApprovedManifest",
         "inputSchema": {

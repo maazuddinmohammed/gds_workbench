@@ -12,7 +12,7 @@ from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
 
 from gds_workbench_api.features.metadata.contracts import MetadataWorkbookDownload
-from gds_workbench_api.features.models import ModelNotFoundError, ModelRevisionConflictError
+from gds_workbench_api.features.projects import ProjectNotFoundError, ProjectRevisionConflictError
 
 from .read_contracts import MappingEntityType, MappingReadDatabase
 from .workbook import (
@@ -26,9 +26,9 @@ from .workbook import (
 )
 
 _HEADER_SQL: LiteralString = """
-SELECT model.model_revision, model.model_name, tenant.tenant_name
-  FROM model.model AS model JOIN core.tenant AS tenant USING (tenant_id)
- WHERE model.tenant_id = %s AND model.model_id = %s AND model.is_active
+SELECT project.project_revision, project.project_name, tenant.tenant_name
+  FROM project.project AS project JOIN core.tenant AS tenant USING (tenant_id)
+ WHERE project.tenant_id = %s AND project.project_id = %s AND project.is_active
 """
 _ENTITIES_SQL: LiteralString = """
 SELECT mapping.mapping_object_id, entity.modeled_entity_id, entity.modeled_entity_schema_name,
@@ -37,14 +37,14 @@ SELECT mapping.mapping_object_id, entity.modeled_entity_id, entity.modeled_entit
        octet_length(mapping.mapping_transformation_document::text) AS document_bytes,
        template.output_template_code
   FROM workflow.mapping_object AS mapping
-  JOIN model.model AS model ON model.model_id = mapping.model_id
-  JOIN workflow.modeled_entity AS entity ON entity.model_id = model.model_id
+  JOIN project.project AS project ON project.project_id = mapping.project_id
+  JOIN workflow.modeled_entity AS entity ON entity.project_id = project.project_id
    AND entity.modeled_entity_type = mapping.modeled_entity_type
    AND entity.modeled_entity_id = coalesce(mapping.logical_entity_id, mapping.dimensional_entity_id)
   JOIN core.system AS system ON system.system_id = mapping.source_system_id
   LEFT JOIN application.output_template AS template
     ON template.output_template_id = mapping.output_template_id
- WHERE model.tenant_id = %s AND model.model_id = %s AND model.is_active
+ WHERE project.tenant_id = %s AND project.project_id = %s AND project.is_active
    AND entity.modeled_entity_type = %s AND lower(btrim(system.system_code)) = %s
    AND entity.status = 'active' AND mapping.object_mapping_status = 'active'
    AND (mapping.mapping_transformation_document IS NOT NULL OR EXISTS (
@@ -58,7 +58,7 @@ SELECT mapping.mapping_object_id, entity.modeled_entity_id, entity.modeled_entit
 """
 _ATTRIBUTES_FROM: LiteralString = """
   FROM workflow.mapping_object AS mapping
-  JOIN workflow.modeled_attribute AS attribute ON attribute.model_id = mapping.model_id
+  JOIN workflow.modeled_attribute AS attribute ON attribute.project_id = mapping.project_id
    AND attribute.modeled_entity_type = mapping.modeled_entity_type
    AND attribute.modeled_entity_id = coalesce(
        mapping.logical_entity_id, mapping.dimensional_entity_id)
@@ -70,7 +70,7 @@ _ATTRIBUTES_FROM: LiteralString = """
    AND child.attribute_mapping_status = 'active'
   LEFT JOIN application.output_template AS template
     ON template.output_template_id = child.output_template_id
- WHERE mapping.model_id = %s AND mapping.mapping_object_id = ANY(%s::BIGINT[])
+ WHERE mapping.project_id = %s AND mapping.mapping_object_id = ANY(%s::BIGINT[])
 """
 _ATTRIBUTE_SIZE_SQL: LiteralString = (
     "SELECT count(*) AS rows, coalesce(sum(octet_length("
@@ -89,7 +89,7 @@ _ATTRIBUTES_SQL: LiteralString = (
 _DOCUMENTS_SQL: LiteralString = """
 SELECT mapping_object_id, mapping_transformation_document AS document
   FROM workflow.mapping_object
- WHERE model_id = %s AND mapping_object_id = ANY(%s::BIGINT[])
+ WHERE project_id = %s AND mapping_object_id = ANY(%s::BIGINT[])
 """
 
 
@@ -99,29 +99,29 @@ async def export_mapping_workbook(
     authorizer: AuthorizationService,
     principal: RequestPrincipal,
     tenant_id: int,
-    model_id: int,
+    project_id: int,
     entity_type: MappingEntityType,
     source_system_code: str,
-    expected_model_revision: int,
+    expected_project_revision: int,
 ) -> MetadataWorkbookDownload:
     async with database.read_transaction(isolation=ReadIsolation.REPEATABLE_READ) as transaction:
         await authorizer.authorize_tenant(
             transaction,
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             policy=ToolPolicy.TENANT_READ,
         )
-        header = await transaction.fetch_one(_HEADER_SQL, (tenant_id, model_id))
+        header = await transaction.fetch_one(_HEADER_SQL, (tenant_id, project_id))
         if header is None:
-            raise ModelNotFoundError()
-        if header["model_revision"] != expected_model_revision:
-            raise ModelRevisionConflictError()
+            raise ProjectNotFoundError()
+        if header["project_revision"] != expected_project_revision:
+            raise ProjectRevisionConflictError()
         entities = await transaction.fetch_all(
             _ENTITIES_SQL,
             (
                 tenant_id,
-                model_id,
+                project_id,
                 entity_type,
                 source_system_code.strip().lower(),
                 MAX_MAPPING_SHEETS + 1,
@@ -132,7 +132,7 @@ async def export_mapping_workbook(
         if len(entities) > MAX_MAPPING_SHEETS:
             raise InvalidRequestError("Mapping workbook exceeds its sheet limit.")
         ids = [row["mapping_object_id"] for row in entities]
-        size = await transaction.fetch_one(_ATTRIBUTE_SIZE_SQL, (model_id, ids))
+        size = await transaction.fetch_one(_ATTRIBUTE_SIZE_SQL, (project_id, ids))
         if size is None or size["rows"] + len(entities) * 14 > MAX_MAPPING_ROWS:
             raise InvalidRequestError("Mapping workbook exceeds its row limit.")
         if (
@@ -142,9 +142,9 @@ async def export_mapping_workbook(
             raise InvalidRequestError("Mapping workbook exceeds its text limit.")
         documents = {
             row["mapping_object_id"]: row["document"]
-            for row in await transaction.fetch_all(_DOCUMENTS_SQL, (model_id, ids))
+            for row in await transaction.fetch_all(_DOCUMENTS_SQL, (project_id, ids))
         }
-        attributes = await transaction.fetch_all(_ATTRIBUTES_SQL, (model_id, ids))
+        attributes = await transaction.fetch_all(_ATTRIBUTES_SQL, (project_id, ids))
 
     children: dict[int, list[MappingWorkbookAttribute]] = {key: [] for key in ids}
     for row in attributes:
@@ -196,7 +196,7 @@ async def export_mapping_workbook(
         )
     try:
         content = build_mapping_workbook(
-            model_name=header["model_name"],
+            project_name=header["project_name"],
             tenant_name=header["tenant_name"],
             system_code=entities[0]["system_code"],
             entities=tuple(projected),
@@ -206,7 +206,7 @@ async def export_mapping_workbook(
     return MetadataWorkbookDownload(
         content=content,
         sheet_count=len(projected),
-        filename=f"gds_mapping_{entity_type.removesuffix('_entity')}__model_{model_id}__r{expected_model_revision}.xlsx",
+        filename=f"gds_mapping_{entity_type.removesuffix('_entity')}__project_{project_id}__r{expected_project_revision}.xlsx",
     )
 
 

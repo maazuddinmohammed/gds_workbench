@@ -27,7 +27,9 @@ from tests.web_backend.test_agent_stage_runner import _plan
 from tests.web_backend.test_metadata_enrichment_evidence import _object
 
 
-def executor_fixture() -> tuple[DatabaseMetadataEnrichmentExecutor, AsyncMock, AsyncMock]:
+def executor_fixture() -> tuple[
+    DatabaseMetadataEnrichmentExecutor, AsyncMock, AsyncMock
+]:
     objects: list[EnrichmentObject] = []
     for index in range(3):
         item = _object(columns=2)
@@ -52,13 +54,16 @@ def executor_fixture() -> tuple[DatabaseMetadataEnrichmentExecutor, AsyncMock, A
                         "source_context": [],
                         "gds_context": [],
                         "ingestion_mapping": [],
-                        "object_context": [{**key, "object_description": f"Existing {index}"}],
+                        "object_context": [
+                            {**key, "object_description": f"Existing {index}"}
+                        ],
                         "object_attribute_context": [
                             {
                                 **key,
                                 "selected_attribute_names": [],
                                 "attributes": [
-                                    {"attribute_name": a.attribute_name} for a in attributes
+                                    {"attribute_name": a.attribute_name}
+                                    for a in attributes
                                 ],
                             }
                         ],
@@ -71,8 +76,8 @@ def executor_fixture() -> tuple[DatabaseMetadataEnrichmentExecutor, AsyncMock, A
         _plan(),
         MetadataEnrichmentContext(
             workflow_run_id=1,
-            model_id=1,
-            model_revision=1,
+            project_id=1,
+            project_revision=1,
             baseline_digest="a" * 64,
             objects=tuple(objects),
         ),
@@ -137,17 +142,21 @@ class ControlledStage:
 async def execute(executor: DatabaseMetadataEnrichmentExecutor) -> None:
     await executor.execute_started(
         RequestPrincipal(
-            actor_kind=ActorKind.HUMAN, entra_tenant_id=UUID(int=1), entra_object_id=UUID(int=2)
+            actor_kind=ActorKind.HUMAN,
+            entra_tenant_id=UUID(int=1),
+            entra_object_id=UUID(int=2),
         ),
         tenant_id=7,
-        model_id=1,
+        project_id=1,
         workflow_run_id=1,
-        expected_model_revision=1,
+        expected_project_revision=1,
         workflow_run_claim_token=UUID(int=3),
     )
 
 
-async def test_two_tables_overlap_but_each_attribute_receives_its_own_object_result() -> None:
+async def test_two_tables_overlap_but_each_attribute_receives_its_own_object_result() -> (
+    None
+):
     executor, repository, lifecycle = executor_fixture()
     stage = ControlledStage()
     executor._stage = cast(AgentStageRunner, stage)
@@ -182,7 +191,10 @@ async def test_two_tables_overlap_but_each_attribute_receives_its_own_object_res
     for index in range(3):
         table = f"table_{index}"
         inputs = stage.inputs[table, "metadata_enrichment_attribute"]
-        assert inputs["object_context"][0]["object_description"] == f"Description for {table}"
+        assert (
+            inputs["object_context"][0]["object_description"]
+            == f"Description for {table}"
+        )
         assert len(inputs["object_attribute_context"][0]["attributes"]) == 2
     repository.complete.assert_awaited_once()
     assert repository.complete.await_args is not None
@@ -190,12 +202,14 @@ async def test_two_tables_overlap_but_each_attribute_receives_its_own_object_res
     assert len(results) == 39
     for result in results:
         if result.field_name.endswith("description"):
-            assert result.applied_value == f"Description for table_{result.object_id - 20}"
+            assert (
+                result.applied_value == f"Description for table_{result.object_id - 20}"
+            )
     events = [call.kwargs["event"] for call in lifecycle.append_event.await_args_list]
     assert [event.sequence for event in events] == list(range(2, 10))
-    assert [event.current for event in events if event.stage == "candidate_authoring"] == list(
-        range(1, 7)
-    )
+    assert [
+        event.current for event in events if event.stage == "candidate_authoring"
+    ] == list(range(1, 7))
 
 
 async def test_cancellation_stops_both_tables_before_any_completion_write() -> None:

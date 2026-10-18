@@ -9,7 +9,7 @@ export function TenantLockControl({ api, home }: { api: TenantLockApi; home: Ten
     : home.lock.is_locked ? `Tenant Lock held by ${home.lock.owner_display_name ?? "another Principal"}`
       : "Tenant Lock required";
   return <>
-    <button type="button" className={`model-lock model-lock-control${home.lock.owned_by_current_principal ? " is-held" : ""}`}
+    <button type="button" className={`project-lock project-lock-control${home.lock.owned_by_current_principal ? " is-held" : ""}`}
       aria-label="Manage Tenant Lock" aria-haspopup="dialog" onClick={() => setOpen(true)}>
       <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3" /></svg>
       {label}<span aria-hidden="true">⌄</span>

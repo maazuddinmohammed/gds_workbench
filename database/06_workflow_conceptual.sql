@@ -2,7 +2,7 @@
 
 CREATE TABLE workflow.conceptual_object (
     conceptual_object_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     workflow_run_id BIGINT,
     conceptual_object_name VARCHAR(255) NOT NULL,
@@ -17,10 +17,10 @@ CREATE TABLE workflow.conceptual_object (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_conceptual_object_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
-    CONSTRAINT uq_conceptual_object_id_model
-        UNIQUE (conceptual_object_id, model_id),
+    CONSTRAINT fk_conceptual_object_project FOREIGN KEY (project_id)
+        REFERENCES project.project (project_id) ON DELETE NO ACTION,
+    CONSTRAINT uq_conceptual_object_id_project
+        UNIQUE (conceptual_object_id, project_id),
     CONSTRAINT ck_conceptual_object_name CHECK (
         reference.is_nonblank(conceptual_object_name)
     ),
@@ -43,15 +43,15 @@ CREATE TABLE workflow.conceptual_object (
     )
 );
 
-CREATE UNIQUE INDEX ux_conceptual_object_model_name
+CREATE UNIQUE INDEX ux_conceptual_object_project_name
     ON workflow.conceptual_object (
-        model_id,
+        project_id,
         lower(btrim(conceptual_object_name))
     );
 
 CREATE TABLE workflow.conceptual_relationship (
     conceptual_relationship_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     workflow_run_id BIGINT,
     from_conceptual_object_id BIGINT NOT NULL,
@@ -69,24 +69,24 @@ CREATE TABLE workflow.conceptual_relationship (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_conceptual_relationship_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_conceptual_relationship_project FOREIGN KEY (project_id)
+        REFERENCES project.project (project_id) ON DELETE NO ACTION,
     CONSTRAINT fk_conceptual_relationship_from_object FOREIGN KEY (
         from_conceptual_object_id,
-        model_id
+        project_id
     ) REFERENCES workflow.conceptual_object (
         conceptual_object_id,
-        model_id
+        project_id
     ) ON DELETE NO ACTION,
     CONSTRAINT fk_conceptual_relationship_to_object FOREIGN KEY (
         to_conceptual_object_id,
-        model_id
+        project_id
     ) REFERENCES workflow.conceptual_object (
         conceptual_object_id,
-        model_id
+        project_id
     ) ON DELETE NO ACTION,
-    CONSTRAINT uq_conceptual_relationship_id_model
-        UNIQUE (conceptual_relationship_id, model_id),
+    CONSTRAINT uq_conceptual_relationship_id_project
+        UNIQUE (conceptual_relationship_id, project_id),
     CONSTRAINT ck_conceptual_relationship_objects_different CHECK (
         from_conceptual_object_id <> to_conceptual_object_id
     ),
@@ -121,7 +121,7 @@ CREATE TABLE workflow.conceptual_relationship (
 
 CREATE UNIQUE INDEX ux_conceptual_relationship_identity
     ON workflow.conceptual_relationship (
-        model_id,
+        project_id,
         from_conceptual_object_id,
         to_conceptual_object_id,
         lower(btrim(conceptual_relationship_name))
@@ -129,7 +129,7 @@ CREATE UNIQUE INDEX ux_conceptual_relationship_identity
 
 CREATE TABLE workflow.conceptual_support (
     conceptual_support_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     workflow_run_id BIGINT,
     supported_artifact_type VARCHAR(30) NOT NULL,
@@ -137,7 +137,7 @@ CREATE TABLE workflow.conceptual_support (
     conceptual_relationship_id BIGINT,
     support_source_type VARCHAR(20) NOT NULL,
     source_object_id BIGINT,
-    modeling_assertion_record_id BIGINT,
+    context_record_id UUID,
     conceptual_support_role VARCHAR(255),
     conceptual_support_reason TEXT NOT NULL,
     conceptual_support_reason_detail TEXT,
@@ -148,32 +148,32 @@ CREATE TABLE workflow.conceptual_support (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_conceptual_support_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_conceptual_support_project FOREIGN KEY (project_id)
+        REFERENCES project.project (project_id) ON DELETE NO ACTION,
     CONSTRAINT fk_conceptual_support_object_parent FOREIGN KEY (
         conceptual_object_id,
-        model_id
+        project_id
     ) REFERENCES workflow.conceptual_object (
         conceptual_object_id,
-        model_id
+        project_id
     ) ON DELETE NO ACTION,
     CONSTRAINT fk_conceptual_support_relationship_parent FOREIGN KEY (
         conceptual_relationship_id,
-        model_id
+        project_id
     ) REFERENCES workflow.conceptual_relationship (
         conceptual_relationship_id,
-        model_id
+        project_id
     ) ON DELETE NO ACTION,
     CONSTRAINT fk_conceptual_support_physical_object FOREIGN KEY (
-        model_id,
+        project_id,
         source_object_id
-    ) REFERENCES model.model_input_scope (model_id, object_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_conceptual_support_assertion_record FOREIGN KEY (
-        modeling_assertion_record_id,
-        model_id
-    ) REFERENCES model.modeling_assertion_record (
-        modeling_assertion_record_id,
-        model_id
+    ) REFERENCES project.project_input_scope (project_id, object_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_conceptual_support_context_record FOREIGN KEY (
+        context_record_id,
+        project_id
+    ) REFERENCES project.context_record (
+        context_record_id,
+        project_id
     ) ON DELETE NO ACTION,
     CONSTRAINT ck_conceptual_support_typed_parent CHECK (
         (
@@ -190,10 +190,10 @@ CREATE TABLE workflow.conceptual_support (
         (
             support_source_type = 'object'
             AND source_object_id IS NOT NULL
-            AND modeling_assertion_record_id IS NULL
+            AND context_record_id IS NULL
         ) OR (
-            support_source_type = 'assertion'
-            AND modeling_assertion_record_id IS NOT NULL
+            support_source_type = 'context_record'
+            AND context_record_id IS NOT NULL
             AND source_object_id IS NULL
         )
     ),
@@ -220,40 +220,40 @@ CREATE TABLE workflow.conceptual_support (
 
 CREATE UNIQUE INDEX ux_conceptual_support_object_parent_object_source
     ON workflow.conceptual_support (
-        model_id,
+        project_id,
         conceptual_object_id,
         source_object_id
     ) WHERE supported_artifact_type = 'conceptual_object'
         AND support_source_type = 'object';
-CREATE UNIQUE INDEX ux_conceptual_support_object_parent_assertion_source
+CREATE UNIQUE INDEX ux_conceptual_support_object_parent_context_source
     ON workflow.conceptual_support (
-        model_id,
+        project_id,
         conceptual_object_id,
-        modeling_assertion_record_id
+        context_record_id
     ) WHERE supported_artifact_type = 'conceptual_object'
-        AND support_source_type = 'assertion';
+        AND support_source_type = 'context_record';
 CREATE UNIQUE INDEX ux_conceptual_support_relationship_parent_object_source
     ON workflow.conceptual_support (
-        model_id,
+        project_id,
         conceptual_relationship_id,
         source_object_id
     ) WHERE supported_artifact_type = 'conceptual_relationship'
         AND support_source_type = 'object';
-CREATE UNIQUE INDEX ux_conceptual_support_relationship_parent_assertion_source
+CREATE UNIQUE INDEX ux_conceptual_support_relationship_parent_context_source
     ON workflow.conceptual_support (
-        model_id,
+        project_id,
         conceptual_relationship_id,
-        modeling_assertion_record_id
+        context_record_id
     ) WHERE supported_artifact_type = 'conceptual_relationship'
-        AND support_source_type = 'assertion';
+        AND support_source_type = 'context_record';
 
-CREATE INDEX ix_conceptual_object_model_status
-    ON workflow.conceptual_object (model_id, conceptual_object_status);
+CREATE INDEX ix_conceptual_object_project_status
+    ON workflow.conceptual_object (project_id, conceptual_object_status);
 CREATE INDEX ix_conceptual_relationship_to_object
-    ON workflow.conceptual_relationship (model_id, to_conceptual_object_id);
+    ON workflow.conceptual_relationship (project_id, to_conceptual_object_id);
 CREATE INDEX ix_conceptual_support_physical_object
-    ON workflow.conceptual_support (model_id, source_object_id)
+    ON workflow.conceptual_support (project_id, source_object_id)
     WHERE support_source_type = 'object';
-CREATE INDEX ix_conceptual_support_assertion_record
-    ON workflow.conceptual_support (model_id, modeling_assertion_record_id)
-    WHERE support_source_type = 'assertion';
+CREATE INDEX ix_conceptual_support_context_record
+    ON workflow.conceptual_support (project_id, context_record_id)
+    WHERE support_source_type = 'context_record';

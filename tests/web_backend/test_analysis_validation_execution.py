@@ -124,7 +124,7 @@ def test_default_analysis_validation_policy_is_canonical_bounded_and_stable() ->
     assert load_default_analysis_validation_policy() is policy
 
 
-def test_context_models_are_strict_and_secret_free() -> None:
+def test_context_projects_are_strict_and_secret_free() -> None:
     relationship = _relationship()
 
     assert relationship.analysis_result_is_locked is True

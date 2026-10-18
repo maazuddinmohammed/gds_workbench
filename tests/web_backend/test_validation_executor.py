@@ -8,7 +8,7 @@ from typing import Any, cast
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
 from gds_etl_workbench.domain.authorization import (
     ActorKind,
     RequestPrincipal,
@@ -69,10 +69,10 @@ def _principal() -> RequestPrincipal:
 def _plan() -> AgentRunPlan:
     return AgentRunPlan(
         workflow_run_id=1048,
-        model_id=18,
+        project_id=18,
         correlation_id=UUID("33333333-3333-3333-3333-333333333333"),
-        model_revision=7,
-        model_workflow="validation",
+        project_revision=7,
+        project_workflow="validation",
         workflow_execution_mode=None,
         modeled_entity_type=None,
         selected_scope_digest="a" * 64,
@@ -81,7 +81,7 @@ def _plan() -> AgentRunPlan:
         selection=AgentRunSelection(
             sdk_code="openai_agents_sdk",
             provider_code="microsoft_foundry",
-            model_code="model-1",
+            model_code="project-1",
             reasoning_effort_code="medium",
             max_turns=8,
             validation_retry_count=1,
@@ -229,7 +229,7 @@ class _Authorizer:
         *,
         tenant_id: int,
         policy: ToolPolicy,
-        model_id: int | None = None,
+        project_id: int | None = None,
     ) -> object:
         del transaction
         assert principal == _principal()
@@ -273,15 +273,15 @@ class _AgentExecutor:
 
 @dataclass
 class _Handoff(RetainingHandoff):
-    calls: list[tuple[StageModelChange, ...]] = field(
-        default_factory=lambda: list[tuple[StageModelChange, ...]]()
+    calls: list[tuple[StageProjectChange, ...]] = field(
+        default_factory=lambda: list[tuple[StageProjectChange, ...]]()
     )
 
     async def finalize(
         self,
         principal: RequestPrincipal,
         *,
-        changes: tuple[StageModelChange, ...],
+        changes: tuple[StageProjectChange, ...],
         final_event: AgentWorkflowEvent,
         **_: object,
     ) -> WorkflowChangeSetFinalizationResult:
@@ -289,9 +289,9 @@ class _Handoff(RetainingHandoff):
         self.calls.append(changes)
         return WorkflowChangeSetFinalizationResult(
             handoff=WorkflowChangeSetHandoffResult(
-                model_id=18,
+                project_id=18,
                 workflow_run_id=1048,
-                model_change_set_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+                project_change_set_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
                 replayed=False,
                 draft_revision=2,
                 candidate_digest="d" * 64,
@@ -319,7 +319,7 @@ class _NoOp:
         self,
         principal: RequestPrincipal,
         *,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         request: AuthoringNoOpRequest,
         **_: object,
@@ -327,13 +327,13 @@ class _NoOp:
         assert principal == _principal()
         self.requests.append(request)
         return AuthoringNoOpReceipt(
-            model_id=model_id,
-            model_revision=request.expected_model_revision,
+            project_id=project_id,
+            project_revision=request.expected_project_revision,
             workflow_run_id=workflow_run_id,
             workflow_run_state="completed_with_repair"
             if request.final_event.attempt > 1
             else "completed",
-            model_workflow="validation",
+            project_workflow="validation",
             workflow_execution_mode=None,
             correlation_id=request.expected_correlation_id,
             candidate_digest=request.candidate_digest,
@@ -356,21 +356,21 @@ class _Lifecycle:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         expected_workflow: str,
         expected_execution_mode: str | None,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart:
         self.starts.append(
             (
                 principal,
                 tenant_id,
-                model_id,
+                project_id,
                 workflow_run_id,
                 expected_workflow,
                 expected_execution_mode,
-                expected_model_revision,
+                expected_project_revision,
             )
         )
         return AgentWorkflowRunStart(
@@ -378,7 +378,7 @@ class _Lifecycle:
             workflow_run_id=workflow_run_id,
             workflow_run_state="running",
             started_at=datetime(2026, 8, 24, 10, tzinfo=UTC),
-            model_revision=expected_model_revision,
+            project_revision=expected_project_revision,
         )
 
     events: list[AgentWorkflowEvent] = field(
@@ -457,14 +457,14 @@ async def test_start_binds_validation_workflow_without_executing() -> None:
     result = await service.start(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
     )
 
     assert lifecycle.starts == [(principal, 7, 18, 1048, "validation", None, 7)]
     assert result.workflow_run_id == 1048
-    assert result.model_revision == 7
+    assert result.project_revision == 7
     assert database.isolations == []
     assert handoff.calls == []
     assert no_op.requests == []
@@ -482,9 +482,9 @@ async def test_executor_stages_validation_groups_and_checks_through_change_set_h
     result = await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -509,14 +509,14 @@ async def test_executor_completes_identical_candidate_as_no_op() -> None:
     result = await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
     assert isinstance(result, AuthoringNoOpReceipt)
-    assert result.model_workflow == "validation"
+    assert result.project_workflow == "validation"
     assert handoff.calls == []
     assert len(no_op.requests) == 1
     assert no_op.requests[0].expected_execution_mode is None
@@ -527,18 +527,17 @@ def validation_graph_context(
 ) -> ValidationExecutionContext:
     from dataclasses import replace
 
-    from tests.mcp.model_test_fixtures import (
-        complete_model_graph,
+    from tests.mcp.project_test_fixtures import (
         complete_physical_scope,
+        complete_project_graph,
         snapshot_from_graph,
     )
 
     if context.snapshot is not None:
         return context
-    graph = complete_model_graph()
+    graph = complete_project_graph()
     systems = tuple(system.system_code for system in context.systems)
     for dataset in (
-
         "mapping_object",
         "mapping_attribute",
         "generated_code_source_system",
@@ -548,7 +547,7 @@ def validation_graph_context(
             for row in graph[cast(Any, dataset)]
             for system in systems
         ]
-    for document in graph["modeling_assertion_document"]:
+    for document in graph["context_group"]:
         if document.get("tenant_code") is not None:
             document["tenant_code"] = "acme"
     graph["validation_group"] = [
@@ -564,11 +563,11 @@ def validation_graph_context(
     return context.model_copy(
         update={
             "snapshot": snapshot_from_graph(graph).model_copy(
-                update={"model_id": 18, "model_revision": 7}
+                update={"project_id": 18, "project_revision": 7}
             ),
             "physical_scope": replace(
                 complete_physical_scope(),
-                model_tenant_code="acme",
+                project_tenant_code="acme",
                 active_system_codes=complete_physical_scope().active_system_codes
                 | frozenset(system.casefold() for system in systems),
             ),

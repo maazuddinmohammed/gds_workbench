@@ -723,7 +723,7 @@ def test_export_selection_rejects_empty_duplicate_and_nonoperational_sheet_codes
             for sheet_codes in (
                 [],
                 ["copy", "copy"],
-                ["project"],
+                ["lane"],
                 ["connection_value"],
                 ["x" * 101],
             )
@@ -739,7 +739,7 @@ def test_export_selection_rejects_empty_duplicate_and_nonoperational_sheet_codes
     assert all(
         forbidden not in response.text
         for response in responses
-        for forbidden in ("project", "connection_value")
+        for forbidden in ("lane", "connection_value")
     )
     assert database.isolations == []
     assert repository.export_calls == []

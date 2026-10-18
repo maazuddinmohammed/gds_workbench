@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from gds_workbench_api.capabilities import MAX_AGENT_TURNS, MAX_VALIDATION_RETRIES
 from gds_workbench_api.features.workflows.usage.read_service import WorkflowTokenUsageSummary
 
-type ModelWorkflow = Literal[
+type ProjectWorkflow = Literal[
     "profiling",
     "analysis",
     "conceptual",
@@ -32,7 +32,7 @@ type RunState = Literal[
     "failed",
     "cancelled",
 ]
-type ModelChangeSetStatus = Literal[
+type ProjectChangeSetStatus = Literal[
     "active",
     "validated",
     "applied",
@@ -76,7 +76,7 @@ class WorkflowRunLedgerRecord(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     workflow_run_id: int = Field(gt=0)
-    model_workflow: ModelWorkflow
+    project_workflow: ProjectWorkflow
     workflow_execution_mode: ExecutionMode | None = None
     modeled_entity_type: ModeledEntityType | None = None
     selected_scope_count: int = Field(gt=0)
@@ -102,8 +102,8 @@ class WorkflowRunDetail(WorkflowRunLedgerRecord):
     validation_retry_count: int | None = Field(default=None, ge=0, le=MAX_VALIDATION_RETRIES)
     failure_code: str | None = Field(default=None, max_length=100)
     failure_message: str | None = Field(default=None, max_length=2000)
-    model_change_set_id: UUID | None = None
-    model_change_set_status: ModelChangeSetStatus | None = None
+    project_change_set_id: UUID | None = None
+    project_change_set_status: ProjectChangeSetStatus | None = None
     draft_revision: int | None = Field(default=None, gt=0)
     candidate_digest: str | None = Field(
         default=None,

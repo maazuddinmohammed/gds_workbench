@@ -16,38 +16,39 @@ from gds_etl_workbench.domain.modeling_records import (
     ProfilingProfileRecord,
     ValidationCheckRecord,
 )
-from gds_etl_workbench.domain.portable_validation import MODEL_RECORD_VALIDATIONS
-from gds_etl_workbench.domain.snapshots.model import (
+from gds_etl_workbench.domain.portable_validation import PROJECT_RECORD_VALIDATIONS
+from gds_etl_workbench.domain.snapshots.project import (
     CHANGE_SET_DATASETS,
     DATASETS,
     DATASETS_BY_NAME,
-    MODEL_SECTIONS,
-    ModelChangeSetDataset,
-    ModelSnapshot,
-    build_model_dataset_schema,
-    model_snapshot_records,
+    PROJECT_SECTIONS,
+    ProjectChangeSetDataset,
+    ProjectSnapshot,
+    build_project_dataset_schema,
+    project_snapshot_records,
 )
 from gds_etl_workbench.infrastructure.snapshot_archive import SnapshotContractError
-from gds_etl_workbench.tools.snapshots.model.archive import (
-    build_model_snapshot_archive,
-    encode_model_snapshot,
+from gds_etl_workbench.tools.snapshots.project.archive import (
+    build_project_snapshot_archive,
+    encode_project_snapshot,
 )
 from pydantic import ValidationError
 
-from tests.mcp.model_test_fixtures import (
-    complete_model_graph,
+from tests.mcp.project_test_fixtures import (
+    complete_project_graph,
     snapshot_from_graph,
 )
 
 EXPECTED_DATASETS = (
-    "model_details",
-    "model_input_scope",
+    "project_details",
+    "project_input_scope",
     "profiling_profile",
     "object_enrichment",
     "attribute_enrichment",
     "analysis_result",
-    "modeling_assertion_document",
-    "modeling_assertion_record",
+    "context_type",
+    "context_group",
+    "context_record",
     "conceptual_object",
     "conceptual_relationship",
     "logical_submodel",
@@ -67,16 +68,16 @@ EXPECTED_DATASETS = (
 )
 
 
-def test_model_snapshot_has_exact_24_dataset_registry() -> None:
+def test_project_snapshot_has_exact_25_dataset_registry() -> None:
     assert tuple(definition.name for definition in DATASETS) == EXPECTED_DATASETS
-    assert len(DATASETS_BY_NAME) == 24
-    assert CHANGE_SET_DATASETS == DATASETS
-    assert MODEL_SECTIONS == (
-        "model_input_scope",
+    assert len(DATASETS_BY_NAME) == 25
+    assert CHANGE_SET_DATASETS == tuple(d for d in DATASETS if d.name != "context_type")
+    assert PROJECT_SECTIONS == (
+        "project_input_scope",
         "profiling",
         "enrichment",
         "analysis",
-        "assertion",
+        "context",
         "conceptual",
         "logical",
         "dimensional",
@@ -89,14 +90,18 @@ def test_model_snapshot_has_exact_24_dataset_registry() -> None:
 def test_every_dataset_is_id_free_and_uses_real_canonical_key_fields() -> None:
     for definition in DATASETS:
         fields = set(definition.row_model.model_fields)
-        assert not any(field == "id" or field.endswith("_id") for field in fields)
+        assert {
+            field for field in fields if field == "id" or field.endswith("_id")
+        } == ({"context_record_id"} if definition.name == "context_record" else set())
         assert set(definition.canonical_key) <= fields
-        assert definition.change_set_eligible is True
+        assert definition.change_set_eligible is (definition.name != "context_type")
         assert definition.rows_path.startswith(f"data/{definition.section}/")
-        assert definition.schema_path == f"schemas/model/{definition.name}.schema.json"
+        assert (
+            definition.schema_path == f"schemas/project/{definition.name}.schema.json"
+        )
 
 
-def test_model_schemas_forbid_removed_authoring_metadata() -> None:
+def test_project_schemas_forbid_removed_authoring_metadata() -> None:
     forbidden = {
         "agent_run_id",
         "workflow_run_id",
@@ -112,17 +117,22 @@ def test_model_schemas_forbid_removed_authoring_metadata() -> None:
     }
 
     for definition in DATASETS:
-        schema = build_model_dataset_schema(definition)
+        schema = build_project_dataset_schema(definition)
         assert schema["additionalProperties"] is False
         assert schema["x-gds-database-ids-included"] is False
-        assert schema["x-gds-change-set-eligible"] is True
+        assert schema["x-gds-portable-identity-fields"] == (
+            ["context_record_id"] if definition.name == "context_record" else []
+        )
+        assert schema["x-gds-change-set-eligible"] is (
+            definition.name != "context_type"
+        )
         assert forbidden.isdisjoint(schema["properties"])
 
 
 def test_logical_attribute_contract_uses_key_origins_without_primary_key() -> None:
-    schema = build_model_dataset_schema(DATASETS_BY_NAME["logical_attribute"])
+    schema = build_project_dataset_schema(DATASETS_BY_NAME["logical_attribute"])
     assert "logical_attribute_is_primary_key" not in schema["properties"]
-    record = complete_model_graph()["logical_attribute"][0]
+    record = complete_project_graph()["logical_attribute"][0]
     validated = LogicalAttributeRecord.model_validate_json(json.dumps(record))
     assert validated.logical_attribute_is_natural_key
     assert not validated.logical_attribute_is_surrogate_key
@@ -141,7 +151,7 @@ def test_logical_attribute_contract_uses_key_origins_without_primary_key() -> No
         )
 
 
-def test_every_custom_model_record_validator_is_exported_for_local_parity() -> None:
+def test_every_custom_project_record_validator_is_exported_for_local_parity() -> None:
     custom = {
         definition.name
         for definition in DATASETS
@@ -149,9 +159,9 @@ def test_every_custom_model_record_validator_is_exported_for_local_parity() -> N
         or definition.row_model.__pydantic_decorators__.model_validators
     }
 
-    assert set(MODEL_RECORD_VALIDATIONS) == custom
-    for dataset, rules in MODEL_RECORD_VALIDATIONS.items():
-        assert build_model_dataset_schema(DATASETS_BY_NAME[dataset])[
+    assert set(PROJECT_RECORD_VALIDATIONS) == custom
+    for dataset, rules in PROJECT_RECORD_VALIDATIONS.items():
+        assert build_project_dataset_schema(DATASETS_BY_NAME[dataset])[
             "x-gds-record-validation"
         ] == {
             "version": "1.0",
@@ -159,8 +169,10 @@ def test_every_custom_model_record_validator_is_exported_for_local_parity() -> N
         }
 
 
-def test_model_schema_accepts_every_decimal_representation_accepted_at_stage() -> None:
-    schema = build_model_dataset_schema(DATASETS_BY_NAME["profiling_profile"])
+def test_project_schema_accepts_every_decimal_representation_accepted_at_stage() -> (
+    None
+):
+    schema = build_project_dataset_schema(DATASETS_BY_NAME["profiling_profile"])
 
     assert schema["properties"]["avg_data_length"]["anyOf"][0] == {
         "minimum": 0.0,
@@ -181,7 +193,7 @@ def test_status_contract_has_only_applied_lifecycle_values() -> None:
         "mapping_object",
         "generated_code",
     ):
-        schema = build_model_dataset_schema(DATASETS_BY_NAME[dataset])
+        schema = build_project_dataset_schema(DATASETS_BY_NAME[dataset])
         status_property = next(
             value
             for name, value in schema["properties"].items()
@@ -191,7 +203,7 @@ def test_status_contract_has_only_applied_lifecycle_values() -> None:
 
 
 def test_logical_entity_schema_exports_server_type_detail_rule() -> None:
-    schema = build_model_dataset_schema(DATASETS_BY_NAME["logical_entity"])
+    schema = build_project_dataset_schema(DATASETS_BY_NAME["logical_entity"])
 
     assert schema["allOf"] == [
         {
@@ -206,11 +218,11 @@ def test_logical_entity_schema_exports_server_type_detail_rule() -> None:
 
 
 def test_generated_code_and_validation_public_shapes_are_minimal() -> None:
-    generated = build_model_dataset_schema(DATASETS_BY_NAME["generated_code"])
-    source_system = build_model_dataset_schema(
+    generated = build_project_dataset_schema(DATASETS_BY_NAME["generated_code"])
+    source_system = build_project_dataset_schema(
         DATASETS_BY_NAME["generated_code_source_system"]
     )
-    group = build_model_dataset_schema(DATASETS_BY_NAME["validation_group"])
+    group = build_project_dataset_schema(DATASETS_BY_NAME["validation_group"])
 
     assert set(generated["properties"]) == {
         "modeled_entity_type",
@@ -256,13 +268,13 @@ def test_generated_code_and_validation_public_shapes_are_minimal() -> None:
     ],
 )
 def test_code_validation_locks_are_required_in_portable_records(
-    dataset: ModelChangeSetDataset, lock_field: str
+    dataset: ProjectChangeSetDataset, lock_field: str
 ) -> None:
     definition = DATASETS_BY_NAME[dataset]
-    schema = build_model_dataset_schema(definition)
+    schema = build_project_dataset_schema(definition)
     assert lock_field in schema["required"]
     assert schema["properties"][lock_field]["type"] == "boolean"
-    record = deepcopy(complete_model_graph()[dataset][0])
+    record = deepcopy(complete_project_graph()[dataset][0])
     del record[lock_field]
     with pytest.raises(ValidationError):
         definition.row_model.model_validate(record, strict=False)
@@ -273,7 +285,7 @@ def test_code_validation_locks_are_required_in_portable_records(
 )
 def test_git_code_accepts_flexible_nullable_metadata(parameters: object) -> None:
     raw = {
-        **complete_model_graph()["generated_code"][0],
+        **complete_project_graph()["generated_code"][0],
         "code_storage_type": "git",
         "code_repository_url": "any repository reference",
         "code_commit_path": "branch/ref or arbitrary text \\ path\nline",
@@ -287,7 +299,7 @@ def test_git_code_accepts_flexible_nullable_metadata(parameters: object) -> None
 
 
 def test_code_storage_defaults_and_content_requirements() -> None:
-    raw = complete_model_graph()["generated_code"][0]
+    raw = complete_project_graph()["generated_code"][0]
     assert GeneratedCodeRecord.model_validate(raw).code_storage_type == "table"
     for content in (None, "", "   "):
         with pytest.raises(ValidationError):
@@ -301,7 +313,7 @@ def test_code_storage_defaults_and_content_requirements() -> None:
 
 
 def test_records_reject_database_or_removed_fields() -> None:
-    graph = complete_model_graph()
+    graph = complete_project_graph()
 
     assert ProfilingProfileRecord.model_validate(
         graph["profiling_profile"][0], strict=False
@@ -311,7 +323,7 @@ def test_records_reject_database_or_removed_fields() -> None:
         graph["validation_check"][0], strict=False
     )
 
-    for model, record, extra in (
+    for project, record, extra in (
         (ProfilingProfileRecord, graph["profiling_profile"][0], {"attribute_id": 1}),
         (GeneratedCodeRecord, graph["generated_code"][0], {"is_logged": True}),
         (
@@ -321,7 +333,7 @@ def test_records_reject_database_or_removed_fields() -> None:
         ),
     ):
         with pytest.raises(ValidationError):
-            model.model_validate({**record, **extra}, strict=False)
+            project.model_validate({**record, **extra}, strict=False)
 
 
 @pytest.mark.parametrize(
@@ -331,7 +343,7 @@ def test_records_reject_database_or_removed_fields() -> None:
 def test_analysis_inference_is_independent_of_measured_evidence(
     cardinality: str,
 ) -> None:
-    record = complete_model_graph()["analysis_result"][0]
+    record = complete_project_graph()["analysis_result"][0]
     inferred = AnalysisResultRecord.model_validate(
         {**record, "inferred_cardinality": cardinality}, strict=True
     )
@@ -342,7 +354,7 @@ def test_analysis_inference_is_independent_of_measured_evidence(
 
 
 def test_analysis_cardinality_defaults_unknown_and_rejects_invalid_values() -> None:
-    record = complete_model_graph()["analysis_result"][0]
+    record = complete_project_graph()["analysis_result"][0]
     record.pop("inferred_cardinality")
     assert (
         AnalysisResultRecord.model_validate(record, strict=True).inferred_cardinality
@@ -356,8 +368,8 @@ def test_analysis_cardinality_defaults_unknown_and_rejects_invalid_values() -> N
 
 
 def test_snapshot_flattens_entity_mapping_code_and_validation_sections() -> None:
-    graph = complete_model_graph()
-    records = model_snapshot_records(snapshot_from_graph(graph))
+    graph = complete_project_graph()
+    records = project_snapshot_records(snapshot_from_graph(graph))
 
     assert tuple(records) == EXPECTED_DATASETS
     assert len(records["mapping_object"]) == 1
@@ -368,11 +380,11 @@ def test_snapshot_flattens_entity_mapping_code_and_validation_sections() -> None
 
 
 def test_snapshot_encoding_sorts_rows_and_rejects_duplicate_keys() -> None:
-    graph = complete_model_graph()
+    graph = complete_project_graph()
     graph["conceptual_object"].reverse()
     encoded = {
         item.definition.name: item
-        for item in encode_model_snapshot(snapshot_from_graph(graph))
+        for item in encode_project_snapshot(snapshot_from_graph(graph))
     }
     rows = encoded["conceptual_object"].rows_jsonl.decode().splitlines()
     assert [json.loads(row)["conceptual_object_name"] for row in rows] == [
@@ -386,20 +398,20 @@ def test_snapshot_encoding_sorts_rows_and_rejects_duplicate_keys() -> None:
     )
     graph["conceptual_object"].append(duplicate)
     with pytest.raises(SnapshotContractError, match="duplicate canonical key"):
-        encode_model_snapshot(snapshot_from_graph(graph))
+        encode_project_snapshot(snapshot_from_graph(graph))
 
 
 def test_snapshot_archive_catalogs_all_sections_and_datasets(tmp_path: Path) -> None:
-    snapshot = snapshot_from_graph(complete_model_graph()).model_copy(
+    snapshot = snapshot_from_graph(complete_project_graph()).model_copy(
         update={
-            "model_tenant_code": "TENANT_A",
-            "other_active_model_names": ("Legacy Model", "Other Model"),
+            "project_tenant_code": "TENANT_A",
+            "other_active_project_names": ("Legacy Project", "Other Project"),
         }
     )
     created_at = datetime(2026, 9, 1, tzinfo=UTC)
-    output = tmp_path / "model-snapshot.zip"
+    output = tmp_path / "project-snapshot.zip"
 
-    result = build_model_snapshot_archive(
+    result = build_project_snapshot_archive(
         output,
         snapshot_id=uuid4(),
         snapshot=snapshot,
@@ -410,13 +422,13 @@ def test_snapshot_archive_catalogs_all_sections_and_datasets(tmp_path: Path) -> 
 
     assert result.sha256 == hashlib.sha256(output.read_bytes()).hexdigest()
     with zipfile.ZipFile(output) as archive:
-        catalog = json.loads(archive.read("model-snapshot/catalog.json"))
-        manifest = json.loads(archive.read("model-snapshot/manifest.json"))
+        catalog = json.loads(archive.read("project-snapshot/catalog.json"))
+        manifest = json.loads(archive.read("project-snapshot/manifest.json"))
         names = archive.namelist()
 
     sections = {section["name"]: section for section in catalog["sections"]}
-    assert tuple(sections) == MODEL_SECTIONS
-    assert "model_binding" not in sections
+    assert tuple(sections) == PROJECT_SECTIONS
+    assert "project_binding" not in sections
     assert [item["name"] for item in sections["code_generation"]["datasets"]] == [
         "generated_code",
         "generated_code_source_system",
@@ -425,28 +437,28 @@ def test_snapshot_archive_catalogs_all_sections_and_datasets(tmp_path: Path) -> 
         "validation_group",
         "validation_check",
     ]
-    assert catalog["model"]["tenant_code"] == "TENANT_A"
-    assert catalog["model"]["other_active_model_names"] == [
-        "Legacy Model",
-        "Other Model",
+    assert catalog["project"]["tenant_code"] == "TENANT_A"
+    assert catalog["project"]["other_active_project_names"] == [
+        "Legacy Project",
+        "Other Project",
     ]
-    assert manifest["counts"]["logical_dataset_count"] == 24
+    assert manifest["counts"]["logical_dataset_count"] == 25
     assert manifest["database_ids_included"] is False
-    assert len([name for name in names if name.endswith(".schema.json")]) == 24
-    assert len([name for name in names if name.endswith("rows.jsonl")]) == 24
-    assert not any("qa" in name.casefold() or "model_scope" in name for name in names)
+    assert len([name for name in names if name.endswith(".schema.json")]) == 25
+    assert len([name for name in names if name.endswith("rows.jsonl")]) == 25
+    assert not any("qa" in name.casefold() or "project_scope" in name for name in names)
 
 
 def test_removed_mapping_dependency_is_absent_and_legacy_snapshot_section_is_rejected() -> (
     None
 ):
-    snapshot = snapshot_from_graph(complete_model_graph())
+    snapshot = snapshot_from_graph(complete_project_graph())
     assert "mapping_dependency" not in DATASETS_BY_NAME
     assert set(snapshot.mapping.model_dump()) == {"objects", "attributes"}
     legacy = snapshot.model_dump(mode="json")
     legacy["mapping"]["dependencies"] = []
     with pytest.raises(ValidationError) as error:
-        ModelSnapshot.model_validate(legacy)
+        ProjectSnapshot.model_validate(legacy)
     assert any(
         item["loc"] == ("mapping", "dependencies") for item in error.value.errors()
     )

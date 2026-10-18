@@ -21,9 +21,9 @@ def dataset(name: str) -> DatasetDefinition:
 
 def project_row(code: str, name: str) -> dict[str, object]:
     return {
-        "project_code": code,
-        "project_name": name,
-        "project_description": None,
+        "lane_code": code,
+        "lane_name": name,
+        "lane_description": None,
         "is_active": True,
     }
 
@@ -49,12 +49,12 @@ def object_row(name: str) -> dict[str, object]:
 
 
 def test_snapshot_rows_are_flat_and_id_free() -> None:
-    encoded = encode_dataset(dataset("project"), [project_row("P1", "Finance")])
+    encoded = encode_dataset(dataset("lane"), [project_row("P1", "Finance")])
 
     assert json.loads(encoded.rows_jsonl) == {
-        "project_code": "P1",
-        "project_name": "Finance",
-        "project_description": None,
+        "lane_code": "P1",
+        "lane_name": "Finance",
+        "lane_description": None,
         "is_active": True,
     }
     assert encoded.lookup_jsonl is None
@@ -62,7 +62,7 @@ def test_snapshot_rows_are_flat_and_id_free() -> None:
 
 def test_rows_sort_by_normalized_natural_key_and_preserve_utf8() -> None:
     encoded = encode_dataset(
-        dataset("project"),
+        dataset("lane"),
         [
             project_row("risk", "Risk\nAnalytics 🚀"),
             project_row("FINANCE", "Finance"),
@@ -70,11 +70,11 @@ def test_rows_sort_by_normalized_natural_key_and_preserve_utf8() -> None:
     )
 
     row_lines = encoded.rows_jsonl.decode().splitlines()
-    assert [json.loads(line)["project_code"] for line in row_lines] == [
+    assert [json.loads(line)["lane_code"] for line in row_lines] == [
         "FINANCE",
         "risk",
     ]
-    assert json.loads(row_lines[1])["project_name"] == "Risk\nAnalytics 🚀"
+    assert json.loads(row_lines[1])["lane_name"] == "Risk\nAnalytics 🚀"
     assert "\\n" in row_lines[1]
     assert encoded.row_count == 2
 
@@ -116,7 +116,9 @@ def test_jsonl_preserves_dates_timestamps_and_bigint_text() -> None:
         "copy_group_control_last_run_time": datetime(2026, 8, 2, tzinfo=UTC),
         "copy_group_control_last_run_value": None,
     }
-    control = json.loads(encode_dataset(dataset("copy_group_control"), [control_row]).rows_jsonl)
+    control = json.loads(
+        encode_dataset(dataset("copy_group_control"), [control_row]).rows_jsonl
+    )
     assert control["copy_group_control_initial_load_date"] == "2026-08-01"
     assert control["copy_group_control_last_run_time"] == "2026-08-02T00:00:00Z"
 
@@ -125,16 +127,18 @@ def test_jsonl_rejects_schema_drift_invalid_values_and_normalized_duplicates() -
     valid = project_row("P1", "One")
 
     with pytest.raises(SnapshotContractError, match="fixed schema"):
-        encode_dataset(dataset("project"), [{**valid, "unexpected": "value"}])
+        encode_dataset(dataset("lane"), [{**valid, "unexpected": "value"}])
     with pytest.raises(SnapshotContractError, match="fixed schema"):
-        encode_dataset(dataset("project"), [{**valid, "project_code": None}])
+        encode_dataset(dataset("lane"), [{**valid, "lane_code": None}])
     with pytest.raises(SnapshotContractError, match="duplicate unique key"):
         encode_dataset(
-            dataset("project"),
+            dataset("lane"),
             [valid, project_row(" p1 ", "Duplicate")],
         )
     with pytest.raises(SnapshotContractError, match="fixed dataset values"):
-        encode_dataset(dataset("source_object"), [{**object_row("orders"), "zone_code": "gold"}])
+        encode_dataset(
+            dataset("source_object"), [{**object_row("orders"), "zone_code": "gold"}]
+        )
 
 
 def test_jsonl_keeps_identity_natural_key_strings_case_sensitive() -> None:
@@ -164,10 +168,10 @@ def test_jsonl_keeps_identity_natural_key_strings_case_sensitive() -> None:
 
 
 def test_empty_dataset_writes_only_its_declared_files() -> None:
-    project = encode_dataset(dataset("project"), [])
+    lane = encode_dataset(dataset("lane"), [])
     source_object = encode_dataset(dataset("source_object"), [])
 
-    assert project.rows_jsonl == b""
-    assert project.lookup_jsonl is None
+    assert lane.rows_jsonl == b""
+    assert lane.lookup_jsonl is None
     assert source_object.rows_jsonl == b""
     assert source_object.lookup_jsonl == b""

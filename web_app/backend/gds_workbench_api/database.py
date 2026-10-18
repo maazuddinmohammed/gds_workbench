@@ -62,31 +62,31 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        AND to_regclass('workflow.modeled_entity') IS NOT NULL
        AND to_regclass('workflow.modeled_attribute') IS NOT NULL
        AND (SELECT count(*) = 2 FROM information_schema.columns
-             WHERE table_schema = 'model' AND table_name = 'model'
+             WHERE table_schema = 'project' AND table_name = 'project'
                AND column_name IN ('logical_schemas', 'dimensional_schemas')
                AND data_type = 'jsonb' AND is_nullable = 'NO')
        AND EXISTS (SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = 'model' AND table_name = 'model'
+                    WHERE table_schema = 'project' AND table_name = 'project'
                       AND column_name = 'logical_entity_scd_type'
                       AND data_type = 'character varying'
                       AND character_maximum_length = 10 AND is_nullable = 'YES')
        AND EXISTS (SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = 'model' AND table_name = 'model'
+                    WHERE table_schema = 'project' AND table_name = 'project'
                       AND column_name = 'dimensional_entity_scd_type'
                       AND data_type = 'character varying'
                       AND character_maximum_length = 10 AND is_nullable = 'YES')
        AND (SELECT count(*) = 2 FROM information_schema.columns
-             WHERE table_schema = 'model' AND table_name = 'model'
+             WHERE table_schema = 'project' AND table_name = 'project'
                AND column_name IN ('logical_coverage_threshold_percent',
                                    'dimensional_coverage_threshold_percent')
                AND data_type = 'integer' AND is_nullable = 'NO')
        AND (SELECT count(*) = 2 FROM information_schema.columns
-             WHERE table_schema = 'model' AND table_name = 'model'
+             WHERE table_schema = 'project' AND table_name = 'project'
                AND column_name IN ('logical_enforce_coverage_threshold',
                                    'dimensional_enforce_coverage_threshold')
                AND data_type = 'boolean' AND is_nullable = 'NO')
        AND to_regclass('workflow.generated_code') IS NOT NULL
-       AND to_regclass('model.model_event_log') IS NOT NULL AS schema_ready,
+       AND to_regclass('project.project_event_log') IS NOT NULL AS schema_ready,
        current_user = 'gds_web_write'
        AND EXISTS (
            SELECT 1
@@ -130,7 +130,7 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        )
        AND NOT EXISTS (
            SELECT 1 FROM unnest(ARRAY[
-               'application.authorize_model_record_review('
+               'application.authorize_project_record_review('
                'uuid,uuid,character varying,bigint,bigint)'
            ]) AS required_review_function(signature)
            WHERE NOT coalesce(has_function_privilege(
@@ -155,7 +155,7 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        AND coalesce(has_function_privilege(
            'gds_web_write',
            to_regprocedure(
-           'application.create_model(uuid,uuid,character varying,bigint,'
+           'application.create_project(uuid,uuid,character varying,bigint,'
            'character varying,character varying,jsonb,jsonb,text,jsonb,text,jsonb,jsonb,'
            'character varying,character varying,character varying,'
            'character varying,integer,integer,bigint,character varying,character varying,'
@@ -169,12 +169,12 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        )
        AND has_function_privilege(
            'gds_web_write',
-           'workflow.list_model_object_eligibility(bigint)',
+           'workflow.list_project_object_eligibility(bigint)',
            'EXECUTE'
        )
        AND has_function_privilege(
            'gds_web_write',
-           'workflow.list_model_attribute_eligibility(bigint)',
+           'workflow.list_project_attribute_eligibility(bigint)',
            'EXECUTE'
        )
        AND coalesce(
@@ -196,7 +196,7 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        )
        AND coalesce(has_function_privilege(
            'gds_web_write',
-           to_regprocedure('workflow.is_assertion_only_mapping_target('
+           to_regprocedure('workflow.is_context_only_mapping_target('
                'bigint,bigint,character varying)'),
            'EXECUTE'
        ), FALSE)
@@ -208,7 +208,7 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        )
        AND has_table_privilege(
            'gds_web_write',
-           'mcp.model_change_set',
+           'mcp.project_change_set',
            'SELECT,INSERT,UPDATE'
        )
        AND has_function_privilege(
@@ -220,7 +220,7 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        AND NOT EXISTS (
            SELECT 1
              FROM unnest(ARRAY[
-                      'mcp.apply_model_enrichment_change_set('
+                      'mcp.apply_project_enrichment_change_set('
                       || 'uuid,uuid,character varying,bigint,uuid,bigint,character varying)',
                       'mcp.stage_metadata_change_set('
                       || 'uuid,uuid,character varying,bigint,uuid,bigint,jsonb,uuid)',
@@ -273,7 +273,7 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
                         FROM unnest(ARRAY[
                                  'mcp.create_metadata_change_set('
                                  || 'uuid,uuid,character varying,bigint,uuid,uuid)',
-                                 'mcp.apply_model_enrichment_change_set('
+                                 'mcp.apply_project_enrichment_change_set('
                       || 'uuid,uuid,character varying,bigint,uuid,bigint,character varying)',
                       'mcp.stage_metadata_change_set('
                                  || 'uuid,uuid,character varying,bigint,uuid,'
@@ -323,12 +323,12 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
              FROM pg_catalog.pg_constraint AS constraint_record
             WHERE constraint_record.conrelid =
                   'application.workflow_run'::REGCLASS
-              AND constraint_record.conname = 'fk_workflow_run_model'
+              AND constraint_record.conname = 'fk_workflow_run_project'
               AND constraint_record.contype = 'f'
               AND constraint_record.convalidated
               AND pg_catalog.pg_get_constraintdef(constraint_record.oid) =
-                  'FOREIGN KEY (model_id, tenant_id) '
-                  'REFERENCES model.model(model_id, tenant_id)'
+                  'FOREIGN KEY (project_id, tenant_id) '
+                  'REFERENCES project.project(project_id, tenant_id)'
        )
        AND EXISTS (
            SELECT 1
@@ -378,9 +378,9 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        AND (SELECT count(*) = 26
               FROM application.workflow_stage
              WHERE is_active)
-       AND (SELECT count(*) = 192
+       AND (SELECT count(*) = 184
               FROM application.workflow_stage_variable)
-       AND (SELECT count(*) = 192
+       AND (SELECT count(*) = 184
               FROM application.workflow_stage_variable
              WHERE is_active) AS application_reference_ready
 """

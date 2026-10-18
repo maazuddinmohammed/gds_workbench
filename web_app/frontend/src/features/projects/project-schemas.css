@@ -1,0 +1,120 @@
+.project-definition-form {
+  padding-top: 1rem;
+}
+
+.project-definition-identity {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  align-items: start;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.create-project-fields.project-mapping-default {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+  padding: 0.25rem 0;
+}
+
+.project-mapping-default > label {
+  max-width: 28rem;
+}
+
+.project-mapping-default > .field-help {
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.project-definition-form .create-project-settings > summary {
+  padding: 0.65rem 0;
+  font-size: 0.78rem;
+}
+
+.project-definition-form .create-project-settings > .create-project-fields {
+  padding-bottom: 0.75rem;
+}
+
+.project-schema-settings > .create-project-fields {
+  gap: 0.4rem;
+}
+
+.project-schema-row {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr) minmax(12rem, 2fr) auto;
+  align-items: start;
+  gap: 0.75rem 1rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.project-schema-row.is-saved {
+  align-items: center;
+  padding-block: 0.5rem;
+  background: var(--soft);
+}
+
+.project-schema-row.is-saved label {
+  gap: 0;
+}
+
+.project-schema-row.is-saved :is(input, textarea) {
+  min-height: 2rem;
+  height: 2rem;
+  border-color: transparent;
+  padding: 0.25rem 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+.project-schema-row.is-saved textarea {
+  resize: none;
+}
+
+.project-schema-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: end;
+  gap: 0.65rem;
+  padding-top: 1.6rem;
+}
+
+.project-schema-actions .text-action {
+  white-space: nowrap;
+}
+
+.project-schema-row.is-saved .project-schema-actions {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.65rem;
+  padding-top: 0;
+}
+
+.project-schema-add {
+  display: flex;
+  justify-content: flex-start;
+  padding-top: 0.35rem;
+}
+
+@media (max-width: 42rem) {
+  .project-definition-identity {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 58rem) {
+  .project-schema-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .project-schema-actions {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 0;
+  }
+}

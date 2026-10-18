@@ -167,27 +167,27 @@
     if (manifest.snapshot_kind !== area || catalog.snapshot_kind !== area) {
       throw new Error(`${area} Snapshot kind does not match its session area.`);
     }
-    if (area === "model" && (manifest.schema_version !== "2.0" || catalog.schema_version !== "2.0")) throw new Error("Model Snapshot schema version 2.0 is required.");
+    if (manifest.schema_version !== "3.0" || catalog.schema_version !== "3.0") throw new Error("Snapshot schema version 3.0 is required; download a fresh Snapshot.");
     if (!Array.isArray(catalog.sections)) throw new Error(`${area} catalog sections are invalid.`);
-    if (area === "model" && !core.isEntityOwnedModelCatalog(catalog)) throw new Error("Legacy Model Snapshot contract; fetch a new Entity-owned Model Snapshot.");
-    if (area === "model") {
-      const model = catalog.model;
+    if (area === "project" && !core.isEntityOwnedProjectCatalog(catalog)) throw new Error("Legacy Project Snapshot contract; fetch a new Entity-owned Project Snapshot.");
+    if (area === "project") {
+      const project = catalog.project;
       if (
-        !model ||
-        Array.isArray(model) ||
-        typeof model !== "object" ||
-        !Number.isSafeInteger(manifest.model_id) ||
-        manifest.model_id <= 0 ||
-        typeof manifest.model_name !== "string" ||
-        !manifest.model_name.trim() ||
-        manifest.model_name.length > 255 ||
-        !Number.isSafeInteger(manifest.model_revision) ||
-        manifest.model_revision < 0 ||
-        model.model_id !== manifest.model_id ||
-        model.model_name !== manifest.model_name ||
-        model.model_revision !== manifest.model_revision
+        !project ||
+        Array.isArray(project) ||
+        typeof project !== "object" ||
+        !Number.isSafeInteger(manifest.project_id) ||
+        manifest.project_id <= 0 ||
+        typeof manifest.project_name !== "string" ||
+        !manifest.project_name.trim() ||
+        manifest.project_name.length > 255 ||
+        !Number.isSafeInteger(manifest.project_revision) ||
+        manifest.project_revision < 0 ||
+        project.project_id !== manifest.project_id ||
+        project.project_name !== manifest.project_name ||
+        project.project_revision !== manifest.project_revision
       ) {
-        throw new Error("Model identity does not match between Snapshot manifest and catalog.");
+        throw new Error("Project identity does not match between Snapshot manifest and catalog.");
       }
     }
     const datasets = [];
@@ -245,9 +245,9 @@
     const object = value => value && typeof value === "object" && !Array.isArray(value);
     const identity = value => object(value) && Number.isSafeInteger(value.id) && value.id > 0 &&
       typeof value.code === "string" && value.code.trim();
-    if (!object(state) || state.schema_version !== "1.0" || !identity(state.tenant) ||
-        (state.model != null && (!object(state.model) || !Number.isSafeInteger(state.model.id) || state.model.id <= 0 ||
-          typeof state.model.name !== "string" || !state.model.name.trim())) ||
+    if (!object(state) || state.schema_version !== "2.0" || !identity(state.tenant) ||
+        (state.project != null && (!object(state.project) || !Number.isSafeInteger(state.project.id) || state.project.id <= 0 ||
+          typeof state.project.name !== "string" || !state.project.name.trim())) ||
         (state.active_task != null && (typeof state.active_task !== "string" || !UUID.test(state.active_task))) ||
         (state.sql !== undefined && (!object(state.sql) || !["never", "essential", "proactive"].includes(state.sql.policy) ||
           (state.sql.environment !== undefined && !["dev", "qa", "stg", "prod"].includes(state.sql.environment))))) {
@@ -264,7 +264,7 @@
       }
     }
     if (state.refresh_required !== undefined && (!Array.isArray(state.refresh_required) || state.refresh_required.some(item =>
-      !object(item) || !["metadata", "model"].includes(item.area) || !Number.isSafeInteger(item.owner_tenant_id) ||
+      !object(item) || !["metadata", "project"].includes(item.area) || !Number.isSafeInteger(item.owner_tenant_id) ||
       typeof item.reason !== "string" || !item.reason))) throw new Error("Known Snapshot invalidations have an invalid shape.");
     return state;
   }
@@ -288,7 +288,7 @@
       !value ||
       Array.isArray(value) ||
       typeof value !== "object" ||
-      value.schema_version !== "1.0" ||
+      value.schema_version !== "2.0" ||
       value.area !== area ||
       !new Set(["agent", "workbench"]).has(value.run_by) ||
       typeof value.generated_at !== "string" ||
@@ -338,7 +338,7 @@
     }
 
     owner(area = "metadata") {
-      if (area === "model") return { ...this.state.tenant, root: "." };
+      if (area === "project") return { ...this.state.tenant, root: "." };
       return this.state.metadata_owners?.[this.ownerId] || { ...this.state.tenant, root: "." };
     }
 
@@ -361,20 +361,20 @@
         const file = tasks && await optionalFile(tasks, `${this.state.active_task}.json`);
         if (file) {
           const task = parseJson((await readFile(file)).text, "Active task");
-          if (task?.schema_version !== "1.0" || typeof task.outcome !== "string" || !task.outcome.trim()) throw new Error("The active task has an invalid shape.");
+          if (task?.schema_version !== "2.0" || typeof task.outcome !== "string" || !task.outcome.trim()) throw new Error("The active task has an invalid shape.");
           this.task = task;
         }
       }
       const nextAreas = new Map(), errors = new Map();
-      for (const area of ["metadata", "model"]) {
+      for (const area of ["metadata", "project"]) {
         try {
           const snapshot = await locateSnapshot(await this.dataRoot(area), area);
           if (snapshot) {
             const owner = this.owner(area);
-            const code = snapshot.manifest.tenant_code ?? snapshot.catalog.model?.tenant_code;
+            const code = snapshot.manifest.tenant_code ?? snapshot.catalog.project?.tenant_code;
             if (typeof code !== "string" || core.normalize("metadata", "tenant_code", code) !== core.normalize("metadata", "tenant_code", owner.code)) throw new Error(`${area} Snapshot Tenant does not match the selected owner.`);
             if (snapshot.manifest.tenant_id !== undefined && snapshot.manifest.tenant_id !== owner.id) throw new Error(`${area} Snapshot Tenant ID does not match the selected owner.`);
-            if (area === "model" && (!this.state.model || this.state.model.id !== snapshot.manifest.model_id || this.state.model.name !== snapshot.manifest.model_name)) throw new Error("Model Snapshot identity conflicts with .atlas/session.json. Resolve it through Atlas.");
+            if (area === "project" && (!this.state.project || this.state.project.id !== snapshot.manifest.project_id || this.state.project.name !== snapshot.manifest.project_name)) throw new Error("Project Snapshot identity conflicts with .atlas/session.json. Resolve it through Atlas.");
           }
           nextAreas.set(area, snapshot);
         } catch (error) { nextAreas.set(area, null); errors.set(area, error.message); }
@@ -397,7 +397,7 @@
       const prefix = area === "metadata" && owner.root !== "." ? `${owner.root}/` : "";
       return { area, owner_tenant_id: owner.id, snapshot_id: snapshot.manifest.snapshot_id,
         manifest_path: `${prefix}${area}/${area}-snapshot/manifest.json`, manifest_sha256: snapshot.manifestDigest,
-        ...(area === "model" ? { model_revision: snapshot.manifest.model_revision } : {}),
+        ...(area === "project" ? { project_revision: snapshot.manifest.project_revision } : {}),
         ...(draftDigest === undefined ? {} : { draft_digest: draftDigest }) };
     }
 
@@ -415,8 +415,8 @@
         if (!Array.isArray(declared)) throw new Error("Task Snapshot bindings must be an array.");
         taskBinding = { path: taskPath, snapshot_selection: core.stableStringify(declared) };
         for (const input of declared) {
-          if (!input || !["metadata", "model"].includes(input.area)) throw new Error("Invalid task Snapshot binding.");
-          const owner = input.area === "model" || input.owner_tenant_id === this.state.tenant.id ? { ...this.state.tenant, root: "." } : this.state.metadata_owners?.[String(input.owner_tenant_id)];
+          if (!input || !["metadata", "project"].includes(input.area)) throw new Error("Invalid task Snapshot binding.");
+          const owner = input.area === "project" || input.owner_tenant_id === this.state.tenant.id ? { ...this.state.tenant, root: "." } : this.state.metadata_owners?.[String(input.owner_tenant_id)];
           if (!owner) throw new Error("Task Snapshot owner is not registered.");
           const context = await locateSnapshot(await this.dataRoot(input.area, owner), input.area);
           if (!context) throw new Error("A task-bound Snapshot is missing.");
@@ -430,12 +430,12 @@
       return binding;
     }
 
-    async loadModelMetadata() {
+    async loadProjectMetadata() {
       const owners = new Map([[this.state.tenant.id, { ...this.state.tenant, root: "." }],
         ...Object.values(this.state.metadata_owners || {}).map(owner => [owner.id, owner])]);
       const loaded = new Map(), inputs = [], missing = [];
       for (const owner of owners.values()) {
-        if (this.state.refresh_required?.some(item => item.area === "metadata" && item.owner_tenant_id === owner.id)) throw new Error(`Metadata for ${owner.code} needs refresh before Model validation.`);
+        if (this.state.refresh_required?.some(item => item.area === "metadata" && item.owner_tenant_id === owner.id)) throw new Error(`Metadata for ${owner.code} needs refresh before Project validation.`);
         let snapshot;
         try { snapshot = await locateSnapshot(await this.dataRoot("metadata", owner), "metadata"); }
         catch (error) { if (error.name !== "NotFoundError") throw error; }
@@ -452,7 +452,7 @@
           const merged = new Map((previous?.baseline || []).map(row => [core.stableStringify(core.key("metadata", definition, row)), row]));
           for (const row of rows) {
             const key = core.stableStringify(core.key("metadata", definition, row)), existing = merged.get(key);
-            if (existing && core.stableStringify(existing) !== core.stableStringify(row)) throw new Error("Owner Snapshots disagree on a shared record; resolve ownership/version before Model validation.");
+            if (existing && core.stableStringify(existing) !== core.stableStringify(row)) throw new Error("Owner Snapshots disagree on a shared record; resolve ownership/version before Project validation.");
             merged.set(key, row);
           }
           const baseline = [...merged.values()];
@@ -470,8 +470,8 @@
         if (core.stableStringify(task.inputs?.snapshots || []) !== binding.task_binding.snapshot_selection) throw new Error("Task context changed during the operation; run it again.");
       }
       for (const input of binding.inputs) {
-        const owner = input.area === "model" || input.owner_tenant_id === this.state.tenant.id ? { ...this.state.tenant, root: "." } : this.state.metadata_owners?.[String(input.owner_tenant_id)];
-        if (!owner || input.area === "model" && input.owner_tenant_id !== this.state.tenant.id) throw new Error("Snapshot input owner is no longer registered.");
+        const owner = input.area === "project" || input.owner_tenant_id === this.state.tenant.id ? { ...this.state.tenant, root: "." } : this.state.metadata_owners?.[String(input.owner_tenant_id)];
+        if (!owner || input.area === "project" && input.owner_tenant_id !== this.state.tenant.id) throw new Error("Snapshot input owner is no longer registered.");
         if (this.state.refresh_required?.some(item => item.area === input.area && item.owner_tenant_id === owner.id)) throw new Error("Snapshot input requires refresh.");
         const expectedPath = `${input.area === "metadata" && owner.root !== "." ? `${owner.root}/` : ""}${input.area}/${input.area}-snapshot/manifest.json`;
         if (input.manifest_path !== expectedPath || (await readFile(await fileAt(this.handle, expectedPath))).digest !== input.manifest_sha256 ||
@@ -625,14 +625,14 @@
     }
 
     async loadOperation(area) {
-      const pointer = area === "metadata" ? this.state.operations?.metadata?.[String(this.owner(area).id)] : this.state.operations?.model;
+      const pointer = area === "metadata" ? this.state.operations?.metadata?.[String(this.owner(area).id)] : this.state.operations?.project;
       if (!pointer) return null;
       safeSegments(pointer);
       if (!/^\.atlas\/tasks\/[A-Za-z0-9_-]+\.evidence\/[A-Za-z0-9_.-]+\.json$/.test(pointer)) throw new Error("Operation evidence must be retained inside its task evidence directory.");
       const file = await readFile(await fileAt(this.handle, pointer));
       if (file.bytes.length > 1024 * 1024) throw new Error("Operation evidence exceeds its local size limit.");
       const value = parseJson(file.text, "Operation evidence");
-      if (value.schema_version !== "1.0" || value.area !== area || value.owner?.id !== this.owner(area).id ||
+      if (value.schema_version !== "2.0" || value.area !== area || value.owner?.id !== this.owner(area).id ||
           core.normalize("metadata", "tenant_code", value.owner?.code) !== core.normalize("metadata", "tenant_code", this.owner(area).code)) throw new Error("Operation evidence belongs to another owner or area.");
       const digest = this.areas.get(area) ? await this.localChangeSetDigest(area) : null;
       let historical = value.local_digest !== digest;
@@ -658,8 +658,8 @@
     }
 
     async loadValidationReport(area) {
-      if (!new Set(["metadata", "model"]).has(area)) {
-        throw new Error("Validation report area must be metadata or model.");
+      if (!new Set(["metadata", "project"]).has(area)) {
+        throw new Error("Validation report area must be metadata or project.");
       }
       const directory = await this.validationReportDirectory(false);
       if (!directory) return null;
@@ -731,7 +731,7 @@
       if (!snapshot) throw new Error(`${area} Snapshot is not available.`);
       const report = validateValidationReport(
         {
-          schema_version: "1.0",
+          schema_version: "2.0",
           area,
           owner_tenant_id: this.owner(area).id,
           checks: validation.checks || [],
@@ -742,7 +742,7 @@
           digest,
           snapshot: {
             id: snapshot.manifest.snapshot_id,
-            revision: snapshot.manifest.model_revision ?? null,
+            revision: snapshot.manifest.project_revision ?? null,
             manifest_digest: snapshot.manifestDigest,
           },
           valid: validation.valid,
@@ -761,7 +761,7 @@
     }
 
     async saveDbmlDocuments(documents, options = {}) {
-      this.requireFresh("model");
+      this.requireFresh("project");
       if (!options.binding) throw new Error("DBML export requires captured Snapshot and Change Set inputs.");
       await this.assertInputsUnchanged(options.binding);
       if (!Array.isArray(documents) || !documents.length || documents.length > 1002) {
@@ -789,9 +789,9 @@
       if (totalBytes > 16 * 1024 * 1024) {
         throw new Error("Generated DBML files exceed their aggregate byte limit.");
       }
-      const snapshot = this.areas.get("model");
-      if (!snapshot?.catalog?.model) throw new Error("Model Snapshot identity is unavailable.");
-      const directory = await this.handle.getDirectoryHandle("model-dbml", { create: true });
+      const snapshot = this.areas.get("project");
+      if (!snapshot?.catalog?.project) throw new Error("Project Snapshot identity is unavailable.");
+      const directory = await this.handle.getDirectoryHandle("project-dbml", { create: true });
       const previousHandle = await optionalFile(directory, "manifest.json");
       let previousFiles = [];
       if (previousHandle) {
@@ -842,16 +842,16 @@
       }
       await this.assertInputsUnchanged(options.binding);
       const manifest = {
-        schema_version: "1.0",
+        schema_version: "2.0",
         snapshot_kind: "dbml",
-        source: "local_effective_model",
+        source: "local_effective_project",
         generated_by: "workbench",
-        model: {
-          id: snapshot.catalog.model.model_id,
-          name: snapshot.catalog.model.model_name,
-          revision: snapshot.catalog.model.model_revision,
+        project: {
+          id: snapshot.catalog.project.project_id,
+          name: snapshot.catalog.project.project_name,
+          revision: snapshot.catalog.project.project_revision,
         },
-        draft_digest: options.binding.inputs.find(item => item.area === "model").draft_digest,
+        draft_digest: options.binding.inputs.find(item => item.area === "project").draft_digest,
         inputs: options.binding.inputs,
         model_type: options.modelType || "full",
         include_submodels: options.includeSubmodels !== false,
@@ -863,8 +863,8 @@
       );
       await this.assertInputsUnchanged(options.binding);
       return {
-        directory: "model-dbml",
-        manifest: "model-dbml/manifest.json",
+        directory: "project-dbml",
+        manifest: "project-dbml/manifest.json",
         file_count: files.length,
         draft_digest: manifest.draft_digest,
         files: files.map((item) => item.path),

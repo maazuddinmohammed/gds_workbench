@@ -3,9 +3,9 @@
 CREATE TABLE application.workflow_run (
     workflow_run_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     tenant_id BIGINT NOT NULL,
-    model_id BIGINT NOT NULL,
-    model_revision BIGINT NOT NULL,
-    model_workflow VARCHAR(30) NOT NULL,
+    project_id BIGINT NOT NULL,
+    project_revision BIGINT NOT NULL,
+    project_workflow VARCHAR(30) NOT NULL,
     workflow_execution_mode VARCHAR(50),
     actor_principal_id BIGINT NOT NULL,
     actor_entra_principal_identity_id BIGINT,
@@ -28,7 +28,7 @@ CREATE TABLE application.workflow_run (
     profiling_completed_objects INTEGER NOT NULL DEFAULT 0,
     profiling_saved_profiles INTEGER NOT NULL DEFAULT 0,
     CONSTRAINT ck_workflow_execution_backend CHECK (
-        execution_backend = 'web' OR (execution_backend = 'mcp' AND model_workflow = 'profiling')
+        execution_backend = 'web' OR (execution_backend = 'mcp' AND project_workflow = 'profiling')
     ),
     CONSTRAINT ck_profiling_progress CHECK (
         profiling_completed_objects >= 0 AND profiling_saved_profiles >= 0
@@ -59,9 +59,9 @@ CREATE TABLE application.workflow_run (
     failure_message VARCHAR(2000),
     metadata_enrichment_receipt_digest CHAR(64),
     metadata_enrichment_description_targets JSONB,
-    authoring_no_op_base_model_revision BIGINT,
+    authoring_no_op_base_project_revision BIGINT,
     authoring_no_op_candidate_digest CHAR(64),
-    authoring_no_op_model_event_log_id BIGINT,
+    authoring_no_op_project_event_log_id BIGINT,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -75,13 +75,13 @@ CREATE TABLE application.workflow_run (
     ),
     CONSTRAINT ck_workflow_run_description_targets CHECK (
         metadata_enrichment_description_targets IS NULL OR (
-            model_workflow = 'metadata_enrichment'
+            project_workflow = 'metadata_enrichment'
             AND jsonb_typeof(metadata_enrichment_description_targets) = 'array'
             AND jsonb_array_length(metadata_enrichment_description_targets) >= 1
         )
     ),
-    CONSTRAINT fk_workflow_run_model FOREIGN KEY (model_id, tenant_id)
-        REFERENCES model.model (model_id, tenant_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_workflow_run_project FOREIGN KEY (project_id, tenant_id)
+        REFERENCES project.project (project_id, tenant_id) ON DELETE NO ACTION,
     CONSTRAINT fk_workflow_run_actor FOREIGN KEY (actor_principal_id)
         REFERENCES security.principal (principal_id) ON DELETE NO ACTION,
     CONSTRAINT fk_workflow_run_actor_identity FOREIGN KEY (
@@ -90,8 +90,8 @@ CREATE TABLE application.workflow_run (
         entra_principal_identity_id
     ) ON DELETE NO ACTION,
     CONSTRAINT fk_workflow_run_authoring_no_op_event FOREIGN KEY (
-        authoring_no_op_model_event_log_id
-    ) REFERENCES model.model_event_log (model_event_log_id) ON DELETE NO ACTION,
+        authoring_no_op_project_event_log_id
+    ) REFERENCES project.project_event_log (project_event_log_id) ON DELETE NO ACTION,
     CONSTRAINT fk_workflow_run_mapping_object_output_template FOREIGN KEY (
         mapping_object_output_template_id,
         mapping_object_output_template_schema_digest
@@ -108,14 +108,14 @@ CREATE TABLE application.workflow_run (
     ) ON DELETE NO ACTION,
     CONSTRAINT uq_workflow_run_correlation UNIQUE (correlation_id),
     CONSTRAINT uq_workflow_run_authoring_no_op_event UNIQUE (
-        authoring_no_op_model_event_log_id
+        authoring_no_op_project_event_log_id
     ),
-    CONSTRAINT uq_workflow_run_model_witness UNIQUE (
+    CONSTRAINT uq_workflow_run_project_witness UNIQUE (
         workflow_run_id,
-        model_id
+        project_id
     ),
     CONSTRAINT ck_workflow_run_workflow CHECK (
-        model_workflow IN (
+        project_workflow IN (
             'profiling', 'analysis', 'conceptual', 'logical',
             'dimensional', 'mapping', 'code_generation', 'validation',
             'metadata_enrichment'
@@ -123,34 +123,34 @@ CREATE TABLE application.workflow_run (
     ),
     CONSTRAINT ck_workflow_run_metadata_enrichment_receipt CHECK (
         metadata_enrichment_receipt_digest IS NULL
-        OR (model_workflow = 'metadata_enrichment'
+        OR (project_workflow = 'metadata_enrichment'
             AND metadata_enrichment_receipt_digest ~ '^[0-9a-f]{64}$')
     ),
-    CONSTRAINT ck_workflow_run_model_revision CHECK (
-        model_revision > 0
+    CONSTRAINT ck_workflow_run_project_revision CHECK (
+        project_revision > 0
     ),
     CONSTRAINT ck_workflow_run_execution_mode CHECK (
         (
             workflow_execution_mode IS NULL
-            AND model_workflow IN (
+            AND project_workflow IN (
                 'profiling', 'analysis', 'code_generation', 'validation'
             )
         ) OR (
             workflow_execution_mode IN (
                 'one_shot', 'tool_assisted'
             )
-            AND model_workflow IN (
+            AND project_workflow IN (
                 'analysis', 'conceptual', 'logical',
                 'dimensional', 'mapping'
             )
         ) OR (
-            model_workflow = 'metadata_enrichment'
+            project_workflow = 'metadata_enrichment'
             AND workflow_execution_mode IS NOT DISTINCT FROM 'one_shot'
         )
     ),
     CONSTRAINT ck_workflow_run_agent_configuration CHECK (
         (
-            model_workflow NOT IN ('code_generation', 'validation')
+            project_workflow NOT IN ('code_generation', 'validation')
             AND workflow_execution_mode IS NULL
             AND agent_sdk_code IS NULL
             AND agent_provider_code IS NULL
@@ -160,7 +160,7 @@ CREATE TABLE application.workflow_run (
             AND validation_retry_count IS NULL
         ) OR (
             (
-                model_workflow IN ('code_generation', 'validation')
+                project_workflow IN ('code_generation', 'validation')
                 OR workflow_execution_mode IS NOT NULL
             )
             AND agent_sdk_code IS NOT NULL
@@ -188,39 +188,39 @@ CREATE TABLE application.workflow_run (
     ),
     CONSTRAINT ck_workflow_run_modeled_entity_type CHECK (
         (
-            model_workflow IN ('dimensional', 'mapping', 'code_generation')
+            project_workflow IN ('dimensional', 'mapping', 'code_generation')
             AND modeled_entity_type IS NOT NULL
             AND modeled_entity_type IN (
                 'logical_entity', 'dimensional_entity'
             )
-        ) OR (model_workflow = 'validation' AND (modeled_entity_type IS NULL
+        ) OR (project_workflow = 'validation' AND (modeled_entity_type IS NULL
             OR modeled_entity_type IN ('logical_entity', 'dimensional_entity'))) OR (
-            model_workflow NOT IN ('dimensional', 'mapping', 'code_generation', 'validation')
+            project_workflow NOT IN ('dimensional', 'mapping', 'code_generation', 'validation')
             AND modeled_entity_type IS NULL
         )
     ),
     CONSTRAINT ck_workflow_run_code_generation_options CHECK (
-        ((model_workflow = 'code_generation'
+        ((project_workflow = 'code_generation'
             AND code_generation_file_layout IS NOT NULL
             AND code_generation_file_layout IN ('combined', 'per_system'))
-         OR (model_workflow <> 'code_generation' AND code_generation_file_layout IS NULL))
-        AND (code_generation_system_codes IS NULL OR model_workflow = 'code_generation')
+         OR (project_workflow <> 'code_generation' AND code_generation_file_layout IS NULL))
+        AND (code_generation_system_codes IS NULL OR project_workflow = 'code_generation')
     ),
     CONSTRAINT ck_workflow_run_code_generation_request CHECK (
         (
-            model_workflow = 'code_generation'
+            project_workflow = 'code_generation'
             AND code_generation_coverage_mode IS NOT NULL
             AND code_generation_coverage_mode IN (
                 'selected_targets', 'all_eligible_targets'
             )
         ) OR (
-            model_workflow <> 'code_generation'
+            project_workflow <> 'code_generation'
             AND code_generation_coverage_mode IS NULL
         )
     ),
     CONSTRAINT ck_workflow_run_mapping_request CHECK (
         (
-            model_workflow = 'mapping'
+            project_workflow = 'mapping'
             AND num_nonnulls(
                 mapping_operation,
                 mapping_coverage_mode,
@@ -235,7 +235,7 @@ CREATE TABLE application.workflow_run (
             END
             AND selected_scope_count > 0
         ) OR (
-            model_workflow <> 'mapping'
+            project_workflow <> 'mapping'
             AND mapping_operation IS NULL
             AND mapping_coverage_mode IS NULL
             AND mapping_route IS NULL
@@ -251,7 +251,7 @@ CREATE TABLE application.workflow_run (
             mapping_attribute_output_template_schema_digest
         ) IN (0, 2)
         AND (
-            model_workflow = 'mapping'
+            project_workflow = 'mapping'
             OR num_nonnulls(
                 mapping_object_output_template_id,
                 mapping_object_output_template_schema_digest,
@@ -263,7 +263,7 @@ CREATE TABLE application.workflow_run (
     CONSTRAINT ck_workflow_run_requested_batch_id CHECK (
         requested_batch_id IS NULL
         OR (
-            model_workflow IN ('profiling', 'analysis')
+            project_workflow IN ('profiling', 'analysis')
             AND reference.is_nonblank(requested_batch_id)
             AND requested_batch_id = btrim(requested_batch_id)
             AND octet_length(requested_batch_id) <= 500
@@ -353,39 +353,39 @@ CREATE TABLE application.workflow_run (
     ),
     CONSTRAINT ck_workflow_run_authoring_no_op_receipt CHECK (
         num_nonnulls(
-            authoring_no_op_base_model_revision,
+            authoring_no_op_base_project_revision,
             authoring_no_op_candidate_digest,
-            authoring_no_op_model_event_log_id
+            authoring_no_op_project_event_log_id
         ) IN (0, 3)
         AND (
             authoring_no_op_candidate_digest IS NULL
             OR (
                 workflow_run_state IN ('completed', 'completed_with_repair')
-                AND model_workflow IN (
+                AND project_workflow IN (
                     'analysis', 'conceptual', 'logical', 'dimensional', 'mapping',
                     'code_generation', 'validation'
                 )
                 AND (
                     (
-                        model_workflow IN (
+                        project_workflow IN (
                             'analysis', 'conceptual', 'logical',
                             'dimensional', 'mapping'
                         )
                         AND workflow_execution_mode IS NOT NULL
                     ) OR (
-                        model_workflow IN ('code_generation', 'validation')
+                        project_workflow IN ('code_generation', 'validation')
                         AND workflow_execution_mode IS NULL
                     )
                 )
-                AND authoring_no_op_base_model_revision > 0
+                AND authoring_no_op_base_project_revision > 0
                 AND authoring_no_op_candidate_digest ~ '^[0-9a-f]{64}$'
             )
         )
     )
 );
 
-CREATE INDEX ix_workflow_run_model_created
-    ON application.workflow_run (model_id, created_time DESC);
+CREATE INDEX ix_workflow_run_project_created
+    ON application.workflow_run (project_id, created_time DESC);
 CREATE INDEX ix_workflow_run_state
     ON application.workflow_run (workflow_run_state, created_time);
 CREATE INDEX ix_workflow_run_claim_eligibility
@@ -403,7 +403,7 @@ CREATE UNIQUE INDEX uq_workflow_run_running_tenant
 CREATE TABLE application.workflow_run_object_selection (
     workflow_run_object_selection_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     workflow_run_id BIGINT NOT NULL,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     object_id BIGINT NOT NULL,
     selection_order INTEGER NOT NULL,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -412,8 +412,8 @@ CREATE TABLE application.workflow_run_object_selection (
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     CONSTRAINT fk_workflow_run_object_selection_run FOREIGN KEY (
         workflow_run_id,
-        model_id
-    ) REFERENCES application.workflow_run (workflow_run_id, model_id)
+        project_id
+    ) REFERENCES application.workflow_run (workflow_run_id, project_id)
         ON DELETE NO ACTION,
     CONSTRAINT fk_workflow_run_object_selection_object FOREIGN KEY (object_id)
         REFERENCES core.object (object_id) ON DELETE NO ACTION,
@@ -433,7 +433,7 @@ CREATE TABLE application.workflow_run_object_selection (
 CREATE TABLE application.workflow_run_system_selection (
     workflow_run_system_selection_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     workflow_run_id BIGINT NOT NULL,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     system_id BIGINT NOT NULL,
     system_code VARCHAR(100) NOT NULL,
     selection_order INTEGER NOT NULL,
@@ -443,8 +443,8 @@ CREATE TABLE application.workflow_run_system_selection (
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     CONSTRAINT fk_workflow_run_system_selection_run FOREIGN KEY (
         workflow_run_id,
-        model_id
-    ) REFERENCES application.workflow_run (workflow_run_id, model_id)
+        project_id
+    ) REFERENCES application.workflow_run (workflow_run_id, project_id)
         ON DELETE NO ACTION,
     CONSTRAINT fk_workflow_run_system_selection_system FOREIGN KEY (system_id)
         REFERENCES core.system (system_id) ON DELETE NO ACTION,
@@ -467,7 +467,7 @@ CREATE TABLE application.workflow_run_system_selection (
 CREATE TABLE application.workflow_run_entity_selection (
     workflow_run_entity_selection_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     workflow_run_id BIGINT NOT NULL,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     modeled_entity_type VARCHAR(30) NOT NULL,
     modeled_entity_id BIGINT NOT NULL,
     modeled_entity_schema_name VARCHAR(400) NOT NULL,
@@ -477,11 +477,11 @@ CREATE TABLE application.workflow_run_entity_selection (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_workflow_run_entity_selection_run FOREIGN KEY (workflow_run_id,model_id)
-        REFERENCES application.workflow_run (workflow_run_id,model_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_workflow_run_entity_selection_run FOREIGN KEY (workflow_run_id,project_id)
+        REFERENCES application.workflow_run (workflow_run_id,project_id) ON DELETE NO ACTION,
     -- Frozen identity intentionally has no FK to a deletable live Entity.
     CONSTRAINT uq_workflow_run_entity_selection_entity UNIQUE (workflow_run_id,modeled_entity_type,modeled_entity_id),
-    CONSTRAINT uq_workflow_run_entity_selection_witness UNIQUE (workflow_run_entity_selection_id,workflow_run_id,model_id),
+    CONSTRAINT uq_workflow_run_entity_selection_witness UNIQUE (workflow_run_entity_selection_id,workflow_run_id,project_id),
     CONSTRAINT uq_workflow_run_entity_selection_order UNIQUE (workflow_run_id,selection_order),
     CONSTRAINT ck_workflow_run_entity_selection_identity CHECK (
         modeled_entity_type IN ('logical_entity','dimensional_entity') AND modeled_entity_id > 0
@@ -504,7 +504,7 @@ CREATE TABLE application.workflow_run_mapping_target_selection (
     workflow_run_mapping_target_selection_id BIGINT GENERATED ALWAYS AS IDENTITY
         PRIMARY KEY,
     workflow_run_id BIGINT NOT NULL,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     workflow_run_entity_selection_id BIGINT NOT NULL,
     source_system_id BIGINT NOT NULL,
     selection_order INTEGER NOT NULL,
@@ -515,13 +515,13 @@ CREATE TABLE application.workflow_run_mapping_target_selection (
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     CONSTRAINT fk_workflow_run_mapping_target_selection_run FOREIGN KEY (
         workflow_run_id,
-        model_id
-    ) REFERENCES application.workflow_run (workflow_run_id, model_id)
+        project_id
+    ) REFERENCES application.workflow_run (workflow_run_id, project_id)
         ON DELETE NO ACTION,
     CONSTRAINT fk_workflow_run_mapping_target_selection_entity FOREIGN KEY (
-        workflow_run_entity_selection_id, workflow_run_id, model_id
+        workflow_run_entity_selection_id, workflow_run_id, project_id
     ) REFERENCES application.workflow_run_entity_selection (
-        workflow_run_entity_selection_id, workflow_run_id, model_id
+        workflow_run_entity_selection_id, workflow_run_id, project_id
     ) ON DELETE NO ACTION,
     CONSTRAINT fk_workflow_run_mapping_target_selection_system FOREIGN KEY (
         source_system_id
@@ -603,9 +603,9 @@ BEGIN
 
     IF ROW(
         NEW.tenant_id,
-        NEW.model_id,
-        NEW.model_revision,
-        NEW.model_workflow,
+        NEW.project_id,
+        NEW.project_revision,
+        NEW.project_workflow,
         NEW.workflow_execution_mode,
         NEW.actor_principal_id,
         NEW.actor_entra_principal_identity_id,
@@ -636,9 +636,9 @@ BEGIN
         NEW.created_by
     ) IS DISTINCT FROM ROW(
         OLD.tenant_id,
-        OLD.model_id,
-        OLD.model_revision,
-        OLD.model_workflow,
+        OLD.project_id,
+        OLD.project_revision,
+        OLD.project_workflow,
         OLD.workflow_execution_mode,
         OLD.actor_principal_id,
         OLD.actor_entra_principal_identity_id,
@@ -690,17 +690,17 @@ BEGIN
             NEW.completed_time,
             NEW.failure_code,
             NEW.failure_message,
-            NEW.authoring_no_op_base_model_revision,
+            NEW.authoring_no_op_base_project_revision,
             NEW.authoring_no_op_candidate_digest,
-            NEW.authoring_no_op_model_event_log_id
+            NEW.authoring_no_op_project_event_log_id
         ) IS DISTINCT FROM ROW(
             OLD.started_time,
             OLD.completed_time,
             OLD.failure_code,
             OLD.failure_message,
-            OLD.authoring_no_op_base_model_revision,
+            OLD.authoring_no_op_base_project_revision,
             OLD.authoring_no_op_candidate_digest,
-            OLD.authoring_no_op_model_event_log_id
+            OLD.authoring_no_op_project_event_log_id
         ) THEN
             RAISE EXCEPTION 'workflow run outcome is immutable while running'
                 USING ERRCODE = '55000';
@@ -757,158 +757,146 @@ CREATE TRIGGER guard_workflow_run
 BEFORE UPDATE OR DELETE ON application.workflow_run
 FOR EACH ROW EXECUTE FUNCTION application.guard_workflow_run();
 
-ALTER TABLE model.model_event_log
-    ADD CONSTRAINT fk_model_event_log_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
-    ON DELETE NO ACTION;
-
-ALTER TABLE model.modeling_assertion_document
-    ADD CONSTRAINT fk_modeling_assertion_document_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
-    ON DELETE NO ACTION;
-
-ALTER TABLE model.modeling_assertion_record
-    ADD CONSTRAINT fk_modeling_assertion_record_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+ALTER TABLE project.project_event_log
+    ADD CONSTRAINT fk_project_event_log_workflow_run
+    FOREIGN KEY (workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
 ALTER TABLE workflow.attribute_profile
     ADD CONSTRAINT fk_attribute_profile_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
 ALTER TABLE workflow.object_enrichment
     ADD CONSTRAINT fk_object_enrichment_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
 ALTER TABLE workflow.attribute_enrichment
     ADD CONSTRAINT fk_attribute_enrichment_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
 ALTER TABLE workflow.analysis_result
     ADD CONSTRAINT fk_analysis_result_inference_workflow_run
-    FOREIGN KEY (inference_workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (inference_workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION,
     ADD CONSTRAINT fk_analysis_result_validation_workflow_run
-    FOREIGN KEY (validation_workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (validation_workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
 ALTER TABLE workflow.conceptual_object
     ADD CONSTRAINT fk_conceptual_object_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
 ALTER TABLE workflow.conceptual_relationship
     ADD CONSTRAINT fk_conceptual_relationship_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
 ALTER TABLE workflow.conceptual_support
     ADD CONSTRAINT fk_conceptual_support_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
 ALTER TABLE workflow.logical_submodel
     ADD CONSTRAINT fk_logical_submodel_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
 ALTER TABLE workflow.logical_entity
     ADD CONSTRAINT fk_logical_entity_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
 ALTER TABLE workflow.logical_entity_submodel
     ADD CONSTRAINT fk_logical_entity_submodel_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
 ALTER TABLE workflow.logical_attribute
     ADD CONSTRAINT fk_logical_attribute_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
 ALTER TABLE workflow.logical_entity_source_mapping
     ADD CONSTRAINT fk_logical_entity_source_mapping_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
 ALTER TABLE workflow.logical_attribute_source_mapping
     ADD CONSTRAINT fk_logical_attribute_source_mapping_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
 ALTER TABLE workflow.logical_relationship
     ADD CONSTRAINT fk_logical_relationship_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
 ALTER TABLE workflow.dimensional_submodel
     ADD CONSTRAINT fk_dimensional_submodel_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
 ALTER TABLE workflow.dimensional_entity
     ADD CONSTRAINT fk_dimensional_entity_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
 ALTER TABLE workflow.dimensional_entity_submodel
     ADD CONSTRAINT fk_dimensional_entity_submodel_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
 ALTER TABLE workflow.dimensional_attribute
     ADD CONSTRAINT fk_dimensional_attribute_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
 ALTER TABLE workflow.dimensional_entity_source_mapping
     ADD CONSTRAINT fk_dimensional_entity_source_mapping_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
 ALTER TABLE workflow.dimensional_attribute_source_mapping
     ADD CONSTRAINT fk_dimensional_attribute_source_mapping_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
 ALTER TABLE workflow.dimensional_relationship
     ADD CONSTRAINT fk_dimensional_relationship_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
 ALTER TABLE workflow.mapping_object
     ADD CONSTRAINT fk_mapping_object_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
 ALTER TABLE workflow.mapping_attribute
@@ -931,14 +919,14 @@ ALTER TABLE workflow.generated_code_source_system
 
 ALTER TABLE workflow.validation_group
     ADD CONSTRAINT fk_validation_group_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (workflow_run_id, project_id)
+    REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
 CREATE TABLE application.workflow_run_prompt_snapshot (
     workflow_run_prompt_snapshot_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     workflow_run_id BIGINT NOT NULL,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     workflow_stage_id BIGINT NOT NULL,
     prompt_template_version_id BIGINT NOT NULL,
     prompt_resolution_source VARCHAR(20) NOT NULL,
@@ -949,8 +937,8 @@ CREATE TABLE application.workflow_run_prompt_snapshot (
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     CONSTRAINT fk_workflow_run_prompt_snapshot_run FOREIGN KEY (
         workflow_run_id,
-        model_id
-    ) REFERENCES application.workflow_run (workflow_run_id, model_id)
+        project_id
+    ) REFERENCES application.workflow_run (workflow_run_id, project_id)
         ON DELETE NO ACTION,
     CONSTRAINT fk_workflow_run_prompt_snapshot_version FOREIGN KEY (
         prompt_template_version_id,
@@ -967,7 +955,7 @@ CREATE TABLE application.workflow_run_prompt_snapshot (
     ),
     CONSTRAINT ck_workflow_run_prompt_snapshot_source CHECK (
         prompt_resolution_source IN (
-            'run_override', 'model_default', 'global_default'
+            'run_override', 'project_default', 'global_default'
         )
     ),
     CONSTRAINT ck_workflow_run_prompt_snapshot_digest CHECK (
@@ -1013,16 +1001,16 @@ BEGIN
     END IF;
 
     SELECT run.workflow_run_id,
-           run.model_id,
-           run.model_workflow,
+           run.project_id,
+           run.project_workflow,
            run.workflow_execution_mode,
            run.metadata_enrichment_description_targets,
-           model.tenant_id
+           project.tenant_id
       INTO v_run
       FROM application.workflow_run AS run
-      JOIN model.model AS model
-        ON model.model_id = run.model_id
-       AND model.is_active
+      JOIN project.project AS project
+        ON project.project_id = run.project_id
+       AND project.is_active
      WHERE run.workflow_run_id = p_workflow_run_id
        AND run.workflow_run_state = 'queued'
      FOR UPDATE OF run;
@@ -1042,12 +1030,12 @@ BEGIN
         SELECT stage.workflow_stage_id
           FROM application.workflow_stage AS stage
          WHERE (
-             (v_run.model_workflow <> 'metadata_enrichment' AND stage.model_workflow = v_run.model_workflow)
-             OR (v_run.model_workflow = 'metadata_enrichment' AND (
-                 (stage.model_workflow = 'metadata_enrichment_object' AND
+             (v_run.project_workflow <> 'metadata_enrichment' AND stage.project_workflow = v_run.project_workflow)
+             OR (v_run.project_workflow = 'metadata_enrichment' AND (
+                 (stage.project_workflow = 'metadata_enrichment_object' AND
                      (v_run.metadata_enrichment_description_targets IS NULL OR
                       v_run.metadata_enrichment_description_targets->0->>'attribute_id' IS NULL))
-                 OR (stage.model_workflow = 'metadata_enrichment_attribute' AND
+                 OR (stage.project_workflow = 'metadata_enrichment_attribute' AND
                      (v_run.metadata_enrichment_description_targets IS NULL OR
                       v_run.metadata_enrichment_description_targets->0->>'attribute_id' IS NOT NULL))
              ))
@@ -1075,11 +1063,11 @@ BEGIN
               INTO v_prompt_template_version_id
               FROM application.prompt_assignment AS assignment
              WHERE assignment.workflow_stage_id = v_stage.workflow_stage_id
-               AND assignment.prompt_assignment_scope = 'model_default'
-               AND assignment.model_id = v_run.model_id
+               AND assignment.prompt_assignment_scope = 'project_default'
+               AND assignment.project_id = v_run.project_id
                AND assignment.is_active;
             IF FOUND THEN
-                v_prompt_resolution_source := 'model_default';
+                v_prompt_resolution_source := 'project_default';
             ELSE
                 SELECT assignment.prompt_template_version_id
                   INTO v_prompt_template_version_id
@@ -1114,19 +1102,19 @@ BEGIN
                OR template.owner_tenant_id = v_run.tenant_id
            );
         IF NOT FOUND THEN
-            RAISE EXCEPTION 'Resolved prompt version is unavailable to the Model';
+            RAISE EXCEPTION 'Resolved prompt version is unavailable to the Project';
         END IF;
 
         INSERT INTO application.workflow_run_prompt_snapshot (
             workflow_run_id,
-            model_id,
+            project_id,
             workflow_stage_id,
             prompt_template_version_id,
             prompt_resolution_source,
             prompt_template_digest
         ) VALUES (
             p_workflow_run_id,
-            v_run.model_id,
+            v_run.project_id,
             v_stage.workflow_stage_id,
             v_prompt_template_version_id,
             v_prompt_resolution_source,
@@ -1167,7 +1155,7 @@ BEGIN
         SELECT run.modeled_entity_type INTO v_layer
           FROM application.workflow_run AS run
          WHERE run.workflow_run_id = NEW.workflow_run_id
-           AND run.model_id = NEW.model_id AND run.model_workflow = 'validation';
+           AND run.project_id = NEW.project_id AND run.project_workflow = 'validation';
     END IF;
     IF TG_OP = 'UPDATE' AND OLD.modeled_entity_type IS NOT NULL THEN
         IF v_layer IS NOT NULL AND v_layer <> OLD.modeled_entity_type THEN
@@ -1189,9 +1177,9 @@ CREATE FUNCTION application.create_workflow_run(
     p_entra_tenant_id UUID,
     p_entra_object_id UUID,
     p_expected_principal_type VARCHAR(30),
-    p_model_id BIGINT,
-    p_expected_model_revision BIGINT,
-    p_model_workflow VARCHAR(30),
+    p_project_id BIGINT,
+    p_expected_project_revision BIGINT,
+    p_project_workflow VARCHAR(30),
     p_workflow_execution_mode VARCHAR(50),
     p_agent_sdk_code VARCHAR(100),
     p_agent_provider_code VARCHAR(100),
@@ -1224,7 +1212,7 @@ RETURNS TABLE (
     correlation_id UUID,
     prompt_snapshot_count INTEGER,
     created_time TIMESTAMPTZ,
-    model_revision BIGINT,
+    project_revision BIGINT,
     selected_scope_digest CHAR(64),
     selected_scope_count INTEGER,
     code_generation_coverage_mode VARCHAR(30)
@@ -1235,8 +1223,8 @@ SECURITY DEFINER
 SET search_path = pg_catalog
 AS $create_workflow_run$
 DECLARE
-    v_model RECORD;
-    v_entity_workflow BOOLEAN := p_model_workflow IN ('dimensional','mapping','code_generation');
+    v_project RECORD;
+    v_entity_workflow BOOLEAN := p_project_workflow IN ('dimensional','mapping','code_generation');
     v_source_tenant_id BIGINT;
     v_source_access RECORD;
     v_decision RECORD;
@@ -1284,7 +1272,7 @@ BEGIN
            OR p_selected_entity_ids IS NULL THEN
             RAISE EXCEPTION 'Entity workflows require Entity selection and no physical Object selection';
         END IF;
-        IF p_model_workflow = 'dimensional' THEN
+        IF p_project_workflow = 'dimensional' THEN
             IF p_modeled_entity_type IS NOT NULL AND p_modeled_entity_type <> 'logical_entity' THEN
                 RAISE EXCEPTION 'Dimensional authoring requires Logical source Entities';
             END IF;
@@ -1301,7 +1289,7 @@ BEGIN
         RAISE EXCEPTION 'Workflow Run correlation ID is required';
     END IF;
     IF p_metadata_enrichment_description_targets IS NOT NULL THEN
-        IF p_model_workflow IS DISTINCT FROM 'metadata_enrichment'
+        IF p_project_workflow IS DISTINCT FROM 'metadata_enrichment'
            OR p_expected_principal_type IS DISTINCT FROM 'user'
            OR jsonb_typeof(p_metadata_enrichment_description_targets) IS DISTINCT FROM 'array' THEN
             RAISE EXCEPTION 'Invalid description regeneration selection';
@@ -1329,27 +1317,27 @@ BEGIN
         SELECT jsonb_agg(target ORDER BY (target->>'object_id')::BIGINT, (target->>'attribute_id')::BIGINT)
           INTO p_metadata_enrichment_description_targets FROM jsonb_array_elements(p_metadata_enrichment_description_targets) AS target;
     END IF;
-    IF p_model_workflow = 'metadata_enrichment'
+    IF p_project_workflow = 'metadata_enrichment'
        AND p_workflow_execution_mode IS DISTINCT FROM 'one_shot' THEN
         RAISE EXCEPTION
             'Metadata Enrichment requires one_shot execution mode';
     END IF;
-    IF p_model_workflow = 'metadata_enrichment'
+    IF p_project_workflow = 'metadata_enrichment'
        AND cardinality(p_selected_object_ids) < 1 THEN
         RAISE EXCEPTION
             'Metadata Enrichment requires selected Objects';
     END IF;
-    IF p_model_workflow = 'code_generation' THEN
+    IF p_project_workflow = 'code_generation' THEN
         p_code_generation_file_layout := coalesce(p_code_generation_file_layout, 'combined');
     END IF;
-    IF p_code_generation_file_layout IS NOT NULL AND (p_model_workflow <> 'code_generation'
+    IF p_code_generation_file_layout IS NOT NULL AND (p_project_workflow <> 'code_generation'
         OR p_code_generation_file_layout NOT IN ('combined', 'per_system')) THEN
         RAISE EXCEPTION 'Invalid Code Generation file layout';
     END IF;
     IF p_selected_object_ids IS NULL OR p_selected_system_codes IS NULL THEN
         RAISE EXCEPTION 'Selected Scope is required';
     END IF;
-    IF p_model_workflow = 'validation' THEN
+    IF p_project_workflow = 'validation' THEN
         IF cardinality(p_selected_object_ids) <> 0
            OR cardinality(p_selected_system_codes) < 1 THEN
             RAISE EXCEPTION
@@ -1359,7 +1347,7 @@ BEGIN
             RAISE EXCEPTION
                 'Code Generation inputs are unavailable for this Workflow Run';
         END IF;
-    ELSIF p_model_workflow = 'code_generation' THEN
+    ELSIF p_project_workflow = 'code_generation' THEN
         IF p_code_generation_coverage_mode IS NULL
            OR p_code_generation_coverage_mode NOT IN (
                'selected_targets', 'all_eligible_targets'
@@ -1452,7 +1440,7 @@ BEGIN
       INTO v_caller_selected_system_codes
       FROM unnest(p_selected_system_codes) WITH ORDINALITY
            AS selected(system_code, selection_order);
-    IF p_model_workflow = 'validation' THEN
+    IF p_project_workflow = 'validation' THEN
         v_selected_scope_count := cardinality(v_caller_selected_system_codes);
         v_selected_scope_digest := encode(
             sha256(
@@ -1465,11 +1453,11 @@ BEGIN
         );
     END IF;
 
-    IF p_mapping_targets IS NOT NULL AND p_model_workflow <> 'mapping' THEN
+    IF p_mapping_targets IS NOT NULL AND p_project_workflow <> 'mapping' THEN
         RAISE EXCEPTION 'Mapping selection is unavailable for this workflow';
     END IF;
     v_modeled_entity_type := p_modeled_entity_type;
-    IF p_model_workflow = 'mapping' THEN
+    IF p_project_workflow = 'mapping' THEN
 
         IF p_mapping_operation IS NULL OR p_mapping_operation NOT IN ('build', 'extend', 'generate')
            OR p_mapping_coverage_mode IS DISTINCT FROM 'selected_targets'
@@ -1505,7 +1493,7 @@ BEGIN
              IS DISTINCT FROM v_selected_object_ids THEN
             RAISE EXCEPTION 'Mapping selections must be unique and match the selected Objects';
         END IF;
-    ELSIF p_model_workflow = 'code_generation' THEN
+    ELSIF p_project_workflow = 'code_generation' THEN
         IF p_modeled_entity_type IS NULL
            OR p_modeled_entity_type NOT IN (
                'logical_entity', 'dimensional_entity'
@@ -1523,10 +1511,10 @@ BEGIN
             RAISE EXCEPTION
                 'Mapping inputs are unavailable for this Workflow Run';
         END IF;
-    ELSIF p_model_workflow = 'validation' AND (p_modeled_entity_type IS NULL
+    ELSIF p_project_workflow = 'validation' AND (p_modeled_entity_type IS NULL
         OR p_modeled_entity_type IN ('logical_entity', 'dimensional_entity')) THEN
         NULL;
-    ELSIF p_model_workflow = 'dimensional' AND p_modeled_entity_type = 'logical_entity' THEN
+    ELSIF p_project_workflow = 'dimensional' AND p_modeled_entity_type = 'logical_entity' THEN
         NULL;
     ELSIF p_modeled_entity_type IS NOT NULL THEN
         RAISE EXCEPTION
@@ -1544,7 +1532,7 @@ BEGIN
 
     IF p_requested_batch_id IS NOT NULL THEN
         v_requested_batch_id := btrim(p_requested_batch_id);
-        IF p_model_workflow NOT IN ('profiling', 'analysis')
+        IF p_project_workflow NOT IN ('profiling', 'analysis')
            OR NOT reference.is_nonblank(v_requested_batch_id)
            OR octet_length(v_requested_batch_id) > 500 THEN
             RAISE EXCEPTION
@@ -1556,21 +1544,21 @@ BEGIN
         RAISE EXCEPTION 'Run prompt overrides must be a JSON object';
     END IF;
 
-    SELECT target_model.tenant_id,
-           target_model.model_revision,
-           target_model.default_agent_sdk_code,
-           target_model.default_agent_provider_code,
-           target_model.default_agent_model_code,
-           target_model.default_reasoning_effort_code,
-           target_model.default_max_turns,
-           target_model.default_validation_retry_count
-      INTO v_model
-      FROM model.model AS target_model
-     WHERE target_model.model_id = p_model_id
-       AND target_model.is_active
-     FOR UPDATE OF target_model;
+    SELECT target_project.tenant_id,
+           target_project.project_revision,
+           target_project.default_agent_sdk_code,
+           target_project.default_agent_provider_code,
+           target_project.default_agent_model_code,
+           target_project.default_reasoning_effort_code,
+           target_project.default_max_turns,
+           target_project.default_validation_retry_count
+      INTO v_project
+      FROM project.project AS target_project
+     WHERE target_project.project_id = p_project_id
+       AND target_project.is_active
+     FOR UPDATE OF target_project;
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'Workflow Run Model is unavailable';
+        RAISE EXCEPTION 'Workflow Run Project is unavailable';
     END IF;
 
     SELECT *
@@ -1579,8 +1567,8 @@ BEGIN
           p_entra_tenant_id,
           p_entra_object_id,
           p_expected_principal_type,
-          v_model.tenant_id,
-          'tenant_model_write'
+          v_project.tenant_id,
+          'tenant_project_write'
       );
     IF NOT FOUND OR NOT v_decision.authorized THEN
         RAISE EXCEPTION 'Workflow Run creation denied: %',
@@ -1652,9 +1640,9 @@ BEGIN
         sha256(
             convert_to(
                 jsonb_build_object(
-                    'model_id', p_model_id,
-                    'expected_model_revision', p_expected_model_revision,
-                    'model_workflow', p_model_workflow,
+                    'project_id', p_project_id,
+                    'expected_project_revision', p_expected_project_revision,
+                    'project_workflow', p_project_workflow,
                     'workflow_execution_mode', p_workflow_execution_mode,
                     'agent_sdk_code', p_agent_sdk_code,
                     'agent_provider_code', p_agent_provider_code,
@@ -1698,7 +1686,7 @@ BEGIN
      WHERE run.correlation_id = p_correlation_id
      FOR UPDATE OF run;
     IF FOUND THEN
-        IF v_existing.model_id <> p_model_id
+        IF v_existing.project_id <> p_project_id
            OR v_existing.actor_principal_id <> v_decision.principal_id
            OR v_existing.actor_entra_principal_identity_id IS DISTINCT FROM
               v_actor_entra_principal_identity_id
@@ -1720,7 +1708,7 @@ BEGIN
             v_existing.correlation_id,
             v_prompt_snapshot_count,
             v_existing.created_time,
-            v_existing.model_revision,
+            v_existing.project_revision,
             v_existing.selected_scope_digest,
             v_existing.selected_scope_count,
             v_existing.code_generation_coverage_mode;
@@ -1729,7 +1717,7 @@ BEGIN
 
     -- Resolve default selections only for new runs. The request digest above
     -- retains the caller's null selectors, so retries reuse frozen selections.
-    IF p_model_workflow = 'mapping' THEN
+    IF p_project_workflow = 'mapping' THEN
         IF p_mapping_object_output_template_id IS NULL THEN
             SELECT template.output_template_id,
                    template.output_template_schema_digest
@@ -1774,23 +1762,23 @@ BEGIN
         END IF;
     END IF;
 
-    IF p_expected_model_revision IS NULL
-       OR v_model.model_revision <> p_expected_model_revision THEN
-        RAISE EXCEPTION 'stale_model_revision';
+    IF p_expected_project_revision IS NULL
+       OR v_project.project_revision <> p_expected_project_revision THEN
+        RAISE EXCEPTION 'stale_project_revision';
     END IF;
 
-    IF p_model_workflow = 'validation' THEN
+    IF p_project_workflow = 'validation' THEN
         WITH target_context AS MATERIALIZED (
             SELECT context.*
               FROM workflow.list_code_generation_target_context(
-                  p_model_id,
+                  p_project_id,
                   'logical_entity',
                   NULL
               ) AS context
             UNION ALL
             SELECT context.*
               FROM workflow.list_code_generation_target_context(
-                  p_model_id,
+                  p_project_id,
                   'dimensional_entity',
                   NULL
               ) AS context
@@ -1853,7 +1841,7 @@ BEGIN
                AS selected(system_id, system_code, selection_order);
     END IF;
 
-    IF p_model_workflow = 'code_generation' THEN
+    IF p_project_workflow = 'code_generation' THEN
         IF p_code_generation_coverage_mode = 'all_eligible_targets' THEN
             SELECT coalesce(
                        array_agg(context.modeled_entity_id ORDER BY context.modeled_entity_id),
@@ -1863,7 +1851,7 @@ BEGIN
               INTO v_selected_object_ids,
                    v_selected_scope_count
               FROM workflow.list_code_generation_target_context(
-                       p_model_id,
+                       p_project_id,
                        p_modeled_entity_type
                    ) AS context;
             IF v_selected_scope_count < 1 THEN
@@ -1883,7 +1871,7 @@ BEGIN
             SELECT count(*)::INTEGER
               INTO v_eligible_scope_count
               FROM workflow.list_code_generation_target_context(
-                       p_model_id,
+                       p_project_id,
                        p_modeled_entity_type
                    ) AS context
              WHERE context.modeled_entity_id = ANY(v_selected_object_ids);
@@ -1897,7 +1885,7 @@ BEGIN
             SELECT 1 FROM unnest(v_caller_selected_system_codes) AS requested(code)
              WHERE NOT EXISTS (
                 SELECT 1 FROM workflow.list_code_generation_target_context(
-                    p_model_id, p_modeled_entity_type) AS context
+                    p_project_id, p_modeled_entity_type) AS context
                 CROSS JOIN LATERAL jsonb_array_elements(context.source_context->'source_systems') AS source(document)
                 WHERE context.modeled_entity_id = ANY(v_selected_object_ids)
                   AND lower(btrim(source.document->>'system_code')) = requested.code
@@ -1909,41 +1897,41 @@ BEGIN
 
     END IF;
 
-    IF p_model_workflow = 'mapping' THEN
+    IF p_project_workflow = 'mapping' THEN
       FOR v_mapping_target IN SELECT value FROM jsonb_array_elements(v_mapping_targets) LOOP
         v_mapping_object_id := (v_mapping_target->>'modeled_entity_id')::BIGINT;
         v_mapping_system_id := (v_mapping_target->>'source_system_id')::BIGINT;
         IF NOT EXISTS (
             SELECT 1 FROM workflow.modeled_entity AS entity
-             WHERE entity.model_id = p_model_id AND entity.modeled_entity_type = p_modeled_entity_type
+             WHERE entity.project_id = p_project_id AND entity.modeled_entity_type = p_modeled_entity_type
                AND entity.modeled_entity_id = v_mapping_object_id AND entity.status = 'active' AND NOT entity.is_locked
         ) OR NOT (EXISTS (
-            SELECT 1 FROM workflow.list_model_input_sources(p_model_id) AS input
+            SELECT 1 FROM workflow.list_project_input_sources(p_project_id) AS input
             JOIN core.system AS system ON system.system_id = input.source_system_id AND system.is_active
              WHERE input.source_system_id = v_mapping_system_id
         ) OR EXISTS (
-            SELECT 1 FROM model.model AS target_model
-            JOIN core.system AS system ON system.system_id = target_model.default_mapping_source_system_id
+            SELECT 1 FROM project.project AS target_project
+            JOIN core.system AS system ON system.system_id = target_project.default_mapping_source_system_id
               AND system.is_active
-             WHERE target_model.model_id = p_model_id
-               AND target_model.default_mapping_source_system_id = v_mapping_system_id
-               AND workflow.is_assertion_only_mapping_target(p_model_id,
+             WHERE target_project.project_id = p_project_id
+               AND target_project.default_mapping_source_system_id = v_mapping_system_id
+               AND workflow.is_context_only_mapping_target(p_project_id,
                    v_mapping_object_id, p_modeled_entity_type)
         )) OR EXISTS (
-            SELECT 1 FROM model.model AS target_model
-             WHERE target_model.model_id = p_model_id
-               AND target_model.default_mapping_source_system_id = v_mapping_system_id
-               AND workflow.is_assertion_only_mapping_target(p_model_id,
+            SELECT 1 FROM project.project AS target_project
+             WHERE target_project.project_id = p_project_id
+               AND target_project.default_mapping_source_system_id = v_mapping_system_id
+               AND workflow.is_context_only_mapping_target(p_project_id,
                    v_mapping_object_id, p_modeled_entity_type)
                AND NOT EXISTS (
                    SELECT 1 FROM core.connection AS owned_connection
-                    WHERE owned_connection.tenant_id = target_model.tenant_id
+                    WHERE owned_connection.tenant_id = target_project.tenant_id
                       AND owned_connection.system_id = v_mapping_system_id
                       AND owned_connection.is_active
                )
         ) OR EXISTS (
             SELECT 1 FROM workflow.mapping_object AS mapping
-             WHERE mapping.model_id = p_model_id AND mapping.modeled_entity_type = p_modeled_entity_type
+             WHERE mapping.project_id = p_project_id AND mapping.modeled_entity_type = p_modeled_entity_type
                AND coalesce(mapping.logical_entity_id,mapping.dimensional_entity_id) = v_mapping_object_id
                AND mapping.source_system_id = v_mapping_system_id AND mapping.object_mapping_is_locked
         ) THEN
@@ -1956,13 +1944,13 @@ BEGIN
                  WHERE selected.id !~ '^[1-9][0-9]{0,17}$' OR NOT EXISTS (
                      SELECT 1 FROM workflow.modeled_attribute AS attribute
                      LEFT JOIN workflow.mapping_object AS object_mapping
-                       ON object_mapping.model_id = attribute.model_id AND object_mapping.modeled_entity_type = attribute.modeled_entity_type
+                       ON object_mapping.project_id = attribute.project_id AND object_mapping.modeled_entity_type = attribute.modeled_entity_type
                       AND coalesce(object_mapping.logical_entity_id,object_mapping.dimensional_entity_id) = attribute.modeled_entity_id
                       AND object_mapping.source_system_id = v_mapping_system_id
                      LEFT JOIN workflow.mapping_attribute AS mapping
                        ON mapping.mapping_object_id = object_mapping.mapping_object_id
                       AND coalesce(mapping.logical_attribute_id,mapping.dimensional_attribute_id) = attribute.modeled_attribute_id
-                     WHERE attribute.model_id = p_model_id AND attribute.modeled_entity_type = p_modeled_entity_type
+                     WHERE attribute.project_id = p_project_id AND attribute.modeled_entity_type = p_modeled_entity_type
                        AND attribute.modeled_entity_id = v_mapping_object_id AND attribute.modeled_attribute_id = selected.id::BIGINT
                        AND attribute.status = 'active' AND NOT attribute.is_locked AND NOT coalesce(mapping.attribute_mapping_is_locked,FALSE)
                  )
@@ -1974,12 +1962,12 @@ BEGIN
       END LOOP;
     END IF;
 
-    -- Source metadata can span Tenants, while the Run remains Model-Tenant owned.
+    -- Source metadata can span Tenants, while the Run remains Project-Tenant owned.
     FOR v_source_tenant_id IN
         SELECT DISTINCT object.source_tenant_id
-          FROM model.model_input_scope AS scope
+          FROM project.project_input_scope AS scope
           JOIN core.object AS object ON object.object_id = scope.object_id
-         WHERE scope.model_id = p_model_id
+         WHERE scope.project_id = p_project_id
     LOOP
         SELECT * INTO v_source_access FROM security.authorize_tenant_operation(
             p_entra_tenant_id, p_entra_object_id, p_expected_principal_type,
@@ -1989,22 +1977,22 @@ BEGIN
         END IF;
     END LOOP;
 
-    IF p_model_workflow <> 'validation' AND NOT v_entity_workflow THEN
+    IF p_project_workflow <> 'validation' AND NOT v_entity_workflow THEN
         SELECT count(*)::INTEGER
           INTO v_eligible_scope_count
-          FROM workflow.list_model_object_eligibility(p_model_id) AS eligible
+          FROM workflow.list_project_object_eligibility(p_project_id) AS eligible
          WHERE eligible.object_id = ANY(v_selected_object_ids)
            AND CASE
-                   WHEN p_model_workflow IN (
+                   WHEN p_project_workflow IN (
                        'profiling', 'analysis', 'conceptual', 'logical'
-                   ) THEN eligible.is_model_input_eligible
-                   WHEN p_model_workflow = 'metadata_enrichment' THEN
-                       eligible.is_model_input_eligible
-                       AND eligible.object_tenant_id = v_model.tenant_id
+                   ) THEN eligible.is_project_input_eligible
+                   WHEN p_project_workflow = 'metadata_enrichment' THEN
+                       eligible.is_project_input_eligible
+                       AND eligible.object_tenant_id = v_project.tenant_id
                        AND EXISTS (
                            SELECT 1
-                             FROM model.model_input_scope AS scope
-                            WHERE scope.model_id = p_model_id
+                             FROM project.project_input_scope AS scope
+                            WHERE scope.project_id = p_project_id
                               AND scope.object_id = eligible.object_id
                               AND scope.is_active
                        )
@@ -2018,7 +2006,7 @@ BEGIN
 
     IF v_entity_workflow THEN
         SELECT count(*)::INTEGER INTO v_eligible_scope_count FROM workflow.modeled_entity AS entity
-         WHERE entity.model_id = p_model_id AND entity.modeled_entity_type = p_modeled_entity_type
+         WHERE entity.project_id = p_project_id AND entity.modeled_entity_type = p_modeled_entity_type
            AND entity.modeled_entity_id = ANY(v_selected_object_ids) AND entity.status = 'active';
         IF v_eligible_scope_count <> v_selected_scope_count THEN
             RAISE EXCEPTION 'Selected Scope contains an unavailable Entity';
@@ -2028,16 +2016,16 @@ BEGIN
                 'modeled_entity_id',entity.modeled_entity_id,'modeled_entity_schema_name',entity.modeled_entity_schema_name,
                 'modeled_entity_name',entity.modeled_entity_name) ORDER BY entity.modeled_entity_id),
             'mapping_targets',v_mapping_targets)::TEXT,'UTF8')),'hex') INTO v_selected_scope_digest
-          FROM workflow.modeled_entity AS entity WHERE entity.model_id = p_model_id
+          FROM workflow.modeled_entity AS entity WHERE entity.project_id = p_project_id
            AND entity.modeled_entity_type = p_modeled_entity_type AND entity.modeled_entity_id = ANY(v_selected_object_ids);
     END IF;
 
     IF v_requested_batch_id IS NOT NULL THEN
         SELECT count(DISTINCT eligible.system_id)::INTEGER
           INTO v_selected_system_count
-          FROM workflow.list_model_object_eligibility(p_model_id) AS eligible
+          FROM workflow.list_project_object_eligibility(p_project_id) AS eligible
          WHERE eligible.object_id = ANY(v_selected_object_ids)
-           AND eligible.is_model_input_eligible;
+           AND eligible.is_project_input_eligible;
         IF v_selected_system_count <> 1 THEN
             RAISE EXCEPTION
                 'Requested batch ID requires Selected Scope from one System';
@@ -2052,20 +2040,20 @@ BEGIN
                 LEFT JOIN core.attribute AS attribute ON attribute.object_id = object.object_id
                     AND attribute.attribute_id = (target->>'attribute_id')::BIGINT
                 WHERE object.object_id = (target->>'object_id')::BIGINT
-                  AND object.source_tenant_id = v_model.tenant_id AND object.is_active
+                  AND object.source_tenant_id = v_project.tenant_id AND object.is_active
                   AND NOT coalesce((SELECT is_locked FROM workflow.object_enrichment
-                      WHERE model_id = p_model_id AND object_id = object.object_id), FALSE)
+                      WHERE project_id = p_project_id AND object_id = object.object_id), FALSE)
                   AND CASE WHEN target->>'attribute_id' IS NULL
-                      THEN workflow.enrichment_review_revision(p_model_id, object.object_id) = target->>'expected_revision'
+                      THEN workflow.enrichment_review_revision(p_project_id, object.object_id) = target->>'expected_revision'
                       ELSE attribute.is_active
                           AND NOT coalesce((SELECT is_locked FROM workflow.attribute_enrichment
-                              WHERE model_id = p_model_id AND attribute_id = attribute.attribute_id), FALSE)
-                          AND workflow.enrichment_review_revision(p_model_id, object.object_id, attribute.attribute_id) = target->>'expected_revision' END
+                              WHERE project_id = p_project_id AND attribute_id = attribute.attribute_id), FALSE)
+                          AND workflow.enrichment_review_revision(p_project_id, object.object_id, attribute.attribute_id) = target->>'expected_revision' END
             )
         ) THEN RAISE EXCEPTION 'metadata_description_conflict'; END IF;
     END IF;
 
-    v_is_agentic := p_model_workflow IN ('code_generation', 'validation')
+    v_is_agentic := p_project_workflow IN ('code_generation', 'validation')
         OR p_workflow_execution_mode IS NOT NULL;
     v_agent_input_count := num_nonnulls(
         p_agent_sdk_code,
@@ -2079,21 +2067,21 @@ BEGIN
     IF v_is_agentic THEN
         IF v_agent_input_count = 0 THEN
             IF num_nonnulls(
-                v_model.default_agent_sdk_code,
-                v_model.default_agent_provider_code,
-                v_model.default_agent_model_code,
-                v_model.default_reasoning_effort_code,
-                v_model.default_max_turns,
-                v_model.default_validation_retry_count
+                v_project.default_agent_sdk_code,
+                v_project.default_agent_provider_code,
+                v_project.default_agent_model_code,
+                v_project.default_reasoning_effort_code,
+                v_project.default_max_turns,
+                v_project.default_validation_retry_count
             ) <> 6 THEN
                 RAISE EXCEPTION 'Agent configuration is required for this Workflow Run';
             END IF;
-            v_agent_sdk_code := v_model.default_agent_sdk_code;
-            v_agent_provider_code := v_model.default_agent_provider_code;
-            v_agent_model_code := v_model.default_agent_model_code;
-            v_reasoning_effort_code := v_model.default_reasoning_effort_code;
-            v_max_turns := v_model.default_max_turns;
-            v_validation_retry_count := v_model.default_validation_retry_count;
+            v_agent_sdk_code := v_project.default_agent_sdk_code;
+            v_agent_provider_code := v_project.default_agent_provider_code;
+            v_agent_model_code := v_project.default_agent_model_code;
+            v_reasoning_effort_code := v_project.default_reasoning_effort_code;
+            v_max_turns := v_project.default_max_turns;
+            v_validation_retry_count := v_project.default_validation_retry_count;
         ELSIF v_agent_input_count = 6 THEN
             v_agent_sdk_code := p_agent_sdk_code;
             v_agent_provider_code := p_agent_provider_code;
@@ -2115,9 +2103,9 @@ BEGIN
 
     INSERT INTO application.workflow_run AS run (
         tenant_id,
-        model_id,
-        model_revision,
-        model_workflow,
+        project_id,
+        project_revision,
+        project_workflow,
         workflow_execution_mode,
         actor_principal_id,
         actor_entra_principal_identity_id,
@@ -2145,10 +2133,10 @@ BEGIN
         code_generation_file_layout,
         code_generation_system_codes
     ) VALUES (
-        v_model.tenant_id,
-        p_model_id,
-        v_model.model_revision,
-        p_model_workflow,
+        v_project.tenant_id,
+        p_project_id,
+        v_project.project_revision,
+        p_project_workflow,
         p_workflow_execution_mode,
         v_decision.principal_id,
         v_actor_entra_principal_identity_id,
@@ -2174,20 +2162,20 @@ BEGIN
         v_request_digest,
         p_metadata_enrichment_description_targets,
         p_code_generation_file_layout,
-        CASE WHEN p_model_workflow = 'code_generation' THEN v_caller_selected_system_codes END
+        CASE WHEN p_project_workflow = 'code_generation' THEN v_caller_selected_system_codes END
     )
     RETURNING run.* INTO v_created;
 
-    IF p_model_workflow = 'validation' THEN
+    IF p_project_workflow = 'validation' THEN
         INSERT INTO application.workflow_run_system_selection (
             workflow_run_id,
-            model_id,
+            project_id,
             system_id,
             system_code,
             selection_order
         )
         SELECT v_created.workflow_run_id,
-               v_created.model_id,
+               v_created.project_id,
                selected.system_id,
                selected.system_code,
                selected.selection_order::INTEGER
@@ -2196,32 +2184,32 @@ BEGIN
                AS selected(system_id, system_code, selection_order);
     ELSIF v_entity_workflow THEN
         INSERT INTO application.workflow_run_entity_selection (
-            workflow_run_id,model_id,modeled_entity_type,modeled_entity_id,
+            workflow_run_id,project_id,modeled_entity_type,modeled_entity_id,
             modeled_entity_schema_name,modeled_entity_name,selection_order
-        ) SELECT v_created.workflow_run_id,v_created.model_id,entity.modeled_entity_type,entity.modeled_entity_id,
+        ) SELECT v_created.workflow_run_id,v_created.project_id,entity.modeled_entity_type,entity.modeled_entity_id,
                  entity.modeled_entity_schema_name,entity.modeled_entity_name,selected.selection_order::INTEGER
             FROM unnest(v_selected_object_ids) WITH ORDINALITY AS selected(entity_id,selection_order)
-            JOIN workflow.modeled_entity AS entity ON entity.model_id = p_model_id
+            JOIN workflow.modeled_entity AS entity ON entity.project_id = p_project_id
              AND entity.modeled_entity_type = p_modeled_entity_type AND entity.modeled_entity_id = selected.entity_id;
     ELSE
         INSERT INTO application.workflow_run_object_selection (
             workflow_run_id,
-            model_id,
+            project_id,
             object_id,
             selection_order
         )
         SELECT v_created.workflow_run_id,
-               v_created.model_id,
+               v_created.project_id,
                selected.object_id,
                selected.selection_order::INTEGER
           FROM unnest(v_selected_object_ids) WITH ORDINALITY
                AS selected(object_id, selection_order);
     END IF;
 
-    IF p_model_workflow = 'mapping' THEN
+    IF p_project_workflow = 'mapping' THEN
         INSERT INTO application.workflow_run_mapping_target_selection (
-            workflow_run_id,model_id,workflow_run_entity_selection_id,source_system_id,selection_order,selected_attribute_ids
-        ) SELECT v_created.workflow_run_id,v_created.model_id,frozen.workflow_run_entity_selection_id,
+            workflow_run_id,project_id,workflow_run_entity_selection_id,source_system_id,selection_order,selected_attribute_ids
+        ) SELECT v_created.workflow_run_id,v_created.project_id,frozen.workflow_run_entity_selection_id,
                  (target->>'source_system_id')::BIGINT,position::INTEGER,
                  CASE WHEN jsonb_typeof(target->'selected_attribute_ids') = 'array'
                       THEN ARRAY(SELECT id::BIGINT FROM jsonb_array_elements_text(target->'selected_attribute_ids') AS attributes(id)) ELSE NULL END
@@ -2245,7 +2233,7 @@ BEGIN
         v_created.correlation_id,
         v_prompt_snapshot_count,
         v_created.created_time,
-        v_created.model_revision,
+        v_created.project_revision,
         v_created.selected_scope_digest,
         v_created.selected_scope_count,
         v_created.code_generation_coverage_mode;
@@ -2286,12 +2274,12 @@ REVOKE ALL ON FUNCTION application.create_workflow_run(
 
 CREATE FUNCTION application.lock_authoring_workflow_run(
     p_workflow_run_id BIGINT,
-    p_model_id BIGINT
+    p_project_id BIGINT
 )
 RETURNS TABLE (
     workflow_run_id BIGINT,
-    model_id BIGINT,
-    model_workflow VARCHAR(30),
+    project_id BIGINT,
+    project_workflow VARCHAR(30),
     workflow_execution_mode VARCHAR(50),
     actor_principal_id BIGINT,
     workflow_run_state VARCHAR(30),
@@ -2303,23 +2291,23 @@ SECURITY DEFINER
 SET search_path = pg_catalog
 AS $lock_authoring_workflow_run$
     SELECT run.workflow_run_id,
-           run.model_id,
-           run.model_workflow,
+           run.project_id,
+           run.project_workflow,
            run.workflow_execution_mode,
            run.actor_principal_id,
            run.workflow_run_state,
            run.correlation_id
       FROM application.workflow_run AS run
      WHERE run.workflow_run_id = p_workflow_run_id
-       AND run.model_id = p_model_id
+       AND run.project_id = p_project_id
        AND (
            (
-               run.model_workflow IN (
+               run.project_workflow IN (
                    'analysis', 'conceptual', 'logical', 'dimensional', 'mapping'
                )
                AND run.workflow_execution_mode IS NOT NULL
            ) OR (
-               run.model_workflow IN ('code_generation', 'validation')
+               run.project_workflow IN ('code_generation', 'validation')
                AND run.workflow_execution_mode IS NULL
            )
        )
@@ -2336,7 +2324,7 @@ CREATE FUNCTION application.start_workflow_run(
     p_entra_object_id UUID,
     p_expected_principal_type VARCHAR(30),
     p_workflow_run_id BIGINT,
-    p_expected_model_revision BIGINT
+    p_expected_project_revision BIGINT
 )
 RETURNS TABLE (
     changed BOOLEAN,
@@ -2356,22 +2344,22 @@ DECLARE
     v_constraint_name TEXT;
 BEGIN
     SELECT run.workflow_run_id,
-           run.model_id,
-           run.model_revision AS run_model_revision,
+           run.project_id,
+           run.project_revision AS run_project_revision,
            run.actor_principal_id,
            run.workflow_run_state,
            run.correlation_id,
-           run.model_workflow,
+           run.project_workflow,
            run.started_time,
-           target_model.tenant_id,
-           target_model.model_revision
+           target_project.tenant_id,
+           target_project.project_revision
       INTO v_run
       FROM application.workflow_run AS run
-      JOIN model.model AS target_model
-        ON target_model.model_id = run.model_id
-       AND target_model.is_active
+      JOIN project.project AS target_project
+        ON target_project.project_id = run.project_id
+       AND target_project.is_active
      WHERE run.workflow_run_id = p_workflow_run_id
-     FOR UPDATE OF run, target_model;
+     FOR UPDATE OF run, target_project;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Workflow Run is unavailable';
     END IF;
@@ -2383,7 +2371,7 @@ BEGIN
           p_entra_object_id,
           p_expected_principal_type,
           v_run.tenant_id,
-          'tenant_model_write'
+          'tenant_project_write'
       );
     IF NOT FOUND OR NOT v_decision.authorized THEN
         RAISE EXCEPTION 'Workflow Run start denied: %',
@@ -2393,10 +2381,10 @@ BEGIN
         RAISE EXCEPTION 'Workflow Run belongs to another Principal';
     END IF;
 
-    IF p_expected_model_revision IS NULL
-       OR v_run.run_model_revision <> p_expected_model_revision
-       OR v_run.model_revision <> p_expected_model_revision THEN
-        RAISE EXCEPTION 'stale_model_revision';
+    IF p_expected_project_revision IS NULL
+       OR v_run.run_project_revision <> p_expected_project_revision
+       OR v_run.project_revision <> p_expected_project_revision THEN
+        RAISE EXCEPTION 'stale_project_revision';
     END IF;
 
     IF v_run.workflow_run_state <> 'queued' THEN
@@ -2433,24 +2421,24 @@ BEGIN
         RAISE;
     END;
 
-    INSERT INTO model.model_event_log (
-        model_id,
+    INSERT INTO project.project_event_log (
+        project_id,
         correlation_id,
         workflow_run_id,
-        model_event_log_sequence,
-        model_event_log_attempt,
-        model_workflow,
-        model_event_log_stage,
-        model_event_log_status,
-        model_event_log_message,
+        project_event_log_sequence,
+        project_event_log_attempt,
+        project_workflow,
+        project_event_log_stage,
+        project_event_log_status,
+        project_event_log_message,
         finding_count
     ) VALUES (
-        v_run.model_id,
+        v_run.project_id,
         v_run.correlation_id,
         v_run.workflow_run_id,
         1,
         1,
-        v_run.model_workflow,
+        v_run.project_workflow,
         'workflow_run',
         'started',
         'Workflow run started.',
@@ -2473,14 +2461,14 @@ REVOKE ALL ON FUNCTION application.start_workflow_run(
     BIGINT
 ) FROM PUBLIC;
 
--- Cancellation is a web command, independent of workflow kind and stale Model revisions.
+-- Cancellation is a web command, independent of workflow kind and stale Project revisions.
 -- Revoke the claim in the same transaction so workers cannot commit further results.
 CREATE FUNCTION application.cancel_workflow_run(
     p_entra_tenant_id UUID,
     p_entra_object_id UUID,
     p_expected_principal_type VARCHAR(30),
     p_tenant_id BIGINT,
-    p_model_id BIGINT,
+    p_project_id BIGINT,
     p_workflow_run_id BIGINT
 )
 RETURNS TABLE (
@@ -2504,7 +2492,7 @@ BEGIN
     SELECT * INTO v_decision
       FROM security.authorize_tenant_operation(
           p_entra_tenant_id, p_entra_object_id, p_expected_principal_type,
-          p_tenant_id, 'tenant_model_write'
+          p_tenant_id, 'tenant_project_write'
       );
     IF NOT FOUND OR NOT v_decision.authorized THEN
         RAISE EXCEPTION 'Workflow Run cancellation denied: %',
@@ -2513,13 +2501,13 @@ BEGIN
 
     SELECT run.* INTO v_run
       FROM application.workflow_run AS run
-      JOIN model.model AS target_model
-        ON target_model.model_id = run.model_id
-       AND target_model.tenant_id = p_tenant_id
-       AND target_model.is_active
+      JOIN project.project AS target_project
+        ON target_project.project_id = run.project_id
+       AND target_project.tenant_id = p_tenant_id
+       AND target_project.is_active
      WHERE run.workflow_run_id = p_workflow_run_id
-       AND run.model_id = p_model_id
-     FOR UPDATE OF run, target_model;
+       AND run.project_id = p_project_id
+     FOR UPDATE OF run, target_project;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Workflow Run is unavailable';
     END IF;
@@ -2535,17 +2523,17 @@ BEGIN
        OR v_run.metadata_enrichment_receipt_digest IS NOT NULL
        OR v_run.authoring_no_op_candidate_digest IS NOT NULL
        OR EXISTS (
-           SELECT 1 FROM mcp.model_change_set AS change_set
+           SELECT 1 FROM mcp.project_change_set AS change_set
             WHERE change_set.workflow_run_id = p_workflow_run_id
-              AND change_set.model_change_set_status IN ('validated', 'applied')
+              AND change_set.project_change_set_status IN ('validated', 'applied')
        ) THEN
         RAISE EXCEPTION 'workflow_run_cancellation_conflict';
     END IF;
 
-    SELECT coalesce(max(event.model_event_log_sequence), 0) + 1,
-           coalesce(max(event.model_event_log_attempt), 1)
+    SELECT coalesce(max(event.project_event_log_sequence), 0) + 1,
+           coalesce(max(event.project_event_log_attempt), 1)
       INTO v_next_sequence, v_attempt
-      FROM model.model_event_log AS event
+      FROM project.project_event_log AS event
      WHERE event.workflow_run_id = p_workflow_run_id;
     v_completed_time := clock_timestamp();
     UPDATE application.workflow_run AS run
@@ -2559,13 +2547,13 @@ BEGIN
            updated_by = CURRENT_USER
      WHERE run.workflow_run_id = p_workflow_run_id;
 
-    INSERT INTO model.model_event_log (
-        model_id, correlation_id, workflow_run_id, model_event_log_sequence,
-        model_event_log_attempt, model_workflow, model_event_log_stage,
-        model_event_log_status, model_event_log_message, finding_count
+    INSERT INTO project.project_event_log (
+        project_id, correlation_id, workflow_run_id, project_event_log_sequence,
+        project_event_log_attempt, project_workflow, project_event_log_stage,
+        project_event_log_status, project_event_log_message, finding_count
     ) VALUES (
-        v_run.model_id, v_run.correlation_id, v_run.workflow_run_id, v_next_sequence,
-        v_attempt, v_run.model_workflow, 'workflow_run.cancelled',
+        v_run.project_id, v_run.correlation_id, v_run.workflow_run_id, v_next_sequence,
+        v_attempt, v_run.project_workflow, 'workflow_run.cancelled',
         'warning', 'Workflow run cancelled. Previously saved results are retained.', 0
     );
     RETURN QUERY SELECT TRUE, v_run.workflow_run_id, 'cancelled'::VARCHAR(30),
@@ -2584,9 +2572,9 @@ CREATE FUNCTION application.claim_workflow_run(
 RETURNS TABLE (
     workflow_run_id BIGINT,
     tenant_id BIGINT,
-    model_id BIGINT,
-    model_revision BIGINT,
-    model_workflow VARCHAR(30),
+    project_id BIGINT,
+    project_revision BIGINT,
+    project_workflow VARCHAR(30),
     workflow_execution_mode VARCHAR(50),
     correlation_id UUID,
     actor_principal_type VARCHAR(30),
@@ -2620,15 +2608,15 @@ BEGIN
     RETURN QUERY
     WITH invalid AS (
         SELECT run.workflow_run_id,
-               run.model_id,
+               run.project_id,
                run.correlation_id,
-               run.model_workflow,
+               run.project_workflow,
                coalesce(event.maximum_attempt, 1) AS event_attempt,
                coalesce(event.maximum_sequence, 0) + 1 AS event_sequence
           FROM application.workflow_run AS run
-          LEFT JOIN model.model AS target_model
-            ON target_model.model_id = run.model_id
-           AND target_model.tenant_id = run.tenant_id
+          LEFT JOIN project.project AS target_project
+            ON target_project.project_id = run.project_id
+           AND target_project.tenant_id = run.tenant_id
           LEFT JOIN security.principal AS actor
             ON actor.principal_id = run.actor_principal_id
           LEFT JOIN LATERAL (
@@ -2644,16 +2632,16 @@ BEGIN
                  )
           ) AS identity_context ON TRUE
           LEFT JOIN LATERAL (
-              SELECT max(log.model_event_log_attempt) AS maximum_attempt,
-                     max(log.model_event_log_sequence) AS maximum_sequence
-                FROM model.model_event_log AS log
+              SELECT max(log.project_event_log_attempt) AS maximum_attempt,
+                     max(log.project_event_log_sequence) AS maximum_sequence
+                FROM project.project_event_log AS log
                WHERE log.workflow_run_id = run.workflow_run_id
           ) AS event ON TRUE
          WHERE run.execution_backend = p_execution_backend
            AND run.workflow_run_state = 'running'
            AND (
-               target_model.model_id IS NULL
-               OR NOT target_model.is_active
+               target_project.project_id IS NULL
+               OR NOT target_project.is_active
                OR actor.principal_id IS NULL
                OR NOT actor.is_active
                OR identity_context.active_identity_count <> 1
@@ -2678,30 +2666,30 @@ BEGIN
           FROM invalid
          WHERE run.workflow_run_id = invalid.workflow_run_id
         RETURNING run.workflow_run_id,
-                  run.model_id,
+                  run.project_id,
                   run.correlation_id,
-                  run.model_workflow
+                  run.project_workflow
     ),
     invalid_failure_events AS (
-        INSERT INTO model.model_event_log (
-            model_id,
+        INSERT INTO project.project_event_log (
+            project_id,
             correlation_id,
             workflow_run_id,
-            model_event_log_sequence,
-            model_event_log_attempt,
-            model_workflow,
-            model_event_log_stage,
-            model_event_log_status,
-            model_event_log_message,
+            project_event_log_sequence,
+            project_event_log_attempt,
+            project_workflow,
+            project_event_log_stage,
+            project_event_log_status,
+            project_event_log_message,
             finding_count,
             created_time
         )
-        SELECT invalid_failed.model_id,
+        SELECT invalid_failed.project_id,
                invalid_failed.correlation_id,
                invalid_failed.workflow_run_id,
                invalid.event_sequence,
                invalid.event_attempt,
-               invalid_failed.model_workflow,
+               invalid_failed.project_workflow,
                'workflow_run',
                'failed',
                'Workflow Run execution context is unavailable.',
@@ -2710,20 +2698,20 @@ BEGIN
           FROM invalid_failed
           JOIN invalid
             ON invalid.workflow_run_id = invalid_failed.workflow_run_id
-        RETURNING model_event_log_id
+        RETURNING project_event_log_id
     ),
     exhausted AS (
         SELECT run.workflow_run_id,
-               run.model_id,
+               run.project_id,
                run.correlation_id,
-               run.model_workflow,
+               run.project_workflow,
                coalesce(event.maximum_attempt, 1) AS event_attempt,
                coalesce(event.maximum_sequence, 0) + 1 AS event_sequence
           FROM application.workflow_run AS run
           LEFT JOIN LATERAL (
-              SELECT max(log.model_event_log_attempt) AS maximum_attempt,
-                     max(log.model_event_log_sequence) AS maximum_sequence
-                FROM model.model_event_log AS log
+              SELECT max(log.project_event_log_attempt) AS maximum_attempt,
+                     max(log.project_event_log_sequence) AS maximum_sequence
+                FROM project.project_event_log AS log
                WHERE log.workflow_run_id = run.workflow_run_id
           ) AS event ON TRUE
          WHERE run.execution_backend = p_execution_backend
@@ -2755,30 +2743,30 @@ BEGIN
           FROM exhausted
          WHERE run.workflow_run_id = exhausted.workflow_run_id
         RETURNING run.workflow_run_id,
-                  run.model_id,
+                  run.project_id,
                   run.correlation_id,
-                  run.model_workflow
+                  run.project_workflow
     ),
     failure_events AS (
-        INSERT INTO model.model_event_log (
-            model_id,
+        INSERT INTO project.project_event_log (
+            project_id,
             correlation_id,
             workflow_run_id,
-            model_event_log_sequence,
-            model_event_log_attempt,
-            model_workflow,
-            model_event_log_stage,
-            model_event_log_status,
-            model_event_log_message,
+            project_event_log_sequence,
+            project_event_log_attempt,
+            project_workflow,
+            project_event_log_stage,
+            project_event_log_status,
+            project_event_log_message,
             finding_count,
             created_time
         )
-        SELECT failed.model_id,
+        SELECT failed.project_id,
                failed.correlation_id,
                failed.workflow_run_id,
                exhausted.event_sequence,
                exhausted.event_attempt,
-               failed.model_workflow,
+               failed.project_workflow,
                'workflow_run',
                'failed',
                'Workflow Run recovery limit exhausted.',
@@ -2787,14 +2775,14 @@ BEGIN
           FROM failed
           JOIN exhausted
             ON exhausted.workflow_run_id = failed.workflow_run_id
-        RETURNING model_event_log_id
+        RETURNING project_event_log_id
     ),
     candidate AS (
         SELECT run.workflow_run_id,
-               target_model.tenant_id,
-               run.model_id,
-               run.model_revision,
-               run.model_workflow,
+               target_project.tenant_id,
+               run.project_id,
+               run.project_revision,
+               run.project_workflow,
                run.workflow_execution_mode,
                run.correlation_id,
                actor.principal_type AS actor_principal_type,
@@ -2802,9 +2790,9 @@ BEGIN
                actor_identity.entra_object_id AS actor_entra_object_id,
                run.workflow_run_claim_token_digest IS NOT NULL AS is_recovery
           FROM application.workflow_run AS run
-          JOIN model.model AS target_model
-            ON target_model.model_id = run.model_id
-           AND target_model.is_active
+          JOIN project.project AS target_project
+            ON target_project.project_id = run.project_id
+           AND target_project.is_active
           JOIN security.principal AS actor
             ON actor.principal_id = run.actor_principal_id
            AND actor.is_active
@@ -2867,9 +2855,9 @@ BEGIN
          WHERE run.workflow_run_id = candidate.workflow_run_id
         RETURNING run.workflow_run_id,
                   candidate.tenant_id,
-                  candidate.model_id,
-                  candidate.model_revision,
-                  candidate.model_workflow,
+                  candidate.project_id,
+                  candidate.project_revision,
+                  candidate.project_workflow,
                   candidate.workflow_execution_mode,
                   candidate.correlation_id,
                   candidate.actor_principal_type,
@@ -2881,9 +2869,9 @@ BEGIN
     )
     SELECT claimed.workflow_run_id,
            claimed.tenant_id,
-           claimed.model_id,
-           claimed.model_revision,
-           claimed.model_workflow,
+           claimed.project_id,
+           claimed.project_revision,
+           claimed.project_workflow,
            claimed.workflow_execution_mode,
            claimed.correlation_id,
            claimed.actor_principal_type,
@@ -2905,9 +2893,9 @@ CREATE FUNCTION application.claim_next_workflow_run(
 RETURNS TABLE (
     workflow_run_id BIGINT,
     tenant_id BIGINT,
-    model_id BIGINT,
-    model_revision BIGINT,
-    model_workflow VARCHAR(30),
+    project_id BIGINT,
+    project_revision BIGINT,
+    project_workflow VARCHAR(30),
     workflow_execution_mode VARCHAR(50),
     correlation_id UUID,
     actor_principal_type VARCHAR(30),
@@ -3081,7 +3069,7 @@ CREATE FUNCTION application.append_workflow_run_event(
     p_entra_object_id UUID,
     p_expected_principal_type VARCHAR(30),
     p_workflow_run_id BIGINT,
-    p_expected_model_revision BIGINT,
+    p_expected_project_revision BIGINT,
     p_event_sequence BIGINT,
     p_attempt INTEGER,
     p_stage_code VARCHAR(100),
@@ -3091,7 +3079,7 @@ CREATE FUNCTION application.append_workflow_run_event(
     p_total_count INTEGER,
     p_finding_count INTEGER
 )
-RETURNS SETOF model.model_event_log
+RETURNS SETOF project.project_event_log
 LANGUAGE plpgsql
 VOLATILE
 SECURITY DEFINER
@@ -3100,8 +3088,8 @@ AS $append_workflow_run_event$
 DECLARE
     v_run RECORD;
     v_decision RECORD;
-    v_existing model.model_event_log%ROWTYPE;
-    v_event model.model_event_log%ROWTYPE;
+    v_existing project.project_event_log%ROWTYPE;
+    v_event project.project_event_log%ROWTYPE;
     v_expected_sequence BIGINT;
     v_percent NUMERIC(5, 2);
     v_max_attempt INTEGER;
@@ -3141,22 +3129,22 @@ BEGIN
     END IF;
 
     SELECT run.workflow_run_id,
-           run.model_id,
+           run.project_id,
            run.actor_principal_id,
            run.workflow_run_state,
            run.correlation_id,
-           run.model_workflow,
+           run.project_workflow,
            run.workflow_execution_mode,
            run.validation_retry_count,
-           target_model.tenant_id,
-           target_model.model_revision
+           target_project.tenant_id,
+           target_project.project_revision
       INTO v_run
       FROM application.workflow_run AS run
-      JOIN model.model AS target_model
-        ON target_model.model_id = run.model_id
-       AND target_model.is_active
+      JOIN project.project AS target_project
+        ON target_project.project_id = run.project_id
+       AND target_project.is_active
      WHERE run.workflow_run_id = p_workflow_run_id
-     FOR UPDATE OF run, target_model;
+     FOR UPDATE OF run, target_project;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Workflow Run is unavailable';
     END IF;
@@ -3168,7 +3156,7 @@ BEGIN
           p_entra_object_id,
           p_expected_principal_type,
           v_run.tenant_id,
-          'tenant_model_write'
+          'tenant_project_write'
       );
     IF NOT FOUND OR NOT v_decision.authorized THEN
         RAISE EXCEPTION 'Workflow Run event denied: %',
@@ -3177,23 +3165,23 @@ BEGIN
     IF v_run.actor_principal_id <> v_decision.principal_id THEN
         RAISE EXCEPTION 'Workflow Run belongs to another Principal';
     END IF;
-    IF p_expected_model_revision IS NULL
-       OR v_run.model_revision <> p_expected_model_revision THEN
-        RAISE EXCEPTION 'stale_model_revision';
+    IF p_expected_project_revision IS NULL
+       OR v_run.project_revision <> p_expected_project_revision THEN
+        RAISE EXCEPTION 'stale_project_revision';
     END IF;
 
     SELECT event.*
       INTO v_existing
-      FROM model.model_event_log AS event
+      FROM project.project_event_log AS event
     WHERE event.workflow_run_id = p_workflow_run_id
-       AND event.model_event_log_sequence = p_event_sequence;
+       AND event.project_event_log_sequence = p_event_sequence;
     IF FOUND THEN
-        IF v_existing.model_event_log_attempt IS DISTINCT FROM p_attempt
-           OR v_existing.model_event_log_stage IS DISTINCT FROM p_stage_code
-           OR v_existing.model_event_log_status IS DISTINCT FROM p_status
-           OR v_existing.model_event_log_message IS DISTINCT FROM p_safe_message
-           OR v_existing.model_event_log_current IS DISTINCT FROM p_current_count
-           OR v_existing.model_event_log_total IS DISTINCT FROM p_total_count
+        IF v_existing.project_event_log_attempt IS DISTINCT FROM p_attempt
+           OR v_existing.project_event_log_stage IS DISTINCT FROM p_stage_code
+           OR v_existing.project_event_log_status IS DISTINCT FROM p_status
+           OR v_existing.project_event_log_message IS DISTINCT FROM p_safe_message
+           OR v_existing.project_event_log_current IS DISTINCT FROM p_current_count
+           OR v_existing.project_event_log_total IS DISTINCT FROM p_total_count
            OR v_existing.finding_count IS DISTINCT FROM p_finding_count THEN
             RAISE EXCEPTION 'Workflow Run event sequence conflict';
         END IF;
@@ -3206,7 +3194,7 @@ BEGIN
     END IF;
 
     v_max_attempt := CASE
-        WHEN v_run.model_workflow IN ('code_generation', 'validation')
+        WHEN v_run.project_workflow IN ('code_generation', 'validation')
              OR v_run.workflow_execution_mode IS NOT NULL
             THEN v_run.validation_retry_count + 1
         ELSE 1
@@ -3215,9 +3203,9 @@ BEGIN
         RAISE EXCEPTION 'Workflow Run event attempt is invalid';
     END IF;
 
-    SELECT coalesce(max(event.model_event_log_sequence), 0) + 1
+    SELECT coalesce(max(event.project_event_log_sequence), 0) + 1
       INTO v_expected_sequence
-      FROM model.model_event_log AS event
+      FROM project.project_event_log AS event
      WHERE event.workflow_run_id = p_workflow_run_id;
     IF p_event_sequence <> v_expected_sequence THEN
         RAISE EXCEPTION 'Workflow Run event sequence must be contiguous';
@@ -3227,27 +3215,27 @@ BEGIN
         WHEN p_total_count IS NULL THEN NULL
         ELSE round((p_current_count::NUMERIC * 100) / p_total_count, 2)
     END;
-    INSERT INTO model.model_event_log AS event (
-        model_id,
+    INSERT INTO project.project_event_log AS event (
+        project_id,
         correlation_id,
         workflow_run_id,
-        model_event_log_sequence,
-        model_event_log_attempt,
-        model_workflow,
-        model_event_log_stage,
-        model_event_log_status,
-        model_event_log_message,
-        model_event_log_current,
-        model_event_log_total,
-        model_event_log_percent,
+        project_event_log_sequence,
+        project_event_log_attempt,
+        project_workflow,
+        project_event_log_stage,
+        project_event_log_status,
+        project_event_log_message,
+        project_event_log_current,
+        project_event_log_total,
+        project_event_log_percent,
         finding_count
     ) VALUES (
-        v_run.model_id,
+        v_run.project_id,
         v_run.correlation_id,
         v_run.workflow_run_id,
         p_event_sequence,
         p_attempt,
-        v_run.model_workflow,
+        v_run.project_workflow,
         p_stage_code,
         p_status,
         p_safe_message,
@@ -3283,7 +3271,7 @@ CREATE FUNCTION application.complete_workflow_run(
     p_entra_object_id UUID,
     p_expected_principal_type VARCHAR(30),
     p_workflow_run_id BIGINT,
-    p_expected_model_revision BIGINT,
+    p_expected_project_revision BIGINT,
     p_final_finding_count INTEGER
 )
 RETURNS TABLE (
@@ -3311,23 +3299,23 @@ BEGIN
     END IF;
 
     SELECT run.workflow_run_id,
-           run.model_id,
+           run.project_id,
            run.actor_principal_id,
            run.workflow_run_state,
            run.correlation_id,
-           run.model_workflow,
+           run.project_workflow,
            run.authoring_no_op_candidate_digest,
            run.metadata_enrichment_receipt_digest,
            run.completed_time,
-           target_model.tenant_id,
-           target_model.model_revision
+           target_project.tenant_id,
+           target_project.project_revision
       INTO v_run
       FROM application.workflow_run AS run
-      JOIN model.model AS target_model
-        ON target_model.model_id = run.model_id
-       AND target_model.is_active
+      JOIN project.project AS target_project
+        ON target_project.project_id = run.project_id
+       AND target_project.is_active
      WHERE run.workflow_run_id = p_workflow_run_id
-     FOR UPDATE OF run, target_model;
+     FOR UPDATE OF run, target_project;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Workflow Run is unavailable';
     END IF;
@@ -3339,7 +3327,7 @@ BEGIN
           p_entra_object_id,
           p_expected_principal_type,
           v_run.tenant_id,
-          'tenant_model_write'
+          'tenant_project_write'
       );
     IF NOT FOUND OR NOT v_decision.authorized THEN
         RAISE EXCEPTION 'Workflow Run completion denied: %',
@@ -3348,12 +3336,12 @@ BEGIN
     IF v_run.actor_principal_id <> v_decision.principal_id THEN
         RAISE EXCEPTION 'Workflow Run belongs to another Principal';
     END IF;
-    IF p_expected_model_revision IS NULL
-       OR v_run.model_revision <> p_expected_model_revision THEN
-        RAISE EXCEPTION 'stale_model_revision';
+    IF p_expected_project_revision IS NULL
+       OR v_run.project_revision <> p_expected_project_revision THEN
+        RAISE EXCEPTION 'stale_project_revision';
     END IF;
 
-    IF v_run.model_workflow = 'metadata_enrichment'
+    IF v_run.project_workflow = 'metadata_enrichment'
        AND v_run.metadata_enrichment_receipt_digest IS NULL THEN
         RAISE EXCEPTION 'Metadata enrichment requires a durable completion receipt';
     END IF;
@@ -3365,11 +3353,11 @@ BEGIN
     IF v_run.workflow_run_state IN ('completed', 'completed_with_repair') THEN
         SELECT event.finding_count
           INTO v_terminal_event
-          FROM model.model_event_log AS event
+          FROM project.project_event_log AS event
          WHERE event.workflow_run_id = p_workflow_run_id
-           AND event.model_event_log_stage = 'workflow_run'
-           AND event.model_event_log_status = 'completed'
-         ORDER BY event.model_event_log_sequence DESC
+           AND event.project_event_log_stage = 'workflow_run'
+           AND event.project_event_log_status = 'completed'
+         ORDER BY event.project_event_log_sequence DESC
          LIMIT 1;
         IF NOT FOUND
            OR v_terminal_event.finding_count <> p_final_finding_count THEN
@@ -3386,10 +3374,10 @@ BEGIN
         RAISE EXCEPTION 'Workflow Run must be running to complete';
     END IF;
 
-    SELECT coalesce(max(event.model_event_log_attempt), 1),
-           coalesce(max(event.model_event_log_sequence), 0) + 1
+    SELECT coalesce(max(event.project_event_log_attempt), 1),
+           coalesce(max(event.project_event_log_sequence), 0) + 1
       INTO v_max_attempt, v_next_sequence
-      FROM model.model_event_log AS event
+      FROM project.project_event_log AS event
      WHERE event.workflow_run_id = p_workflow_run_id;
     v_terminal_state := CASE
         WHEN v_max_attempt > 1 THEN 'completed_with_repair'
@@ -3408,24 +3396,24 @@ BEGIN
            updated_by = CURRENT_USER
      WHERE run.workflow_run_id = p_workflow_run_id;
 
-    INSERT INTO model.model_event_log (
-        model_id,
+    INSERT INTO project.project_event_log (
+        project_id,
         correlation_id,
         workflow_run_id,
-        model_event_log_sequence,
-        model_event_log_attempt,
-        model_workflow,
-        model_event_log_stage,
-        model_event_log_status,
-        model_event_log_message,
+        project_event_log_sequence,
+        project_event_log_attempt,
+        project_workflow,
+        project_event_log_stage,
+        project_event_log_status,
+        project_event_log_message,
         finding_count
     ) VALUES (
-        v_run.model_id,
+        v_run.project_id,
         v_run.correlation_id,
         v_run.workflow_run_id,
         v_next_sequence,
         v_max_attempt,
-        v_run.model_workflow,
+        v_run.project_workflow,
         'workflow_run',
         'completed',
         'Workflow run completed.',
@@ -3454,12 +3442,12 @@ CREATE FUNCTION application.complete_authoring_workflow_run_no_op(
     p_entra_object_id UUID,
     p_expected_principal_type VARCHAR(30),
     p_tenant_id BIGINT,
-    p_model_id BIGINT,
+    p_project_id BIGINT,
     p_workflow_run_id BIGINT,
     p_expected_workflow VARCHAR(30),
     p_expected_execution_mode VARCHAR(50),
     p_expected_correlation_id UUID,
-    p_expected_base_model_revision BIGINT,
+    p_expected_base_project_revision BIGINT,
     p_candidate_digest CHAR(64),
     p_final_event_sequence BIGINT,
     p_final_event_attempt INTEGER,
@@ -3474,9 +3462,9 @@ RETURNS TABLE (
     changed BOOLEAN,
     workflow_run_id BIGINT,
     workflow_run_state VARCHAR(30),
-    model_id BIGINT,
-    model_revision BIGINT,
-    model_workflow VARCHAR(30),
+    project_id BIGINT,
+    project_revision BIGINT,
+    project_workflow VARCHAR(30),
     workflow_execution_mode VARCHAR(50),
     correlation_id UUID,
     candidate_digest CHAR(64),
@@ -3498,7 +3486,7 @@ AS $complete_authoring_workflow_run_no_op$
 DECLARE
     v_run RECORD;
     v_decision RECORD;
-    v_terminal_event model.model_event_log%ROWTYPE;
+    v_terminal_event project.project_event_log%ROWTYPE;
     v_prior_max_attempt INTEGER;
     v_allowed_max_attempt INTEGER;
     v_expected_sequence BIGINT;
@@ -3506,7 +3494,7 @@ DECLARE
     v_completed_time TIMESTAMPTZ;
 BEGIN
     IF p_tenant_id IS NULL OR p_tenant_id <= 0
-       OR p_model_id IS NULL OR p_model_id <= 0
+       OR p_project_id IS NULL OR p_project_id <= 0
        OR p_workflow_run_id IS NULL OR p_workflow_run_id <= 0 THEN
         RAISE EXCEPTION 'Workflow Run no-op identity is invalid';
     END IF;
@@ -3533,8 +3521,8 @@ BEGIN
     IF p_expected_correlation_id IS NULL THEN
         RAISE EXCEPTION 'Workflow Run no-op correlation is invalid';
     END IF;
-    IF p_expected_base_model_revision IS NULL
-       OR p_expected_base_model_revision <= 0 THEN
+    IF p_expected_base_project_revision IS NULL
+       OR p_expected_base_project_revision <= 0 THEN
         RAISE EXCEPTION 'Workflow Run no-op base revision is invalid';
     END IF;
     IF p_candidate_digest IS NULL
@@ -3542,26 +3530,26 @@ BEGIN
         RAISE EXCEPTION 'Workflow Run no-op Candidate digest is invalid';
     END IF;
     SELECT run.workflow_run_id,
-           run.model_id,
+           run.project_id,
            run.actor_principal_id,
            run.workflow_run_state,
            run.correlation_id,
-           run.model_workflow,
+           run.project_workflow,
            run.workflow_execution_mode,
            run.validation_retry_count,
            run.completed_time,
-           run.authoring_no_op_base_model_revision,
+           run.authoring_no_op_base_project_revision,
            run.authoring_no_op_candidate_digest,
-           run.authoring_no_op_model_event_log_id,
-           target_model.tenant_id,
-           target_model.model_revision
+           run.authoring_no_op_project_event_log_id,
+           target_project.tenant_id,
+           target_project.project_revision
       INTO v_run
       FROM application.workflow_run AS run
-      JOIN model.model AS target_model
-        ON target_model.model_id = run.model_id
-       AND target_model.is_active
+      JOIN project.project AS target_project
+        ON target_project.project_id = run.project_id
+       AND target_project.is_active
      WHERE run.workflow_run_id = p_workflow_run_id
-     FOR UPDATE OF run, target_model;
+     FOR UPDATE OF run, target_project;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Workflow Run is unavailable';
     END IF;
@@ -3573,7 +3561,7 @@ BEGIN
           p_entra_object_id,
           p_expected_principal_type,
           v_run.tenant_id,
-          'tenant_model_write'
+          'tenant_project_write'
       );
     IF NOT FOUND OR NOT v_decision.authorized THEN
         RAISE EXCEPTION 'Workflow Run no-op completion denied: %',
@@ -3583,8 +3571,8 @@ BEGIN
         RAISE EXCEPTION 'Workflow Run belongs to another Principal';
     END IF;
     IF v_run.tenant_id <> p_tenant_id
-       OR v_run.model_id <> p_model_id
-       OR v_run.model_workflow <> p_expected_workflow
+       OR v_run.project_id <> p_project_id
+       OR v_run.project_workflow <> p_expected_workflow
        OR v_run.workflow_execution_mode IS DISTINCT FROM p_expected_execution_mode
        OR v_run.correlation_id <> p_expected_correlation_id THEN
         RAISE EXCEPTION 'Workflow Run no-op completion conflict';
@@ -3592,60 +3580,60 @@ BEGIN
 
     IF EXISTS (
         SELECT 1
-          FROM mcp.model_change_set AS change_set
+          FROM mcp.project_change_set AS change_set
          WHERE change_set.workflow_run_id = p_workflow_run_id
     ) THEN
-        RAISE EXCEPTION 'Workflow Run no-op requires no Model Change Set';
+        RAISE EXCEPTION 'Workflow Run no-op requires no Project Change Set';
     END IF;
 
     IF v_run.authoring_no_op_candidate_digest IS NOT NULL THEN
-        IF v_run.authoring_no_op_base_model_revision
-               <> p_expected_base_model_revision
+        IF v_run.authoring_no_op_base_project_revision
+               <> p_expected_base_project_revision
            OR v_run.authoring_no_op_candidate_digest <> p_candidate_digest
-           OR v_run.authoring_no_op_model_event_log_id IS NULL THEN
+           OR v_run.authoring_no_op_project_event_log_id IS NULL THEN
             RAISE EXCEPTION 'Workflow Run no-op completion conflict';
         END IF;
 
         SELECT event.*
           INTO v_terminal_event
-          FROM model.model_event_log AS event
-         WHERE event.model_event_log_id =
-                   v_run.authoring_no_op_model_event_log_id;
+          FROM project.project_event_log AS event
+         WHERE event.project_event_log_id =
+                   v_run.authoring_no_op_project_event_log_id;
         IF NOT FOUND
-           OR v_terminal_event.model_id <> v_run.model_id
+           OR v_terminal_event.project_id <> v_run.project_id
            OR v_terminal_event.workflow_run_id IS DISTINCT FROM v_run.workflow_run_id
            OR v_terminal_event.correlation_id <> v_run.correlation_id
            OR v_terminal_event.agent_run_id IS NOT NULL
-           OR v_terminal_event.model_workflow <> v_run.model_workflow
-           OR v_terminal_event.model_event_log_sequence IS DISTINCT FROM
+           OR v_terminal_event.project_workflow <> v_run.project_workflow
+           OR v_terminal_event.project_event_log_sequence IS DISTINCT FROM
               p_final_event_sequence
-           OR v_terminal_event.model_event_log_attempt IS DISTINCT FROM
+           OR v_terminal_event.project_event_log_attempt IS DISTINCT FROM
               p_final_event_attempt
-           OR v_terminal_event.model_event_log_stage IS DISTINCT FROM
+           OR v_terminal_event.project_event_log_stage IS DISTINCT FROM
               p_final_event_stage
-           OR v_terminal_event.model_event_log_status IS DISTINCT FROM
+           OR v_terminal_event.project_event_log_status IS DISTINCT FROM
               p_final_event_status
-           OR v_terminal_event.model_event_log_message IS DISTINCT FROM
+           OR v_terminal_event.project_event_log_message IS DISTINCT FROM
               p_final_event_message
-           OR v_terminal_event.model_event_log_current IS DISTINCT FROM
+           OR v_terminal_event.project_event_log_current IS DISTINCT FROM
               p_final_event_current
-           OR v_terminal_event.model_event_log_total IS DISTINCT FROM
+           OR v_terminal_event.project_event_log_total IS DISTINCT FROM
               p_final_event_total
-           OR v_terminal_event.model_event_log_percent <> 100.00
+           OR v_terminal_event.project_event_log_percent <> 100.00
            OR v_terminal_event.finding_count IS DISTINCT FROM
               p_final_finding_count
            OR v_terminal_event.created_time <> v_run.completed_time
            OR v_run.workflow_run_state <> (CASE
-               WHEN v_terminal_event.model_event_log_attempt > 1
+               WHEN v_terminal_event.project_event_log_attempt > 1
                    THEN 'completed_with_repair'
                ELSE 'completed'
            END)
            OR EXISTS (
                SELECT 1
-                 FROM model.model_event_log AS later_event
+                 FROM project.project_event_log AS later_event
                 WHERE later_event.workflow_run_id = v_run.workflow_run_id
-                  AND later_event.model_event_log_sequence >
-                      v_terminal_event.model_event_log_sequence
+                  AND later_event.project_event_log_sequence >
+                      v_terminal_event.project_event_log_sequence
            ) THEN
             RAISE EXCEPTION 'Workflow Run no-op completion conflict';
         END IF;
@@ -3654,19 +3642,19 @@ BEGIN
             FALSE,
             v_run.workflow_run_id,
             v_run.workflow_run_state,
-            v_run.model_id,
-            v_run.authoring_no_op_base_model_revision,
-            v_run.model_workflow,
+            v_run.project_id,
+            v_run.authoring_no_op_base_project_revision,
+            v_run.project_workflow,
             v_run.workflow_execution_mode,
             v_run.correlation_id,
             v_run.authoring_no_op_candidate_digest,
-            v_terminal_event.model_event_log_sequence,
-            v_terminal_event.model_event_log_attempt,
-            v_terminal_event.model_event_log_stage,
-            v_terminal_event.model_event_log_status,
-            v_terminal_event.model_event_log_message,
-            v_terminal_event.model_event_log_current,
-            v_terminal_event.model_event_log_total,
+            v_terminal_event.project_event_log_sequence,
+            v_terminal_event.project_event_log_attempt,
+            v_terminal_event.project_event_log_stage,
+            v_terminal_event.project_event_log_status,
+            v_terminal_event.project_event_log_message,
+            v_terminal_event.project_event_log_current,
+            v_terminal_event.project_event_log_total,
             v_terminal_event.finding_count,
             v_run.completed_time;
         RETURN;
@@ -3699,14 +3687,14 @@ BEGIN
        OR p_final_finding_count IS DISTINCT FROM 0 THEN
         RAISE EXCEPTION 'Workflow Run no-op event counts are invalid';
     END IF;
-    IF v_run.model_revision <> p_expected_base_model_revision THEN
-        RAISE EXCEPTION 'stale_model_revision';
+    IF v_run.project_revision <> p_expected_base_project_revision THEN
+        RAISE EXCEPTION 'stale_project_revision';
     END IF;
 
-    SELECT coalesce(max(event.model_event_log_attempt), 1),
-           coalesce(max(event.model_event_log_sequence), 0) + 1
+    SELECT coalesce(max(event.project_event_log_attempt), 1),
+           coalesce(max(event.project_event_log_sequence), 0) + 1
       INTO v_prior_max_attempt, v_expected_sequence
-      FROM model.model_event_log AS event
+      FROM project.project_event_log AS event
      WHERE event.workflow_run_id = p_workflow_run_id;
     v_allowed_max_attempt := v_run.validation_retry_count + 1;
     IF p_final_event_sequence <> v_expected_sequence THEN
@@ -3722,28 +3710,28 @@ BEGIN
     END;
     v_completed_time := clock_timestamp();
 
-    INSERT INTO model.model_event_log AS event (
-        model_id,
+    INSERT INTO project.project_event_log AS event (
+        project_id,
         correlation_id,
         workflow_run_id,
-        model_event_log_sequence,
-        model_event_log_attempt,
-        model_workflow,
-        model_event_log_stage,
-        model_event_log_status,
-        model_event_log_message,
-        model_event_log_current,
-        model_event_log_total,
-        model_event_log_percent,
+        project_event_log_sequence,
+        project_event_log_attempt,
+        project_workflow,
+        project_event_log_stage,
+        project_event_log_status,
+        project_event_log_message,
+        project_event_log_current,
+        project_event_log_total,
+        project_event_log_percent,
         finding_count,
         created_time
     ) VALUES (
-        v_run.model_id,
+        v_run.project_id,
         v_run.correlation_id,
         v_run.workflow_run_id,
         p_final_event_sequence,
         p_final_event_attempt,
-        v_run.model_workflow,
+        v_run.project_workflow,
         p_final_event_stage,
         p_final_event_status,
         p_final_event_message,
@@ -3762,10 +3750,10 @@ BEGIN
            workflow_run_claimed_time = NULL,
            workflow_run_claim_heartbeat_time = NULL,
            workflow_run_claim_expires_time = NULL,
-           authoring_no_op_base_model_revision = p_expected_base_model_revision,
+           authoring_no_op_base_project_revision = p_expected_base_project_revision,
            authoring_no_op_candidate_digest = p_candidate_digest,
-           authoring_no_op_model_event_log_id =
-               v_terminal_event.model_event_log_id,
+           authoring_no_op_project_event_log_id =
+               v_terminal_event.project_event_log_id,
            updated_time = v_completed_time,
            updated_by = CURRENT_USER
      WHERE run.workflow_run_id = p_workflow_run_id;
@@ -3774,19 +3762,19 @@ BEGIN
         TRUE,
         v_run.workflow_run_id,
         v_terminal_state,
-        v_run.model_id,
-        p_expected_base_model_revision,
-        v_run.model_workflow,
+        v_run.project_id,
+        p_expected_base_project_revision,
+        v_run.project_workflow,
         v_run.workflow_execution_mode,
         v_run.correlation_id,
         p_candidate_digest,
-        v_terminal_event.model_event_log_sequence,
-        v_terminal_event.model_event_log_attempt,
-        v_terminal_event.model_event_log_stage,
-        v_terminal_event.model_event_log_status,
-        v_terminal_event.model_event_log_message,
-        v_terminal_event.model_event_log_current,
-        v_terminal_event.model_event_log_total,
+        v_terminal_event.project_event_log_sequence,
+        v_terminal_event.project_event_log_attempt,
+        v_terminal_event.project_event_log_stage,
+        v_terminal_event.project_event_log_status,
+        v_terminal_event.project_event_log_message,
+        v_terminal_event.project_event_log_current,
+        v_terminal_event.project_event_log_total,
         v_terminal_event.finding_count,
         v_completed_time;
 END;
@@ -3819,7 +3807,7 @@ CREATE FUNCTION application.fail_workflow_run(
     p_entra_object_id UUID,
     p_expected_principal_type VARCHAR(30),
     p_workflow_run_id BIGINT,
-    p_expected_model_revision BIGINT,
+    p_expected_project_revision BIGINT,
     p_failure_code VARCHAR(100),
     p_safe_failure_message VARCHAR(2000)
 )
@@ -3852,25 +3840,25 @@ BEGIN
     END IF;
 
     SELECT run.workflow_run_id,
-           run.model_id,
+           run.project_id,
            run.actor_principal_id,
            run.workflow_run_state,
            run.correlation_id,
-           run.model_workflow,
+           run.project_workflow,
            run.failure_code,
            run.failure_message,
            run.authoring_no_op_candidate_digest,
            run.metadata_enrichment_receipt_digest,
            run.completed_time,
-           target_model.tenant_id,
-           target_model.model_revision
+           target_project.tenant_id,
+           target_project.project_revision
       INTO v_run
       FROM application.workflow_run AS run
-      JOIN model.model AS target_model
-        ON target_model.model_id = run.model_id
-       AND target_model.is_active
+      JOIN project.project AS target_project
+        ON target_project.project_id = run.project_id
+       AND target_project.is_active
      WHERE run.workflow_run_id = p_workflow_run_id
-     FOR UPDATE OF run, target_model;
+     FOR UPDATE OF run, target_project;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Workflow Run is unavailable';
     END IF;
@@ -3882,7 +3870,7 @@ BEGIN
           p_entra_object_id,
           p_expected_principal_type,
           v_run.tenant_id,
-          'tenant_model_write'
+          'tenant_project_write'
       );
     IF NOT FOUND OR NOT v_decision.authorized THEN
         RAISE EXCEPTION 'Workflow Run failure denied: %',
@@ -3891,18 +3879,18 @@ BEGIN
     IF v_run.actor_principal_id <> v_decision.principal_id THEN
         RAISE EXCEPTION 'Workflow Run belongs to another Principal';
     END IF;
-    IF p_expected_model_revision IS NULL
-       OR v_run.model_revision <> p_expected_model_revision THEN
-        RAISE EXCEPTION 'stale_model_revision';
+    IF p_expected_project_revision IS NULL
+       OR v_run.project_revision <> p_expected_project_revision THEN
+        RAISE EXCEPTION 'stale_project_revision';
     END IF;
 
     IF v_run.metadata_enrichment_receipt_digest IS NOT NULL
        OR v_run.authoring_no_op_candidate_digest IS NOT NULL
        OR EXISTS (
            SELECT 1
-             FROM mcp.model_change_set AS change_set
+             FROM mcp.project_change_set AS change_set
             WHERE change_set.workflow_run_id = p_workflow_run_id
-              AND change_set.model_change_set_status IN ('validated', 'applied')
+              AND change_set.project_change_set_status IN ('validated', 'applied')
        ) THEN
         RAISE EXCEPTION 'Workflow Run has a durable authoring outcome';
     END IF;
@@ -3923,10 +3911,10 @@ BEGIN
         RAISE EXCEPTION 'Workflow Run must be running to fail';
     END IF;
 
-    SELECT coalesce(max(event.model_event_log_attempt), 1),
-           coalesce(max(event.model_event_log_sequence), 0) + 1
+    SELECT coalesce(max(event.project_event_log_attempt), 1),
+           coalesce(max(event.project_event_log_sequence), 0) + 1
       INTO v_max_attempt, v_next_sequence
-      FROM model.model_event_log AS event
+      FROM project.project_event_log AS event
      WHERE event.workflow_run_id = p_workflow_run_id;
     v_completed_time := clock_timestamp();
 
@@ -3943,24 +3931,24 @@ BEGIN
            updated_by = CURRENT_USER
      WHERE run.workflow_run_id = p_workflow_run_id;
 
-    INSERT INTO model.model_event_log (
-        model_id,
+    INSERT INTO project.project_event_log (
+        project_id,
         correlation_id,
         workflow_run_id,
-        model_event_log_sequence,
-        model_event_log_attempt,
-        model_workflow,
-        model_event_log_stage,
-        model_event_log_status,
-        model_event_log_message,
+        project_event_log_sequence,
+        project_event_log_attempt,
+        project_workflow,
+        project_event_log_stage,
+        project_event_log_status,
+        project_event_log_message,
         finding_count
     ) VALUES (
-        v_run.model_id,
+        v_run.project_id,
         v_run.correlation_id,
         v_run.workflow_run_id,
         v_next_sequence,
         v_max_attempt,
-        v_run.model_workflow,
+        v_run.project_workflow,
         'workflow_run',
         'failed',
         p_safe_failure_message,
@@ -4135,7 +4123,7 @@ RETURNS TRIGGER LANGUAGE plpgsql SET search_path = pg_catalog
 AS $guard_workflow_run_model_request$
 BEGIN
     IF TG_OP = 'DELETE' OR OLD.completed_time IS NOT NULL THEN
-        RAISE EXCEPTION 'Model request receipts are immutable';
+        RAISE EXCEPTION 'Project request receipts are immutable';
     END IF;
     IF ROW(NEW.request_id, NEW.workflow_run_id, NEW.invocation_id, NEW.stage_code,
            NEW.authoring_attempt, NEW.request_ordinal, NEW.workflow_run_recovery_count,
@@ -4151,7 +4139,7 @@ BEGIN
            OLD.pricing_cache_write_input_usd_per_million, OLD.pricing_output_usd_per_million,
            OLD.pricing_valid_from, OLD.pricing_valid_until, OLD.pricing_max_input_tokens)
        OR NEW.completed_time IS NULL THEN
-        RAISE EXCEPTION 'Model request receipt identity is immutable';
+        RAISE EXCEPTION 'Project request receipt identity is immutable';
     END IF;
     RETURN NEW;
 END;
@@ -4163,7 +4151,7 @@ REVOKE ALL ON application.workflow_run_model_request FROM PUBLIC;
 
 CREATE FUNCTION application.assert_workflow_run_usage_binding(
     p_entra_tenant_id UUID, p_entra_object_id UUID, p_expected_principal_type VARCHAR,
-    p_workflow_run_id BIGINT, p_expected_model_revision BIGINT, p_claim_token UUID
+    p_workflow_run_id BIGINT, p_expected_project_revision BIGINT, p_claim_token UUID
 )
 RETURNS application.workflow_run
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
@@ -4176,17 +4164,17 @@ BEGIN
     PERFORM application.assert_workflow_run_claim(p_workflow_run_id, p_claim_token);
     SELECT run.* INTO v_run FROM application.workflow_run AS run
      WHERE run.workflow_run_id = p_workflow_run_id;
-    SELECT target.model_revision INTO v_revision FROM model.model AS target
-     WHERE target.model_id = v_run.model_id AND target.tenant_id = v_run.tenant_id
+    SELECT target.project_revision INTO v_revision FROM project.project AS target
+     WHERE target.project_id = v_run.project_id AND target.tenant_id = v_run.tenant_id
        AND target.is_active FOR SHARE OF target;
-    IF NOT FOUND OR p_expected_model_revision IS NULL
-       OR v_revision <> p_expected_model_revision
-       OR v_run.model_revision <> p_expected_model_revision THEN
+    IF NOT FOUND OR p_expected_project_revision IS NULL
+       OR v_revision <> p_expected_project_revision
+       OR v_run.project_revision <> p_expected_project_revision THEN
         RAISE EXCEPTION 'Workflow usage revision is unavailable';
     END IF;
     SELECT * INTO v_decision FROM security.authorize_tenant_operation(
         p_entra_tenant_id, p_entra_object_id, p_expected_principal_type,
-        v_run.tenant_id, 'tenant_model_write'
+        v_run.tenant_id, 'tenant_project_write'
     );
     IF NOT FOUND OR NOT v_decision.authorized
        OR v_decision.principal_id <> v_run.actor_principal_id THEN
@@ -4201,7 +4189,7 @@ REVOKE ALL ON FUNCTION application.assert_workflow_run_usage_binding(
 
 CREATE FUNCTION application.begin_workflow_run_usage(
     p_entra_tenant_id UUID, p_entra_object_id UUID, p_expected_principal_type VARCHAR,
-    p_workflow_run_id BIGINT, p_expected_model_revision BIGINT, p_claim_token UUID
+    p_workflow_run_id BIGINT, p_expected_project_revision BIGINT, p_claim_token UUID
 )
 RETURNS VARCHAR
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
@@ -4210,7 +4198,7 @@ DECLARE v_run application.workflow_run%ROWTYPE;
 BEGIN
     v_run := application.assert_workflow_run_usage_binding(
         p_entra_tenant_id, p_entra_object_id, p_expected_principal_type,
-        p_workflow_run_id, p_expected_model_revision, p_claim_token
+        p_workflow_run_id, p_expected_project_revision, p_claim_token
     );
     IF v_run.usage_tracking_version = 1
        AND v_run.usage_tracked_recovery_count = v_run.workflow_run_recovery_count THEN
@@ -4233,7 +4221,7 @@ REVOKE ALL ON FUNCTION application.begin_workflow_run_usage(
 
 CREATE FUNCTION application.begin_workflow_run_model_request(
     p_entra_tenant_id UUID, p_entra_object_id UUID, p_expected_principal_type VARCHAR,
-    p_workflow_run_id BIGINT, p_expected_model_revision BIGINT, p_claim_token UUID,
+    p_workflow_run_id BIGINT, p_expected_project_revision BIGINT, p_claim_token UUID,
     p_request_id UUID, p_invocation_id UUID, p_stage_code VARCHAR,
     p_authoring_attempt INTEGER, p_request_ordinal INTEGER, p_pricing JSONB DEFAULT NULL
 )
@@ -4248,7 +4236,7 @@ DECLARE
 BEGIN
     v_run := application.assert_workflow_run_usage_binding(
         p_entra_tenant_id, p_entra_object_id, p_expected_principal_type,
-        p_workflow_run_id, p_expected_model_revision, p_claim_token
+        p_workflow_run_id, p_expected_project_revision, p_claim_token
     );
     IF v_run.usage_tracking_version IS DISTINCT FROM 1
        OR v_run.usage_tracked_recovery_count IS DISTINCT FROM v_run.workflow_run_recovery_count
@@ -4263,7 +4251,7 @@ BEGIN
             WHERE snapshot.workflow_run_id = p_workflow_run_id
               AND stage.workflow_stage_code = p_stage_code
        ) THEN
-        RAISE EXCEPTION 'Workflow model request binding is unavailable';
+        RAISE EXCEPTION 'Workflow project request binding is unavailable';
     END IF;
     IF p_pricing IS NOT NULL THEN
         -- Validate before assigning NUMERIC(15,8), which would otherwise round.
@@ -4320,7 +4308,7 @@ BEGIN
                 RAISE EXCEPTION 'Invalid pricing';
             END IF;
         EXCEPTION WHEN OTHERS THEN
-            RAISE EXCEPTION 'Workflow model request pricing is invalid';
+            RAISE EXCEPTION 'Workflow project request pricing is invalid';
         END;
     END IF;
     SELECT * INTO v_existing FROM application.workflow_run_model_request
@@ -4343,7 +4331,7 @@ BEGIN
                v_pricing.pricing_cache_write_input_usd_per_million,
                v_pricing.pricing_output_usd_per_million, v_pricing.pricing_valid_from,
                v_pricing.pricing_valid_until, v_pricing.pricing_max_input_tokens) THEN
-            RAISE EXCEPTION 'Workflow model request identity conflict';
+            RAISE EXCEPTION 'Workflow project request identity conflict';
         END IF;
         RETURN v_existing.request_id;
     END IF;
@@ -4371,7 +4359,7 @@ REVOKE ALL ON FUNCTION application.begin_workflow_run_model_request(
 
 CREATE FUNCTION application.complete_workflow_run_model_request(
     p_entra_tenant_id UUID, p_entra_object_id UUID, p_expected_principal_type VARCHAR,
-    p_workflow_run_id BIGINT, p_expected_model_revision BIGINT, p_claim_token UUID,
+    p_workflow_run_id BIGINT, p_expected_project_revision BIGINT, p_claim_token UUID,
     p_request_id UUID, p_input_tokens BIGINT, p_output_tokens BIGINT, p_total_tokens BIGINT,
     p_cached_input_tokens BIGINT, p_cache_write_input_tokens BIGINT,
     p_reasoning_output_tokens BIGINT, p_other_token_types BOOLEAN
@@ -4385,14 +4373,14 @@ DECLARE
 BEGIN
     v_run := application.assert_workflow_run_usage_binding(
         p_entra_tenant_id, p_entra_object_id, p_expected_principal_type,
-        p_workflow_run_id, p_expected_model_revision, p_claim_token
+        p_workflow_run_id, p_expected_project_revision, p_claim_token
     );
     SELECT * INTO v_existing FROM application.workflow_run_model_request
      WHERE request_id = p_request_id AND workflow_run_id = p_workflow_run_id
        AND workflow_run_recovery_count = v_run.workflow_run_recovery_count
        AND claim_token_digest = v_run.workflow_run_claim_token_digest FOR UPDATE;
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'Workflow model request is unavailable';
+        RAISE EXCEPTION 'Workflow project request is unavailable';
     END IF;
     IF v_existing.completed_time IS NOT NULL THEN
         IF ROW(v_existing.input_tokens, v_existing.output_tokens, v_existing.total_tokens,
@@ -4401,7 +4389,7 @@ BEGIN
            IS DISTINCT FROM
            ROW(p_input_tokens, p_output_tokens, p_total_tokens, p_cached_input_tokens,
                p_cache_write_input_tokens, p_reasoning_output_tokens, p_other_token_types) THEN
-            RAISE EXCEPTION 'Workflow model request completion conflict';
+            RAISE EXCEPTION 'Workflow project request completion conflict';
         END IF;
         RETURN;
     END IF;

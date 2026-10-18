@@ -27,66 +27,92 @@ Workflow Run per Tenant across processes. Super Admins bypass neither. Claim,
 revision and idempotency fences prevent stale workers or uncertain retries from
 reapplying work.
 
-## Persistent Model lock
+## Persistent Project lock
 
-`model.model.is_locked` is independent of the Tenant lease and individual record
-locks. PostgreSQL triggers fence all Model-owned inserts, updates and deletes,
+`project.project.is_locked` is independent of the Tenant lease and individual record
+locks. PostgreSQL triggers fence all Project-owned inserts, updates and deletes,
 including Change Sets, workflow state/results, code, profiling and enrichment.
-Checks lock the parent Model row in write transactions, serializing writes with
+Checks lock the parent Project row in write transactions, serializing writes with
 lock transitions. Both old and new owners are checked on reassignment.
 
 The web-only command requires a human Architect (or higher), the Tenant Lock,
-ownership and expected revision. Each transition advances the Model revision
+ownership and expected revision. Each transition advances the Project revision
 and appends a lock audit event. Queued/running work must finish or be cancelled
-before locking, so no in-flight execution remains behind a locked Model. Reads
+before locking, so no in-flight execution remains behind a locked Project. Reads
 remain available; expiring a draft during a read is deferred until unlock.
 MCP and Change Sets expose no lock mutation. Runtime roles cannot update the
 flag directly. Engineering SQL follows the same write fence and active-run check.
 
-## Model ownership and evidence
+## Project ownership and evidence
 
-A Model belongs to one Tenant, but its authorized physical input scope can span
+A Project belongs to one Tenant, but its authorized physical input scope can span
 readable Source Tenants. Source ownership is distinct from GDS placement. Access to
 retained source references is rechecked; structural eligibility never grants access.
 
-Logical and Dimensional Entity identity includes Model, layer, schema and name.
+Logical and Dimensional Entity identity includes Project, layer, schema and name.
 Mapping and Code belong directly to those Entities. Physical target registration
 is optional later work, so modeling can proceed before operational metadata exists.
-Typed references and composite foreign keys preserve Model/parent/layer ownership.
+Typed references and composite foreign keys preserve Project/parent/layer ownership.
 
-Assertions retain source documents and individual contextual records. Support
-references the actual record, with typed physical/Logical/Assertion references
+Context Types are a read-only global vocabulary. Each Project-owned Context Group
+selects one Type and may identify a source System. Context Records hold text, an
+optional plain-text source reference, status and lock. Each Record has one UUID,
+generated once at draft creation and retained through edits, imports and retries.
+Support references the actual UUID with typed physical/Logical/Context references
 rather than one unchecked polymorphic ID. Requirements express desired behavior;
 they do not prove source availability. Analysis likewise separates inferred
 cardinality from measured validation instead of overwriting one with the other.
 
+## Project, Lane and portable Context contracts
+
+`project.project` owns modeling work. `core.lane` groups Tenants; its foreign keys
+use `lane_id`. Conceptual, Logical and Dimensional models, AI model identifiers,
+provider settings and library model APIs retain their technical meanings.
+
+Project and Metadata Snapshots use schema version 3.0. Project Change Set results
+use 2.0; Metadata Change Set results remain 1.0. Changed Atlas workspace, task,
+operation, report and Stage contracts use 2.0. Old contracts require a fresh
+Snapshot/workspace; source changes do not migrate populated databases or rewrite
+frozen workflow history.
+
+Portable Context is `context.types`, `context.groups`, `context.records`. The
+catalog exposes read-only `context_type` alongside writable `context_group` and
+`context_record`. Types/groups use published names; records and nested evidence
+references retain `context_record_id`. Portable UUID identity is explicit schema
+metadata, while internal numeric ownership/audit IDs remain excluded. Types have
+no per-Project override. Group type and record ownership are validated server-side.
+There is no second record key or classification, stored layer restriction,
+confidence field or JSON import/detail metadata. Consumers assess relevance and
+active evidence without treating a Context Record as proof of physical lineage.
+
 ## Plugin settings and enrichment
 
-Model identity is immutable through Change Sets. Model description and allowed
-schema/naming/SCD/template/default source-System settings use `model_details` in
+Project identity is immutable through Change Sets. Project description and allowed
+schema/naming/SCD/template/default source-System settings use `project_details` in
 the existing reviewed draft; no direct MCP settings save or web-agent-default
 mutation is exposed. Source Systems use codes in portable records. Shared template
 types validate both web projection and Change Set authoring.
 
-Model-owned `object_enrichment` and `attribute_enrichment` use Snapshots, effective
+Project-owned `object_enrichment` and `attribute_enrichment` use Snapshots, effective
 local records and the same governed Change Set lifecycle as Analysis and design.
 They require active applied Input Scope. Profiling remains backend-run; refresh its
 Snapshot evidence before enrichment. Enrichment locks are read-only to the plugin;
 a locked Object also protects its Attributes. The internal enrichment Apply
 function verifies the owned validated draft, revision/digest, Tenant authorization
 and locks. Saved-record witnesses also reject concurrent enrichment edits that do
-not advance the Model revision. Runtime roles retain no direct enrichment table mutation privileges.
+not advance the Project revision. Runtime roles retain no direct enrichment table mutation privileges.
 Later local phases can consume pending findings without per-phase Apply.
 
 ## Partial authoring and protected work
 
-Web Logical authoring receives no Conceptual records. Legacy Conceptual prompt
-variables/readers remain compatible but expose absent data for Logical runs.
-Current default prompts omit those variables and reader selections; older frozen
-or custom versions retain their registrations.
+Conceptual is a standalone deliverable across web and Atlas. Neither Logical nor
+Dimensional authoring consumes its objects, relationships or pending local records.
+Their prompt variables/readers and default prompts expose only eligible evidence;
+Conceptual is not a prerequisite or an overview quality warning for either layer.
+Logical uses physical inputs; Dimensional continues to consume Logical outputs.
 The complete snapshot stays private for final graph validation. Logical candidates
 default to 70% coverage of distinct physical Objects selected for the run through active
-source mappings on active Entities across the proposed and retained Model.
+source mappings on active Entities across the proposed and retained Project.
 Required counts round up; repeated and unselected sources do not inflate coverage.
 Attribute completeness is not enforced: physical
 Attributes may be omitted or consolidated for the design. Included Attributes
@@ -95,7 +121,7 @@ default to 60% coverage of selected Logical Entities, without requiring every Si
 be copied into an analytical model. Neither rule imposes a minimum output Entity
 count. Below target, the existing repair loop receives counts, the shortfall and up
 to 50 complete missing-source identities per attempt (fewer if the context budget
-requires it). Independent Model-owned enforcement switches default off. When off,
+requires it). Independent Project-owned enforcement switches default off. When off,
 an otherwise valid final candidate returns after the last configured attempt even
 below target, with an explicit coverage warning; an empty Logical result can complete
 as no effective change with a zero-coverage warning. When on, below-target candidates
@@ -106,13 +132,13 @@ Mapping operates on frozen Entity/System pairs. Supported partial documents are
 useful progress. Omitted selected, unlocked transformations clear on regeneration;
 locked/unselected content stays protected. Protect parent rowset logic when any
 child is protected. True failures leave their pair unchanged, distinct from a valid
-empty result. Final validation covers the whole future Model before Apply.
+empty result. Final validation covers the whole future Project before Apply.
 
 Code may use partial applied Mapping with explicit typed-null/zero-row placeholders
 and warnings. Missing rules cannot justify invented joins or business logic.
 Validation and executable modeled-source lookups still require complete Mapping.
 Input-currentness digests describe consistency, not production execution readiness.
-A configured default Mapping System applies only to eligible Assertion-only Entities;
+A configured default Mapping System applies only to eligible Context-only Entities;
 it cannot relabel real lineage or bypass missing upstream Mapping.
 
 Output Templates are advisory JSON field guidance. Preserve custom documents intact
@@ -121,7 +147,7 @@ names alone never authorize interpreting arbitrary custom JSON as executable lin
 
 ## Authoring versus execution
 
-Generated Code and Validation are governed Model sections with explicit review and
+Generated Code and Validation are governed Project sections with explicit review and
 Apply. Applying definitions never executes or deploys them. Generated surrogate
 keys belong to Databricks/framework population; source business identifiers remain
 separate mapped fields. Mapping stores transformation dependencies; external Process
@@ -141,7 +167,7 @@ structured `artifact_requirements`; validators enforce layout, target/System
 coverage, SQL restrictions and governed persistence independently of prompt text.
 
 Manual editing/removal uses backend previews, dependency checks, locks and revision
-fences. Explicit Model deletion is a product operation, not a database-reset helper.
+fences. Explicit Project deletion is a product operation, not a database-reset helper.
 Snapshots and Stage payloads use the same effective graph contracts across web/MCP/
 Atlas. An old Snapshot must be refreshed before further work.
 
@@ -187,14 +213,14 @@ backend authorization or deployment.
 ## Deterministic plugin profiling
 
 Atlas starts, polls, or cancels a Profiling run through three governed MCP tools.
-The MCP worker resolves applied Model Input Scope, GDS execution credentials,
+The MCP worker resolves applied Project Input Scope, GDS execution credentials,
 Source foreign-catalog coordinates or Bronze owner `tenant_catalog`, then builds
 parameterized aggregate SQL and saves complete profiles atomically. The plugin
-refreshes its Model Snapshot; it does not author SQL or stage profile results.
+refreshes its Project Snapshot; it does not author SQL or stage profile results.
 Batch ID lists are required on batched Objects and shared across a run. Separate
 runs represent different selections. Request UUIDs provide idempotency, frozen
 context digests reject metadata changes, and claim tokens fence stale/cancelled
-workers. Existing Model/Tenant locks and one-running-workflow-per-Tenant remain.
+workers. Existing Project/Tenant locks and one-running-workflow-per-Tenant remain.
 The Connector attempts cancellation; Workbench cancellation guarantees no later
 save even if Databricks has not yet stopped its statement. Internal credential
 and worker functions are never exposed as tools. SQL changes are fresh-install
@@ -202,15 +228,15 @@ contracts, not populated-database migrations.
 ## Atlas task workflows and context disclosure
 
 Atlas 0.2 organizes agent instructions by requested outcome: investigation, source analysis,
-conceptual/logical/dimensional design, mapping, code, verification, model changes,
+conceptual/logical/dimensional design, mapping, code, verification, project changes,
 physical metadata and registration. The entry skill routes these tasks; Guided and
 Grill Me share the same modeling skill and records. Shared context is minimal;
 platform knowledge, domain methods, tool procedures and evidence formats load on demand.
 
 Readiness is derived for selected artifacts from applied state, pending changes and
-bound evidence, not a new global Model stage or a second progress ledger. Existing
+bound evidence, not a new global Project stage or a second progress ledger. Existing
 Change Set authorization, locks, revisions, approval digests and uncertain-write
-recovery remain authoritative. Model-owned enrichment and server-enforced analysis
+recovery remain authoritative. Project-owned enrichment and server-enforced analysis
 scope/masking gaps are explicit; plugin instructions cannot implement missing backend
 capabilities or replace their governed boundary.
 
@@ -220,9 +246,9 @@ detail/history retrieval. Node and native PowerShell share this command contract
 neither surface grants additional access or proves business correctness.
 
 
-### Model coverage and unified Gold audit settings
+### Project coverage and unified Gold audit settings
 
-Logical and Dimensional coverage are Model-owned integer percentages (1–100),
+Logical and Dimensional coverage are Project-owned integer percentages (1–100),
 with NOT NULL database defaults of 70 and 60. Each layer has a separate NOT NULL
 boolean enforcement setting defaulting false. Governed create/update commands
 resolve omitted/null inputs to those defaults and preserve revision/lock checks.

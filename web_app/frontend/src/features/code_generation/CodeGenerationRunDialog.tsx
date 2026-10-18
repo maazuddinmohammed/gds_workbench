@@ -6,7 +6,7 @@ import { trapDialogFocus, useDialogFocus } from "../../shared/dialog";
 import { MultiSelectField } from "../../shared/MultiSelectField";
 import { SelectField } from "../../shared/ui";
 import type { MappingEntityType } from "../mapping/api";
-import type { ModelDetail } from "../models/api";
+import type { ProjectDetail } from "../projects/api";
 import { useWorkflowRunSubmission } from "../workflows/useWorkflowRunSubmission";
 import { findAgentExecutionProfile, reasoningEffortDisplayName, resolveDefaultAgent, workflowCreationQueryKeys } from "../workflows/api";
 import { isTenantWorkflowConflict, TENANT_WORKFLOW_CONFLICT_MESSAGE } from "../workflows/presentation";
@@ -15,8 +15,8 @@ import { CodeMappingWarnings } from "./CodeMappingWarnings";
 
 export type CodeGenerationCoverage = "selected_targets" | "all_eligible_targets";
 
-export function CodeGenerationRunDialog({ api, tenantId, model, entityType, coverage, selectedTargets, onClose, onStarted }: {
-  api: CodeGenerationApi; tenantId: number; model: ModelDetail; entityType: MappingEntityType;
+export function CodeGenerationRunDialog({ api, tenantId, project, entityType, coverage, selectedTargets, onClose, onStarted }: {
+  api: CodeGenerationApi; tenantId: number; project: ProjectDetail; entityType: MappingEntityType;
   coverage: CodeGenerationCoverage; selectedTargets: CodeGenerationTarget[];
   onClose: () => void; onStarted: (workflowRunId: number) => Promise<void>;
 }) {
@@ -29,18 +29,18 @@ export function CodeGenerationRunDialog({ api, tenantId, model, entityType, cove
   const [fileLayout, setFileLayout] = useState<"combined" | "per_system">("per_system");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
-  const [modelCode, setModelCode] = useState(model.default_agent_model_code ?? "");
-  const [reasoningCode, setReasoningCode] = useState(model.default_reasoning_effort_code ?? "");
+  const [modelCode, setModelCode] = useState(project.default_agent_model_code ?? "");
+  const [reasoningCode, setReasoningCode] = useState(project.default_reasoning_effort_code ?? "");
   const targets = useQuery({
-    queryKey: codeGenerationQueryKeys.targets(tenantId, model.model_id, { entityType }, undefined),
-    queryFn: () => loadCodeGenerationTargets(api, tenantId, model.model_id, entityType),
+    queryKey: codeGenerationQueryKeys.targets(tenantId, project.project_id, { entityType }, undefined),
+    queryFn: () => loadCodeGenerationTargets(api, tenantId, project.project_id, entityType),
   });
   const capabilities = useQuery({ queryKey: workflowCreationQueryKeys.capabilities, queryFn: api.readAgentCapabilities });
   const models = capabilities.data?.models.filter((item) => findAgentExecutionProfile(item, "tool_assisted")) ?? [];
   const profile = models.find((item) => item.code === modelCode);
   const efforts = capabilities.data?.reasoning_efforts.filter((item) => profile && findAgentExecutionProfile(profile, "tool_assisted")?.reasoning_effort_codes.includes(item.code)) ?? [];
   const agent = capabilities.data ? resolveDefaultAgent(capabilities.data, "tool_assisted", {
-    modelCode, reasoningEffortCode: reasoningCode, maxTurns: model.default_max_turns, validationRetryCount: model.default_validation_retry_count,
+    modelCode, reasoningEffortCode: reasoningCode, maxTurns: project.default_max_turns, validationRetryCount: project.default_validation_retry_count,
   }) : null;
   useEffect(() => {
     if (!agent) return;
@@ -64,18 +64,18 @@ export function CodeGenerationRunDialog({ api, tenantId, model, entityType, cove
     && artifact.source_system_codes.some((code) => item.source_systems.some((system) => system.system_code === code) && !selectedCodes.includes(code))));
   const mappingCount = requestedEntities.reduce((count, item) => count + item.source_systems.filter((system) => selectedCodes.includes(system.system_code)).length, 0);
   const fileCount = fileLayout === "combined" ? requestedEntities.length : mappingCount;
-  const unavailable = targets.isPending || targets.isError || targets.data?.model_revision !== model.model_revision;
+  const unavailable = targets.isPending || targets.isError || targets.data?.project_revision !== project.project_revision;
   const valid = !unavailable && !hasUnavailableSystems && requestedEntities.length > 0 && selectedCodes.length > 0 && !partialFiles
     && agent?.model_code === modelCode && agent?.reasoning_effort_code === reasoningCode;
-  const { mutation, pendingRunId } = useWorkflowRunSubmission({ api, tenantId, modelId: model.model_id,
-    execute: (id, command) => api.executeCodeGenerationRun(tenantId, model.model_id, id, command.expected_model_revision),
+  const { mutation, pendingRunId } = useWorkflowRunSubmission({ api, tenantId, projectId: project.project_id,
+    execute: (id, command) => api.executeCodeGenerationRun(tenantId, project.project_id, id, command.expected_project_revision),
     onSuccess: async (id) => { await onStarted(id); onClose(); },
   });
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (pendingRunId !== null) { mutation.mutate(undefined); return; }
     if (!valid) return;
-    mutation.mutate({ expected_model_revision: model.model_revision, model_workflow: "code_generation", workflow_execution_mode: null,
+    mutation.mutate({ expected_project_revision: project.project_revision, project_workflow: "code_generation", workflow_execution_mode: null,
       selected_object_ids: [], selected_entity_ids: requestedEntities.map((item) => item.target.entity_id), selected_system_codes: selectedCodes,
       modeled_entity_type: entityType, requested_batch_id: null, agent, prompt_overrides: {},
       code_generation_coverage_mode: "selected_targets", code_generation_file_layout: fileLayout });
@@ -130,7 +130,7 @@ export function CodeGenerationRunDialog({ api, tenantId, model, entityType, cove
           {partialFiles ? <p className="inline-error" role="alert">An existing SQL file combines selected and unselected Systems. Select all Systems covered by that file to regenerate it.</p> : null}
           {hasUnavailableSystems ? <p className="inline-error" role="alert">A selected System no longer contributes to the selected Entities. Remove unavailable Systems from the selection or choose All Systems.</p> : null}
         </fieldset>
-        {targets.isPending ? <p className="surface-state compact" aria-busy="true">Loading Entities…</p> : targets.isError ? <p className="inline-error" role="alert">Entities could not be loaded. Close and retry.</p> : targets.data?.model_revision !== model.model_revision ? <p className="inline-error" role="alert">The Model changed. Close and refresh before generating SQL.</p> : null}
+        {targets.isPending ? <p className="surface-state compact" aria-busy="true">Loading Entities…</p> : targets.isError ? <p className="inline-error" role="alert">Entities could not be loaded. Close and retry.</p> : targets.data?.project_revision !== project.project_revision ? <p className="inline-error" role="alert">The Project changed. Close and refresh before generating SQL.</p> : null}
         {capabilities.isError ? <p className="inline-error" role="alert">Generator options could not be loaded.</p> : null}
         {mutation.isError ? <p className="inline-error" role="alert">{generationError(mutation.error, pendingRunId !== null)}
           {mutation.error instanceof ApiError && mutation.error.correlationId ? <span> Reference {mutation.error.correlationId}.</span> : null}</p> : null}
@@ -147,16 +147,16 @@ function generationError(error: Error, created: boolean): string {
       code_mapping_incomplete: "The selected Entities need at least one saved Object or Attribute transformation. Review their applied Mapping, then refresh before generating SQL.",
       code_no_eligible_targets: "No selected Entities have a saved Mapping transformation. Apply at least one Object or Attribute transformation, then refresh.",
       code_system_unavailable: "A selected System no longer contributes to the selected Entities. Refresh and select the contributing Systems again.",
-      workflow_prompt_unavailable: "A published Code generation prompt is unavailable. Review the Model’s prompt settings, then retry.",
+      workflow_prompt_unavailable: "A published Code generation prompt is unavailable. Review the Project’s prompt settings, then retry.",
       tenant_lock_required: "Acquire the Tenant Lock on Home before generating SQL.",
       tenant_locked: "Another user holds the Tenant Lock. Acquire it on Home before generating SQL.",
-      model_revision_conflict: "The Model changed. Close this dialog and refresh before generating SQL.",
+      project_revision_conflict: "The Project changed. Close this dialog and refresh before generating SQL.",
     };
     const message = messages[error.code];
     if (message) return message + (created ? " This run remains queued." : "");
   }
   if (created) return "The Code Generation run remains queued because it could not be started.";
   if (error instanceof ApiError && error.status === 403) return "You no longer have permission or the required Tenant Lock to generate SQL.";
-  if (error instanceof ApiError && error.status === 409) return "The Model or Code Generation state changed. Refresh before creating another run.";
+  if (error instanceof ApiError && error.status === 409) return "The Project or Code Generation state changed. Refresh before creating another run.";
   return "The Code Generation run could not be created or started.";
 }

@@ -10,10 +10,17 @@ from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetHandoffResult,
 )
-from gds_workbench_api.features.workflows.authoring.tool_configuration import configure_tools
+from gds_workbench_api.features.workflows.authoring.tool_configuration import (
+    configure_tools,
+)
 
 from tests.web_backend import test_code_generation_executor as code
-from tests.web_backend.test_agent_usage import _request, _response, _responses_response, _router
+from tests.web_backend.test_agent_usage import (
+    _request,
+    _response,
+    _responses_response,
+    _router,
+)
 
 
 @pytest.mark.parametrize("effort", ["xhigh", "default"])
@@ -34,13 +41,17 @@ async def test_code_reads_all_mapping_tools_with_reasoning_without_stored_respon
         if request.url.path.endswith("/chat/completions") and body.get("tools"):
             return httpx2.Response(
                 400,
-                json={"error": {"code": "unsupported_value", "param": "reasoning_effort"}},
+                json={
+                    "error": {"code": "unsupported_value", "param": "reasoning_effort"}
+                },
             )
         assert request.url.path.endswith("/responses")
         assert body["model"] == "gpt-6.1-sol"
         assert body["text"] == {"format": {"type": "json_object"}}
         assert "response_format" not in body and "reasoning_effort" not in body
-        assert body.get("reasoning") == (None if effort == "default" else {"effort": effort})
+        assert body.get("reasoning") == (
+            None if effort == "default" else {"effort": effort}
+        )
         assert body["store"] is False
         assert "previous_response_id" not in body and "conversation" not in body
         assert "reasoning.encrypted_content" in body["include"]
@@ -52,10 +63,17 @@ async def test_code_reads_all_mapping_tools_with_reasoning_without_stored_respon
         # Stateless tool turns must preserve both reasoning and tool-call/output identities.
         encrypted = [item for item in history if item.get("type") == "reasoning"]
         assert len(encrypted) == turn
-        assert all(item["encrypted_content"] == "fixture-encrypted-reasoning" for item in encrypted)
-        calls = {item["call_id"] for item in history if item.get("type") == "function_call"}
+        assert all(
+            item["encrypted_content"] == "fixture-encrypted-reasoning"
+            for item in encrypted
+        )
+        calls = {
+            item["call_id"] for item in history if item.get("type") == "function_call"
+        }
         outputs = {
-            item["call_id"] for item in history if item.get("type") == "function_call_output"
+            item["call_id"]
+            for item in history
+            if item.get("type") == "function_call_output"
         }
         assert calls == outputs and len(calls) == turn
         sends += 1
@@ -98,7 +116,9 @@ async def test_code_reads_all_mapping_tools_with_reasoning_without_stored_respon
     plan = code._plan()
     plan = plan.model_copy(
         update={
-            "selection": plan.selection.model_copy(update={"reasoning_effort_code": effort}),
+            "selection": plan.selection.model_copy(
+                update={"reasoning_effort_code": effort}
+            ),
         }
     )
     service, _, _, handoff, no_op, lifecycle = code._service(
@@ -108,9 +128,9 @@ async def test_code_reads_all_mapping_tools_with_reasoning_without_stored_respon
         result = await service.execute_started(
             code._principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=code._CLAIM_TOKEN,
         )
     finally:
@@ -129,7 +149,10 @@ async def test_no_enabled_tools_keeps_chat_completions_reasoning(
     request = _request(tools=empty_tool_catalog)
     if empty_tool_catalog:
         catalog = configure_tools(
-            request.local_tool_catalog, (), workflow="logical", execution_mode="tool_assisted"
+            request.local_tool_catalog,
+            (),
+            workflow="logical",
+            execution_mode="tool_assisted",
         )
         request = request.model_copy(
             update={
@@ -139,7 +162,9 @@ async def test_no_enabled_tools_keeps_chat_completions_reasoning(
         )
     request = request.model_copy(
         update={
-            "selection": request.selection.model_copy(update={"reasoning_effort_code": "xhigh"}),
+            "selection": request.selection.model_copy(
+                update={"reasoning_effort_code": "xhigh"}
+            ),
         }
     )
 
@@ -190,7 +215,9 @@ async def test_responses_never_accepts_json_from_an_unsuccessful_response(
             response["error"] = {"code": detail, "message": "private-provider-message"}
         else:
             output = cast(list[dict[str, Any]], response["output"])
-            output[0]["content"] = [{"type": "refusal", "refusal": "private-provider-refusal"}]
+            output[0]["content"] = [
+                {"type": "refusal", "refusal": "private-provider-refusal"}
+            ]
         return httpx2.Response(200, json=response)
 
     router = _router(monkeypatch, None, handler)
@@ -201,4 +228,6 @@ async def test_responses_never_accepts_json_from_an_unsuccessful_response(
         await router.close()
     assert sends == 1
     assert raised.value.code == f"agent_{reason}"
-    assert "private-provider-" not in str(raised.value) + repr(raised.value) + caplog.text
+    assert (
+        "private-provider-" not in str(raised.value) + repr(raised.value) + caplog.text
+    )

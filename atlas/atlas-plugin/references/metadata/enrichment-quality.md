@@ -1,6 +1,6 @@
 # Enrichment quality
 
-This guide supplies physical-description correction methods for [Metadata authoring](../../skills/atlas-metadata/SKILL.md). Its three-field mutation boundary applies to physical Metadata only. [Model-owned enrichment](../model/enrichment.md) has separate Snapshot/draft records and Model Change Sets; never substitute physical Metadata corrections for those findings.
+This guide supplies physical-description correction methods for [Metadata authoring](../../skills/atlas-metadata/SKILL.md). Its three-field mutation boundary applies to physical Metadata only. [Project-owned enrichment](../project/enrichment.md) has separate Snapshot/draft records and Project Change Sets; never substitute physical Metadata corrections for those findings.
 
 Reusable description and inferred-type guidance for enrichment and downstream workflows. Procedures are Atlas recommendations synthesized from the user's framework, inspected contracts and the primary sources cited below. They are not claims that those sources prescribe this exact workflow.
 
@@ -10,7 +10,7 @@ Reusable description and inferred-type guidance for enrichment and downstream wo
 2. **State what is known.** Identify the business subject, purpose and row grain. Separate declared, observed and inferred evidence in task notes. Existing descriptions and schema patterns suggest interpretations; names or generated prose alone do not prove them.
 3. **Investigate only useful gaps.** For uncertainty that changes the description, inspect source comments, approved terminology, related definitions or permitted aggregate evidence. Uniqueness checks may support grain; value patterns alone cannot establish tax treatment, currency, business intent or a join relationship.
 4. **Write a direct description.** Start with the represented business entity/event or operational fact. Add what one row represents when supported, then any important lifecycle, scope or usage distinction. Use concise sentences; no fixed sentence count or new byte cap.
-5. **Check every claim.** Remove unsupported assertions and text that merely restates a name. Do not prepend Zone, storage format, connection technology, 'this table contains data' or similar boilerplate. Include operational details only when they explain the Object's actual meaning.
+5. **Check every claim.** Remove unsupported contexts and text that merely restates a name. Do not prepend Zone, storage format, connection technology, 'this table contains data' or similar boilerplate. Include operational details only when they explain the Object's actual meaning.
 
 Business context combined with schema, lineage and profile evidence is supported by [DataHub's documentation guidance](https://support.datahub.com/hc/en-us/articles/52985040530715-Best-Practices-for-AI-Ready-Documentation-in-DataHub-AI-Doc-Generation-and-Context-Documents) and [Google's metadata-generation guidance](https://cloud.google.com/blog/products/data-analytics/generate-metadata-automatically-in-google-data-cloud). Explicit row grain helps downstream interpretation; see [dbt's grain guide](https://www.getdbt.com/blog/guide-to-data-grain). Atlas retains unknowns rather than treating these sources as permission to invent details.
 
@@ -63,7 +63,7 @@ These are modular workflow checks for later implementation/review, separate from
 
 | Rule | Check / purpose | Enforcement status |
 |---|---|---|
-| enrichment.scope | Exact selected Object/Attribute keys, Zone and owner; Model scope revision when used. Prevent accidental expansion or wrong-Tenant writes. | Existing ownership/reference checks plus proposed workflow scope comparison. |
+| enrichment.scope | Exact selected Object/Attribute keys, Zone and owner; Project scope revision when used. Prevent accidental expansion or wrong-Tenant writes. | Existing ownership/reference checks plus proposed workflow scope comparison. |
 | enrichment.fields | Compare with incoming effective records; enrichment changes only the three allowed fields. Preserve earlier pending authoring edits. | Proposed local/backend operation-boundary check; not a restriction on general Metadata authoring. |
 | enrichment.descriptions | Meaningful Object/Attribute definitions, consistent terminology and supported claims; no Zone boilerplate or tautology. | Agent review rubric; a text/schema validator cannot prove business truth. |
 | enrichment.types | Evidence supports interpretation; physical type unchanged; identify loss, ambiguity and limited coverage. | Existing null/nonblank/100-character field shape; semantic checks proposed. No current inferred-type grammar validator. |
@@ -74,6 +74,6 @@ Shared description fields are nullable text with no 2,000-byte limit found in th
 
 ## Skill and helper design
 
-The skill contains the sequence; this reference holds reusable quality rules and examples. Existing Snapshot readers and validators should be reused. Add deterministic helpers for repeated evidence/type checks only when their contracts are agreed. This follows [Agent Skills guidance](https://agentskills.io/skill-creation/best-practices) on concrete procedures, examples, progressive disclosure and validation loops. Outcome quality still needs evaluation with representative cases and the models the plugin will support; structural validation is not an evaluation of writing quality.
+The skill contains the sequence; this reference holds reusable quality rules and examples. Existing Snapshot readers and validators should be reused. Add deterministic helpers for repeated evidence/type checks only when their contracts are agreed. This follows [Agent Skills guidance](https://agentskills.io/skill-creation/best-practices) on concrete procedures, examples, progressive disclosure and validation loops. Outcome quality still needs evaluation with representative cases and the projects the plugin will support; structural validation is not an evaluation of writing quality.
 
-Local provenance: metadata_records.py; current GDS metadata-enrichment.md; profiling.js; metadata-enrichment-type-evidence.sql. Legacy Attribute-Mapping-only Bronze inference, Model-required selection, scope caps and inferred-type fill-only policy are not adopted by this draft.
+Local provenance: metadata_records.py; current GDS metadata-enrichment.md; profiling.js; metadata-enrichment-type-evidence.sql. Legacy Attribute-Mapping-only Bronze inference, Project-required selection, scope caps and inferred-type fill-only policy are not adopted by this draft.

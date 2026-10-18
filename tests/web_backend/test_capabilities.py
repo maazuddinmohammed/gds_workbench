@@ -19,7 +19,9 @@ from gds_workbench_api.main import create_app
 from pydantic import ValidationError
 
 
-def test_tool_assisted_supports_the_same_registered_reasoning_choices_as_one_shot() -> None:
+def test_tool_assisted_supports_the_same_registered_reasoning_choices_as_one_shot() -> (
+    None
+):
     registry = load_default_agent_capabilities()
     expected = {
         "foundry-primary": ("default", "low", "medium", "high", "xhigh", "max"),
@@ -34,7 +36,9 @@ def test_tool_assisted_supports_the_same_registered_reasoning_choices_as_one_sho
         ),
     }
     for model in registry.models:
-        profiles = {profile.execution_mode: profile for profile in model.execution_profiles}
+        profiles = {
+            profile.execution_mode: profile for profile in model.execution_profiles
+        }
         assert (
             profiles["tool_assisted"].reasoning_effort_codes
             == expected[model.code]
@@ -123,7 +127,10 @@ def test_expanded_limits_preserve_defaults_and_reject_out_of_range_values(
         preserved = registry.resolve_default_selection(
             execution_mode=mode, max_turns=turns, validation_retry_count=retries
         )
-        assert (preserved.max_turns, preserved.validation_retry_count) == (turns, retries)
+        assert (preserved.max_turns, preserved.validation_retry_count) == (
+            turns,
+            retries,
+        )
     selected = registry.resolve_default_selection(
         execution_mode=mode, max_turns=100, validation_retry_count=25
     )
@@ -158,7 +165,9 @@ def test_current_models_reject_unsupported_explicit_efforts(
     mode: AgentExecutionModeCode, model_code: str, effort: str
 ) -> None:
     registry = load_default_agent_capabilities()
-    selected = registry.resolve_default_selection(execution_mode=mode, model_code=model_code)
+    selected = registry.resolve_default_selection(
+        execution_mode=mode, model_code=model_code
+    )
     with pytest.raises(InvalidRequestError):
         registry.validate_selection(
             selected.model_copy(update={"reasoning_effort_code": effort}),
@@ -168,7 +177,9 @@ def test_current_models_reject_unsupported_explicit_efforts(
 
 def test_selection_validation_uses_the_exact_sdk_and_execution_mode_profile() -> None:
     registry = load_default_agent_capabilities()
-    foundry_model = next(model for model in registry.models if model.code == "foundry-primary")
+    foundry_model = next(
+        model for model in registry.models if model.code == "foundry-primary"
+    )
     restricted_model = foundry_model.model_copy(
         update={
             "execution_profiles": (
@@ -265,7 +276,9 @@ def test_invalid_capability_cross_references_fail_before_startup(
 
 def test_runtime_capabilities_include_only_exact_configured_registry_models() -> None:
     registry = load_default_agent_capabilities()
-    primary = next(model for model in registry.models if model.code == "foundry-primary")
+    primary = next(
+        model for model in registry.models if model.code == "foundry-primary"
+    )
     secondary = primary.model_copy(
         update={
             "code": "foundry-secondary",
@@ -320,7 +333,8 @@ def test_agent_capabilities_are_authenticated_and_exposed_read_only() -> None:
     assert payload["schema_version"] == "3.0"
     assert payload["models"][0]["provider_code"] == "microsoft_foundry"
     assert [
-        (model["code"], model["name"], model["deployment_name"]) for model in payload["models"]
+        (model["code"], model["name"], model["deployment_name"])
+        for model in payload["models"]
     ] == [
         ("foundry-primary", "OpenAI GPT-6.1 Sol", "gpt-6.1-sol"),
         ("foundry-gpt-5.6-luna", "OpenAI GPT-6 Luna", "gpt-6-luna"),

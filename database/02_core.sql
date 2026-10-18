@@ -2,23 +2,23 @@
 
 CREATE SCHEMA core;
 
-CREATE TABLE core.project (
-    project_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    project_code VARCHAR(100) NOT NULL,
-    project_name VARCHAR(200) NOT NULL,
-    project_description TEXT,
+CREATE TABLE core.lane (
+    lane_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    lane_code VARCHAR(100) NOT NULL,
+    lane_name VARCHAR(200) NOT NULL,
+    lane_description TEXT,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT ck_project_code CHECK (reference.is_nonblank(project_code)),
-    CONSTRAINT ck_project_name CHECK (reference.is_nonblank(project_name))
+    CONSTRAINT ck_lane_code CHECK (reference.is_nonblank(lane_code)),
+    CONSTRAINT ck_lane_name CHECK (reference.is_nonblank(lane_name))
 );
 
 CREATE TABLE core.tenant (
     tenant_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    project_id BIGINT NOT NULL,
+    lane_id BIGINT NOT NULL,
     tenant_code VARCHAR(100) NOT NULL,
     tenant_name VARCHAR(200) NOT NULL,
     tenant_description TEXT,
@@ -32,8 +32,8 @@ CREATE TABLE core.tenant (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_tenant_project FOREIGN KEY (project_id)
-        REFERENCES core.project (project_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_tenant_lane FOREIGN KEY (lane_id)
+        REFERENCES core.lane (lane_id) ON DELETE NO ACTION,
     CONSTRAINT ck_tenant_code CHECK (reference.is_nonblank(tenant_code)),
     CONSTRAINT ck_tenant_name CHECK (reference.is_nonblank(tenant_name)),
     CONSTRAINT ck_tenant_visibility CHECK (
@@ -527,8 +527,8 @@ CREATE TABLE core.process (
     )
 );
 
-CREATE UNIQUE INDEX ux_project_code_ci
-    ON core.project (lower(btrim(project_code)));
+CREATE UNIQUE INDEX ux_lane_code_ci
+    ON core.lane (lower(btrim(lane_code)));
 CREATE UNIQUE INDEX ux_tenant_code_ci
     ON core.tenant (lower(btrim(tenant_code)));
 CREATE UNIQUE INDEX ux_system_code_ci
@@ -567,7 +567,7 @@ CREATE UNIQUE INDEX ux_process_group_name_ci
         lower(btrim(process_group_name))
     );
 
-CREATE INDEX ix_tenant_project_active ON core.tenant (project_id, is_active);
+CREATE INDEX ix_tenant_lane_active ON core.tenant (lane_id, is_active);
 CREATE INDEX ix_system_system_type_active ON core.system (system_type_id, is_active);
 CREATE INDEX ix_connection_tenant_active ON core.connection (tenant_id, is_active);
 CREATE INDEX ix_connection_system_active ON core.connection (system_id, is_active);

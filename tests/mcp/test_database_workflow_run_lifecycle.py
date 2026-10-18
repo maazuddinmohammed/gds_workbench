@@ -19,8 +19,8 @@ class WorkflowContext:
     entra_tenant_id: UUID
     entra_object_id: UUID
     tenant_id: int
-    model_id: int
-    model_revision: int
+    project_id: int
+    project_revision: int
     principal_id: int
     prompt_snapshots: tuple[tuple[int, int], ...]
     selected_object_ids: tuple[int, ...]
@@ -147,21 +147,21 @@ def seed_workflow_context(
             """
             ).fetchone()
         )["digest"]
-        project_id = require_row(
+        lane_id = require_row(
             connection.execute(
                 """
-            INSERT INTO core.project (project_code, project_name)
+            INSERT INTO core.lane (lane_code, lane_name)
             VALUES (%s, %s)
-            RETURNING project_id
+            RETURNING lane_id
             """,
                 (f"workflow_project_{suffix}", f"Workflow Project {suffix}"),
             ).fetchone()
-        )["project_id"]
+        )["lane_id"]
         tenant_id = require_row(
             connection.execute(
                 """
             INSERT INTO core.tenant (
-                project_id,
+                lane_id,
                 tenant_code,
                 tenant_name,
                 tenant_catalog,
@@ -170,7 +170,7 @@ def seed_workflow_context(
             RETURNING tenant_id
             """,
                 (
-                    project_id,
+                    lane_id,
                     f"workflow_tenant_{suffix}",
                     f"Workflow Tenant {suffix}",
                     f"workflow_catalog_{suffix}",
@@ -178,12 +178,12 @@ def seed_workflow_context(
                 ),
             ).fetchone()
         )["tenant_id"]
-        model_row = require_row(
+        project_row = require_row(
             connection.execute(
                 """
-            INSERT INTO model.model (
+            INSERT INTO project.project (
                 tenant_id,
-                model_name, logical_schemas, dimensional_schemas,
+                project_name, logical_schemas, dimensional_schemas,
                 default_agent_sdk_code,
                 default_agent_provider_code,
                 default_agent_model_code,
@@ -197,14 +197,14 @@ def seed_workflow_context(
                 '[{"schema_name":"gold","description":null}]',
                 'openai_agents_sdk',
                 'microsoft_foundry',
-                'default-model',
+                'default-project',
                 'medium',
                 12,
                 2
             )
-            RETURNING model_id, model_revision
+            RETURNING project_id, project_revision
             """,
-                (tenant_id, f"Workflow Model {suffix}"),
+                (tenant_id, f"Workflow Project {suffix}"),
             ).fetchone()
         )
         principal_id = require_row(
@@ -262,7 +262,7 @@ def seed_workflow_context(
             """
             SELECT workflow_stage_id
               FROM application.workflow_stage
-             WHERE model_workflow = 'conceptual'
+             WHERE project_workflow = 'conceptual'
                AND workflow_execution_mode = %s
                AND workflow_stage_is_agentic
                AND is_active
@@ -276,7 +276,7 @@ def seed_workflow_context(
                     connection.execute(
                         """
                     INSERT INTO application.workflow_stage (
-                        model_workflow,
+                        project_workflow,
                         workflow_execution_mode,
                         workflow_stage_code,
                         workflow_stage_name,
@@ -365,14 +365,14 @@ def seed_workflow_context(
                     workflow_stage_id,
                     prompt_template_version_id,
                     prompt_assignment_scope,
-                    model_id,
+                    project_id,
                     assigned_by_principal_id
-                ) VALUES (%s, %s, 'model_default', %s, %s)
+                ) VALUES (%s, %s, 'project_default', %s, %s)
                 """,
                 (
                     workflow_stage_id,
                     prompt_template_version_id,
-                    model_row["model_id"],
+                    project_row["project_id"],
                     principal_id,
                 ),
             )
@@ -382,15 +382,15 @@ def seed_workflow_context(
         entra_tenant_id=entra_tenant_id,
         entra_object_id=entra_object_id,
         tenant_id=tenant_id,
-        model_id=model_row["model_id"],
-        model_revision=model_row["model_revision"],
+        project_id=project_row["project_id"],
+        project_revision=project_row["project_revision"],
         principal_id=principal_id,
         prompt_snapshots=tuple(prompt_snapshots),
         selected_object_ids=(),
     )
     return replace(
         context,
-        selected_object_ids=_seed_bronze_model_input_scope(
+        selected_object_ids=_seed_bronze_project_input_scope(
             postgres_database,
             context,
         ),
@@ -418,8 +418,8 @@ def create_workflow_run_parameters(
     return (
         context.entra_tenant_id,
         context.entra_object_id,
-        context.model_id,
-        context.model_revision,
+        context.project_id,
+        context.project_revision,
         workflow,
         execution_mode,
         *agent_configuration,
@@ -463,7 +463,7 @@ def _create_and_start_profiling_run(
                 context.entra_tenant_id,
                 context.entra_object_id,
                 created["workflow_run_id"],
-                context.model_revision,
+                context.project_revision,
             ),
         )
     return int(created["workflow_run_id"])
@@ -522,7 +522,7 @@ def _release_claim_if_present(
         )
 
 
-def _seed_bronze_model_input_scope(
+def _seed_bronze_project_input_scope(
     postgres_database: DisposablePostgres,
     context: WorkflowContext,
     *,
@@ -654,17 +654,17 @@ def _seed_bronze_model_input_scope(
             )["object_id"]
             connection.execute(
                 """
-                INSERT INTO model.model_input_scope (model_id, object_id)
+                INSERT INTO project.project_input_scope (project_id, object_id)
                 VALUES (%s, %s)
                 """,
-                (context.model_id, object_id),
+                (context.project_id, object_id),
             )
             object_ids.append(object_id)
 
     return tuple(object_ids)
 
 
-def _seed_model_input_scope_object_in_zone(
+def _seed_project_input_scope_object_in_zone(
     postgres_database: DisposablePostgres,
     context: WorkflowContext,
     *,
@@ -729,10 +729,10 @@ def _seed_model_input_scope_object_in_zone(
         )["object_id"]
         connection.execute(
             """
-            INSERT INTO model.model_input_scope (model_id, object_id)
+            INSERT INTO project.project_input_scope (project_id, object_id)
             VALUES (%s, %s)
             """,
-            (context.model_id, object_id),
+            (context.project_id, object_id),
         )
 
     return object_id
@@ -809,7 +809,7 @@ def _seed_code_generation_target(
     context: WorkflowContext,
 ) -> int:
     suffix = uuid4().hex
-    object_id = _seed_model_input_scope_object_in_zone(
+    object_id = _seed_project_input_scope_object_in_zone(
         postgres_database,
         context,
         zone_code="silver",
@@ -831,7 +831,7 @@ def _seed_code_generation_target(
             connection.execute(
                 """
             INSERT INTO workflow.logical_entity (
-                model_id,
+                project_id,
                 logical_entity_name,
                 logical_entity_definition,
                 logical_entity_type,
@@ -840,7 +840,7 @@ def _seed_code_generation_target(
             RETURNING logical_entity_id
             """,
                 (
-                    context.model_id,
+                    context.project_id,
                     f"code_generation_entity_{suffix}",
                     "Complete logical entity for SQL generation.",
                     "One SQL target row",
@@ -860,7 +860,7 @@ def _seed_code_generation_target(
         connection.execute(
             """
             INSERT INTO workflow.mapping_object (
-                model_id,
+                project_id,
                 logical_entity_id, modeled_entity_type,
                 source_system_id,
                 mapping_transformation_document
@@ -870,7 +870,7 @@ def _seed_code_generation_target(
             )
             """,
             (
-                context.model_id,
+                context.project_id,
                 logical_entity_id,
                 source_system_id,
             ),
@@ -888,7 +888,7 @@ def _seed_validation_prompt(
             """
             SELECT workflow_stage_id
               FROM application.workflow_stage
-             WHERE model_workflow = 'validation'
+             WHERE project_workflow = 'validation'
                AND workflow_execution_mode IS NULL
                AND workflow_stage_is_agentic
                AND is_active
@@ -901,7 +901,7 @@ def _seed_validation_prompt(
                 connection.execute(
                     """
                     INSERT INTO application.workflow_stage (
-                        model_workflow,
+                        project_workflow,
                         workflow_execution_mode,
                         workflow_stage_code,
                         workflow_stage_name,
@@ -999,14 +999,14 @@ def _seed_validation_prompt(
                 workflow_stage_id,
                 prompt_template_version_id,
                 prompt_assignment_scope,
-                model_id,
+                project_id,
                 assigned_by_principal_id
-            ) VALUES (%s, %s, 'model_default', %s, %s)
+            ) VALUES (%s, %s, 'project_default', %s, %s)
             """,
             (
                 stage["workflow_stage_id"],
                 prompt_template_version_id,
-                context.model_id,
+                context.project_id,
                 context.principal_id,
             ),
         )
@@ -1029,10 +1029,10 @@ def _seed_validation_systems(
                   FROM workflow.mapping_object AS mapping
                   JOIN core.system AS source_system
                     ON source_system.system_id = mapping.source_system_id
-                 WHERE mapping.model_id = %s
+                 WHERE mapping.project_id = %s
                    AND mapping.logical_entity_id = %s
                 """,
-                (context.model_id, first_target_id),
+                (context.project_id, first_target_id),
             ).fetchone()
         )
         second = require_row(
@@ -1056,13 +1056,13 @@ def _seed_validation_systems(
             """
             UPDATE workflow.mapping_object
                SET source_system_id = %s
-             WHERE model_id = %s
-               AND model_id = %s AND logical_entity_id = %s
+             WHERE project_id = %s
+               AND project_id = %s AND logical_entity_id = %s
             """,
             (
                 second["system_id"],
-                context.model_id,
-                context.model_id,
+                context.project_id,
+                context.project_id,
                 second_target_id,
             ),
         )
@@ -1083,8 +1083,8 @@ def _system_selection_parameters(
     return (
         context.entra_tenant_id,
         context.entra_object_id,
-        context.model_id,
-        context.model_revision,
+        context.project_id,
+        context.project_revision,
         workflow,
         object_ids,
         system_codes,
@@ -1102,7 +1102,7 @@ def _seed_code_generation_prompt(
             """
             SELECT workflow_stage_id
               FROM application.workflow_stage
-             WHERE model_workflow = 'code_generation'
+             WHERE project_workflow = 'code_generation'
                AND workflow_execution_mode IS NULL
                AND workflow_stage_is_agentic
                AND is_active
@@ -1115,7 +1115,7 @@ def _seed_code_generation_prompt(
                     connection.execute(
                         """
                     INSERT INTO application.workflow_stage (
-                        model_workflow,
+                        project_workflow,
                         workflow_execution_mode,
                         workflow_stage_code,
                         workflow_stage_name,
@@ -1216,14 +1216,14 @@ def _seed_code_generation_prompt(
                     workflow_stage_id,
                     prompt_template_version_id,
                     prompt_assignment_scope,
-                    model_id,
+                    project_id,
                     assigned_by_principal_id
-                ) VALUES (%s, %s, 'model_default', %s, %s)
+                ) VALUES (%s, %s, 'project_default', %s, %s)
                 """,
                 (
                     stage["workflow_stage_id"],
                     prompt_template_version_id,
-                    context.model_id,
+                    context.project_id,
                     context.principal_id,
                 ),
             )
@@ -1239,8 +1239,8 @@ def _code_generation_parameters(
     return (
         context.entra_tenant_id,
         context.entra_object_id,
-        context.model_id,
-        context.model_revision,
+        context.project_id,
+        context.project_revision,
         correlation_id,
         coverage_mode,
         object_ids,
@@ -1447,17 +1447,17 @@ def test_create_validation_run_rejects_system_without_applied_mapping_atomically
             connection.execute(
                 """
                 SELECT source_system.system_code
-                  FROM model.model_input_scope AS scope
+                  FROM project.project_input_scope AS scope
                   JOIN core.object AS object_record
                     ON object_record.object_id = scope.object_id
                   JOIN core.connection AS source_connection
                     ON source_connection.connection_id = object_record.connection_id
                   JOIN core.system AS source_system
                     ON source_system.system_id = source_connection.system_id
-                 WHERE scope.model_id = %s
+                 WHERE scope.project_id = %s
                  LIMIT 1
                 """,
-                (context.model_id,),
+                (context.project_id,),
             ).fetchone()
         )["system_code"]
 
@@ -1552,7 +1552,7 @@ def test_create_code_generation_run_freezes_selected_targets_revision_and_prompt
             (created["workflow_run_id"],),
         ).fetchall()
 
-    assert created["model_revision"] == context.model_revision
+    assert created["project_revision"] == context.project_revision
     assert created["selected_scope_count"] == 1
     assert created["code_generation_coverage_mode"] == "selected_targets"
     assert created["prompt_snapshot_count"] == 1
@@ -1714,7 +1714,7 @@ def test_code_generation_run_rejects_zone_only_target_without_applied_mapping(
     postgres_database: DisposablePostgres,
 ) -> None:
     context = seed_workflow_context(postgres_database)
-    target_id = _seed_model_input_scope_object_in_zone(
+    target_id = _seed_project_input_scope_object_in_zone(
         postgres_database,
         context,
         zone_code="silver",
@@ -1833,11 +1833,11 @@ def test_create_workflow_run_rejects_invalid_selected_scope_atomically(
     assert rejected_rows == {"run_count": 0, "selection_count": 0}
 
 
-def test_create_workflow_run_accepts_source_model_input(
+def test_create_workflow_run_accepts_source_project_input(
     postgres_database: DisposablePostgres,
 ) -> None:
     context = seed_workflow_context(postgres_database)
-    source_object_id = _seed_model_input_scope_object_in_zone(
+    source_object_id = _seed_project_input_scope_object_in_zone(
         postgres_database,
         context,
         zone_code="source",
@@ -1860,11 +1860,11 @@ def test_create_workflow_run_accepts_source_model_input(
             connection.execute(
                 """
                 SELECT is_active
-                  FROM model.model_input_scope
-                 WHERE model_id = %s
+                  FROM project.project_input_scope
+                 WHERE project_id = %s
                    AND object_id = %s
                 """,
-                (context.model_id, source_object_id),
+                (context.project_id, source_object_id),
             ).fetchone()
         )
 
@@ -1928,9 +1928,9 @@ def test_workflow_run_constraint_requires_mapping_entity_type(
             """
             INSERT INTO application.workflow_run (
                 tenant_id,
-                model_id,
-                model_revision,
-                model_workflow,
+                project_id,
+                project_revision,
+                project_workflow,
                 workflow_execution_mode,
                 actor_principal_id,
                 agent_sdk_code,
@@ -1952,7 +1952,7 @@ def test_workflow_run_constraint_requires_mapping_entity_type(
                 %s,
                 'openai_agents_sdk',
                 'microsoft_foundry',
-                'default-model',
+                'default-project',
                 'medium',
                 12,
                 2,
@@ -1964,8 +1964,8 @@ def test_workflow_run_constraint_requires_mapping_entity_type(
             """,
             (
                 context.tenant_id,
-                context.model_id,
-                context.model_revision,
+                context.project_id,
+                context.project_revision,
                 context.principal_id,
                 uuid4(),
             ),
@@ -1995,9 +1995,9 @@ def test_workflow_run_constraint_requires_code_generation_options(
             """
             INSERT INTO application.workflow_run (
                 tenant_id,
-                model_id,
-                model_revision,
-                model_workflow,
+                project_id,
+                project_revision,
+                project_workflow,
                 actor_principal_id,
                 agent_sdk_code,
                 agent_provider_code,
@@ -2019,7 +2019,7 @@ def test_workflow_run_constraint_requires_code_generation_options(
                 %s,
                 'openai_agents_sdk',
                 'microsoft_foundry',
-                'default-model',
+                'default-project',
                 'medium',
                 12,
                 2,
@@ -2033,8 +2033,8 @@ def test_workflow_run_constraint_requires_code_generation_options(
             """,
             (
                 context.tenant_id,
-                context.model_id,
-                context.model_revision,
+                context.project_id,
+                context.project_revision,
                 context.principal_id,
                 coverage_mode,
                 file_layout,
@@ -2152,7 +2152,7 @@ def test_governed_workflow_run_happy_path_is_idempotent_ordered_and_repair_aware
         "actor_principal_id": context.principal_id,
         "agent_sdk_code": "openai_agents_sdk",
         "agent_provider_code": "microsoft_foundry",
-        "agent_model_code": "default-model",
+        "agent_model_code": "default-project",
         "reasoning_effort_code": "medium",
         "max_turns": 12,
         "validation_retry_count": 2,
@@ -2186,7 +2186,7 @@ def test_governed_workflow_run_happy_path_is_idempotent_ordered_and_repair_aware
                     context.entra_tenant_id,
                     context.entra_object_id,
                     workflow_run_id,
-                    context.model_revision,
+                    context.project_revision,
                 ),
             ).fetchone()
         )
@@ -2206,15 +2206,15 @@ def test_governed_workflow_run_happy_path_is_idempotent_ordered_and_repair_aware
                     context.entra_tenant_id,
                     context.entra_object_id,
                     workflow_run_id,
-                    context.model_revision,
+                    context.project_revision,
                 ),
             ).fetchone()
         )
 
     assert running["workflow_run_state"] == "running"
-    assert first_event["model_event_log_sequence"] == 2
-    assert first_event["model_event_log_attempt"] == 1
-    assert first_event["model_id"] == context.model_id
+    assert first_event["project_event_log_sequence"] == 2
+    assert first_event["project_event_log_attempt"] == 1
+    assert first_event["project_id"] == context.project_id
     assert first_event["correlation_id"] == correlation_id
 
     with (
@@ -2236,7 +2236,7 @@ def test_governed_workflow_run_happy_path_is_idempotent_ordered_and_repair_aware
                 context.entra_tenant_id,
                 context.entra_object_id,
                 workflow_run_id,
-                context.model_revision,
+                context.project_revision,
             ),
         )
 
@@ -2257,7 +2257,7 @@ def test_governed_workflow_run_happy_path_is_idempotent_ordered_and_repair_aware
                     context.entra_tenant_id,
                     context.entra_object_id,
                     workflow_run_id,
-                    context.model_revision,
+                    context.project_revision,
                 ),
             ).fetchone()
         )
@@ -2274,7 +2274,7 @@ def test_governed_workflow_run_happy_path_is_idempotent_ordered_and_repair_aware
                     context.entra_tenant_id,
                     context.entra_object_id,
                     workflow_run_id,
-                    context.model_revision,
+                    context.project_revision,
                 ),
             ).fetchone()
         )
@@ -2291,10 +2291,10 @@ def test_governed_workflow_run_happy_path_is_idempotent_ordered_and_repair_aware
         ).fetchall()
         events = connection.execute(
             """
-            SELECT model_event_log_sequence, model_event_log_attempt
-              FROM model.model_event_log
+            SELECT project_event_log_sequence, project_event_log_attempt
+              FROM project.project_event_log
              WHERE workflow_run_id = %s
-             ORDER BY model_event_log_sequence
+             ORDER BY project_event_log_sequence
             """,
             (workflow_run_id,),
         ).fetchall()
@@ -2309,22 +2309,22 @@ def test_governed_workflow_run_happy_path_is_idempotent_ordered_and_repair_aware
             ).fetchone()
         )
 
-    assert second_event["model_event_log_sequence"] == 3
+    assert second_event["project_event_log_sequence"] == 3
     assert completed["workflow_run_state"] == "completed_with_repair"
     assert stored_terminal_run == {"failure_code": None, "failure_message": None}
     assert snapshots == [
         {
             "workflow_stage_id": stage_id,
             "prompt_template_version_id": version_id,
-            "prompt_resolution_source": "model_default",
+            "prompt_resolution_source": "project_default",
         }
         for stage_id, version_id in context.prompt_snapshots
     ]
     assert events == [
-        {"model_event_log_sequence": 1, "model_event_log_attempt": 1},
-        {"model_event_log_sequence": 2, "model_event_log_attempt": 1},
-        {"model_event_log_sequence": 3, "model_event_log_attempt": 2},
-        {"model_event_log_sequence": 4, "model_event_log_attempt": 2},
+        {"project_event_log_sequence": 1, "project_event_log_attempt": 1},
+        {"project_event_log_sequence": 2, "project_event_log_attempt": 1},
+        {"project_event_log_sequence": 3, "project_event_log_attempt": 2},
+        {"project_event_log_sequence": 4, "project_event_log_attempt": 2},
     ]
 
 
@@ -2336,7 +2336,7 @@ def test_create_workflow_run_validates_agent_overrides_and_snapshots_atomically(
     override = (
         "pydantic_ai",
         "registered_provider",
-        "registered-model-2",
+        "registered-project-2",
         "high",
         20,
         4,
@@ -2406,7 +2406,7 @@ def test_create_workflow_run_validates_agent_overrides_and_snapshots_atomically(
                 """
             SELECT count(*) AS count
               FROM application.workflow_stage
-             WHERE model_workflow = 'logical'
+             WHERE project_workflow = 'logical'
                AND workflow_execution_mode = 'one_shot'
                AND workflow_stage_is_agentic
                AND is_active
@@ -2417,7 +2417,7 @@ def test_create_workflow_run_validates_agent_overrides_and_snapshots_atomically(
             connection.execute(
                 """
                 INSERT INTO application.workflow_stage (
-                    model_workflow,
+                    project_workflow,
                     workflow_execution_mode,
                     workflow_stage_code,
                     workflow_stage_name,
@@ -2542,7 +2542,7 @@ def test_create_and_complete_require_identity_role_owned_lock_and_revision(
                 correlation_id=stale_correlation,
             )
         )
-        stale_parameters[3] = context.model_revision + 1
+        stale_parameters[3] = context.project_revision + 1
         connection.execute(CREATE_WORKFLOW_RUN_SQL, stale_parameters)
 
     no_lock_correlation = uuid4()
@@ -2581,7 +2581,7 @@ def test_create_and_complete_require_identity_role_owned_lock_and_revision(
     assert rejected_count == 0
 
 
-def test_create_workflow_run_rejects_a_null_expected_model_revision(
+def test_create_workflow_run_rejects_a_null_expected_project_revision(
     postgres_database: DisposablePostgres,
 ) -> None:
     context = seed_workflow_context(postgres_database)
@@ -2593,12 +2593,12 @@ def test_create_workflow_run_rejects_a_null_expected_model_revision(
 
     with (
         postgres_database.connect_owner() as connection,
-        pytest.raises(RaiseException, match="stale_model_revision"),
+        pytest.raises(RaiseException, match="stale_project_revision"),
     ):
         connection.execute(CREATE_WORKFLOW_RUN_SQL, parameters)
 
 
-def test_start_workflow_run_rejects_a_null_expected_model_revision(
+def test_start_workflow_run_rejects_a_null_expected_project_revision(
     postgres_database: DisposablePostgres,
 ) -> None:
     context = seed_workflow_context(postgres_database)
@@ -2617,7 +2617,7 @@ def test_start_workflow_run_rejects_a_null_expected_model_revision(
 
     with (
         postgres_database.connect_owner() as connection,
-        pytest.raises(RaiseException, match="stale_model_revision"),
+        pytest.raises(RaiseException, match="stale_project_revision"),
     ):
         connection.execute(
             """
@@ -2635,7 +2635,7 @@ def test_start_workflow_run_rejects_a_null_expected_model_revision(
         )
 
 
-def test_start_workflow_run_rejects_frozen_or_current_revision_after_model_drift(
+def test_start_workflow_run_rejects_frozen_or_current_revision_after_project_drift(
     postgres_database: DisposablePostgres,
 ) -> None:
     context = seed_workflow_context(postgres_database)
@@ -2654,19 +2654,19 @@ def test_start_workflow_run_rejects_frozen_or_current_revision_after_model_drift
         current_revision = require_row(
             connection.execute(
                 """
-                UPDATE model.model
-                   SET model_revision = model_revision + 1
-                 WHERE model_id = %s
-                RETURNING model_revision
+                UPDATE project.project
+                   SET project_revision = project_revision + 1
+                 WHERE project_id = %s
+                RETURNING project_revision
                 """,
-                (context.model_id,),
+                (context.project_id,),
             ).fetchone()
-        )["model_revision"]
+        )["project_revision"]
 
-    for expected_revision in (context.model_revision, current_revision):
+    for expected_revision in (context.project_revision, current_revision):
         with (
             postgres_database.connect_owner() as connection,
-            pytest.raises(RaiseException, match="stale_model_revision"),
+            pytest.raises(RaiseException, match="stale_project_revision"),
         ):
             connection.execute(
                 """
@@ -2706,7 +2706,7 @@ def test_start_workflow_run_replay_remains_revision_fenced(
 
     with (
         postgres_database.connect_owner() as connection,
-        pytest.raises(RaiseException, match="stale_model_revision"),
+        pytest.raises(RaiseException, match="stale_project_revision"),
     ):
         connection.execute(
             """
@@ -2720,12 +2720,12 @@ def test_start_workflow_run_replay_remains_revision_fenced(
                 context.entra_tenant_id,
                 context.entra_object_id,
                 workflow_run_id,
-                context.model_revision + 1,
+                context.project_revision + 1,
             ),
         )
 
 
-def test_append_workflow_event_rejects_a_null_expected_model_revision(
+def test_append_workflow_event_rejects_a_null_expected_project_revision(
     postgres_database: DisposablePostgres,
 ) -> None:
     context = seed_workflow_context(postgres_database)
@@ -2733,7 +2733,7 @@ def test_append_workflow_event_rejects_a_null_expected_model_revision(
 
     with (
         postgres_database.connect_owner() as connection,
-        pytest.raises(RaiseException, match="stale_model_revision"),
+        pytest.raises(RaiseException, match="stale_project_revision"),
     ):
         connection.execute(
             """
@@ -2779,7 +2779,7 @@ def test_append_workflow_event_rejects_a_null_event_sequence(
                 context.entra_tenant_id,
                 context.entra_object_id,
                 workflow_run_id,
-                context.model_revision,
+                context.project_revision,
             ),
         )
 
@@ -2809,7 +2809,7 @@ def test_append_workflow_event_rejects_a_null_status(
                 context.entra_tenant_id,
                 context.entra_object_id,
                 workflow_run_id,
-                context.model_revision,
+                context.project_revision,
             ),
         )
 
@@ -2839,7 +2839,7 @@ def test_append_workflow_event_rejects_a_null_attempt(
                 context.entra_tenant_id,
                 context.entra_object_id,
                 workflow_run_id,
-                context.model_revision,
+                context.project_revision,
             ),
         )
 
@@ -2866,13 +2866,13 @@ def test_append_workflow_event_replay_still_requires_a_revision_fence(
                 context.entra_tenant_id,
                 context.entra_object_id,
                 workflow_run_id,
-                context.model_revision,
+                context.project_revision,
             ),
         )
 
     with (
         postgres_database.connect_owner() as connection,
-        pytest.raises(RaiseException, match="stale_model_revision"),
+        pytest.raises(RaiseException, match="stale_project_revision"),
     ):
         connection.execute(
             statement,
@@ -2885,7 +2885,7 @@ def test_append_workflow_event_replay_still_requires_a_revision_fence(
         )
 
 
-def test_complete_workflow_run_rejects_a_null_expected_model_revision(
+def test_complete_workflow_run_rejects_a_null_expected_project_revision(
     postgres_database: DisposablePostgres,
 ) -> None:
     context = seed_workflow_context(postgres_database)
@@ -2893,7 +2893,7 @@ def test_complete_workflow_run_rejects_a_null_expected_model_revision(
 
     with (
         postgres_database.connect_owner() as connection,
-        pytest.raises(RaiseException, match="stale_model_revision"),
+        pytest.raises(RaiseException, match="stale_project_revision"),
     ):
         connection.execute(
             """
@@ -2911,7 +2911,7 @@ def test_complete_workflow_run_rejects_a_null_expected_model_revision(
         )
 
 
-def test_fail_workflow_run_rejects_a_null_expected_model_revision(
+def test_fail_workflow_run_rejects_a_null_expected_project_revision(
     postgres_database: DisposablePostgres,
 ) -> None:
     context = seed_workflow_context(postgres_database)
@@ -2919,7 +2919,7 @@ def test_fail_workflow_run_rejects_a_null_expected_model_revision(
 
     with (
         postgres_database.connect_owner() as connection,
-        pytest.raises(RaiseException, match="stale_model_revision"),
+        pytest.raises(RaiseException, match="stale_project_revision"),
     ):
         connection.execute(
             """
@@ -2970,7 +2970,7 @@ def test_release_workflow_run_claim_rejects_an_expired_lease(
         )
 
 
-def test_archive_model_rejects_a_running_tenant_workflow(
+def test_archive_project_rejects_a_running_tenant_workflow(
     postgres_database: DisposablePostgres,
 ) -> None:
     context = seed_workflow_context(postgres_database)
@@ -2983,7 +2983,7 @@ def test_archive_model_rejects_a_running_tenant_workflow(
         connection.execute(
             """
             SELECT *
-              FROM application.archive_model(
+              FROM application.archive_project(
                   %s::UUID, %s::UUID, 'user'::VARCHAR,
                   %s::BIGINT, %s::BIGINT
               )
@@ -2991,21 +2991,21 @@ def test_archive_model_rejects_a_running_tenant_workflow(
             (
                 context.entra_tenant_id,
                 context.entra_object_id,
-                context.model_id,
-                context.model_revision,
+                context.project_id,
+                context.project_revision,
             ),
         )
 
 
-def test_claim_terminalizes_a_running_run_with_an_inactive_model(
+def test_claim_terminalizes_a_running_run_with_an_inactive_project(
     postgres_database: DisposablePostgres,
 ) -> None:
     context = seed_workflow_context(postgres_database)
     workflow_run_id = _create_and_start_profiling_run(postgres_database, context)
     with postgres_database.connect_owner() as connection:
         connection.execute(
-            "UPDATE model.model SET is_active = FALSE WHERE model_id = %s",
-            (context.model_id,),
+            "UPDATE project.project SET is_active = FALSE WHERE project_id = %s",
+            (context.project_id,),
         )
         claim = connection.execute(
             "SELECT * FROM application.claim_next_workflow_run(30)"
@@ -3033,16 +3033,16 @@ def test_claim_terminalizes_a_running_run_with_an_inactive_model(
         )
         events = connection.execute(
             """
-            SELECT model_event_log_status, model_event_log_message
-              FROM model.model_event_log
+            SELECT project_event_log_status, project_event_log_message
+              FROM project.project_event_log
              WHERE workflow_run_id = %s
-               AND model_event_log_status = 'failed'
+               AND project_event_log_status = 'failed'
             """,
             (workflow_run_id,),
         ).fetchall()
         connection.execute(
-            "UPDATE model.model SET is_active = TRUE WHERE model_id = %s",
-            (context.model_id,),
+            "UPDATE project.project SET is_active = TRUE WHERE project_id = %s",
+            (context.project_id,),
         )
         replacement = require_row(
             connection.execute(
@@ -3068,7 +3068,7 @@ def test_claim_terminalizes_a_running_run_with_an_inactive_model(
                     context.entra_tenant_id,
                     context.entra_object_id,
                     replacement["workflow_run_id"],
-                    context.model_revision,
+                    context.project_revision,
                 ),
             ).fetchone()
         )["workflow_run_state"]
@@ -3080,8 +3080,8 @@ def test_claim_terminalizes_a_running_run_with_an_inactive_model(
     }
     assert events == [
         {
-            "model_event_log_status": "failed",
-            "model_event_log_message": (
+            "project_event_log_status": "failed",
+            "project_event_log_message": (
                 "Workflow Run execution context is unavailable."
             ),
         }
@@ -3137,9 +3137,9 @@ def test_claim_terminalizes_a_running_run_with_an_inactive_actor_identity(
             connection.execute(
                 """
                 SELECT count(*) AS event_count
-                  FROM model.model_event_log
+                  FROM project.project_event_log
                  WHERE workflow_run_id = %s
-                   AND model_event_log_status = 'failed'
+                   AND project_event_log_status = 'failed'
                 """,
                 (workflow_run_id,),
             ).fetchone()
@@ -3163,9 +3163,9 @@ def test_claim_terminalizes_a_running_run_with_an_ambiguous_unbound_identity(
                 """
                 INSERT INTO application.workflow_run (
                     tenant_id,
-                    model_id,
-                    model_revision,
-                    model_workflow,
+                    project_id,
+                    project_revision,
+                    project_workflow,
                     actor_principal_id,
                     actor_entra_principal_identity_id,
                     selected_scope_digest,
@@ -3181,8 +3181,8 @@ def test_claim_terminalizes_a_running_run_with_an_ambiguous_unbound_identity(
                 """,
                 (
                     context.tenant_id,
-                    context.model_id,
-                    context.model_revision,
+                    context.project_id,
+                    context.project_revision,
                     context.principal_id,
                     correlation_id,
                 ),
@@ -3190,23 +3190,23 @@ def test_claim_terminalizes_a_running_run_with_an_ambiguous_unbound_identity(
         )["workflow_run_id"]
         connection.execute(
             """
-            INSERT INTO model.model_event_log (
-                model_id,
+            INSERT INTO project.project_event_log (
+                project_id,
                 correlation_id,
                 workflow_run_id,
-                model_event_log_sequence,
-                model_event_log_attempt,
-                model_workflow,
-                model_event_log_stage,
-                model_event_log_status,
-                model_event_log_message,
+                project_event_log_sequence,
+                project_event_log_attempt,
+                project_workflow,
+                project_event_log_stage,
+                project_event_log_status,
+                project_event_log_message,
                 finding_count
             ) VALUES (
                 %s, %s, %s, 1, 1, 'profiling', 'workflow_run',
                 'started', 'Workflow run started.', 0
             )
             """,
-            (context.model_id, correlation_id, workflow_run_id),
+            (context.project_id, correlation_id, workflow_run_id),
         )
         connection.execute(
             """
@@ -3268,7 +3268,7 @@ def test_fail_workflow_run_requires_the_owned_lock_and_records_safe_failure(
                 context.entra_tenant_id,
                 context.entra_object_id,
                 created["workflow_run_id"],
-                context.model_revision,
+                context.project_revision,
             ),
         )
         connection.execute(
@@ -3298,7 +3298,7 @@ def test_fail_workflow_run_requires_the_owned_lock_and_records_safe_failure(
                 context.entra_tenant_id,
                 context.entra_object_id,
                 created["workflow_run_id"],
-                context.model_revision,
+                context.project_revision,
             ),
         )
 
@@ -3344,7 +3344,7 @@ def test_fail_workflow_run_requires_the_owned_lock_and_records_safe_failure(
                     context.entra_tenant_id,
                     context.entra_object_id,
                     created["workflow_run_id"],
-                    context.model_revision,
+                    context.project_revision,
                 ),
             ).fetchone()
         )
@@ -3423,7 +3423,7 @@ def test_workflow_lifecycle_mutations_use_web_only_security_definer_functions(
                    ) AS web_can_mutate_selection,
                    has_table_privilege(
                        'gds_web_write',
-                       'model.model_event_log',
+                       'project.project_event_log',
                        'INSERT,UPDATE,DELETE'
                    ) AS web_can_mutate_event
             """
@@ -3466,9 +3466,9 @@ def test_code_generation_delivery_options_are_frozen_and_replay_fenced(
                 """
             SELECT source.system_code FROM workflow.mapping_object AS mapping
             JOIN core.system AS source ON source.system_id = mapping.source_system_id
-            WHERE mapping.model_id = %s LIMIT 1
+            WHERE mapping.project_id = %s LIMIT 1
         """,
-                (context.model_id,),
+                (context.project_id,),
             ).fetchone()
         )["system_code"]
         values = list(
@@ -3532,9 +3532,9 @@ def test_validation_layer_is_retained_after_manual_review_clears_provenance(
                 """
             SELECT source.system_id, source.system_code FROM workflow.mapping_object AS mapping
             JOIN core.system AS source ON source.system_id = mapping.source_system_id
-            WHERE mapping.model_id = %s LIMIT 1
+            WHERE mapping.project_id = %s LIMIT 1
         """,
-                (context.model_id,),
+                (context.project_id,),
             ).fetchone()
         )
         sql = CREATE_SYSTEM_SELECTION_WORKFLOW_RUN_SQL.replace(
@@ -3556,13 +3556,13 @@ def test_validation_layer_is_retained_after_manual_review_clears_provenance(
         group = require_row(
             connection.execute(
                 """
-            INSERT INTO workflow.validation_group (model_id, tenant_id, system_id, workflow_run_id,
+            INSERT INTO workflow.validation_group (project_id, tenant_id, system_id, workflow_run_id,
                 validation_group_name, mapping_context_digest, is_locked, is_active)
             VALUES (%s, %s, %s, %s, 'Logical · Scope test', %s, false, true)
             RETURNING validation_group_id, modeled_entity_type
         """,
                 (
-                    context.model_id,
+                    context.project_id,
                     context.tenant_id,
                     system["system_id"],
                     created["workflow_run_id"],

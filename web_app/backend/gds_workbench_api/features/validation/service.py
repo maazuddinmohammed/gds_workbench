@@ -9,12 +9,12 @@ from typing import Any, Protocol, cast
 from uuid import UUID
 
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.model import (
-    StageModelChange,
-    validate_model_stage_changes,
+from gds_etl_workbench.application.change_sets.project import (
+    StageProjectChange,
+    validate_project_stage_changes,
 )
-from gds_etl_workbench.application.change_sets.model_validation import (
-    ModelValidationIssue,
+from gds_etl_workbench.application.change_sets.project_validation import (
+    ProjectValidationIssue,
     validate_future_graph,
 )
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
@@ -49,8 +49,8 @@ from gds_workbench_api.features.workflows.authoring.no_op import (
 from gds_workbench_api.features.workflows.authoring.plan import (
     AgentRunPlan,
     AgentRunPlanRepository,
-    ModelWorkflow,
     PostgresAgentRunPlanRepository,
+    ProjectWorkflow,
 )
 from gds_workbench_api.features.workflows.authoring.progress import (
     AgentWorkflowProgress,
@@ -63,7 +63,7 @@ from gds_workbench_api.features.workflows.authoring.repair import (
     AgentExecutor,
     AgentValidationIssue,
     load_default_agent_context_policy,
-    model_validation_issues,
+    project_validation_issues,
 )
 from gds_workbench_api.features.workflows.authoring.stage_runner import AgentStageRunner
 from gds_workbench_api.features.workflows.execution.contracts import WorkflowExecutionDatabase
@@ -94,11 +94,11 @@ class ValidationLifecycle(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
+        expected_workflow: ProjectWorkflow,
         expected_execution_mode: None,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart: ...
 
     async def append_event(
@@ -106,7 +106,7 @@ class ValidationLifecycle(Protocol):
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         event: AgentWorkflowEvent,
     ) -> None: ...
@@ -116,7 +116,7 @@ class ValidationLifecycle(Protocol):
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         failure_code: str,
         safe_failure_message: str,
@@ -176,18 +176,18 @@ class ValidationWorkflow:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart:
         return await self._lifecycle.start(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             workflow_run_id=workflow_run_id,
             expected_workflow="validation",
             expected_execution_mode=None,
-            expected_model_revision=expected_model_revision,
+            expected_project_revision=expected_project_revision,
         )
 
     async def execute_started(
@@ -195,15 +195,15 @@ class ValidationWorkflow:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
     ) -> ValidationExecutionResult:
         finalization_attempted = False
-        changes: tuple[StageModelChange, ...] = ()
-        rejected_changes: tuple[StageModelChange, ...] = ()
-        rejected_issues: tuple[ModelValidationIssue, ...] = ()
+        changes: tuple[StageProjectChange, ...] = ()
+        rejected_changes: tuple[StageProjectChange, ...] = ()
+        rejected_issues: tuple[ProjectValidationIssue, ...] = ()
         try:
             async with self._database.write_transaction(
                 isolation=ReadIsolation.REPEATABLE_READ
@@ -212,20 +212,20 @@ class ValidationWorkflow:
                     transaction,
                     principal,
                     tenant_id=tenant_id,
-                    policy=ToolPolicy.TENANT_MODEL_WRITE,
-                    model_id=model_id,
+                    policy=ToolPolicy.TENANT_PROJECT_WRITE,
+                    project_id=project_id,
                 )
                 plan = await self._plan_repository.load(
                     transaction,
                     tenant_id=tenant_id,
-                    model_id=model_id,
+                    project_id=project_id,
                     workflow_run_id=workflow_run_id,
                 )
                 self._validate_plan(
                     plan,
-                    model_id=model_id,
+                    project_id=project_id,
                     workflow_run_id=workflow_run_id,
-                    expected_model_revision=expected_model_revision,
+                    expected_project_revision=expected_project_revision,
                 )
                 context = await self._context_repository.load(
                     transaction,
@@ -241,7 +241,7 @@ class ValidationWorkflow:
                 lifecycle=self._lifecycle,
                 principal=principal,
                 workflow_run_id=workflow_run_id,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 workflow_run_claim_token=workflow_run_claim_token,
             )
             await progress.append(
@@ -298,7 +298,7 @@ class ValidationWorkflow:
                             ),
                             candidates=(*candidates, validator.parse_validated(value)),
                         )
-                        validate_model_stage_changes(list(candidate_changes))
+                        validate_project_stage_changes(list(candidate_changes))
                     except InvalidRequestError, ValidationError:
                         return AgentCandidateValidation(
                             issues=(
@@ -306,7 +306,7 @@ class ValidationWorkflow:
                                     code="candidate.change_set_bounds",
                                     path=(),
                                     message=(
-                                        "Combined Validation exceeds Model Change Set limits. "
+                                        "Combined Validation exceeds Project Change Set limits. "
                                         "Reduce redundant checks while preserving System coverage."
                                     ),
                                 ),
@@ -319,7 +319,9 @@ class ValidationWorkflow:
                     )
                     if checked.issues and position == system_count:
                         rejected_changes, rejected_issues = candidate_changes, checked.issues
-                    return AgentCandidateValidation(issues=model_validation_issues(checked.issues))
+                    return AgentCandidateValidation(
+                        issues=project_validation_issues(checked.issues)
+                    )
 
                 outcome = await self._stage_runner.run(
                     plan=stage_plan,
@@ -365,14 +367,14 @@ class ValidationWorkflow:
                 return await self._no_op.complete(
                     principal,
                     tenant_id=tenant_id,
-                    model_id=model_id,
+                    project_id=project_id,
                     workflow_run_id=workflow_run_id,
                     workflow_run_claim_token=workflow_run_claim_token,
                     request=AuthoringNoOpRequest(
                         expected_workflow="validation",
                         expected_execution_mode=None,
                         expected_correlation_id=plan.correlation_id,
-                        expected_model_revision=expected_model_revision,
+                        expected_project_revision=expected_project_revision,
                         candidate_digest=authoring_no_op_candidate_digest(plan),
                         final_event=progress.event(
                             attempt=highest_attempt,
@@ -391,10 +393,10 @@ class ValidationWorkflow:
             finalized = await self._handoff.finalize(
                 principal,
                 tenant_id=tenant_id,
-                model_id=model_id,
+                project_id=project_id,
                 workflow_run_id=workflow_run_id,
                 expected_workflow="validation",
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 workflow_run_claim_token=workflow_run_claim_token,
                 changes=changes,
                 final_event=progress.event(
@@ -419,10 +421,10 @@ class ValidationWorkflow:
                     await self._handoff.retain_failed_candidate(
                         principal,
                         tenant_id=tenant_id,
-                        model_id=model_id,
+                        project_id=project_id,
                         workflow_run_id=workflow_run_id,
                         expected_workflow="validation",
-                        expected_model_revision=expected_model_revision,
+                        expected_project_revision=expected_project_revision,
                         workflow_run_claim_token=workflow_run_claim_token,
                         changes=changes,
                         issues=retention_issues,
@@ -434,7 +436,7 @@ class ValidationWorkflow:
                 except Exception as retention_error:
                     _logger.warning(
                         "Rejected Workflow draft retention remains pending.",
-                        extra={"workflow_run_id": workflow_run_id, "model_id": model_id},
+                        extra={"workflow_run_id": workflow_run_id, "project_id": project_id},
                     )
                     raise _safe_execution_error(
                         retention_error,
@@ -450,7 +452,7 @@ class ValidationWorkflow:
                     "Validation Workflow Run finalization remains pending.",
                     extra={
                         "workflow_run_id": workflow_run_id,
-                        "model_id": model_id,
+                        "project_id": project_id,
                         "failure_code": safe_error.code[:100],
                     },
                 )
@@ -459,7 +461,7 @@ class ValidationWorkflow:
                 await self._lifecycle.fail(
                     principal,
                     workflow_run_id=workflow_run_id,
-                    expected_model_revision=expected_model_revision,
+                    expected_project_revision=expected_project_revision,
                     workflow_run_claim_token=workflow_run_claim_token,
                     failure_code=safe_error.code[:100],
                     safe_failure_message=safe_error.message[:2000],
@@ -469,7 +471,7 @@ class ValidationWorkflow:
                     "Validation failure state could not be persisted.",
                     extra={
                         "workflow_run_id": workflow_run_id,
-                        "model_id": model_id,
+                        "project_id": project_id,
                         "failure_code": safe_error.code[:100],
                     },
                 )
@@ -483,15 +485,15 @@ class ValidationWorkflow:
     def _validate_plan(
         plan: AgentRunPlan,
         *,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> None:
         if (
-            plan.model_id != model_id
+            plan.project_id != project_id
             or plan.workflow_run_id != workflow_run_id
-            or plan.model_revision != expected_model_revision
-            or plan.model_workflow != "validation"
+            or plan.project_revision != expected_project_revision
+            or plan.project_workflow != "validation"
             or plan.workflow_execution_mode is not None
             or plan.selected_object_ids
             or plan.selected_entity_ids

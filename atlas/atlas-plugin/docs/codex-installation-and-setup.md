@@ -60,7 +60,7 @@ configuration. Repeat this command after replacing the packages.
 5. Open Codex in that exact same folder. Restart an existing Codex session if needed.
 6. Ask: **Start atlas. List the tenants I can access.**
 
-For example, open `~/Work/SalesModel` in VS Code and start Codex there. Use the
+For example, open `~/Work/SalesProject` in VS Code and start Codex there. Use the
 working folder, not the installation folder or a subfolder. In a VS Code multi-root
 workspace, each open folder receives its own bridge. Use one bridge window per folder.
 

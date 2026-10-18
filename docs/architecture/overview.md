@@ -38,10 +38,15 @@ PostgreSQL owns authorization, Tenant Locks, immutable run inputs, revision fenc
 idempotency and Apply. Services revalidate all authoritative rules; browser state
 is presentation and unsaved interaction state only.
 
-Model Input Scope contains authorized Source/Bronze Objects. Logical/Dimensional
+Project Input Scope contains authorized Source/Bronze Objects. Logical/Dimensional
 Entities own Mapping and Code directly. Physical target registration is an optional
 later Metadata handoff. Code consumes applied Mapping; Validation consumes complete
 Mapping and relevant current Code. Apply stores definitions, not execution results.
+
+Conceptual is a standalone deliverable. Logical and Dimensional authoring exclude
+Conceptual records from prompt variables, readers and Atlas task inputs. Logical
+uses physical evidence; Dimensional consumes Logical. Full Project snapshots still
+preserve every section for browsing and governed validation.
 
 The web worker claims a durable Run before execution. Run creation freezes its
 selection, published Prompt versions, settings and relevant revisions. Feature
@@ -58,14 +63,14 @@ No MCP prompts/resources mirror the plugin workflows.
 ## Snapshots and staging
 
 Snapshot selection and encoding live in `application/metadata_snapshot/` and
-`application/model_snapshot.py`; dataset schemas are in `domain/snapshots/`.
+`application/project_snapshot.py`; dataset schemas are in `domain/snapshots/`.
 The bounded archive writer is `infrastructure/snapshot_archive.py`. MCP adapters
 handle storage and return a short-lived private download descriptor; rows and ZIP
 bytes do not enter tool results or audit logs.
 
 Keep archive member paths safe, encoding deterministic, dataset schemas aligned
 with Change Set input schemas, and complete natural keys intact. Snapshot limits
-must fail explicitly rather than silently truncate a record. A changed Model
+must fail explicitly rather than silently truncate a record. A changed Project
 revision invalidates work based on the earlier Snapshot.
 
 Stage transport never applies partial datasets. Byte-fragment mode is transport

@@ -9,7 +9,7 @@ function state(records) {
   return { effective: records };
 }
 
-test("local DBML renders complete and submodel files from the effective Model", () => {
+test("local DBML renders complete and submodel files from the effective Project", () => {
   const loaded = new Map([
     ["conceptual_object", state([
       { conceptual_object_name: "Customer", conceptual_object_type: "party", conceptual_object_status: "active" },
@@ -51,9 +51,9 @@ test("local DBML renders complete and submodel files from the effective Model", 
   ]);
 
   const documents = dbml.render(loaded, {
-    model_id: 41,
-    model_name: "Customer Operations",
-    model_revision: 8,
+    project_id: 41,
+    project_name: "Customer Operations",
+    project_revision: 8,
   });
 
   assert.deepEqual(documents.map((document) => document.path), [
@@ -95,7 +95,7 @@ test("local DBML rejects relationships whose effective endpoints are missing", (
   ]);
 
   assert.throws(
-    () => dbml.render(loaded, { model_id: 41, model_name: "Orders", model_revision: 1 }),
+    () => dbml.render(loaded, { project_id: 41, project_name: "Orders", project_revision: 1 }),
     /inactive or missing endpoint/,
   );
 });
@@ -123,18 +123,18 @@ test("natural-key tuples remain composite and repeat across declared history", (
     const columns = [attribute("CustomerID", 1, true), attribute("SystemID", 2, false), attribute("CustomerCode", 3, false)];
     const details = { logical_entity_scd_type: "type_1" };
     const loaded = new Map([
-      ["model_details", state([details])],
+      ["project_details", state([details])],
       [`${layer}_entity`, state([{ ...entity, [`${layer}_entity_status`]: "active", submodels: [] }])],
       [`${layer}_attribute`, state(columns)],
     ]);
-    const model = { model_id: 41, model_name: "Customer Operations", model_revision: 1 };
-    const current = dbml.render(loaded, model, { modelType: layer })[0].content;
+    const project = { project_id: 41, project_name: "Customer Operations", project_revision: 1 };
+    const current = dbml.render(loaded, project, { modelType: layer })[0].content;
     assert.match(current, /\("SystemID", "CustomerCode"\) \[unique\]/);
     assert.match(current, /"CustomerID" bigint \[unique, not null/);
     assert.doesNotMatch(current, /\[pk[,\]]/);
     if (layer === "logical") details.logical_entity_scd_type = "type_2";
     else columns[1].dimensional_attribute_change_behavior = "historize";
-    const history = dbml.render(loaded, model, { modelType: layer })[0].content;
+    const history = dbml.render(loaded, project, { modelType: layer })[0].content;
     assert.match(history, /"CustomerID" bigint \[unique, not null/);
     assert.doesNotMatch(history, /\("SystemID", "CustomerCode"\) \[unique\]/);
     assert.doesNotMatch(history, /\[pk[,\]]/);

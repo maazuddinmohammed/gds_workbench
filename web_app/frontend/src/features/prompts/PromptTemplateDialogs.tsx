@@ -473,7 +473,7 @@ export function EditPromptHeaderDialog({
 }
 
 function stageLabel(stage: PromptStage): string {
-  return `${humanize(stage.model_workflow)} · ${modeLabel(stage.workflow_execution_mode)} · ${stage.workflow_stage_name}`;
+  return `${humanize(stage.project_workflow)} · ${modeLabel(stage.workflow_execution_mode)} · ${stage.workflow_stage_name}`;
 }
 
 function modeLabel(value: PromptStage["workflow_execution_mode"]): string {

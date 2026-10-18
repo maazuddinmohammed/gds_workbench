@@ -131,7 +131,7 @@
     ],
     "authoring": {
       "audit_columns_template": null,
-      "model_name": "Customer Model",
+      "project_name": "Customer Project",
       "naming_instructions": "Use PascalCase names.",
       "technical_columns_template": null
     },

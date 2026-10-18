@@ -36,7 +36,7 @@ def test_cancellation_is_terminal_idempotent_and_revokes_claim(
         context.entra_tenant_id,
         context.entra_object_id,
         context.tenant_id,
-        context.model_id,
+        context.project_id,
         run_id,
     )
     with psycopg.Connection[dict[str, object]].connect(
@@ -55,7 +55,9 @@ def test_cancellation_is_terminal_idempotent_and_revokes_claim(
         assert first["changed"] is True and repeated["changed"] is False
         assert first["completed_time"] == repeated["completed_time"]
         assert (
-            connection.execute("SELECT * FROM application.claim_next_workflow_run(30)").fetchone()
+            connection.execute(
+                "SELECT * FROM application.claim_next_workflow_run(30)"
+            ).fetchone()
             is None
         )
         if claim is not None:
@@ -70,16 +72,24 @@ def test_cancellation_is_terminal_idempotent_and_revokes_claim(
                     (run_id, claim["workflow_run_claim_token"]),
                 )
     with web_postgres_database.connect_owner() as connection:
-        assert _start_run(connection, context, run_id)["workflow_run_state"] == "cancelled"
+        assert (
+            _start_run(connection, context, run_id)["workflow_run_state"] == "cancelled"
+        )
         events = connection.execute(
-            "SELECT model_event_log_stage FROM model.model_event_log WHERE workflow_run_id = %s",
+            "SELECT project_event_log_stage FROM project.project_event_log WHERE workflow_run_id = %s",
             (run_id,),
         ).fetchall()
         assert (
-            sum(event["model_event_log_stage"] == "workflow_run.cancelled" for event in events) == 1
+            sum(
+                event["project_event_log_stage"] == "workflow_run.cancelled"
+                for event in events
+            )
+            == 1
         )
         with (
-            pytest.raises(ObjectNotInPrerequisiteState, match="terminal workflow run is immutable"),
+            pytest.raises(
+                ObjectNotInPrerequisiteState, match="terminal workflow run is immutable"
+            ),
             connection.transaction(),
         ):
             connection.execute(
@@ -100,19 +110,22 @@ def test_cancellation_checks_path_ownership_lock_and_terminal_race(
         context.entra_tenant_id,
         context.entra_object_id,
         context.tenant_id,
-        context.model_id,
+        context.project_id,
     )
     with web_postgres_database.connect_owner() as connection:
         run_id = _create_run(connection, context, start=True)
-        # An authorized caller cannot use another Tenant or Model's Run ID.
-        with pytest.raises(RaiseException, match="unavailable"), connection.transaction():
+        # An authorized caller cannot use another Tenant or Project's Run ID.
+        with (
+            pytest.raises(RaiseException, match="unavailable"),
+            connection.transaction(),
+        ):
             connection.execute(
                 CANCEL_SQL,
                 (
                     other.entra_tenant_id,
                     other.entra_object_id,
                     other.tenant_id,
-                    other.model_id,
+                    other.project_id,
                     run_id,
                 ),
             )
@@ -123,7 +136,7 @@ def test_cancellation_checks_path_ownership_lock_and_terminal_race(
                     other.entra_tenant_id,
                     other.entra_object_id,
                     context.tenant_id,
-                    context.model_id,
+                    context.project_id,
                     run_id,
                 ),
             )
@@ -209,11 +222,14 @@ async def test_cancel_service_interrupts_the_worker_and_rejects_late_writes(
             cancelled = await service.cancel_run(
                 claim.principal,
                 tenant_id=context.tenant_id,
-                model_id=context.model_id,
+                project_id=context.project_id,
                 workflow_run_id=run_id,
             )
             assert cancelled.workflow_run_state == "cancelled"
-            assert await asyncio.wait_for(execution, timeout=2) is WorkerRunResult.CLAIM_LOST
+            assert (
+                await asyncio.wait_for(execution, timeout=2)
+                is WorkerRunResult.CLAIM_LOST
+            )
         assert dispatcher.cancelled.is_set()
         assert await claims.claim_next(lease_duration_seconds=30) is None
     finally:
@@ -242,7 +258,7 @@ def test_cancel_and_completion_race_has_exactly_one_terminal_winner(
                             context.entra_tenant_id,
                             context.entra_object_id,
                             context.tenant_id,
-                            context.model_id,
+                            context.project_id,
                             run_id,
                         ),
                     )
@@ -263,7 +279,9 @@ def test_cancel_and_completion_race_has_exactly_one_terminal_winner(
                 (run_id,),
             ).fetchone()
         )
-        assert row["workflow_run_state"] == ("cancelled" if outcomes[0] else "completed")
+        assert row["workflow_run_state"] == (
+            "cancelled" if outcomes[0] else "completed"
+        )
 
 
 def test_cancellation_can_stop_a_stale_run_and_free_the_tenant_slot(
@@ -274,8 +292,8 @@ def test_cancellation_can_stop_a_stale_run_and_free_the_tenant_slot(
         run_id = _create_run(connection, context, start=True)
         with connection.transaction(force_rollback=True):
             connection.execute(
-                "UPDATE model.model SET model_revision = model_revision + 1 WHERE model_id = %s",
-                (context.model_id,),
+                "UPDATE project.project SET project_revision = project_revision + 1 WHERE project_id = %s",
+                (context.project_id,),
             )
             result = require_row(
                 connection.execute(
@@ -284,7 +302,7 @@ def test_cancellation_can_stop_a_stale_run_and_free_the_tenant_slot(
                         context.entra_tenant_id,
                         context.entra_object_id,
                         context.tenant_id,
-                        context.model_id,
+                        context.project_id,
                         run_id,
                     ),
                 ).fetchone()
@@ -296,7 +314,7 @@ def test_cancellation_can_stop_a_stale_run_and_free_the_tenant_slot(
                 context.entra_tenant_id,
                 context.entra_object_id,
                 context.tenant_id,
-                context.model_id,
+                context.project_id,
                 run_id,
             ),
         )
@@ -307,7 +325,7 @@ def test_cancellation_can_stop_a_stale_run_and_free_the_tenant_slot(
                 context.entra_tenant_id,
                 context.entra_object_id,
                 context.tenant_id,
-                context.model_id,
+                context.project_id,
                 next_run_id,
             ),
         )

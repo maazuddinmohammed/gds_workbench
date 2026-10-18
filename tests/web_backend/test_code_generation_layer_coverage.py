@@ -1,4 +1,4 @@
-"""Code execution preserves complete Entity/System coverage in both Model layers."""
+"""Code execution preserves complete Entity/System coverage in both Project layers."""
 
 # Existing fake execution fixtures are deliberately shared.
 # pyright: reportPrivateUsage=false
@@ -31,7 +31,9 @@ async def test_each_entity_generates_all_of_its_system_files_before_handoff(
         target.model_copy(
             update={
                 "modeled_entity_type": layer,
-                "modeled_entity_schema_name": "silver" if layer == "logical_entity" else "gold",
+                "modeled_entity_schema_name": "silver"
+                if layer == "logical_entity"
+                else "gold",
                 "source_system_codes": codes,
             }
         )
@@ -41,7 +43,9 @@ async def test_each_entity_generates_all_of_its_system_files_before_handoff(
     plan = _plan().model_copy(
         update={
             "modeled_entity_type": layer,
-            "selected_entity_ids": tuple(target.modeled_entity_id for target in targets),
+            "selected_entity_ids": tuple(
+                target.modeled_entity_id for target in targets
+            ),
             "code_generation_file_layout": "per_system",
         }
     )
@@ -73,9 +77,9 @@ async def test_each_entity_generates_all_of_its_system_files_before_handoff(
     await service.execute_started(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
@@ -88,7 +92,9 @@ async def test_each_entity_generates_all_of_its_system_files_before_handoff(
         if change.dataset == "generated_code_source_system"
         for record in change.records
     ]
-    assert {(item.modeled_entity_name, item.source_system_code) for item in assignments} == {
+    assert {
+        (item.modeled_entity_name, item.source_system_code) for item in assignments
+    } == {
         ("Target1", "CRM"),
         ("Target2", "ERP"),
         ("Target2", "WEB"),

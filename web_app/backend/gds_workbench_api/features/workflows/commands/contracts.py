@@ -12,7 +12,7 @@ from gds_workbench_api.features.metadata_enrichment.contracts import EnrichmentD
 from gds_workbench_api.features.workflows.runs import (
     ExecutionMode,
     ModeledEntityType,
-    ModelWorkflow,
+    ProjectWorkflow,
     RunState,
 )
 
@@ -20,8 +20,8 @@ from gds_workbench_api.features.workflows.runs import (
 class CreateWorkflowRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    expected_model_revision: int = Field(gt=0)
-    model_workflow: ModelWorkflow
+    expected_project_revision: int = Field(gt=0)
+    project_workflow: ProjectWorkflow
     workflow_execution_mode: ExecutionMode | None = None
     selected_object_ids: list[Annotated[int, Field(gt=0, strict=True)]] = Field(
         default_factory=list[int]
@@ -98,7 +98,7 @@ class CreateWorkflowRunRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_workflow_shape(self) -> Self:
-        entity_workflow = self.model_workflow in {"dimensional", "mapping", "code_generation"}
+        entity_workflow = self.project_workflow in {"dimensional", "mapping", "code_generation"}
         selected_ids = self.selected_entity_ids if entity_workflow else self.selected_object_ids
         if (entity_workflow and self.selected_object_ids) or (
             not entity_workflow and self.selected_entity_ids
@@ -108,7 +108,7 @@ class CreateWorkflowRunRequest(BaseModel):
             )
         if len(self.selected_entity_ids) != len(set(self.selected_entity_ids)):
             raise ValueError("Selected Entity IDs must be unique")
-        if self.model_workflow == "dimensional" and self.modeled_entity_type != "logical_entity":
+        if self.project_workflow == "dimensional" and self.modeled_entity_type != "logical_entity":
             raise ValueError("Dimensional input requires Logical Entities")
         if self.description_targets is not None:
             targets = self.description_targets
@@ -116,7 +116,7 @@ class CreateWorkflowRunRequest(BaseModel):
             attributes = {target.attribute_id is not None for target in targets}
             identities = {(target.object_id, target.attribute_id) for target in targets}
             if (
-                self.model_workflow != "metadata_enrichment"
+                self.project_workflow != "metadata_enrichment"
                 or objects != set(selected_ids)
                 or len(attributes) != 1
                 or len(identities) != len(targets)
@@ -127,12 +127,12 @@ class CreateWorkflowRunRequest(BaseModel):
         normalized_system_codes = [value.casefold() for value in self.selected_system_codes]
         if len(normalized_system_codes) != len(set(normalized_system_codes)):
             raise ValueError("Selected System Codes must be unique")
-        if self.model_workflow == "validation":
+        if self.project_workflow == "validation":
             if self.selected_object_ids or not self.selected_system_codes:
                 raise ValueError("Validation requires only an explicit System selection")
             if self.code_generation_coverage_mode is not None:
                 raise ValueError("Code Generation inputs are unavailable for this workflow")
-        elif self.model_workflow == "code_generation":
+        elif self.project_workflow == "code_generation":
             if self.code_generation_file_layout is None:
                 object.__setattr__(self, "code_generation_file_layout", "combined")
             if (
@@ -153,17 +153,17 @@ class CreateWorkflowRunRequest(BaseModel):
 
         if (
             self.code_generation_file_layout is not None
-            and self.model_workflow != "code_generation"
+            and self.project_workflow != "code_generation"
         ):
             raise ValueError("File layout is available only for Code Generation")
-        if self.model_workflow == "metadata_enrichment" and (
+        if self.project_workflow == "metadata_enrichment" and (
             self.workflow_execution_mode != "one_shot"
         ):
             raise ValueError("Metadata enrichment requires one-shot execution")
-        agentic = self.model_workflow in {"code_generation", "validation"} or (
+        agentic = self.project_workflow in {"code_generation", "validation"} or (
             self.workflow_execution_mode is not None
         )
-        requires_mode = self.model_workflow in {
+        requires_mode = self.project_workflow in {
             "conceptual",
             "logical",
             "dimensional",
@@ -171,7 +171,7 @@ class CreateWorkflowRunRequest(BaseModel):
         }
         if requires_mode and self.workflow_execution_mode is None:
             raise ValueError("This workflow requires an explicit execution mode")
-        if self.model_workflow in {"profiling", "code_generation", "validation"} and (
+        if self.project_workflow in {"profiling", "code_generation", "validation"} and (
             self.workflow_execution_mode is not None
         ):
             raise ValueError("This workflow does not accept an execution mode")
@@ -180,7 +180,7 @@ class CreateWorkflowRunRequest(BaseModel):
 
         if entity_workflow and (self.modeled_entity_type is None):
             raise ValueError("Code Generation requires a modeled Entity type")
-        if self.model_workflow not in {
+        if self.project_workflow not in {
             "dimensional",
             "mapping",
             "code_generation",
@@ -197,7 +197,7 @@ class CreateWorkflowRunRequest(BaseModel):
             self.mapping_object_output_template_id,
             self.mapping_attribute_output_template_id,
         )
-        if self.model_workflow == "mapping":
+        if self.project_workflow == "mapping":
             if self.mapping_targets is not None:
                 pairs = {
                     (item.modeled_entity_id, item.source_system_id) for item in self.mapping_targets
@@ -217,7 +217,7 @@ class CreateWorkflowRunRequest(BaseModel):
                 raise ValueError("Mapping requires one complete target selection")
         elif self.mapping_targets is not None or any(value is not None for value in mapping_inputs):
             raise ValueError("Mapping inputs are unavailable for this workflow")
-        if self.requested_batch_id is not None and self.model_workflow not in {
+        if self.requested_batch_id is not None and self.project_workflow not in {
             "profiling",
             "analysis",
         }:
@@ -233,7 +233,7 @@ class WorkflowRunCommandResult(BaseModel):
     workflow_run_state: RunState
     correlation_id: UUID
     prompt_snapshot_count: int = Field(ge=0)
-    model_revision: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     selected_scope_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     selected_scope_count: int = Field(gt=0)
     code_generation_coverage_mode: (

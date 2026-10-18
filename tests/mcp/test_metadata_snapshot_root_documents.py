@@ -44,18 +44,20 @@ def test_root_documents_are_complete_deterministic_and_row_free() -> None:
 
 
 def test_catalog_contains_agent_navigation_without_duplicate_rows() -> None:
-    catalog = cast(dict[str, Any], json.loads(build_root_documents(empty_datasets()).catalog_json))
+    catalog = cast(
+        dict[str, Any], json.loads(build_root_documents(empty_datasets()).catalog_json)
+    )
     source_objects = next(
         dataset
         for section in catalog["sections"]
         for dataset in section["datasets"]
         if dataset["name"] == "source_object"
     )
-    projects = next(
+    lanes = next(
         dataset
         for section in catalog["sections"]
         for dataset in section["datasets"]
-        if dataset["name"] == "project"
+        if dataset["name"] == "lane"
     )
 
     assert source_objects == {
@@ -87,8 +89,8 @@ def test_catalog_contains_agent_navigation_without_duplicate_rows() -> None:
         "rows_file": "data/operational/source_object/rows.jsonl",
         "search_result_complete": False,
     }
-    assert projects["search_file"] == projects["rows_file"]
-    assert projects["search_result_complete"] is True
+    assert lanes["search_file"] == lanes["rows_file"]
+    assert lanes["search_result_complete"] is True
     assert catalog["record_groups"] == [
         {
             "name": "objects",
@@ -133,7 +135,9 @@ def test_root_documents_reject_missing_duplicate_or_changed_datasets() -> None:
 def test_root_documents_reject_an_unresolved_natural_key_reference() -> None:
     encoded = list(empty_datasets())
     connection_index = next(
-        index for index, definition in enumerate(DATASETS) if definition.name == "connection"
+        index
+        for index, definition in enumerate(DATASETS)
+        if definition.name == "connection"
     )
     encoded[connection_index] = encode_dataset(
         DATASETS[connection_index],

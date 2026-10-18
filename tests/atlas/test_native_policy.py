@@ -9,7 +9,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
 from gds_etl_workbench.domain.modeling_records import has_mapping_transformation_content
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -74,7 +73,7 @@ foreach ($value in (ConvertFrom-GdsJson ([IO.File]::ReadAllText($CasesPath)))) {
     ]
 
 
-def test_native_model_policy_matches_all_javascript_scenarios(tmp_path: Path) -> None:
+def test_native_project_policy_matches_all_javascript_scenarios(tmp_path: Path) -> None:
     powershell = (
         os.environ.get("ATLAS_POWERSHELL")
         or shutil.which("powershell.exe")
@@ -83,17 +82,17 @@ def test_native_model_policy_matches_all_javascript_scenarios(tmp_path: Path) ->
     if powershell is None:
         pytest.skip("PowerShell is not installed")
     captured = tmp_path / "cases.json"
-    module = HELPER.parent.parent / "workbench" / "validation" / "model-policy.js"
+    module = HELPER.parent.parent / "workbench" / "validation" / "project-policy.js"
     suite = REPOSITORY_ROOT / "tests" / "atlas" / "workbench-policy.test.mjs"
     capture = tmp_path / "capture.cjs"
     capture.write_text("""
 const fs = require('node:fs');
 const {pathToFileURL} = require('node:url');
 const api = require(process.argv[2]), evaluate = api.validate, cases = [];
-api.validate = (model, metadata, options = {}) => {
-  const expected = evaluate(model, metadata, options);
+api.validate = (project, metadata, options = {}) => {
+  const expected = evaluate(project, metadata, options);
   cases.push(JSON.parse(JSON.stringify({
-    model:[...model], metadata:metadata instanceof Map ? [...metadata] : [], options,
+    project:[...project], metadata:metadata instanceof Map ? [...metadata] : [], options,
     expected:expected.map(item=>({code:item.code,dataset:item.dataset,
       fields:[item.field],severity:item.severity || 'error'}))})));
   return expected;
@@ -139,10 +138,10 @@ function Convert-States($Pairs) {
 $results = New-Object Collections.ArrayList
 $cases = ConvertFrom-GdsJson ([IO.File]::ReadAllText($CasesPath))
 foreach ($case in $cases) {
-    $states = if ($null -eq $case.model) { $null } else { @(Convert-States $case.model) }
+    $states = if ($null -eq $case.project) { $null } else { @(Convert-States $case.project) }
     $metadata = @(Convert-States $case.metadata)
-    $model = Get-Property $case.options 'model'
-    [void]$results.Add(@(Get-AtlasModelPolicy $states $metadata $model))
+    $project = Get-Property $case.options 'project'
+    [void]$results.Add(@(Get-AtlasProjectPolicy $states $metadata $project))
 
 }
 [IO.File]::WriteAllText($Output, (ConvertTo-GdsJson @($results)), $script:Utf8NoBom)

@@ -14,8 +14,8 @@ from gds_workbench_api.prompt_rendering import (
 def _variables() -> tuple[PromptVariableDefinition, ...]:
     return (
         PromptVariableDefinition(
-            name="model_name",
-            resolver_key="model.name",
+            name="project_name",
+            resolver_key="project.name",
             data_type="text",
             is_required=True,
         ),
@@ -36,20 +36,20 @@ def _variables() -> tuple[PromptVariableDefinition, ...]:
 
 def test_prompt_renderer_uses_only_registered_data_and_renders_once() -> None:
     templates = PromptComponentTemplates(
-        system="Model {{ model_name }}",
+        system="Project {{ project_name }}",
         instruction="Use {{stage_context}}. Retry {{ retry_count }}.",
     )
     rendered = render_prompt(
         templates=templates,
         variables=_variables(),
         resolver_values={
-            "model.name": "{{never_render_again}}",
+            "project.name": "{{never_render_again}}",
             "context.stage": {"objects": 25},
             "run.retry_count": 2,
             "unregistered.value": "must-not-appear",
         },
     )
-    assert rendered.system == "Model {{never_render_again}}"
+    assert rendered.system == "Project {{never_render_again}}"
     assert rendered.instruction == 'Use {"objects":25}. Retry 2.'
     assert rendered.warning_codes == ()
     assert "objects" not in repr(rendered)
@@ -58,7 +58,9 @@ def test_prompt_renderer_uses_only_registered_data_and_renders_once() -> None:
 
 def test_known_missing_data_is_null_and_unreferenced_values_are_optional() -> None:
     rendered = render_prompt(
-        templates=PromptComponentTemplates(system="Use metadata", instruction="{{stage_context}}"),
+        templates=PromptComponentTemplates(
+            system="Use metadata", instruction="{{stage_context}}"
+        ),
         variables=_variables(),
         resolver_values={},
     )
@@ -76,7 +78,7 @@ def test_known_missing_data_is_null_and_unreferenced_values_are_optional() -> No
         "{% include 'anything' %}",
         "{% for x in stage_context recursive %}x{% endfor %}",
         "{% set x = 1 %}{{x}}",
-        "{{model_name|attr('__class__')}}",
+        "{{project_name|attr('__class__')}}",
         "{{ broken",
     ],
 )
@@ -125,7 +127,7 @@ def test_large_loops_render_every_item_without_work_budget() -> None:
 @pytest.mark.parametrize(
     ("resolver_key", "invalid_value"),
     [
-        ("model.name", 42),
+        ("project.name", 42),
         ("context.stage", object()),
         ("run.retry_count", True),
     ],
@@ -135,7 +137,7 @@ def test_prompt_renderer_rejects_resolver_type_mismatch_without_value_disclosure
     invalid_value: object,
 ) -> None:
     values: dict[str, object] = {
-        "model.name": "customer_360",
+        "project.name": "customer_360",
         "context.stage": {"objects": 25},
         "run.retry_count": 2,
     }
@@ -144,7 +146,7 @@ def test_prompt_renderer_rejects_resolver_type_mismatch_without_value_disclosure
     with pytest.raises(InvalidRequestError) as captured:
         render_prompt(
             templates=PromptComponentTemplates(
-                system="{{model_name}}",
+                system="{{project_name}}",
                 instruction="{{stage_context}} {{retry_count}}",
                 tool_instruction=None,
             ),
@@ -155,7 +157,9 @@ def test_prompt_renderer_rejects_resolver_type_mismatch_without_value_disclosure
     assert str(invalid_value) not in str(captured.value)
 
 
-@pytest.mark.parametrize("expression", ["{{stage_context}}", "{{stage_context|tojson}}"])
+@pytest.mark.parametrize(
+    "expression", ["{{stage_context}}", "{{stage_context|tojson}}"]
+)
 def test_large_json_projection_renders_complete_content(expression: str) -> None:
     value = ["é" * 2000] * 1000
     rendered = render_prompt(
@@ -171,11 +175,11 @@ def test_large_template_and_filtered_text_are_not_truncated() -> None:
     rendered = render_prompt(
         templates=PromptComponentTemplates(
             system=content,
-            instruction="{{model_name|default('missing')}}",
-            tool_instruction="{{model_name}}",
+            instruction="{{project_name|default('missing')}}",
+            tool_instruction="{{project_name}}",
         ),
         variables=_variables(),
-        resolver_values={"model.name": content},
+        resolver_values={"project.name": content},
     )
     assert rendered.system == content
     assert rendered.instruction == content
@@ -184,8 +188,10 @@ def test_large_template_and_filtered_text_are_not_truncated() -> None:
 
 def test_large_template_keeps_all_valid_expressions() -> None:
     rendered = render_prompt(
-        templates=PromptComponentTemplates(system="Metadata", instruction="{{model_name}}" * 5001),
+        templates=PromptComponentTemplates(
+            system="Metadata", instruction="{{project_name}}" * 5001
+        ),
         variables=_variables(),
-        resolver_values={"model.name": "x"},
+        resolver_values={"project.name": "x"},
     )
     assert rendered.instruction == "x" * 5001

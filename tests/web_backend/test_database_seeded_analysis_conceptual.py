@@ -61,7 +61,7 @@ def installed_stages(bootstrap_postgres_database: DisposablePostgres) -> SeedSta
     with database.connect_owner() as connection:
         variables = connection.execute(
             """
-            SELECT stage.model_workflow, stage.workflow_execution_mode,
+            SELECT stage.project_workflow, stage.workflow_execution_mode,
                    stage.workflow_stage_id, stage.workflow_stage_code,
                    stage.workflow_stage_order,
                    variable.workflow_stage_variable_name AS name,
@@ -70,7 +70,7 @@ def installed_stages(bootstrap_postgres_database: DisposablePostgres) -> SeedSta
                    variable.workflow_stage_variable_is_required AS is_required
               FROM application.workflow_stage AS stage
               JOIN application.workflow_stage_variable AS variable USING (workflow_stage_id)
-             WHERE stage.model_workflow IN (
+             WHERE stage.project_workflow IN (
                    'analysis', 'conceptual', 'logical', 'dimensional', 'mapping',
                    'code_generation', 'validation')
                AND stage.workflow_stage_is_agentic AND stage.is_active AND variable.is_active
@@ -79,7 +79,7 @@ def installed_stages(bootstrap_postgres_database: DisposablePostgres) -> SeedSta
         ).fetchall()
     stages: dict[tuple[str, str | None], list[FrozenAgentStage]] = {}
     for row in _snapshot(database):
-        if row["model_workflow"] not in {
+        if row["project_workflow"] not in {
             "analysis",
             "conceptual",
             "logical",
@@ -90,7 +90,7 @@ def installed_stages(bootstrap_postgres_database: DisposablePostgres) -> SeedSta
         }:
             continue
         identity = (
-            row["model_workflow"],
+            row["project_workflow"],
             row["workflow_execution_mode"],
             row["workflow_stage_code"],
         )
@@ -98,7 +98,7 @@ def installed_stages(bootstrap_postgres_database: DisposablePostgres) -> SeedSta
             variable
             for variable in variables
             if (
-                variable["model_workflow"],
+                variable["project_workflow"],
                 variable["workflow_execution_mode"],
                 variable["workflow_stage_code"],
             )
@@ -194,7 +194,7 @@ async def test_installed_defaults_execute_inside_real_authoring_paths(
         assert kwargs["variables"] == stage_by_identity[identity].variables
         for variable in kwargs["variables"]:
             contract = get_prompt_input_contract(
-                model_workflow=identity[0],
+                project_workflow=identity[0],
                 workflow_execution_mode=identity[1],
                 stage_code=identity[2],
                 resolver_key=variable.resolver_key,
@@ -256,7 +256,7 @@ async def test_installed_defaults_execute_inside_real_authoring_paths(
         original_plan = plan or module._plan()
         mode = original_plan.workflow_execution_mode
         assert mode is not None
-        selected = installed_stages[(original_plan.model_workflow, mode)]
+        selected = installed_stages[(original_plan.project_workflow, mode)]
         # Replace only frozen installed Prompt stages, before the real executor loads its plan.
         seeded = original_plan.model_copy(update={"stages": selected})
         assert seeded.stages is selected
@@ -287,9 +287,9 @@ async def test_installed_defaults_execute_inside_real_authoring_paths(
         await service.execute_started(
             factory_module._principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=factory_module._CLAIM_TOKEN,
         )
         assert len(handoff.calls) == 1 and lifecycle.failed is None
@@ -322,7 +322,7 @@ async def test_installed_mapping_defaults_execute(
         stage = next(item for item in stages if kwargs["templates"] is item.templates)
         for variable in stage.variables:
             contract = get_prompt_input_contract(
-                model_workflow="mapping",
+                project_workflow="mapping",
                 workflow_execution_mode=mode,
                 stage_code=stage.stage_code,
                 resolver_key=variable.resolver_key,
@@ -377,7 +377,7 @@ async def test_installed_sql_defaults_with_repository_projection(
             "SELECT * FROM workflow.list_code_generation_target_context("
             "%s, 'logical_entity', NULL) "
             "WHERE modeled_entity_id = %s",
-            (scope.plan.model_id, scope.plan.pair.modeled_entity_id),
+            (scope.plan.project_id, scope.plan.pair.modeled_entity_id),
         ).fetchone()
     assert row is not None
     source = row["source_context"]
@@ -404,16 +404,18 @@ async def test_installed_sql_defaults_with_repository_projection(
         nonlocal renders
         # SQL policy is frozen in the published Prompt; no second policy is appended.
         actual_templates = kwargs["templates"]
-        assert sha256(actual_templates.system.encode()).digest() == sha256(
-            stages[0].templates.system.encode()
-        ).digest()
-        assert sha256(actual_templates.instruction.encode()).digest() == sha256(
-            stages[0].templates.instruction.encode()
-        ).digest()
+        assert (
+            sha256(actual_templates.system.encode()).digest()
+            == sha256(stages[0].templates.system.encode()).digest()
+        )
+        assert (
+            sha256(actual_templates.instruction.encode()).digest()
+            == sha256(stages[0].templates.instruction.encode()).digest()
+        )
         assert actual_templates.tool_instruction == stages[0].templates.tool_instruction
         for variable in stages[0].variables:
             contract = get_prompt_input_contract(
-                model_workflow="code_generation",
+                project_workflow="code_generation",
                 workflow_execution_mode=None,
                 stage_code="sql_generation",
                 resolver_key=variable.resolver_key,
@@ -460,9 +462,9 @@ async def test_installed_sql_defaults_with_repository_projection(
     await service.execute_started(
         code._principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=code._CLAIM_TOKEN,
     )
     assert renders == 1 and len(agent.requests) == (2 if repair else 1)
@@ -499,7 +501,7 @@ async def test_installed_validation_defaults_with_repository_context(
         row = connection.execute(
             "SELECT * FROM workflow.list_code_generation_target_context("
             "%s, 'logical_entity', NULL) WHERE modeled_entity_id = %s",
-            (scope.plan.model_id, scope.plan.pair.modeled_entity_id),
+            (scope.plan.project_id, scope.plan.pair.modeled_entity_id),
         ).fetchone()
     assert row is not None
     system_code = row["source_context"]["source_systems"][0]["system_code"]
@@ -541,7 +543,7 @@ async def test_installed_validation_defaults_with_repository_context(
         assert kwargs["templates"] is stages[0].templates
         for variable in stages[0].variables:
             contract = get_prompt_input_contract(
-                model_workflow="validation",
+                project_workflow="validation",
                 workflow_execution_mode=None,
                 stage_code="validation_generation",
                 resolver_key=variable.resolver_key,
@@ -563,9 +565,9 @@ async def test_installed_validation_defaults_with_repository_context(
     await service.execute_started(
         validation._principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        expected_model_revision=7,
+        expected_project_revision=7,
         workflow_run_claim_token=validation._CLAIM_TOKEN,
     )
     assert renders == 1 and len(agent.requests) == 1

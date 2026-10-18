@@ -86,7 +86,7 @@ class PromptActor:
 @dataclass(frozen=True, slots=True)
 class PromptContext:
     tenant_id: int
-    model_id: int
+    project_id: int
     workflow_stage_id: int
     architect: PromptActor
     super_admin: PromptActor
@@ -100,21 +100,21 @@ def _seed_prompt_context(
     super_admin = PromptActor(uuid4(), uuid4(), 0)
 
     with postgres_database.connect_owner() as connection:
-        project_id = require_row(
+        lane_id = require_row(
             connection.execute(
                 """
-            INSERT INTO core.project (project_code, project_name)
+            INSERT INTO core.lane (lane_code, lane_name)
             VALUES (%s, %s)
-            RETURNING project_id
+            RETURNING lane_id
             """,
                 (f"prompt_project_{suffix}", f"Prompt Project {suffix}"),
             ).fetchone()
-        )["project_id"]
+        )["lane_id"]
         tenant_id = require_row(
             connection.execute(
                 """
             INSERT INTO core.tenant (
-                project_id,
+                lane_id,
                 tenant_code,
                 tenant_name,
                 tenant_catalog,
@@ -123,7 +123,7 @@ def _seed_prompt_context(
             RETURNING tenant_id
             """,
                 (
-                    project_id,
+                    lane_id,
                     f"prompt_tenant_{suffix}",
                     f"Prompt Tenant {suffix}",
                     f"prompt_catalog_{suffix}",
@@ -131,22 +131,22 @@ def _seed_prompt_context(
                 ),
             ).fetchone()
         )["tenant_id"]
-        model_id = require_row(
+        project_id = require_row(
             connection.execute(
                 """
-            INSERT INTO model.model (tenant_id, model_name)
+            INSERT INTO project.project (tenant_id, project_name)
             VALUES (%s, %s)
-            RETURNING model_id
+            RETURNING project_id
             """,
-                (tenant_id, f"Prompt Model {suffix}"),
+                (tenant_id, f"Prompt Project {suffix}"),
             ).fetchone()
-        )["model_id"]
+        )["project_id"]
         workflow_stage_order = require_row(
             connection.execute(
                 """
             SELECT coalesce(max(workflow_stage_order), 0) + 1 AS next_order
               FROM application.workflow_stage
-             WHERE model_workflow = 'analysis'
+             WHERE project_workflow = 'analysis'
                AND workflow_execution_mode = 'one_shot'
             """
             ).fetchone()
@@ -155,7 +155,7 @@ def _seed_prompt_context(
             connection.execute(
                 """
             INSERT INTO application.workflow_stage (
-                model_workflow,
+                project_workflow,
                 workflow_execution_mode,
                 workflow_stage_code,
                 workflow_stage_name,
@@ -253,7 +253,7 @@ def _seed_prompt_context(
 
     return PromptContext(
         tenant_id=tenant_id,
-        model_id=model_id,
+        project_id=project_id,
         workflow_stage_id=workflow_stage_id,
         architect=PromptActor(
             architect.entra_tenant_id,
@@ -363,7 +363,7 @@ def _set_prompt_assignment(
     *,
     workflow_stage_id: int,
     assignment_scope: str,
-    model_id: int | None,
+    project_id: int | None,
     prompt_template_version_id: int | None,
     expected_prompt_assignment_id: int | None,
 ) -> TestRow:
@@ -376,7 +376,7 @@ def _set_prompt_assignment(
                     actor.entra_object_id,
                     workflow_stage_id,
                     assignment_scope,
-                    model_id,
+                    project_id,
                     prompt_template_version_id,
                     expected_prompt_assignment_id,
                 ),
@@ -413,7 +413,7 @@ def _expected_prompt_digest(
         )["prompt_template_digest"]
 
 
-def _create_global_prompt_with_model_assignment(
+def _create_global_prompt_with_project_assignment(
     postgres_database: DisposablePostgres,
     context: PromptContext,
 ) -> tuple[TestRow, TestRow, TestRow]:
@@ -424,16 +424,16 @@ def _create_global_prompt_with_model_assignment(
         workflow_stage_id=context.workflow_stage_id,
         ownership_scope="global",
         owner_tenant_id=None,
-        code=f"global_model_prompt_{uuid4().hex}",
-        name="Global Model prompt",
+        code=f"global_project_prompt_{uuid4().hex}",
+        name="Global Project prompt",
     )
     draft = _save_prompt_template_draft(
         postgres_database,
         context.super_admin,
         prompt_template_id=prompt["prompt_template_id"],
         expected_prompt_template_version_id=None,
-        system_prompt="Global Model system prompt.",
-        instruction_prompt="Global Model instruction prompt.",
+        system_prompt="Global Project system prompt.",
+        instruction_prompt="Global Project instruction prompt.",
         tool_instruction_prompt=None,
         expected_updated_time=None,
     )
@@ -448,8 +448,8 @@ def _create_global_prompt_with_model_assignment(
         postgres_database,
         context.architect,
         workflow_stage_id=context.workflow_stage_id,
-        assignment_scope="model_default",
-        model_id=context.model_id,
+        assignment_scope="project_default",
+        project_id=context.project_id,
         prompt_template_version_id=version["prompt_template_version_id"],
         expected_prompt_assignment_id=None,
     )
@@ -715,7 +715,7 @@ def test_prompt_lifecycle_and_assignments_enforce_scope_fences_and_retirement(
             context.architect,
             workflow_stage_id=context.workflow_stage_id,
             assignment_scope="global_default",
-            model_id=None,
+            project_id=None,
             prompt_template_version_id=global_version["prompt_template_version_id"],
             expected_prompt_assignment_id=None,
         )
@@ -725,7 +725,7 @@ def test_prompt_lifecycle_and_assignments_enforce_scope_fences_and_retirement(
         context.super_admin,
         workflow_stage_id=context.workflow_stage_id,
         assignment_scope="global_default",
-        model_id=None,
+        project_id=None,
         prompt_template_version_id=global_version["prompt_template_version_id"],
         expected_prompt_assignment_id=None,
     )
@@ -734,7 +734,7 @@ def test_prompt_lifecycle_and_assignments_enforce_scope_fences_and_retirement(
         context.super_admin,
         workflow_stage_id=context.workflow_stage_id,
         assignment_scope="global_default",
-        model_id=None,
+        project_id=None,
         prompt_template_version_id=global_version["prompt_template_version_id"],
         expected_prompt_assignment_id=global_assignment["prompt_assignment_id"],
     )
@@ -752,7 +752,7 @@ def test_prompt_lifecycle_and_assignments_enforce_scope_fences_and_retirement(
             context.super_admin,
             workflow_stage_id=context.workflow_stage_id,
             assignment_scope="global_default",
-            model_id=None,
+            project_id=None,
             prompt_template_version_id=None,
             expected_prompt_assignment_id=global_assignment["prompt_assignment_id"]
             + 1000,
@@ -780,7 +780,7 @@ def test_prompt_lifecycle_and_assignments_enforce_scope_fences_and_retirement(
         context.super_admin,
         workflow_stage_id=context.workflow_stage_id,
         assignment_scope="global_default",
-        model_id=None,
+        project_id=None,
         prompt_template_version_id=None,
         expected_prompt_assignment_id=global_assignment["prompt_assignment_id"],
     )
@@ -844,31 +844,31 @@ def test_prompt_lifecycle_and_assignments_enforce_scope_fences_and_retirement(
             context.super_admin,
             workflow_stage_id=context.workflow_stage_id,
             assignment_scope="global_default",
-            model_id=None,
+            project_id=None,
             prompt_template_version_id=tenant_version["prompt_template_version_id"],
             expected_prompt_assignment_id=None,
         )
 
-    model_assignment = _set_prompt_assignment(
+    project_assignment = _set_prompt_assignment(
         postgres_database,
         context.architect,
         workflow_stage_id=context.workflow_stage_id,
-        assignment_scope="model_default",
-        model_id=context.model_id,
+        assignment_scope="project_default",
+        project_id=context.project_id,
         prompt_template_version_id=tenant_version["prompt_template_version_id"],
         expected_prompt_assignment_id=None,
     )
-    assert model_assignment["model_id"] == context.model_id
-    assert model_assignment["assigned_by_principal_id"] == (
+    assert project_assignment["project_id"] == context.project_id
+    assert project_assignment["assigned_by_principal_id"] == (
         context.architect.principal_id
     )
 
 
-def test_global_prompt_deactivation_rejects_active_model_assignments(
+def test_global_prompt_deactivation_rejects_active_project_assignments(
     postgres_database: DisposablePostgres,
 ) -> None:
     context = _seed_prompt_context(postgres_database)
-    prompt, _, _ = _create_global_prompt_with_model_assignment(
+    prompt, _, _ = _create_global_prompt_with_project_assignment(
         postgres_database,
         context,
     )
@@ -889,11 +889,11 @@ def test_global_prompt_deactivation_rejects_active_model_assignments(
         )
 
 
-def test_global_prompt_retirement_rejects_active_model_assignments(
+def test_global_prompt_retirement_rejects_active_project_assignments(
     postgres_database: DisposablePostgres,
 ) -> None:
     context = _seed_prompt_context(postgres_database)
-    _, version, _ = _create_global_prompt_with_model_assignment(
+    _, version, _ = _create_global_prompt_with_project_assignment(
         postgres_database,
         context,
     )
@@ -1127,7 +1127,7 @@ def test_same_prompt_assignment_replay_enforces_expected_assignment_fence(
     postgres_database: DisposablePostgres,
 ) -> None:
     context = _seed_prompt_context(postgres_database)
-    _, version, assignment = _create_global_prompt_with_model_assignment(
+    _, version, assignment = _create_global_prompt_with_project_assignment(
         postgres_database,
         context,
     )
@@ -1137,8 +1137,8 @@ def test_same_prompt_assignment_replay_enforces_expected_assignment_fence(
             postgres_database,
             context.architect,
             workflow_stage_id=context.workflow_stage_id,
-            assignment_scope="model_default",
-            model_id=context.model_id,
+            assignment_scope="project_default",
+            project_id=context.project_id,
             prompt_template_version_id=version["prompt_template_version_id"],
             expected_prompt_assignment_id=assignment["prompt_assignment_id"] + 1,
         )
@@ -1148,7 +1148,7 @@ def test_prompt_assignment_deactivation_records_derived_actor_and_time(
     postgres_database: DisposablePostgres,
 ) -> None:
     context = _seed_prompt_context(postgres_database)
-    _, _, assignment = _create_global_prompt_with_model_assignment(
+    _, _, assignment = _create_global_prompt_with_project_assignment(
         postgres_database,
         context,
     )
@@ -1157,8 +1157,8 @@ def test_prompt_assignment_deactivation_records_derived_actor_and_time(
         postgres_database,
         context.architect,
         workflow_stage_id=context.workflow_stage_id,
-        assignment_scope="model_default",
-        model_id=context.model_id,
+        assignment_scope="project_default",
+        project_id=context.project_id,
         prompt_template_version_id=None,
         expected_prompt_assignment_id=assignment["prompt_assignment_id"],
     )
@@ -1305,6 +1305,70 @@ def test_prompt_mutators_are_web_only_security_definers_without_direct_dml(
         }
         for table_name in sorted(prompt_tables)
     ]
+
+
+@pytest.mark.parametrize("workflow", ["conceptual", "logical", "dimensional"])
+def test_conceptual_readers_belong_only_to_conceptual_prompts(
+    postgres_database: DisposablePostgres, workflow: str
+) -> None:
+    context = _seed_prompt_context(postgres_database)
+    with postgres_database.connect_owner() as connection:
+        connection.execute(
+            """
+            UPDATE application.workflow_stage
+               SET project_workflow = %s,
+                   workflow_execution_mode = 'tool_assisted',
+                   workflow_stage_order = (
+                       SELECT coalesce(max(workflow_stage_order), 0) + 1
+                         FROM application.workflow_stage
+                        WHERE project_workflow = %s
+                          AND workflow_execution_mode = 'tool_assisted'
+                   )
+             WHERE workflow_stage_id = %s
+            """,
+            (workflow, workflow, context.workflow_stage_id),
+        )
+    prompt = _save_prompt_template(
+        postgres_database,
+        context.architect,
+        prompt_template_id=None,
+        workflow_stage_id=context.workflow_stage_id,
+        ownership_scope="tenant",
+        owner_tenant_id=context.tenant_id,
+        code=f"standalone_conceptual_{uuid4().hex}",
+        name="Workflow reader boundaries",
+    )
+    kwargs = dict(
+        prompt_template_id=prompt["prompt_template_id"],
+        expected_prompt_template_version_id=None,
+        system_prompt="Use the selected workflow evidence.",
+        instruction_prompt="Author a candidate.",
+        tool_instruction_prompt=None,
+        expected_updated_time=None,
+    )
+    conceptual_readers = [
+        "list_conceptual_objects",
+        "get_conceptual_objects",
+        "list_conceptual_relationships",
+        "get_conceptual_relationships",
+    ]
+    if workflow == "conceptual":
+        allowed = conceptual_readers
+    else:
+        for reader in conceptual_readers:
+            with pytest.raises(RaiseException, match="tool selection is invalid"):
+                _save_prompt_template_draft(
+                    postgres_database,
+                    context.architect,
+                    **kwargs,
+                    agent_tool_names=[reader],
+                )
+        # Dimensional keeps its applied Logical inputs; Logical keeps its history.
+        allowed = ["get_objects", "get_logical_entities"]
+    saved = _save_prompt_template_draft(
+        postgres_database, context.architect, **kwargs, agent_tool_names=allowed
+    )
+    assert saved["agent_tool_names"] == allowed
 
 
 def test_prompt_tool_permissions_are_digested_fenced_and_stage_scoped(

@@ -22,7 +22,7 @@ User: "For the orders Copy in the daily group, use the same landing-file naming 
 - Read [Copy](tables/copy.md) and the relevant Snapshot records. Confirm the example uses the same naming consumer; open File Type documentation only for a format question.
 - Propose the corresponding orders naming values. Check agreement between landing writer and Bronze reader; request relevant code if adapting the convention is unclear.
 - Preserve other fields. A landing filename change does not rename the registered Source/Bronze Objects.
-- A new Model, Bronze bundle, and Process definition are not implied.
+- A new Project, Bronze bundle, and Process definition are not implied.
 - Validate the proposed record; fix failures and rerun affected checks before reporting it ready. Report unavailable checks explicitly.
 
 ## Example: source registration

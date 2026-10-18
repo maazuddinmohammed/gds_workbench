@@ -24,7 +24,7 @@ function Resolve-AnalysisEndpoint($Metadata, $Scope, $Endpoint, $Masked) {
         $seen[$normalized] = $true
     }
     $identity = Get-ProfileKey $Endpoint.object
-    if (-not @($Scope | Where-Object { ((Get-Active $_) -ne $false) -and (Get-ProfileKey $_) -ceq $identity }).Count) { Fail 'Object is outside active Model Input Scope.' }
+    if (-not @($Scope | Where-Object { ((Get-Active $_) -ne $false) -and (Get-ProfileKey $_) -ceq $identity }).Count) { Fail 'Object is outside active Project Input Scope.' }
     $objects = @(@((Get-Property $Metadata 'source_object')) + @((Get-Property $Metadata 'bronze_object')) | Where-Object { $null -ne $_ -and ((Get-Active $_) -ne $false) })
     $matches = @($objects | Where-Object { (Get-ProfileKey $_) -ceq $identity })
     if ($matches.Count -ne 1) { Fail 'Object is missing or ambiguous in Source/Bronze Metadata.' }

@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ApiError } from "../../core/http";
 import { useWorkflowRunSubmission } from "../workflows/useWorkflowRunSubmission";
 import { SelectField } from "../../shared/ui";
-import type { ModelDetail } from "../models/api";
+import type { ProjectDetail } from "../projects/api";
 import {
   findAgentExecutionProfile,
   reasoningEffortDisplayName,
@@ -24,7 +24,7 @@ const VALIDATION_AGENT_EXECUTION_MODE = "tool_assisted" as const;
 export function ValidationRunDialog({
   api,
   tenantId,
-  model,
+  project,
   systems,
   entityType,
   systemsTruncated,
@@ -33,7 +33,7 @@ export function ValidationRunDialog({
 }: {
   api: ValidationApi;
   tenantId: number;
-  model: ModelDetail;
+  project: ProjectDetail;
   entityType: MappingEntityType;
   systems: ValidationEligibleSystem[];
   systemsTruncated: boolean;
@@ -51,8 +51,8 @@ export function ValidationRunDialog({
     portalHost.current.dataset.validationModalHost = "true";
   }
   const [selectedSystemIds, setSelectedSystemIds] = useState<Set<number>>(() => new Set());
-  const [modelCode, setModelCode] = useState(model.default_agent_model_code ?? "");
-  const [reasoningEffortCode, setReasoningEffortCode] = useState(model.default_reasoning_effort_code ?? "");
+  const [modelCode, setModelCode] = useState(project.default_agent_model_code ?? "");
+  const [reasoningEffortCode, setReasoningEffortCode] = useState(project.default_reasoning_effort_code ?? "");
   const capabilitiesQuery = useQuery({
     queryKey: workflowCreationQueryKeys.capabilities,
     queryFn: api.readAgentCapabilities,
@@ -64,8 +64,8 @@ export function ValidationRunDialog({
     {
       modelCode,
       reasoningEffortCode,
-      maxTurns: model.default_max_turns,
-      validationRetryCount: model.default_validation_retry_count,
+      maxTurns: project.default_max_turns,
+      validationRetryCount: project.default_validation_retry_count,
     },
   ) : null;
   const compatibleModels = capabilities?.models.filter((item) =>
@@ -90,9 +90,9 @@ export function ValidationRunDialog({
   const { mutation: runMutation, pendingRunId: pendingWorkflowRunId } = useWorkflowRunSubmission({
     api,
     tenantId,
-    modelId: model.model_id,
+    projectId: project.project_id,
     execute: (workflowRunId, command) => api.executeValidationRun(
-      tenantId, model.model_id, workflowRunId, command.expected_model_revision,
+      tenantId, project.project_id, workflowRunId, command.expected_project_revision,
     ),
     onSuccess: async (workflowRunId) => {
       await onStarted(workflowRunId);
@@ -183,8 +183,8 @@ export function ValidationRunDialog({
             }
             if (!agentSelectionValid || !selectedCodes) return;
             runMutation.mutate({
-              expected_model_revision: model.model_revision,
-              model_workflow: "validation",
+              expected_project_revision: project.project_revision,
+              project_workflow: "validation",
               modeled_entity_type: entityType,
               workflow_execution_mode: null,
               selected_object_ids: [],
@@ -342,7 +342,7 @@ function validationRunError(error: Error, runWasCreated: boolean): string {
     return "You no longer have permission or the required Tenant Lock to run Validation.";
   }
   if (error instanceof ApiError && error.status === 409) {
-    return "The Model or Validation context changed. Refresh before creating another run.";
+    return "The Project or Validation context changed. Refresh before creating another run.";
   }
   return "The Validation run could not be created or started.";
 }

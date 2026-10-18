@@ -4,23 +4,25 @@
 from copy import deepcopy
 from uuid import uuid4
 
-from gds_etl_workbench.application.change_sets.model import load_model_physical_scope
-from gds_etl_workbench.application.change_sets.model_apply import ModelMaterializer
-from gds_etl_workbench.application.change_sets.model_validation import (
+from gds_etl_workbench.application.change_sets.project import (
+    load_project_physical_scope,
+)
+from gds_etl_workbench.application.change_sets.project_apply import ProjectMaterializer
+from gds_etl_workbench.application.change_sets.project_validation import (
     validate_future_graph,
 )
-from gds_etl_workbench.application.model_read import ModelReadContext
-from gds_etl_workbench.application.model_snapshot import build_model_snapshot
-from gds_etl_workbench.domain.snapshots.model import (
-    ModelChangeSetDataset,
-    model_snapshot_records,
+from gds_etl_workbench.application.project_read import ProjectReadContext
+from gds_etl_workbench.application.project_snapshot import build_project_snapshot
+from gds_etl_workbench.domain.snapshots.project import (
+    ProjectChangeSetDataset,
+    project_snapshot_records,
 )
 
 from tests.mcp.conftest import DisposablePostgres
-from tests.mcp.model_test_fixtures import complete_model_graph
-from tests.mcp.test_database_model_change_set_round_trip import (
+from tests.mcp.project_test_fixtures import complete_project_graph
+from tests.mcp.test_database_project_change_set_round_trip import (
     _replace_codes,
-    _seed_model_foundation,
+    _seed_project_foundation,
 )
 
 
@@ -28,9 +30,11 @@ async def test_code_validation_lock_round_trip_and_authoring_barrier(
     postgres_database: DisposablePostgres,
 ) -> None:
     prefix = "CODE_LOCKS_" + uuid4().hex
-    model_id, tenant_id = _seed_model_foundation(postgres_database, code_prefix=prefix)
-    graph = _replace_codes(complete_model_graph(), code_prefix=prefix)
-    locked: dict[ModelChangeSetDataset, str] = {
+    project_id, tenant_id = _seed_project_foundation(
+        postgres_database, code_prefix=prefix
+    )
+    graph = _replace_codes(complete_project_graph(), code_prefix=prefix)
+    locked: dict[ProjectChangeSetDataset, str] = {
         "generated_code": "generated_code_is_locked",
         "generated_code_source_system": "generated_code_source_system_is_locked",
         "validation_group": "is_locked",
@@ -38,29 +42,29 @@ async def test_code_validation_lock_round_trip_and_authoring_barrier(
     }
     for dataset, field in locked.items():
         graph[dataset][0][field] = True
-    model = ModelReadContext(
-        model_id=model_id,
+    project = ProjectReadContext(
+        project_id=project_id,
         tenant_id=tenant_id,
-        model_name="Model Tool Round Trip",
-        model_revision=1,
+        project_name="Project Tool Round Trip",
+        project_revision=1,
     )
     runtime = postgres_database.create_runtime_adapter()
     await runtime.open()
     try:
         async with runtime.write_transaction() as transaction:
-            snapshot = await build_model_snapshot(transaction, model)
-            physical = await load_model_physical_scope(transaction, model)
+            snapshot = await build_project_snapshot(transaction, project)
+            physical = await load_project_physical_scope(transaction, project)
             authored = validate_future_graph(
                 snapshot=snapshot, staged_documents=graph, physical_scope=physical
             )
             assert authored.valid
-            await ModelMaterializer(transaction, model_id, "a" * 64).apply(
+            await ProjectMaterializer(transaction, project_id, "a" * 64).apply(
                 authored.records
             )
         async with runtime.read_transaction() as transaction:
-            snapshot = await build_model_snapshot(transaction, model)
-            records = model_snapshot_records(snapshot)
-            physical = await load_model_physical_scope(transaction, model)
+            snapshot = await build_project_snapshot(transaction, project)
+            records = project_snapshot_records(snapshot)
+            physical = await load_project_physical_scope(transaction, project)
             for dataset, field in locked.items():
                 original = records[dataset][0].model_dump(mode="json")
                 assert original[field] is True

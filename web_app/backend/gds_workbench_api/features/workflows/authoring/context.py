@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Awaitable, Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -10,35 +11,35 @@ from functools import partial
 from hashlib import sha256
 from typing import Any, Literal, LiteralString, Protocol, cast
 
-from gds_etl_workbench.application.change_sets.model import load_model_physical_scope
-from gds_etl_workbench.application.change_sets.model_validation import PhysicalModelCatalog
-from gds_etl_workbench.application.model_read import ModelReadContext
-from gds_etl_workbench.application.model_snapshot import build_model_snapshot
+from gds_etl_workbench.application.change_sets.project import load_project_physical_scope
+from gds_etl_workbench.application.change_sets.project_validation import PhysicalProjectCatalog
+from gds_etl_workbench.application.project_read import ProjectReadContext
+from gds_etl_workbench.application.project_snapshot import build_project_snapshot
 from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_etl_workbench.domain.metadata_records import AttributeRecord, ObjectRecord
 from gds_etl_workbench.domain.modeling_records import (
     AnalysisResultRecord,
     LogicalAttributeRecord,
     LogicalEntityRecord,
-    ModelDetailsRecord,
     ProfilingProfileRecord,
-    normalize_model_key_value,
+    ProjectDetailsRecord,
+    normalize_project_key_value,
 )
-from gds_etl_workbench.domain.snapshots.model import (
-    AssertionSection,
+from gds_etl_workbench.domain.safe_json import validate_safe_json
+from gds_etl_workbench.domain.snapshots.project import (
     ConceptualSection,
+    ContextSection,
     DimensionalSection,
     LogicalSection,
     MappingSection,
-    ModelDataset,
-    ModelSnapshot,
-    model_snapshot_records,
+    ProjectDataset,
+    ProjectSnapshot,
+    project_snapshot_records,
 )
 from gds_etl_workbench.infrastructure.postgres import ReadTransaction
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from gds_workbench_api.features.assertions.contracts import validate_safe_json
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentContextToolRequestError,
     AgentContextToolResultTooLargeError,
@@ -50,15 +51,15 @@ from gds_workbench_api.features.workflows.authoring.tool_configuration import (
 
 from .context_inputs import OBJECT_FIELDS, natural_key, project_context_inputs
 from .context_readers import FrozenContextReaders
-from .plan import AgentRunPlan, ModelWorkflow, WorkflowExecutionMode
+from .plan import AgentRunPlan, ProjectWorkflow, WorkflowExecutionMode
 from .repair import AgentContextTooLargeError, load_default_agent_context_policy
 
 type SnapshotLoader = Callable[
-    [ReadTransaction, ModelReadContext],
-    Awaitable[ModelSnapshot],
+    [ReadTransaction, ProjectReadContext],
+    Awaitable[ProjectSnapshot],
 ]
 type PhysicalScopeLoader = Callable[
-    [ReadTransaction, ModelReadContext], Awaitable[PhysicalModelCatalog]
+    [ReadTransaction, ProjectReadContext], Awaitable[PhysicalProjectCatalog]
 ]
 type PhysicalObjectKey = tuple[str, str, str, str, str]
 
@@ -128,15 +129,15 @@ _FORBIDDEN_PROVIDER_JSON_VALUE_PREFIXES = (
     "sqlserver://",
 )
 
-_MODEL_FENCE_SQL: LiteralString = """
-SELECT model_id,
+_PROJECT_FENCE_SQL: LiteralString = """
+SELECT project_id,
        tenant_id,
-       model_name,
-       model_revision
-  FROM model.model
+       project_name,
+       project_revision
+  FROM project.project
  WHERE tenant_id = %s
-   AND model_id = %s
-   AND model_revision = %s
+   AND project_id = %s
+   AND project_revision = %s
    AND is_active
 """
 
@@ -145,13 +146,13 @@ SELECT selection.selection_order, selection.modeled_entity_id,
        selection.modeled_entity_schema_name, selection.modeled_entity_name
   FROM application.workflow_run_entity_selection AS selection
   JOIN workflow.logical_entity AS entity
-    ON entity.model_id = selection.model_id
+    ON entity.project_id = selection.project_id
    AND entity.logical_entity_id = selection.modeled_entity_id
    AND lower(btrim(entity.logical_entity_schema_name))
        = lower(btrim(selection.modeled_entity_schema_name))
    AND lower(btrim(entity.logical_entity_name)) = lower(btrim(selection.modeled_entity_name))
    AND entity.logical_entity_status = 'active'
- WHERE selection.workflow_run_id = %s AND selection.model_id = %s
+ WHERE selection.workflow_run_id = %s AND selection.project_id = %s
    AND selection.modeled_entity_type = 'logical_entity'
  ORDER BY selection.selection_order
 """
@@ -186,7 +187,7 @@ WITH selected AS (
            AS selected_object(object_id, selection_order)
 ), eligible_objects AS MATERIALIZED (
     SELECT eligibility.*
-      FROM workflow.list_model_object_eligibility(%s) AS eligibility
+      FROM workflow.list_project_object_eligibility(%s) AS eligibility
 )
 SELECT selected.selection_order,
        eligibility.object_id,
@@ -212,7 +213,8 @@ SELECT selected.selection_order,
     ON object_record.object_id = eligibility.object_id
    AND object_record.connection_id = eligibility.connection_id
   LEFT JOIN workflow.object_enrichment AS enrichment
-    ON enrichment.model_id = eligibility.model_id AND enrichment.object_id = eligibility.object_id
+    ON enrichment.project_id = eligibility.project_id
+   AND enrichment.object_id = eligibility.object_id
   JOIN core.connection AS connection
     ON connection.connection_id = eligibility.connection_id
    AND connection.system_id = eligibility.system_id
@@ -235,7 +237,7 @@ WITH selected AS (
            AS selected_object(object_id, selection_order)
 ), eligible_attributes AS MATERIALIZED (
     SELECT eligibility.*
-      FROM workflow.list_model_attribute_eligibility(%s) AS eligibility
+      FROM workflow.list_project_attribute_eligibility(%s) AS eligibility
 )
 SELECT selected.selection_order,
        eligibility.object_id,
@@ -274,7 +276,7 @@ SELECT selected.selection_order,
     ON attribute.attribute_id = eligibility.attribute_id
    AND attribute.object_id = eligibility.object_id
   LEFT JOIN workflow.attribute_enrichment AS enrichment
-    ON enrichment.model_id = eligibility.model_id
+    ON enrichment.project_id = eligibility.project_id
    AND enrichment.attribute_id = eligibility.attribute_id
   JOIN core.connection AS connection
     ON connection.connection_id = eligibility.connection_id
@@ -338,18 +340,18 @@ SELECT target.object_id,
  ORDER BY target.object_id, source.object_id
 """
 
-_MODEL_GDS_CONTEXT_SQL: LiteralString = """
+_PROJECT_GDS_CONTEXT_SQL: LiteralString = """
 SELECT placement.tenant_code, system.system_code, connection.connection_code,
        'gold'::TEXT AS zone_code, zone.zone_description
-  FROM model.model AS model
-  JOIN core.tenant AS owner ON owner.tenant_id = model.tenant_id AND owner.is_active
+  FROM project.project AS project
+  JOIN core.tenant AS owner ON owner.tenant_id = project.tenant_id AND owner.is_active
   JOIN core.connection AS connection ON connection.connection_id = owner.gds_connection_id
    AND connection.is_active AND connection.is_global_data_store
   JOIN core.tenant AS placement
     ON placement.tenant_id = connection.tenant_id AND placement.is_active
   JOIN core.system AS system ON system.system_id = connection.system_id AND system.is_active
   LEFT JOIN reference.zone AS zone ON zone.zone_code = 'gold'
- WHERE model.model_id = %s AND model.tenant_id = %s AND model.is_active
+ WHERE project.project_id = %s AND project.tenant_id = %s AND project.is_active
 """
 
 _PROFILE_PROVENANCE_SQL: LiteralString = """
@@ -367,9 +369,9 @@ SELECT tenant.tenant_code, system.system_code, connection.connection_code,
   JOIN core.tenant AS tenant ON tenant.tenant_id = connection.tenant_id
   JOIN core.system AS system ON system.system_id = connection.system_id
   LEFT JOIN application.workflow_run AS run
-    ON run.workflow_run_id = profile.workflow_run_id AND run.model_id = profile.model_id
-   AND run.model_workflow = 'profiling'
- WHERE profile.model_id = %s AND profile.object_id = ANY(%s::BIGINT[])
+    ON run.workflow_run_id = profile.workflow_run_id AND run.project_id = profile.project_id
+   AND run.project_workflow = 'profiling'
+ WHERE profile.project_id = %s AND profile.object_id = ANY(%s::BIGINT[])
  ORDER BY profile.object_id, profile.attribute_id
 """
 
@@ -434,12 +436,12 @@ class ApplicableAppliedRecords(BaseModel):
     mapping: MappingSection | None = Field(default=None, repr=False)
 
 
-class AgentModelDependency(BaseModel):
+class AgentProjectDependency(BaseModel):
     """Read-only dependency identity and state, without generated code or Mapping bodies."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    dataset: ModelDataset
+    dataset: ProjectDataset
     record: dict[str, JsonValue] = Field(repr=False)
 
 
@@ -450,14 +452,14 @@ class AgentAuthoringContext(BaseModel):
 
     schema_version: Literal["1.0"] = "1.0"
     workflow_run_id: int = Field(gt=0)
-    model_id: int = Field(gt=0)
-    model_name: str = Field(min_length=1, max_length=255)
-    model_revision: int = Field(gt=0)
-    model_workflow: ModelWorkflow
+    project_id: int = Field(gt=0)
+    project_name: str = Field(min_length=1, max_length=255)
+    project_revision: int = Field(gt=0)
+    project_workflow: ProjectWorkflow
     workflow_execution_mode: WorkflowExecutionMode | None
     modeled_entity_type: Literal["logical_entity", "dimensional_entity"] | None
     selected_scope_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    model_details: ModelDetailsRecord = Field(repr=False)
+    project_details: ProjectDetailsRecord = Field(repr=False)
     selected_objects: tuple[SelectedObjectContext, ...] = Field(repr=False)
     # Read-only physical lineage for Dimensional decisions; never candidate source eligibility.
     supporting_objects: tuple[SelectedObjectContext, ...] = Field(default=(), repr=False)
@@ -466,10 +468,10 @@ class AgentAuthoringContext(BaseModel):
     )
     profiles: tuple[ProfilingProfileRecord, ...] = Field(repr=False)
     analysis_relationships: tuple[AnalysisResultRecord, ...] = Field(repr=False)
-    assertion: AssertionSection = Field(repr=False)
-    assertion_source_scope: tuple[dict[str, str], ...] = Field(default=(), repr=False, exclude=True)
+    context: ContextSection = Field(repr=False)
+    context_source_scope: tuple[dict[str, str], ...] = Field(default=(), repr=False, exclude=True)
     applied: ApplicableAppliedRecords = Field(repr=False)
-    read_only_dependencies: tuple[AgentModelDependency, ...] = Field(default=(), repr=False)
+    read_only_dependencies: tuple[AgentProjectDependency, ...] = Field(default=(), repr=False)
     source_context: tuple[dict[str, JsonValue], ...] = Field(default=(), repr=False)
     gds_context: tuple[dict[str, JsonValue], ...] = Field(default=(), repr=False)
     ingestion_mapping: tuple[dict[str, JsonValue], ...] = Field(default=(), repr=False)
@@ -509,17 +511,17 @@ class InMemoryAgentContextToolCatalog:
             max_result_bytes=max_result_bytes,
         )
         self._readers = FrozenContextReaders(
-            workflow=context.model_workflow,
+            workflow=context.project_workflow,
             values=project_context_inputs(
                 context.model_dump(mode="json"),
-                assertion_source_scope=context.assertion_source_scope,
+                context_source_scope=context.context_source_scope,
             ),
             max_result_bytes=max_result_bytes,
             max_page_records=max_page_records,
             max_cumulative_result_bytes=cumulative_result_bytes,
         )
         self._definitions = registered_tool_definitions(
-            context.model_workflow, max_page_records=max_page_records
+            context.project_workflow, max_page_records=max_page_records
         )
         self._manifest = _context_manifest(
             context,
@@ -662,13 +664,13 @@ class AgentContextBundle:
     context: AgentAuthoringContext = field(repr=False)
     embedded_context: JsonValue = field(repr=False)
     tool_catalog: InMemoryAgentContextToolCatalog | None = field(default=None, repr=False)
-    snapshot: ModelSnapshot | None = field(default=None, repr=False)
-    physical_scope: PhysicalModelCatalog | None = field(default=None, repr=False)
+    snapshot: ProjectSnapshot | None = field(default=None, repr=False)
+    physical_scope: PhysicalProjectCatalog | None = field(default=None, repr=False)
 
     def __repr__(self) -> str:
         return (
-            f"AgentContextBundle(model_id={self.context.model_id}, "
-            f"model_revision={self.context.model_revision}, "
+            f"AgentContextBundle(project_id={self.context.project_id}, "
+            f"project_revision={self.context.project_revision}, "
             f"tool_assisted={self.tool_catalog is not None})"
         )
 
@@ -684,17 +686,17 @@ class AgentContextRepository(Protocol):
 
 
 class PostgresAgentContextRepository:
-    """Load one Model and final-recheck its revision under any read isolation."""
+    """Load one Project and final-recheck its revision under any read isolation."""
 
     def __init__(
         self,
         *,
         snapshot_loader: SnapshotLoader | None = None,
-        physical_scope_loader: PhysicalScopeLoader = load_model_physical_scope,
+        physical_scope_loader: PhysicalScopeLoader = load_project_physical_scope,
         limits: AgentContextLimits | None = None,
     ) -> None:
         self._snapshot_loader = snapshot_loader or partial(
-            build_model_snapshot, enforce_row_limits=False
+            build_project_snapshot, enforce_row_limits=False
         )
         self._physical_scope_loader = physical_scope_loader
         self._limits = limits or load_default_agent_context_limits()
@@ -712,32 +714,32 @@ class PostgresAgentContextRepository:
             > self._limits.max_selected_objects
         ):
             raise AgentContextTooLargeError()
-        if plan.model_workflow == "dimensional" and plan.selected_object_ids:
+        if plan.project_workflow == "dimensional" and plan.selected_object_ids:
             raise AgentContextUnavailableError()
 
         try:
-            model_row = await transaction.fetch_one(
-                _MODEL_FENCE_SQL,
-                (tenant_id, plan.model_id, plan.model_revision),
+            project_row = await transaction.fetch_one(
+                _PROJECT_FENCE_SQL,
+                (tenant_id, plan.project_id, plan.project_revision),
             )
-            if model_row is None:
+            if project_row is None:
                 raise AgentContextUnavailableError()
-            model = _model_context(model_row, tenant_id=tenant_id, plan=plan)
+            project = _project_context(project_row, tenant_id=tenant_id, plan=plan)
 
             object_rows = await transaction.fetch_all(
                 _SELECTED_OBJECTS_SQL,
                 (
                     list(plan.selected_object_ids),
-                    plan.model_id,
-                    plan.model_workflow,
+                    plan.project_id,
+                    plan.project_workflow,
                 ),
             )
             attribute_rows = await transaction.fetch_all(
                 _SELECTED_ATTRIBUTES_SQL,
                 (
                     list(plan.selected_object_ids),
-                    plan.model_id,
-                    plan.model_workflow,
+                    plan.project_id,
+                    plan.project_workflow,
                     None
                     if self._limits.max_selected_attributes is None
                     else self._limits.max_selected_attributes + 1,
@@ -753,25 +755,25 @@ class PostgresAgentContextRepository:
                 object_rows=object_rows,
                 attribute_rows=attribute_rows,
             )
-            snapshot = await self._snapshot_loader(transaction, model)
+            snapshot = await self._snapshot_loader(transaction, project)
             physical_scope = (
-                await self._physical_scope_loader(transaction, model)
-                if plan.model_workflow in {"conceptual", "logical", "dimensional"}
+                await self._physical_scope_loader(transaction, project)
+                if plan.project_workflow in {"conceptual", "logical", "dimensional"}
                 else None
             )
             selected_logical: tuple[SelectedLogicalEntityContext, ...] = ()
             supporting_objects: tuple[SelectedObjectContext, ...] = ()
             evidence_object_ids = plan.selected_object_ids
-            if plan.model_workflow == "dimensional":
+            if plan.project_workflow == "dimensional":
                 entity_rows = await transaction.fetch_all(
-                    _SELECTED_LOGICAL_ENTITIES_SQL, (plan.workflow_run_id, plan.model_id)
+                    _SELECTED_LOGICAL_ENTITIES_SQL, (plan.workflow_run_id, plan.project_id)
                 )
                 if len(entity_rows) != len(plan.selected_entity_ids):
                     raise AgentContextUnavailableError()
                 entity_by_key = {
                     (
-                        normalize_model_key_value(entity.logical_entity_schema_name),
-                        normalize_model_key_value(entity.logical_entity_name),
+                        normalize_project_key_value(entity.logical_entity_schema_name),
+                        normalize_project_key_value(entity.logical_entity_name),
                     ): entity
                     for entity in snapshot.logical.entities
                     if entity.logical_entity_status == "active"
@@ -783,8 +785,8 @@ class PostgresAgentContextRepository:
                     if row["modeled_entity_id"] != entity_id or row["selection_order"] != order:
                         raise AgentContextUnavailableError()
                     key = (
-                        normalize_model_key_value(row["modeled_entity_schema_name"]),
-                        normalize_model_key_value(row["modeled_entity_name"]),
+                        normalize_project_key_value(row["modeled_entity_schema_name"]),
+                        normalize_project_key_value(row["modeled_entity_name"]),
                     )
                     entity = entity_by_key.get(key)
                     if entity is None:
@@ -793,8 +795,8 @@ class PostgresAgentContextRepository:
                         attribute
                         for attribute in snapshot.logical.attributes
                         if (
-                            normalize_model_key_value(attribute.logical_entity_schema_name),
-                            normalize_model_key_value(attribute.logical_entity_name),
+                            normalize_project_key_value(attribute.logical_entity_schema_name),
+                            normalize_project_key_value(attribute.logical_entity_name),
                         )
                         == key
                         and attribute.logical_attribute_status == "active"
@@ -831,7 +833,7 @@ class PostgresAgentContextRepository:
                     )
                     for source in physical_sources:
                         key = _physical_key(source)
-                        if key in physical_scope.model_input_objects:
+                        if key in physical_scope.project_input_objects:
                             support_objects[key] = {
                                 name: getattr(source, name) for name in OBJECT_FIELDS
                             }
@@ -864,13 +866,13 @@ class PostgresAgentContextRepository:
                         raise AgentContextUnavailableError()
                     support_rows = await transaction.fetch_all(
                         _SELECTED_OBJECTS_SQL,
-                        (list(evidence_object_ids), plan.model_id, "dimensional"),
+                        (list(evidence_object_ids), plan.project_id, "dimensional"),
                     )
                     support_attribute_rows = await transaction.fetch_all(
                         _SELECTED_ATTRIBUTES_SQL,
                         (
                             list(evidence_object_ids),
-                            plan.model_id,
+                            plan.project_id,
                             "dimensional",
                             None
                             if self._limits.max_selected_attributes is None
@@ -891,7 +893,7 @@ class PostgresAgentContextRepository:
                         raise AgentContextUnavailableError()
             context = _assemble_context(
                 plan=plan,
-                model=model,
+                project=project,
                 selected=selected,
                 selected_logical=selected_logical,
                 supporting_objects=supporting_objects,
@@ -901,7 +903,7 @@ class PostgresAgentContextRepository:
                 _PROMPT_SOURCE_CONTEXT_SQL, (list(evidence_object_ids), tenant_id)
             )
             provenance_rows = await transaction.fetch_all(
-                _PROFILE_PROVENANCE_SQL, (plan.model_id, list(evidence_object_ids))
+                _PROFILE_PROVENANCE_SQL, (plan.project_id, list(evidence_object_ids))
             )
             context = _with_prompt_evidence(
                 context,
@@ -911,8 +913,10 @@ class PostgresAgentContextRepository:
                 provenance_rows=provenance_rows,
                 evidence_object_ids=evidence_object_ids,
                 placement_rows=(
-                    await transaction.fetch_all(_MODEL_GDS_CONTEXT_SQL, (plan.model_id, tenant_id))
-                    if plan.model_workflow == "dimensional"
+                    await transaction.fetch_all(
+                        _PROJECT_GDS_CONTEXT_SQL, (plan.project_id, tenant_id)
+                    )
+                    if plan.project_workflow == "dimensional"
                     else []
                 ),
             )
@@ -964,18 +968,18 @@ class PostgresAgentContextRepository:
             ):
                 raise AgentContextTooLargeError()
 
-            final_model_row = await transaction.fetch_one(
-                _MODEL_FENCE_SQL,
-                (tenant_id, plan.model_id, plan.model_revision),
+            final_project_row = await transaction.fetch_one(
+                _PROJECT_FENCE_SQL,
+                (tenant_id, plan.project_id, plan.project_revision),
             )
             if (
-                final_model_row is None
-                or _model_context(
-                    final_model_row,
+                final_project_row is None
+                or _project_context(
+                    final_project_row,
                     tenant_id=tenant_id,
                     plan=plan,
                 )
-                != model
+                != project
             ):
                 raise AgentContextUnavailableError()
             return AgentContextBundle(
@@ -991,49 +995,49 @@ class PostgresAgentContextRepository:
             raise AgentContextUnavailableError() from None
 
 
-async def load_frozen_model_graph(
+async def load_frozen_project_graph(
     transaction: ReadTransaction,
     *,
     tenant_id: int,
     plan: AgentRunPlan,
-) -> tuple[ModelSnapshot, PhysicalModelCatalog]:
+) -> tuple[ProjectSnapshot, PhysicalProjectCatalog]:
     """Load backend-only validation evidence inside an authorized repeatable-read context."""
     row = await transaction.fetch_one(
-        _MODEL_FENCE_SQL, (tenant_id, plan.model_id, plan.model_revision)
+        _PROJECT_FENCE_SQL, (tenant_id, plan.project_id, plan.project_revision)
     )
     if row is None:
         raise AgentContextUnavailableError()
-    model = _model_context(row, tenant_id=tenant_id, plan=plan)
-    return await build_model_snapshot(
-        transaction, model, enforce_row_limits=False
-    ), await load_model_physical_scope(transaction, model)
+    project = _project_context(row, tenant_id=tenant_id, plan=plan)
+    return await build_project_snapshot(
+        transaction, project, enforce_row_limits=False
+    ), await load_project_physical_scope(transaction, project)
 
 
-def _model_context(
+def _project_context(
     row: Mapping[str, Any],
     *,
     tenant_id: int,
     plan: AgentRunPlan,
-) -> ModelReadContext:
+) -> ProjectReadContext:
     values = (
-        row.get("model_id"),
+        row.get("project_id"),
         row.get("tenant_id"),
-        row.get("model_name"),
-        row.get("model_revision"),
+        row.get("project_name"),
+        row.get("project_revision"),
     )
     if (
-        values[0] != plan.model_id
+        values[0] != plan.project_id
         or values[1] != tenant_id
         or not isinstance(values[2], str)
         or not values[2]
-        or values[3] != plan.model_revision
+        or values[3] != plan.project_revision
     ):
         raise AgentContextUnavailableError()
-    return ModelReadContext(
-        model_id=plan.model_id,
+    return ProjectReadContext(
+        project_id=plan.project_id,
         tenant_id=tenant_id,
-        model_name=values[2],
-        model_revision=plan.model_revision,
+        project_name=values[2],
+        project_revision=plan.project_revision,
     )
 
 
@@ -1098,7 +1102,7 @@ def _physical_object_groups(
         selection_order, object_record = object_by_id[object_id]
         attributes = attributes_by_object[object_id]
         ordinals = [attribute.attribute_ordinal_position for attribute in attributes]
-        names = [normalize_model_key_value(attribute.attribute_name) for attribute in attributes]
+        names = [normalize_project_key_value(attribute.attribute_name) for attribute in attributes]
         if len(ordinals) != len(set(ordinals)) or len(names) != len(set(names)):
             raise AgentContextUnavailableError()
         selected.append(
@@ -1114,29 +1118,29 @@ def _physical_object_groups(
 def _assemble_context(
     *,
     plan: AgentRunPlan,
-    model: ModelReadContext,
+    project: ProjectReadContext,
     selected: tuple[SelectedObjectContext, ...],
-    snapshot: ModelSnapshot,
+    snapshot: ProjectSnapshot,
     selected_logical: tuple[SelectedLogicalEntityContext, ...] = (),
     supporting_objects: tuple[SelectedObjectContext, ...] = (),
 ) -> AgentAuthoringContext:
     if (
-        snapshot.model_id != model.model_id
-        or snapshot.model_name != model.model_name
-        or snapshot.model_revision != model.model_revision
+        snapshot.project_id != project.project_id
+        or snapshot.project_name != project.project_name
+        or snapshot.project_revision != project.project_revision
     ):
         raise AgentContextUnavailableError()
 
-    if plan.model_workflow in {"logical", "dimensional"}:
-        schemas = getattr(snapshot.model_input_scope.details, f"{plan.model_workflow}_schemas")
+    if plan.project_workflow in {"logical", "dimensional"}:
+        schemas = getattr(snapshot.project_input_scope.details, f"{plan.project_workflow}_schemas")
         if not schemas:
             raise AgentContextUnavailableError()
 
     selected_keys = {_physical_key(item.object) for item in selected}
     if len(selected_keys) != len(selected):
         raise AgentContextUnavailableError()
-    scope_keys = {_physical_key(item) for item in snapshot.model_input_scope.objects}
-    if plan.model_workflow == "dimensional":
+    scope_keys = {_physical_key(item) for item in snapshot.project_input_scope.objects}
+    if plan.project_workflow == "dimensional":
         if selected or len(selected_logical) != len(plan.selected_entity_ids):
             raise AgentContextUnavailableError()
     elif supporting_objects or not selected_keys <= scope_keys:
@@ -1144,14 +1148,14 @@ def _assemble_context(
 
     evidence_keys = selected_keys | {_physical_key(item.object) for item in supporting_objects}
     evidence_attribute_keys = {
-        (*_physical_key(attribute), normalize_model_key_value(attribute.attribute_name))
+        (*_physical_key(attribute), normalize_project_key_value(attribute.attribute_name))
         for item in (*selected, *supporting_objects)
         for attribute in item.attributes
     }
     profiles = tuple(
         profile
         for profile in snapshot.profiling.profiles
-        if (*_physical_key(profile), normalize_model_key_value(profile.attribute_name))
+        if (*_physical_key(profile), normalize_project_key_value(profile.attribute_name))
         in evidence_attribute_keys
     )
     analysis_relationships = tuple(
@@ -1161,47 +1165,46 @@ def _assemble_context(
         or _analysis_endpoint_key(relationship, "to") in evidence_keys
     )
 
-    assertion_records = snapshot.assertion.records
-    assertion_document_names = {
-        normalize_model_key_value(record.modeling_assertion_document_name)
-        for record in assertion_records
+    context_records = snapshot.context.records
+    context_group_names = {
+        normalize_project_key_value(record.context_group_name) for record in context_records
     }
-    assertion_documents = tuple(
+    context_groups = tuple(
         document
-        for document in snapshot.assertion.documents
-        if normalize_model_key_value(document.modeling_assertion_document_name)
-        in assertion_document_names
+        for document in snapshot.context.groups
+        if normalize_project_key_value(document.context_group_name) in context_group_names
     )
 
     applied = _applicable_applied_records(plan, snapshot)
     return AgentAuthoringContext(
         workflow_run_id=plan.workflow_run_id,
-        model_id=model.model_id,
-        model_name=model.model_name,
-        model_revision=model.model_revision,
-        model_workflow=plan.model_workflow,
+        project_id=project.project_id,
+        project_name=project.project_name,
+        project_revision=project.project_revision,
+        project_workflow=plan.project_workflow,
         workflow_execution_mode=plan.workflow_execution_mode,
         modeled_entity_type=plan.modeled_entity_type,
         selected_scope_digest=plan.selected_scope_digest,
-        model_details=snapshot.model_input_scope.details,
+        project_details=snapshot.project_input_scope.details,
         selected_objects=selected,
         supporting_objects=supporting_objects,
         selected_logical_entities=selected_logical,
         profiles=profiles,
         analysis_relationships=analysis_relationships,
-        assertion=AssertionSection(
-            documents=assertion_documents,
-            records=assertion_records,
+        context=ContextSection(
+            types=snapshot.context.types,
+            groups=context_groups,
+            records=context_records,
         ),
         applied=applied,
         read_only_dependencies=(
             modeled_layer_dependencies(
                 snapshot,
                 modeled_entity_type=(
-                    "logical_entity" if plan.model_workflow == "logical" else "dimensional_entity"
+                    "logical_entity" if plan.project_workflow == "logical" else "dimensional_entity"
                 ),
             )
-            if plan.model_workflow in {"logical", "dimensional"}
+            if plan.project_workflow in {"logical", "dimensional"}
             else ()
         ),
     )
@@ -1211,7 +1214,7 @@ def _with_prompt_evidence(
     context: AgentAuthoringContext,
     *,
     plan: AgentRunPlan,
-    snapshot: ModelSnapshot,
+    snapshot: ProjectSnapshot,
     source_rows: list[dict[str, Any]],
     provenance_rows: list[dict[str, Any]],
     placement_rows: list[dict[str, Any]],
@@ -1219,7 +1222,7 @@ def _with_prompt_evidence(
 ) -> AgentAuthoringContext:
     physical_objects = (
         context.supporting_objects
-        if plan.model_workflow == "dimensional"
+        if plan.project_workflow == "dimensional"
         else context.selected_objects
     )
     selected = dict(zip(evidence_object_ids, physical_objects, strict=True))
@@ -1233,7 +1236,7 @@ def _with_prompt_evidence(
             raise AgentContextUnavailableError()
         obj = selected[row["object_id"]].object.model_dump(mode="json")
         key = {name: obj[name] for name in OBJECT_FIELDS}
-        if obj["zone_code"] != "source" and plan.model_workflow != "dimensional":
+        if obj["zone_code"] != "source" and plan.project_workflow != "dimensional":
             placement = {name: obj[name] for name in (*OBJECT_FIELDS[:3], "zone_code")}
             placement["zone_description"] = row["zone_description"]
             placements[(*natural_key(obj, OBJECT_FIELDS[:3]), obj["zone_code"])] = placement
@@ -1274,43 +1277,43 @@ def _with_prompt_evidence(
             row["profiled_at"].isoformat() if row["profiled_at"] is not None else None
         )
         provenance.append(value)
-    # Assertion scope follows authorized source meaning, independent of target registration.
-    assertion_scope = [
-        {"tenant_code": snapshot.model_tenant_code, "system_code": system}
+    # Context scope follows authorized source meaning, independent of target registration.
+    context_scope = [
+        {"tenant_code": snapshot.project_tenant_code, "system_code": system}
         for system in sorted(
             {item.object.system_code for item in physical_objects}
             | {str(source["system_code"]) for source in sources.values()}
         )
-        if snapshot.model_tenant_code
+        if snapshot.project_tenant_code
     ]
-    if plan.model_workflow == "dimensional":
+    if plan.project_workflow == "dimensional":
         entity_keys = {
             (
-                normalize_model_key_value(item.entity.logical_entity_schema_name),
-                normalize_model_key_value(item.entity.logical_entity_name),
+                normalize_project_key_value(item.entity.logical_entity_schema_name),
+                normalize_project_key_value(item.entity.logical_entity_name),
             )
             for item in context.selected_logical_entities
         }
-        source_systems = {source.system_code for source in snapshot.model_input_scope.objects}
+        source_systems = {source.system_code for source in snapshot.project_input_scope.objects}
         source_systems.update(
             mapping.source_system_code
             for mapping in snapshot.mapping.objects
             if mapping.modeled_entity_type == "logical_entity"
             and mapping.object_mapping_status == "active"
             and (
-                normalize_model_key_value(mapping.modeled_entity_schema_name),
-                normalize_model_key_value(mapping.modeled_entity_name),
+                normalize_project_key_value(mapping.modeled_entity_schema_name),
+                normalize_project_key_value(mapping.modeled_entity_name),
             )
             in entity_keys
         )
-        if snapshot.model_tenant_code:
-            assertion_scope.extend(
-                {"tenant_code": snapshot.model_tenant_code, "system_code": system}
+        if snapshot.project_tenant_code:
+            context_scope.extend(
+                {"tenant_code": snapshot.project_tenant_code, "system_code": system}
                 for system in sorted(source_systems)
             )
     return context.model_copy(
         update={
-            "assertion_source_scope": tuple(assertion_scope),
+            "context_source_scope": tuple(context_scope),
             "source_context": tuple(sources.values()),
             "gds_context": tuple(placements.values()),
             "ingestion_mapping": tuple(mappings.values()),
@@ -1320,13 +1323,15 @@ def _with_prompt_evidence(
 
 
 def modeled_layer_dependencies(
-    snapshot: ModelSnapshot, *, modeled_entity_type: Literal["logical_entity", "dimensional_entity"]
-) -> tuple[AgentModelDependency, ...]:
+    snapshot: ProjectSnapshot,
+    *,
+    modeled_entity_type: Literal["logical_entity", "dimensional_entity"],
+) -> tuple[AgentProjectDependency, ...]:
     """Preserve direct downstream references for authoring and repair of either modeled layer."""
 
-    records = model_snapshot_records(snapshot)
+    records = project_snapshot_records(snapshot)
     return tuple(
-        AgentModelDependency(
+        AgentProjectDependency(
             dataset=dataset,
             record=record.model_dump(
                 mode="json",
@@ -1350,23 +1355,23 @@ def modeled_layer_dependencies(
 
 def _applicable_applied_records(
     plan: AgentRunPlan,
-    snapshot: ModelSnapshot,
+    snapshot: ProjectSnapshot,
 ) -> ApplicableAppliedRecords:
     conceptual = None
     logical = None
     dimensional = None
     mapping = None
-    if plan.model_workflow == "conceptual":
+    if plan.project_workflow == "conceptual":
         conceptual = snapshot.conceptual
-    elif plan.model_workflow == "logical":
+    elif plan.project_workflow == "logical":
         # Logical authoring uses physical evidence independently of Conceptual.
         # Keep the full snapshot private for final graph validation only.
         logical = snapshot.logical
-    elif plan.model_workflow == "dimensional":
+    elif plan.project_workflow == "dimensional":
         logical = snapshot.logical
         dimensional = snapshot.dimensional
         mapping = snapshot.mapping
-    elif plan.model_workflow in ("mapping", "code_generation"):
+    elif plan.project_workflow in ("mapping", "code_generation"):
         mapping = snapshot.mapping
         if plan.modeled_entity_type == "logical_entity":
             logical = snapshot.logical
@@ -1384,7 +1389,7 @@ def _physical_key(value: object) -> PhysicalObjectKey:
     return cast(
         PhysicalObjectKey,
         tuple(
-            normalize_model_key_value(getattr(value, field_name))
+            normalize_project_key_value(getattr(value, field_name))
             for field_name in (
                 "tenant_code",
                 "system_code",
@@ -1403,7 +1408,7 @@ def _analysis_endpoint_key(
     return cast(
         PhysicalObjectKey,
         tuple(
-            normalize_model_key_value(getattr(relationship, f"{endpoint}_{field_name}"))
+            normalize_project_key_value(getattr(relationship, f"{endpoint}_{field_name}"))
             for field_name in (
                 "tenant_code",
                 "system_code",
@@ -1495,6 +1500,14 @@ def reject_forbidden_provider_json(
                     or (
                         not allow_identity_keys
                         and normalized_key != "batch_id"
+                        and not (
+                            normalized_key == "context_record_id"
+                            and isinstance(child, str)
+                            and re.fullmatch(
+                                r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                                child,
+                            )
+                        )
                         and (normalized_key.endswith("_id") or normalized_key.endswith("_ids"))
                     )
                     or any(
@@ -1549,7 +1562,7 @@ def _context_datasets(
         )
 
     datasets: dict[str, tuple[JsonValue, ...]] = {
-        "model_details": (cast(JsonValue, context.model_details.model_dump(mode="json")),),
+        "project_details": (cast(JsonValue, context.project_details.model_dump(mode="json")),),
         "selected_object": tuple(selected_objects),
         "selected_attribute": tuple(selected_attributes),
         "selected_logical_entity": tuple(
@@ -1563,16 +1576,18 @@ def _context_datasets(
             cast(JsonValue, record.model_dump(mode="json"))
             for record in context.analysis_relationships
         ),
-        "modeling_assertion_document": tuple(
-            cast(JsonValue, record.model_dump(mode="json"))
-            for record in context.assertion.documents
+        "context_type": tuple(
+            cast(JsonValue, record.model_dump(mode="json")) for record in context.context.types
         ),
-        "modeling_assertion_record": tuple(
-            cast(JsonValue, record.model_dump(mode="json")) for record in context.assertion.records
+        "context_group": tuple(
+            cast(JsonValue, record.model_dump(mode="json")) for record in context.context.groups
+        ),
+        "context_record": tuple(
+            cast(JsonValue, record.model_dump(mode="json")) for record in context.context.records
         ),
     }
     conceptual = context.applied.conceptual
-    if conceptual is not None:
+    if context.project_workflow == "conceptual" and conceptual is not None:
         datasets["conceptual_object"] = _dump_records(conceptual.objects)
         datasets["conceptual_relationship"] = _dump_records(conceptual.relationships)
     logical = context.applied.logical
@@ -1793,9 +1808,9 @@ def _context_manifest(
         )
     manifest: dict[str, JsonValue] = {
         "schema_version": "1.0",
-        "model_name": context.model_name,
-        "model_revision": context.model_revision,
-        "model_workflow": context.model_workflow,
+        "project_name": context.project_name,
+        "project_revision": context.project_revision,
+        "project_workflow": context.project_workflow,
         "workflow_execution_mode": context.workflow_execution_mode,
         "modeled_entity_type": context.modeled_entity_type,
         "selected_scope_digest": context.selected_scope_digest,
@@ -1811,8 +1826,8 @@ def _context_manifest(
         ],
         "schemas": cast(
             JsonValue,
-            context.model_details.model_dump(mode="json").get(
-                f"{context.model_workflow}_schemas", []
+            context.project_details.model_dump(mode="json").get(
+                f"{context.project_workflow}_schemas", []
             ),
         ),
         "dataset_counts": {name: len(rows) for name, rows in datasets.items()},
@@ -1860,12 +1875,15 @@ def _provider_context(context: AgentAuthoringContext) -> JsonValue:
         dict[str, JsonValue],
         context.model_dump(
             mode="json",
-            exclude={"workflow_run_id", "model_id", "assertion_source_scope"},
+            exclude={"workflow_run_id", "project_id", "context_source_scope"},
         ),
     )
+    if context.project_workflow != "conceptual":
+        applied = cast(dict[str, JsonValue], provider_context["applied"])
+        applied["conceptual"] = None
     # Freeze projected inputs before removing internal Tenant/System scope metadata.
     provider_context["prompt_inputs"] = project_context_inputs(
-        context.model_dump(mode="json"), assertion_source_scope=context.assertion_source_scope
+        context.model_dump(mode="json"), context_source_scope=context.context_source_scope
     )
     reject_forbidden_provider_json(provider_context)
     return provider_context

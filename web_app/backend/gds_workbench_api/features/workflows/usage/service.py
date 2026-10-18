@@ -11,14 +11,13 @@ from typing import LiteralString, Protocol
 from uuid import UUID, uuid4
 
 from gds_etl_workbench.domain.errors import DependencyUnavailableError, InvalidRequestError
-from psycopg.types.json import Jsonb
-
 from gds_workbench_api.capabilities import MAX_AGENT_REQUESTS, MAX_AUTHORING_ATTEMPTS
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     LifecycleTransaction,
     workflow_identity_triple,
 )
 from gds_workbench_api.features.workflows.execution.contracts import WorkflowExecutionClaim
+from psycopg.types.json import Jsonb
 
 from .contracts import FoundryModelPricing, ModelRequestRecorder, ModelTokenUsage
 
@@ -71,7 +70,7 @@ class DatabaseWorkflowUsageRecorder:
             row = await transaction.fetch_one(
                 _BEGIN_RUN_SQL,
                 identity
-                + (claim.workflow_run_id, claim.model_revision, claim.workflow_run_claim_token),
+                + (claim.workflow_run_id, claim.project_revision, claim.workflow_run_claim_token),
             )
             if row is None:
                 raise DependencyUnavailableError()
@@ -128,7 +127,7 @@ class _InvocationRecorder:
                 workflow_identity_triple(claim.principal)
                 + (
                     claim.workflow_run_id,
-                    claim.model_revision,
+                    claim.project_revision,
                     claim.workflow_run_claim_token,
                     request_id,
                     self._invocation_id,
@@ -154,7 +153,7 @@ class _InvocationRecorder:
                 workflow_identity_triple(claim.principal)
                 + (
                     claim.workflow_run_id,
-                    claim.model_revision,
+                    claim.project_revision,
                     claim.workflow_run_claim_token,
                     request_id,
                     usage.input_tokens,

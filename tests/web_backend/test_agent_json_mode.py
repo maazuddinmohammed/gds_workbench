@@ -52,7 +52,9 @@ async def test_json_mode_preserves_actual_candidate_schema_tools_repairs_and_usa
     stage = "mapping_authoring" if workflow == "mapping" else "candidate_authoring"
     validator = (
         CompleteMappingCandidateValidator(
-            preparation=mapping_preparation(execution_mode="tool_assisted" if tools else "one_shot")
+            preparation=mapping_preparation(
+                execution_mode="tool_assisted" if tools else "one_shot"
+            )
         )
         if workflow == "mapping"
         else _validator()
@@ -63,7 +65,9 @@ async def test_json_mode_preserves_actual_candidate_schema_tools_repairs_and_usa
         else {"objects": [_object()], "relationships": []}
     )
     wrong_type = deepcopy(candidate)
-    wrong_type["attribute_mappings" if workflow == "mapping" else "objects"] = "invalid type"
+    wrong_type["attribute_mappings" if workflow == "mapping" else "objects"] = (
+        "invalid type"
+    )
     responses = iter(
         (
             '{"incomplete":' if invalid == "malformed" else json.dumps(wrong_type),
@@ -101,19 +105,25 @@ async def test_json_mode_preserves_actual_candidate_schema_tools_repairs_and_usa
                 assert body["reasoning"] == {"effort": effort}
             assert "reasoning_effort" not in body and "response_format" not in body
             formats.append(body["text"]["format"])
-            user_message = next(item for item in body["input"] if item.get("role") == "user")
+            user_message = next(
+                item for item in body["input"] if item.get("role") == "user"
+            )
         else:
             if effort == "default":
                 assert "reasoning_effort" not in body
             else:
                 assert body["reasoning_effort"] == effort
             formats.append(body.get("response_format"))
-            user_message = next(item for item in body["messages"] if item["role"] == "user")
+            user_message = next(
+                item for item in body["messages"] if item["role"] == "user"
+            )
         payload = json.loads(user_message["content"])
         schema_preserved.append(payload["required_output_schema"] == schema)
         repair = payload["context"]["repair"]
         repair_issue_codes.append(
-            [] if repair is None else [item["code"] for item in repair["validation_issues"]]
+            []
+            if repair is None
+            else [item["code"] for item in repair["validation_issues"]]
         )
         tool_response = tools and len(formats) == 1
         response_factory = _responses_response if tools else _response
@@ -132,7 +142,8 @@ async def test_json_mode_preserves_actual_candidate_schema_tools_repairs_and_usa
         )
 
     request = _request(
-        tools=tools, model_code="foundry-gpt-5.6-luna" if effort == "none" else "foundry-primary"
+        tools=tools,
+        model_code="foundry-gpt-5.6-luna" if effort == "none" else "foundry-primary",
     ).model_copy(
         update={
             "workflow": workflow,
@@ -141,7 +152,11 @@ async def test_json_mode_preserves_actual_candidate_schema_tools_repairs_and_usa
         }
     )
     request = request.model_copy(
-        update={"selection": request.selection.model_copy(update={"reasoning_effort_code": effort})}
+        update={
+            "selection": request.selection.model_copy(
+                update={"reasoning_effort_code": effort}
+            )
+        }
     )
     router = _router(monkeypatch, recorder, handler)
     try:

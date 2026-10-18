@@ -7,8 +7,6 @@ from typing import Any, cast
 
 OPAQUE_CONTEXT_DOCUMENT_FIELDS = frozenset(
     {
-        "modeling_assertion_details",
-        "modeling_assertion_source_location",
         "transformation",
         "transformation_document",
         "mapping_transformation_document",
@@ -23,7 +21,11 @@ OPAQUE_CONTEXT_DOCUMENT_FIELDS = frozenset(
 
 def is_internal_context_field(name: str) -> bool:
     """Keep payload and schema projections on the same metadata boundary."""
-    return name.endswith("_id") or name in {"ids", "schema_digest", "schema_digest_is_valid"}
+    return (name.endswith("_id") and name != "context_record_id") or name in {
+        "ids",
+        "schema_digest",
+        "schema_digest_is_valid",
+    }
 
 
 def without_internal_fields(value: Any) -> Any:

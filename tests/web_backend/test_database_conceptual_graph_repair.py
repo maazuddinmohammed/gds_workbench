@@ -37,9 +37,9 @@ from gds_workbench_api.features.workflows.execution.repository import (
 
 from tests.mcp.conftest import DisposablePostgres
 from tests.web_backend.test_conceptual_candidate import _object
-from tests.web_backend.test_database_model_change_sets import (
+from tests.web_backend.test_database_project_change_sets import (
     _create_queued_conceptual_run_with_prompt,
-    _seed_profile_model,
+    _seed_profile_project,
 )
 
 
@@ -48,8 +48,8 @@ async def test_conceptual_graph_failure_repairs_or_retains_complete_rejected_dra
     web_postgres_database: DisposablePostgres,
     repair_succeeds: bool,
 ) -> None:
-    model_id, tenant_id, _, entra_tenant_id, entra_object_id, _ = _seed_profile_model(
-        web_postgres_database
+    project_id, tenant_id, _, entra_tenant_id, entra_object_id, _ = (
+        _seed_profile_project(web_postgres_database)
     )
     with web_postgres_database.connect_owner() as connection:
         object_ids: dict[str, int] = {}
@@ -58,14 +58,14 @@ async def test_conceptual_graph_failure_repairs_or_retains_complete_rejected_dra
             row = connection.execute(
                 """
                 INSERT INTO workflow.conceptual_object (
-                    model_id, conceptual_object_name, conceptual_object_definition,
+                    project_id, conceptual_object_name, conceptual_object_definition,
                     conceptual_object_type, conceptual_object_grain,
                     conceptual_object_confidence
                 ) VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING conceptual_object_id
                 """,
                 (
-                    model_id,
+                    project_id,
                     name,
                     record["conceptual_object_definition"],
                     record["conceptual_object_type"],
@@ -78,7 +78,7 @@ async def test_conceptual_graph_failure_repairs_or_retains_complete_rejected_dra
         connection.execute(
             """
             INSERT INTO workflow.conceptual_relationship (
-                model_id, from_conceptual_object_id, to_conceptual_object_id,
+                project_id, from_conceptual_object_id, to_conceptual_object_id,
                 conceptual_relationship_name, conceptual_relationship_type,
                 conceptual_relationship_definition, conceptual_relationship_cardinality,
                 conceptual_relationship_basis, conceptual_relationship_cardinality_basis
@@ -86,7 +86,7 @@ async def test_conceptual_graph_failure_repairs_or_retains_complete_rejected_dra
                       'Order belongs to customer.', 'many_to_one',
                       'Declared business rule.', 'Many orders per customer.')
             """,
-            (model_id, object_ids["Order"], object_ids["Customer"]),
+            (project_id, object_ids["Order"], object_ids["Customer"]),
         )
         acquired = connection.execute(
             "SELECT acquired FROM security.acquire_tenant_lock(%s, %s, 'user', %s, 60, %s)",
@@ -101,7 +101,7 @@ async def test_conceptual_graph_failure_repairs_or_retains_complete_rejected_dra
     run_id = _create_queued_conceptual_run_with_prompt(
         web_postgres_database,
         tenant_id=tenant_id,
-        model_id=model_id,
+        project_id=project_id,
         entra_tenant_id=entra_tenant_id,
         entra_object_id=entra_object_id,
     )
@@ -149,11 +149,11 @@ async def test_conceptual_graph_failure_repairs_or_retains_complete_rejected_dra
         await lifecycle.start(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             workflow_run_id=run_id,
             expected_workflow="conceptual",
             expected_execution_mode="one_shot",
-            expected_model_revision=1,
+            expected_project_revision=1,
         )
         claim = await DatabaseWorkflowClaimRepository(database=database).claim_next(
             lease_duration_seconds=300
@@ -161,9 +161,9 @@ async def test_conceptual_graph_failure_repairs_or_retains_complete_rejected_dra
         assert claim is not None and claim.workflow_run_id == run_id
         arguments: dict[str, Any] = {
             "tenant_id": tenant_id,
-            "model_id": model_id,
+            "project_id": project_id,
             "workflow_run_id": run_id,
-            "expected_model_revision": 1,
+            "expected_project_revision": 1,
             "workflow_run_claim_token": claim.workflow_run_claim_token,
         }
         if repair_succeeds:
@@ -175,10 +175,10 @@ async def test_conceptual_graph_failure_repairs_or_retains_complete_rejected_dra
             ).apply(
                 principal,
                 tenant_id=tenant_id,
-                model_id=model_id,
+                project_id=project_id,
                 workflow_run_id=run_id,
                 command=ApplyWorkflowDraftRequest(
-                    expected_model_revision=1,
+                    expected_project_revision=1,
                     expected_draft_revision=draft.draft_revision,
                     expected_candidate_digest=draft.candidate_digest,
                 ),
@@ -206,28 +206,28 @@ async def test_conceptual_graph_failure_repairs_or_retains_complete_rejected_dra
         with web_postgres_database.connect_owner() as connection:
             state = connection.execute(
                 """
-                SELECT run.workflow_run_state, model.model_revision,
-                       draft.model_change_set_status, draft.applied_time IS NOT NULL AS applied,
+                SELECT run.workflow_run_state, project.project_revision,
+                       draft.project_change_set_status, draft.applied_time IS NOT NULL AS applied,
                        object.conceptual_object_status, object.conceptual_object_definition,
                        relationship.conceptual_relationship_status,
                        relationship.workflow_run_id AS relationship_run_id,
                        draft.conceptual_document
                   FROM application.workflow_run AS run
-                  JOIN model.model AS model ON model.model_id = run.model_id
-                  JOIN mcp.model_change_set AS draft ON draft.workflow_run_id = run.workflow_run_id
+                  JOIN project.project AS project ON project.project_id = run.project_id
+                  JOIN mcp.project_change_set AS draft ON draft.workflow_run_id = run.workflow_run_id
                   JOIN workflow.conceptual_object AS object
-                    ON object.model_id = model.model_id
+                    ON object.project_id = project.project_id
                    AND object.conceptual_object_name = 'Customer'
                   JOIN workflow.conceptual_relationship AS relationship
-                    ON relationship.model_id = model.model_id
+                    ON relationship.project_id = project.project_id
                  WHERE run.workflow_run_id = %s
                 """,
                 (run_id,),
             ).fetchone()
         assert state is not None
-        assert state["model_revision"] == (2 if repair_succeeds else 1)
+        assert state["project_revision"] == (2 if repair_succeeds else 1)
         assert state["applied"] is repair_succeeds
-        assert state["model_change_set_status"] == (
+        assert state["project_change_set_status"] == (
             "applied" if repair_succeeds else "active"
         )
         assert state["workflow_run_state"] == (

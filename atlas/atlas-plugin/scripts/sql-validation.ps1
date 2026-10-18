@@ -240,11 +240,11 @@ function Get-AtlasGeneratedCodeIssues($States) {
     $state = @($States | Where-Object { $_.Dataset.name -ceq 'generated_code' }) | Select-Object -First 1
     if ($null -eq $state) { return }
     $originals = New-Object 'Collections.Generic.Dictionary[string,object]' ([StringComparer]::Ordinal)
-    foreach ($record in @($state.Baseline)) { $originals[(Get-CanonicalKey 'model' $state.Dataset $record)] = $record }
+    foreach ($record in @($state.Baseline)) { $originals[(Get-CanonicalKey 'project' $state.Dataset $record)] = $record }
     $index = 0
     foreach ($record in @($state.Pending)) {
         $index++
-        $key = Get-CanonicalKey 'model' $state.Dataset $record
+        $key = Get-CanonicalKey 'project' $state.Dataset $record
         if ((Get-Property $record 'code_storage_type') -ceq 'git' -or
             (Get-Property $record 'artifact_type') -cne 'sql_file' -or (Get-Active $record) -ne $true -or
             ($originals.ContainsKey($key) -and (ConvertTo-StableJson $originals[$key]) -ceq (ConvertTo-StableJson $record))) { continue }

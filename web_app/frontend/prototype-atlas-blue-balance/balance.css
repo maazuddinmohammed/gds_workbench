@@ -59,16 +59,16 @@
 }
 .navigator .main-rail .nav-label,
 .navigator .bench-rail .nav-label,
-.navigator .model-shortcut > span,
+.navigator .project-shortcut > span,
 .navigator .rail-foot {
   color: var(--on-brand-muted);
 }
 .navigator .nav-link,
 .navigator .bench-area,
 .navigator .dataset,
-.navigator .model-shortcut strong,
-.navigator .model-shortcut button { color: #fff; }
-.navigator .model-shortcut { border-color: #3f66aa; }
+.navigator .project-shortcut strong,
+.navigator .project-shortcut button { color: #fff; }
+.navigator .project-shortcut { border-color: #3f66aa; }
 .navigator .nav-link:hover,
 .navigator .bench-area:hover,
 .navigator .dataset:hover { background: #164795; }
@@ -88,15 +88,15 @@
 .entry.navigator > .app-masthead { padding-left: 0; }
 .entry.navigator .app-masthead > .brand { padding-left: 38px; }
 
-/* 03 — model context carries the colour; records and navigation remain light. */
+/* 03 — project context carries the colour; records and navigation remain light. */
 .horizon .app-masthead { box-shadow: none; }
-.horizon .model-heading { background: var(--brand); }
-.horizon .model-heading h1 { color: #fff; }
-.horizon .model-heading p,
-.horizon .model-heading .eyebrow,
-.horizon .model-heading .model-status,
-.horizon .model-heading .meta-line { color: var(--on-brand-muted); }
-.horizon .model-heading .live-dot { background: #a8dfc0; }
+.horizon .project-heading { background: var(--brand); }
+.horizon .project-heading h1 { color: #fff; }
+.horizon .project-heading p,
+.horizon .project-heading .eyebrow,
+.horizon .project-heading .project-status,
+.horizon .project-heading .meta-line { color: var(--on-brand-muted); }
+.horizon .project-heading .live-dot { background: #a8dfc0; }
 .entry.horizon .entry-side {
   background: var(--brand);
   box-shadow: 0 0 0 30px var(--brand);

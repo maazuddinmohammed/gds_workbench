@@ -151,7 +151,7 @@
           "classification": "entity",
           "grain": "One row per source user.",
           "entity_schema_name": "silver_people",
-          "assertions": []
+          "context_records": []
         },
         "transformation": {
           "source_tables": [

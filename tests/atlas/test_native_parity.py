@@ -87,25 +87,25 @@ def test_selection_cursor_continues_across_node_and_native(tmp_path: Path) -> No
     assert second["next_cursor"] is None
 
 
-def test_native_selection_preserves_draft_and_attaches_model(tmp_path: Path) -> None:
+def test_native_selection_preserves_draft_and_attaches_project(tmp_path: Path) -> None:
     root = tmp_path / "work"
     native_run("session-init", "--root", str(root), "--tenant", "TENANT_A", "--tenant-id", "1")
     native_run(
-        "model-select",
+        "project-select",
         "--session",
         str(root),
-        "--model-id",
+        "--project-id",
         "41",
-        "--model-name",
-        "Customer Model",
+        "--project-name",
+        "Customer Project",
     )
     native_run(
-        "model-select",
+        "project-select",
         "--session",
         str(root),
-        "--model-id",
+        "--project-id",
         "42",
-        "--model-name",
+        "--project-name",
         "Other",
         success=False,
     )
@@ -161,12 +161,12 @@ def test_native_selection_preserves_draft_and_attaches_model(tmp_path: Path) -> 
     assert selected["records"][0]["object_description"] == draft[0]["object_description"]
 
 
-def test_native_new_model_policy_rejects_unsupported_layout(
+def test_native_new_project_policy_rejects_unsupported_layout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(cases, "run", native_run)
     root = cases.workspace(tmp_path)
-    pending = root / "model-change-set"
+    pending = root / "project-change-set"
     pending.mkdir()
     (pending / "logical_entity.json").write_text(
         json.dumps(
@@ -183,10 +183,10 @@ def test_native_new_model_policy_rejects_unsupported_layout(
             ]
         )
     )
-    result = native_run("validate", "--session", str(root), "--area", "model")
+    result = native_run("validate", "--session", str(root), "--area", "project")
     assert not result["valid"]
     codes = {item["code"] for item in result["issues"]}
-    assert {"model.naming-policy", "model.own-surrogate", "model.audit-order"} <= codes
+    assert {"project.naming-policy", "project.own-surrogate", "project.audit-order"} <= codes
 
 
 def test_native_apply_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -213,34 +213,34 @@ def test_native_refresh_fences_applied_revision_without_pending_rows(
     (root / relative).write_text(
         json.dumps(
             {
-                "schema_version": "1.0",
+                "schema_version": "2.0",
                 "id": operation_id,
                 "task_id": state["active_task"],
-                "area": "model",
+                "area": "project",
                 "owner": {"id": 1, "code": "TENANT_A", "root": "."},
                 "local_digest": "a" * 64,
-                "apply": {"applied": True, "model_revision": 9},
+                "apply": {"applied": True, "project_revision": 9},
             }
         )
     )
-    state["operations"] = {"model": relative}
-    state["refresh_required"] = [{"area": "model", "owner_tenant_id": 1}]
+    state["operations"] = {"project": relative}
+    state["refresh_required"] = [{"area": "project", "owner_tenant_id": 1}]
     state_path.write_text(json.dumps(state))
     source = tmp_path / "download"
-    cases.fixtures.write_model_snapshot(source)
-    snapshot = source / "model/model-snapshot"
+    cases.fixtures.write_project_snapshot(source)
+    snapshot = source / "project/project-snapshot"
     snapshot_id = str(uuid4())
     cases.fixtures.write_snapshot_manifest(
-        snapshot, kind="model", snapshot_id=snapshot_id, model_revision=8
+        snapshot, kind="project", snapshot_id=snapshot_id, project_revision=8
     )
-    archive = tmp_path / "model.zip"
+    archive = tmp_path / "project.zip"
     content = cases.fixtures.archive_snapshot(snapshot, archive)
     result = native_run(
         "snapshot-install",
         "--session",
         str(root),
         "--area",
-        "model",
+        "project",
         "--archive",
         str(archive),
         "--snapshot-id",

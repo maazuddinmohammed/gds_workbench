@@ -71,7 +71,7 @@ class MappingWorkbookEntity:
 
 def build_mapping_workbook(
     *,
-    model_name: str,
+    project_name: str,
     tenant_name: str,
     system_code: str,
     entities: tuple[MappingWorkbookEntity, ...],
@@ -111,7 +111,7 @@ def build_mapping_workbook(
         ):
             # This block is the complete, ordered top-section field mapping.
             header_rows = (
-                ("ModelName", model_name),
+                ("ProjectName", project_name),
                 ("TenantName", tenant_name),
                 ("SystemCode", system_code),
                 ("TargetLayer", entity.target_layer),

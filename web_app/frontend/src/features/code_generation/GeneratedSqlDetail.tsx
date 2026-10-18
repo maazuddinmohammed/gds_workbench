@@ -4,7 +4,7 @@ import { Link } from "@tanstack/react-router";
 
 import { DetailState } from "../../shared/ui";
 import { ApiError } from "../../core/http";
-import type { ModelDetail } from "../models/api";
+import type { ProjectDetail } from "../projects/api";
 import {
   codeGenerationQueryKeys,
   generatedSqlArtifactDownloadPath,
@@ -18,14 +18,14 @@ import { CodeMappingWarnings } from "./CodeMappingWarnings";
 export function GeneratedSqlDetailPage({
   api,
   tenantId,
-  model,
+  project,
   artifactId,
   hasTenantLock,
   hasAppPermission,
 }: {
   api: CodeGenerationApi;
   tenantId: number;
-  model: ModelDetail;
+  project: ProjectDetail;
   artifactId: number;
   hasTenantLock: boolean;
   hasAppPermission: boolean;
@@ -34,8 +34,8 @@ export function GeneratedSqlDetailPage({
   const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [startedRunId, setStartedRunId] = useState<number | null>(null);
   const query = useQuery({
-    queryKey: codeGenerationQueryKeys.artifact(tenantId, model.model_id, artifactId),
-    queryFn: () => api.readGeneratedSqlArtifact(tenantId, model.model_id, artifactId),
+    queryKey: codeGenerationQueryKeys.artifact(tenantId, project.project_id, artifactId),
+    queryFn: () => api.readGeneratedSqlArtifact(tenantId, project.project_id, artifactId),
   });
   if (query.isPending) return <DetailState label="Loading stored SQL…" />;
   if (query.isError) return <DetailState label={detailError(query.error)} error />;
@@ -49,7 +49,7 @@ export function GeneratedSqlDetailPage({
     <>
       <GeneratedSqlDetailView
         tenantId={tenantId}
-        model={model}
+        project={project}
         detail={query.data}
         canGenerate={canGenerate}
         permissionLabel={permissionLabel}
@@ -60,7 +60,7 @@ export function GeneratedSqlDetailPage({
         <CodeGenerationRunDialog
           api={api}
           tenantId={tenantId}
-          model={model}
+          project={project}
           entityType={query.data.entity_type}
           coverage="selected_targets"
           selectedTargets={[targetFromArtifact(query.data)]}
@@ -69,10 +69,10 @@ export function GeneratedSqlDetailPage({
             setStartedRunId(workflowRunId);
             await Promise.all([
               queryClient.invalidateQueries({
-                queryKey: ["code-generation-targets", tenantId, model.model_id],
+                queryKey: ["code-generation-targets", tenantId, project.project_id],
               }),
               queryClient.invalidateQueries({
-                queryKey: codeGenerationQueryKeys.artifact(tenantId, model.model_id, artifactId),
+                queryKey: codeGenerationQueryKeys.artifact(tenantId, project.project_id, artifactId),
               }),
             ]);
           }}
@@ -84,7 +84,7 @@ export function GeneratedSqlDetailPage({
 
 function GeneratedSqlDetailView({
   tenantId,
-  model,
+  project,
   detail,
   canGenerate,
   permissionLabel,
@@ -92,7 +92,7 @@ function GeneratedSqlDetailView({
   onRegenerate,
 }: {
   tenantId: number;
-  model: ModelDetail;
+  project: ProjectDetail;
   detail: GeneratedSqlArtifactDetail;
   canGenerate: boolean;
   permissionLabel: string;
@@ -104,30 +104,32 @@ function GeneratedSqlDetailView({
   const title = `${detail.target.entity_schema_name}.${detail.target.entity_name}`;
   const downloadPath = generatedSqlArtifactDownloadPath(
     tenantId,
-    model.model_id,
+    project.project_id,
     detail.generated_sql_artifact_id,
   );
   return (
     <article className="workflow-detail-page code-generation-detail-page page-enter">
-      <header className="workflow-detail-header code-generation-detail-header">
-        <div>
+      <header className="workflow-detail-header code-generation-detail-header workspace-entity-heading">
+        <div className="workspace-record-heading">
           <Link
             className="text-action"
             search={{ layer: detail.entity_type === "logical_entity" ? "logical" : "dimensional" }}
             aria-label="Back to Code Generation"
-            to="/tenants/$tenantId/code-generation/models/$modelId"
-            params={{ tenantId: String(tenantId), modelId: String(model.model_id) }}
+            to="/tenants/$tenantId/code-generation/projects/$projectId"
+            params={{ tenantId: String(tenantId), projectId: String(project.project_id) }}
           >
             ← Back to Code Generation
           </Link>
           <h1 ref={heading} tabIndex={-1}>{detail.artifact_name}</h1>
+          {!detail.artifact_is_current ? <p className="workspace-record-warning" role="status">
+            Generation context changed. Review this SQL before reuse.
+          </p> : null}
         </div>
         <div className="code-generation-detail-actions">
           <div className="detail-badge-stack">
             <span className={`status-badge ${detail.artifact_is_current ? "is-success" : "is-stale"}`}>
               {detail.artifact_is_current ? "Current" : "Stale"}
             </span>
-            <span className="status-badge is-neutral">{layerLabel(detail.entity_type)}</span>
           </div>
           <div>
             <a className="button button-secondary button-small" href={downloadPath}>Download .sql</a>
@@ -149,14 +151,7 @@ function GeneratedSqlDetailView({
         </p>
       ) : null}
 
-      {!detail.artifact_is_current ? <p className="drawer-warning">Generation context changed. Review this SQL before reuse.</p> : null}
       <CodeMappingWarnings supports={detail.mapping_supports} systemCodes={detail.source_systems.map((system) => system.system_code)} />
-      <dl className="workspace-detail-facts" aria-label="SQL context">
-        <div><dt>Schema</dt><dd>{detail.target.entity_schema_name}</dd></div>
-        <div><dt>Entity</dt><dd>{detail.target.entity_name}</dd></div>
-        <div><dt>Systems</dt><dd>{detail.source_systems.map((system) => system.system_code).join(", ") || "Unavailable"}</dd></div>
-        <div><dt>Status</dt><dd>{humanize(detail.generated_code_status)}</dd></div>
-      </dl>
       <section className="workspace-sql generated-sql-section" aria-labelledby="stored-sql-heading">
         <header>
           <h2 id="stored-sql-heading">Stored SQL</h2>
@@ -164,6 +159,17 @@ function GeneratedSqlDetailView({
         </header>
         <pre tabIndex={0} aria-label={`Stored SQL for ${title}`}><code>{detail.generated_sql}</code></pre>
       </section>
+
+      <details className="workspace-detail-disclosure" aria-labelledby="generated-sql-details-heading">
+        <summary><h2 id="generated-sql-details-heading">SQL details</h2></summary>
+        <dl className="detail-fact-grid" aria-label="SQL context">
+          <div><dt>Schema</dt><dd>{detail.target.entity_schema_name}</dd></div>
+          <div><dt>Entity</dt><dd>{detail.target.entity_name}</dd></div>
+          <div><dt>Systems</dt><dd>{detail.source_systems.map((system) => system.system_code).join(", ") || "Unavailable"}</dd></div>
+          <div><dt>Status</dt><dd>{humanize(detail.generated_code_status)}</dd></div>
+          <div><dt>Layer</dt><dd>{layerLabel(detail.entity_type)}</dd></div>
+        </dl>
+      </details>
 
       <details className="workspace-detail-disclosure" aria-labelledby="generated-sql-mapping-heading">
         <summary>
@@ -186,8 +192,8 @@ function GeneratedSqlDetailView({
                     <td>{support.source.entity_name}</td>
                     <td>{support.dependency_order}</td>
                     <td><Link className="text-action"
-                      to="/tenants/$tenantId/mapping/models/$modelId/objects/$mappingObjectId"
-                      params={{ tenantId: String(tenantId), modelId: String(model.model_id), mappingObjectId: String(support.mapping_object_id) }}
+                      to="/tenants/$tenantId/mapping/projects/$projectId/objects/$mappingObjectId"
+                      params={{ tenantId: String(tenantId), projectId: String(project.project_id), mappingObjectId: String(support.mapping_object_id) }}
                     >Show mapping</Link></td>
                   </tr>
                 ))}

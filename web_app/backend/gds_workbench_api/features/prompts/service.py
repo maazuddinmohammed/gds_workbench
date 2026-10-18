@@ -25,13 +25,13 @@ from gds_etl_workbench.infrastructure.postgres import (
 from gds_workbench_api.features.prompts.contracts import (
     CreatePromptTemplateRequest,
     EffectivePromptSource,
-    ModelPromptAssignments,
-    ModelPromptAssignmentState,
+    ProjectPromptAssignments,
+    ProjectPromptAssignmentState,
     PromptAssignmentConflictError,
     PromptAssignmentTarget,
     PromptConflictError,
-    PromptModelNotFoundError,
     PromptOwnershipScope,
+    PromptProjectNotFoundError,
     PromptStage,
     PromptStageCatalog,
     PromptStageVariable,
@@ -44,7 +44,7 @@ from gds_workbench_api.features.prompts.contracts import (
     PromptTemplateSummary,
     PromptTemplateVersion,
     SavePromptDraftRequest,
-    SetModelPromptAssignmentRequest,
+    SetProjectPromptAssignmentRequest,
     UpdatePromptTemplateRequest,
 )
 from gds_workbench_api.features.workflows.authoring.prompt_inputs import get_prompt_input_contract
@@ -61,7 +61,7 @@ def _documented_variable(
     stage: Mapping[str, Any], variable: PromptStageVariable
 ) -> PromptStageVariable:
     descriptor = get_prompt_input_contract(
-        model_workflow=stage["model_workflow"],
+        project_workflow=stage["project_workflow"],
         workflow_execution_mode=stage["workflow_execution_mode"],
         stage_code=stage["workflow_stage_code"],
         resolver_key=variable.resolver_key,
@@ -79,7 +79,7 @@ def _documented_variable(
 
 _STAGE_CATALOG_SQL = """
 SELECT stage.workflow_stage_id,
-       stage.model_workflow,
+       stage.project_workflow,
        stage.workflow_execution_mode,
        stage.workflow_stage_code,
        stage.workflow_stage_name,
@@ -98,7 +98,7 @@ SELECT stage.workflow_stage_id,
    AND variable.is_active
  WHERE stage.workflow_stage_is_agentic
    AND stage.is_active
- ORDER BY stage.model_workflow,
+ ORDER BY stage.project_workflow,
           stage.workflow_execution_mode NULLS FIRST,
           stage.workflow_stage_order,
           stage.workflow_stage_id,
@@ -110,7 +110,7 @@ SELECT stage.workflow_stage_id,
 _TEMPLATE_LIST_SQL = """
 SELECT template.prompt_template_id,
        template.workflow_stage_id,
-       stage.model_workflow,
+       stage.project_workflow,
        stage.workflow_execution_mode,
        stage.workflow_stage_code,
        stage.workflow_stage_name,
@@ -153,11 +153,11 @@ SELECT template.prompt_template_id,
                AND template.owner_tenant_id = %s
            )
        )
-   AND (%s::VARCHAR IS NULL OR stage.model_workflow = %s)
+   AND (%s::VARCHAR IS NULL OR stage.project_workflow = %s)
    AND (%s::VARCHAR IS NULL OR stage.workflow_execution_mode = %s)
    AND (%s::VARCHAR IS NULL OR stage.workflow_stage_code = %s)
    AND (%s::VARCHAR IS NULL OR latest.prompt_template_version_status = %s)
- ORDER BY stage.model_workflow,
+ ORDER BY stage.project_workflow,
           stage.workflow_execution_mode NULLS FIRST,
           stage.workflow_stage_order,
           lower(template.prompt_template_name),
@@ -168,7 +168,7 @@ SELECT template.prompt_template_id,
 _TEMPLATE_DETAIL_SQL = """
 SELECT template.prompt_template_id,
        template.workflow_stage_id,
-       stage.model_workflow,
+       stage.project_workflow,
        stage.workflow_execution_mode,
        stage.workflow_stage_code,
        stage.workflow_stage_name,
@@ -361,33 +361,33 @@ SELECT saved.prompt_template_version_id,
   ) AS saved
 """
 
-_MODEL_BINDING_SQL = """
-SELECT target_model.model_id,
-       target_model.tenant_id
-  FROM model.model AS target_model
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+_PROJECT_BINDING_SQL = """
+SELECT target_project.project_id,
+       target_project.tenant_id
+  FROM project.project AS target_project
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
 """
 
 _EFFECTIVE_ASSIGNMENTS_SQL = """
 SELECT stage.workflow_stage_id,
-       stage.model_workflow,
+       stage.project_workflow,
        stage.workflow_execution_mode,
        stage.workflow_stage_code,
        stage.workflow_stage_name,
        stage.workflow_stage_order,
-       model_assignment.prompt_assignment_id AS model_assignment_id,
-       model_assignment.prompt_assignment_scope AS model_assignment_scope,
-       model_version.prompt_template_version_id AS model_version_id,
-       model_version.prompt_template_version_number AS model_version_number,
-       model_version.prompt_template_digest AS model_version_digest,
-       model_template.prompt_template_id AS model_template_id,
-       model_template.prompt_template_ownership_scope AS model_template_ownership_scope,
-       model_template.owner_tenant_id AS model_owner_tenant_id,
-       model_template.prompt_template_code AS model_template_code,
-       model_template.prompt_template_name AS model_template_name,
-       model_assignment.created_time AS model_assigned_at,
+       project_assignment.prompt_assignment_id AS project_assignment_id,
+       project_assignment.prompt_assignment_scope AS project_assignment_scope,
+       project_version.prompt_template_version_id AS project_version_id,
+       project_version.prompt_template_version_number AS project_version_number,
+       project_version.prompt_template_digest AS project_version_digest,
+       project_template.prompt_template_id AS project_template_id,
+       project_template.prompt_template_ownership_scope AS project_template_ownership_scope,
+       project_template.owner_tenant_id AS project_owner_tenant_id,
+       project_template.prompt_template_code AS project_template_code,
+       project_template.prompt_template_name AS project_template_name,
+       project_assignment.created_time AS project_assigned_at,
        global_assignment.prompt_assignment_id AS global_assignment_id,
        global_assignment.prompt_assignment_scope AS global_assignment_scope,
        global_version.prompt_template_version_id AS global_version_id,
@@ -400,20 +400,20 @@ SELECT stage.workflow_stage_id,
        global_template.prompt_template_name AS global_template_name,
        global_assignment.created_time AS global_assigned_at
   FROM application.workflow_stage AS stage
-  LEFT JOIN application.prompt_assignment AS model_assignment
-    ON model_assignment.workflow_stage_id = stage.workflow_stage_id
-   AND model_assignment.prompt_assignment_scope = 'model_default'
-   AND model_assignment.model_id = %s
-   AND model_assignment.is_active
-  LEFT JOIN application.prompt_template_version AS model_version
-    ON model_version.prompt_template_version_id =
-       model_assignment.prompt_template_version_id
-  LEFT JOIN application.prompt_template AS model_template
-    ON model_template.prompt_template_id = model_version.prompt_template_id
+  LEFT JOIN application.prompt_assignment AS project_assignment
+    ON project_assignment.workflow_stage_id = stage.workflow_stage_id
+   AND project_assignment.prompt_assignment_scope = 'project_default'
+   AND project_assignment.project_id = %s
+   AND project_assignment.is_active
+  LEFT JOIN application.prompt_template_version AS project_version
+    ON project_version.prompt_template_version_id =
+       project_assignment.prompt_template_version_id
+  LEFT JOIN application.prompt_template AS project_template
+    ON project_template.prompt_template_id = project_version.prompt_template_id
   LEFT JOIN application.prompt_assignment AS global_assignment
     ON global_assignment.workflow_stage_id = stage.workflow_stage_id
    AND global_assignment.prompt_assignment_scope = 'global_default'
-   AND global_assignment.model_id IS NULL
+   AND global_assignment.project_id IS NULL
    AND global_assignment.is_active
   LEFT JOIN application.prompt_template_version AS global_version
     ON global_version.prompt_template_version_id =
@@ -422,14 +422,14 @@ SELECT stage.workflow_stage_id,
     ON global_template.prompt_template_id = global_version.prompt_template_id
  WHERE stage.workflow_stage_is_agentic
    AND stage.is_active
- ORDER BY stage.model_workflow,
+ ORDER BY stage.project_workflow,
           stage.workflow_execution_mode NULLS FIRST,
           stage.workflow_stage_order,
           stage.workflow_stage_id
  LIMIT %s
 """
 
-_SET_MODEL_ASSIGNMENT_SQL = """
+_SET_PROJECT_ASSIGNMENT_SQL = """
 SELECT saved.prompt_assignment_id
   FROM application.set_prompt_assignment(
        %s::UUID,
@@ -524,23 +524,23 @@ class PromptService(Protocol):
         prompt_template_version_id: int,
     ) -> PromptTemplateVersion: ...
 
-    async def list_model_assignments(
+    async def list_project_assignments(
         self,
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
-    ) -> ModelPromptAssignments: ...
+        project_id: int,
+    ) -> ProjectPromptAssignments: ...
 
-    async def set_model_assignment(
+    async def set_project_assignment(
         self,
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_stage_id: int,
-        body: SetModelPromptAssignmentRequest,
-    ) -> ModelPromptAssignmentState: ...
+        body: SetProjectPromptAssignmentRequest,
+    ) -> ProjectPromptAssignmentState: ...
 
 
 class DatabasePromptService:
@@ -604,7 +604,7 @@ class DatabasePromptService:
             stages.append(
                 PromptStage(
                     workflow_stage_id=row["workflow_stage_id"],
-                    model_workflow=row["model_workflow"],
+                    project_workflow=row["project_workflow"],
                     workflow_execution_mode=row["workflow_execution_mode"],
                     workflow_stage_code=row["workflow_stage_code"],
                     workflow_stage_name=row["workflow_stage_name"],
@@ -628,7 +628,7 @@ class DatabasePromptService:
             (
                 "web_prompt_templates",
                 str(tenant_id),
-                filters.model_workflow or "-",
+                filters.project_workflow or "-",
                 filters.workflow_execution_mode or "-",
                 filters.workflow_stage_code or "-",
                 filters.version_status or "-",
@@ -637,7 +637,7 @@ class DatabasePromptService:
         )
         offset = self._cursors.decode(cursor, collection=collection)
         filter_parameters = (
-            filters.model_workflow,
+            filters.project_workflow,
             filters.workflow_execution_mode,
             filters.workflow_stage_code,
             filters.version_status,
@@ -721,9 +721,9 @@ class DatabasePromptService:
             ),
             versions=tuple(PromptTemplateVersion.model_validate(row) for row in version_rows),
             available_tools=(
-                registered_tool_definitions(template_row["model_workflow"])
+                registered_tool_definitions(template_row["project_workflow"])
                 if template_row["workflow_execution_mode"] == "tool_assisted"
-                or template_row["model_workflow"] in ("code_generation", "validation")
+                or template_row["project_workflow"] in ("code_generation", "validation")
                 else ()
             ),
         )
@@ -906,13 +906,13 @@ class DatabasePromptService:
             raise InvalidRequestError("The Prompt Template version could not be changed.")
         return PromptTemplateVersion.model_validate(row)
 
-    async def list_model_assignments(
+    async def list_project_assignments(
         self,
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
-    ) -> ModelPromptAssignments:
+        project_id: int,
+    ) -> ProjectPromptAssignments:
         async with self._database.read_transaction(
             isolation=ReadIsolation.REPEATABLE_READ
         ) as transaction:
@@ -921,64 +921,64 @@ class DatabasePromptService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
-            model_row = await transaction.fetch_one(
-                _MODEL_BINDING_SQL,
-                (tenant_id, model_id),
+            project_row = await transaction.fetch_one(
+                _PROJECT_BINDING_SQL,
+                (tenant_id, project_id),
             )
-            if model_row is None:
-                raise PromptModelNotFoundError()
+            if project_row is None:
+                raise PromptProjectNotFoundError()
             rows = await transaction.fetch_all(
                 _EFFECTIVE_ASSIGNMENTS_SQL,
-                (model_id, 201),
+                (project_id, 201),
             )
         if len(rows) > 200:
             raise InvalidRequestError("The Prompt assignment result exceeds its safe bound.")
-        return ModelPromptAssignments(
+        return ProjectPromptAssignments(
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             items=tuple(_assignment_state(row) for row in rows),
         )
 
-    async def set_model_assignment(
+    async def set_project_assignment(
         self,
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_stage_id: int,
-        body: SetModelPromptAssignmentRequest,
-    ) -> ModelPromptAssignmentState:
+        body: SetProjectPromptAssignmentRequest,
+    ) -> ProjectPromptAssignmentState:
         identity = _identity_arguments(principal)
         async with self._write_transaction() as transaction:
             await self._authorizer.authorize_tenant(
                 transaction,
                 principal,
                 tenant_id=tenant_id,
-                policy=ToolPolicy.TENANT_MODEL_WRITE,
-                model_id=model_id,
+                policy=ToolPolicy.TENANT_PROJECT_WRITE,
+                project_id=project_id,
             )
-            model_row = await transaction.fetch_one(
-                _MODEL_BINDING_SQL,
-                (tenant_id, model_id),
+            project_row = await transaction.fetch_one(
+                _PROJECT_BINDING_SQL,
+                (tenant_id, project_id),
             )
-            if model_row is None:
-                raise PromptModelNotFoundError()
+            if project_row is None:
+                raise PromptProjectNotFoundError()
             await transaction.fetch_one(
-                _SET_MODEL_ASSIGNMENT_SQL,
+                _SET_PROJECT_ASSIGNMENT_SQL,
                 (
                     *identity,
                     workflow_stage_id,
-                    "model_default",
-                    model_id,
+                    "project_default",
+                    project_id,
                     body.prompt_template_version_id,
                     body.expected_prompt_assignment_id,
                 ),
             )
             rows = await transaction.fetch_all(
                 _EFFECTIVE_ASSIGNMENTS_SQL,
-                (model_id, 201),
+                (project_id, 201),
             )
         if len(rows) > 200:
             raise InvalidRequestError("The Prompt assignment result exceeds its safe bound.")
@@ -1024,7 +1024,7 @@ class DatabasePromptService:
                 transaction,
                 principal,
                 tenant_id=context.owner_tenant_id or tenant_id,
-                policy=ToolPolicy.TENANT_MODEL_WRITE,
+                policy=ToolPolicy.TENANT_PROJECT_WRITE,
             )
         return context
 
@@ -1037,7 +1037,9 @@ class DatabasePromptService:
         ownership_scope: PromptOwnershipScope,
     ) -> None:
         policy = (
-            ToolPolicy.TENANT_MODEL_WRITE if ownership_scope == "tenant" else ToolPolicy.TENANT_READ
+            ToolPolicy.TENANT_PROJECT_WRITE
+            if ownership_scope == "tenant"
+            else ToolPolicy.TENANT_READ
         )
         authorization = await self._authorizer.authorize_tenant(
             transaction,
@@ -1064,7 +1066,7 @@ def _identity_arguments(principal: RequestPrincipal) -> tuple[UUID, UUID, str]:
 def _assignment_target(
     row: Mapping[str, Any],
     *,
-    prefix: Literal["model", "global"],
+    prefix: Literal["project", "global"],
 ) -> PromptAssignmentTarget | None:
     assignment_id = row[f"{prefix}_assignment_id"]
     if assignment_id is None:
@@ -1084,25 +1086,25 @@ def _assignment_target(
     )
 
 
-def _assignment_state(row: Mapping[str, Any]) -> ModelPromptAssignmentState:
-    model_assignment = _assignment_target(row, prefix="model")
+def _assignment_state(row: Mapping[str, Any]) -> ProjectPromptAssignmentState:
+    project_assignment = _assignment_target(row, prefix="project")
     global_assignment = _assignment_target(row, prefix="global")
-    effective = model_assignment or global_assignment
+    effective = project_assignment or global_assignment
     source: EffectivePromptSource = (
-        "model_default"
-        if model_assignment is not None
+        "project_default"
+        if project_assignment is not None
         else "global_default"
         if global_assignment is not None
         else "none"
     )
-    return ModelPromptAssignmentState(
+    return ProjectPromptAssignmentState(
         workflow_stage_id=row["workflow_stage_id"],
-        model_workflow=row["model_workflow"],
+        project_workflow=row["project_workflow"],
         workflow_execution_mode=row["workflow_execution_mode"],
         workflow_stage_code=row["workflow_stage_code"],
         workflow_stage_name=row["workflow_stage_name"],
         workflow_stage_order=row["workflow_stage_order"],
-        model_assignment=model_assignment,
+        project_assignment=project_assignment,
         global_assignment=global_assignment,
         effective_source=source,
         effective_assignment=effective,
@@ -1136,13 +1138,13 @@ def _raise_prompt_database_error(error: DependencyUnavailableError) -> Never:
         "stale_prompt_assignment" in message
         or "Prompt assignment does not exist" in message
         or "Prompt assignment requires a published active Prompt" in message
-        or "Prompt does not belong to the Model owner Tenant" in message
+        or "Prompt does not belong to the Project owner Tenant" in message
         or "Prompt assignment scope is invalid" in message
         or "Global default requires a global Prompt" in message
     ):
         raise PromptAssignmentConflictError() from error
-    if "Prompt assignment Model is unavailable" in message:
-        raise PromptModelNotFoundError() from error
+    if "Prompt assignment Project is unavailable" in message:
+        raise PromptProjectNotFoundError() from error
     if "Prompt Template" in message and "unavailable" in message:
         raise PromptTemplateNotFoundError() from error
     if (

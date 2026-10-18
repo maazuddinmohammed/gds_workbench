@@ -12,7 +12,6 @@ from gds_etl_workbench.infrastructure.metadata_visibility import VISIBLE_OBJECTS
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation, ReadTransaction
 from pydantic import Field
 
-from gds_workbench_api.features.models import ModelNotFoundError
 from gds_workbench_api.features.profiling.read_contracts import (
     AttributeProfile,
     ProfileWorkflowProvenance,
@@ -23,24 +22,25 @@ from gds_workbench_api.features.profiling.read_contracts import (
     ProfilingObjectPage,
     ReviewContract,
 )
+from gds_workbench_api.features.projects import ProjectNotFoundError
 
-_MODEL_HEADER_SQL: LiteralString = """
-SELECT target_model.model_id,
-       target_model.model_revision
-  FROM model.model AS target_model
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+_PROJECT_HEADER_SQL: LiteralString = """
+SELECT target_project.project_id,
+       target_project.project_revision
+  FROM project.project AS target_project
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
 """
 
 _PROFILING_OBJECTS_SQL: LiteralString = f"""
 {VISIBLE_OBJECTS_CTE},
-target_model AS (
-    SELECT target_model.model_id
-      FROM model.model AS target_model
-     WHERE target_model.tenant_id = %s
-       AND target_model.model_id = %s
-       AND target_model.is_active
+target_project AS (
+    SELECT target_project.project_id
+      FROM project.project AS target_project
+     WHERE target_project.tenant_id = %s
+       AND target_project.project_id = %s
+       AND target_project.is_active
 )
 SELECT profile.object_id,
        source_tenant.tenant_id AS source_tenant_id,
@@ -55,13 +55,13 @@ SELECT profile.object_id,
        object_record.object_name,
        count(profile.attribute_id)::INTEGER AS profiled_attribute_count,
        max(profile.updated_time) AS last_profiled_at
-  FROM target_model
+  FROM target_project
   JOIN workflow.attribute_profile AS profile
-    ON profile.model_id = target_model.model_id
-  JOIN model.model_input_scope AS model_input_scope
-    ON model_input_scope.model_id = target_model.model_id
-   AND model_input_scope.object_id = profile.object_id
-   AND model_input_scope.is_active
+    ON profile.project_id = target_project.project_id
+  JOIN project.project_input_scope AS project_input_scope
+    ON project_input_scope.project_id = target_project.project_id
+   AND project_input_scope.object_id = profile.object_id
+   AND project_input_scope.is_active
   JOIN visible_objects AS visible_object
     ON visible_object.object_id = profile.object_id
   JOIN core.object AS object_record
@@ -103,12 +103,12 @@ SELECT profile.object_id,
 
 _PROFILING_OBJECT_DETAIL_SQL: LiteralString = f"""
 {VISIBLE_OBJECTS_CTE},
-target_model AS (
-    SELECT target_model.model_id
-      FROM model.model AS target_model
-     WHERE target_model.tenant_id = %s
-       AND target_model.model_id = %s
-       AND target_model.is_active
+target_project AS (
+    SELECT target_project.project_id
+      FROM project.project AS target_project
+     WHERE target_project.tenant_id = %s
+       AND target_project.project_id = %s
+       AND target_project.is_active
 )
 SELECT profile.object_id,
        source_tenant.tenant_id AS source_tenant_id,
@@ -124,13 +124,13 @@ SELECT profile.object_id,
        left(object_record.object_description, 2000) AS object_description,
        count(profile.attribute_id)::INTEGER AS profiled_attribute_count,
        max(profile.updated_time) AS last_profiled_at
-  FROM target_model
+  FROM target_project
   JOIN workflow.attribute_profile AS profile
-    ON profile.model_id = target_model.model_id
-  JOIN model.model_input_scope AS model_input_scope
-    ON model_input_scope.model_id = target_model.model_id
-   AND model_input_scope.object_id = profile.object_id
-   AND model_input_scope.is_active
+    ON profile.project_id = target_project.project_id
+  JOIN project.project_input_scope AS project_input_scope
+    ON project_input_scope.project_id = target_project.project_id
+   AND project_input_scope.object_id = profile.object_id
+   AND project_input_scope.is_active
   JOIN visible_objects AS visible_object
     ON visible_object.object_id = profile.object_id
   JOIN core.object AS object_record
@@ -162,12 +162,12 @@ SELECT profile.object_id,
 """
 
 _ATTRIBUTE_PROFILES_SQL: LiteralString = """
-WITH target_model AS (
-    SELECT target_model.model_id
-      FROM model.model AS target_model
-     WHERE target_model.tenant_id = %s
-       AND target_model.model_id = %s
-       AND target_model.is_active
+WITH target_project AS (
+    SELECT target_project.project_id
+      FROM project.project AS target_project
+     WHERE target_project.tenant_id = %s
+       AND target_project.project_id = %s
+       AND target_project.is_active
 )
 SELECT profile.attribute_id,
        attribute.attribute_name,
@@ -193,13 +193,13 @@ SELECT profile.attribute_id,
        profile.percent_distinct,
        profile.created_time AS created_at,
        profile.updated_time AS updated_at
-  FROM target_model
+  FROM target_project
   JOIN workflow.attribute_profile AS profile
-    ON profile.model_id = target_model.model_id
-  JOIN model.model_input_scope AS model_input_scope
-    ON model_input_scope.model_id = target_model.model_id
-   AND model_input_scope.object_id = profile.object_id
-   AND model_input_scope.is_active
+    ON profile.project_id = target_project.project_id
+  JOIN project.project_input_scope AS project_input_scope
+    ON project_input_scope.project_id = target_project.project_id
+   AND project_input_scope.object_id = profile.object_id
+   AND project_input_scope.is_active
   JOIN core.object AS object_record
     ON object_record.object_id = profile.object_id
    AND object_record.is_active
@@ -221,7 +221,7 @@ class ProfilingReviewService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: ProfilingObjectFilters,
         page_size: int,
         cursor: str | None,
@@ -232,7 +232,7 @@ class ProfilingReviewService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         object_id: int,
     ) -> ProfilingObjectDetail: ...
 
@@ -245,9 +245,9 @@ class ProfilingReviewDatabase(Protocol):
     ) -> AbstractAsyncContextManager[ReadTransaction]: ...
 
 
-class _ModelHeader(ReviewContract):
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+class _ProjectHeader(ReviewContract):
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
 
 
 class DatabaseProfilingReviewService:
@@ -267,7 +267,7 @@ class DatabaseProfilingReviewService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: ProfilingObjectFilters,
         page_size: int,
         cursor: str | None,
@@ -276,7 +276,7 @@ class DatabaseProfilingReviewService:
             json.dumps(
                 {
                     "filters": filters.model_dump(mode="json"),
-                    "model_id": model_id,
+                    "project_id": project_id,
                     "tenant_id": tenant_id,
                 },
                 separators=(",", ":"),
@@ -294,20 +294,20 @@ class DatabaseProfilingReviewService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
             header_row = await transaction.fetch_one(
-                _MODEL_HEADER_SQL,
-                (tenant_id, model_id),
+                _PROJECT_HEADER_SQL,
+                (tenant_id, project_id),
             )
             if header_row is None:
-                raise ModelNotFoundError()
+                raise ProjectNotFoundError()
             rows = await transaction.fetch_all(
                 _PROFILING_OBJECTS_SQL,
                 (
                     tenant_id,
                     tenant_id,
-                    model_id,
+                    project_id,
                     filters.object_id,
                     filters.object_id,
                     filters.source_tenant_code,
@@ -323,7 +323,7 @@ class DatabaseProfilingReviewService:
                 ),
             )
 
-        header = _ModelHeader.model_validate(header_row)
+        header = _ProjectHeader.model_validate(header_row)
         next_cursor = None
         if len(rows) > page_size:
             next_cursor = self._cursors.encode(
@@ -331,8 +331,8 @@ class DatabaseProfilingReviewService:
                 offset=offset + page_size,
             )
         return ProfilingObjectPage(
-            model_id=header.model_id,
-            model_revision=header.model_revision,
+            project_id=header.project_id,
+            project_revision=header.project_revision,
             items=tuple(ProfilingObjectLedgerItem.model_validate(row) for row in rows[:page_size]),
             next_cursor=next_cursor,
         )
@@ -342,7 +342,7 @@ class DatabaseProfilingReviewService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         object_id: int,
     ) -> ProfilingObjectDetail:
         async with self._database.read_transaction(
@@ -353,32 +353,32 @@ class DatabaseProfilingReviewService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
             header_row = await transaction.fetch_one(
-                _MODEL_HEADER_SQL,
-                (tenant_id, model_id),
+                _PROJECT_HEADER_SQL,
+                (tenant_id, project_id),
             )
             if header_row is None:
-                raise ModelNotFoundError()
+                raise ProjectNotFoundError()
             object_row = await transaction.fetch_one(
                 _PROFILING_OBJECT_DETAIL_SQL,
-                (tenant_id, tenant_id, model_id, object_id),
+                (tenant_id, tenant_id, project_id, object_id),
             )
             if object_row is None:
                 raise ProfilingObjectNotFoundError()
             profile_rows = await transaction.fetch_all(
                 _ATTRIBUTE_PROFILES_SQL,
-                (tenant_id, model_id, object_id, 2001),
+                (tenant_id, project_id, object_id, 2001),
             )
 
-        header = _ModelHeader.model_validate(header_row)
+        header = _ProjectHeader.model_validate(header_row)
         profiles = tuple(_normalize_attribute_profile(row) for row in profile_rows[:2000])
         return ProfilingObjectDetail.model_validate(
             {
                 **object_row,
-                "model_id": header.model_id,
-                "model_revision": header.model_revision,
+                "project_id": header.project_id,
+                "project_revision": header.project_revision,
                 "attribute_profiles": profiles,
                 "profiles_truncated": len(profile_rows) > 2000,
             }

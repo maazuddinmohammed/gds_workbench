@@ -109,7 +109,7 @@ class StaticTenantService:
                     system_type_name="Salesforce",
                     connection_count=1,
                     registered_object_count=63,
-                    active_model_count=2,
+                    active_project_count=2,
                     last_metadata_update_time=expires_at,
                 ),
             ),
@@ -357,7 +357,9 @@ async def test_database_tenant_service_reuses_authorization_and_signed_paging() 
 
 
 @pytest.mark.asyncio
-async def test_database_tenant_selection_reauthorizes_and_calls_the_governed_function() -> None:
+async def test_database_tenant_selection_reauthorizes_and_calls_the_governed_function() -> (
+    None
+):
     database = RecordingDatabase()
     service = DatabaseTenantService(
         database=database,
@@ -435,7 +437,7 @@ class TenantHomeTransaction:
                 "system_type_name": "Salesforce",
                 "connection_count": 1,
                 "registered_object_count": 63,
-                "active_model_count": 2,
+                "active_project_count": 2,
                 "last_metadata_update_time": datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
             }
         ]
@@ -458,7 +460,9 @@ class TenantHomeDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_tenant_home_derives_lock_actions_from_role_and_ownership() -> None:
+async def test_database_tenant_home_derives_lock_actions_from_role_and_ownership() -> (
+    None
+):
     service = DatabaseTenantService(
         database=TenantHomeDatabase(),
         authorizer=AuthorizationService(),
@@ -481,4 +485,4 @@ async def test_database_tenant_home_derives_lock_actions_from_role_and_ownership
         can_release=False,
         can_override=True,
     )
-    assert home.systems[0].active_model_count == 2
+    assert home.systems[0].active_project_count == 2

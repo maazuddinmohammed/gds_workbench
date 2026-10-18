@@ -42,26 +42,26 @@ function createRequest(workspace, large, endpoint) {
   const payload = write('metadata-change-set/source_object.json', records);
   const digest = sha(Buffer.concat([Buffer.from(`source_object.json\0${Buffer.byteLength(payload.bytes)}\0`),
     Buffer.from(payload.bytes)]));
-  const catalog = write('metadata/metadata-snapshot/catalog.json', { snapshot_kind: 'metadata',
+  const catalog = write('metadata/metadata-snapshot/catalog.json', { schema_version: '3.0', snapshot_kind: 'metadata',
     sections: [{ name: 'fixture', datasets: [{ name: 'source_object', canonical_key: KEY }] }] });
-  const snapshot = write('metadata/metadata-snapshot/manifest.json', { schema_version: '2.0', snapshot_kind: 'metadata',
+  const snapshot = write('metadata/metadata-snapshot/manifest.json', { schema_version: '3.0', snapshot_kind: 'metadata',
     snapshot_id: SNAPSHOT, tenant_code: 'DEMO', catalog: { path: 'catalog.json', sha256: catalog.hash },
     members: [{ path: 'catalog.json', size_bytes: Buffer.byteLength(catalog.bytes), sha256: catalog.hash }] });
   const inputs=[{area:'metadata',owner_tenant_id:17,manifest_path:'metadata/metadata-snapshot/manifest.json',snapshot_id:SNAPSHOT,manifest_sha256:snapshot.hash}];
   const owner={id:17,code:'DEMO',root:'.'};
-  write('.atlas/session.json',{schema_version:'1.0',tenant:{id:17,code:'DEMO'},model:null,
+  write('.atlas/session.json',{schema_version:'2.0',tenant:{id:17,code:'DEMO'},project:null,
     metadata_owners:{'17':owner},active_task:task,operations:{metadata:{'17':operationPath}}});
-  write(`.atlas/tasks/${task}.json`,{schema_version:'1.0',outcome:'Synthetic Stage verification'});
-  const report=write(`${evidence}/validation.json`,{schema_version:'1.0',area:'metadata',owner_tenant_id:17,
+  write(`.atlas/tasks/${task}.json`,{schema_version:'2.0',outcome:'Synthetic Stage verification'});
+  const report=write(`${evidence}/validation.json`,{schema_version:'2.0',area:'metadata',owner_tenant_id:17,
     valid:true,digest,inputs,evidence_files:[],checks:['synthetic']});
   const manifestPath=`${evidence}/${operation}.stage-request.json`;
-  const manifest=write(manifestPath,{schema_version:'1.0',kind:'atlas-stage-request',area:'metadata',task,
+  const manifest=write(manifestPath,{schema_version:'2.0',kind:'atlas-stage-request',area:'metadata',task,
     operation:{id:operation,path:operationPath},owner,backend,accepted_digest:digest,failed_retry:false,
     snapshot:{manifest_path:'metadata/metadata-snapshot/manifest.json',snapshot_id:SNAPSHOT,manifest_sha256:snapshot.hash},
     target:{tenant_code:'DEMO',change_set_id:ID,starting_revision:1},
     datasets:[{dataset:'source_object',canonical_key:KEY,record_count:records.length,
       payload_file:'metadata-change-set/source_object.json',sha256:payload.hash}]});
-  write(operationPath,{schema_version:'1.0',id:operation,task_id:task,area:'metadata',owner,backend,inputs,
+  write(operationPath,{schema_version:'2.0',id:operation,task_id:task,area:'metadata',owner,backend,inputs,
     local_digest:digest,validation:{outcome:'valid',report_path:`${evidence}/validation.json`,report_sha256:report.hash},
     acknowledgement:{source:'conversation',at:new Date().toISOString(),digest,report_sha256:report.hash},
     draft:{id:ID,revision:1,status:'active',digest},stage_request:{path:manifestPath,sha256:manifest.hash}});

@@ -44,9 +44,7 @@ def test_unselected_attributes_are_preserved_even_when_blank(
     existing: bool,
 ) -> None:
     preparation = mapping_preparation(existing=existing, attribute_count=2)
-    plan = preparation.plan.model_copy(
-        update={"selected_attribute_ids": (701,)}
-    )
+    plan = preparation.plan.model_copy(update={"selected_attribute_ids": (701,)})
     readiness = assess_mapping_readiness(plan=plan, context=preparation.context)
     assert readiness.ready
     assert [row.action for row in readiness.headers[0].attribute_actions] == [
@@ -102,7 +100,8 @@ async def test_declared_physical_references_are_checked_against_frozen_sources(
         "object_mapping": {
             "object_dependency_order": 0,
             "mapping_transformation_document": {
-                "source_objects": sources, "steps": ["Read inputs."]
+                "source_objects": sources,
+                "steps": ["Read inputs."],
             },
         },
         "attribute_mappings": [
@@ -163,7 +162,9 @@ async def test_missing_evidence_only_identifies_a_printable_frozen_attribute(
         target = target.model_copy(
             update={
                 "attributes": (
-                    target.attributes[0].model_copy(update={"attribute_name": attribute_name}),
+                    target.attributes[0].model_copy(
+                        update={"attribute_name": attribute_name}
+                    ),
                 )
             }
         )
@@ -178,14 +179,17 @@ async def test_missing_evidence_only_identifies_a_printable_frozen_attribute(
             "object_mapping": None,
             "attribute_mappings": [],
             "issues": [
-                {"code": "missing_transformation_rule", "modeled_attribute_name": attribute_name}
+                {
+                    "code": "missing_transformation_rule",
+                    "modeled_attribute_name": attribute_name,
+                }
             ],
         }
     )
     assert value.warnings[0].code == "mapping.missing_transformation_rule"
     fixed = (
         "A required transformation rule is missing. "
-        "Add the relevant attribute lineage or business assertion."
+        "Add the relevant attribute lineage or business context record."
     )
     assert value.warnings[0].message == (
         f"Attribute {attribute_name}: {fixed}" if prefixed else fixed

@@ -1,29 +1,29 @@
-"""Human Mapping document editing inside the governed Model review transaction."""
+"""Human Mapping document editing inside the governed Project review transaction."""
 
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from typing import Any, LiteralString, Self, cast
 
-from gds_etl_workbench.application.change_sets.model_validation import (
-    PhysicalModelCatalog,
-    ValidatedModelChangeSet,
+from gds_etl_workbench.application.change_sets.project_validation import (
+    PhysicalProjectCatalog,
+    ValidatedProjectChangeSet,
     validate_future_graph,
 )
 from gds_etl_workbench.application.mapping_context import MAPPING_REFERENCE_TEMPLATE_CODES
-from gds_etl_workbench.application.model_snapshot import ModelReviewSnapshot
+from gds_etl_workbench.application.project_snapshot import ProjectReviewSnapshot
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 from gds_etl_workbench.domain.modeling_records import (
     MappingAttributeRecord,
     MappingObjectRecord,
-    normalize_model_key_value,
+    normalize_project_key_value,
 )
-from gds_etl_workbench.domain.snapshots.model import ModelChangeSetDataset
+from gds_etl_workbench.domain.snapshots.project import ProjectChangeSetDataset
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from gds_workbench_api.features.model_change_sets.editor import (
-    ModelRecordEditor,
-    ModelRecordEditorRequest,
-    SaveModelRecordRequest,
+from gds_workbench_api.features.project_change_sets.editor import (
+    ProjectRecordEditor,
+    ProjectRecordEditorRequest,
+    SaveProjectRecordRequest,
 )
 from gds_workbench_api.features.workflows.authoring.context_inputs import OBJECT_FIELDS
 
@@ -33,21 +33,21 @@ NEW_MAPPING_TARGET_SQL: LiteralString = """
 SELECT entity.modeled_entity_schema_name, entity.modeled_entity_name,
        entity.dependency_order, system.system_code
   FROM workflow.modeled_entity AS entity
-  JOIN model.model AS model ON model.model_id = entity.model_id
+  JOIN project.project AS project ON project.project_id = entity.project_id
   JOIN core.system AS system ON system.system_id = %s AND system.is_active
- WHERE entity.model_id = %s AND entity.modeled_entity_id = %s
+ WHERE entity.project_id = %s AND entity.modeled_entity_id = %s
    AND entity.modeled_entity_type = %s AND entity.status = 'active'
    AND (EXISTS (
-       SELECT 1 FROM workflow.list_mapping_source_objects(entity.model_id,
+       SELECT 1 FROM workflow.list_mapping_source_objects(entity.project_id,
            entity.modeled_entity_id, entity.modeled_entity_type, system.system_id)
-   ) OR (model.default_mapping_source_system_id = system.system_id
-       AND workflow.is_assertion_only_mapping_target(entity.model_id,
+   ) OR (project.default_mapping_source_system_id = system.system_id
+       AND workflow.is_context_only_mapping_target(entity.project_id,
            entity.modeled_entity_id, entity.modeled_entity_type)
        AND EXISTS (SELECT 1 FROM core.connection AS connection
-           WHERE connection.tenant_id = model.tenant_id
+           WHERE connection.tenant_id = project.tenant_id
              AND connection.system_id = system.system_id AND connection.is_active)))
    AND NOT EXISTS (SELECT 1 FROM workflow.mapping_object AS mapping
-       WHERE mapping.model_id = entity.model_id
+       WHERE mapping.project_id = entity.project_id
          AND mapping.modeled_entity_type = entity.modeled_entity_type
          AND coalesce(mapping.logical_entity_id, mapping.dimensional_entity_id) =
              entity.modeled_entity_id
@@ -59,7 +59,7 @@ SELECT entity.modeled_entity_schema_name, entity.modeled_entity_name,
 # including Bronze provenance resolved by the existing eligibility function.
 MAPPING_INPUT_SCOPE_SQL: LiteralString = """
 WITH selected_sources AS MATERIALIZED (
-    SELECT object_id FROM workflow.list_model_input_sources(%s)
+    SELECT object_id FROM workflow.list_project_input_sources(%s)
      WHERE source_system_id = %s ORDER BY object_id LIMIT 201
 )
 SELECT jsonb_build_object('object', jsonb_build_object(
@@ -126,39 +126,39 @@ def _reference_key(reference: Mapping[str, Any]) -> tuple[str, ...]:
         raise InvalidRequestError("Choose an eligible source table.")
     if any(not isinstance(reference.get(key), str) or not reference[key].strip() for key in fields):
         raise InvalidRequestError("A source reference needs its complete identity.")
-    return tuple(normalize_model_key_value(reference[key]) for key in fields)
+    return tuple(normalize_project_key_value(reference[key]) for key in fields)
 
 
 def mapping_record_editor(
-    review: ModelReviewSnapshot,
-    command: ModelRecordEditorRequest,
+    review: ProjectReviewSnapshot,
+    command: ProjectRecordEditorRequest,
     sources: Sequence[Mapping[str, Any]],
-) -> ModelRecordEditor:
+) -> ProjectRecordEditor:
     parent = review.records_by_id.get("mapping_object", {}).get(command.record_id)
     if not isinstance(parent, MappingObjectRecord):
-        raise WorkbenchError("model_record_not_found", "This Mapping is unavailable.")
+        raise WorkbenchError("project_record_not_found", "This Mapping is unavailable.")
     layer = parent.modeled_entity_type.removesuffix("_entity")
     entity_key = (
-        normalize_model_key_value(parent.modeled_entity_schema_name),
-        normalize_model_key_value(parent.modeled_entity_name),
+        normalize_project_key_value(parent.modeled_entity_schema_name),
+        normalize_project_key_value(parent.modeled_entity_name),
     )
     entity = next(
         (
             row
             for row in review.records_by_id.get(f"{layer}_entity", {}).values()
             if (
-                normalize_model_key_value(getattr(row, f"{layer}_entity_schema_name")),
-                normalize_model_key_value(getattr(row, f"{layer}_entity_name")),
+                normalize_project_key_value(getattr(row, f"{layer}_entity_schema_name")),
+                normalize_project_key_value(getattr(row, f"{layer}_entity_name")),
             )
             == entity_key
         ),
         None,
     )
     if entity is None:
-        raise WorkbenchError("model_record_not_found", "This modeled Entity is unavailable.")
+        raise WorkbenchError("project_record_not_found", "This modeled Entity is unavailable.")
     entity_locked = bool(getattr(entity, f"{layer}_entity_is_locked"))
     children = {
-        normalize_model_key_value(row.modeled_attribute_name): row
+        normalize_project_key_value(row.modeled_attribute_name): row
         for row in review.records_by_id.get("mapping_attribute", {}).values()
         if isinstance(row, MappingAttributeRecord) and _same_pair(parent, row)
     }
@@ -166,15 +166,15 @@ def mapping_record_editor(
     protected_child = any(row.attribute_mapping_is_locked for row in children.values())
     for row in review.records_by_id.get(f"{layer}_attribute", {}).values():
         if (
-            normalize_model_key_value(getattr(row, f"{layer}_entity_schema_name")),
-            normalize_model_key_value(getattr(row, f"{layer}_entity_name")),
+            normalize_project_key_value(getattr(row, f"{layer}_entity_schema_name")),
+            normalize_project_key_value(getattr(row, f"{layer}_entity_name")),
         ) != entity_key:
             continue
         protected_child = protected_child or bool(getattr(row, f"{layer}_attribute_is_locked"))
         if getattr(row, f"{layer}_attribute_status") != "active":
             continue
         name = getattr(row, f"{layer}_attribute_name")
-        child = children.get(normalize_model_key_value(name))
+        child = children.get(normalize_project_key_value(name))
         attributes.append(
             {
                 "name": name,
@@ -217,8 +217,8 @@ def mapping_record_editor(
             )
         )
         tables.append({"reference": reference, "label": label, "columns": columns})
-    return ModelRecordEditor(
-        model_revision=review.snapshot.model_revision,
+    return ProjectRecordEditor(
+        project_revision=review.snapshot.project_revision,
         label=(
             f"{parent.modeled_entity_schema_name}.{parent.modeled_entity_name} · "
             f"{parent.source_system_code}"
@@ -240,8 +240,8 @@ def mapping_record_editor(
 
 def _same_pair(parent: MappingObjectRecord, child: MappingAttributeRecord) -> bool:
     return all(
-        normalize_model_key_value(getattr(parent, field))
-        == normalize_model_key_value(getattr(child, field))
+        normalize_project_key_value(getattr(parent, field))
+        == normalize_project_key_value(getattr(child, field))
         for field in (
             "modeled_entity_type",
             "modeled_entity_schema_name",
@@ -252,11 +252,11 @@ def _same_pair(parent: MappingObjectRecord, child: MappingAttributeRecord) -> bo
 
 
 def prepare_mapping_edit(
-    review: ModelReviewSnapshot,
-    command: SaveModelRecordRequest,
-    editor: ModelRecordEditor,
-    physical_scope: PhysicalModelCatalog,
-) -> ValidatedModelChangeSet:
+    review: ProjectReviewSnapshot,
+    command: SaveProjectRecordRequest,
+    editor: ProjectRecordEditor,
+    physical_scope: PhysicalProjectCatalog,
+) -> ValidatedProjectChangeSet:
     if editor.is_locked:
         raise WorkbenchError("record_locked", "Unlock this Mapping and Entity before editing.")
     try:
@@ -284,15 +284,15 @@ def prepare_mapping_edit(
         or dependency_order != parent.object_dependency_order
     ):
         raise WorkbenchError("record_locked", "Object logic is protected by a locked Attribute.")
-    targets = {normalize_model_key_value(item["name"]): item for item in data["attributes"]}
+    targets = {normalize_project_key_value(item["name"]): item for item in data["attributes"]}
     names = [
-        normalize_model_key_value(item.modeled_attribute_name)
+        normalize_project_key_value(item.modeled_attribute_name)
         for item in changes.attribute_mappings
     ]
     if len(names) != len(set(names)) or not set(names) <= targets.keys():
         raise InvalidRequestError("Choose each active target Attribute at most once.")
     existing = {
-        normalize_model_key_value(row.modeled_attribute_name): row
+        normalize_project_key_value(row.modeled_attribute_name): row
         for row in review.records_by_id.get("mapping_attribute", {}).values()
         if isinstance(row, MappingAttributeRecord) and _same_pair(parent, row)
     }
@@ -377,8 +377,8 @@ def prepare_mapping_edit(
                             "Select the source table on the Object before using its columns. "
                             "Remove affected Attribute references before removing a table."
                         )
-                    if not isinstance(column, str) or normalize_model_key_value(column) not in {
-                        normalize_model_key_value(item["name"])
+                    if not isinstance(column, str) or normalize_project_key_value(column) not in {
+                        normalize_project_key_value(item["name"])
                         for item in available[key]["columns"]
                     }:
                         raise InvalidRequestError("A selected source column is no longer eligible.")
@@ -388,7 +388,7 @@ def prepare_mapping_edit(
             "object_dependency_order": dependency_order,
         }
     )
-    staged: dict[ModelChangeSetDataset, list[dict[str, Any]]] = {}
+    staged: dict[ProjectChangeSetDataset, list[dict[str, Any]]] = {}
     if command.mapping_target is not None or edited != parent:
         staged["mapping_object"] = [edited.model_dump(mode="json")]
     if children:
@@ -398,6 +398,6 @@ def prepare_mapping_edit(
     )
     if not validation.valid or validation.candidate_digest is None:
         raise InvalidRequestError(
-            "This Mapping edit conflicts with model references or protected records."
+            "This Mapping edit conflicts with project references or protected records."
         )
     return validation

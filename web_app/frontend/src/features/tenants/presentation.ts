@@ -11,6 +11,6 @@ export function roleLabel(role: TenantRole): string {
   return labels[role];
 }
 
-export function canAuthorModels(role: TenantRole): boolean {
+export function canAuthorProjects(role: TenantRole): boolean {
   return role === "architect" || role === "tenant_admin" || role === "super_admin";
 }

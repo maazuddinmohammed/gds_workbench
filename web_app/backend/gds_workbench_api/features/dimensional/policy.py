@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 from typing import Literal, cast
 
-from gds_etl_workbench.application.change_sets.model import StageModelChange
-from gds_etl_workbench.application.change_sets.model_validation import validate_staged_records
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
+from gds_etl_workbench.application.change_sets.project_validation import validate_staged_records
 from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.domain.model_policy import (
+from gds_etl_workbench.domain.modeling_policy import (
     GoldAuditPolicy,
     GoldPolicyColumn,
     GoldTechnicalPolicy,
@@ -17,9 +17,9 @@ from gds_etl_workbench.domain.modeling_records import (
     DimensionalAttributeRecord,
     DimensionalEntityRecord,
     DimensionalRelationshipRecord,
-    normalize_model_key_value,
+    normalize_project_key_value,
 )
-from gds_etl_workbench.domain.snapshots.model import DimensionalSection
+from gds_etl_workbench.domain.snapshots.project import DimensionalSection
 from pydantic import BaseModel, ValidationError
 
 
@@ -43,12 +43,12 @@ def validate_dimensional_gold_policy(
 
 def project_dimensional_gold_policy(
     *,
-    changes: tuple[StageModelChange, ...],
+    changes: tuple[StageProjectChange, ...],
     applied: DimensionalSection | None,
     raw_technical_template: dict[str, object] | None,
     raw_audit_template: dict[str, object] | None,
     scd_type: Literal["type_1", "type_2"] | None = None,
-) -> tuple[StageModelChange, ...]:
+) -> tuple[StageProjectChange, ...]:
     """Project Entity-local surrogate, Type 2, and audit Attributes.
 
     Relationship-derived Fact/Bridge foreign keys are applied separately after
@@ -186,14 +186,14 @@ def project_dimensional_gold_policy(
             (
                 index + 1
                 for index, column in enumerate(audit_columns)
-                if normalize_model_key_value(column.semantic_name) == "sourcesystemid"
+                if normalize_project_key_value(column.semantic_name) == "sourcesystemid"
             ),
             0,
         )
         audit_columns[history_position:history_position] = history
         specifications.extend((column, "audit", "none") for column in audit_columns)
         normalized_names = [
-            normalize_model_key_value(column.semantic_name) for column, _, _ in specifications
+            normalize_project_key_value(column.semantic_name) for column, _, _ in specifications
         ]
         if len(normalized_names) != len(set(normalized_names)):
             raise DimensionalProjectionConflictError(
@@ -201,7 +201,7 @@ def project_dimensional_gold_policy(
             )
 
         for offset, (column, role, key_role) in enumerate(specifications, start=1):
-            key = (*entity_key, normalize_model_key_value(column.semantic_name))
+            key = (*entity_key, normalize_project_key_value(column.semantic_name))
             existing = attributes.get(key)
             if key_role == "surrogate":
                 ordinal = (
@@ -243,7 +243,7 @@ def project_dimensional_gold_policy(
         if applied_attributes.get(key) != record
     }
 
-    output: list[StageModelChange] = []
+    output: list[StageProjectChange] = []
     for dataset in (
         "dimensional_submodel",
         "dimensional_entity",
@@ -256,9 +256,9 @@ def project_dimensional_gold_policy(
                 for record in sorted(
                     changed_attribute_by_key.values(),
                     key=lambda item: (
-                        normalize_model_key_value(item.dimensional_entity_name),
+                        normalize_project_key_value(item.dimensional_entity_name),
                         item.dimensional_attribute_ordinal_position,
-                        normalize_model_key_value(item.dimensional_attribute_name),
+                        normalize_project_key_value(item.dimensional_attribute_name),
                     ),
                 )
             ]
@@ -266,16 +266,16 @@ def project_dimensional_gold_policy(
             change = changes_by_dataset.get(dataset)
             records = [] if change is None else change.records
         if records:
-            output.append(StageModelChange(dataset=dataset, records=records))
+            output.append(StageProjectChange(dataset=dataset, records=records))
     return tuple(output)
 
 
 def project_dimensional_foreign_key_policy(
     *,
-    changes: tuple[StageModelChange, ...],
+    changes: tuple[StageProjectChange, ...],
     applied: DimensionalSection | None,
     raw_technical_template: dict[str, object] | None,
-) -> tuple[StageModelChange, ...]:
+) -> tuple[StageProjectChange, ...]:
     """Project Fact/Bridge foreign keys and bind their final Relationships."""
 
     if raw_technical_template is None:
@@ -317,12 +317,12 @@ def project_dimensional_foreign_key_policy(
     affected_entity_keys: set[tuple[str, str]] = set()
     for relationship in changed_relationships:
         from_key = (
-            normalize_model_key_value(relationship.from_dimensional_entity_schema_name),
-            normalize_model_key_value(relationship.from_dimensional_entity_name),
+            normalize_project_key_value(relationship.from_dimensional_entity_schema_name),
+            normalize_project_key_value(relationship.from_dimensional_entity_name),
         )
         to_key = (
-            normalize_model_key_value(relationship.to_dimensional_entity_schema_name),
-            normalize_model_key_value(relationship.to_dimensional_entity_name),
+            normalize_project_key_value(relationship.to_dimensional_entity_schema_name),
+            normalize_project_key_value(relationship.to_dimensional_entity_name),
         )
         from_entity = entities.get(from_key)
         to_entity = entities.get(to_key)
@@ -380,7 +380,7 @@ def project_dimensional_foreign_key_policy(
                 ) from None
             attribute_key = (
                 *from_key,
-                normalize_model_key_value(column.semantic_name),
+                normalize_project_key_value(column.semantic_name),
             )
             if attribute_key in projected_fk_keys:
                 raise DimensionalProjectionConflictError(
@@ -433,7 +433,7 @@ def project_dimensional_foreign_key_policy(
             ),
             key=lambda item: (
                 0 if item.dimensional_attribute_key_role == "surrogate" else 1,
-                normalize_model_key_value(item.dimensional_attribute_name),
+                normalize_project_key_value(item.dimensional_attribute_name),
             ),
         )
         audit_attributes = sorted(
@@ -444,7 +444,7 @@ def project_dimensional_foreign_key_policy(
             ),
             key=lambda item: (
                 item.dimensional_attribute_ordinal_position,
-                normalize_model_key_value(item.dimensional_attribute_name),
+                normalize_project_key_value(item.dimensional_attribute_name),
             ),
         )
         next_ordinal = max(
@@ -485,7 +485,7 @@ def project_dimensional_foreign_key_policy(
 
     changed_attribute_by_key = {_attribute_key(record): record for record in changed_attributes}
     changed_attribute_by_key.update(projected_attributes)
-    output: list[StageModelChange] = []
+    output: list[StageProjectChange] = []
     for dataset in (
         "dimensional_submodel",
         "dimensional_entity",
@@ -500,7 +500,7 @@ def project_dimensional_foreign_key_policy(
                     key=lambda item: (
                         _entity_key_from_attribute(item),
                         item.dimensional_attribute_ordinal_position,
-                        normalize_model_key_value(item.dimensional_attribute_name),
+                        normalize_project_key_value(item.dimensional_attribute_name),
                     ),
                 )
             ]
@@ -510,7 +510,7 @@ def project_dimensional_foreign_key_policy(
             change = changes_by_dataset.get(dataset)
             records = [] if change is None else change.records
         if records:
-            output.append(StageModelChange(dataset=dataset, records=records))
+            output.append(StageProjectChange(dataset=dataset, records=records))
     return tuple(output)
 
 
@@ -535,7 +535,7 @@ def _parse_audit_policy(raw_template: dict[str, object]) -> GoldAuditPolicy:
 
 
 def _parse_records[T: BaseModel](
-    change: StageModelChange | None,
+    change: StageProjectChange | None,
     *,
     dataset: Literal[
         "dimensional_entity",
@@ -570,12 +570,13 @@ def _policy_attribute(
                 and existing.dimensional_attribute_key_role == key_role == "none"
             )
         )
-        or normalize_model_key_value(existing.dimensional_attribute_data_type)
-        != normalize_model_key_value(column.data_type)
+        or normalize_project_key_value(existing.dimensional_attribute_data_type)
+        != normalize_project_key_value(column.data_type)
         or existing.dimensional_attribute_is_nullable != column.nullable
         or existing.dimensional_attribute_key_role != key_role
         or (
-            existing.sources and normalize_model_key_value(column.semantic_name) != "sourcesystemid"
+            existing.sources
+            and normalize_project_key_value(column.semantic_name) != "sourcesystemid"
         )
     ):
         raise DimensionalProjectionConflictError(
@@ -613,16 +614,16 @@ def _policy_attribute(
 
 def _entity_key(record: DimensionalEntityRecord) -> tuple[str, str]:
     return (
-        normalize_model_key_value(record.dimensional_entity_schema_name),
-        normalize_model_key_value(record.dimensional_entity_name),
+        normalize_project_key_value(record.dimensional_entity_schema_name),
+        normalize_project_key_value(record.dimensional_entity_name),
     )
 
 
 def _attribute_key(record: DimensionalAttributeRecord) -> tuple[str, str, str]:
     return (
-        normalize_model_key_value(record.dimensional_entity_schema_name),
-        normalize_model_key_value(record.dimensional_entity_name),
-        normalize_model_key_value(record.dimensional_attribute_name),
+        normalize_project_key_value(record.dimensional_entity_schema_name),
+        normalize_project_key_value(record.dimensional_entity_name),
+        normalize_project_key_value(record.dimensional_attribute_name),
     )
 
 

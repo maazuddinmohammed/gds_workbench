@@ -1,1 +1,1 @@
-"""Governed Model workflow read tools."""
+"""Governed Project workflow read tools."""

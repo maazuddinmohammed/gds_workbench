@@ -1,9 +1,9 @@
 import type { HttpRequest } from "../../core/http";
-import type { ModelWorkflow, WorkflowExecutionMode } from "../workflows/api";
+import type { ProjectWorkflow, WorkflowExecutionMode } from "../workflows/api";
 
 export type PromptOwnershipScope = "global" | "tenant";
 export type PromptVersionStatus = "draft" | "published" | "retired";
-export type PromptWorkflow = ModelWorkflow | "metadata_enrichment_object" | "metadata_enrichment_attribute";
+export type PromptWorkflow = ProjectWorkflow | "metadata_enrichment_object" | "metadata_enrichment_attribute";
 
 export interface PromptStageVariable {
   name: string;
@@ -23,7 +23,7 @@ export interface PromptStageVariable {
 
 export interface PromptStage {
   workflow_stage_id: number;
-  model_workflow: PromptWorkflow;
+  project_workflow: PromptWorkflow;
   workflow_execution_mode: WorkflowExecutionMode | null;
   workflow_stage_code: string;
   workflow_stage_name: string;
@@ -47,7 +47,7 @@ export interface PromptTemplateFilters {
 export interface PromptTemplateSummary {
   prompt_template_id: number;
   workflow_stage_id: number;
-  model_workflow: PromptWorkflow;
+  project_workflow: PromptWorkflow;
   workflow_execution_mode: WorkflowExecutionMode | null;
   workflow_stage_code: string;
   workflow_stage_name: string;
@@ -154,7 +154,7 @@ export interface PromptPreview {
 
 export interface PromptAssignmentTarget {
   prompt_assignment_id: number;
-  prompt_assignment_scope: "global_default" | "model_default";
+  prompt_assignment_scope: "global_default" | "project_default";
   prompt_template_version_id: number;
   prompt_template_version_number: number;
   prompt_template_digest: string;
@@ -166,26 +166,26 @@ export interface PromptAssignmentTarget {
   assigned_at: string;
 }
 
-export interface ModelPromptAssignmentState {
+export interface ProjectPromptAssignmentState {
   workflow_stage_id: number;
-  model_workflow: PromptWorkflow;
+  project_workflow: PromptWorkflow;
   workflow_execution_mode: WorkflowExecutionMode | null;
   workflow_stage_code: string;
   workflow_stage_name: string;
   workflow_stage_order: number;
-  model_assignment: PromptAssignmentTarget | null;
+  project_assignment: PromptAssignmentTarget | null;
   global_assignment: PromptAssignmentTarget | null;
-  effective_source: "global_default" | "model_default" | "none";
+  effective_source: "global_default" | "project_default" | "none";
   effective_assignment: PromptAssignmentTarget | null;
 }
 
-export interface ModelPromptAssignments {
+export interface ProjectPromptAssignments {
   tenant_id: number;
-  model_id: number;
-  items: ModelPromptAssignmentState[];
+  project_id: number;
+  items: ProjectPromptAssignmentState[];
 }
 
-export interface SetModelPromptAssignmentCommand {
+export interface SetProjectPromptAssignmentCommand {
   prompt_template_version_id: number | null;
   expected_prompt_assignment_id: number | null;
 }
@@ -231,16 +231,16 @@ export interface PromptsApi {
     promptTemplateId: number,
     promptTemplateVersionId: number,
   ) => Promise<PromptTemplateVersion>;
-  listModelPromptAssignments: (
+  listProjectPromptAssignments: (
     tenantId: number,
-    modelId: number,
-  ) => Promise<ModelPromptAssignments>;
-  setModelPromptAssignment: (
+    projectId: number,
+  ) => Promise<ProjectPromptAssignments>;
+  setProjectPromptAssignment: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     workflowStageId: number,
-    command: SetModelPromptAssignmentCommand,
-  ) => Promise<ModelPromptAssignmentState>;
+    command: SetProjectPromptAssignmentCommand,
+  ) => Promise<ProjectPromptAssignmentState>;
 }
 
 export function createPromptsApi(request: HttpRequest): PromptsApi {
@@ -294,13 +294,13 @@ export function createPromptsApi(request: HttpRequest): PromptsApi {
         `/api/v1/tenants/${tenantId}/prompts/templates/${promptTemplateId}/versions/${promptTemplateVersionId}/retire`,
         { method: "POST" },
       ),
-    listModelPromptAssignments: (tenantId, modelId) =>
-      request<ModelPromptAssignments>(
-        `/api/v1/tenants/${tenantId}/prompts/models/${modelId}/assignments`,
+    listProjectPromptAssignments: (tenantId, projectId) =>
+      request<ProjectPromptAssignments>(
+        `/api/v1/tenants/${tenantId}/prompts/projects/${projectId}/assignments`,
       ),
-    setModelPromptAssignment: (tenantId, modelId, workflowStageId, command) =>
-      request<ModelPromptAssignmentState>(
-        `/api/v1/tenants/${tenantId}/prompts/models/${modelId}/assignments/${workflowStageId}`,
+    setProjectPromptAssignment: (tenantId, projectId, workflowStageId, command) =>
+      request<ProjectPromptAssignmentState>(
+        `/api/v1/tenants/${tenantId}/prompts/projects/${projectId}/assignments/${workflowStageId}`,
         {
           method: "PUT",
           headers: { "content-type": "application/json" },
@@ -329,8 +329,8 @@ export const promptQueryKeys = {
   template: (tenantId: number, promptTemplateId: number) => (
     ["prompt-template", tenantId, promptTemplateId] as const
   ),
-  modelAssignments: (tenantId: number, modelId: number) => (
-    ["model-prompt-assignments", tenantId, modelId] as const
+  projectAssignments: (tenantId: number, projectId: number) => (
+    ["project-prompt-assignments", tenantId, projectId] as const
   ),
   assignableVersions: (tenantId: number, workflowStageId: number) => (
     ["assignable-prompt-versions", tenantId, workflowStageId] as const

@@ -10,20 +10,20 @@ from typing import Any, Protocol
 from uuid import UUID, uuid4
 
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.model import (
-    StageModelChange,
-    model_change_set_documents,
-    model_validation_outcome,
-    pending_model_change_set_datasets,
-    validate_locked_model_change_set,
-    validate_model_change_set_document_bounds,
-    validate_model_stage_changes,
+from gds_etl_workbench.application.change_sets.project import (
+    StageProjectChange,
+    pending_project_change_set_datasets,
+    project_change_set_documents,
+    project_validation_outcome,
+    validate_locked_project_change_set,
+    validate_project_change_set_document_bounds,
+    validate_project_stage_changes,
 )
-from gds_etl_workbench.application.change_sets.model_validation import (
-    ModelValidationIssue,
-    ValidatedModelChangeSet,
+from gds_etl_workbench.application.change_sets.project_validation import (
+    ProjectValidationIssue,
+    ValidatedProjectChangeSet,
 )
-from gds_etl_workbench.application.model_read import ModelReadContext
+from gds_etl_workbench.application.project_read import ProjectReadContext
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import (
     AuthorizationDeniedError,
@@ -31,15 +31,15 @@ from gds_etl_workbench.domain.errors import (
     InvalidRequestError,
     WorkbenchError,
 )
-from gds_etl_workbench.domain.snapshots.model import DATASETS_BY_NAME
+from gds_etl_workbench.domain.snapshots.project import DATASETS_BY_NAME
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 from pydantic import BaseModel, ConfigDict, Field
 
-from gds_workbench_api.features.model_change_sets.repository import (
-    PostgresModelChangeSetRepository,
+from gds_workbench_api.features.project_change_sets.repository import (
+    PostgresProjectChangeSetRepository,
     require_datetime,
 )
-from gds_workbench_api.features.models import ModelNotFoundError, ModelRevisionConflictError
+from gds_workbench_api.features.projects import ProjectNotFoundError, ProjectRevisionConflictError
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
     AgentWorkflowTerminalResult,
@@ -47,15 +47,15 @@ from gds_workbench_api.features.workflows.authoring.lifecycle import (
     complete_agent_workflow_run,
     fail_agent_workflow_run,
 )
-from gds_workbench_api.features.workflows.authoring.plan import ModelWorkflow
+from gds_workbench_api.features.workflows.authoring.plan import ProjectWorkflow
 from gds_workbench_api.features.workflows.execution.fence import (
     assert_workflow_run_claim,
 )
 from gds_workbench_api.features.workflows.runs import WorkflowRunNotFoundError
 
 type ChangeSetValidator = Callable[
-    [WriteTransaction, ModelReadContext, Mapping[str, Any]],
-    Awaitable[ValidatedModelChangeSet],
+    [WriteTransaction, ProjectReadContext, Mapping[str, Any]],
+    Awaitable[ValidatedProjectChangeSet],
 ]
 
 _AUTHORING_WORKFLOWS = frozenset(
@@ -80,9 +80,9 @@ class WorkflowChangeSetDatabase(Protocol):
 class WorkflowChangeSetHandoffResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    model_id: int = Field(gt=0)
+    project_id: int = Field(gt=0)
     workflow_run_id: int = Field(gt=0)
-    model_change_set_id: UUID
+    project_change_set_id: UUID
     replayed: bool
     draft_revision: int = Field(gt=0)
     candidate_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -100,11 +100,11 @@ class WorkflowChangeSetFinalizationResult(BaseModel):
 class WorkflowChangeSetValidationError(WorkbenchError):
     __slots__ = ("issues",)
 
-    def __init__(self, issues: tuple[ModelValidationIssue, ...]) -> None:
+    def __init__(self, issues: tuple[ProjectValidationIssue, ...]) -> None:
         self.issues = issues
         super().__init__(
             code="workflow_change_set_validation_failed",
-            message="Authoritative Model Change Set validation failed.",
+            message="Authoritative Project Change Set validation failed.",
         )
 
 
@@ -114,13 +114,13 @@ class WorkflowChangeSetFinalizer(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_model_revision: int,
+        expected_workflow: ProjectWorkflow,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
-        changes: tuple[StageModelChange, ...],
-        issues: tuple[ModelValidationIssue, ...],
+        changes: tuple[StageProjectChange, ...],
+        issues: tuple[ProjectValidationIssue, ...],
         failure_code: str,
         safe_failure_message: str,
     ) -> object: ...
@@ -130,12 +130,12 @@ class WorkflowChangeSetFinalizer(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_model_revision: int,
+        expected_workflow: ProjectWorkflow,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
-        changes: tuple[StageModelChange, ...],
+        changes: tuple[StageProjectChange, ...],
         final_event: AgentWorkflowEvent,
     ) -> WorkflowChangeSetFinalizationResult: ...
 
@@ -153,7 +153,7 @@ class WorkflowChangeSetHandoff:
         self._database = database
         self._authorizer = authorizer
         self._validator = validator or partial(
-            validate_locked_model_change_set, enforce_row_limits=False
+            validate_locked_project_change_set, enforce_row_limits=False
         )
 
     async def handoff(
@@ -161,12 +161,12 @@ class WorkflowChangeSetHandoff:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_model_revision: int,
+        expected_workflow: ProjectWorkflow,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
-        changes: tuple[StageModelChange, ...],
+        changes: tuple[StageProjectChange, ...],
     ) -> WorkflowChangeSetHandoffResult:
         staged, staged_record_count = self._validate_changes(
             expected_workflow=expected_workflow,
@@ -183,10 +183,10 @@ class WorkflowChangeSetHandoff:
                 transaction,
                 principal,
                 tenant_id=tenant_id,
-                model_id=model_id,
+                project_id=project_id,
                 workflow_run_id=workflow_run_id,
                 expected_workflow=expected_workflow,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 staged=staged,
                 staged_record_count=staged_record_count,
             )
@@ -196,12 +196,12 @@ class WorkflowChangeSetHandoff:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_model_revision: int,
+        expected_workflow: ProjectWorkflow,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
-        changes: tuple[StageModelChange, ...],
+        changes: tuple[StageProjectChange, ...],
         final_event: AgentWorkflowEvent,
     ) -> WorkflowChangeSetFinalizationResult:
         """Validate the draft, append its exact event, and complete atomically."""
@@ -227,10 +227,10 @@ class WorkflowChangeSetHandoff:
                 transaction,
                 principal,
                 tenant_id=tenant_id,
-                model_id=model_id,
+                project_id=project_id,
                 workflow_run_id=workflow_run_id,
                 expected_workflow=expected_workflow,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 staged=staged,
                 staged_record_count=staged_record_count,
             )
@@ -238,14 +238,14 @@ class WorkflowChangeSetHandoff:
                 transaction,
                 principal,
                 workflow_run_id=workflow_run_id,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 event=final_event,
             )
             completion = await complete_agent_workflow_run(
                 transaction,
                 principal,
                 workflow_run_id=workflow_run_id,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 finding_count=staged_record_count,
             )
             return WorkflowChangeSetFinalizationResult(
@@ -258,13 +258,13 @@ class WorkflowChangeSetHandoff:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_model_revision: int,
+        expected_workflow: ProjectWorkflow,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
-        changes: tuple[StageModelChange, ...],
-        issues: tuple[ModelValidationIssue, ...],
+        changes: tuple[StageProjectChange, ...],
+        issues: tuple[ProjectValidationIssue, ...],
         failure_code: str,
         safe_failure_message: str,
     ) -> AgentWorkflowTerminalResult:
@@ -281,38 +281,38 @@ class WorkflowChangeSetHandoff:
                 workflow_run_id=workflow_run_id,
                 workflow_run_claim_token=workflow_run_claim_token,
             )
-            current, model, _replayed = await self._stage_in_transaction(
+            current, project, _replayed = await self._stage_in_transaction(
                 transaction,
                 principal,
                 tenant_id=tenant_id,
-                model_id=model_id,
+                project_id=project_id,
                 workflow_run_id=workflow_run_id,
                 expected_workflow=expected_workflow,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 staged=staged,
                 staged_record_count=staged_record_count,
             )
-            if current["model_change_set_status"] != "active":
+            if current["project_change_set_status"] != "active":
                 raise InvalidRequestError("Only an active rejected draft can be retained.")
-            if model.model_revision != expected_model_revision:
-                raise ModelRevisionConflictError()
-            validation = await self._validator(transaction, model, current)
+            if project.project_revision != expected_project_revision:
+                raise ProjectRevisionConflictError()
+            validation = await self._validator(transaction, project, current)
             if validation.valid:
                 raise InvalidRequestError("The candidate no longer fails authoritative validation.")
-            repository = PostgresModelChangeSetRepository(transaction)
-            change_set_id = current["model_change_set_id"]
+            repository = PostgresProjectChangeSetRepository(transaction)
+            change_set_id = current["project_change_set_id"]
             retained = await repository.record_validation(
                 change_set_id=change_set_id,
                 status="active",
                 candidate_digest=None,
-                outcome=model_validation_outcome(validation),
+                outcome=project_validation_outcome(validation),
                 valid=False,
             )
             if retained is None:
                 raise DependencyUnavailableError()
             await repository.insert_event(
                 change_set_id=change_set_id,
-                model_id=model_id,
+                project_id=project_id,
                 event_type="validation_failed",
                 draft_revision=retained["draft_revision"],
                 section=None,
@@ -325,7 +325,7 @@ class WorkflowChangeSetHandoff:
                 transaction,
                 principal,
                 workflow_run_id=workflow_run_id,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 failure_code=failure_code,
                 safe_failure_message=safe_failure_message,
             )
@@ -336,27 +336,27 @@ class WorkflowChangeSetHandoff:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_model_revision: int,
+        expected_workflow: ProjectWorkflow,
+        expected_project_revision: int,
         staged: dict[str, list[dict[str, object]]],
         staged_record_count: int,
-    ) -> tuple[Mapping[str, Any], ModelReadContext, bool]:
-        repository = PostgresModelChangeSetRepository(transaction)
-        model_row = await repository.get_model_for_update(
+    ) -> tuple[Mapping[str, Any], ProjectReadContext, bool]:
+        repository = PostgresProjectChangeSetRepository(transaction)
+        project_row = await repository.get_project_for_update(
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
         )
-        if model_row is None:
-            raise ModelNotFoundError()
+        if project_row is None:
+            raise ProjectNotFoundError()
 
         authorization = await self._authorizer.authorize_tenant(
             transaction,
             principal,
             tenant_id=tenant_id,
-            policy=ToolPolicy.TENANT_MODEL_WRITE,
-            model_id=model_id,
+            policy=ToolPolicy.TENANT_PROJECT_WRITE,
+            project_id=project_id,
         )
         source_tenants = authorization.readable_source_tenant_ids
         principal_id = authorization.principal.principal_id
@@ -365,13 +365,13 @@ class WorkflowChangeSetHandoff:
 
         run = await repository.get_workflow_run_for_update(
             workflow_run_id=workflow_run_id,
-            model_id=model_id,
+            project_id=project_id,
         )
         if run is None:
             raise WorkflowRunNotFoundError()
         if run["actor_principal_id"] != principal_id:
             raise AuthorizationDeniedError()
-        if run["model_workflow"] != expected_workflow:
+        if run["project_workflow"] != expected_workflow:
             raise InvalidRequestError(
                 "Workflow Run does not match the requested authoring workflow."
             )
@@ -380,33 +380,33 @@ class WorkflowChangeSetHandoff:
             "validation",
         }:
             raise InvalidRequestError(
-                "A deterministic Workflow Run cannot author a Model Change Set."
+                "A deterministic Workflow Run cannot author a Project Change Set."
             )
         correlation_id = run["correlation_id"]
         if not isinstance(correlation_id, UUID):
             raise DependencyUnavailableError()
 
-        model = ModelReadContext(
-            model_id=model_row["model_id"],
-            tenant_id=model_row["tenant_id"],
-            model_name=model_row["model_name"],
-            model_revision=model_row["model_revision"],
+        project = ProjectReadContext(
+            project_id=project_row["project_id"],
+            tenant_id=project_row["tenant_id"],
+            project_name=project_row["project_name"],
+            project_revision=project_row["project_revision"],
             readable_source_tenant_ids=source_tenants,
         )
 
         existing = await repository.get_by_workflow_run(
             workflow_run_id=workflow_run_id,
-            model_id=model_id,
+            project_id=project_id,
         )
         if existing is not None:
             if existing["created_by_principal_id"] != principal_id:
                 raise AuthorizationDeniedError()
             if (
-                existing["base_model_revision"] != expected_model_revision
+                existing["base_project_revision"] != expected_project_revision
                 or existing["correlation_id"] != correlation_id
             ):
                 raise DependencyUnavailableError()
-            if pending_model_change_set_datasets(existing) != staged:
+            if pending_project_change_set_datasets(existing) != staged:
                 raise InvalidRequestError(
                     "Workflow Run output does not match the existing validated output."
                 )
@@ -418,31 +418,31 @@ class WorkflowChangeSetHandoff:
                 raise InvalidRequestError(
                     "Workflow Run output cannot be replayed from its current state."
                 )
-            return existing, model, True
+            return existing, project, True
 
         if run["workflow_run_state"] != "running":
             raise InvalidRequestError(
-                "Workflow Run must be running before Model Change Set handoff."
+                "Workflow Run must be running before Project Change Set handoff."
             )
-        if model_row["model_revision"] != expected_model_revision:
-            raise ModelRevisionConflictError()
+        if project_row["project_revision"] != expected_project_revision:
+            raise ProjectRevisionConflictError()
 
         change_set = await repository.create(
             change_set_id=uuid4(),
-            model_id=model_id,
+            project_id=project_id,
             workflow_run_id=workflow_run_id,
             principal_id=principal_id,
             correlation_id=correlation_id,
         )
         if change_set is None:
             raise DependencyUnavailableError()
-        change_set_id = change_set["model_change_set_id"]
+        change_set_id = change_set["project_change_set_id"]
         if not isinstance(change_set_id, UUID):
             raise DependencyUnavailableError()
 
         await repository.insert_event(
             change_set_id=change_set_id,
-            model_id=model_id,
+            project_id=project_id,
             event_type="created",
             draft_revision=change_set["draft_revision"],
             section=None,
@@ -452,11 +452,11 @@ class WorkflowChangeSetHandoff:
             correlation_id=correlation_id,
         )
 
-        documents = model_change_set_documents(change_set)
+        documents = project_change_set_documents(change_set)
         for dataset, records in staged.items():
             section = DATASETS_BY_NAME[dataset].section
             documents[section][dataset] = records
-        validate_model_change_set_document_bounds(documents)
+        validate_project_change_set_document_bounds(documents)
         staged_row = await repository.stage_documents(
             documents=documents,
             change_set_id=change_set_id,
@@ -465,7 +465,7 @@ class WorkflowChangeSetHandoff:
             raise DependencyUnavailableError()
         await repository.insert_event(
             change_set_id=change_set_id,
-            model_id=model_id,
+            project_id=project_id,
             event_type="section_put",
             draft_revision=staged_row["draft_revision"],
             section=expected_workflow,
@@ -477,12 +477,12 @@ class WorkflowChangeSetHandoff:
 
         current = await repository.get_change_set(
             change_set_id=change_set_id,
-            model_id=model_id,
+            project_id=project_id,
             for_update=True,
         )
         if current is None:
             raise DependencyUnavailableError()
-        return current, model, False
+        return current, project, False
 
     async def _handoff_in_transaction(
         self,
@@ -490,32 +490,32 @@ class WorkflowChangeSetHandoff:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_model_revision: int,
+        expected_workflow: ProjectWorkflow,
+        expected_project_revision: int,
         staged: dict[str, list[dict[str, object]]],
         staged_record_count: int,
     ) -> WorkflowChangeSetHandoffResult:
-        current, model, replayed = await self._stage_in_transaction(
+        current, project, replayed = await self._stage_in_transaction(
             transaction,
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             workflow_run_id=workflow_run_id,
             expected_workflow=expected_workflow,
-            expected_model_revision=expected_model_revision,
+            expected_project_revision=expected_project_revision,
             staged=staged,
             staged_record_count=staged_record_count,
         )
         if replayed:
             return self._result(
-                current, model_id=model_id, workflow_run_id=workflow_run_id, replayed=True
+                current, project_id=project_id, workflow_run_id=workflow_run_id, replayed=True
             )
-        repository = PostgresModelChangeSetRepository(transaction)
-        change_set_id = current["model_change_set_id"]
+        repository = PostgresProjectChangeSetRepository(transaction)
+        change_set_id = current["project_change_set_id"]
         correlation_id = current["correlation_id"]
-        validation = await self._validator(transaction, model, current)
+        validation = await self._validator(transaction, project, current)
         if not validation.valid:
             raise WorkflowChangeSetValidationError(validation.issues)
         if validation.candidate_digest is None:
@@ -525,14 +525,14 @@ class WorkflowChangeSetHandoff:
             change_set_id=change_set_id,
             status="validated",
             candidate_digest=validation.candidate_digest,
-            outcome=model_validation_outcome(validation),
+            outcome=project_validation_outcome(validation),
             valid=True,
         )
         if validated is None:
             raise DependencyUnavailableError()
         await repository.insert_event(
             change_set_id=change_set_id,
-            model_id=model_id,
+            project_id=project_id,
             event_type="validated",
             draft_revision=validated["draft_revision"],
             section=None,
@@ -543,9 +543,9 @@ class WorkflowChangeSetHandoff:
         )
 
         return WorkflowChangeSetHandoffResult(
-            model_id=model_id,
+            project_id=project_id,
             workflow_run_id=workflow_run_id,
-            model_change_set_id=change_set_id,
+            project_change_set_id=change_set_id,
             replayed=False,
             draft_revision=validated["draft_revision"],
             candidate_digest=validation.candidate_digest,
@@ -556,46 +556,46 @@ class WorkflowChangeSetHandoff:
     @staticmethod
     def _validate_changes(
         *,
-        expected_workflow: ModelWorkflow,
-        changes: tuple[StageModelChange, ...],
+        expected_workflow: ProjectWorkflow,
+        changes: tuple[StageProjectChange, ...],
     ) -> tuple[dict[str, list[dict[str, object]]], int]:
         if expected_workflow not in _AUTHORING_WORKFLOWS:
             raise InvalidRequestError(
-                "This Workflow does not produce an authoring Model Change Set."
+                "This Workflow does not produce an authoring Project Change Set."
             )
         if not changes or any(not change.records for change in changes):
             raise InvalidRequestError(
-                "A Workflow Model Change Set requires at least one changed record."
+                "A Workflow Project Change Set requires at least one changed record."
             )
         if any(DATASETS_BY_NAME[change.dataset].section != expected_workflow for change in changes):
             raise InvalidRequestError(
                 "Workflow output contains a dataset from another authoring section."
             )
-        staged = validate_model_stage_changes(list(changes))
+        staged = validate_project_stage_changes(list(changes))
         return staged, sum(len(records) for records in staged.values())
 
     @staticmethod
     def _result(
         row: Mapping[str, Any],
         *,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         replayed: bool,
     ) -> WorkflowChangeSetHandoffResult:
-        if row["model_change_set_status"] != "validated":
+        if row["project_change_set_status"] != "validated":
             raise DependencyUnavailableError()
         candidate_digest = row["candidate_digest"]
         if not isinstance(candidate_digest, str):
             raise DependencyUnavailableError()
         return WorkflowChangeSetHandoffResult(
-            model_id=model_id,
+            project_id=project_id,
             workflow_run_id=workflow_run_id,
-            model_change_set_id=row["model_change_set_id"],
+            project_change_set_id=row["project_change_set_id"],
             replayed=replayed,
             draft_revision=row["draft_revision"],
             candidate_digest=candidate_digest,
             staged_record_count=sum(
-                len(records) for records in pending_model_change_set_datasets(row).values()
+                len(records) for records in pending_project_change_set_datasets(row).values()
             ),
             validated_at=require_datetime(row, "validated_time"),
         )

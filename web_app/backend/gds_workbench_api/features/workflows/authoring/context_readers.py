@@ -18,7 +18,7 @@ from .agent_execution import (
     LocalAgentToolDefinition,
 )
 from .context_contracts import workflow_input_contracts
-from .context_inputs import OBJECT_FIELDS, model_key_fields, natural_key
+from .context_inputs import OBJECT_FIELDS, natural_key, project_key_fields
 
 # (variable, optional selector, exact selector identity fields).
 type ReaderSpecs = dict[str, tuple[str, str | None, tuple[str, ...]]]
@@ -31,19 +31,19 @@ def workflow_reader_specs(workflow: str) -> ReaderSpecs:
         "get_objects": ("object_context", "source_connection_key", OBJECT_FIELDS[:3]),
         "get_object_details": ("object_attribute_context", "object_keys", OBJECT_FIELDS),
         "get_object_relationships": ("object_relationship_context", "object_keys", OBJECT_FIELDS),
-        "get_modeling_assertions": (
-            "modeling_assertions",
-            "assertion_keys",
-            ("modeling_assertion_record_key",),
+        "get_context_records": (
+            "context_records",
+            "context_record_ids",
+            ("context_record_id",),
         ),
     }
     if workflow == "dimensional":
         specs["get_selected_logical_entities"] = (
             "selected_logical_entities",
             "logical_entity_keys",
-            model_key_fields("logical", "entity"),
+            project_key_fields("logical", "entity"),
         )
-    if workflow in {"conceptual", "logical"}:
+    if workflow == "conceptual":
         for kind in ("object", "relationship"):
             specs[f"list_conceptual_{kind}s"] = (
                 f"conceptual_{kind}_list",
@@ -53,7 +53,7 @@ def workflow_reader_specs(workflow: str) -> ReaderSpecs:
             specs[f"get_conceptual_{kind}s"] = (
                 f"conceptual_{kind}s",
                 "conceptual_object_names" if kind == "object" else "relationship_keys",
-                model_key_fields("conceptual", kind),
+                project_key_fields("conceptual", kind),
             )
     for family in (
         ("logical",)
@@ -72,7 +72,7 @@ def workflow_reader_specs(workflow: str) -> ReaderSpecs:
                 else f"{family}_entity_keys"
             )
             fields = (
-                OBJECT_FIELDS if selector == "object_keys" else model_key_fields(family, "entity")
+                OBJECT_FIELDS if selector == "object_keys" else project_key_fields(family, "entity")
             )
             specs[f"list_{family}_{plural}"] = (f"{family}_{kind}_list", selector, fields)
             get_selector = (
@@ -87,7 +87,7 @@ def workflow_reader_specs(workflow: str) -> ReaderSpecs:
             specs[f"get_{family}_{plural}"] = (
                 f"{family}_{plural}",
                 get_selector,
-                model_key_fields(family, kind),
+                project_key_fields(family, kind),
             )
     return specs
 
@@ -137,7 +137,7 @@ def reader_definitions(
                         },
                     ]
                 }
-            if selector.endswith("_names") or selector == "assertion_keys":
+            if selector.endswith("_names") or selector == "context_record_ids":
                 key_schema = {"type": "string", "minLength": 1, "pattern": r"\S"}
             properties[selector] = (
                 {"anyOf": [key_schema, {"type": "null"}]}

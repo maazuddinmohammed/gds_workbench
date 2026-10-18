@@ -27,8 +27,8 @@ test('readable table opens a side comparison without losing table context',async
  assert.match(document.querySelector('.comparison-panel').textContent,/Empty string/);assert.match(document.querySelector('.comparison-panel').textContent,/null/);
  assert.ok(document.querySelector('.comparison-field.is-changed'));document.querySelector('[data-action="back-to-ledger"]').click();assert.equal(document.querySelector('.comparison-panel'),null);dom.window.close();
 });
-test('saved sub-agent policy is visible without changing the active data Model',async()=>{
- const root=metadata();state(root,{model:{id:7,name:'Sales'},subagent_policy:{mode:'custom',model:'Provider <Model-A>'}});
+test('saved sub-agent policy is visible without changing the active Project',async()=>{
+ const root=metadata();state(root,{project:{id:7,name:'Sales'},subagent_policy:{mode:'custom',model:'Provider <Model-A>'}});
  const {document,dom}=await app(root);
  assert.equal(document.querySelector('.subagent-policy').textContent,'Sub-agents: Specified model only · Provider <Model-A>');
  assert.match(document.querySelector('.session-line').textContent,/Sales/);
@@ -51,33 +51,33 @@ test('columns preserve identity and draft labels never claim staging',async()=>{
  assert.ok([...document.querySelectorAll('button')].some(button=>button.textContent==='Reload local files'));
  assert.equal([...document.querySelectorAll('button')].some(button=>['Apply','Stage'].includes(button.textContent.trim())),false);dom.window.close();
 });
-test('Model settings owned by the web app remain visible and read-only in the editor', async () => {
- const root=workspace();state(root,{model:{id:7,name:'Sales'}});
- const row={model_name:'Sales',model_purpose:'Customer reporting',logical_entity_scd_type:'type_2',dimensional_entity_scd_type:'type_1'};
- const definition=dataset('model_details',[],[row]);
- definition.schema={type:'object','x-gds-change-set-eligible':true,properties:{model_name:{type:'string'},model_purpose:{type:'string'},logical_entity_scd_type:{anyOf:[{type:'string',enum:['type_1','type_2']},{type:'null'}]},dimensional_entity_scd_type:{anyOf:[{type:'string',enum:['type_1','type_2']},{type:'null'}]}}};
- snapshot(root,'model',[definition]);root.directory('model-change-set').file('model_details.json',JSON.stringify([row]));
- const {api,document,dom}=await app(root);await api.switchArea('model','model_details');
+test('Project settings owned by the web app remain visible and read-only in the editor', async () => {
+ const root=workspace();state(root,{project:{id:7,name:'Sales'}});
+ const row={project_name:'Sales',project_purpose:'Customer reporting',logical_entity_scd_type:'type_2',dimensional_entity_scd_type:'type_1'};
+ const definition=dataset('project_details',[],[row]);
+ definition.schema={type:'object','x-gds-change-set-eligible':true,properties:{project_name:{type:'string'},project_purpose:{type:'string'},logical_entity_scd_type:{anyOf:[{type:'string',enum:['type_1','type_2']},{type:'null'}]},dimensional_entity_scd_type:{anyOf:[{type:'string',enum:['type_1','type_2']},{type:'null'}]}}};
+ snapshot(root,'project',[definition]);root.directory('project-change-set').file('project_details.json',JSON.stringify([row]));
+ const {api,document,dom}=await app(root);await api.switchArea('project','project_details');
  document.querySelector('[data-source="changeset"]').click();document.querySelector('[data-row-action]').click();document.querySelector('[data-action="edit-detail-draft"]').click();
  const scd=document.querySelector('[data-row-field="logical_entity_scd_type"]');
  assert.equal(scd.value,'"type_2"');assert.equal(scd.disabled,true);
  const dimensional=document.querySelector('[data-row-field="dimensional_entity_scd_type"]');
  assert.equal(dimensional.value,'"type_1"');assert.equal(dimensional.disabled,true);
- assert.match(scd.closest('.row-editor-field').textContent,/Model settings/);
- assert.equal(document.querySelector('[data-row-field="model_purpose"]').disabled,false);
+ assert.match(scd.closest('.row-editor-field').textContent,/Project settings/);
+ assert.equal(document.querySelector('[data-row-field="project_purpose"]').disabled,false);
  dom.window.close();
 });
 test('Mapping sheets expose System first and filter complete Entity/System branches', async () => {
- const root=workspace();state(root,{model:{id:7,name:'Sales'}});
+ const root=workspace();state(root,{project:{id:7,name:'Sales'}});
  const key=['modeled_entity_type','modeled_entity_schema_name','modeled_entity_name','source_system_code'];
  const branches=['CRM','ERP'].map(source_system_code=>({modeled_entity_type:'logical_entity',modeled_entity_schema_name:'silver',modeled_entity_name:'Customer',source_system_code}));
- snapshot(root,'model',[
+ snapshot(root,'project',[
   dataset('mapping_object',key,branches),
   dataset('mapping_attribute',[...key,'modeled_attribute_name'],branches.map(row=>({...row,modeled_attribute_name:'CustomerID'}))),
  ]);
  const {api,document,win,dom}=await app(root);
  for(const name of ['mapping_object','mapping_attribute']){
-  await api.switchArea('model',name);
+  await api.switchArea('project',name);
   const filters=document.querySelectorAll('.multi-filter');
   assert.equal(filters[0].querySelector('summary span').textContent,'Source system');
   const crm=filters[0].querySelector('input[value="CRM"]');crm.checked=true;crm.dispatchEvent(new win.Event('change',{bubbles:true}));
@@ -87,17 +87,17 @@ test('Mapping sheets expose System first and filter complete Entity/System branc
  }
  dom.window.close();
 });
-test('DBML displays the complete effective Model despite record view filters',async()=>{
- const root=workspace();state(root,{model:{id:7,name:'Sales'}});snapshot(root,'metadata',[]);snapshot(root,'model',[dataset('conceptual_object',['conceptual_object_name'],[{conceptual_object_name:'Customer',conceptual_object_status:'active',conceptual_object_type:'party'}])]);
- root.directory('model-change-set').file('conceptual_object.json',JSON.stringify([{conceptual_object_name:'Order',conceptual_object_status:'active',conceptual_object_type:'event'}]));
- const {api,document,dom}=await app(root);api.state.filters['model:conceptual_object:conceptual_object_name']=['Customer'];await api.generateDbml();
+test('DBML displays the complete effective Project despite record view filters',async()=>{
+ const root=workspace();state(root,{project:{id:7,name:'Sales'}});snapshot(root,'metadata',[]);snapshot(root,'project',[dataset('conceptual_object',['conceptual_object_name'],[{conceptual_object_name:'Customer',conceptual_object_status:'active',conceptual_object_type:'party'}])]);
+ root.directory('project-change-set').file('conceptual_object.json',JSON.stringify([{conceptual_object_name:'Order',conceptual_object_status:'active',conceptual_object_type:'event'}]));
+ const {api,document,dom}=await app(root);api.state.filters['project:conceptual_object:conceptual_object_name']=['Customer'];await api.generateDbml();
  assert.equal(api.state.screen,'dbml',api.state.message);assert.match(document.querySelector('.dbml-text').textContent,/Customer/);assert.match(document.querySelector('.dbml-text').textContent,/Order/);
  assert.ok(document.getElementById('copy-dbml'));assert.ok(document.getElementById('download-dbml'));dom.window.close();
 });
 test('DBML duplicate and locked edit findings stop export and open validation',async()=>{
- const root=workspace();state(root,{model:{id:7,name:'Sales'}});const row={conceptual_object_name:'Customer',conceptual_object_status:'active',conceptual_object_type:'party',conceptual_object_is_locked:true};snapshot(root,'model',[dataset('conceptual_object',['conceptual_object_name'],[row])]);
- root.directory('model-change-set').file('conceptual_object.json',JSON.stringify([{...row,conceptual_object_type:'event'},{...row,conceptual_object_type:'event'}]));
- const {api,document,dom}=await app(root);await api.generateDbml();assert.equal(api.state.screen,'validation');assert.match(document.querySelector('.issue-table').textContent,/duplicates a canonical key/);assert.equal(root.entries.has('model-dbml'),false);dom.window.close();
+ const root=workspace();state(root,{project:{id:7,name:'Sales'}});const row={conceptual_object_name:'Customer',conceptual_object_status:'active',conceptual_object_type:'party',conceptual_object_is_locked:true};snapshot(root,'project',[dataset('conceptual_object',['conceptual_object_name'],[row])]);
+ root.directory('project-change-set').file('conceptual_object.json',JSON.stringify([{...row,conceptual_object_type:'event'},{...row,conceptual_object_type:'event'}]));
+ const {api,document,dom}=await app(root);await api.generateDbml();assert.equal(api.state.screen,'validation');assert.match(document.querySelector('.issue-table').textContent,/duplicates a canonical key/);assert.equal(root.entries.has('project-dbml'),false);dom.window.close();
 });
 
 test('compact dataset navigation preserves groups and supports keyboard focus',async()=>{
@@ -121,4 +121,22 @@ test('compact dataset navigation preserves groups and supports keyboard focus',a
  assert.equal(document.querySelector('h1').textContent,'Source Object');
  assert.equal(document.querySelector('#workbench-root').getAttribute('aria-busy'),'false');
  assert.ok(document.querySelector('.brand img[src="atlas.svg"]'));dom.window.close();
+});
+
+test('Context editor creates one hidden UUID and preserves it after a failed save',async()=>{
+ const root=workspace();state(root,{project:{id:7,name:'Sales'}});
+ const definition=dataset('context_record',['context_record_id'],[]);
+ definition.schema={type:'object','x-gds-change-set-eligible':true,additionalProperties:false,required:['context_record_id','context_group_name','context_text','source_reference','status','is_locked'],properties:{context_record_id:{type:'string',pattern:'^[0-9a-f-]{36}$'},context_group_name:{type:'string'},context_text:{type:'string',minLength:1},source_reference:{type:['string','null'],default:null},status:{type:'string',enum:['active','inactive','deprecated'],default:'active'},is_locked:{type:'boolean'}}};
+ snapshot(root,'project',[definition]);const {api,document,win,dom}=await app(root);await api.switchArea('project','context_record');
+ document.querySelector('[data-source="changeset"]').click();document.querySelector('[data-action="add-row"]').click();
+ const id=api.state.editing.original.context_record_id;assert.match(id,/^[0-9a-f]{8}-[0-9a-f-]{27}$/);assert.equal(document.querySelector('[data-row-field="context_record_id"]'),null);
+ document.querySelector('[data-row-field="context_group_name"]').value='Identity';
+ const message=document.getElementById('row-editor-message');
+ const failure=new Promise(resolve=>{const observer=new win.MutationObserver(()=>{if(message.textContent){observer.disconnect();resolve();}});observer.observe(message,{childList:true,subtree:true});});
+ document.getElementById('row-editor-form').dispatchEvent(new win.Event('submit',{cancelable:true}));await failure;
+ assert.equal(api.state.editing.original.context_record_id,id);
+ document.querySelector('[data-row-field="context_text"]').value='Preserve leading zeros.';
+ const saved=new Promise(resolve=>document.getElementById('row-editor-dialog').addEventListener('close',resolve,{once:true}));
+ document.getElementById('row-editor-form').dispatchEvent(new win.Event('submit',{cancelable:true}));await saved;
+ const records=JSON.parse(root.entries.get('project-change-set').entries.get('context_record.json').text);assert.equal(records.length,1);assert.equal(records[0].context_record_id,id);await new Promise(resolve=>setImmediate(resolve));dom.window.close();
 });

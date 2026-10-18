@@ -104,8 +104,8 @@ class MappingGenerationTarget(ModeledEntityReference):
 
 
 class MappingGenerationPage(ContractModel):
-    model_id: int
-    model_revision: int
+    project_id: int
+    project_revision: int
     items: tuple[MappingGenerationTarget, ...]
     next_cursor: str | None
 
@@ -122,8 +122,8 @@ class MappingObjectSummary(ContractModel):
 
 
 class MappingObjectPage(ContractModel):
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     items: tuple[MappingObjectSummary, ...] = Field(max_length=200)
     next_cursor: str | None = Field(default=None, max_length=2048)
 
@@ -176,8 +176,8 @@ class MappingAttributeSummary(_MappingAttributeIdentity):
 
 
 class MappingAttributePage(ContractModel):
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     items: tuple[MappingAttributeSummary, ...] = Field(max_length=200)
     next_cursor: str | None = Field(default=None, max_length=2048)
 

@@ -144,7 +144,7 @@ async def test_cost_uses_only_applicable_rates_and_sufficient_reported_counts(
         ).read_run(
             claim.principal,
             tenant_id=context.tenant_id,
-            model_id=context.model_id,
+            project_id=context.project_id,
             workflow_run_id=claim.workflow_run_id,
         )
         cost = detail.token_usage.cost_estimate
@@ -220,7 +220,7 @@ async def test_mixed_frozen_schedules_sum_exactly_and_preserve_unknown_history(
         ).read_run(
             claim.principal,
             tenant_id=context.tenant_id,
-            model_id=context.model_id,
+            project_id=context.project_id,
             workflow_run_id=claim.workflow_run_id,
         )
         cost = detail.token_usage.cost_estimate
@@ -228,7 +228,9 @@ async def test_mixed_frozen_schedules_sum_exactly_and_preserve_unknown_history(
         assert cost.priced_request_count == 2
         assert cost.unpriced_request_count == (0 if history_gap else 1)
         assert sum(cost.unpriced_reasons.values()) == cost.unpriced_request_count
-        assert cost.unpriced_reasons["pricing_not_configured"] == (0 if history_gap else 1)
+        assert cost.unpriced_reasons["pricing_not_configured"] == (
+            0 if history_gap else 1
+        )
         assert cost.pricing_bases == ("A replacement", "Z original")
         assert cost.amount is not None
         assert Decimal(cost.amount) == Decimal("999999999998.99000000000002")
@@ -285,13 +287,15 @@ async def test_pricing_window_uses_saved_request_time_and_excludes_its_end(
         ).read_run(
             claim.principal,
             tenant_id=context.tenant_id,
-            model_id=context.model_id,
+            project_id=context.project_id,
             workflow_run_id=claim.workflow_run_id,
         )
         cost = detail.token_usage.cost_estimate
         assert cost.status == ("unpriced" if at_end else "estimated")
         assert cost.unpriced_reasons["outside_pricing_window"] == (1 if at_end else 0)
         if not at_end:
-            assert cost.amount is not None and Decimal(cost.amount) == Decimal("0.000001")
+            assert cost.amount is not None and Decimal(cost.amount) == Decimal(
+                "0.000001"
+            )
     finally:
         await runtime.close()

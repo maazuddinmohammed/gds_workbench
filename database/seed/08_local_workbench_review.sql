@@ -39,10 +39,10 @@ DECLARE
     v_gold_order_customer_id BIGINT;
     v_gold_order_date_id BIGINT;
     v_gold_order_amount_id BIGINT;
-    v_model_id BIGINT;
+    v_project_id BIGINT;
     v_document_id BIGINT;
-    v_customer_assertion_id BIGINT;
-    v_order_assertion_id BIGINT;
+    v_customer_context_id UUID;
+    v_order_context_id UUID;
     v_conceptual_customer_id BIGINT;
     v_conceptual_order_id BIGINT;
     v_conceptual_relationship_id BIGINT;
@@ -273,46 +273,46 @@ BEGIN
     SELECT attribute_id INTO STRICT v_gold_order_amount_id FROM core.attribute
      WHERE object_id = v_gold_order_id AND attribute_name = 'order_amount';
 
-    INSERT INTO model.model (
-        tenant_id, model_name, model_description, logical_schemas, dimensional_schemas,
+    INSERT INTO project.project (
+        tenant_id, project_name, project_description, logical_schemas, dimensional_schemas,
         silver_model_naming_instructions, gold_model_naming_instructions
     ) VALUES (
         v_tenant_id,
         'Customer Orders 360',
-        'Review model connecting customer identities, orders, conformed Silver outputs, and a Gold sales mart.',
+        'Review project connecting customer identities, orders, conformed Silver outputs, and a Gold sales mart.',
         '[{"schema_name":"silver_demo","description":"Conformed entities"}]',
         '[{"schema_name":"gold_demo","description":"Sales mart"}]',
         'Use snake_case names and preserve stable business identifiers.',
         'Use dim_ and fact_ prefixes with explicit grain.'
-    ) RETURNING model_id INTO v_model_id;
+    ) RETURNING project_id INTO v_project_id;
 
-    INSERT INTO model.model_input_scope (model_id, object_id)
+    INSERT INTO project.project_input_scope (project_id, object_id)
     VALUES
-        (v_model_id, v_bronze_customer_id),
-        (v_model_id, v_bronze_order_id);
+        (v_project_id, v_bronze_customer_id),
+        (v_project_id, v_bronze_order_id);
 
     INSERT INTO workflow.attribute_profile (
-        model_id, attribute_id, object_id, source_context_digest,
+        project_id, attribute_id, object_id, source_context_digest,
         row_count, non_null_count, null_count, blank_count, distinct_count,
         min_data_length, max_data_length, avg_data_length,
         percent_populated, percent_duplicates, percent_null,
         percent_blank, percent_distinct
     ) VALUES
-        (v_model_id, v_bronze_customer_key_id, v_bronze_customer_id, repeat('a', 64),
+        (v_project_id, v_bronze_customer_key_id, v_bronze_customer_id, repeat('a', 64),
          125000, 125000, 0, 0, 125000, 1, 12, 8.4, 100, 0, 0, 0, 100),
-        (v_model_id, v_bronze_customer_name_id, v_bronze_customer_id, repeat('a', 64),
+        (v_project_id, v_bronze_customer_name_id, v_bronze_customer_id, repeat('a', 64),
          125000, 124820, 180, 24, 93210, 1, 98, 24.7, 99.856, 25.326, 0.144, 0.0192, 74.677),
-        (v_model_id, v_bronze_order_key_id, v_bronze_order_id, repeat('a', 64),
+        (v_project_id, v_bronze_order_key_id, v_bronze_order_id, repeat('a', 64),
          842310, 842310, 0, 0, 842310, 1, 14, 10.2, 100, 0, 0, 0, 100),
-        (v_model_id, v_bronze_order_customer_id, v_bronze_order_id, repeat('a', 64),
+        (v_project_id, v_bronze_order_customer_id, v_bronze_order_id, repeat('a', 64),
          842310, 842310, 0, 0, 124996, 1, 12, 8.3, 100, 85.160, 0, 0, 14.840),
-        (v_model_id, v_bronze_order_date_id, v_bronze_order_id, repeat('a', 64),
+        (v_project_id, v_bronze_order_date_id, v_bronze_order_id, repeat('a', 64),
          842310, 842310, 0, 0, 730, 10, 10, 10, 100, 99.913, 0, 0, 0.087),
-        (v_model_id, v_bronze_order_amount_id, v_bronze_order_id, repeat('a', 64),
+        (v_project_id, v_bronze_order_amount_id, v_bronze_order_id, repeat('a', 64),
          842310, 842104, 206, 0, 415892, 1, 12, 6.8, 99.976, 50.614, 0.024, 0, 49.386);
 
     INSERT INTO workflow.analysis_result (
-        model_id, validation_source_context_digest,
+        project_id, validation_source_context_digest,
         from_object_id, from_attribute_id, to_object_id, to_attribute_id,
         relationship_kind, relationship_confidence, relationship_basis,
         validation_policy_version, validation_policy_digest, validation_result,
@@ -321,7 +321,7 @@ BEGIN
         validation_source_missing_target_count, validation_unused_target_count,
         validation_duplicate_target_key_count
     ) VALUES (
-        v_model_id, repeat('b', 64),
+        v_project_id, repeat('b', 64),
         v_bronze_order_id, v_bronze_order_customer_id,
         v_bronze_customer_id, v_bronze_customer_key_id,
         'foreign_key', 'high',
@@ -330,64 +330,49 @@ BEGIN
         842310, 124996, 125000, 125000, 0, 4, 0
     );
 
-    INSERT INTO model.modeling_assertion_document (
-        model_id, tenant_id, system_id, modeling_assertion_document_name,
-        modeling_assertion_document_type, modeling_assertion_document_description
+    INSERT INTO project.context_group (
+        project_id, context_type_id, source_system_id, name, description
     ) VALUES (
-        v_model_id, v_tenant_id, v_system_id, 'Customer Orders business rules',
-        'business_rules', 'Review-ready customer and order modeling decisions.'
-    ) RETURNING modeling_assertion_document_id INTO v_document_id;
+        v_project_id, (SELECT context_type_id FROM reference.context_type WHERE name = 'Business Requirement'),
+        v_system_id, 'Customer Orders business rules', 'Review-ready customer and order modeling decisions.'
+    ) RETURNING context_group_id INTO v_document_id;
 
-    INSERT INTO model.modeling_assertion_record (
-        model_id, modeling_assertion_document_id,
-        modeling_assertion_record_key, modeling_assertion_record_type,
-        modeling_assertion_text, modeling_assertion_details,
-        modeling_assertion_applicable_layers, modeling_assertion_confidence
-    ) VALUES (
-        v_model_id, v_document_id, 'customer.grain', 'grain_rule',
-        'One Customer record represents one durable customer identity.',
-        '{"owner":"Customer Data Product","review_status":"approved"}',
-        ARRAY['conceptual', 'logical', 'dimensional', 'mapping'], 'high'
-    ) RETURNING modeling_assertion_record_id INTO v_customer_assertion_id;
+    INSERT INTO project.context_record (context_record_id, project_id, context_group_id, context_text)
+    VALUES (gen_random_uuid(), v_project_id, v_document_id,
+        'One Customer record represents one durable customer identity.')
+    RETURNING context_record_id INTO v_customer_context_id;
 
-    INSERT INTO model.modeling_assertion_record (
-        model_id, modeling_assertion_document_id,
-        modeling_assertion_record_key, modeling_assertion_record_type,
-        modeling_assertion_text, modeling_assertion_details,
-        modeling_assertion_applicable_layers, modeling_assertion_confidence
-    ) VALUES (
-        v_model_id, v_document_id, 'order.customer', 'relationship_rule',
-        'Every submitted Order belongs to exactly one Customer.',
-        '{"owner":"Commerce Data Product","review_status":"approved"}',
-        ARRAY['analysis', 'conceptual', 'logical', 'dimensional', 'mapping'], 'high'
-    ) RETURNING modeling_assertion_record_id INTO v_order_assertion_id;
+    INSERT INTO project.context_record (context_record_id, project_id, context_group_id, context_text)
+    VALUES (gen_random_uuid(), v_project_id, v_document_id,
+        'Every submitted Order belongs to exactly one Customer.')
+    RETURNING context_record_id INTO v_order_context_id;
 
     INSERT INTO workflow.conceptual_object (
-        model_id, conceptual_object_name, conceptual_object_definition,
+        project_id, conceptual_object_name, conceptual_object_definition,
         conceptual_object_type, conceptual_object_grain,
         conceptual_object_aliases, conceptual_object_confidence
     ) VALUES (
-        v_model_id, 'Customer', 'A person or organization that places Orders.',
+        v_project_id, 'Customer', 'A person or organization that places Orders.',
         'business_entity', 'One durable customer identity', ARRAY['Client'], 'high'
     ) RETURNING conceptual_object_id INTO v_conceptual_customer_id;
 
     INSERT INTO workflow.conceptual_object (
-        model_id, conceptual_object_name, conceptual_object_definition,
+        project_id, conceptual_object_name, conceptual_object_definition,
         conceptual_object_type, conceptual_object_grain,
         conceptual_object_aliases, conceptual_object_confidence
     ) VALUES (
-        v_model_id, 'Order', 'A commercial request submitted by a Customer.',
+        v_project_id, 'Order', 'A commercial request submitted by a Customer.',
         'business_event', 'One submitted order', ARRAY['Purchase'], 'high'
     ) RETURNING conceptual_object_id INTO v_conceptual_order_id;
 
     INSERT INTO workflow.conceptual_relationship (
-        model_id, from_conceptual_object_id, to_conceptual_object_id,
+        project_id, from_conceptual_object_id, to_conceptual_object_id,
         conceptual_relationship_name, conceptual_relationship_type,
         conceptual_relationship_definition, conceptual_relationship_cardinality,
         conceptual_relationship_basis, conceptual_relationship_cardinality_basis,
         conceptual_relationship_confidence
     ) VALUES (
-        v_model_id, v_conceptual_order_id, v_conceptual_customer_id,
+        v_project_id, v_conceptual_order_id, v_conceptual_customer_id,
         'Order belongs to Customer', 'ownership',
         'Each Order is placed by one Customer.', 'many_to_one',
         'Supported by the Customer identifier relationship and business rule.',
@@ -395,157 +380,157 @@ BEGIN
     ) RETURNING conceptual_relationship_id INTO v_conceptual_relationship_id;
 
     INSERT INTO workflow.conceptual_support (
-        model_id, supported_artifact_type, conceptual_object_id,
+        project_id, supported_artifact_type, conceptual_object_id,
         support_source_type, source_object_id, conceptual_support_role,
         conceptual_support_reason, conceptual_support_confidence
     ) VALUES
-        (v_model_id, 'conceptual_object', v_conceptual_customer_id,
+        (v_project_id, 'conceptual_object', v_conceptual_customer_id,
          'object', v_bronze_customer_id, 'primary evidence',
          'Customer records demonstrate the governed identity.', 'high'),
-        (v_model_id, 'conceptual_object', v_conceptual_order_id,
+        (v_project_id, 'conceptual_object', v_conceptual_order_id,
          'object', v_bronze_order_id, 'primary evidence',
          'Order records demonstrate the transaction grain.', 'high');
 
     INSERT INTO workflow.conceptual_support (
-        model_id, supported_artifact_type, conceptual_relationship_id,
-        support_source_type, modeling_assertion_record_id,
+        project_id, supported_artifact_type, conceptual_relationship_id,
+        support_source_type, context_record_id,
         conceptual_support_role, conceptual_support_reason,
         conceptual_support_confidence
     ) VALUES (
-        v_model_id, 'conceptual_relationship', v_conceptual_relationship_id,
-        'assertion', v_order_assertion_id, 'business rule',
+        v_project_id, 'conceptual_relationship', v_conceptual_relationship_id,
+        'context_record', v_order_context_id, 'business rule',
         'The approved rule defines the Customer ownership relationship.', 'high'
     );
 
     INSERT INTO workflow.logical_submodel (
-        model_id, logical_submodel_name, logical_submodel_definition
+        project_id, logical_submodel_name, logical_submodel_definition
     ) VALUES (
-        v_model_id, 'Customer Commerce', 'Customer and Order entities for commerce analytics.'
+        v_project_id, 'Customer Commerce', 'Customer and Order entities for commerce analytics.'
     ) RETURNING logical_submodel_id INTO v_logical_submodel_id;
 
     INSERT INTO workflow.logical_entity (
-        model_id, logical_entity_schema_name, logical_entity_name, logical_entity_definition,
+        project_id, logical_entity_schema_name, logical_entity_name, logical_entity_definition,
         logical_entity_type, logical_entity_grain,
         logical_entity_dependency_order, logical_entity_confidence
     ) VALUES (
-        v_model_id, 'silver_demo', 'Customer', 'A conformed durable customer identity.',
+        v_project_id, 'silver_demo', 'Customer', 'A conformed durable customer identity.',
         'core', 'One Customer', 0, 'high'
     ) RETURNING logical_entity_id INTO v_logical_customer_id;
 
     INSERT INTO workflow.logical_entity (
-        model_id, logical_entity_schema_name, logical_entity_name, logical_entity_definition,
+        project_id, logical_entity_schema_name, logical_entity_name, logical_entity_definition,
         logical_entity_type, logical_entity_grain,
         logical_entity_dependency_order, logical_entity_confidence
     ) VALUES (
-        v_model_id, 'silver_demo', 'Order', 'A conformed commercial order.',
+        v_project_id, 'silver_demo', 'Order', 'A conformed commercial order.',
         'transaction', 'One submitted Order', 1, 'high'
     ) RETURNING logical_entity_id INTO v_logical_order_id;
 
     INSERT INTO workflow.logical_entity_submodel (
-        model_id, logical_entity_id, logical_submodel_id
+        project_id, logical_entity_id, logical_submodel_id
     ) VALUES
-        (v_model_id, v_logical_customer_id, v_logical_submodel_id),
-        (v_model_id, v_logical_order_id, v_logical_submodel_id);
+        (v_project_id, v_logical_customer_id, v_logical_submodel_id),
+        (v_project_id, v_logical_order_id, v_logical_submodel_id);
 
     INSERT INTO workflow.logical_attribute (
-        model_id, logical_entity_id, logical_attribute_name,
+        project_id, logical_entity_id, logical_attribute_name,
         logical_attribute_definition, logical_attribute_data_type,
         logical_attribute_is_nullable,
         logical_attribute_is_natural_key, logical_attribute_ordinal_position
     ) VALUES (
-        v_model_id, v_logical_customer_id, 'Customer ID',
+        v_project_id, v_logical_customer_id, 'Customer ID',
         'Stable Customer business identifier.', 'BIGINT', FALSE, TRUE, 1
     ) RETURNING logical_attribute_id INTO v_logical_customer_key_id;
     INSERT INTO workflow.logical_attribute (
-        model_id, logical_entity_id, logical_attribute_name,
+        project_id, logical_entity_id, logical_attribute_name,
         logical_attribute_definition, logical_attribute_data_type,
         logical_attribute_is_nullable, logical_attribute_ordinal_position
     ) VALUES (
-        v_model_id, v_logical_customer_id, 'Customer Name',
+        v_project_id, v_logical_customer_id, 'Customer Name',
         'Current Customer display name.', 'VARCHAR(200)', TRUE, 2
     ) RETURNING logical_attribute_id INTO v_logical_customer_name_id;
     INSERT INTO workflow.logical_attribute (
-        model_id, logical_entity_id, logical_attribute_name,
+        project_id, logical_entity_id, logical_attribute_name,
         logical_attribute_definition, logical_attribute_data_type,
         logical_attribute_is_nullable,
         logical_attribute_is_natural_key, logical_attribute_ordinal_position
     ) VALUES (
-        v_model_id, v_logical_order_id, 'Order ID',
+        v_project_id, v_logical_order_id, 'Order ID',
         'Stable Order business identifier.', 'BIGINT', FALSE, TRUE, 1
     ) RETURNING logical_attribute_id INTO v_logical_order_key_id;
     INSERT INTO workflow.logical_attribute (
-        model_id, logical_entity_id, logical_attribute_name,
+        project_id, logical_entity_id, logical_attribute_name,
         logical_attribute_definition, logical_attribute_data_type,
         logical_attribute_is_nullable, logical_attribute_ordinal_position
     ) VALUES (
-        v_model_id, v_logical_order_id, 'Customer ID',
+        v_project_id, v_logical_order_id, 'Customer ID',
         'Customer that placed the Order.', 'BIGINT', FALSE, 2
     ) RETURNING logical_attribute_id INTO v_logical_order_customer_id;
     INSERT INTO workflow.logical_attribute (
-        model_id, logical_entity_id, logical_attribute_name,
+        project_id, logical_entity_id, logical_attribute_name,
         logical_attribute_definition, logical_attribute_data_type,
         logical_attribute_is_nullable, logical_attribute_ordinal_position
     ) VALUES (
-        v_model_id, v_logical_order_id, 'Order Date',
+        v_project_id, v_logical_order_id, 'Order Date',
         'Date the Order was submitted.', 'DATE', FALSE, 3
     ) RETURNING logical_attribute_id INTO v_logical_order_date_id;
     INSERT INTO workflow.logical_attribute (
-        model_id, logical_entity_id, logical_attribute_name,
+        project_id, logical_entity_id, logical_attribute_name,
         logical_attribute_definition, logical_attribute_data_type,
         logical_attribute_is_nullable, logical_attribute_ordinal_position
     ) VALUES (
-        v_model_id, v_logical_order_id, 'Order Amount',
+        v_project_id, v_logical_order_id, 'Order Amount',
         'Gross Order amount in USD.', 'DECIMAL(18,2)', FALSE, 4
     ) RETURNING logical_attribute_id INTO v_logical_order_amount_id;
 
     INSERT INTO workflow.logical_entity_source_mapping (
-        model_id, logical_entity_id, support_source_type, source_object_id,
+        project_id, logical_entity_id, support_source_type, source_object_id,
         logical_entity_source_mapping_order, logical_entity_source_mapping_rationale
     ) VALUES (
-        v_model_id, v_logical_customer_id, 'object', v_bronze_customer_id, 1,
+        v_project_id, v_logical_customer_id, 'object', v_bronze_customer_id, 1,
         'The Bronze Customer object supplies the conformed identity.'
     ) RETURNING logical_entity_source_mapping_id INTO v_logical_customer_source_id;
     INSERT INTO workflow.logical_entity_source_mapping (
-        model_id, logical_entity_id, support_source_type, source_object_id,
+        project_id, logical_entity_id, support_source_type, source_object_id,
         logical_entity_source_mapping_order, logical_entity_source_mapping_rationale
     ) VALUES (
-        v_model_id, v_logical_order_id, 'object', v_bronze_order_id, 1,
+        v_project_id, v_logical_order_id, 'object', v_bronze_order_id, 1,
         'The Bronze Order object supplies the transaction grain.'
     ) RETURNING logical_entity_source_mapping_id INTO v_logical_order_source_id;
 
     INSERT INTO workflow.logical_attribute_source_mapping (
-        model_id, logical_entity_source_mapping_id, logical_entity_id,
+        project_id, logical_entity_source_mapping_id, logical_entity_id,
         logical_attribute_id, support_source_type, source_object_id,
         source_attribute_id, logical_attribute_source_mapping_order,
         logical_attribute_source_mapping_rationale
     ) VALUES
-        (v_model_id, v_logical_customer_source_id, v_logical_customer_id,
+        (v_project_id, v_logical_customer_source_id, v_logical_customer_id,
          v_logical_customer_key_id, 'attribute', v_bronze_customer_id,
          v_bronze_customer_key_id, 1, 'Direct governed identifier mapping.'),
-        (v_model_id, v_logical_customer_source_id, v_logical_customer_id,
+        (v_project_id, v_logical_customer_source_id, v_logical_customer_id,
          v_logical_customer_name_id, 'attribute', v_bronze_customer_id,
          v_bronze_customer_name_id, 2, 'Direct descriptive mapping.'),
-        (v_model_id, v_logical_order_source_id, v_logical_order_id,
+        (v_project_id, v_logical_order_source_id, v_logical_order_id,
          v_logical_order_key_id, 'attribute', v_bronze_order_id,
          v_bronze_order_key_id, 1, 'Direct governed identifier mapping.'),
-        (v_model_id, v_logical_order_source_id, v_logical_order_id,
+        (v_project_id, v_logical_order_source_id, v_logical_order_id,
          v_logical_order_customer_id, 'attribute', v_bronze_order_id,
          v_bronze_order_customer_id, 2, 'Direct Customer reference mapping.'),
-        (v_model_id, v_logical_order_source_id, v_logical_order_id,
+        (v_project_id, v_logical_order_source_id, v_logical_order_id,
          v_logical_order_date_id, 'attribute', v_bronze_order_id,
          v_bronze_order_date_id, 3, 'Direct activity date mapping.'),
-        (v_model_id, v_logical_order_source_id, v_logical_order_id,
+        (v_project_id, v_logical_order_source_id, v_logical_order_id,
          v_logical_order_amount_id, 'attribute', v_bronze_order_id,
          v_bronze_order_amount_id, 4, 'Direct monetary amount mapping.');
 
     INSERT INTO workflow.logical_relationship (
-        model_id, logical_relationship_name, logical_relationship_definition,
+        project_id, logical_relationship_name, logical_relationship_definition,
         logical_relationship_from_entity_id, logical_relationship_from_attribute_id,
         logical_relationship_to_entity_id, logical_relationship_to_attribute_id,
         logical_relationship_cardinality, logical_relationship_confidence,
         logical_relationship_basis, logical_relationship_cardinality_basis
     ) VALUES (
-        v_model_id, 'Order references Customer',
+        v_project_id, 'Order references Customer',
         'Every Order references the Customer that placed it.',
         v_logical_order_id, v_logical_order_customer_id,
         v_logical_customer_id, v_logical_customer_key_id,
@@ -554,146 +539,146 @@ BEGIN
     );
 
     INSERT INTO workflow.dimensional_submodel (
-        model_id, dimensional_submodel_name, dimensional_submodel_definition
+        project_id, dimensional_submodel_name, dimensional_submodel_definition
     ) VALUES (
-        v_model_id, 'Sales Mart', 'Customer and Order structures for governed sales reporting.'
+        v_project_id, 'Sales Mart', 'Customer and Order structures for governed sales reporting.'
     ) RETURNING dimensional_submodel_id INTO v_dimensional_submodel_id;
 
     INSERT INTO workflow.dimensional_entity (
-        model_id, dimensional_entity_schema_name, dimensional_entity_name, dimensional_entity_definition,
+        project_id, dimensional_entity_schema_name, dimensional_entity_name, dimensional_entity_definition,
         dimensional_entity_type, dimensional_entity_dependency_order,
         dimensional_entity_confidence
     ) VALUES (
-        v_model_id, 'gold_demo', 'Dim Customer', 'Conformed Customer descriptors.',
+        v_project_id, 'gold_demo', 'Dim Customer', 'Conformed Customer descriptors.',
         'dimension', 0, 'high'
     ) RETURNING dimensional_entity_id INTO v_dimensional_customer_id;
     INSERT INTO workflow.dimensional_entity (
-        model_id, dimensional_entity_schema_name, dimensional_entity_name, dimensional_entity_definition,
+        project_id, dimensional_entity_schema_name, dimensional_entity_name, dimensional_entity_definition,
         dimensional_entity_type, dimensional_fact_type,
         dimensional_entity_grain_definition, dimensional_entity_dependency_order,
         dimensional_entity_confidence
     ) VALUES (
-        v_model_id, 'gold_demo', 'Fact Order', 'Submitted Order activity and amount.',
+        v_project_id, 'gold_demo', 'Fact Order', 'Submitted Order activity and amount.',
         'fact', 'transaction', 'One row per submitted Order', 1, 'high'
     ) RETURNING dimensional_entity_id INTO v_dimensional_order_id;
 
     INSERT INTO workflow.dimensional_entity_submodel (
-        model_id, dimensional_entity_id, dimensional_submodel_id
+        project_id, dimensional_entity_id, dimensional_submodel_id
     ) VALUES
-        (v_model_id, v_dimensional_customer_id, v_dimensional_submodel_id),
-        (v_model_id, v_dimensional_order_id, v_dimensional_submodel_id);
+        (v_project_id, v_dimensional_customer_id, v_dimensional_submodel_id),
+        (v_project_id, v_dimensional_order_id, v_dimensional_submodel_id);
 
     INSERT INTO workflow.dimensional_attribute (
-        model_id, dimensional_entity_id, dimensional_attribute_name,
+        project_id, dimensional_entity_id, dimensional_attribute_name,
         dimensional_attribute_definition, dimensional_attribute_data_type,
         dimensional_attribute_is_nullable, dimensional_attribute_ordinal_position,
         dimensional_attribute_role, dimensional_attribute_key_role,
         dimensional_attribute_change_behavior, dimensional_attribute_confidence
     ) VALUES (
-        v_model_id, v_dimensional_customer_id, 'Customer Key',
+        v_project_id, v_dimensional_customer_id, 'Customer Key',
         'Durable Customer dimension key.', 'BIGINT', FALSE, 1,
         'key', 'surrogate', 'fixed', 'high'
     ) RETURNING dimensional_attribute_id INTO v_dimensional_customer_key_id;
     INSERT INTO workflow.dimensional_attribute (
-        model_id, dimensional_entity_id, dimensional_attribute_name,
+        project_id, dimensional_entity_id, dimensional_attribute_name,
         dimensional_attribute_definition, dimensional_attribute_data_type,
         dimensional_attribute_is_nullable, dimensional_attribute_ordinal_position,
         dimensional_attribute_role, dimensional_attribute_change_behavior,
         dimensional_attribute_confidence
     ) VALUES (
-        v_model_id, v_dimensional_customer_id, 'Customer Name',
+        v_project_id, v_dimensional_customer_id, 'Customer Name',
         'Current Customer display name.', 'VARCHAR(200)', TRUE, 2,
         'descriptor', 'overwrite', 'high'
     ) RETURNING dimensional_attribute_id INTO v_dimensional_customer_name_id;
     INSERT INTO workflow.dimensional_attribute (
-        model_id, dimensional_entity_id, dimensional_attribute_name,
+        project_id, dimensional_entity_id, dimensional_attribute_name,
         dimensional_attribute_definition, dimensional_attribute_data_type,
         dimensional_attribute_is_nullable, dimensional_attribute_ordinal_position,
         dimensional_attribute_role, dimensional_attribute_key_role,
         dimensional_attribute_is_grain_component, dimensional_attribute_confidence
     ) VALUES (
-        v_model_id, v_dimensional_order_id, 'Order ID',
+        v_project_id, v_dimensional_order_id, 'Order ID',
         'Degenerate Order business identifier.', 'BIGINT', FALSE, 1,
         'degenerate_dimension', 'none', TRUE, 'high'
     ) RETURNING dimensional_attribute_id INTO v_dimensional_order_key_id;
     INSERT INTO workflow.dimensional_attribute (
-        model_id, dimensional_entity_id, dimensional_attribute_name,
+        project_id, dimensional_entity_id, dimensional_attribute_name,
         dimensional_attribute_definition, dimensional_attribute_data_type,
         dimensional_attribute_is_nullable, dimensional_attribute_ordinal_position,
         dimensional_attribute_role, dimensional_attribute_key_role,
         dimensional_attribute_is_grain_component, dimensional_attribute_confidence
     ) VALUES (
-        v_model_id, v_dimensional_order_id, 'Customer Key',
+        v_project_id, v_dimensional_order_id, 'Customer Key',
         'Foreign key to Dim Customer.', 'BIGINT', FALSE, 2,
         'key', 'foreign', FALSE, 'high'
     ) RETURNING dimensional_attribute_id INTO v_dimensional_order_customer_id;
     INSERT INTO workflow.dimensional_attribute (
-        model_id, dimensional_entity_id, dimensional_attribute_name,
+        project_id, dimensional_entity_id, dimensional_attribute_name,
         dimensional_attribute_definition, dimensional_attribute_data_type,
         dimensional_attribute_is_nullable, dimensional_attribute_ordinal_position,
         dimensional_attribute_role, dimensional_attribute_is_grain_component,
         dimensional_attribute_confidence
     ) VALUES (
-        v_model_id, v_dimensional_order_id, 'Order Date',
+        v_project_id, v_dimensional_order_id, 'Order Date',
         'Order activity date.', 'DATE', FALSE, 3,
         'descriptor', TRUE, 'high'
     ) RETURNING dimensional_attribute_id INTO v_dimensional_order_date_id;
     INSERT INTO workflow.dimensional_attribute (
-        model_id, dimensional_entity_id, dimensional_attribute_name,
+        project_id, dimensional_entity_id, dimensional_attribute_name,
         dimensional_attribute_definition, dimensional_attribute_data_type,
         dimensional_attribute_is_nullable, dimensional_attribute_ordinal_position,
         dimensional_attribute_role, dimensional_attribute_additivity,
         dimensional_attribute_default_aggregation, dimensional_attribute_confidence
     ) VALUES (
-        v_model_id, v_dimensional_order_id, 'Order Amount',
+        v_project_id, v_dimensional_order_id, 'Order Amount',
         'Additive gross Order amount.', 'DECIMAL(18,2)', FALSE, 4,
         'measure', 'additive', 'sum', 'high'
     ) RETURNING dimensional_attribute_id INTO v_dimensional_order_amount_id;
 
     INSERT INTO workflow.dimensional_entity_source_mapping (
-        model_id, dimensional_entity_id, support_source_type, source_logical_entity_id,
+        project_id, dimensional_entity_id, support_source_type, source_logical_entity_id,
         dimensional_entity_source_role, dimensional_entity_source_mapping_order,
         dimensional_entity_source_mapping_rationale
     ) VALUES (
-        v_model_id, v_dimensional_customer_id, 'logical_entity', v_logical_customer_id,
+        v_project_id, v_dimensional_customer_id, 'logical_entity', v_logical_customer_id,
         'dimension source', 1, 'Silver Customer supplies conformed descriptors.'
     ) RETURNING dimensional_entity_source_mapping_id INTO v_dimensional_customer_source_id;
     INSERT INTO workflow.dimensional_entity_source_mapping (
-        model_id, dimensional_entity_id, support_source_type, source_logical_entity_id,
+        project_id, dimensional_entity_id, support_source_type, source_logical_entity_id,
         dimensional_entity_source_role, dimensional_entity_source_mapping_order,
         dimensional_entity_source_mapping_rationale
     ) VALUES (
-        v_model_id, v_dimensional_order_id, 'logical_entity', v_logical_order_id,
+        v_project_id, v_dimensional_order_id, 'logical_entity', v_logical_order_id,
         'fact source', 1, 'Silver Order supplies the transaction grain and measure.'
     ) RETURNING dimensional_entity_source_mapping_id INTO v_dimensional_order_source_id;
 
     INSERT INTO workflow.dimensional_attribute_source_mapping (
-        model_id, dimensional_entity_source_mapping_id, dimensional_entity_id,
+        project_id, dimensional_entity_source_mapping_id, dimensional_entity_id,
         dimensional_attribute_id, support_source_type, source_logical_entity_id,
         source_logical_attribute_id, dimensional_attribute_source_mapping_order,
         dimensional_attribute_source_mapping_rationale
     ) VALUES
-        (v_model_id, v_dimensional_customer_source_id, v_dimensional_customer_id,
+        (v_project_id, v_dimensional_customer_source_id, v_dimensional_customer_id,
          v_dimensional_customer_key_id, 'logical_attribute', v_logical_customer_id,
          v_logical_customer_key_id, 1, 'Promote the governed Customer identifier.'),
-        (v_model_id, v_dimensional_customer_source_id, v_dimensional_customer_id,
+        (v_project_id, v_dimensional_customer_source_id, v_dimensional_customer_id,
          v_dimensional_customer_name_id, 'logical_attribute', v_logical_customer_id,
          v_logical_customer_name_id, 2, 'Carry the current Customer name.'),
-        (v_model_id, v_dimensional_order_source_id, v_dimensional_order_id,
+        (v_project_id, v_dimensional_order_source_id, v_dimensional_order_id,
          v_dimensional_order_key_id, 'logical_attribute', v_logical_order_id,
          v_logical_order_key_id, 1, 'Carry the degenerate Order identifier.'),
-        (v_model_id, v_dimensional_order_source_id, v_dimensional_order_id,
+        (v_project_id, v_dimensional_order_source_id, v_dimensional_order_id,
          v_dimensional_order_customer_id, 'logical_attribute', v_logical_order_id,
          v_logical_order_customer_id, 2, 'Resolve the Customer dimension key.'),
-        (v_model_id, v_dimensional_order_source_id, v_dimensional_order_id,
+        (v_project_id, v_dimensional_order_source_id, v_dimensional_order_id,
          v_dimensional_order_date_id, 'logical_attribute', v_logical_order_id,
          v_logical_order_date_id, 3, 'Carry the activity date.'),
-        (v_model_id, v_dimensional_order_source_id, v_dimensional_order_id,
+        (v_project_id, v_dimensional_order_source_id, v_dimensional_order_id,
          v_dimensional_order_amount_id, 'logical_attribute', v_logical_order_id,
          v_logical_order_amount_id, 4, 'Carry the additive Order amount.');
 
     INSERT INTO workflow.dimensional_relationship (
-        model_id, dimensional_relationship_name, dimensional_relationship_definition,
+        project_id, dimensional_relationship_name, dimensional_relationship_definition,
         dimensional_relationship_from_entity_id,
         dimensional_relationship_from_attribute_id,
         dimensional_relationship_to_entity_id,
@@ -703,7 +688,7 @@ BEGIN
         dimensional_relationship_confidence, dimensional_relationship_basis,
         dimensional_relationship_cardinality_basis
     ) VALUES (
-        v_model_id, 'Fact Order to Dim Customer',
+        v_project_id, 'Fact Order to Dim Customer',
         'Each Fact Order row resolves to its Customer dimension member.',
         v_dimensional_order_id, v_dimensional_order_customer_id,
         v_dimensional_customer_id, v_dimensional_customer_key_id,
@@ -713,11 +698,11 @@ BEGIN
 
     FOR v_mapping_object_id IN
         INSERT INTO workflow.mapping_object (
-            model_id, modeled_entity_type, logical_entity_id, dimensional_entity_id,
+            project_id, modeled_entity_type, logical_entity_id, dimensional_entity_id,
             source_system_id, output_template_id, object_dependency_order,
             mapping_transformation_document
         )
-        SELECT v_model_id, example.layer, example.logical_id, example.dimensional_id,
+        SELECT v_project_id, example.layer, example.logical_id, example.dimensional_id,
                v_system_id, template.output_template_id, example.dependency_order,
                example.document
           FROM (VALUES
@@ -737,10 +722,10 @@ BEGIN
         RETURNING mapping_object_id
     LOOP
         INSERT INTO workflow.mapping_attribute (
-            mapping_object_id, model_id, modeled_entity_type, logical_entity_id,
+            mapping_object_id, project_id, modeled_entity_type, logical_entity_id,
             dimensional_entity_id, logical_attribute_id, dimensional_attribute_id,
             output_template_id, attribute_mapping_transformation_document
-        ) SELECT mapping.mapping_object_id, mapping.model_id, mapping.modeled_entity_type,
+        ) SELECT mapping.mapping_object_id, mapping.project_id, mapping.modeled_entity_type,
                  mapping.logical_entity_id, mapping.dimensional_entity_id,
                  CASE mapping.modeled_entity_type WHEN 'logical_entity' THEN attribute.modeled_attribute_id END,
                  CASE mapping.modeled_entity_type WHEN 'dimensional_entity' THEN attribute.modeled_attribute_id END,
@@ -765,7 +750,7 @@ BEGIN
                      )
                  )
             FROM workflow.mapping_object AS mapping
-            JOIN workflow.modeled_attribute AS attribute ON attribute.model_id = mapping.model_id
+            JOIN workflow.modeled_attribute AS attribute ON attribute.project_id = mapping.project_id
              AND attribute.modeled_entity_type = mapping.modeled_entity_type
              AND attribute.modeled_entity_id = coalesce(mapping.logical_entity_id, mapping.dimensional_entity_id)
             JOIN application.output_template AS template
@@ -776,25 +761,25 @@ BEGIN
     END LOOP;
 
     INSERT INTO workflow.generated_code (
-        model_id,modeled_entity_type,logical_entity_id,dimensional_entity_id,
+        project_id,modeled_entity_type,logical_entity_id,dimensional_entity_id,
         artifact_name,artifact_type,generated_code_content,code_input_digest
     ) VALUES
-        (v_model_id,'logical_entity',v_logical_customer_id,NULL,'silver_customer.sql','sql_file',
+        (v_project_id,'logical_entity',v_logical_customer_id,NULL,'silver_customer.sql','sql_file',
          E'SELECT customer_id AS `Customer ID`, customer_name AS `Customer Name`\nFROM bronze_demo.customer',repeat('d',64)),
-        (v_model_id,'logical_entity',v_logical_order_id,NULL,'silver_orders.sql','sql_file',
+        (v_project_id,'logical_entity',v_logical_order_id,NULL,'silver_orders.sql','sql_file',
          E'SELECT order_id AS `Order ID`, customer_id AS `Customer ID`, order_date AS `Order Date`, order_amount AS `Order Amount`\nFROM bronze_demo.orders',repeat('e',64)),
-        (v_model_id,'dimensional_entity',NULL,v_dimensional_customer_id,'dim_customer.sql','sql_file',
+        (v_project_id,'dimensional_entity',NULL,v_dimensional_customer_id,'dim_customer.sql','sql_file',
          E'SELECT `Customer ID`, `Customer Name`\nFROM silver_demo.Customer',repeat('f',64)),
-        (v_model_id,'dimensional_entity',NULL,v_dimensional_order_id,'fact_order.sql','sql_file',
+        (v_project_id,'dimensional_entity',NULL,v_dimensional_order_id,'fact_order.sql','sql_file',
          E'SELECT `Order ID`, `Customer ID`, `Order Date`, `Order Amount`\nFROM silver_demo.Order',repeat('1',64));
     INSERT INTO workflow.generated_code_source_system (generated_code_id,source_system_id)
-    SELECT generated_code_id,v_system_id FROM workflow.generated_code WHERE model_id = v_model_id;
+    SELECT generated_code_id,v_system_id FROM workflow.generated_code WHERE project_id = v_project_id;
 
     INSERT INTO workflow.validation_group (
-        model_id, tenant_id, system_id, validation_group_name,
+        project_id, tenant_id, system_id, validation_group_name,
         validation_group_description, mapping_context_digest, code_context_digest
     ) VALUES (
-        v_model_id, v_tenant_id, v_system_id, 'Customer Orders release checks',
+        v_project_id, v_tenant_id, v_system_id, 'Customer Orders release checks',
         'Blocking and warning checks for the conformed Customer Orders pipeline.',
         repeat('2', 64), repeat('3', 64)
     ) RETURNING validation_group_id INTO v_validation_group_id;
@@ -830,34 +815,34 @@ BEGIN
      LIMIT 1;
 
     INSERT INTO application.workflow_run (
-        tenant_id, model_id, model_revision, model_workflow,
+        tenant_id, project_id, project_revision, project_workflow,
         actor_principal_id, selected_scope_digest, selected_scope_count,
         workflow_run_state, correlation_id, started_time, completed_time,
         created_time
     )
-    SELECT v_tenant_id, v_model_id, model_revision, 'profiling',
+    SELECT v_tenant_id, v_project_id, project_revision, 'profiling',
            v_principal_id, repeat('4', 64), 2, 'completed', gen_random_uuid(),
            CURRENT_TIMESTAMP - INTERVAL '4 minutes',
            CURRENT_TIMESTAMP - INTERVAL '3 minutes',
            CURRENT_TIMESTAMP - INTERVAL '5 minutes'
-      FROM model.model
-     WHERE model_id = v_model_id
+      FROM project.project
+     WHERE project_id = v_project_id
     RETURNING workflow_run_id INTO v_workflow_run_id;
 
     INSERT INTO application.workflow_run_object_selection (
-        workflow_run_id, model_id, object_id, selection_order
+        workflow_run_id, project_id, object_id, selection_order
     ) VALUES
-        (v_workflow_run_id, v_model_id, v_bronze_customer_id, 1),
-        (v_workflow_run_id, v_model_id, v_bronze_order_id, 2);
+        (v_workflow_run_id, v_project_id, v_bronze_customer_id, 1),
+        (v_workflow_run_id, v_project_id, v_bronze_order_id, 2);
 
-    INSERT INTO model.model_event_log (
-        model_id, correlation_id, workflow_run_id,
-        model_event_log_sequence, model_event_log_attempt,
-        model_workflow, model_event_log_stage, model_event_log_status,
-        model_event_log_message, model_event_log_current,
-        model_event_log_total, model_event_log_percent
+    INSERT INTO project.project_event_log (
+        project_id, correlation_id, workflow_run_id,
+        project_event_log_sequence, project_event_log_attempt,
+        project_workflow, project_event_log_stage, project_event_log_status,
+        project_event_log_message, project_event_log_current,
+        project_event_log_total, project_event_log_percent
     ) VALUES (
-        v_model_id, gen_random_uuid(), v_workflow_run_id,
+        v_project_id, gen_random_uuid(), v_workflow_run_id,
         1, 1, 'profiling', 'completed', 'completed',
         'Profiled six Customer and Order attributes.', 6, 6, 100
     );

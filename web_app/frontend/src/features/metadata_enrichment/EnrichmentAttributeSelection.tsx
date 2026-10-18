@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { SelectAllCheckbox } from "../../shared/ui";
-import type { ModelInputScopeApi, ModelInputScopeDetail } from "../model_input_scope/api";
+import type { ProjectInputScopeApi, ProjectInputScopeDetail } from "../project_input_scope/api";
 import type { CreateWorkflowRunCommand, WorkflowScopeObject } from "../workflows/api";
 
 export interface EnrichmentAttributeSelectionValue {
@@ -11,16 +11,16 @@ export interface EnrichmentAttributeSelectionValue {
 type DetailState =
   | { status: "loading"; scopeKey: string }
   | { status: "error"; scopeKey: string }
-  | { status: "ready"; scopeKey: string; value: ModelInputScopeDetail };
+  | { status: "ready"; scopeKey: string; value: ProjectInputScopeDetail };
 
 export function EnrichmentAttributeSelection({
-  objects, tenantId, modelId, readObject, initialObject, initialSelectedIds, disabled, onChange,
+  objects, tenantId, projectId, readObject, initialObject, initialSelectedIds, disabled, onChange,
 }: {
   objects: WorkflowScopeObject[];
   tenantId: number;
-  modelId: number;
-  readObject: ModelInputScopeApi["readModelInputScopeObject"];
-  initialObject?: ModelInputScopeDetail;
+  projectId: number;
+  readObject: ProjectInputScopeApi["readProjectInputScopeObject"];
+  initialObject?: ProjectInputScopeDetail;
   initialSelectedIds: number[];
   disabled: boolean;
   onChange: (selection: EnrichmentAttributeSelectionValue) => void;
@@ -63,13 +63,13 @@ export function EnrichmentAttributeSelection({
       const key = scopeIdentity(object);
       inFlight.current.add(id);
       setDetails((old) => ({ ...old, [id]: { status: "loading", scopeKey: key } }));
-      void readObject(tenantId, modelId, id).then((value) => {
+      void readObject(tenantId, projectId, id).then((value) => {
         // The complete response must belong to the exact requested Scope record.
         if (value.object_id !== id || value.source_tenant_id !== tenantId
           || value.system_id !== object.system_id || value.system_code !== object.system_code
           || (object.connection_id !== undefined && value.connection_id !== object.connection_id)
           || value.object_name !== object.object_name || value.object_schema !== object.object_schema
-          || value.zone_code !== object.zone_code || !value.is_model_input_eligible
+          || value.zone_code !== object.zone_code || !value.is_project_input_eligible
           || value.is_locked !== false || value.review_revision !== object.review_revision
           || !Array.isArray(value.attributes)
           || !Number.isSafeInteger(value.attribute_count) || value.attribute_count < 0
@@ -103,7 +103,7 @@ export function EnrichmentAttributeSelection({
         if (mounted.current) setDetails((old) => ({ ...old }));
       });
     }
-  }, [chosen, details, disabled, duplicateScope, modelId, readObject, tenantId]);
+  }, [chosen, details, disabled, duplicateScope, projectId, readObject, tenantId]);
 
   const selection = useMemo(() => {
     const targets: EnrichmentAttributeSelectionValue["targets"] = [];

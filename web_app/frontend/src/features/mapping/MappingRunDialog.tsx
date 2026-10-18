@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ApiError } from "../../core/http";
 import { trapDialogFocus, useDialogFocus } from "../../shared/dialog";
 import { SelectField } from "../../shared/ui";
-import type { ModelDetail } from "../models/api";
+import type { ProjectDetail } from "../projects/api";
 import { useWorkflowRunSubmission } from "../workflows/useWorkflowRunSubmission";
 import {
   findAgentExecutionProfile,
@@ -30,10 +30,10 @@ import { MappingOutputTemplateSelection } from "./MappingOutputTemplateSelection
 type ExecutionMode = NonNullable<CreateWorkflowRunCommand["workflow_execution_mode"]>;
 const targetKey = (target: MappingGenerationTarget) => `${target.entity_id}:${target.source_system.system_id}`;
 
-export function MappingRunDialog({ api, tenantId, model, entityType, onClose, onCompleted }: {
+export function MappingRunDialog({ api, tenantId, project, entityType, onClose, onCompleted }: {
   api: MappingApi;
   tenantId: number;
-  model: ModelDetail;
+  project: ProjectDetail;
   entityType: MappingEntityType;
   onClose: () => void;
   onCompleted: (workflowRunId: number) => Promise<void>;
@@ -50,8 +50,8 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
   const [viewedKey, setViewedKey] = useState<string | null>(null);
   const [attributePage, setAttributePage] = useState(0);
   const [executionMode, setExecutionMode] = useState<ExecutionMode>("tool_assisted");
-  const [modelCode, setModelCode] = useState(model.default_agent_model_code ?? "");
-  const [reasoningCode, setReasoningCode] = useState(model.default_reasoning_effort_code ?? "");
+  const [modelCode, setModelCode] = useState(project.default_agent_model_code ?? "");
+  const [reasoningCode, setReasoningCode] = useState(project.default_reasoning_effort_code ?? "");
   const [objectTemplate, setObjectTemplate] = useState("");
   const [attributeTemplate, setAttributeTemplate] = useState("");
   const capabilities = useQuery({
@@ -59,11 +59,11 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
     queryFn: api.readAgentCapabilities,
   });
   const targets = useQuery({
-    queryKey: ["mapping-generation-targets", tenantId, model.model_id, entityType],
-    queryFn: () => loadMappingGenerationTargets(api, tenantId, model.model_id, entityType),
+    queryKey: ["mapping-generation-targets", tenantId, project.project_id, entityType],
+    queryFn: () => loadMappingGenerationTargets(api, tenantId, project.project_id, entityType),
   });
   const templates = useQuery({
-    queryKey: mappingQueryKeys.outputTemplates(tenantId, model.model_id, entityType),
+    queryKey: mappingQueryKeys.outputTemplates(tenantId, project.project_id, entityType),
     queryFn: () => loadActiveMappingOutputTemplates(api, tenantId, entityType),
   });
   const rows = useMemo(() => targets.data?.items ?? [], [targets.data?.items]);
@@ -82,7 +82,7 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
   const preservedCount = selected.reduce((count, row) => count + row.attributes.length - selectedAttributes(row).length, 0);
   const viewed = rows.find((row) => targetKey(row) === viewedKey);
   const viewedAttributes = viewed ? selectedAttributes(viewed) : [];
-  const revisionChanged = targets.data !== undefined && targets.data.modelRevision !== model.model_revision;
+  const revisionChanged = targets.data !== undefined && targets.data.projectRevision !== project.project_revision;
   const models = capabilities.data?.models.filter((item) => findAgentExecutionProfile(item, executionMode)) ?? [];
   const profile = models.find((item) => item.code === modelCode);
   const efforts = capabilities.data?.reasoning_efforts.filter((item) => profile
@@ -90,8 +90,8 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
   const agent = capabilities.data ? resolveDefaultAgent(capabilities.data, executionMode, {
     modelCode,
     reasoningEffortCode: reasoningCode,
-    maxTurns: model.default_max_turns,
-    validationRetryCount: model.default_validation_retry_count,
+    maxTurns: project.default_max_turns,
+    validationRetryCount: project.default_validation_retry_count,
   }) : null;
   const agentValid = agent !== null && agent.model_code === modelCode && agent.reasoning_effort_code === reasoningCode;
 
@@ -112,9 +112,9 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
   const { mutation, pendingRunId } = useWorkflowRunSubmission({
     api,
     tenantId,
-    modelId: model.model_id,
+    projectId: project.project_id,
     execute: (id, command) => api.executeMappingRun(
-      tenantId, model.model_id, id, command.workflow_execution_mode!, command.expected_model_revision,
+      tenantId, project.project_id, id, command.workflow_execution_mode!, command.expected_project_revision,
     ),
     onSuccess: async (id) => { await onCompleted(id); onClose(); },
   });
@@ -128,8 +128,8 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
     if (pendingRunId !== null) { mutation.mutate(undefined); return; }
     if (selectionUnavailable || !selected.length || !agentValid) return;
     mutation.mutate({
-      expected_model_revision: model.model_revision,
-      model_workflow: "mapping",
+      expected_project_revision: project.project_revision,
+      project_workflow: "mapping",
       workflow_execution_mode: executionMode,
       selected_object_ids: [],
       selected_entity_ids: [...new Set(selected.map((row) => row.entity_id))],
@@ -197,7 +197,7 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
           <p className="field-help">Each selected Entity is assessed for every selected input System. Available transformations are retained; missing selected transformations stay blank. Locked and unselected mappings are preserved.</p>
           {targets.isPending ? <div className="surface-state" aria-busy="true">Loading all Mapping targets and Attributes…</div>
             : targets.isError ? <p className="inline-error" role="alert">Targets could not be fully loaded.</p>
-            : revisionChanged ? <p className="inline-error" role="alert">The Model changed. Close this dialog and refresh.</p>
+            : revisionChanged ? <p className="inline-error" role="alert">The Project changed. Close this dialog and refresh.</p>
             : viewed ? <section aria-label="Choose Entity Attributes">
               <button className="text-action" type="button" onClick={() => setViewedKey(null)}>Back to Entities</button>
               <header className="enrichment-selection-header">
@@ -287,7 +287,7 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
                     </tr>;
                   })}</tbody>
                 </table>
-                {!visible.length ? <p className="empty-state compact">No targets match. Check active Entities and Systems represented in Model Input Scope.</p> : null}
+                {!visible.length ? <p className="empty-state compact">No targets match. Check active Entities and Systems represented in Project Input Scope.</p> : null}
               </div>
             </>}
         </fieldset>
@@ -298,7 +298,7 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
             objectValue={objectTemplate} attributeValue={attributeTemplate} disabled={frozen || templates.isPending || templates.isError}
             onObjectChange={setObjectTemplate} onAttributeChange={setAttributeTemplate} />
         </details>
-        {capabilities.isError || (capabilities.data && !agentValid) ? <p className="inline-error" role="alert">No compatible agent configuration is available. Refresh and check Model settings.</p> : null}
+        {capabilities.isError || (capabilities.data && !agentValid) ? <p className="inline-error" role="alert">No compatible agent configuration is available. Refresh and check Project settings.</p> : null}
         {templates.isError ? <p className="field-help">Custom templates could not be loaded. Global defaults remain available.</p> : null}
         {mutation.isError ? <p className="inline-error" role="alert">{mappingRunError(mutation.error, pendingRunId !== null)}</p> : null}
         <footer className="dialog-actions">
@@ -317,6 +317,6 @@ function mappingRunError(error: Error, runWasCreated: boolean): string {
   if (runWasCreated && isTenantWorkflowConflict(error)) return TENANT_WORKFLOW_CONFLICT_MESSAGE;
   if (runWasCreated) return "The Mapping run remains queued because it could not be started.";
   if (error instanceof ApiError && error.status === 403) return "You no longer have permission or the required Tenant Lock to run Mapping.";
-  if (error instanceof ApiError && error.status === 409) return "The Model or Mapping state changed. Refresh before creating another run.";
+  if (error instanceof ApiError && error.status === 409) return "The Project or Mapping state changed. Refresh before creating another run.";
   return "The Mapping run could not be created or started.";
 }

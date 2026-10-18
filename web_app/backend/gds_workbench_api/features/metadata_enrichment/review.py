@@ -1,4 +1,4 @@
-"""Human edits of Model enrichment, with revision fencing and durable replay."""
+"""Human edits of Project enrichment, with revision fencing and durable replay."""
 
 import re
 from contextlib import AbstractAsyncContextManager
@@ -21,7 +21,7 @@ from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from gds_workbench_api.dependencies import principal_dependency
-from gds_workbench_api.features.models import ModelNotFoundError
+from gds_workbench_api.features.projects import ProjectNotFoundError
 from gds_workbench_api.features.workflows.authoring.lifecycle import raise_workflow_lifecycle_error
 
 type RecordId = Annotated[int, Field(gt=0, le=9_223_372_036_854_775_807)]
@@ -82,7 +82,7 @@ class EnrichmentReviewDatabase(Protocol):
 
 class ReviewEnrichmentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-    expected_model_revision: int = Field(gt=0)
+    expected_project_revision: int = Field(gt=0)
     record_type: Literal["object", "attribute"]
     action: Literal["edit", "lock", "unlock"]
     records: list[EnrichmentReviewRecord] = Field(min_length=1, max_length=200)
@@ -118,7 +118,7 @@ class DatabaseEnrichmentReviewService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         command: ReviewEnrichmentRequest,
         idempotency_key: UUID,
     ) -> ReviewEnrichmentResult:
@@ -131,14 +131,14 @@ class DatabaseEnrichmentReviewService:
         async with self._database.write_transaction() as transaction:
             try:
                 row = await transaction.fetch_one(
-                    "SELECT application.review_model_enrichment("
+                    "SELECT application.review_project_enrichment("
                     "%s,%s,%s,%s,%s,%s,%s,%s,%s) AS result",
                     (
                         principal.entra_tenant_id,
                         principal.entra_object_id,
                         tenant_id,
-                        model_id,
-                        command.expected_model_revision,
+                        project_id,
+                        command.expected_project_revision,
                         command.record_type,
                         command.action,
                         Jsonb(
@@ -169,8 +169,8 @@ class DatabaseEnrichmentReviewService:
                     ) from None
                 if message in ("authorization_denied", "principal_not_found", "principal_inactive"):
                     raise AuthorizationDeniedError() from None
-                if message == "model_not_found":
-                    raise ModelNotFoundError() from None
+                if message == "project_not_found":
+                    raise ProjectNotFoundError() from None
                 if message in ("tenant_locked", "tenant_lock_required"):
                     raise TenantLockRequiredError() from None
                 raise_workflow_lifecycle_error(error)
@@ -189,12 +189,14 @@ def create_enrichment_review_router(
     identity_provider: IdentityProvider,
     service: DatabaseEnrichmentReviewService,
 ) -> APIRouter:
-    router = APIRouter(prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/metadata-enrichment")
+    router = APIRouter(
+        prefix="/api/v1/tenants/{tenant_id}/projects/{project_id}/metadata-enrichment"
+    )
     authenticate = principal_dependency(identity_provider)
 
     async def review_records(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         command: ReviewEnrichmentRequest,
         idempotency_key: Annotated[UUID, Header(alias="Idempotency-Key")],
         principal: RequestPrincipal = Depends(authenticate),
@@ -202,7 +204,7 @@ def create_enrichment_review_router(
         return await service.review_records(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             command=command,
             idempotency_key=idempotency_key,
         )

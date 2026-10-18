@@ -9,6 +9,30 @@ IMMUTABLE
 PARALLEL SAFE
 RETURN value IS NOT NULL AND length(btrim(value)) > 0;
 
+CREATE TABLE reference.context_type (
+    context_type_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name VARCHAR(200) NOT NULL,
+    description TEXT,
+    CONSTRAINT ck_context_type_name CHECK (reference.is_nonblank(name))
+);
+CREATE UNIQUE INDEX ux_context_type_name_ci
+    ON reference.context_type (lower(btrim(name)));
+
+-- Global vocabulary available in every fresh installation.
+INSERT INTO reference.context_type (name, description) VALUES
+    ('Business Requirement', 'Business outcomes, needs, and constraints.'),
+    ('Technical Requirement', 'Technical capabilities, constraints, and nonfunctional needs.'),
+    ('Source Information', 'Facts about source systems, data, and observed behavior.'),
+    ('Source Requirement', 'Requirements for accessing, extracting, or interpreting source data.'),
+    ('Reporting Requirement', 'Required reports, measures, dimensions, and reporting behavior.'),
+    ('Convention', 'Shared naming, design, and implementation conventions.'),
+    ('Decision', 'Agreed choices and the reasoning behind them.'),
+    ('Assumption', 'Working assumptions that need confirmation or ongoing review.'),
+    ('Data Quality Rule', 'Rules describing acceptable data and quality expectations.'),
+    ('Validation Criterion', 'Conditions and evidence used to determine correctness.'),
+    ('Operational Guidance', 'Instructions for execution, monitoring, support, and recovery.'),
+    ('Code Context', 'Implementation knowledge, code behavior, dependencies, and coding guidance.');
+
 CREATE TABLE reference.environment (
     environment_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     environment_code VARCHAR(100) NOT NULL,
@@ -247,19 +271,6 @@ CREATE TABLE reference.job_type (
     CONSTRAINT ck_job_type_name CHECK (reference.is_nonblank(job_type_name))
 );
 
-CREATE TABLE reference.lane (
-    lane_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    lane_code VARCHAR(100) NOT NULL,
-    lane_name VARCHAR(200) NOT NULL,
-    lane_description TEXT,
-    created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT ck_lane_code CHECK (reference.is_nonblank(lane_code)),
-    CONSTRAINT ck_lane_name CHECK (reference.is_nonblank(lane_name))
-);
-
 CREATE UNIQUE INDEX ux_environment_code_ci
     ON reference.environment (lower(btrim(environment_code)));
 CREATE UNIQUE INDEX ux_system_type_code_ci
@@ -296,8 +307,6 @@ CREATE UNIQUE INDEX ux_currency_code_ci
     ON reference.currency (lower(btrim(currency_code)));
 CREATE UNIQUE INDEX ux_job_type_name_ci
     ON reference.job_type (lower(btrim(job_type_name)));
-CREATE UNIQUE INDEX ux_lane_code_ci
-    ON reference.lane (lower(btrim(lane_code)));
 
 -- Supports reverse traversal of the self-referencing hierarchy.
 CREATE INDEX ix_pipeline_parent

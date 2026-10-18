@@ -5,31 +5,31 @@ from __future__ import annotations
 from typing import LiteralString
 
 _ELIGIBLE_OBJECTS_CTE = """
-WITH requested_model AS (
-    SELECT %s::BIGINT AS model_id
+WITH requested_project AS (
+    SELECT %s::BIGINT AS project_id
 ),
 eligible_objects AS MATERIALIZED (
     SELECT eligibility.*
-      FROM requested_model
-      CROSS JOIN LATERAL workflow.list_model_object_eligibility(
-          requested_model.model_id
+      FROM requested_project
+      CROSS JOIN LATERAL workflow.list_project_object_eligibility(
+          requested_project.project_id
       ) AS eligibility
 )
 """
 
 # Complete snapshots retain owned inactive supports; workflow inputs stay eligible.
 _HISTORICAL_OBJECTS_CTE = """
-WITH requested_model AS (
-    SELECT %s::BIGINT AS model_id
+WITH requested_project AS (
+    SELECT %s::BIGINT AS project_id
 ),
 eligible_objects AS MATERIALIZED (
-    SELECT model.model_id, object.object_id, TRUE AS is_model_input_eligible
-      FROM requested_model
-      JOIN model.model AS model USING (model_id)
-      JOIN core.object AS object ON object.source_tenant_id = model.tenant_id
+    SELECT project.project_id, object.object_id, TRUE AS is_project_input_eligible
+      FROM requested_project
+      JOIN project.project AS project USING (project_id)
+      JOIN core.object AS object ON object.source_tenant_id = project.tenant_id
         OR (object.source_tenant_id = ANY(%s::BIGINT[])
-            AND EXISTS (SELECT 1 FROM model.model_input_scope AS retained_scope
-                         WHERE retained_scope.model_id = model.model_id
+            AND EXISTS (SELECT 1 FROM project.project_input_scope AS retained_scope
+                         WHERE retained_scope.project_id = project.project_id
                            AND retained_scope.object_id = object.object_id))
 )
 """
@@ -58,12 +58,10 @@ COALESCE((
                    )
                    ELSE jsonb_build_object(
                        'conceptual_support_id', support.conceptual_support_id,
-                       'support_source_type', 'assertion',
-                       'assertion_record', jsonb_build_object(
-                           'modeling_assertion_record_id',
-                               assertion_record.modeling_assertion_record_id,
-                           'modeling_assertion_record_key',
-                               assertion_record.modeling_assertion_record_key
+                       'support_source_type', 'context_record',
+                       'context_record', jsonb_build_object(
+                           'context_record_id',
+                               context_record.context_record_id
                        ),
                        'support_role', support.conceptual_support_role,
                        'support_reason', support.conceptual_support_reason,
@@ -82,16 +80,16 @@ COALESCE((
         ON source_connection.connection_id = source_object.connection_id
       LEFT JOIN eligible_objects AS source_eligibility
         ON source_eligibility.object_id = support.source_object_id
-       AND source_eligibility.model_id = support.model_id
-       AND source_eligibility.is_model_input_eligible
+       AND source_eligibility.project_id = support.project_id
+       AND source_eligibility.is_project_input_eligible
       LEFT JOIN core.tenant AS source_tenant
         ON source_tenant.tenant_id = source_connection.tenant_id
       LEFT JOIN core.system AS source_system
         ON source_system.system_id = source_connection.system_id
-      LEFT JOIN model.modeling_assertion_record AS assertion_record
-        ON assertion_record.modeling_assertion_record_id = support.modeling_assertion_record_id
-       AND assertion_record.model_id = support.model_id
-     WHERE support.model_id = parent.model_id
+      LEFT JOIN project.context_record AS context_record
+        ON context_record.context_record_id = support.context_record_id
+       AND context_record.project_id = support.project_id
+     WHERE support.project_id = parent.project_id
        AND support.supported_artifact_type = '{supported_artifact_type}'
        AND support.{parent_id_column} = parent.{parent_id_column}
        AND (
@@ -100,8 +98,8 @@ COALESCE((
                SELECT 1
                  FROM eligible_objects AS eligibility
                 WHERE eligibility.object_id = support.source_object_id
-                  AND eligibility.model_id = support.model_id
-                  AND eligibility.is_model_input_eligible
+                  AND eligibility.project_id = support.project_id
+                  AND eligibility.is_project_input_eligible
            )
        )
 ), '[]'::JSONB) AS supports
@@ -124,13 +122,13 @@ SELECT parent.conceptual_object_id,
     )
 }
   FROM workflow.conceptual_object AS parent
- WHERE parent.model_id = (SELECT model_id FROM requested_model)
+ WHERE parent.project_id = (SELECT project_id FROM requested_project)
    AND (
        cardinality(%s::BIGINT[]) = 0
        OR EXISTS (
            SELECT 1
              FROM workflow.conceptual_support AS selected_support
-            WHERE selected_support.model_id = parent.model_id
+            WHERE selected_support.project_id = parent.project_id
               AND selected_support.conceptual_object_id = parent.conceptual_object_id
               AND selected_support.support_source_type = 'object'
               AND selected_support.source_object_id = ANY(%s::BIGINT[])
@@ -138,8 +136,8 @@ SELECT parent.conceptual_object_id,
                   SELECT 1
                     FROM eligible_objects AS eligibility
                    WHERE eligibility.object_id = selected_support.source_object_id
-                     AND eligibility.model_id = selected_support.model_id
-                     AND eligibility.is_model_input_eligible
+                     AND eligibility.project_id = selected_support.project_id
+                     AND eligibility.is_project_input_eligible
               )
        )
    )
@@ -171,11 +169,11 @@ SELECT parent.conceptual_relationship_id,
   FROM workflow.conceptual_relationship AS parent
   JOIN workflow.conceptual_object AS from_object
     ON from_object.conceptual_object_id = parent.from_conceptual_object_id
-   AND from_object.model_id = parent.model_id
+   AND from_object.project_id = parent.project_id
   JOIN workflow.conceptual_object AS to_object
     ON to_object.conceptual_object_id = parent.to_conceptual_object_id
-   AND to_object.model_id = parent.model_id
- WHERE parent.model_id = (SELECT model_id FROM requested_model)
+   AND to_object.project_id = parent.project_id
+ WHERE parent.project_id = (SELECT project_id FROM requested_project)
    AND (
        cardinality(%s::BIGINT[]) = 0
        OR parent.from_conceptual_object_id = ANY(%s::BIGINT[])

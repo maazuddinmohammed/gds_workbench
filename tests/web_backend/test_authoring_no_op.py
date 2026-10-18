@@ -33,16 +33,16 @@ def test_candidate_digest_is_canonical_and_plan_bound() -> None:
     plan = cast(
         AgentRunPlan,
         SimpleNamespace(
-            model_id=18,
-            model_revision=7,
-            model_workflow="conceptual",
+            project_id=18,
+            project_revision=7,
+            project_workflow="conceptual",
             workflow_execution_mode="one_shot",
             selected_scope_digest="a" * 64,
         ),
     )
 
     assert authoring_no_op_candidate_digest(plan) == (
-        "af2d492ba6a8801a6fecc29695210c52e2fc8dceb2fb358e8a4d13e28fb36461"
+        "6cceaf2ffa573764f8cd0a873f7e44b0a05abc6bc4e61ddfe6d6f988f1d07902"
     )
 
 
@@ -68,9 +68,9 @@ class NoOpTransaction:
             "changed": self.changed,
             "workflow_run_id": 1048,
             "workflow_run_state": "completed_with_repair",
-            "model_id": 18,
-            "model_revision": 7,
-            "model_workflow": "conceptual",
+            "project_id": 18,
+            "project_revision": 7,
+            "project_workflow": "conceptual",
             "workflow_execution_mode": "one_shot",
             "correlation_id": UUID("33333333-3333-3333-3333-333333333333"),
             "candidate_digest": self.candidate_digest,
@@ -78,7 +78,9 @@ class NoOpTransaction:
             "final_event_attempt": 2,
             "final_event_stage": "conceptual.backend_validation",
             "final_event_status": "warning",
-            "final_event_message": ("Conceptual authoring completed with no effective change."),
+            "final_event_message": (
+                "Conceptual authoring completed with no effective change."
+            ),
             "final_event_current": 1,
             "final_event_total": 1,
             "final_finding_count": 0,
@@ -103,7 +105,7 @@ async def test_service_commits_one_server_owned_no_op_receipt() -> None:
         expected_workflow="conceptual",
         expected_execution_mode="one_shot",
         expected_correlation_id=UUID("33333333-3333-3333-3333-333333333333"),
-        expected_model_revision=7,
+        expected_project_revision=7,
         candidate_digest="c" * 64,
         final_event=AgentWorkflowEvent(
             sequence=3,
@@ -120,7 +122,7 @@ async def test_service_commits_one_server_owned_no_op_receipt() -> None:
     receipt = await service.complete(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
         workflow_run_claim_token=_CLAIM_TOKEN,
         request=request,
@@ -128,7 +130,7 @@ async def test_service_commits_one_server_owned_no_op_receipt() -> None:
 
     assert receipt.replayed is False
     assert receipt.workflow_run_state == "completed_with_repair"
-    assert receipt.model_revision == 7
+    assert receipt.project_revision == 7
     assert receipt.candidate_digest == "c" * 64
     assert receipt.final_event.stage == "conceptual.backend_validation"
     assert receipt.final_event.status == "warning"
@@ -168,7 +170,7 @@ async def test_service_commits_one_server_owned_no_op_receipt() -> None:
     replay = await service.complete(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
         workflow_run_claim_token=_CLAIM_TOKEN,
         request=request,
@@ -183,7 +185,7 @@ async def test_service_commits_one_server_owned_no_op_receipt() -> None:
         await service.complete(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
             workflow_run_claim_token=_CLAIM_TOKEN,
             request=request,
@@ -199,7 +201,7 @@ async def test_service_stops_before_no_op_completion_when_claim_fence_fails() ->
         expected_workflow="conceptual",
         expected_execution_mode="one_shot",
         expected_correlation_id=UUID("33333333-3333-3333-3333-333333333333"),
-        expected_model_revision=7,
+        expected_project_revision=7,
         candidate_digest="c" * 64,
         final_event=AgentWorkflowEvent(
             sequence=3,
@@ -217,7 +219,7 @@ async def test_service_stops_before_no_op_completion_when_claim_fence_fails() ->
         await service.complete(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
             workflow_run_claim_token=_CLAIM_TOKEN,
             request=request,

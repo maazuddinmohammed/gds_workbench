@@ -68,7 +68,9 @@ def _multi_remote_configuration() -> AgentRuntimeConfiguration:
 
 def _capabilities_with_secondary(provider_code: str) -> AgentCapabilityRegistry:
     registry = load_default_agent_capabilities()
-    primary = next(model for model in registry.models if model.provider_code == provider_code)
+    primary = next(
+        model for model in registry.models if model.provider_code == provider_code
+    )
     model_code = "foundry-secondary"
     secondary = primary.model_copy(
         update={
@@ -125,7 +127,9 @@ def test_remote_router_constructs_only_sdks_registered_for_the_bound_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     registry = load_default_agent_capabilities()
-    primary = next(model for model in registry.models if model.code == "foundry-primary")
+    primary = next(
+        model for model in registry.models if model.code == "foundry-primary"
+    )
     openai_only = primary.model_copy(
         update={
             "execution_profiles": tuple(
@@ -212,7 +216,9 @@ async def test_multiple_models_share_one_provider_authentication_and_cleanup(
 def test_injected_authentication_requires_exact_provider_coverage(
     provider_codes: tuple[str, ...],
 ) -> None:
-    authentications = {provider_code: InjectedAuthentication() for provider_code in provider_codes}
+    authentications = {
+        provider_code: InjectedAuthentication() for provider_code in provider_codes
+    }
 
     with pytest.raises(
         ValueError,
@@ -254,7 +260,9 @@ def test_remote_router_rejects_a_deployment_name_outside_the_registry() -> None:
         mode="remote",
         timeout_seconds=90,
         connections=(
-            primary.model_copy(update={"model_endpoint": "environment-overridden-endpoint"}),
+            primary.model_copy(
+                update={"model_endpoint": "environment-overridden-endpoint"}
+            ),
         ),
     )
 

@@ -25,10 +25,10 @@ from psycopg import sql
 
 from tests.mcp.conftest import DisposablePostgres
 from tests.web_backend.mapping_fixtures import mapping_preparation
-from tests.web_backend.test_database_model_change_sets import (
+from tests.web_backend.test_database_project_change_sets import (
     _make_scope_object_dimensional_eligible,
     _required_id,
-    _seed_profile_model,
+    _seed_profile_project,
 )
 
 
@@ -52,18 +52,18 @@ def _seed_mapping_scope(
     create_run: bool = True,
     generate: bool = False,
 ) -> MappingScope:
-    model_id, tenant_id, attribute_id, entra_tenant_id, entra_object_id, _ = (
-        _seed_profile_model(database)
+    project_id, tenant_id, attribute_id, entra_tenant_id, entra_object_id, _ = (
+        _seed_profile_project(database)
     )
     logical_entity_id = _make_scope_object_dimensional_eligible(
-        database, model_id=model_id
+        database, project_id=project_id
     )
     with database.connect_owner() as connection:
         seed = connection.execute(
             """
             SELECT object.object_id, object.connection_id, object.object_type_id,
                    connection.system_id, connection.connection_type_id,
-                   system.system_type_id, tenant.project_id
+                   system.system_type_id, tenant.lane_id
               FROM core.attribute AS attribute
               JOIN core.object AS object USING (object_id)
               JOIN core.connection AS connection USING (connection_id)
@@ -80,14 +80,14 @@ def _seed_mapping_scope(
             connection.execute(
                 """
                 INSERT INTO core.tenant (
-                    project_id, tenant_code, tenant_name, tenant_catalog, gds_admin_catalog
+                    lane_id, tenant_code, tenant_name, tenant_catalog, gds_admin_catalog
                 ) VALUES (%s, %s, 'Shared GDS fixture', %s, %s) RETURNING tenant_id
                 """,
                 (
-                    seed["project_id"],
-                    f"GDS_{model_id}",
-                    f"shared_{model_id}",
-                    f"admin_{model_id}",
+                    seed["lane_id"],
+                    f"GDS_{project_id}",
+                    f"shared_{project_id}",
+                    f"admin_{project_id}",
                 ),
             ).fetchone(),
             "tenant_id",
@@ -98,7 +98,7 @@ def _seed_mapping_scope(
                 INSERT INTO core.system (system_code, system_name, system_type_id)
                 VALUES (%s, 'Shared store fixture', %s) RETURNING system_id
                 """,
-                (f"GDS_{model_id}", seed["system_type_id"]),
+                (f"GDS_{project_id}", seed["system_type_id"]),
             ).fetchone(),
             "system_id",
         )
@@ -113,7 +113,7 @@ def _seed_mapping_scope(
                 (
                     placement_tenant_id,
                     other_system_id,
-                    f"STORE_{model_id}",
+                    f"STORE_{project_id}",
                     seed["connection_type_id"],
                 ),
             ).fetchone(),
@@ -161,8 +161,8 @@ def _seed_mapping_scope(
             (source_object_id,),
         )
         connection.execute(
-            "INSERT INTO model.model_input_scope (model_id, object_id) VALUES (%s, %s)",
-            (model_id, source_object_id),
+            "INSERT INTO project.project_input_scope (project_id, object_id) VALUES (%s, %s)",
+            (project_id, source_object_id),
         )
         connection.execute(
             """
@@ -174,16 +174,22 @@ def _seed_mapping_scope(
         connection.execute(
             """
             INSERT INTO workflow.logical_entity_source_mapping (
-                model_id, logical_entity_id, support_source_type, source_object_id,
+                project_id, logical_entity_id, support_source_type, source_object_id,
                 logical_entity_source_mapping_order, logical_entity_source_mapping_rationale
             ) SELECT %s, entity.logical_entity_id, 'object', source.object_id,
                      source.mapping_order, 'Registered source fixture.'
                 FROM workflow.logical_entity AS entity
                 CROSS JOIN (VALUES (%s::BIGINT, 2), (%s::BIGINT, 1))
                     AS source(object_id, mapping_order)
-               WHERE entity.model_id = %s AND entity.logical_entity_id = %s
+               WHERE entity.project_id = %s AND entity.logical_entity_id = %s
             """,
-            (model_id, source_object_id, bronze_object_id, model_id, logical_entity_id),
+            (
+                project_id,
+                source_object_id,
+                bronze_object_id,
+                project_id,
+                logical_entity_id,
+            ),
         )
         modeled_entity_id = logical_entity_id
         if dimensional:
@@ -191,13 +197,13 @@ def _seed_mapping_scope(
                 connection.execute(
                     """
                     INSERT INTO workflow.dimensional_entity (
-                        model_id, dimensional_entity_schema_name, dimensional_entity_name,
+                        project_id, dimensional_entity_schema_name, dimensional_entity_name,
                         dimensional_entity_definition,
                         dimensional_entity_type, dimensional_entity_grain_definition
                     ) VALUES (%s, 'gold', 'Customer', 'One customer.', 'dimension', 'One customer.')
                     RETURNING dimensional_entity_id
                     """,
-                    (model_id,),
+                    (project_id,),
                 ).fetchone(),
                 "dimensional_entity_id",
             )
@@ -205,25 +211,25 @@ def _seed_mapping_scope(
                 connection.execute(
                     """
                     INSERT INTO workflow.dimensional_attribute (
-                        model_id, dimensional_entity_id, dimensional_attribute_name,
+                        project_id, dimensional_entity_id, dimensional_attribute_name,
                         dimensional_attribute_definition, dimensional_attribute_data_type,
                         dimensional_attribute_ordinal_position, dimensional_attribute_role
                     ) VALUES (%s, %s, 'customer_id', 'Customer identifier.', 'bigint', 1, 'key')
                     RETURNING dimensional_attribute_id
                     """,
-                    (model_id, entity_id),
+                    (project_id, entity_id),
                 ).fetchone(),
                 "dimensional_attribute_id",
             )
             connection.execute(
                 """
                 INSERT INTO workflow.dimensional_entity_source_mapping (
-                    model_id, dimensional_entity_id, support_source_type, source_logical_entity_id,
+                    project_id, dimensional_entity_id, support_source_type, source_logical_entity_id,
                     dimensional_entity_source_role, dimensional_entity_source_mapping_order,
                     dimensional_entity_source_mapping_rationale
                 ) VALUES (%s, %s, 'logical_entity', %s, 'support', 1, 'Applied Logical source.')
                 """,
-                (model_id, entity_id, logical_entity_id),
+                (project_id, entity_id, logical_entity_id),
             )
             modeled_entity_id = entity_id
         actor = connection.execute(
@@ -246,7 +252,7 @@ def _seed_mapping_scope(
                 connection.execute(
                     """
                     INSERT INTO application.workflow_run (
-                        tenant_id, model_id, model_revision, model_workflow,
+                        tenant_id, project_id, project_revision, project_workflow,
                         workflow_execution_mode, actor_principal_id,
                         actor_entra_principal_identity_id, agent_sdk_code, agent_provider_code,
                         agent_model_code, reasoning_effort_code, max_turns,
@@ -254,13 +260,13 @@ def _seed_mapping_scope(
                         workflow_run_state, correlation_id, started_time,
                         modeled_entity_type, mapping_operation, mapping_coverage_mode, mapping_route
                     ) VALUES (%s, %s, 1, 'mapping', 'one_shot', %s, %s,
-                        'openai_agents_sdk', 'databricks', 'test-model', 'medium', 8, 1,
+                        'openai_agents_sdk', 'databricks', 'test-project', 'medium', 8, 1,
                         %s, 1, 'running', %s, CURRENT_TIMESTAMP, %s, %s, 'selected_targets', %s)
                     RETURNING workflow_run_id
                     """,
                     (
                         tenant_id,
-                        model_id,
+                        project_id,
                         actor_id,
                         actor["entra_principal_identity_id"],
                         "a" * 64,
@@ -275,30 +281,30 @@ def _seed_mapping_scope(
             connection.execute(
                 """WITH selected AS (
                  INSERT INTO application.workflow_run_entity_selection (
-                    workflow_run_id,model_id,modeled_entity_type,modeled_entity_id,
+                    workflow_run_id,project_id,modeled_entity_type,modeled_entity_id,
                     modeled_entity_schema_name,modeled_entity_name,selection_order)
-                 SELECT %s,model_id,modeled_entity_type,modeled_entity_id,
+                 SELECT %s,project_id,modeled_entity_type,modeled_entity_id,
                     modeled_entity_schema_name,modeled_entity_name,1
-                 FROM workflow.modeled_entity WHERE model_id=%s AND modeled_entity_type=%s
+                 FROM workflow.modeled_entity WHERE project_id=%s AND modeled_entity_type=%s
                    AND modeled_entity_id=%s RETURNING workflow_run_entity_selection_id)
                  INSERT INTO application.workflow_run_mapping_target_selection (
-                   workflow_run_id,model_id,workflow_run_entity_selection_id,source_system_id,selection_order)
+                   workflow_run_id,project_id,workflow_run_entity_selection_id,source_system_id,selection_order)
                  SELECT %s,%s,workflow_run_entity_selection_id,%s,1 FROM selected""",
                 (
                     run_id,
-                    model_id,
+                    project_id,
                     entity_type,
                     modeled_entity_id,
                     run_id,
-                    model_id,
+                    project_id,
                     source_system_id,
                 ),
             )
     plan_data = mapping_preparation().plan.model_dump(mode="python")
     plan_data["agent_plan"].update(
         workflow_run_id=run_id,
-        model_id=model_id,
-        model_revision=1,
+        project_id=project_id,
+        project_revision=1,
         correlation_id=correlation_id,
         modeled_entity_type=entity_type,
         selected_object_ids=(),
@@ -340,45 +346,43 @@ async def _load(database: DisposablePostgres, scope: MappingScope) -> MappingRun
         await runtime.close()
 
 
-def _seed_assertion_mapping_target(
+def _seed_context_mapping_target(
     database: DisposablePostgres,
     scope: MappingScope,
     *,
     dimensional: bool,
-) -> tuple[int, int]:
+) -> tuple[int, str]:
     """An explicit generated reference Entity, using only disposable fixture state."""
     layer = "dimensional" if dimensional else "logical"
     with database.connect_owner() as connection:
         connection.execute(
-            "UPDATE model.model SET default_mapping_source_system_id=%s WHERE model_id=%s",
-            (scope.source_system_id, scope.plan.model_id),
+            "UPDATE project.project SET default_mapping_source_system_id=%s WHERE project_id=%s",
+            (scope.source_system_id, scope.plan.project_id),
         )
-        document_id = _required_id(
+        context_group_id = _required_id(
             connection.execute(
-                """INSERT INTO model.modeling_assertion_document
-                (model_id, modeling_assertion_document_name)
-                VALUES (%s, 'Generated reference values')
-                RETURNING modeling_assertion_document_id""",
-                (scope.plan.model_id,),
+                """INSERT INTO project.context_group
+                (project_id, name, context_type_id)
+                VALUES (%s, 'Generated reference values',
+                    (SELECT context_type_id FROM reference.context_type
+                     WHERE name = 'Business Requirement'))
+                RETURNING context_group_id""",
+                (scope.plan.project_id,),
             ).fetchone(),
-            "modeling_assertion_document_id",
+            "context_group_id",
         )
-        assertion_id = _required_id(
-            connection.execute(
-                """INSERT INTO model.modeling_assertion_record
-                (model_id, modeling_assertion_document_id, modeling_assertion_record_key,
-                 modeling_assertion_record_type, modeling_assertion_text)
-                VALUES (%s,%s,'generated_reference','business_rule',
-                    'Produce one row with reference_id equal to 1.')
-                RETURNING modeling_assertion_record_id""",
-                (scope.plan.model_id, document_id),
-            ).fetchone(),
-            "modeling_assertion_record_id",
+        context_record_id = str(uuid4())
+        connection.execute(
+            """INSERT INTO project.context_record
+            (project_id, context_group_id, context_record_id, context_text)
+            VALUES (%s, %s, %s::UUID,
+                    'Produce one row with reference_id equal to 1.')""",
+            (scope.plan.project_id, context_group_id, context_record_id),
         )
         entity_id = _required_id(
             connection.execute(
                 sql.SQL(
-                    "INSERT INTO workflow.{} (model_id, {}, {}, {}, {}, {}) "
+                    "INSERT INTO workflow.{} (project_id, {}, {}, {}, {}, {}) "
                     "VALUES (%s,%s,'GeneratedReference','Generated reference.',%s,'One row.') "
                     "RETURNING {} AS entity_id"
                 ).format(
@@ -395,7 +399,7 @@ def _seed_assertion_mapping_target(
                     sql.Identifier(f"{layer}_entity_id"),
                 ),
                 (
-                    scope.plan.model_id,
+                    scope.plan.project_id,
                     "gold" if dimensional else "silver",
                     "dimension" if dimensional else "reference",
                 ),
@@ -404,7 +408,7 @@ def _seed_assertion_mapping_target(
         )
         connection.execute(
             sql.SQL(
-                "INSERT INTO workflow.{} (model_id, {}, {}, {}, {}, {}, {}, {}) "
+                "INSERT INTO workflow.{} (project_id, {}, {}, {}, {}, {}, {}, {}) "
                 "VALUES (%s,%s,'reference_id','Generated key.','bigint',1,%s,FALSE)"
             ).format(
                 sql.Identifier(f"{layer}_attribute"),
@@ -420,7 +424,7 @@ def _seed_assertion_mapping_target(
                 ),
                 sql.Identifier(f"{layer}_attribute_is_nullable"),
             ),
-            (scope.plan.model_id, entity_id, "key" if dimensional else True),
+            (scope.plan.project_id, entity_id, "key" if dimensional else True),
         )
         extra_columns = (
             sql.SQL(", dimensional_entity_source_role") if dimensional else sql.SQL("")
@@ -428,9 +432,9 @@ def _seed_assertion_mapping_target(
         extra_values = sql.SQL(", 'support'") if dimensional else sql.SQL("")
         connection.execute(
             sql.SQL(
-                "INSERT INTO workflow.{} (model_id, {}, support_source_type, "
-                "modeling_assertion_record_id, {}{}) "
-                "VALUES (%s,%s,'assertion',%s,'Explicit generated reference rule.'{})"
+                "INSERT INTO workflow.{} (project_id, {}, support_source_type, "
+                "context_record_id, {}{}) "
+                "VALUES (%s,%s,'context_record',%s,'Explicit generated reference rule.'{})"
             ).format(
                 sql.Identifier(f"{layer}_entity_source_mapping"),
                 sql.Identifier(f"{layer}_entity_id"),
@@ -438,13 +442,13 @@ def _seed_assertion_mapping_target(
                 extra_columns,
                 extra_values,
             ),
-            (scope.plan.model_id, entity_id, assertion_id),
+            (scope.plan.project_id, entity_id, context_record_id),
         )
-    return entity_id, assertion_id
+    return entity_id, context_record_id
 
 
 @pytest.mark.parametrize("dimensional", [False, True])
-def test_assertion_fallback_has_one_pair_and_no_unrelated_candidate_sources(
+def test_context_fallback_has_one_pair_and_no_unrelated_candidate_sources(
     web_postgres_database: DisposablePostgres,
     dimensional: bool,
 ) -> None:
@@ -455,7 +459,7 @@ def test_assertion_fallback_has_one_pair_and_no_unrelated_candidate_sources(
     scope = _seed_mapping_scope(
         web_postgres_database, dimensional=False, create_run=False
     )
-    entity_id, assertion_id = _seed_assertion_mapping_target(
+    entity_id, context_record_id = _seed_context_mapping_target(
         web_postgres_database,
         scope,
         dimensional=dimensional,
@@ -463,17 +467,17 @@ def test_assertion_fallback_has_one_pair_and_no_unrelated_candidate_sources(
     entity_type = "dimensional_entity" if dimensional else "logical_entity"
     with web_postgres_database.connect_owner() as connection:
         assert connection.execute(
-            "SELECT workflow.is_assertion_only_mapping_target(%s,%s,%s) AS eligible",
-            (scope.plan.model_id, entity_id, entity_type),
+            "SELECT workflow.is_context_only_mapping_target(%s,%s,%s) AS eligible",
+            (scope.plan.project_id, entity_id, entity_type),
         ).fetchone() == {"eligible": True}
         pairs = connection.execute(
             _MAPPING_GENERATION_TARGETS_SQL,
             (
                 scope.tenant_id,
-                scope.plan.model_id,
+                scope.plan.project_id,
                 entity_type,
                 scope.tenant_id,
-                scope.plan.model_id,
+                scope.plan.project_id,
                 200,
                 0,
             ),
@@ -485,44 +489,44 @@ def test_assertion_fallback_has_one_pair_and_no_unrelated_candidate_sources(
         assert (
             connection.execute(
                 "SELECT * FROM workflow.list_mapping_source_objects(%s,%s,%s,%s)",
-                (scope.plan.model_id, entity_id, entity_type, scope.source_system_id),
+                (scope.plan.project_id, entity_id, entity_type, scope.source_system_id),
             ).fetchall()
             == []
         )
         assert connection.execute(
-            "SELECT workflow.is_assertion_only_mapping_target(%s,%s,'logical_entity') AS eligible",
-            (scope.plan.model_id, scope.logical_entity_id),
+            "SELECT workflow.is_context_only_mapping_target(%s,%s,'logical_entity') AS eligible",
+            (scope.plan.project_id, scope.logical_entity_id),
         ).fetchone() == {"eligible": False}
         connection.execute(
-            "UPDATE model.modeling_assertion_document SET system_id=%s WHERE "
-            "modeling_assertion_document_id=(SELECT modeling_assertion_document_id "
-            "FROM model.modeling_assertion_record WHERE modeling_assertion_record_id=%s)",
-            (scope.other_system_id, assertion_id),
+            "UPDATE project.context_group SET source_system_id=%s WHERE "
+            "context_group_id=(SELECT context_group_id "
+            "FROM project.context_record WHERE context_record_id=%s)",
+            (scope.other_system_id, context_record_id),
         )
         assert connection.execute(
-            "SELECT workflow.is_assertion_only_mapping_target(%s,%s,%s) AS eligible",
-            (scope.plan.model_id, entity_id, entity_type),
+            "SELECT workflow.is_context_only_mapping_target(%s,%s,%s) AS eligible",
+            (scope.plan.project_id, entity_id, entity_type),
         ).fetchone() == {"eligible": False}
         connection.execute(
-            "UPDATE model.modeling_assertion_document SET system_id=NULL WHERE "
-            "modeling_assertion_document_id=(SELECT modeling_assertion_document_id "
-            "FROM model.modeling_assertion_record WHERE modeling_assertion_record_id=%s)",
-            (assertion_id,),
+            "UPDATE project.context_group SET source_system_id=NULL WHERE "
+            "context_group_id=(SELECT context_group_id "
+            "FROM project.context_record WHERE context_record_id=%s)",
+            (context_record_id,),
         )
         connection.execute(
-            "UPDATE model.modeling_assertion_record "
-            "SET modeling_assertion_record_status='inactive' "
-            "WHERE modeling_assertion_record_id=%s",
-            (assertion_id,),
+            "UPDATE project.context_record "
+            "SET status='inactive' "
+            "WHERE context_record_id=%s",
+            (context_record_id,),
         )
         assert connection.execute(
-            "SELECT workflow.is_assertion_only_mapping_target(%s,%s,%s) AS eligible",
-            (scope.plan.model_id, entity_id, entity_type),
+            "SELECT workflow.is_context_only_mapping_target(%s,%s,%s) AS eligible",
+            (scope.plan.project_id, entity_id, entity_type),
         ).fetchone() == {"eligible": False}
         connection.execute(
-            "UPDATE model.modeling_assertion_record "
-            "SET modeling_assertion_record_status='active' WHERE modeling_assertion_record_id=%s",
-            (assertion_id,),
+            "UPDATE project.context_record "
+            "SET status='active' WHERE context_record_id=%s",
+            (context_record_id,),
         )
         connection.execute(
             "UPDATE core.connection SET is_active=FALSE WHERE tenant_id=%s AND system_id=%s",
@@ -532,10 +536,10 @@ def test_assertion_fallback_has_one_pair_and_no_unrelated_candidate_sources(
             _MAPPING_GENERATION_TARGETS_SQL,
             (
                 scope.tenant_id,
-                scope.plan.model_id,
+                scope.plan.project_id,
                 entity_type,
                 scope.tenant_id,
-                scope.plan.model_id,
+                scope.plan.project_id,
                 200,
                 0,
             ),
@@ -549,9 +553,9 @@ async def test_dimensional_mapping_uses_logical_entities_without_registered_targ
     scope = _seed_mapping_scope(web_postgres_database)
     with web_postgres_database.connect_owner() as connection:
         connection.execute(
-            "UPDATE model.model SET logical_entity_scd_type='type_1', "
-            "dimensional_entity_scd_type='type_2' WHERE model_id=%s",
-            (scope.plan.model_id,),
+            "UPDATE project.project SET logical_entity_scd_type='type_1', "
+            "dimensional_entity_scd_type='type_2' WHERE project_id=%s",
+            (scope.plan.project_id,),
         )
     context = await _load(web_postgres_database, scope)
     assert context.authoring.logical_entity_scd_type == "type_1"
@@ -596,7 +600,7 @@ async def test_logical_mapping_keeps_ordered_source_and_ingested_bronze_inputs(
     assert assess_mapping_readiness(plan=scope.plan, context=context).ready
 
 
-async def test_mapping_target_requires_owning_model_tenant(
+async def test_mapping_target_requires_owning_project_tenant(
     web_postgres_database: DisposablePostgres,
 ) -> None:
     scope = _seed_mapping_scope(web_postgres_database)
@@ -621,10 +625,10 @@ async def test_mapping_pairs_do_not_require_registered_targets_or_dependency_row
             _MAPPING_GENERATION_TARGETS_SQL,
             (
                 scope.tenant_id,
-                scope.plan.model_id,
+                scope.plan.project_id,
                 scope.plan.modeled_entity_type,
                 scope.tenant_id,
-                scope.plan.model_id,
+                scope.plan.project_id,
                 200,
                 0,
             ),

@@ -1,4 +1,4 @@
-import { createModelInputScopeApi, type ModelInputScopeApi } from "../model_input_scope/api";
+import { createProjectInputScopeApi, type ProjectInputScopeApi } from "../project_input_scope/api";
 export interface ReviewEnrichmentResult {
   review_event_id: number;
   action_count: number;
@@ -28,8 +28,8 @@ export interface MetadataEnrichmentResult {
 
 export interface MetadataEnrichmentResultPage {
   tenant_id: number;
-  model_id: number;
-  model_revision: number;
+  project_id: number;
+  project_revision: number;
   workflow_run_id: number;
   workflow_run_state: WorkflowRunState;
   total_count: number;
@@ -57,43 +57,43 @@ export interface ReviewEnrichmentCommand {
 }
 
 export interface MetadataEnrichmentTransport {
-  listEnrichmentObjects: ModelInputScopeApi["listModelInputScope"];
-  readEnrichmentObject: ModelInputScopeApi["readModelInputScopeObject"];
-  reviewEnrichment: (tenantId: number, modelId: number, modelRevision: number, command: ReviewEnrichmentCommand, key: string) => Promise<ReviewEnrichmentResult>;
-  exportEnrichment: (tenantId: number, modelId: number) => Promise<{ blob: Blob; filename: string }>;
-  executeMetadataEnrichmentRun: (tenantId: number, modelId: number, runId: number,
-    expectedModelRevision: number) => Promise<WorkflowRunStart>;
-  readMetadataEnrichmentResults: (tenantId: number, modelId: number, runId: number,
+  listEnrichmentObjects: ProjectInputScopeApi["listProjectInputScope"];
+  readEnrichmentObject: ProjectInputScopeApi["readProjectInputScopeObject"];
+  reviewEnrichment: (tenantId: number, projectId: number, projectRevision: number, command: ReviewEnrichmentCommand, key: string) => Promise<ReviewEnrichmentResult>;
+  exportEnrichment: (tenantId: number, projectId: number) => Promise<{ blob: Blob; filename: string }>;
+  executeMetadataEnrichmentRun: (tenantId: number, projectId: number, runId: number,
+    expectedProjectRevision: number) => Promise<WorkflowRunStart>;
+  readMetadataEnrichmentResults: (tenantId: number, projectId: number, runId: number,
     limit?: number, offset?: number) => Promise<MetadataEnrichmentResultPage>;
 }
 
-export const enrichmentResultKey = (tenantId: number, modelId: number, runId: number) => (
-  ["metadata-enrichment-results", tenantId, modelId, runId] as const
+export const enrichmentResultKey = (tenantId: number, projectId: number, runId: number) => (
+  ["metadata-enrichment-results", tenantId, projectId, runId] as const
 );
 
 export function createMetadataEnrichmentApi(request: HttpRequest): MetadataEnrichmentTransport {
-  const scope = createModelInputScopeApi((path, init, reader) => request(path.replace("/input-scope", "/metadata-enrichment/objects"), init, reader));
+  const scope = createProjectInputScopeApi((path, init, reader) => request(path.replace("/input-scope", "/metadata-enrichment/objects"), init, reader));
   return {
-    listEnrichmentObjects: scope.listModelInputScope,
-    readEnrichmentObject: scope.readModelInputScopeObject,
-    reviewEnrichment: (tenantId, modelId, expectedModelRevision, command, key) => request(
-      `/api/v1/tenants/${tenantId}/models/${modelId}/metadata-enrichment/review`,
+    listEnrichmentObjects: scope.listProjectInputScope,
+    readEnrichmentObject: scope.readProjectInputScopeObject,
+    reviewEnrichment: (tenantId, projectId, expectedProjectRevision, command, key) => request(
+      `/api/v1/tenants/${tenantId}/projects/${projectId}/metadata-enrichment/review`,
       { method: "POST", headers: { "content-type": "application/json", "Idempotency-Key": key },
-        body: JSON.stringify({ ...command, expected_model_revision: expectedModelRevision }) },
+        body: JSON.stringify({ ...command, expected_project_revision: expectedProjectRevision }) },
     ),
-    exportEnrichment: (tenantId, modelId) => request(
-      `/api/v1/tenants/${tenantId}/models/${modelId}/metadata-enrichment/export`,
+    exportEnrichment: (tenantId, projectId) => request(
+      `/api/v1/tenants/${tenantId}/projects/${projectId}/metadata-enrichment/export`,
       { headers: { accept: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" } },
-      async (response) => ({ blob: await response.blob(), filename: /filename="([^"\r\n]+)"/.exec(response.headers.get("content-disposition") ?? "")?.[1] ?? "Model_Enrichment.xlsx" }),
+      async (response) => ({ blob: await response.blob(), filename: /filename="([^"\r\n]+)"/.exec(response.headers.get("content-disposition") ?? "")?.[1] ?? "Project_Enrichment.xlsx" }),
     ),
-    executeMetadataEnrichmentRun: (tenantId, modelId, runId, expectedModelRevision) => request(
-      `/api/v1/tenants/${tenantId}/models/${modelId}/metadata-enrichment/runs/${runId}/execute`,
+    executeMetadataEnrichmentRun: (tenantId, projectId, runId, expectedProjectRevision) => request(
+      `/api/v1/tenants/${tenantId}/projects/${projectId}/metadata-enrichment/runs/${runId}/execute`,
       { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
-        execution_mode: "one_shot", expected_model_revision: expectedModelRevision,
+        execution_mode: "one_shot", expected_project_revision: expectedProjectRevision,
       }) },
     ),
-    readMetadataEnrichmentResults: (tenantId, modelId, runId, limit = 100, offset = 0) => request(
-      `/api/v1/tenants/${tenantId}/models/${modelId}/runs/${runId}/metadata-enrichment?limit=${limit}&offset=${offset}`,
+    readMetadataEnrichmentResults: (tenantId, projectId, runId, limit = 100, offset = 0) => request(
+      `/api/v1/tenants/${tenantId}/projects/${projectId}/runs/${runId}/metadata-enrichment?limit=${limit}&offset=${offset}`,
     ),
   };
 }

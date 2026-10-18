@@ -4,7 +4,7 @@ This runbook covers the web App: React, FastAPI and its durable worker in one
 supervised process. MCP is a separate Azure App Service. Source manifests/configuration
 are authoritative; this document explains operator steps and failure boundaries.
 Deployment requires explicit approval and a compatible, already-installed database.
-It performs no schema migration, backfill or direct Model-data update.
+It performs no schema migration, backfill or direct Project-data update.
 
 ## Required configuration
 
@@ -51,13 +51,13 @@ and a production login other than `gds_web_runtime` are rejected.
 ## Foundry
 
 The registry `web_app/backend/gds_workbench_api/config/agent_capabilities.json` owns
-model codes, actual deployment names, execution modes and reasoning choices. Configure
+project codes, actual deployment names, execution modes and reasoning choices. Configure
 only combinations verified for the destination resource, then rebuild. There is no
-per-model environment override. Historical Run selections remain immutable.
+per-project environment override. Historical Run selections remain immutable.
 
 The SDK adapter selects Responses for requests with tools and Chat Completions for
 requests without tools. Do not remove reasoning merely to fit a different transport.
-Backend configuration rejects unsupported model/mode/reasoning combinations.
+Backend configuration rejects unsupported project/mode/reasoning combinations.
 
 Canonical App configuration uses secret resources:
 
@@ -88,13 +88,13 @@ not used. Entra accepts `https://<resource>.openai.azure.com/openai/v1/`; API-ke
 configuration also accepts the resource `.services.ai.azure.com/openai/v1/` route.
 Project routes under `/api/projects/` are rejected.
 
-Model-call timeout, worker lease/heartbeat and SQL limits are independent. Their
+Project-call timeout, worker lease/heartbeat and SQL limits are independent. Their
 current defaults/bounds are in backend config and settings; do not copy deployment
 specific limits into prompts. Missing/partial credentials fail startup. Disable raw
-model payload tracing.
+project payload tracing.
 
 Optional `GDS_WEB_FOUNDRY_PRICING_JSON` supplies approved token rates by registered
-model code. The runtime schema validates rates and applicability. Unset rates mean
+project code. The runtime schema validates rates and applicability. Unset rates mean
 Unpriced; missing provider usage stays unknown. Each request freezes its applicable
 rate before execution. Estimates exclude other platform/contract charges.
 
@@ -139,21 +139,21 @@ Wait for Running. Promote the same verified source and locks using the productio
 target/profile only after acceptance. Never record secret references or values in a
 release record.
 
-Before rollout, check active Model agent defaults against the current registry.
-Incompatible defaults need an approved governed Model update, not direct SQL or
+Before rollout, check active Project agent defaults against the current registry.
+Incompatible defaults need an approved governed Project update, not direct SQL or
 historical Run rewrites. Code/schema compatibility is a separate gate from replaying
 prompt/reference seeds.
 
 Coverage enforcement requires the Logical and Dimensional enforcement columns and
-matching governed Model function signatures from this release. App-only redeployment
+matching governed Project function signatures from this release. App-only redeployment
 against an older schema fails readiness. Numbered SQL remains fresh-install-only;
 an existing installation needs a separately reviewed schema transition.
 
 After schema compatibility is established, refresh reference seed 04 and publish the
 updated Logical defaults through the documented seed 05 replay or the Prompts UI.
 Seed replay preserves custom defaults; explicitly select a new published version
-when the Model uses a custom assignment. Start a new Run to use the new version.
-Set each layer's Enforce coverage threshold switch in Model Settings as required;
+when the Project uses a custom assignment. Start a new Run to use the new version.
+Set each layer's Enforce coverage threshold switch in Project Settings as required;
 both default off. Verify rejection below target and review supported Submodels and
 relationships on a representative selection before expanding scope.
 
@@ -171,7 +171,7 @@ Verify in the intended environment using authorized data:
 
 Local synthetic checks do not certify live-provider quality or production networking.
 Rollback redeploys a known-good compatible source revision using validate/deploy/run;
-it never resets PostgreSQL or invokes `bundle destroy`. Recheck active Model default
+it never resets PostgreSQL or invokes `bundle destroy`. Recheck active Project default
 compatibility and preserve immutable historical provenance.
 
 | Failure | Check |

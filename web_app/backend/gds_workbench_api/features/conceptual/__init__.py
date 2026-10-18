@@ -2,10 +2,9 @@
 
 from .candidate import ConceptualCandidateValidator
 from .read_contracts import (
-    AssertionRecordReference,
     ConceptualAlias,
-    ConceptualAssertionSupport,
     ConceptualCardinality,
+    ConceptualContextSupport,
     ConceptualFilters,
     ConceptualListQuery,
     ConceptualObjectDetail,
@@ -22,6 +21,7 @@ from .read_contracts import (
     ConceptualSupportBase,
     ConceptualSupportLimitExceededError,
     Confidence,
+    ContextRecordReference,
     ContractModel,
     PhysicalObjectReference,
 )
@@ -37,11 +37,11 @@ from .router import ConceptualWorkflowService, create_conceptual_workflow_router
 from .service import ConceptualExecutionFailedError, ConceptualWorkflow
 
 __all__ = [
-    "AssertionRecordReference",
+    "ContextRecordReference",
     "CONCEPTUAL_OBJECT_SUPPORT_SQL",
     "CONCEPTUAL_RELATIONSHIP_SUPPORT_SQL",
     "ConceptualAlias",
-    "ConceptualAssertionSupport",
+    "ConceptualContextSupport",
     "ConceptualCandidateValidator",
     "ConceptualCardinality",
     "ConceptualExecutionFailedError",

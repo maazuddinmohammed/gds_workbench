@@ -1,6 +1,6 @@
 # Workspace file contract
 
-File contract for the [working method](working-method.md), enforced by shared workspace helpers and the runner. Model-derived Metadata work may use several owner-specific drafts inside the same working directory.
+File contract for the [working method](working-method.md), enforced by shared workspace helpers and the runner. Project-derived Metadata work may use several owner-specific drafts inside the same working directory.
 
 ## Minimal layout
 
@@ -13,9 +13,9 @@ File contract for the [working method](working-method.md), enforced by shared wo
       <task-id>.evidence/
     temp/
   metadata/metadata-snapshot/
-  model/model-snapshot/
+  project/project-snapshot/
   metadata-change-set/
-  model-change-set/
+  project-change-set/
   code/
   metadata-owners/tenant-<id>/       # only for additional Metadata owners
     metadata/metadata-snapshot/
@@ -24,9 +24,9 @@ File contract for the [working method](working-method.md), enforced by shared wo
 
 Create only what is used. Task IDs are helper-generated opaque identifiers. Evidence folders appear only when there is evidence to retain. The existing Snapshot guides own their internal archive layout; do not move those files into `.atlas`.
 
-## Model-derived Metadata owners
+## Project-derived Metadata owners
 
-Keep the primary Tenant and single active Model fixed. When Model-derived work changes Metadata belonging to another authorized owner, register that owner in `metadata_owners` and use its own subtree. No additional session, Model Snapshot or working directory is required.
+Keep the primary Tenant and single active Project fixed. When Project-derived work changes Metadata belonging to another authorized owner, register that owner in `metadata_owners` and use its own subtree. No additional session, Project Snapshot or working directory is required.
 
 - The primary Metadata owner uses root `.`; another owner uses `metadata-owners/tenant-<verified-id>`. IDs are verified positive integers, not user-supplied path fragments.
 - Both roots contain the same `metadata/metadata-snapshot` and `metadata-change-set` structure. Snapshot internals remain unchanged. Primary examples elsewhere use root `.`; helpers resolve the selected owner root before accessing Metadata.
@@ -35,34 +35,34 @@ Keep the primary Tenant and single active Model fixed. When Model-derived work c
 - Keep server Change Sets, locks, revisions, approvals and receipts independent per owner. Atlas Local Workbench can navigate owners; it must never combine their files into one Stage request or imply atomic Apply.
 - If owner Snapshots disagree about a shared physical record, resolve its authoritative ownership/version before using it. Never select a winner by folder or overlay order.
 - The same task can reference several owner batches. Approval may be collected together if each reviewed owner/digest is explicit, but partial success stays visible. Dependent work waits for every required upstream Apply.
-- Model-derived selection does not grant another Tenant's write access or runtime authorization. Missing authorization leaves that owner unresolved while independent work can continue.
+- Project-derived selection does not grant another Tenant's write access or runtime authorization. Missing authorization leaves that owner unresolved while independent work can continue.
 
 ## Session
 
 | Field | Shape and meaning |
 |---|---|
-| `schema_version` | String `"1.0"`; workspace file format, unrelated to Snapshot format or server revision. |
+| `schema_version` | String `"2.0"`; workspace file format, unrelated to Snapshot format or server revision. |
 | `tenant` | Verified primary `{id, code}` plus optional display `name`. Positive numeric ID and nonempty code; identity comes from authorized context, not the directory name. The primary Tenant does not change when selecting another Metadata owner. |
-| `model` | Verified `{id, name}` or `null`; at most one active Model. |
+| `project` | Verified `{id, name}` or `null`; at most one active Project. |
 | `metadata_owners` | Optional map keyed by verified Tenant ID as a string. Each value is `{id, code, root}` with optional display `name`; include the primary owner with root `.` when Metadata is used. Additional owners use the subtree above. |
 | `sql` | Optional `{policy, environment}`. Policy is `never`, `essential` or `proactive`; environment is `dev`, `qa`, `stg` or `prod` when relevant. Stores resolved choices, not authorization. |
 | `subagent_policy` | Optional `{mode}` for `current` or `auto`, or `{mode:"custom", model:"exact-model-name-or-id"}`. No other keys. The custom model is 1–200 characters, without surrounding whitespace or control characters. Omission means unresolved, not permission to choose any model. Applies across tasks and nested sub-agents; see [sub-agent policy](tools/delegation.md). |
 | `active_task` | Task ID or `null`; navigation and resumption only. |
-| `refresh_required` | Optional list of `{area, owner_tenant_id, reason, evidence}`. Helper-maintained known invalidations; for Model the owner is its Tenant. Absence does not prove remote freshness. |
-| `operations` | Optional object: `metadata` maps owner Tenant IDs to current operation-evidence paths; `model` points to the current Model operation. Starting another task or selecting an owner must not hide a staged, failed or uncertain operation. |
+| `refresh_required` | Optional list of `{area, owner_tenant_id, reason, evidence}`. Helper-maintained known invalidations; for Project the owner is its Tenant. Absence does not prove remote freshness. |
+| `operations` | Optional object: `metadata` maps owner Tenant IDs to current operation-evidence paths; `project` points to the current Project operation. Starting another task or selecting an owner must not hide a staged, failed or uncertain operation. |
 
 Session does not duplicate Snapshot versions, server revisions, approval flags or task status lists. The selected filesystem root is the working directory; do not persist an authoritative absolute path that breaks when the directory moves. Display names never replace identity checks.
 
 Use the `subagent-policy` helper to save a user choice with the normal session
 write-conflict checks. `status` returns the saved policy. Reading or resuming an
 older workspace does not add a default or rewrite it. Task changes preserve the
-policy; changing it does not alter the data Model, SQL policy, or existing drafts.
+policy; changing it does not alter the Project, SQL policy, or existing drafts.
 Helpers validate the policy shape. The agent must enforce model selection through
 the host; the helper cannot control a host's sub-agent launcher.
 
 ## Task
 
-Each task has `schema_version:"1.0"` and the five agreed sections. Only `outcome` is required beyond the version; add other sections when useful.
+Each task has `schema_version:"2.0"` and the five agreed sections. Only `outcome` is required beyond the version; add other sections when useful.
 
 | Section | Shape and ownership |
 |---|---|
@@ -72,7 +72,7 @@ Each task has `schema_version:"1.0"` and the five agreed sections. Only `outcome
 | `progress` | Free-form string; concise notes, decisions, optional plan, blockers and next action. No mandatory stage enum. |
 | `evidence` | List of `{path, purpose}` pointing to retained reports and operation records. References do not themselves prove success. |
 
-Each `inputs.snapshots` entry identifies `area`, `owner_tenant_id`, relative `manifest_path`, `snapshot_id`, `manifest_sha256`, and Model `model_revision` where applicable. Capture from verified installed files; never invent a Metadata revision. Include all inputs actually used, including a Model Snapshot that selected a Metadata enrichment scope. Several owner snapshots remain distinct entries.
+Each `inputs.snapshots` entry identifies `area`, `owner_tenant_id`, relative `manifest_path`, `snapshot_id`, `manifest_sha256`, and Project `project_revision` where applicable. Capture from verified installed files; never invent a Metadata revision. Include all inputs actually used, including a Project Snapshot that selected a Metadata enrichment scope. Several owner snapshots remain distinct entries.
 
 Plain Markdown lists can be used inside progress text. A simple explanation needs no task. Helper identity/evidence fields are never hand-edited to manufacture a successful operation.
 
@@ -80,7 +80,7 @@ Plain Markdown lists can be used inside progress text. A simple explanation need
 
 Keep each reviewed batch's operation record under `.atlas/tasks/<task-id>.evidence/<operation-id>.json`, with referenced reports and manifests beside it. Operation IDs are helper-generated. Update that operation's verified checkpoints through expected-content checks; preserve earlier reviewed versions and uncertain attempts when beginning another operation.
 
-Common bindings: format version, operation/task IDs, Metadata/Model area, actual owner identity, safe configured backend identity, Snapshot inputs and local digest. Keep referenced report/manifest paths and digests. Never store connection values, credentials, raw tool dumps or raw user acknowledgements.
+Common bindings: format version, operation/task IDs, Metadata/Project area, actual owner identity, safe configured backend identity, Snapshot inputs and local digest. Keep referenced report/manifest paths and digests. Never store connection values, credentials, raw tool dumps or raw user acknowledgements.
 
 | Checkpoint | Evidence to retain when reached |
 |---|---|
@@ -97,7 +97,7 @@ Retain actual supported result fields; do not manufacture identifiers or compare
 ## Consistency rules
 
 - Paths stored in task/session references are workspace-relative. Resolve and validate them within the chosen root; Stage's public manifest-path argument remains the verified absolute path required by its tool contract.
-- Metadata drafts belong to their owner root; the Model draft belongs to the primary workspace. Neither belongs exclusively to an individual task. A batch may include earlier tasks' edits; review its complete contents. A task/owner switch does not transfer approval or clear an operation pointer.
+- Metadata drafts belong to their owner root; the Project draft belongs to the primary workspace. Neither belongs exclusively to an individual task. A batch may include earlier tasks' edits; review its complete contents. A task/owner switch does not transfer approval or clear an operation pointer.
 - Write evidence before updating a pointer to it. Detect external edits before replacing state; never claim a multi-file update is atomic. A recoverable interrupted write must leave enough evidence to inspect its actual outcome.
 - Content/input changes invalidate matching validation/review checkpoints. Preserve the records as history without presenting them as current approval.
 - `.atlas/temp/` contains disposable material only. Required reports, approved manifests and recovery evidence stay durable. Same-directory temporary files needed for safe replacement may sit beside their destination.

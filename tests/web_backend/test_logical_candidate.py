@@ -11,11 +11,10 @@ from gds_etl_workbench.domain.modeling_records import (
     PhysicalAttributeKey,
     PhysicalObjectKey,
 )
-from gds_etl_workbench.domain.snapshots.model import LogicalSection
+from gds_etl_workbench.domain.snapshots.project import LogicalSection
+from gds_workbench_api.features.logical.candidate import LogicalCandidateValidator
 from jsonschema import Draft202012Validator
 from pydantic import JsonValue
-
-from gds_workbench_api.features.logical.candidate import LogicalCandidateValidator
 
 
 def _object(name: str = "customer_raw") -> PhysicalObjectKey:
@@ -107,7 +106,7 @@ def _validator(*, applied: LogicalSection | None = None) -> LogicalCandidateVali
     return LogicalCandidateValidator(
         selected_object_keys=(_object(),),
         selected_attribute_keys=(_attribute(),),
-        assertion_record_keys=(),
+        context_record_ids=(),
         applied=applied,
     )
 
@@ -146,7 +145,7 @@ async def test_large_selection_cannot_be_silently_reduced_to_one_source() -> Non
     validator = LogicalCandidateValidator(
         selected_object_keys=objects,
         selected_attribute_keys=attributes,
-        assertion_record_keys=(),
+        context_record_ids=(),
         applied=None,
     )
     issues = validator.validate_coverage(cast(JsonValue, _candidate()))
@@ -179,7 +178,7 @@ async def test_coverage_allows_consolidation_and_previously_applied_sources() ->
     validator = LogicalCandidateValidator(
         selected_object_keys=(_object(), other_object),
         selected_attribute_keys=(_attribute(), other_attribute),
-        assertion_record_keys=(),
+        context_record_ids=(),
         applied=None,
     )
     assert validator.validate_coverage(cast(JsonValue, candidate)) == ()
@@ -187,7 +186,7 @@ async def test_coverage_allows_consolidation_and_previously_applied_sources() ->
     validator = LogicalCandidateValidator(
         selected_object_keys=(_object(), other_object),
         selected_attribute_keys=(_attribute(), other_attribute),
-        assertion_record_keys=(),
+        context_record_ids=(),
         applied=applied,
     )
     assert (
@@ -200,12 +199,14 @@ async def test_coverage_allows_consolidation_and_previously_applied_sources() ->
     assert validator.validate_coverage(cast(JsonValue, candidate))
 
 
-async def test_object_coverage_allows_omitted_attributes_but_requires_active_sources() -> None:
+async def test_object_coverage_allows_omitted_attributes_but_requires_active_sources() -> (
+    None
+):
     omitted = _attribute("unused_business_column")
     validator = LogicalCandidateValidator(
         selected_object_keys=(_object(),),
         selected_attribute_keys=(_attribute(), omitted),
-        assertion_record_keys=(),
+        context_record_ids=(),
         applied=None,
     )
     candidate = cast(JsonValue, _candidate())
@@ -216,12 +217,17 @@ async def test_object_coverage_allows_omitted_attributes_but_requires_active_sou
         _first_record(cast(dict[str, object], candidate), "entities")["sources"],
     )[0]
     source["status"] = "inactive"
-    assert validator.validate_coverage(candidate)[0].code == "candidate.object_coverage_incomplete"
+    assert (
+        validator.validate_coverage(candidate)[0].code
+        == "candidate.object_coverage_incomplete"
+    )
 
 
 async def test_omitting_attributes_does_not_allow_invented_attribute_sources() -> None:
     candidate = _candidate()
-    source = cast(list[dict[str, object]], _first_record(candidate, "attributes")["sources"])[0]
+    source = cast(
+        list[dict[str, object]], _first_record(candidate, "attributes")["sources"]
+    )[0]
     source["source_attribute"] = _attribute("unselected_column").model_dump(mode="json")
 
     issues = (await _validator().validate(cast(JsonValue, candidate))).issues
@@ -251,7 +257,9 @@ async def test_candidate_requires_complete_future_references() -> None:
     assert "candidate.entity_missing" in {issue.code for issue in issues}
 
 
-async def test_candidate_preserves_omitted_nested_records_and_rejects_locked_change() -> None:
+async def test_candidate_preserves_omitted_nested_records_and_rejects_locked_change() -> (
+    None
+):
     original = _candidate()
     applied = LogicalSection(
         submodels=(
@@ -271,14 +279,18 @@ async def test_candidate_preserves_omitted_nested_records_and_rejects_locked_cha
         ),
         relationships=(),
     )
-    locked_entity = applied.entities[0].model_copy(update={"logical_entity_is_locked": True})
+    locked_entity = applied.entities[0].model_copy(
+        update={"logical_entity_is_locked": True}
+    )
     applied = applied.model_copy(update={"entities": (locked_entity,)})
     candidate = deepcopy(original)
     entity = _first_record(candidate, "entities")
     entity["logical_entity_definition"] = "Changed by the agent."
     entity["sources"] = []
 
-    issues = (await _validator(applied=applied).validate(cast(JsonValue, candidate))).issues
+    issues = (
+        await _validator(applied=applied).validate(cast(JsonValue, candidate))
+    ).issues
 
     assert "candidate.record_locked" in {issue.code for issue in issues}
 

@@ -4,6 +4,7 @@ import hashlib
 import json
 import zipfile
 from pathlib import Path
+from typing import Any
 
 
 def write_snapshot_manifest(
@@ -11,23 +12,23 @@ def write_snapshot_manifest(
     *,
     kind: str,
     snapshot_id: str,
-    model_revision: int | None = None,
+    project_revision: int | None = None,
     tenant_code: str = "TENANT_A",
-    model_id: int = 41,
-    model_name: str = "Customer Model",
+    project_id: int = 41,
+    project_name: str = "Customer Project",
 ) -> None:
     catalog_path = snapshot / "catalog.json"
     catalog_document = json.loads(catalog_path.read_text())
-    if kind == "model":
-        catalog_document["schema_version"] = "2.0"
-        catalog_document["model"] = {
-            "model_id": model_id,
-            "model_name": model_name,
-            "model_revision": model_revision,
+    catalog_document["schema_version"] = "3.0"
+    if kind == "project":
+        catalog_document["project"] = {
+            "project_id": project_id,
+            "project_name": project_name,
+            "project_revision": project_revision,
             "tenant_code": tenant_code,
         }
-        catalog_path.write_text(json.dumps(catalog_document))
-    members = []
+    catalog_path.write_text(json.dumps(catalog_document))
+    members: list[dict[str, object]] = []
     for file in sorted(path for path in snapshot.rglob("*") if path.is_file()):
         if file.name == "manifest.json" and file.parent == snapshot:
             continue
@@ -40,17 +41,17 @@ def write_snapshot_manifest(
             }
         )
     catalog = next(member for member in members if member["path"] == "catalog.json")
-    manifest = {
-        "schema_version": "2.0",
+    manifest: dict[str, object] = {
+        "schema_version": "3.0",
         "snapshot_kind": kind,
         "snapshot_id": snapshot_id,
         "catalog": {"path": "catalog.json", "sha256": catalog["sha256"]},
         "members": members,
     }
-    if model_revision is not None:
-        manifest["model_revision"] = model_revision
-    if kind == "model":
-        manifest.update(model_id=model_id, model_name=model_name)
+    if project_revision is not None:
+        manifest["project_revision"] = project_revision
+    if kind == "project":
+        manifest.update(project_id=project_id, project_name=project_name)
     else:
         manifest["tenant_code"] = tenant_code
     (snapshot / "manifest.json").write_text(json.dumps(manifest))
@@ -212,17 +213,17 @@ def write_metadata_snapshot(session: Path) -> None:
     )
 
 
-def write_model_snapshot(session: Path) -> None:
-    snapshot = session / "model" / "model-snapshot"
+def write_project_snapshot(session: Path) -> None:
+    snapshot = session / "project" / "project-snapshot"
     (snapshot / "data").mkdir(parents=True)
     (snapshot / "schemas").mkdir()
-    datasets = [
+    datasets: list[dict[str, Any]] = [
         {
-            "name": "model_details",
+            "name": "project_details",
             "row_count": 1,
             "canonical_key": [],
-            "rows_file": "data/model_details.jsonl",
-            "schema_file": "schemas/model_details.schema.json",
+            "rows_file": "data/project_details.jsonl",
+            "schema_file": "schemas/project_details.schema.json",
         },
         {
             "name": "logical_entity",
@@ -246,21 +247,25 @@ def write_model_snapshot(session: Path) -> None:
     (snapshot / "catalog.json").write_text(
         json.dumps(
             {
-                "snapshot_kind": "model",
+                "snapshot_kind": "project",
                 "sections": [{"name": "logical", "datasets": datasets}],
             }
         )
     )
     for dataset in datasets:
-        rows = '{"model_purpose":"Current purpose"}\n' if dataset["name"] == "model_details" else ""
+        rows = (
+            '{"project_purpose":"Current purpose"}\n'
+            if dataset["name"] == "project_details"
+            else ""
+        )
         (snapshot / dataset["rows_file"]).write_text(rows)
-    (snapshot / "schemas" / "model_details.schema.json").write_text(
+    (snapshot / "schemas" / "project_details.schema.json").write_text(
         json.dumps(
             {
                 "type": "object",
                 "additionalProperties": False,
-                "properties": {"model_purpose": {"type": "string"}},
-                "required": ["model_purpose"],
+                "properties": {"project_purpose": {"type": "string"}},
+                "required": ["project_purpose"],
                 "x-gds-change-set-eligible": True,
             }
         )
@@ -306,7 +311,7 @@ def write_model_snapshot(session: Path) -> None:
     )
     write_snapshot_manifest(
         snapshot,
-        kind="model",
-        snapshot_id="model-snapshot-01",
-        model_revision=8,
+        kind="project",
+        snapshot_id="project-snapshot-01",
+        project_revision=8,
     )

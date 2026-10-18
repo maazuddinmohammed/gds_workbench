@@ -10,10 +10,10 @@ const commonValidation = require(
 const metadataValidation = require(
   "../../atlas/atlas-plugin/workbench/validation/metadata.js",
 );
-const modelValidation = require(
-  "../../atlas/atlas-plugin/workbench/validation/model.js",
+const projectValidation = require(
+  "../../atlas/atlas-plugin/workbench/validation/project.js",
 );
-const model = require("../../atlas/atlas-plugin/workbench/model.js");
+const project = require("../../atlas/atlas-plugin/workbench/project.js");
 
 test("effective overlay replaces matching keys and preserves omissions", () => {
   const definition = {
@@ -35,9 +35,9 @@ test("effective overlay replaces matching keys and preserves omissions", () => {
   assert.ok(effective.some((record) => record.object_name === "Order"));
 });
 
-test("Model keys use Unicode casefold", () => {
-  assert.equal(core.normalize("model", "model_name", " Straße "), "strasse");
-  assert.equal(core.normalize("model", "model_name", "ΟΣ"), "οσ");
+test("Project keys use Unicode casefold", () => {
+  assert.equal(core.normalize("project", "project_name", " Straße "), "strasse");
+  assert.equal(core.normalize("project", "project_name", "ΟΣ"), "οσ");
 });
 
 test("review distinguishes deactivation and groups Mapping by schema-qualified Entity and System", () => {
@@ -51,7 +51,7 @@ test("review distinguishes deactivation and groups Mapping by schema-qualified E
     "deactivated",
   );
 
-  const groups = model.reviewGroups(
+  const groups = project.reviewGroups(
     { name: "mapping_attribute" },
     [
       {
@@ -84,7 +84,7 @@ test("review distinguishes deactivation and groups Mapping by schema-qualified E
 });
 
 test("review separates equally named Entities in distinct schemas", () => {
-  const groups = model.reviewGroups({ name: "mapping_attribute" }, [
+  const groups = project.reviewGroups({ name: "mapping_attribute" }, [
     { modeled_entity_type: "logical_entity", modeled_entity_schema_name: "sales", modeled_entity_name: "Customer", source_system_code: "CRM" },
     { modeled_entity_type: "logical_entity", modeled_entity_schema_name: "billing", modeled_entity_name: "Customer", source_system_code: "CRM" },
   ]);
@@ -194,7 +194,7 @@ test("portable Snapshot rules cover every backend record validator", () => {
     ["ingestion_object_endpoints", sameObject],
     ["ingestion_attribute_endpoints", sameAttribute],
     ["copy_record_limit", { copy_source_record_limit: "9223372036854775808" }],
-    ["model_details_policy", {
+    ["project_details_policy", {
       silver_model_naming_instructions: "x".repeat(32769),
       gold_model_naming_instructions: null,
       silver_model_audit_columns_template: null,
@@ -215,14 +215,7 @@ test("portable Snapshot rules cover every backend record validator", () => {
       to_connection_code: "connection", to_object_schema: "schema",
       to_object_name: "object", to_attribute_name: "attribute",
     }],
-    ["modeling_assertion_document", {
-      modeling_assertion_document_metadata: { raw_rows: ["prohibited"] },
-    }],
-    ["modeling_assertion_record", {
-      modeling_assertion_text: "Text", modeling_assertion_details: {},
-      modeling_assertion_source_location: null,
-      modeling_assertion_applicable_layers: ["logical", "logical"],
-    }],
+    ["context_record", { source_reference: "é".repeat(32769) }],
     ["conceptual_object", {
       conceptual_object_aliases: ["Alias", " alias "], supports: [],
     }],
@@ -340,7 +333,7 @@ test("common validation enforces eligibility, keys, constraints, and locks", () 
     ],
   ]);
 
-  const issues = commonValidation.validateLoaded("model", loaded);
+  const issues = commonValidation.validateLoaded("project", loaded);
   assert.ok(issues.some((issue) => issue.code === "duplicate_canonical_key"));
   assert.ok(issues.some((issue) => issue.code === "duplicate_unique_constraint"));
   assert.ok(issues.some((issue) => issue.code === "locked_record"));
@@ -499,7 +492,7 @@ test("metadata Attribute locks use normalized full keys across zone datasets", (
   assert.deepEqual(metadataValidation.validateLocks(loaded), []);
 });
 
-test("model validation follows current schema references across Model datasets", () => {
+test("project validation follows current schema references across Project datasets", () => {
   const datasets = new Map([
     [
       "logical_entity",
@@ -532,13 +525,13 @@ test("model validation follows current schema references across Model datasets",
     ],
   ]);
 
-  const issues = modelValidation.validateGraph(datasets);
+  const issues = projectValidation.validateGraph(datasets);
   assert.equal(issues.length, 1);
   assert.equal(issues[0].code, "broken_reference");
   assert.equal(issues[0].record, 2);
 });
 
-test("model validation can resolve declared references into Metadata", () => {
+test("project validation can resolve declared references into Metadata", () => {
   const metadata = new Map([
     [
       "bronze_object",
@@ -551,11 +544,11 @@ test("model validation can resolve declared references into Metadata", () => {
   ]);
   const datasets = new Map([
     [
-      "model_input_scope",
+      "project_input_scope",
       {
-        definition: { name: "model_input_scope" },
+        definition: { name: "project_input_scope" },
         schema: {
-          "x-gds-record-type": "model_input_scope",
+          "x-gds-record-type": "project_input_scope",
           "x-gds-references": [
             {
               columns: ["object_id"],
@@ -570,10 +563,10 @@ test("model validation can resolve declared references into Metadata", () => {
     ],
   ]);
 
-  assert.deepEqual(modelValidation.validateGraph(datasets, metadata), []);
+  assert.deepEqual(projectValidation.validateGraph(datasets, metadata), []);
 });
 
-test("model validation handles nullable and partial-null references", () => {
+test("project validation handles nullable and partial-null references", () => {
   const datasets = new Map([
     [
       "target",
@@ -605,11 +598,11 @@ test("model validation handles nullable and partial-null references", () => {
     ],
   ]);
 
-  const issues = modelValidation.validateGraph(datasets);
+  const issues = projectValidation.validateGraph(datasets);
   assert.deepEqual(issues.map((issue) => issue.code), ["partial_null_reference"]);
 });
 
-test("model validation rejects malformed reference metadata", () => {
+test("project validation rejects malformed reference metadata", () => {
   const datasets = new Map([
     [
       "broken",
@@ -622,19 +615,19 @@ test("model validation rejects malformed reference metadata", () => {
   ]);
 
   assert.deepEqual(
-    modelValidation.validateGraph(datasets).map((issue) => issue.code),
+    projectValidation.validateGraph(datasets).map((issue) => issue.code),
     ["invalid_reference_contract"],
   );
 });
 
-function modelDataset(name, records, baseline = records, pending = []) {
+function projectDataset(name, records, baseline = records, pending = []) {
   return {
     definition: { name, canonical_key: [], record_type: name },
     schema: {}, records, baseline, pending,
   };
 }
 
-test("full local Model validation preserves Model ownership without registered targets", () => {
+test("full local Project validation preserves Project ownership without registered targets", () => {
   const target = {
     tenant_code: "GDS", system_code: "GDS", connection_code: "DEV",
     source_tenant_code: "TENANT_A", object_schema: "silver", object_name: "Customer",
@@ -654,34 +647,34 @@ test("full local Model validation preserves Model ownership without registered t
     logical_entity_schema_name: "silver", logical_entity_name: name, logical_entity_status: "active", submodels: [], sources: [],
   }));
   const graph = new Map([
-    ["model_details", modelDataset("model_details", [{ model_name: "Customer Model" }])],
-    ["model_input_scope", modelDataset("model_input_scope", [])],
-    ["logical_entity", modelDataset("logical_entity", entities)],
+    ["project_details", projectDataset("project_details", [{ project_name: "Customer Project" }])],
+    ["project_input_scope", projectDataset("project_input_scope", [])],
+    ["logical_entity", projectDataset("logical_entity", entities)],
   ]);
 
-  const issues = modelValidation.validateGraph(graph, metadata, {
+  const issues = projectValidation.validateGraph(graph, metadata, {
     tenantCode: "TENANT_A",
-    model: { other_active_model_names: [] },
+    project: { other_active_project_names: [] },
   });
   assert.deepEqual(issues, []);
 
-  graph.get("model_details").records[0].model_name = "Existing";
-  const conflict = modelValidation.validateGraph(graph, metadata, {
+  graph.get("project_details").records[0].project_name = "Existing";
+  const conflict = projectValidation.validateGraph(graph, metadata, {
     tenantCode: "TENANT_A",
-    model: { other_active_model_names: [" existing "] },
+    project: { other_active_project_names: [" existing "] },
   });
-  assert.ok(conflict.some((item) => item.code === "model_name_conflict"));
+  assert.ok(conflict.some((item) => item.code === "project_name_conflict"));
 });
 
-test("full local Model validation accepts a Source or Bronze input in active scope", () => {
+test("full local Project validation accepts a Source or Bronze input in active scope", () => {
   const input = {
     tenant_code: "TENANT_A", system_code: "CRM", connection_code: "SOURCE",
     object_schema: "dbo", object_name: "Customer", zone_code: "source", is_active: true,
   };
   const graph = new Map([
-    ["model_details", modelDataset("model_details", [{ model_name: "Customer Model" }])],
-    ["model_input_scope", modelDataset("model_input_scope", [{ ...input,
-      model_input_scope_is_locked: false,
+    ["project_details", projectDataset("project_details", [{ project_name: "Customer Project" }])],
+    ["project_input_scope", projectDataset("project_input_scope", [{ ...input,
+      project_input_scope_is_locked: false,
     }])],
   ]);
   const metadata = new Map([
@@ -690,8 +683,8 @@ test("full local Model validation accepts a Source or Bronze input in active sco
     ["source_object", { definition: { name: "source_object", record_type: "object" },
       schema: {}, records: [{ ...input, source_tenant_code: "TENANT_A" }] }],
   ]);
-  assert.deepEqual(modelValidation.validateGraph(graph, metadata, {
-    tenantCode: "TENANT_A", model: { other_active_model_names: [] },
+  assert.deepEqual(projectValidation.validateGraph(graph, metadata, {
+    tenantCode: "TENANT_A", project: { other_active_project_names: [] },
   }), []);
 });
 
@@ -737,14 +730,14 @@ test("local Databricks SQL policy matches backend safety cases", () => {
     "",
   ];
   for (const sql of accepted) {
-    assert.equal(modelValidation.validateReadSql(sql).valid, true, sql);
+    assert.equal(projectValidation.validateReadSql(sql).valid, true, sql);
   }
   for (const sql of rejected) {
-    assert.equal(modelValidation.validateReadSql(sql).valid, false, sql);
+    assert.equal(projectValidation.validateReadSql(sql).valid, false, sql);
   }
-  assert.equal(modelValidation.validateReadSql("CREATE TEMP TABLE scratch AS SELECT 1").finalReturnsRows, false);
+  assert.equal(projectValidation.validateReadSql("CREATE TEMP TABLE scratch AS SELECT 1").finalReturnsRows, false);
   assert.equal(
-    modelValidation.validateReadSql(Array.from({ length: 26 }, () => "SELECT 1").join(";")).valid,
+    projectValidation.validateReadSql(Array.from({ length: 26 }, () => "SELECT 1").join(";")).valid,
     false,
   );
 });
@@ -765,46 +758,46 @@ test("reference validation includes inactive source and target records", () => {
     }],
   ]);
   assert.deepEqual(metadataValidation.validateReferences(datasets), []);
-  assert.deepEqual(modelValidation.validateReferences(datasets), []);
+  assert.deepEqual(projectValidation.validateReferences(datasets), []);
 });
 
-test("Model physical-scope validation covers every backend rule family", () => {
+test("Project physical-scope validation covers every backend rule family", () => {
   const missingObject = {
     tenant_code: "TENANT_A", system_code: "MISSING", connection_code: "CONNECTION",
     object_schema: "schema", object_name: "Object",
   };
   const missingAttribute = { ...missingObject, attribute_name: "Attribute" };
   const graph = new Map([
-    ["model_details", modelDataset("model_details", [])],
-    ["model_input_scope", modelDataset("model_input_scope", [{ ...missingObject, is_active: true }])],
-    ["profiling_profile", modelDataset("profiling_profile", [missingAttribute])],
-    ["analysis_result", modelDataset("analysis_result", [{
+    ["project_details", projectDataset("project_details", [])],
+    ["project_input_scope", projectDataset("project_input_scope", [{ ...missingObject, is_active: true }])],
+    ["profiling_profile", projectDataset("profiling_profile", [missingAttribute])],
+    ["analysis_result", projectDataset("analysis_result", [{
       ...Object.fromEntries(Object.entries(missingAttribute).map(([field, value]) => [`from_${field}`, value])),
       ...Object.fromEntries(Object.entries(missingAttribute).map(([field, value]) => [`to_${field}`, value])),
     }])],
-    ["modeling_assertion_document", modelDataset("modeling_assertion_document", [{
-      tenant_code: "TENANT_B", system_code: "MISSING",
-    }])],
-    ["conceptual_object", modelDataset("conceptual_object", [{
-      supports: [{ support_source_type: "object", source_object: missingObject }],
-    }])],
-    ["logical_entity", modelDataset("logical_entity", [{ sources: [{
-      support_source_type: "object", source_object: missingObject,
-    }] }])],
-    ["logical_attribute", modelDataset("logical_attribute", [{ sources: [{
-      support_source_type: "attribute", source_attribute: missingAttribute,
-    }] }])],
-    ["dimensional_entity", modelDataset("dimensional_entity", [{ sources: [{
-      support_source_type: "object", source_object: missingObject,
-    }] }])],
-    ["mapping_object", modelDataset("mapping_object", [{
+    ["context_group", projectDataset("context_group", [{
       source_system_code: "MISSING",
     }])],
-    ["validation_group", modelDataset("validation_group", [{
+    ["conceptual_object", projectDataset("conceptual_object", [{
+      supports: [{ support_source_type: "object", source_object: missingObject }],
+    }])],
+    ["logical_entity", projectDataset("logical_entity", [{ sources: [{
+      support_source_type: "object", source_object: missingObject,
+    }] }])],
+    ["logical_attribute", projectDataset("logical_attribute", [{ sources: [{
+      support_source_type: "attribute", source_attribute: missingAttribute,
+    }] }])],
+    ["dimensional_entity", projectDataset("dimensional_entity", [{ sources: [{
+      support_source_type: "object", source_object: missingObject,
+    }] }])],
+    ["mapping_object", projectDataset("mapping_object", [{
+      source_system_code: "MISSING",
+    }])],
+    ["validation_group", projectDataset("validation_group", [{
       tenant_code: "TENANT_B", system_code: "MISSING", validation_group_name: "Checks",
       is_active: false,
     }])],
-    ["validation_check", modelDataset("validation_check", [{
+    ["validation_check", projectDataset("validation_check", [{
       tenant_code: "TENANT_A", system_code: "MISSING", validation_group_name: "Checks",
       validation_query_sql: "CREATE TEMP TABLE scratch AS SELECT 1",
       validation_comparison_query_sql: null, validation_comparison_operator: "equal",
@@ -812,7 +805,7 @@ test("Model physical-scope validation covers every backend rule family", () => {
     }])],
   ]);
   const catalog = {
-    tenant: "tenant_a", otherModelNames: new Set(), activeSystems: new Set(["crm"]),
+    tenant: "tenant_a", otherProjectNames: new Set(), activeSystems: new Set(["crm"]),
     objects: new Set(), attributes: new Set(), inputObjects: new Set(),
     inputAttributes: new Set(), dimensionalSourceObjects: new Set(),
     dimensionalSourceAttributes: new Set(), logicalTargets: new Set(),
@@ -820,116 +813,116 @@ test("Model physical-scope validation covers every backend rule family", () => {
     dimensionalTargetAttributes: new Set(),
   };
 
-  const issues = modelValidation.validatePhysicalScope(graph, catalog);
+  const issues = projectValidation.validatePhysicalScope(graph, catalog);
   const codes = new Set(issues.map((item) => item.code));
-  assert.ok(codes.has("model_details_invalid"));
-  assert.ok(codes.has("model_input_reference_invalid"));
+  assert.ok(codes.has("project_details_invalid"));
+  assert.ok(codes.has("project_input_reference_invalid"));
   assert.ok(codes.has("validation_query_result_invalid"));
   for (const dataset of [
-    "model_input_scope", "profiling_profile", "analysis_result",
-    "modeling_assertion_document", "conceptual_object", "logical_entity",
+    "project_input_scope", "profiling_profile", "analysis_result",
+    "context_group", "conceptual_object", "logical_entity",
     "logical_attribute", "mapping_object",
     "validation_group", "validation_check",
   ]) assert.ok(issues.some((item) => item.dataset === dataset), dataset);
 });
 
-test("Model future-graph references cover every backend relationship family", () => {
-  const assertionSource = {
-    support_source_type: "assertion",
-    assertion_record: { modeling_assertion_record_key: "MissingAssertion" },
+test("Project future-graph references cover every backend relationship family", () => {
+  const contextSource = {
+    support_source_type: "context_record",
+    context_record: { context_record_id: "9f355cf0-2aed-5145-bfb2-b0b2c17f3661" },
   };
   const graph = new Map([
-    ["modeling_assertion_document", modelDataset("modeling_assertion_document", [])],
-    ["modeling_assertion_record", modelDataset("modeling_assertion_record", [{
-      modeling_assertion_document_name: "MissingDocument",
-      modeling_assertion_record_key: "Assertion", modeling_assertion_applicable_layers: ["logical"],
+    ["context_group", projectDataset("context_group", [])],
+    ["context_record", projectDataset("context_record", [{
+      context_group_name: "MissingDocument",
+      context_record_id: "0fce27af-cdea-5936-8b21-dbc7856f3e3d",
     }])],
-    ["conceptual_object", modelDataset("conceptual_object", [{
-      conceptual_object_name: "Concept", supports: [assertionSource],
+    ["conceptual_object", projectDataset("conceptual_object", [{
+      conceptual_object_name: "Concept", supports: [contextSource],
     }])],
-    ["conceptual_relationship", modelDataset("conceptual_relationship", [{
+    ["conceptual_relationship", projectDataset("conceptual_relationship", [{
       from_conceptual_object_name: "MissingA", to_conceptual_object_name: "MissingB",
       supports: [],
     }])],
-    ["logical_submodel", modelDataset("logical_submodel", [])],
-    ["logical_entity", modelDataset("logical_entity", [{
+    ["logical_submodel", projectDataset("logical_submodel", [])],
+    ["logical_entity", projectDataset("logical_entity", [{
       logical_entity_schema_name: "silver", logical_entity_name: "Entity", submodels: [{ submodel_name: "Missing" }],
-      sources: [assertionSource],
+      sources: [contextSource],
     }])],
-    ["logical_attribute", modelDataset("logical_attribute", [{
+    ["logical_attribute", projectDataset("logical_attribute", [{
       logical_entity_schema_name: "silver", logical_entity_name: "MissingEntity", logical_attribute_name: "Attribute", sources: [],
     }])],
-    ["logical_relationship", modelDataset("logical_relationship", [{
+    ["logical_relationship", projectDataset("logical_relationship", [{
       from_logical_entity_schema_name: "silver", from_logical_entity_name: "Entity", from_logical_attribute_name: "MissingA",
       to_logical_entity_schema_name: "silver", to_logical_entity_name: "Entity", to_logical_attribute_name: "MissingB",
     }])],
-    ["mapping_object", modelDataset("mapping_object", [{
+    ["mapping_object", projectDataset("mapping_object", [{
       modeled_entity_type: "logical_entity", modeled_entity_schema_name: "silver", modeled_entity_name: "NoBinding",
       source_system_code: "CRM",
     }])],
-    ["mapping_attribute", modelDataset("mapping_attribute", [{
+    ["mapping_attribute", projectDataset("mapping_attribute", [{
       modeled_entity_type: "logical_entity", modeled_entity_schema_name: "silver", modeled_entity_name: "NoBinding",
       modeled_attribute_name: "Missing", source_system_code: "CRM",
     }])],
-    ["generated_code", modelDataset("generated_code", [{
+    ["generated_code", projectDataset("generated_code", [{
       modeled_entity_type: "logical_entity", modeled_entity_schema_name: "silver", modeled_entity_name: "NoBinding",
       artifact_name: "code.sql",
     }])],
-    ["generated_code_source_system", modelDataset("generated_code_source_system", [{
+    ["generated_code_source_system", projectDataset("generated_code_source_system", [{
       modeled_entity_type: "logical_entity", modeled_entity_schema_name: "silver", modeled_entity_name: "NoBinding",
       artifact_name: "missing.sql",
     }])],
-    ["validation_group", modelDataset("validation_group", [])],
-    ["validation_check", modelDataset("validation_check", [{
+    ["validation_group", projectDataset("validation_group", [])],
+    ["validation_check", projectDataset("validation_check", [{
       tenant_code: "TENANT_A", system_code: "CRM", validation_group_name: "Missing",
     }])],
   ]);
 
-  const issues = modelValidation.validateBackendReferences(graph);
+  const issues = projectValidation.validateBackendReferences(graph);
   for (const dataset of [
-    "modeling_assertion_record", "conceptual_object", "conceptual_relationship",
+    "context_record", "conceptual_object", "conceptual_relationship",
     "logical_entity", "logical_attribute", "logical_relationship",
     "mapping_object",
     "mapping_attribute", "generated_code", "generated_code_source_system",
     "validation_check",
   ]) assert.ok(issues.some((item) => item.dataset === dataset), dataset);
-  assert.ok(issues.some((item) => item.code === "assertion_layer_invalid") === false);
+  assert.ok(issues.some((item) => item.code === "context_layer_invalid") === false);
 });
 
-test("Model active dependencies cover Entity, Mapping, Code, and Validation", () => {
+test("Project active dependencies cover Entity, Mapping, Code, and Validation", () => {
   const graph = new Map([
-    ["logical_entity", modelDataset("logical_entity", [])],
-    ["logical_attribute", modelDataset("logical_attribute", [])],
-    ["mapping_object", modelDataset("mapping_object", [{
+    ["logical_entity", projectDataset("logical_entity", [])],
+    ["logical_attribute", projectDataset("logical_attribute", [])],
+    ["mapping_object", projectDataset("mapping_object", [{
       modeled_entity_type: "logical_entity", modeled_entity_schema_name: "silver", modeled_entity_name: "Entity",
       source_system_code: "CRM", object_mapping_status: "active",
       mapping_transformation_document: null,
     }])],
-    ["mapping_attribute", modelDataset("mapping_attribute", [{
+    ["mapping_attribute", projectDataset("mapping_attribute", [{
       modeled_entity_type: "logical_entity", modeled_entity_schema_name: "silver", modeled_entity_name: "Entity",
       modeled_attribute_name: "Attribute", source_system_code: "CRM",
       attribute_mapping_status: "active", attribute_mapping_transformation_document: null,
     }])],
-    ["generated_code", modelDataset("generated_code", [{
+    ["generated_code", projectDataset("generated_code", [{
       modeled_entity_type: "logical_entity", modeled_entity_schema_name: "silver", modeled_entity_name: "NoBinding",
       artifact_name: "code.sql", generated_code_status: "active",
     }])],
-    ["generated_code_source_system", modelDataset("generated_code_source_system", [{
+    ["generated_code_source_system", projectDataset("generated_code_source_system", [{
       modeled_entity_type: "logical_entity", modeled_entity_schema_name: "silver", modeled_entity_name: "NoBinding",
       artifact_name: "code.sql", source_system_code: "CRM",
       generated_code_source_system_status: "active",
     }])],
-    ["validation_group", modelDataset("validation_group", [{
+    ["validation_group", projectDataset("validation_group", [{
       tenant_code: "TENANT_A", system_code: "CRM", validation_group_name: "Checks",
       is_active: true,
     }])],
-    ["validation_check", modelDataset("validation_check", [{
+    ["validation_check", projectDataset("validation_check", [{
       tenant_code: "TENANT_A", system_code: "CRM", validation_group_name: "Missing",
       is_active: true,
     }])],
   ]);
 
-  const issues = modelValidation.validateActiveDependencies(graph);
+  const issues = projectValidation.validateActiveDependencies(graph);
   assert.ok(issues.length >= 6);
   assert.ok(issues.every((item) => item.code === "active_dependency_invalid"));
   for (const dataset of [
@@ -950,7 +943,7 @@ test("physical history only permits typed lifecycle changes, never JSON payload 
     const changed = structuredClone(original);
     if (field === "sources") changed.sources[0].is_locked = true;
     else changed[field] = field.endsWith("status") ? "inactive" : true;
-    assert.equal(modelValidation.retainsPhysicalReferences(original, changed), true, field);
+    assert.equal(projectValidation.retainsPhysicalReferences(original, changed), true, field);
   }
   for (const edit of [
     (value) => { value.metadata.status = "inactive"; },
@@ -961,25 +954,25 @@ test("physical history only permits typed lifecycle changes, never JSON payload 
   ]) {
     const changed = structuredClone(original);
     edit(changed);
-    assert.equal(modelValidation.retainsPhysicalReferences(original, changed), false);
+    assert.equal(projectValidation.retainsPhysicalReferences(original, changed), false);
   }
-  assert.equal(modelValidation.retainsPhysicalReferences(null, original), false);
-  assert.equal(modelValidation.retainsPhysicalReferences(
+  assert.equal(projectValidation.retainsPhysicalReferences(null, original), false);
+  assert.equal(projectValidation.retainsPhysicalReferences(
     { ...original, logical_entity_status: "inactive" }, original), false);
 });
 
 test("Dimensional source identity requires the exact Logical schema and active design", () => {
   const source = { logical_entity_schema_name: "sales", logical_entity_name: "Customer" };
   const graph = new Map([
-    ["logical_entity", modelDataset("logical_entity", [{ ...source, logical_entity_status: "active" }])],
-    ["dimensional_entity", modelDataset("dimensional_entity", [{ dimensional_entity_schema_name: "gold", dimensional_entity_name: "DimCustomer", dimensional_entity_status: "active", sources: [{ support_source_type: "logical_entity", source_logical_entity: source, status: "active" }] }])],
+    ["logical_entity", projectDataset("logical_entity", [{ ...source, logical_entity_status: "active" }])],
+    ["dimensional_entity", projectDataset("dimensional_entity", [{ dimensional_entity_schema_name: "gold", dimensional_entity_name: "DimCustomer", dimensional_entity_status: "active", sources: [{ support_source_type: "logical_entity", source_logical_entity: source, status: "active" }] }])],
   ]);
-  assert.deepEqual(modelValidation.validateBackendReferences(graph), []);
+  assert.deepEqual(projectValidation.validateBackendReferences(graph), []);
   graph.get("logical_entity").records[0].logical_entity_schema_name = "billing";
-  assert.ok(modelValidation.validateBackendReferences(graph).some(issue => issue.code === "reference_not_found"));
+  assert.ok(projectValidation.validateBackendReferences(graph).some(issue => issue.code === "reference_not_found"));
   graph.get("logical_entity").records[0].logical_entity_schema_name = "sales";
   graph.get("logical_entity").records[0].logical_entity_status = "inactive";
-  assert.ok(modelValidation.validateBackendReferences(graph).some(issue => issue.code === "active_dependency_invalid"));
+  assert.ok(projectValidation.validateBackendReferences(graph).some(issue => issue.code === "active_dependency_invalid"));
 });
 
 for (const [dataset, lockField] of [
@@ -997,7 +990,7 @@ for (const [dataset, lockField] of [
         schema: { type: "object", "x-gds-change-set-eligible": true },
         baseline, pending, effective: pending, overlayError: null,
       }]]);
-      assert.ok(commonValidation.validateLoaded("model", loaded)
+      assert.ok(commonValidation.validateLoaded("project", loaded)
         .some((issue) => issue.code === "locked_record"));
     }
   });
@@ -1007,18 +1000,60 @@ test("new Mapping systems leave prior Code stale; Code authoring still needs exa
   const entity = { modeled_entity_type: "logical_entity", modeled_entity_schema_name: "silver", modeled_entity_name: "Customer" };
   const artifact = { ...entity, artifact_name: "customer.sql", generated_code_status: "active" };
   const graph = new Map([
-    ["logical_entity", modelDataset("logical_entity", [{logical_entity_schema_name: "silver", logical_entity_name: "Customer", logical_entity_status: "active"}])],
-    ["logical_attribute", modelDataset("logical_attribute", [{logical_entity_schema_name: "silver", logical_entity_name: "Customer", logical_attribute_name: "ID", logical_attribute_status: "active"}])],
-    ["mapping_object", modelDataset("mapping_object", ["ERP", "CRM"].map((source_system_code) => ({...entity, source_system_code, object_mapping_status: "active", mapping_transformation_document: {kind: "direct"}})))],
-    ["mapping_attribute", modelDataset("mapping_attribute", ["ERP", "CRM"].map((source_system_code) => ({...entity, source_system_code, modeled_attribute_name: "ID", attribute_mapping_status: "active", attribute_mapping_transformation_document: {kind: "direct"}})))],
-    ["generated_code", modelDataset("generated_code", [artifact])],
-    ["generated_code_source_system", modelDataset("generated_code_source_system", [{...artifact, source_system_code: "ERP", generated_code_source_system_status: "active"}])],
+    ["logical_entity", projectDataset("logical_entity", [{logical_entity_schema_name: "silver", logical_entity_name: "Customer", logical_entity_status: "active"}])],
+    ["logical_attribute", projectDataset("logical_attribute", [{logical_entity_schema_name: "silver", logical_entity_name: "Customer", logical_attribute_name: "ID", logical_attribute_status: "active"}])],
+    ["mapping_object", projectDataset("mapping_object", ["ERP", "CRM"].map((source_system_code) => ({...entity, source_system_code, object_mapping_status: "active", mapping_transformation_document: {kind: "direct"}})))],
+    ["mapping_attribute", projectDataset("mapping_attribute", ["ERP", "CRM"].map((source_system_code) => ({...entity, source_system_code, modeled_attribute_name: "ID", attribute_mapping_status: "active", attribute_mapping_transformation_document: {kind: "direct"}})))],
+    ["generated_code", projectDataset("generated_code", [artifact])],
+    ["generated_code_source_system", projectDataset("generated_code_source_system", [{...artifact, source_system_code: "ERP", generated_code_source_system_status: "active"}])],
   ]);
-  assert.deepEqual(modelValidation.validateActiveDependencies(graph), []);
+  assert.deepEqual(projectValidation.validateActiveDependencies(graph), []);
   graph.get("generated_code").pending = [artifact];
-  assert.deepEqual(modelValidation.validateActiveDependencies(graph).map((issue) => issue.dataset), ["generated_code_source_system"]);
+  assert.deepEqual(projectValidation.validateActiveDependencies(graph).map((issue) => issue.dataset), ["generated_code_source_system"]);
   graph.get("generated_code").pending = [];
   graph.get("generated_code").records.push({...artifact, artifact_name: "duplicate.sql"});
   graph.get("generated_code_source_system").records.push({...artifact, artifact_name: "duplicate.sql", source_system_code: "ERP", generated_code_source_system_status: "active"});
-  assert.deepEqual(modelValidation.validateActiveDependencies(graph).map((issue) => issue.dataset), ["generated_code_source_system"]);
+  assert.deepEqual(projectValidation.validateActiveDependencies(graph).map((issue) => issue.dataset), ["generated_code_source_system"]);
+});
+
+test('Context references resolve Snapshot types, groups and stable record UUIDs', () => {
+  const id = '74acf19b-49ba-4a71-a21c-8b46238f3d96';
+  const group = {context_group_name:'Identity',context_type_name:'Business Requirement'};
+  const record = {context_record_id:id,context_group_name:'Identity'};
+  const source = {support_source_type:'context_record',context_record:{context_record_id:id}};
+  const graph = new Map([
+    ['context_type',projectDataset('context_type',[{context_type_name:'Business Requirement'}])],
+    ['context_group',projectDataset('context_group',[group])],
+    ['context_record',projectDataset('context_record',[record])],
+    ['conceptual_object',projectDataset('conceptual_object',[{conceptual_object_name:'Customer',supports:[source]}])],
+  ]);
+  assert.deepEqual(projectValidation.validateBackendReferences(graph),[]);
+  group.context_type_name='Invented type';
+  assert.ok(projectValidation.validateBackendReferences(graph).some(issue=>issue.field==='context_type_name'));
+  group.context_type_name='Business Requirement';record.context_group_name='Missing group';
+  assert.ok(projectValidation.validateBackendReferences(graph).some(issue=>issue.field==='context_group_name'));
+  record.context_group_name='Identity';source.context_record.context_record_id='87be585c-7b03-45d7-98e2-62745af055d1';
+  assert.ok(projectValidation.validateBackendReferences(graph).some(issue=>issue.dataset==='conceptual_object'));
+});
+
+test('locked Context records protect group changes and active supports require active evidence', () => {
+  const id='74acf19b-49ba-4a71-a21c-8b46238f3d96';
+  const group={context_group_name:'Identity',context_type_name:'Business Requirement',is_active:true};
+  const record={context_record_id:id,context_group_name:'Identity',status:'active',is_locked:true};
+  const source={support_source_type:'context_record',context_record:{context_record_id:id},support_status:'active'};
+  const graph=new Map([
+    ['context_group',projectDataset('context_group',[group],[group],[{...group,context_type_name:'Decision'}])],
+    ['context_record',projectDataset('context_record',[record])],
+    ['conceptual_object',projectDataset('conceptual_object',[{conceptual_object_name:'Customer',conceptual_object_status:'active',supports:[source]}])],
+  ]);
+  graph.get('context_group').definition.canonical_key=['context_group_name'];
+  assert.ok(projectValidation.validateNestedLocks(graph).some(issue=>issue.code==='context_group_child_locked'));
+  graph.get('context_group').pending=[{...group}];assert.deepEqual(projectValidation.validateNestedLocks(graph),[]);
+  assert.deepEqual(projectValidation.validateActiveDependencies(graph),[]);
+  for (const state of ['inactive','deprecated']) {
+    record.status=state;assert.ok(projectValidation.validateActiveDependencies(graph).some(issue=>issue.field==='context_record_id'));
+  }
+  record.status='active';group.is_active=false;
+  assert.ok(projectValidation.validateActiveDependencies(graph).some(issue=>issue.field==='context_record_id'));
+  source.support_status='inactive';assert.deepEqual(projectValidation.validateActiveDependencies(graph),[]);
 });

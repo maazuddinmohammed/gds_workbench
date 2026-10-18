@@ -9,13 +9,10 @@ from copy import deepcopy
 from typing import Any, Literal, LiteralString, cast
 
 import pytest
-from gds_etl_workbench.domain.assertion_safety import (
-    ASSERTION_RECORD_DETAILS_MAX_BYTES,
-    validate_assertion_json,
-)
 from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_etl_workbench.domain.modeling_records import ModelingAssertionRecordRecord
-from gds_etl_workbench.domain.snapshots.model import ModelSnapshot
+from gds_etl_workbench.domain.modeling_records import ContextRecord
+from gds_etl_workbench.domain.safe_json import validate_safe_json
+from gds_etl_workbench.domain.snapshots.project import ProjectSnapshot
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
 )
@@ -170,7 +167,7 @@ async def test_default_repository_accepts_large_deep_nonsecret_policy_evidence()
         "labels": [f"label-{index}" for index in range(5000)],
     }
 
-    async def load_snapshot(*_: object) -> ModelSnapshot:
+    async def load_snapshot(*_: object) -> ProjectSnapshot:
         return _snapshot_with_policy_json(policy)
 
     bundle = await PostgresAgentContextRepository(
@@ -178,7 +175,7 @@ async def test_default_repository_accepts_large_deep_nonsecret_policy_evidence()
         snapshot_loader=load_snapshot,
     ).load(UnlimitedContextTransaction(), tenant_id=7, plan=_plan())
     embedded = cast(dict[str, Any], bundle.embedded_context)
-    assert embedded["model_details"]["silver_model_audit_columns_template"] == policy
+    assert embedded["project_details"]["silver_model_audit_columns_template"] == policy
 
 
 @pytest.mark.asyncio
@@ -188,7 +185,7 @@ async def test_default_repository_accepts_large_deep_nonsecret_policy_evidence()
 async def test_unlimited_repository_still_rejects_prohibited_nested_fields(
     prohibited_key: str,
 ) -> None:
-    async def load_snapshot(*_: object) -> ModelSnapshot:
+    async def load_snapshot(*_: object) -> ProjectSnapshot:
         return _snapshot_with_policy_json(
             {"detail": {prohibited_key: "synthetic-private-marker"}}
         )
@@ -217,7 +214,7 @@ def test_unlimited_value_safety_check_still_rejects_sensitive_text(
 
 
 @pytest.mark.parametrize("shape", ("bytes", "string", "depth", "nodes"))
-def test_explicit_assertion_and_mcp_record_bounds_are_unchanged(shape: str) -> None:
+def test_explicit_json_and_mcp_record_bounds_are_unchanged(shape: str) -> None:
     value: dict[str, object]
     if shape == "bytes":
         value = {"explanation": LARGE_DESCRIPTION}
@@ -229,16 +226,26 @@ def test_explicit_assertion_and_mcp_record_bounds_are_unchanged(shape: str) -> N
             value = {"detail": value}
     else:
         value = {"labels": list(range(4097))}
-    validate_assertion_json(value, maximum_bytes=None, label="Provider evidence")
+    validate_safe_json(value, maximum_bytes=None, label="Provider evidence")
     with pytest.raises(ValueError):
-        validate_assertion_json(
+        validate_safe_json(
             value,
-            maximum_bytes=ASSERTION_RECORD_DETAILS_MAX_BYTES,
-            label="Assertion details",
+            maximum_bytes=65536,
+            label="Bounded JSON",
         )
-    record = _snapshot().assertion.records[0].model_dump(mode="json")
+    record = _snapshot().context.records[0].model_dump(mode="json")
+    # The removed structured-details field remains rejected by the lean Context contract.
     record["modeling_assertion_details"] = value
     with pytest.raises(ValidationError):
-        ModelingAssertionRecordRecord.model_validate_json(
-            json.dumps(record), strict=True
-        )
+        ContextRecord.model_validate_json(json.dumps(record), strict=True)
+
+
+def test_provider_context_preserves_only_canonical_context_uuid_identity() -> None:
+    reject_forbidden_provider_json(
+        {"context_record_id": "00000000-0000-4000-8000-000000000001"}
+    )
+    for value in (1, "customer.key", "00000000-0000-4000-8000-00000000000A"):
+        with pytest.raises(WorkbenchError):
+            reject_forbidden_provider_json({"context_record_id": value})
+    with pytest.raises(WorkbenchError):
+        reject_forbidden_provider_json({"context_group_id": 1})

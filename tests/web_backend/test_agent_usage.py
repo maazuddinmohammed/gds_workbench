@@ -7,7 +7,10 @@ from uuid import UUID, uuid4
 import httpx2
 import pytest
 from gds_etl_workbench.domain.errors import DependencyUnavailableError, WorkbenchError
-from gds_workbench_api.capabilities import AgentRunSelection, load_default_agent_capabilities
+from gds_workbench_api.capabilities import (
+    AgentRunSelection,
+    load_default_agent_capabilities,
+)
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
     AgentExecutionRouter,
@@ -18,7 +21,10 @@ from gds_workbench_api.features.workflows.authoring.repair import (
     ValidationRepairRunner,
     load_default_agent_context_policy,
 )
-from gds_workbench_api.features.workflows.usage.contracts import AgentUsageRecorder, ModelTokenUsage
+from gds_workbench_api.features.workflows.usage.contracts import (
+    AgentUsageRecorder,
+    ModelTokenUsage,
+)
 from gds_workbench_api.integrations.agents import adapters
 from gds_workbench_api.integrations.agents.adapters import (
     OpenAIAgentsSdkAdapter,
@@ -138,7 +144,11 @@ def _response(
         "created": 0,
         "model": "fixture",
         "choices": [
-            {"index": 0, "message": message, "finish_reason": "tool_calls" if tool else "stop"}
+            {
+                "index": 0,
+                "message": message,
+                "finish_reason": "tool_calls" if tool else "stop",
+            }
         ],
         "usage": usage,
     }
@@ -189,7 +199,9 @@ def _router(
     timeout_seconds: int = 480,
 ) -> AgentExecutionRouter:
     def client_factory(**options: Any) -> httpx2.AsyncClient:
-        return DefaultAsyncHttpxClient(transport=httpx2.MockTransport(handler), **options)
+        return DefaultAsyncHttpxClient(
+            transport=httpx2.MockTransport(handler), **options
+        )
 
     monkeypatch.setattr(adapters, "DefaultAsyncHttpxClient", client_factory)
     registry = load_default_agent_capabilities()
@@ -238,9 +250,18 @@ def _router(
                 reasoning_output_tokens=1,
             ),
         ),
-        ({"prompt_tokens": True, "completion_tokens": 2, "total_tokens": 3}, ModelTokenUsage()),
-        ({"prompt_tokens": -1, "completion_tokens": 2, "total_tokens": 1}, ModelTokenUsage()),
-        ({"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 99}, ModelTokenUsage()),
+        (
+            {"prompt_tokens": True, "completion_tokens": 2, "total_tokens": 3},
+            ModelTokenUsage(),
+        ),
+        (
+            {"prompt_tokens": -1, "completion_tokens": 2, "total_tokens": 1},
+            ModelTokenUsage(),
+        ),
+        (
+            {"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 99},
+            ModelTokenUsage(),
+        ),
         (
             {
                 "prompt_tokens": 12,
@@ -258,7 +279,10 @@ def _router(
                 "prompt_tokens_details": {"audio_tokens": 1},
             },
             ModelTokenUsage(
-                input_tokens=12, output_tokens=3, total_tokens=15, other_token_types=True
+                input_tokens=12,
+                output_tokens=3,
+                total_tokens=15,
+                other_token_types=True,
             ),
         ),
         (
@@ -269,7 +293,10 @@ def _router(
                 "completion_tokens_details": {"future_token_category": 1},
             },
             ModelTokenUsage(
-                input_tokens=12, output_tokens=3, total_tokens=15, other_token_types=True
+                input_tokens=12,
+                output_tokens=3,
+                total_tokens=15,
+                other_token_types=True,
             ),
         ),
         (
@@ -283,20 +310,26 @@ def _router(
         ),
     ],
 )
-async def test_http_usage_preserves_presence_and_never_collects_model_content(
+async def test_http_usage_preserves_presence_and_never_collects_project_content(
     raw: object,
     expected: ModelTokenUsage,
 ) -> None:
     recorder = MemoryRecorder()
     hooks = ProviderUsageHooks(recorder)
     async with DefaultAsyncHttpxClient(
-        transport=httpx2.MockTransport(lambda _: httpx2.Response(200, json=_response(raw))),
+        transport=httpx2.MockTransport(
+            lambda _: httpx2.Response(200, json=_response(raw))
+        ),
         event_hooks={"request": [hooks.on_request], "response": [hooks.on_response]},
     ) as client:
-        await client.post("https://fixture.invalid/chat/completions", json={"private": "prompt"})
+        await client.post(
+            "https://fixture.invalid/chat/completions", json={"private": "prompt"}
+        )
     assert len(recorder.started) == len(recorder.completed) == 1
     assert recorder.completed[0][1] == expected
-    assert "private" not in repr(recorder.completed) and "valid" not in repr(recorder.completed)
+    assert "private" not in repr(recorder.completed) and "valid" not in repr(
+        recorder.completed
+    )
 
 
 @pytest.mark.parametrize("max_turns, expected_requests", [(1, 1), (3, 4)])

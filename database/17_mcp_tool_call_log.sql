@@ -39,7 +39,7 @@ CREATE TABLE mcp.tool_call_log (
         tool_policy IN (
             'tenant_read',
             'tenant_metadata_write',
-            'tenant_model_write',
+            'tenant_project_write',
             'tenant_lock_manage',
             'super_admin_only'
         )

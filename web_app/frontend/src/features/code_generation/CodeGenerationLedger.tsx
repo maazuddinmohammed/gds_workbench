@@ -26,7 +26,7 @@ export interface CodeGenerationLedgerState {
 
 export function CodeGenerationLedger({
   tenantId,
-  modelId,
+  projectId,
   items,
   objectIds, onObjectIdsChange, page,
   artifactStatus,
@@ -42,7 +42,7 @@ export function CodeGenerationLedger({
   onPreviousPage,
 }: {
   tenantId: number;
-  modelId: number;
+  projectId: number;
   items: CodeGenerationTarget[];
   objectIds: string[]; onObjectIdsChange: (ids: string[]) => void; page: number;
   artifactStatus: ArtifactStatusFilter;
@@ -160,11 +160,11 @@ export function CodeGenerationLedger({
                 key={artifact.generated_sql_artifact_id}
                 className="text-action"
                 aria-label={`Show ${artifact.artifact_name} for ${targetName(row.original)}`}
-                to="/tenants/$tenantId/code-generation/models/$modelId/artifacts/$artifactId"
+                to="/tenants/$tenantId/code-generation/projects/$projectId/artifacts/$artifactId"
                 search={{ layer: row.original.entity_type === "logical_entity" ? "logical" : "dimensional" }}
                 params={{
                   tenantId: String(tenantId),
-                  modelId: String(modelId),
+                  projectId: String(projectId),
                   artifactId: String(artifact.generated_sql_artifact_id),
                 }}
               >
@@ -196,7 +196,7 @@ export function CodeGenerationLedger({
   ], [
     allVisibleSelected,
     canGenerate,
-    modelId,
+    projectId,
     onGenerateTarget,
     onToggleTarget,
     onToggleVisible,
@@ -237,7 +237,7 @@ export function CodeGenerationLedger({
         </div>
       ) : state.revisionMismatch ? (
         <div className="surface-state is-error" role="alert">
-          The Model changed while Code Generation targets were loading. Refresh before generating SQL.
+          The Project changed while Code Generation targets were loading. Refresh before generating SQL.
         </div>
       ) : items.length === 0 ? (
         <div className="empty-state compact">No eligible target Entities in this layer.</div>

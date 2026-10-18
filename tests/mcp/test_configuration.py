@@ -23,7 +23,9 @@ def settings_values(**overrides: str) -> dict[str, str]:
         "GDS_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
         "GDS_LOCAL_PRINCIPAL_OBJECT_ID": "33333333-3333-3333-3333-333333333333",
         "GDS_MCP_PUBLIC_URL": "https://workbench.example.test/mcp",
-        "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": ("https://snapshot.blob.core.windows.net"),
+        "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": (
+            "https://snapshot.blob.core.windows.net"
+        ),
         "GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER": "snapshots",
     }
     values.update(overrides)
@@ -55,14 +57,18 @@ def test_development_mode_explicitly_disables_authentication() -> None:
 def test_local_principal_object_id_is_explicit_configuration() -> None:
     settings = RuntimeSettings.from_environment(settings_values())
 
-    assert settings.local_principal_object_id == UUID("33333333-3333-3333-3333-333333333333")
+    assert settings.local_principal_object_id == UUID(
+        "33333333-3333-3333-3333-333333333333"
+    )
 
 
 def test_local_principal_object_id_is_required_in_local_mode() -> None:
     values = settings_values()
     values.pop("GDS_LOCAL_PRINCIPAL_OBJECT_ID")
 
-    with pytest.raises(ConfigurationError, match="GDS_LOCAL_PRINCIPAL_OBJECT_ID is required"):
+    with pytest.raises(
+        ConfigurationError, match="GDS_LOCAL_PRINCIPAL_OBJECT_ID is required"
+    ):
         RuntimeSettings.from_environment(values)
 
 
@@ -128,7 +134,9 @@ def test_entra_identifiers_must_be_uuids(key: str) -> None:
 
 
 @pytest.mark.parametrize("sslmode", [None, "disable", "allow", "prefer", "invalid"])
-def test_production_rejects_missing_or_unsupported_database_tls(sslmode: str | None) -> None:
+def test_production_rejects_missing_or_unsupported_database_tls(
+    sslmode: str | None,
+) -> None:
     dsn = "postgresql://app@db.example.invalid/workbench"
     if sslmode is not None:
         dsn += f"?sslmode={sslmode}"
@@ -228,7 +236,8 @@ def test_metadata_snapshot_settings_use_bounded_defaults() -> None:
     settings = RuntimeSettings.from_environment(settings_values())
 
     assert (
-        settings.metadata_snapshot_storage_account_url == "https://snapshot.blob.core.windows.net"
+        settings.metadata_snapshot_storage_account_url
+        == "https://snapshot.blob.core.windows.net"
     )
     assert settings.metadata_snapshot_storage_container == "snapshots"
     assert settings.metadata_snapshot_download_ttl_seconds == 900
@@ -261,7 +270,9 @@ def test_metadata_snapshot_container_uses_azure_naming_rules(container: str) -> 
         )
 
 
-def test_metadata_snapshot_managed_identity_client_id_is_optional_and_validated() -> None:
+def test_metadata_snapshot_managed_identity_client_id_is_optional_and_validated() -> (
+    None
+):
     client_id = "11111111-1111-1111-1111-111111111111"
     settings = RuntimeSettings.from_environment(
         settings_values(

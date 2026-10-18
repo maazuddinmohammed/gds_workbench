@@ -1,9 +1,9 @@
 """Dimensional review reads and authoring workflow support."""
 
 from gds_workbench_api.features.logical import (
-    AssertionRecordReference,
     Cardinality,
     Confidence,
+    ContextRecordReference,
     ContractModel,
     ModeledFilters,
     ModeledListQuery,
@@ -14,8 +14,7 @@ from gds_workbench_api.features.logical import (
 
 from .candidate import DimensionalCandidateValidator
 from .read_contracts import (
-    DimensionalAssertionSource,
-    DimensionalAttributeAssertionSource,
+    DimensionalAttributeContextSource,
     DimensionalAttributeDetail,
     DimensionalAttributeFilters,
     DimensionalAttributeListQuery,
@@ -25,6 +24,7 @@ from .read_contracts import (
     DimensionalAttributeSource,
     DimensionalAttributeSourceBase,
     DimensionalAttributeSummary,
+    DimensionalContextSource,
     DimensionalDetailLimitExceededError,
     DimensionalFilters,
     DimensionalLogicalEntitySource,
@@ -54,7 +54,7 @@ from .router import DimensionalWorkflowService, create_dimensional_workflow_rout
 from .service import DimensionalExecutionFailedError, DimensionalWorkflow
 
 __all__ = [
-    "AssertionRecordReference",
+    "ContextRecordReference",
     "Cardinality",
     "Confidence",
     "ContractModel",
@@ -62,8 +62,8 @@ __all__ = [
     "DatabaseDimensionalService",
     "DIMENSIONAL_ATTRIBUTE_SOURCES_SQL",
     "DIMENSIONAL_OBJECT_SOURCES_SQL",
-    "DimensionalAssertionSource",
-    "DimensionalAttributeAssertionSource",
+    "DimensionalContextSource",
+    "DimensionalAttributeContextSource",
     "DimensionalAttributeDetail",
     "DimensionalAttributeFilters",
     "DimensionalAttributeListQuery",

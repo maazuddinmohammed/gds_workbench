@@ -119,10 +119,17 @@ def test_generated_app_contains_runtime_source_only(tmp_path: Path) -> None:
     assert "web_app/frontend/index.html" in app_files
     assert "web_app/frontend/src/main.tsx" in app_files
     assert "web_app/frontend/public/assets/atlas.svg" in app_files
-    for name in ("OpenSans-Regular.woff2", "OpenSans-SemiBold.woff2", "OpenSans_Condensed-Bold.woff2", "OFL.txt"):
+    for name in (
+        "OpenSans-Regular.woff2",
+        "OpenSans-SemiBold.woff2",
+        "OpenSans_Condensed-Bold.woff2",
+        "OFL.txt",
+    ):
         relative = f"web_app/frontend/public/assets/fonts/{name}"
         assert relative in app_files
-        assert (result.app_source_directory / relative).read_bytes() == (ROOT / relative).read_bytes()
+        assert (result.app_source_directory / relative).read_bytes() == (
+            ROOT / relative
+        ).read_bytes()
     assert "web_app/frontend/src/styles.css" in app_files
     assert (result.app_source_directory / "DEPLOYMENT_GUIDE.md").read_bytes() == (
         ROOT / "web_app/DEPLOYMENT_GUIDE.md"

@@ -218,7 +218,7 @@ function Plan-Profiling($Metadata, $Scope, $Plan) {
     $scopeRows = @{}; $scopeOrder = [string[]]@($scoped | ForEach-Object { $identity = Get-ProfileKey $_; $scopeRows[$identity] = $_; $identity })
     [Array]::Sort($scopeOrder, [StringComparer]::Ordinal)
     $scoped = @($scopeOrder | ForEach-Object { $scopeRows[$_] })
-    if ($scoped.Count -eq 0 -or $scoped.Count -gt 2000 -or ($null -ne $selectedKeys -and $selectedKeys.Count -ne $scoped.Count)) { Fail 'Selection must match active Model Input Scope.' }
+    if ($scoped.Count -eq 0 -or $scoped.Count -gt 2000 -or ($null -ne $selectedKeys -and $selectedKeys.Count -ne $scoped.Count)) { Fail 'Selection must match active Project Input Scope.' }
     $queries = New-Object System.Collections.ArrayList
     $coverage = New-Object System.Collections.ArrayList
     $masked = Get-ProfileMaskingKeys $Metadata
@@ -294,8 +294,8 @@ function Plan-Profiling($Metadata, $Scope, $Plan) {
     return [ordered]@{queries=@($queries);coverage=@($coverage)}
 }
 function New-AggregatePlan([hashtable]$Options, [string]$Kind) {
-    $modelOptions = @{} + $Options; $modelOptions['area'] = 'model'
-    $context = Get-ChangeContext $modelOptions
+    $projectOptions = @{} + $Options; $projectOptions['area'] = 'project'
+    $context = Get-ChangeContext $projectOptions
     $supplied = Read-Json (Require-Option $Options 'plan-file') 'SQL planning input'
     $selections = Get-Property $supplied 'selections'
     $executionConnections = Get-Property $supplied 'execution_connections'
@@ -303,7 +303,7 @@ function New-AggregatePlan([hashtable]$Options, [string]$Kind) {
     $environment = Get-Property (Get-Property $context.State 'sql') 'environment'
     if (-not $environment -and (Get-Property (Get-Property $context.State 'sql') 'policy') -ceq 'never') { $environment = 'dev' }
     if (-not $environment) { Fail 'Resolve SQL policy/environment before preparing evidence queries.' }
-    if (-not $context.ByName.ContainsKey('model_input_scope')) { Fail 'Model Input Scope is missing.' }
+    if (-not $context.ByName.ContainsKey('project_input_scope')) { Fail 'Project Input Scope is missing.' }
     $inputs = New-Object Collections.ArrayList
     [void]$inputs.Add((Get-SnapshotBinding $context))
     $owners = [ordered]@{}; $owners[[string]$context.State.tenant.id] = Get-AtlasOwner $context.State 'metadata'
@@ -311,7 +311,7 @@ function New-AggregatePlan([hashtable]$Options, [string]$Kind) {
     $merged = @{}
     foreach ($owner in $owners.Values) {
         foreach ($marker in @(Get-Property $context.State 'refresh_required')) {
-            if ($null -ne $marker -and $marker.area -ceq 'metadata' -and $marker.owner_tenant_id -eq $owner.id) { Fail 'Model work needs refreshed Metadata inputs.' }
+            if ($null -ne $marker -and $marker.area -ceq 'metadata' -and $marker.owner_tenant_id -eq $owner.id) { Fail 'Project work needs refreshed Metadata inputs.' }
         }
         try { $snapshot = Find-Snapshot @{session=$context.Session;area='metadata';owner=[string]$owner.id} }
         catch { if ($_.Exception.GetBaseException() -is [IO.FileNotFoundException]) { Fail 'Install every registered owner Metadata Snapshot before planning SQL.' }; throw }
@@ -328,7 +328,7 @@ function New-AggregatePlan([hashtable]$Options, [string]$Kind) {
     }
     $datasets = @{}
     foreach ($name in $merged.Keys) { $datasets[$name] = @($merged[$name].Values) }
-    $scope = @(Read-SnapshotRecords $context $context.ByName['model_input_scope'])
+    $scope = @(Read-SnapshotRecords $context $context.ByName['project_input_scope'])
     $planned = if ($Kind -ceq 'analysis') { @(Plan-Analysis $datasets $scope $selections) } else { Plan-Profiling $datasets $scope $selections }
     $queries = if ($Kind -ceq 'analysis') { @($planned) } else { $planned.queries }
     $relative = '.atlas/temp/' + $context.TaskId + '/' + $Kind + '/' + [Guid]::NewGuid().ToString()
@@ -355,7 +355,7 @@ function New-AggregatePlan([hashtable]$Options, [string]$Kind) {
         $entry['expected_row_count']=if ($Kind -ceq 'profiling') { $query.attributes.Count } else { 1 }
         [void]$entries.Add($entry)
     }
-    $manifest = [ordered]@{schema_version='1.0';kind=$Kind;task=$context.TaskId;inputs=@($inputs);environment=$environment;selections=$selections;queries=@($entries)}
+    $manifest = [ordered]@{schema_version='2.0';kind=$Kind;task=$context.TaskId;inputs=@($inputs);environment=$environment;selections=$selections;queries=@($entries)}
     if ($Kind -ceq 'profiling') { $manifest['coverage'] = $planned.coverage }
     foreach ($inputBinding in $inputs) {
         if ((Get-FileDigest (Resolve-WorkspacePath $context.Session $inputBinding.manifest_path)) -cne $inputBinding.manifest_sha256) { Fail 'Snapshot changed during planning; discard this plan and retry.' }

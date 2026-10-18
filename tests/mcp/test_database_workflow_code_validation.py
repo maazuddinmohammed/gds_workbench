@@ -23,7 +23,7 @@ def _seed_code_validation_scope(
     with postgres_database.connect_owner() as connection:
         if (
             connection.execute(
-                "SELECT 1 FROM core.project WHERE project_code = 'DEMO_PROJECT'"
+                "SELECT 1 FROM core.lane WHERE lane_code = 'DEMO_LANE'"
             ).fetchone()
             is None
         ):
@@ -58,31 +58,31 @@ def _seed_code_validation_scope(
                 """
             ).fetchone()
         )
-        model_id = require_row(
+        project_id = require_row(
             connection.execute(
                 """
-                INSERT INTO model.model (tenant_id, model_name, logical_schemas)
+                INSERT INTO project.project (tenant_id, project_name, logical_schemas)
                 VALUES (%s, %s, '[{"schema_name":"silver","description":null}]')
-                RETURNING model_id
+                RETURNING project_id
                 """,
                 (seed["tenant_id"], f"Code Validation {uuid4().hex}"),
             ).fetchone()
-        )["model_id"]
+        )["project_id"]
         logical_entity_id = require_row(
             connection.execute(
                 """
                 INSERT INTO workflow.logical_entity (
-                    model_id, logical_entity_name, logical_entity_definition,
+                    project_id, logical_entity_name, logical_entity_definition,
                     logical_entity_type, logical_entity_grain, logical_entity_schema_name
                 ) VALUES (%s, 'Customer', 'Customer.', 'core', 'One customer', 'silver')
                 RETURNING logical_entity_id
                 """,
-                (model_id,),
+                (project_id,),
             ).fetchone()
         )["logical_entity_id"]
 
     return {
-        "model_id": model_id,
+        "project_id": project_id,
         "tenant_id": seed["tenant_id"],
         "object_id": seed["object_id"],
         "system_id": seed["system_id"],
@@ -136,7 +136,7 @@ def test_git_code_accepts_nullable_metadata_and_table_code_requires_content(
     with postgres_database.connect_owner() as connection:
         stored = connection.execute(
             """INSERT INTO workflow.generated_code (
-                   model_id, modeled_entity_type, logical_entity_id, artifact_name,
+                   project_id, modeled_entity_type, logical_entity_id, artifact_name,
                    artifact_type, code_storage_type, code_input_digest,
                    code_repository_url, code_commit_path, code_entry_point, code_parameters
                ) VALUES (%s, 'logical_entity', %s, 'Customer.sql', 'sql_file',
@@ -144,7 +144,7 @@ def test_git_code_accepts_nullable_metadata_and_table_code_requires_content(
                RETURNING generated_code_content, code_commit_path, code_parameters,
                          generated_code_digest""",
             (
-                scope["model_id"],
+                scope["project_id"],
                 scope["logical_entity_id"],
                 "a" * 64,
                 "anything \\ a ref\nnot a URL",
@@ -160,14 +160,14 @@ def test_git_code_accepts_nullable_metadata_and_table_code_requires_content(
         with pytest.raises(CheckViolation), connection.transaction():
             connection.execute(
                 """UPDATE workflow.generated_code SET code_storage_type = 'table'
-                   WHERE model_id = %s""",
-                (scope["model_id"],),
+                   WHERE project_id = %s""",
+                (scope["project_id"],),
             )
         with pytest.raises(CheckViolation), connection.transaction():
             connection.execute(
                 """UPDATE workflow.generated_code SET code_storage_type = 'unknown'
-                   WHERE model_id = %s""",
-                (scope["model_id"],),
+                   WHERE project_id = %s""",
+                (scope["project_id"],),
             )
 
 
@@ -183,7 +183,7 @@ def test_generated_code_enforces_entity_identity_and_derives_content_digest(
             connection.execute(
                 """
                 INSERT INTO workflow.generated_code (
-                    model_id, modeled_entity_type, logical_entity_id,
+                    project_id, modeled_entity_type, logical_entity_id,
                     artifact_name,
                     artifact_type,
                     generated_code_content,
@@ -192,7 +192,7 @@ def test_generated_code_enforces_entity_identity_and_derives_content_digest(
                 RETURNING generated_code_status, generated_code_digest
                 """,
                 (
-                    scope["model_id"],
+                    scope["project_id"],
                     scope["logical_entity_id"],
                     large_content,
                     "a" * 64,
@@ -215,12 +215,12 @@ def test_generated_code_enforces_entity_identity_and_derives_content_digest(
                 connection.execute(
                     """
                     INSERT INTO workflow.generated_code (
-                        model_id, modeled_entity_type, logical_entity_id, artifact_name, artifact_type,
+                        project_id, modeled_entity_type, logical_entity_id, artifact_name, artifact_type,
                         generated_code_content, code_input_digest
                     ) VALUES (%s, 'logical_entity', %s, %s, 'sql_file', 'SELECT 2', %s)
                     """,
                     (
-                        scope["model_id"],
+                        scope["project_id"],
                         scope["logical_entity_id"],
                         artifact_name,
                         input_digest,
@@ -231,11 +231,11 @@ def test_generated_code_enforces_entity_identity_and_derives_content_digest(
             connection.execute(
                 """
                 INSERT INTO workflow.generated_code (
-                    model_id, modeled_entity_type, logical_entity_id, artifact_name, artifact_type,
+                    project_id, modeled_entity_type, logical_entity_id, artifact_name, artifact_type,
                     generated_code_content, code_input_digest
                 ) VALUES (%s, 'logical_entity', -1, 'Unknown.sql', 'sql_file', 'SELECT 4', %s)
                 """,
-                (scope["model_id"], "c" * 64),
+                (scope["project_id"], "c" * 64),
             )
 
 
@@ -248,13 +248,13 @@ def test_validation_group_enforces_scope_and_normalized_name(
             connection.execute(
                 """
                 INSERT INTO workflow.validation_group (
-                    model_id, tenant_id, system_id, validation_group_name,
+                    project_id, tenant_id, system_id, validation_group_name,
                     mapping_context_digest
                 ) VALUES (%s, %s, %s, 'Reconciliation', %s)
                 RETURNING validation_group_id
                 """,
                 (
-                    scope["model_id"],
+                    scope["project_id"],
                     scope["tenant_id"],
                     scope["system_id"],
                     "a" * 64,
@@ -267,12 +267,12 @@ def test_validation_group_enforces_scope_and_normalized_name(
             connection.execute(
                 """
                 INSERT INTO workflow.validation_group (
-                    model_id, tenant_id, system_id, validation_group_name,
+                    project_id, tenant_id, system_id, validation_group_name,
                     mapping_context_digest
                 ) VALUES (%s, %s, %s, '  RECONCILIATION  ', %s)
                 """,
                 (
-                    scope["model_id"],
+                    scope["project_id"],
                     scope["tenant_id"],
                     scope["system_id"],
                     "a" * 64,
@@ -283,23 +283,23 @@ def test_validation_group_enforces_scope_and_normalized_name(
             connection.execute(
                 """
                 INSERT INTO workflow.validation_group (
-                    model_id, tenant_id, system_id, validation_group_name,
+                    project_id, tenant_id, system_id, validation_group_name,
                     mapping_context_digest
                 ) VALUES (%s, -1, %s, 'Wrong tenant', %s)
                 """,
-                (scope["model_id"], scope["system_id"], "a" * 64),
+                (scope["project_id"], scope["system_id"], "a" * 64),
             )
 
         with pytest.raises(CheckViolation), connection.transaction():
             connection.execute(
                 """
                 INSERT INTO workflow.validation_group (
-                    model_id, tenant_id, system_id, validation_group_name,
+                    project_id, tenant_id, system_id, validation_group_name,
                     mapping_context_digest
                 ) VALUES (%s, %s, %s, 'Bad digest', 'not-a-digest')
                 """,
                 (
-                    scope["model_id"],
+                    scope["project_id"],
                     scope["tenant_id"],
                     scope["system_id"],
                 ),
@@ -315,13 +315,13 @@ def test_validation_check_accepts_deterministic_assertion_shapes(
             connection.execute(
                 """
                 INSERT INTO workflow.validation_group (
-                    model_id, tenant_id, system_id, validation_group_name,
+                    project_id, tenant_id, system_id, validation_group_name,
                     mapping_context_digest, code_context_digest
                 ) VALUES (%s, %s, %s, 'Business checks', %s, %s)
                 RETURNING validation_group_id
                 """,
                 (
-                    scope["model_id"],
+                    scope["project_id"],
                     scope["tenant_id"],
                     scope["system_id"],
                     "a" * 64,
@@ -376,13 +376,13 @@ def test_validation_check_rejects_ambiguous_assertion_shapes(
             connection.execute(
                 """
                 INSERT INTO workflow.validation_group (
-                    model_id, tenant_id, system_id, validation_group_name,
+                    project_id, tenant_id, system_id, validation_group_name,
                     mapping_context_digest
                 ) VALUES (%s, %s, %s, 'Invalid shapes', %s)
                 RETURNING validation_group_id
                 """,
                 (
-                    scope["model_id"],
+                    scope["project_id"],
                     scope["tenant_id"],
                     scope["system_id"],
                     "a" * 64,

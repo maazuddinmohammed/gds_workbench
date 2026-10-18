@@ -1,4 +1,4 @@
-/* Governed Prompt Library and Model Prompt Settings */
+/* Governed Prompt Library and Project Prompt Settings */
 textarea {
   font: inherit;
 }
@@ -18,7 +18,7 @@ textarea:focus-visible {
 
 .prompts-commandbar,
 .prompt-detail-commandbar,
-.model-prompts-commandbar {
+.project-prompts-commandbar {
   display: grid;
   min-height: 5.35rem;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -30,7 +30,7 @@ textarea:focus-visible {
 
 .prompts-commandbar h1,
 .prompt-detail-commandbar h1,
-.model-prompts-commandbar h1 {
+.project-prompts-commandbar h1 {
   margin: 0.25rem 0 0.35rem;
   font-size: 1.5rem;
   letter-spacing: -0.05em;
@@ -39,7 +39,7 @@ textarea:focus-visible {
 
 .prompts-commandbar p:last-child,
 .prompt-detail-commandbar p:last-child,
-.model-prompts-commandbar p:last-child {
+.project-prompts-commandbar p:last-child {
   max-width: 47rem;
   margin: 0;
   color: var(--muted);
@@ -49,7 +49,7 @@ textarea:focus-visible {
 
 .prompts-command-actions,
 .prompt-detail-actions,
-.model-prompts-commandbar > div:last-child {
+.project-prompts-commandbar > div:last-child {
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -154,24 +154,24 @@ textarea:focus-visible {
   min-width: 76rem;
 }
 
-.model-prompts-table-scroll table {
+.project-prompts-table-scroll table {
   min-width: 60rem;
 }
 
 .prompt-table-scroll tbody tr,
-.model-prompts-table-scroll tbody tr {
+.project-prompts-table-scroll tbody tr {
   transition: background-color 120ms ease, box-shadow 120ms ease;
 }
 
 .prompt-table-scroll tbody tr:hover td,
 .prompt-table-scroll tbody tr:focus-within td,
-.model-prompts-table-scroll tbody tr:hover td,
-.model-prompts-table-scroll tbody tr:focus-within td {
+.project-prompts-table-scroll tbody tr:hover td,
+.project-prompts-table-scroll tbody tr:focus-within td {
   background: #f8f9fa;
 }
 
 .prompt-table-scroll tbody tr:focus-within,
-.model-prompts-table-scroll tbody tr:focus-within {
+.project-prompts-table-scroll tbody tr:focus-within {
   box-shadow: inset 3px 0 var(--accent);
 }
 
@@ -643,46 +643,46 @@ textarea:focus-visible {
   border-top: 0;
 }
 
-.model-prompt-settings {
+.project-prompt-settings {
   min-width: 0;
 }
 
-.model-prompts-context {
+.project-prompts-context {
   margin: 0.75rem 0;
   color: var(--muted);
   font-size: 0.74rem;
   line-height: 1.5;
 }
 
-.model-prompts-table-scroll {
+.project-prompts-table-scroll {
   max-height: calc(100vh - 19rem);
   border-top: 1px solid var(--line-strong);
 }
 
-.model-prompt-audit > summary {
+.project-prompt-audit > summary {
   color: var(--muted);
   font-size: 0.68rem;
   cursor: pointer;
 }
 
-.model-prompt-audit dl {
+.project-prompt-audit dl {
   display: grid;
   gap: 0.6rem;
   max-width: 28rem;
   margin: 0.65rem 0 0;
 }
 
-.model-prompt-audit dt {
+.project-prompt-audit dt {
   color: var(--muted);
   font-size: 0.65rem;
 }
 
-.model-prompt-audit dd {
+.project-prompt-audit dd {
   margin: 0.2rem 0 0;
   overflow-wrap: anywhere;
 }
 
-.model-prompt-audit dd code {
+.project-prompt-audit dd code {
   font-size: 0.68rem;
 }
 
@@ -731,7 +731,7 @@ textarea:focus-visible {
 @media (max-width: 64rem) {
   .prompts-commandbar,
   .prompt-detail-commandbar,
-  .model-prompts-commandbar {
+  .project-prompts-commandbar {
     grid-template-columns: 1fr;
     align-items: start;
     gap: 1rem;
@@ -739,7 +739,7 @@ textarea:focus-visible {
 
   .prompts-command-actions,
   .prompt-detail-actions,
-  .model-prompts-commandbar > div:last-child {
+  .project-prompts-commandbar > div:last-child {
     justify-content: flex-start;
   }
 
@@ -778,7 +778,7 @@ textarea:focus-visible {
 
   .prompts-command-actions,
   .prompt-detail-actions,
-  .model-prompts-commandbar > div:last-child,
+  .project-prompts-commandbar > div:last-child,
   .prompt-editor-actions {
     align-items: stretch;
     flex-direction: column;
@@ -786,7 +786,7 @@ textarea:focus-visible {
 
   .prompts-command-actions .button,
   .prompt-detail-actions .button,
-  .model-prompts-commandbar .button,
+  .project-prompts-commandbar .button,
   .prompt-editor-actions .button {
     width: 100%;
   }
@@ -808,7 +808,7 @@ textarea:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   .prompt-table-scroll tbody tr,
-  .model-prompts-table-scroll tbody tr,
+  .project-prompts-table-scroll tbody tr,
   .prompt-variable-reference > summary > span:last-child,
   .prompt-dialog-scrim,
   .prompt-dialog,

@@ -79,9 +79,9 @@ async def test_validation_authors_every_system_and_never_hands_off_partial_resul
             await service.execute_started(
                 _principal(),
                 tenant_id=7,
-                model_id=18,
+                project_id=18,
                 workflow_run_id=1048,
-                expected_model_revision=7,
+                expected_project_revision=7,
                 workflow_run_claim_token=_CLAIM_TOKEN,
             )
         assert handoff.calls == [] and handoff.retained == []
@@ -91,9 +91,9 @@ async def test_validation_authors_every_system_and_never_hands_off_partial_resul
         await service.execute_started(
             _principal(),
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             workflow_run_id=1048,
-            expected_model_revision=7,
+            expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
         )
         assert len(handoff.calls) == 1 and lifecycle.failed is None

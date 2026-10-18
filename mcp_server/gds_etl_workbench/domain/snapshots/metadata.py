@@ -20,6 +20,7 @@ from gds_etl_workbench.domain.metadata_records import (
     FileTypeRecord,
     IngestionAttributeMappingRecord,
     IngestionObjectMappingRecord,
+    LaneRecord,
     MemberGroupRecord,
     MemberRecord,
     MetadataRecord,
@@ -28,7 +29,6 @@ from gds_etl_workbench.domain.metadata_records import (
     ProcessGroupRecord,
     ProcessRecord,
     ProcessTypeRecord,
-    ProjectRecord,
     SystemRecord,
     SystemTypeRecord,
     TenantRecord,
@@ -64,7 +64,7 @@ class SnapshotSection(StrEnum):
 
 
 type MetadataDataset = Literal[
-    "project",
+    "lane",
     "tenant",
     "system",
     "connection",
@@ -155,7 +155,7 @@ class EncodedDataset:
     row_count: int
 
 
-PROJECT_KEY = ("project_code",)
+LANE_KEY = ("lane_code",)
 TENANT_KEY = ("tenant_code",)
 SYSTEM_KEY = ("system_code",)
 CONNECTION_KEY = ("tenant_code", "system_code", "connection_code")
@@ -234,14 +234,14 @@ def _dataset(
 
 DATASETS = (
     _dataset(
-        "project",
-        "Projects",
-        "core.project",
-        "project",
+        "lane",
+        "Lanes",
+        "core.lane",
+        "lane",
         SnapshotSection.FOUNDATIONAL,
         False,
-        ProjectRecord,
-        PROJECT_KEY,
+        LaneRecord,
+        LANE_KEY,
     ),
     _dataset(
         "tenant",
@@ -253,7 +253,7 @@ DATASETS = (
         TenantRecord,
         TENANT_KEY,
         references=(
-            _reference(("project_code",), "project", PROJECT_KEY),
+            _reference(("lane_code",), "lane", LANE_KEY),
             _reference(
                 (
                     "gds_connection_tenant_code",

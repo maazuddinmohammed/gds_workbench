@@ -67,7 +67,7 @@ async def test_installed_mapping_stages_execute_one_complete_candidate(
                AND assignment.is_active
               JOIN application.prompt_template_version AS version
                 ON version.prompt_template_version_id = assignment.prompt_template_version_id
-             WHERE stage.model_workflow = 'mapping'
+             WHERE stage.project_workflow = 'mapping'
                AND stage.workflow_execution_mode = %s
                AND stage.workflow_stage_is_agentic AND stage.is_active
              ORDER BY stage.workflow_stage_order
@@ -130,9 +130,9 @@ async def test_installed_mapping_stages_execute_one_complete_candidate(
     handoff = AsyncMock()
     now = datetime.now(UTC)
     receipt = WorkflowChangeSetHandoffResult(
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
-        model_change_set_id=uuid4(),
+        project_change_set_id=uuid4(),
         replayed=False,
         draft_revision=2,
         candidate_digest="a" * 64,
@@ -160,10 +160,10 @@ async def test_installed_mapping_stages_execute_one_complete_candidate(
             actor_kind=ActorKind.HUMAN, entra_tenant_id=uuid4(), entra_object_id=uuid4()
         ),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
         workflow_run_claim_token=uuid4(),
-        expected_model_revision=7,
+        expected_project_revision=7,
     )
 
     assert result == receipt

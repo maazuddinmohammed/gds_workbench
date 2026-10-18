@@ -21,11 +21,11 @@ Implemented release boundary. The package supplies local runtime, Atlas Local Wo
 
 ## Required compatibility work
 
-Track the implementation beside its authoritative rules: [Process Group order](metadata/tables/process-group.md#dependency-order), [Copy order](metadata/tables/copy.md#copy-order-and-default), [keys/audits](model/keys-and-audit.md#population-boundary-and-implementation-alignment), [Entity ownership](model/entity-ownership.md), [Mapping consumer context](model/mapping-documents.md#complete-context-for-coding-and-validation), and [Validation SQL/consumer contracts](model/validation.md#sql-eligibility-and-protection).
+Track the implementation beside its authoritative rules: [Process Group order](metadata/tables/process-group.md#dependency-order), [Copy order](metadata/tables/copy.md#copy-order-and-default), [keys/audits](project/keys-and-audit.md#population-boundary-and-implementation-alignment), [Entity ownership](project/entity-ownership.md), [Mapping consumer context](project/mapping-documents.md#complete-context-for-coding-and-validation), and [Validation SQL/consumer contracts](project/validation.md#sql-eligibility-and-protection).
 
 Existing installations require an explicit backend upgrade and operator review of existing Process Group dependency orders. Do not silently assign 1 to historical groups. Deliver compatibility checks and operator instructions; deployment remains separate.
 
-Model-derived Metadata work may keep several owner-specific Snapshot/draft roots in one working directory. The primary Tenant and active Model stay fixed; each owner retains independent authorization, validation, Stage and Apply evidence. See [workspace ownership](workspace-contract.md#model-derived-metadata-owners).
+Project-derived Metadata work may keep several owner-specific Snapshot/draft roots in one working directory. The primary Tenant and active Project stay fixed; each owner retains independent authorization, validation, Stage and Apply evidence. See [workspace ownership](workspace-contract.md#project-derived-metadata-owners).
 
 This workspace arrangement does not broaden physical Metadata write or runtime access. Verify operational targets under their true owner; modeled Mapping and Code need no target registration.
 

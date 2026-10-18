@@ -9,13 +9,15 @@ from gds_etl_workbench.domain.authorization import RequestPrincipal
 from gds_workbench_api.dependencies import principal_dependency
 
 from .contracts import (
+    MAX_EXPORT_ARTIFACTS,
     MAX_SELECTED_ARTIFACTS,
     CodeGenerationTargetFilters,
     CodeGenerationTargetPage,
     CodeGenerationTargetQuery,
+    ExportSqlArtifactsRequest,
     GeneratedSqlArtifactDetail,
 )
-from .downloads import build_selected_sql_zip, sql_artifact_filename
+from .downloads import build_sql_zip, sql_artifact_filename
 from .read_service import CodeGenerationService
 
 
@@ -27,13 +29,13 @@ def create_code_generation_router(
     """Create stored SQL routes for application composition."""
     authenticate = principal_dependency(identity_provider)
     router = APIRouter(
-        prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/code-generation",
+        prefix="/api/v1/tenants/{tenant_id}/projects/{project_id}/code-generation",
         tags=["code-generation"],
     )
 
     async def list_targets(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         query: Annotated[CodeGenerationTargetQuery, Query()],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -51,7 +53,7 @@ def create_code_generation_router(
         return await service.list_targets(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=filters,
             page_size=query.page_size,
             cursor=query.cursor,
@@ -66,7 +68,7 @@ def create_code_generation_router(
 
     async def read_artifact(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         generated_sql_artifact_id: Annotated[int, Path(gt=0)],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -74,7 +76,7 @@ def create_code_generation_router(
         return await service.read_artifact(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             generated_sql_artifact_id=generated_sql_artifact_id,
         )
 
@@ -87,7 +89,7 @@ def create_code_generation_router(
 
     async def download_artifact(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         generated_sql_artifact_id: Annotated[int, Path(gt=0)],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -95,7 +97,7 @@ def create_code_generation_router(
         artifact = await service.read_artifact(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             generated_sql_artifact_id=generated_sql_artifact_id,
         )
         filename = sql_artifact_filename(artifact)
@@ -118,7 +120,7 @@ def create_code_generation_router(
 
     async def download_selected_artifacts(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         artifact_ids: Annotated[
             list[int], Query(alias="artifact_id", min_length=1, max_length=MAX_SELECTED_ARTIFACTS)
         ],
@@ -128,11 +130,11 @@ def create_code_generation_router(
         artifacts = await service.read_artifacts_for_download(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             generated_sql_artifact_ids=tuple(artifact_ids),
         )
-        content = build_selected_sql_zip(artifacts)
-        filename = f"gds_sql_artifacts__model_{model_id}__{len(artifacts)}.zip"
+        content = build_sql_zip(artifacts)
+        filename = f"gds_sql_artifacts__project_{project_id}__{len(artifacts)}.zip"
         return Response(
             content=content,
             media_type="application/zip",
@@ -149,5 +151,47 @@ def create_code_generation_router(
         download_selected_artifacts,
         methods=["GET"],
         response_class=Response,
+    )
+
+    async def download_all_artifacts(
+        tenant_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
+        command: ExportSqlArtifactsRequest,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
+    ) -> Response:
+        artifacts = await service.read_all_artifacts_for_download(
+            principal, tenant_id=tenant_id, project_id=project_id, command=command
+        )
+        content = build_sql_zip(
+            artifacts,
+            max_artifacts=MAX_EXPORT_ARTIFACTS,
+            manifest={
+                "format_version": "1.0",
+                "scope": "active_sql",
+                "project_id": project_id,
+                "project_revision": command.expected_project_revision,
+                "entity_type": command.entity_type,
+            },
+        )
+        layer = "logical" if command.entity_type == "logical_entity" else "dimensional"
+        filename = (
+            f"gds_sql_{layer}__project_{project_id}__r{command.expected_project_revision}.zip"
+        )
+        return Response(
+            content=content,
+            media_type="application/zip",
+            headers={
+                "Cache-Control": "no-store",
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "X-Content-Type-Options": "nosniff",
+                "X-GDS-Artifact-Count": str(len(artifacts)),
+                "X-GDS-Export-Scope": "active_sql",
+                "X-GDS-Project-Revision": str(command.expected_project_revision),
+            },
+        )
+
+    router.add_api_route(
+        "/downloads/all.zip", download_all_artifacts, methods=["POST"], response_class=Response
     )
     return router

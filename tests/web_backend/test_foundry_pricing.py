@@ -1,4 +1,4 @@
-"""Configured pricing is exact, optional, bounded, and never guessed from model names."""
+"""Configured pricing is exact, optional, bounded, and never guessed from project names."""
 
 import json
 from decimal import Decimal
@@ -7,7 +7,9 @@ import pytest
 from gds_etl_workbench.configuration import ConfigurationError
 from gds_workbench_api.configuration import RuntimeSettings
 from gds_workbench_api.features.workflows.usage.contracts import FoundryModelPricing
-from gds_workbench_api.integrations.agents.configuration import AgentRuntimeConfiguration
+from gds_workbench_api.integrations.agents.configuration import (
+    AgentRuntimeConfiguration,
+)
 from pydantic import ValidationError
 
 
@@ -35,13 +37,17 @@ def _remote(pricing: str | None = None) -> AgentRuntimeConfiguration:
     return AgentRuntimeConfiguration.from_environment(values, production=False)
 
 
-def test_pricing_is_optional_and_binds_only_the_configured_registered_model() -> None:
+def test_pricing_is_optional_and_binds_only_the_configured_registered_project() -> None:
     assert all(connection.pricing is None for connection in _remote().connections)
     configured = _remote(json.dumps({"foundry-primary": _pricing()}))
-    primary = next(item for item in configured.connections if item.model_code == "foundry-primary")
+    primary = next(
+        item for item in configured.connections if item.model_code == "foundry-primary"
+    )
     assert primary.pricing is not None
     assert primary.pricing.input_usd_per_million == Decimal("2.12345678")
-    assert primary.pricing.model_dump(mode="json")["input_usd_per_million"] == "2.12345678"
+    assert (
+        primary.pricing.model_dump(mode="json")["input_usd_per_million"] == "2.12345678"
+    )
     assert all(
         item.pricing is None
         for item in configured.connections
@@ -70,7 +76,9 @@ def test_app_settings_accept_and_forward_pricing_without_exposing_it_in_repr() -
         for item in settings.agent_runtime.connections
         if item.model_code == "foundry-primary"
     )
-    assert pricing is not None and pricing.input_usd_per_million == Decimal("2.12345678")
+    assert pricing is not None and pricing.input_usd_per_million == Decimal(
+        "2.12345678"
+    )
     assert pricing.basis not in repr(settings)
 
 
@@ -101,7 +109,9 @@ def test_app_settings_accept_and_forward_pricing_without_exposing_it_in_repr() -
         ("unknown_field", "Private"),
     ],
 )
-def test_pricing_rejects_invalid_configuration_without_echo(field: str, value: object) -> None:
+def test_pricing_rejects_invalid_configuration_without_echo(
+    field: str, value: object
+) -> None:
     pricing = {**_pricing(), field: value}
     with pytest.raises(ValidationError):
         FoundryModelPricing.model_validate_json(json.dumps(pricing), strict=True)
@@ -119,17 +129,21 @@ def test_pricing_rejects_invalid_configuration_without_echo(field: str, value: o
         "{",
         '{"foundry-primary":null}',
         '{"foundry-primary":{},"foundry-primary":{}}',
-        json.dumps({"unregistered-private-model": _pricing()}),
+        json.dumps({"unregistered-private-project": _pricing()}),
         json.dumps({"foundry-primary": {**_pricing(), "basis": "x" * 65536}}),
     ],
 )
-def test_pricing_rejects_malformed_unregistered_duplicate_and_oversized_maps(raw: str) -> None:
+def test_pricing_rejects_malformed_unregistered_duplicate_and_oversized_maps(
+    raw: str,
+) -> None:
     with pytest.raises(ConfigurationError) as caught:
         _remote(raw)
-    assert "private-model" not in str(caught.value)
+    assert "private-project" not in str(caught.value)
 
 
-def test_pricing_requires_explicit_cache_rates_and_allows_zero_and_unrestricted_windows() -> None:
+def test_pricing_requires_explicit_cache_rates_and_allows_zero_and_unrestricted_windows() -> (
+    None
+):
     pricing = {
         **_pricing(),
         "input_usd_per_million": "0",
@@ -148,6 +162,10 @@ def test_pricing_requires_explicit_cache_rates_and_allows_zero_and_unrestricted_
 def test_fake_runtime_cannot_accept_real_pricing_settings() -> None:
     with pytest.raises(ConfigurationError, match="does not accept provider settings"):
         AgentRuntimeConfiguration.from_environment(
-            {"GDS_WEB_FOUNDRY_PRICING_JSON": json.dumps({"foundry-primary": _pricing()})},
+            {
+                "GDS_WEB_FOUNDRY_PRICING_JSON": json.dumps(
+                    {"foundry-primary": _pricing()}
+                )
+            },
             production=False,
         )

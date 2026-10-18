@@ -23,7 +23,7 @@ from gds_workbench_api.capabilities import (
     VALIDATION_AGENT_EXECUTION_MODE,
     AgentCapabilityRegistry,
 )
-from gds_workbench_api.features.models import ModelNotFoundError, ModelRevisionConflictError
+from gds_workbench_api.features.projects import ProjectNotFoundError, ProjectRevisionConflictError
 from gds_workbench_api.features.workflows.commands.contracts import (
     CreateWorkflowRunRequest,
     WorkflowRunCancellationResult,
@@ -31,18 +31,18 @@ from gds_workbench_api.features.workflows.commands.contracts import (
 )
 from gds_workbench_api.features.workflows.runs import WorkflowRunNotFoundError
 
-_MODEL_OWNER_SQL = """
-SELECT target_model.model_revision,
-       target_model.default_agent_sdk_code,
-       target_model.default_agent_provider_code,
-       target_model.default_agent_model_code,
-       target_model.default_reasoning_effort_code,
-       target_model.default_max_turns,
-       target_model.default_validation_retry_count
-  FROM model.model AS target_model
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+_PROJECT_OWNER_SQL = """
+SELECT target_project.project_revision,
+       target_project.default_agent_sdk_code,
+       target_project.default_agent_provider_code,
+       target_project.default_agent_model_code,
+       target_project.default_reasoning_effort_code,
+       target_project.default_max_turns,
+       target_project.default_validation_retry_count
+  FROM project.project AS target_project
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
 """
 
 _CREATE_WORKFLOW_RUN_SQL = """
@@ -51,7 +51,7 @@ SELECT created.created,
        created.workflow_run_state,
        created.correlation_id,
        created.prompt_snapshot_count,
-       created.model_revision,
+       created.project_revision,
        created.selected_scope_digest,
        created.selected_scope_count,
        created.code_generation_coverage_mode,
@@ -70,7 +70,7 @@ class WorkflowCommandService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
     ) -> WorkflowRunCancellationResult: ...
 
@@ -79,7 +79,7 @@ class WorkflowCommandService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         correlation_id: UUID,
         command: CreateWorkflowRunRequest,
     ) -> WorkflowRunCommandResult: ...
@@ -106,7 +106,7 @@ class DatabaseWorkflowCommandService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
     ) -> WorkflowRunCancellationResult:
         try:
@@ -115,8 +115,8 @@ class DatabaseWorkflowCommandService:
                     transaction,
                     principal,
                     tenant_id=tenant_id,
-                    policy=ToolPolicy.TENANT_MODEL_WRITE,
-                    model_id=model_id,
+                    policy=ToolPolicy.TENANT_PROJECT_WRITE,
+                    project_id=project_id,
                 )
                 row = await transaction.fetch_one(
                     """
@@ -124,7 +124,7 @@ class DatabaseWorkflowCommandService:
                            completed_time AS completed_at
                       FROM application.cancel_workflow_run(%s, %s, %s, %s, %s, %s)
                     """,
-                    _identity_triple(principal) + (tenant_id, model_id, workflow_run_id),
+                    _identity_triple(principal) + (tenant_id, project_id, workflow_run_id),
                 )
         except Exception as error:
             _raise_safe_workflow_error(error)
@@ -137,13 +137,13 @@ class DatabaseWorkflowCommandService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         correlation_id: UUID,
         command: CreateWorkflowRunRequest,
     ) -> WorkflowRunCommandResult:
-        if command.model_workflow == "code_generation":
+        if command.project_workflow == "code_generation":
             agent_execution_mode = CODE_GENERATION_AGENT_EXECUTION_MODE
-        elif command.model_workflow == "validation":
+        elif command.project_workflow == "validation":
             agent_execution_mode = VALIDATION_AGENT_EXECUTION_MODE
         else:
             agent_execution_mode = command.workflow_execution_mode
@@ -158,15 +158,15 @@ class DatabaseWorkflowCommandService:
                     transaction,
                     principal,
                     tenant_id=tenant_id,
-                    policy=ToolPolicy.TENANT_MODEL_WRITE,
-                    model_id=model_id,
+                    policy=ToolPolicy.TENANT_PROJECT_WRITE,
+                    project_id=project_id,
                 )
                 owner = await transaction.fetch_one(
-                    _MODEL_OWNER_SQL,
-                    (tenant_id, model_id),
+                    _PROJECT_OWNER_SQL,
+                    (tenant_id, project_id),
                 )
                 if owner is None:
-                    raise ModelNotFoundError()
+                    raise ProjectNotFoundError()
                 agent = command.agent
                 if agent is None and agent_execution_mode is not None:
                     agent = self._agent_capability_registry.resolve_default_selection(
@@ -181,9 +181,9 @@ class DatabaseWorkflowCommandService:
                     _CREATE_WORKFLOW_RUN_SQL,
                     identity
                     + (
-                        model_id,
-                        command.expected_model_revision,
-                        command.model_workflow,
+                        project_id,
+                        command.expected_project_revision,
+                        command.project_workflow,
                         command.workflow_execution_mode,
                         None if agent is None else agent.sdk_code,
                         None if agent is None else agent.provider_code,
@@ -250,18 +250,18 @@ def _raise_safe_workflow_error(error: Exception) -> Never:
             "workflow_run_cancellation_conflict",
             "This run has already finished or saved its result. Refresh to see its outcome.",
         ) from error
-    if message == "stale_model_revision":
-        raise ModelRevisionConflictError() from error
+    if message == "stale_project_revision":
+        raise ProjectRevisionConflictError() from error
     if message == "metadata_description_conflict":
         raise WorkbenchError(
             "metadata_revision_conflict",
             "The description changed or its record is locked. Refresh and review again.",
         ) from error
     if message in {
-        "Workflow Run Model is unavailable",
-        "Model is unavailable",
+        "Workflow Run Project is unavailable",
+        "Project is unavailable",
     }:
-        raise ModelNotFoundError() from error
+        raise ProjectNotFoundError() from error
     if message in {
         "Global default Mapping Object output template is unavailable",
         "Global default Mapping Attribute output template is unavailable",
@@ -291,12 +291,12 @@ def _raise_safe_workflow_error(error: Exception) -> Never:
     if (
         message == "No usable prompt is assigned to Workflow Stage"
         or message.startswith("No usable prompt is assigned to Workflow Stage ")
-        or message == "Resolved prompt version is unavailable to the Model"
+        or message == "Resolved prompt version is unavailable to the Project"
     ):
         raise WorkbenchError(
             code="workflow_prompt_unavailable",
             message="A published prompt is unavailable for this workflow. "
-            "Review the Model's prompt settings before generating again.",
+            "Review the Project's prompt settings before generating again.",
         ) from error
     if message == "Selected Validation System lacks complete applied Mapping":
         raise InvalidRequestError(

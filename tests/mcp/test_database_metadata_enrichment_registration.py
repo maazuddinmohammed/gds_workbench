@@ -17,13 +17,13 @@ from tests.mcp.database_test_support import require_row
 from tests.mcp.test_database_workflow_run_lifecycle import (
     CREATE_WORKFLOW_RUN_SQL,
     WorkflowContext,
-    _seed_model_input_scope_object_in_zone,
+    _seed_project_input_scope_object_in_zone,
     create_workflow_run_parameters,
     seed_workflow_context,
 )
 
 
-def _seed_missing_model_prompt_assignments(
+def _seed_missing_project_prompt_assignments(
     database: DisposablePostgres,
     context: WorkflowContext,
     *,
@@ -36,7 +36,7 @@ def _seed_missing_model_prompt_assignments(
             """
             SELECT stage.workflow_stage_id
               FROM application.workflow_stage AS stage
-             WHERE stage.model_workflow = %s
+             WHERE stage.project_workflow = %s
                AND stage.workflow_execution_mode IS NOT DISTINCT FROM %s
                AND stage.workflow_stage_is_agentic
                AND stage.is_active
@@ -44,13 +44,13 @@ def _seed_missing_model_prompt_assignments(
                    SELECT 1
                      FROM application.prompt_assignment AS assignment
                     WHERE assignment.workflow_stage_id = stage.workflow_stage_id
-                      AND assignment.prompt_assignment_scope = 'model_default'
-                      AND assignment.model_id = %s
+                      AND assignment.prompt_assignment_scope = 'project_default'
+                      AND assignment.project_id = %s
                       AND assignment.is_active
                )
              ORDER BY stage.workflow_stage_order
             """,
-            (workflow, execution_mode, context.model_id),
+            (workflow, execution_mode, context.project_id),
         ).fetchall()
         prompt_digest = require_row(
             connection.execute(
@@ -138,11 +138,11 @@ def _seed_missing_model_prompt_assignments(
                     workflow_stage_id,
                     prompt_template_version_id,
                     prompt_assignment_scope,
-                    model_id,
+                    project_id,
                     assigned_by_principal_id
-                ) VALUES (%s, %s, 'model_default', %s, %s)
+                ) VALUES (%s, %s, 'project_default', %s, %s)
                 """,
-                (stage_id, version_id, context.model_id, context.principal_id),
+                (stage_id, version_id, context.project_id, context.principal_id),
             )
 
 
@@ -153,7 +153,7 @@ def _context(database: DisposablePostgres) -> WorkflowContext:
         connection.execute(
             """
             INSERT INTO application.workflow_stage (
-                model_workflow, workflow_execution_mode, workflow_stage_code,
+                project_workflow, workflow_execution_mode, workflow_stage_code,
                 workflow_stage_name, workflow_stage_order, workflow_stage_is_agentic
             ) SELECT workflow, 'one_shot', 'candidate_authoring',
                      'Metadata Enrichment', stage_order, TRUE
@@ -161,13 +161,13 @@ def _context(database: DisposablePostgres) -> WorkflowContext:
                             ('metadata_enrichment_attribute', 20)) AS stages(workflow, stage_order)
                WHERE NOT EXISTS (
                    SELECT 1 FROM application.workflow_stage
-                    WHERE model_workflow = stages.workflow
+                    WHERE project_workflow = stages.workflow
                       AND workflow_execution_mode = 'one_shot'
                )
             """
         )
     for workflow in ("metadata_enrichment_object", "metadata_enrichment_attribute"):
-        _seed_missing_model_prompt_assignments(
+        _seed_missing_project_prompt_assignments(
             database, context, workflow=workflow, execution_mode="one_shot"
         )
     return context
@@ -215,7 +215,7 @@ def test_enrichment_registers_locked_source_and_bronze_on_shared_placement_witho
 ) -> None:
     database = bootstrap_postgres_database
     context = _context(database)
-    source_id = _seed_model_input_scope_object_in_zone(
+    source_id = _seed_project_input_scope_object_in_zone(
         database, context, zone_code="source"
     )
     placement = seed_workflow_context(database)
@@ -244,8 +244,8 @@ def test_enrichment_registers_locked_source_and_bronze_on_shared_placement_witho
             (context.tenant_id,),
         )
         connection.execute(
-            "UPDATE model.model_input_scope SET model_input_scope_is_locked = TRUE WHERE model_id = %s",
-            (context.model_id,),
+            "UPDATE project.project_input_scope SET project_input_scope_is_locked = TRUE WHERE project_id = %s",
+            (context.project_id,),
         )
     selected = [source_id, *reversed(context.selected_object_ids)]
     before = _physical_snapshot(database, context)
@@ -301,7 +301,7 @@ def test_enrichment_rejects_ineligible_scope_atomically(
     context = _context(database)
     object_id = context.selected_object_ids[0]
     if case in {"silver", "gold"}:
-        object_id = _seed_model_input_scope_object_in_zone(
+        object_id = _seed_project_input_scope_object_in_zone(
             database, context, zone_code=case
         )
     elif case == "foreign_owner":
@@ -313,7 +313,7 @@ def test_enrichment_rejects_ineligible_scope_atomically(
             )
     else:
         statements: dict[str, LiteralString] = {
-            "inactive_scope": "UPDATE model.model_input_scope SET is_active = FALSE WHERE model_id = %s AND object_id = %s",
+            "inactive_scope": "UPDATE project.project_input_scope SET is_active = FALSE WHERE project_id = %s AND object_id = %s",
             "inactive_object": "UPDATE core.object SET is_active = FALSE WHERE source_tenant_id = %s AND object_id = %s",
             "outside_scope": """INSERT INTO core.object (
                 connection_id, source_tenant_id, object_schema, object_name, object_type_id, zone_id
@@ -324,14 +324,18 @@ def test_enrichment_rejects_ineligible_scope_atomically(
             cursor = connection.execute(
                 statements[case],
                 (
-                    context.model_id if case == "inactive_scope" else context.tenant_id,
+                    context.project_id
+                    if case == "inactive_scope"
+                    else context.tenant_id,
                     object_id,
                 ),
             )
             if case == "outside_scope":
                 object_id = require_row(cursor.fetchone())["object_id"]
     correlation_id = uuid4()
-    expected_error = InsufficientPrivilege if case == "foreign_owner" else RaiseException
+    expected_error = (
+        InsufficientPrivilege if case == "foreign_owner" else RaiseException
+    )
     with pytest.raises(expected_error):
         _create(
             database,
@@ -356,7 +360,12 @@ def test_enrichment_rejects_unsupported_execution_modes(
 ) -> None:
     context = _context(bootstrap_postgres_database)
     with pytest.raises(RaiseException):
-        _create(bootstrap_postgres_database, context, correlation_id=uuid4(), execution_mode=mode)
+        _create(
+            bootstrap_postgres_database,
+            context,
+            correlation_id=uuid4(),
+            execution_mode=mode,
+        )
 
 
 def test_large_enrichment_selection_still_rejects_ineligible_objects(
@@ -380,7 +389,7 @@ def test_enrichment_registration_keeps_revision_identity_role_and_lock_fences(
     database = bootstrap_postgres_database
     context = _context(database)
     if fence == "revision":
-        context = replace(context, model_revision=context.model_revision + 1)
+        context = replace(context, project_revision=context.project_revision + 1)
     elif fence == "identity":
         context = replace(context, entra_object_id=uuid4())
     else:

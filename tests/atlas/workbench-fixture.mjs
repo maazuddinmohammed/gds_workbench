@@ -16,8 +16,8 @@ export class Directory {
 }
 export function workspace() {
   const root = new Directory(); const atlas = root.directory('.atlas');
-  atlas.file('session.json', JSON.stringify({ schema_version: '1.0', tenant: {id:1, code:'T'}, model:null, active_task:'00000000-0000-4000-8000-000000000001' }));
-  atlas.directory('tasks').file('00000000-0000-4000-8000-000000000001.json', JSON.stringify({schema_version:'1.0', outcome:'Review synthetic changes'}));
+  atlas.file('session.json', JSON.stringify({ schema_version: '2.0', tenant: {id:1, code:'T'}, project:null, active_task:'00000000-0000-4000-8000-000000000001' }));
+  atlas.directory('tasks').file('00000000-0000-4000-8000-000000000001.json', JSON.stringify({schema_version:'2.0', outcome:'Review synthetic changes'}));
   return root;
 }
 export function state(root, update) { const file = root.entries.get('.atlas').entries.get('session.json'); file.text = JSON.stringify({...JSON.parse(file.text), ...update}); }
@@ -32,10 +32,10 @@ export function snapshot(root, area, datasets = [], tenant = 'T') {
     members.push({path:`data/${dataset.name}.jsonl`,size_bytes:Buffer.byteLength(rows),sha256:hash(rows)}, {path:`schemas/${dataset.name}.schema.json`,size_bytes:Buffer.byteLength(schema),sha256:hash(schema)});
     definitions.push({name:dataset.name,record_type:dataset.name,canonical_key:dataset.keys,row_count:dataset.rows.length,rows_file:`data/${dataset.name}.jsonl`,schema_file:`schemas/${dataset.name}.schema.json`});
   }
-  const model = area === 'model' ? {model_id:7, model_name:'Sales', model_revision:1,tenant_code:tenant} : undefined;
-  const catalog = JSON.stringify({schema_version:"2.0",snapshot_kind:area,model,sections:[{name:area,datasets:definitions}]});
+  const project = area === 'project' ? {project_id:7, project_name:'Sales', project_revision:1,tenant_code:tenant} : undefined;
+  const catalog = JSON.stringify({schema_version:"3.0",snapshot_kind:area,project,sections:[{name:area,datasets:definitions}]});
   dir.file('catalog.json', catalog); members.unshift({path:'catalog.json',size_bytes:Buffer.byteLength(catalog),sha256:hash(catalog)});
-  dir.file('manifest.json', JSON.stringify({schema_version:"2.0",snapshot_kind:area,snapshot_id:`${area}-snapshot`,tenant_code:tenant,...model,catalog:{path:'catalog.json',sha256:hash(catalog)},members}));
+  dir.file('manifest.json', JSON.stringify({schema_version:"3.0",snapshot_kind:area,snapshot_id:`${area}-snapshot`,tenant_code:tenant,...project,catalog:{path:'catalog.json',sha256:hash(catalog)},members}));
   return dir;
 }
 export function dataset(name, keys, rows) { return {name,keys,rows}; }

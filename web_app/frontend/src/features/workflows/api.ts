@@ -1,7 +1,7 @@
 import type { HttpRequest } from "../../core/http";
 import type { JsonObject } from "../../shared/contracts";
 
-export type ModelWorkflow =
+export type ProjectWorkflow =
   | "profiling"
   | "metadata_enrichment"
   | "analysis"
@@ -76,8 +76,8 @@ export function reasoningEffortDisplayName(
 }
 
 export interface CreateWorkflowRunCommand {
-  expected_model_revision: number;
-  model_workflow: ModelWorkflow;
+  expected_project_revision: number;
+  project_workflow: ProjectWorkflow;
   workflow_execution_mode: WorkflowExecutionMode | null;
   selected_object_ids: number[];
   selected_entity_ids?: number[];
@@ -119,7 +119,7 @@ export interface MappingRunFailure {
 
 export interface WorkflowRunRecord {
   workflow_run_id: number;
-  model_workflow: ModelWorkflow;
+  project_workflow: ProjectWorkflow;
   workflow_execution_mode: WorkflowExecutionMode | null;
   modeled_entity_type: "logical_entity" | "dimensional_entity" | null;
   selected_scope_count: number;
@@ -183,8 +183,8 @@ export interface WorkflowRunDetail extends WorkflowRunRecord {
   validation_retry_count: number | null;
   failure_code: string | null;
   failure_message: string | null;
-  model_change_set_id: string | null;
-  model_change_set_status:
+  project_change_set_id: string | null;
+  project_change_set_status:
     | "active"
     | "validated"
     | "applied"
@@ -228,19 +228,19 @@ export interface WorkflowRunStart {
   changed: boolean;
   workflow_run_id: number;
   workflow_run_state: WorkflowRunState;
-  model_revision: number;
+  project_revision: number;
 }
 
 export interface ApplyWorkflowDraftResult {
   schema_version: "1.0";
-  model_id: number;
+  project_id: number;
   workflow_run_id: number;
-  model_change_set_id: string;
+  project_change_set_id: string;
   replayed: boolean;
   draft_revision: number;
   candidate_digest: string;
   action_count: number;
-  model_revision: number;
+  project_revision: number;
   applied_at: string;
 }
 
@@ -255,8 +255,8 @@ export interface WorkflowDraftActionReview {
 
 export interface WorkflowDraftReview {
   schema_version: "1.0";
-  model_id: number;
-  model_change_set_id: string;
+  project_id: number;
+  project_change_set_id: string;
   status: "active" | "validated" | "applied" | "expired" | "discarded" | "superseded";
   draft_revision: number;
   candidate_digest: string | null;
@@ -297,122 +297,122 @@ export interface WorkflowRunCancellationResult {
 
 export interface WorkflowsApi {
   cancelWorkflowRun: (
-    tenantId: number, modelId: number, workflowRunId: number,
+    tenantId: number, projectId: number, workflowRunId: number,
   ) => Promise<WorkflowRunCancellationResult>;
   readAgentCapabilities: () => Promise<AgentCapabilities>;
   listWorkflowRuns: (
     tenantId: number,
-    modelId: number,
-    workflow: ModelWorkflow,
+    projectId: number,
+    workflow: ProjectWorkflow,
     state?: WorkflowRunFilterState,
     pageSize?: number,
     cursor?: string,
   ) => Promise<WorkflowRunCollection>;
   readWorkflowRun: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     workflowRunId: number,
   ) => Promise<WorkflowRunDetail>;
   listWorkflowRunEvents: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     workflowRunId: number,
     afterSequence?: number,
   ) => Promise<WorkflowRunEventCollection>;
   createWorkflowRun: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     command: CreateWorkflowRunCommand,
     idempotencyKey: string,
   ) => Promise<WorkflowRunCommandResult>;
   applyWorkflowDraft: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     workflowRunId: number,
-    expectedModelRevision: number,
+    expectedProjectRevision: number,
     expectedDraftRevision: number,
     expectedCandidateDigest: string,
     idempotencyKey: string,
   ) => Promise<ApplyWorkflowDraftResult>;
   readWorkflowDraftReview: (
     tenantId: number,
-    modelId: number,
-    modelChangeSetId: string,
+    projectId: number,
+    projectChangeSetId: string,
     dataset?: string,
   ) => Promise<WorkflowDraftReview>;
   executeProfilingRun: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     workflowRunId: number,
-    expectedModelRevision: number,
+    expectedProjectRevision: number,
   ) => Promise<WorkflowRunStart>;
   executeAnalysisInferenceRun: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     workflowRunId: number,
     executionMode: WorkflowExecutionMode,
-    expectedModelRevision: number,
+    expectedProjectRevision: number,
   ) => Promise<WorkflowRunStart>;
   executeAnalysisValidationRun: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     workflowRunId: number,
-    expectedModelRevision: number,
+    expectedProjectRevision: number,
   ) => Promise<WorkflowRunStart>;
   executeConceptualRun: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     workflowRunId: number,
     executionMode: WorkflowExecutionMode,
-    expectedModelRevision: number,
+    expectedProjectRevision: number,
   ) => Promise<WorkflowRunStart>;
   executeLogicalRun: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     workflowRunId: number,
     executionMode: WorkflowExecutionMode,
-    expectedModelRevision: number,
+    expectedProjectRevision: number,
   ) => Promise<WorkflowRunStart>;
   executeDimensionalRun: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     workflowRunId: number,
     executionMode: WorkflowExecutionMode,
-    expectedModelRevision: number,
+    expectedProjectRevision: number,
   ) => Promise<WorkflowRunStart>;
   executeMappingRun: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     workflowRunId: number,
     executionMode: WorkflowExecutionMode,
-    expectedModelRevision: number,
+    expectedProjectRevision: number,
   ) => Promise<WorkflowRunStart>;
   executeCodeGenerationRun: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     workflowRunId: number,
-    expectedModelRevision: number,
+    expectedProjectRevision: number,
   ) => Promise<WorkflowRunStart>;
   executeValidationRun: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     workflowRunId: number,
-    expectedModelRevision: number,
+    expectedProjectRevision: number,
   ) => Promise<WorkflowRunStart>;
 }
 
 export function createWorkflowsApi(request: HttpRequest): WorkflowsApi {
   return {
-    cancelWorkflowRun: (tenantId, modelId, workflowRunId) =>
+    cancelWorkflowRun: (tenantId, projectId, workflowRunId) =>
       request<WorkflowRunCancellationResult>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/runs/${workflowRunId}/cancel`,
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/runs/${workflowRunId}/cancel`,
         { method: "POST" },
       ),
     readAgentCapabilities: () =>
       request<AgentCapabilities>("/api/v1/config/agent-capabilities"),
     listWorkflowRuns: (
       tenantId,
-      modelId,
+      projectId,
       workflow,
       state = "",
       pageSize = 200,
@@ -422,21 +422,21 @@ export function createWorkflowsApi(request: HttpRequest): WorkflowsApi {
       if (state) query.set("state", state);
       if (cursor) query.set("cursor", cursor);
       return request<WorkflowRunCollection>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/runs?${query}`,
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/runs?${query}`,
       );
     },
-    readWorkflowRun: (tenantId, modelId, workflowRunId) =>
+    readWorkflowRun: (tenantId, projectId, workflowRunId) =>
       request<WorkflowRunDetail>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/runs/${workflowRunId}`,
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/runs/${workflowRunId}`,
       ),
-    listWorkflowRunEvents: (tenantId, modelId, workflowRunId, afterSequence = 0) =>
+    listWorkflowRunEvents: (tenantId, projectId, workflowRunId, afterSequence = 0) =>
       request<WorkflowRunEventCollection>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/runs/${workflowRunId}/events`
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/runs/${workflowRunId}/events`
         + `?after_sequence=${afterSequence}&page_size=200`,
       ),
-    createWorkflowRun: (tenantId, modelId, command, idempotencyKey) =>
+    createWorkflowRun: (tenantId, projectId, command, idempotencyKey) =>
       request<WorkflowRunCommandResult>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/runs`,
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/runs`,
         {
           method: "POST",
           headers: {
@@ -448,14 +448,14 @@ export function createWorkflowsApi(request: HttpRequest): WorkflowsApi {
       ),
     applyWorkflowDraft: (
       tenantId,
-      modelId,
+      projectId,
       workflowRunId,
-      expectedModelRevision,
+      expectedProjectRevision,
       expectedDraftRevision,
       expectedCandidateDigest,
       idempotencyKey,
     ) => request<ApplyWorkflowDraftResult>(
-      `/api/v1/tenants/${tenantId}/models/${modelId}/runs/${workflowRunId}/draft/apply`,
+      `/api/v1/tenants/${tenantId}/projects/${projectId}/runs/${workflowRunId}/draft/apply`,
       {
         method: "POST",
         headers: {
@@ -463,152 +463,152 @@ export function createWorkflowsApi(request: HttpRequest): WorkflowsApi {
           "Idempotency-Key": idempotencyKey,
         },
         body: JSON.stringify({
-          expected_model_revision: expectedModelRevision,
+          expected_project_revision: expectedProjectRevision,
           expected_draft_revision: expectedDraftRevision,
           expected_candidate_digest: expectedCandidateDigest,
         }),
       },
     ),
-    readWorkflowDraftReview: (tenantId, modelId, modelChangeSetId, dataset) =>
+    readWorkflowDraftReview: (tenantId, projectId, projectChangeSetId, dataset) =>
       request<WorkflowDraftReview>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/change-sets/${modelChangeSetId}`
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/change-sets/${projectChangeSetId}`
         + (dataset ? `?${new URLSearchParams({ dataset })}` : ""),
       ),
     executeProfilingRun: (
       tenantId,
-      modelId,
+      projectId,
       workflowRunId,
-      expectedModelRevision,
+      expectedProjectRevision,
     ) => request<WorkflowRunStart>(
-      `/api/v1/tenants/${tenantId}/models/${modelId}/profiling/runs/${workflowRunId}/execute`,
+      `/api/v1/tenants/${tenantId}/projects/${projectId}/profiling/runs/${workflowRunId}/execute`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ expected_model_revision: expectedModelRevision }),
+        body: JSON.stringify({ expected_project_revision: expectedProjectRevision }),
       },
     ),
     executeAnalysisInferenceRun: (
       tenantId,
-      modelId,
+      projectId,
       workflowRunId,
       executionMode,
-      expectedModelRevision,
+      expectedProjectRevision,
     ) => request<WorkflowRunStart>(
-      `/api/v1/tenants/${tenantId}/models/${modelId}/analysis/inference-runs/${workflowRunId}/execute`,
+      `/api/v1/tenants/${tenantId}/projects/${projectId}/analysis/inference-runs/${workflowRunId}/execute`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           execution_mode: executionMode,
-          expected_model_revision: expectedModelRevision,
+          expected_project_revision: expectedProjectRevision,
         }),
       },
     ),
     executeAnalysisValidationRun: (
       tenantId,
-      modelId,
+      projectId,
       workflowRunId,
-      expectedModelRevision,
+      expectedProjectRevision,
     ) => request<WorkflowRunStart>(
-      `/api/v1/tenants/${tenantId}/models/${modelId}/analysis/validation-runs/${workflowRunId}/execute`,
+      `/api/v1/tenants/${tenantId}/projects/${projectId}/analysis/validation-runs/${workflowRunId}/execute`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ expected_model_revision: expectedModelRevision }),
+        body: JSON.stringify({ expected_project_revision: expectedProjectRevision }),
       },
     ),
     executeConceptualRun: (
       tenantId,
-      modelId,
+      projectId,
       workflowRunId,
       executionMode,
-      expectedModelRevision,
+      expectedProjectRevision,
     ) => request<WorkflowRunStart>(
-      `/api/v1/tenants/${tenantId}/models/${modelId}/conceptual/runs/${workflowRunId}/execute`,
+      `/api/v1/tenants/${tenantId}/projects/${projectId}/conceptual/runs/${workflowRunId}/execute`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           execution_mode: executionMode,
-          expected_model_revision: expectedModelRevision,
+          expected_project_revision: expectedProjectRevision,
         }),
       },
     ),
     executeLogicalRun: (
       tenantId,
-      modelId,
+      projectId,
       workflowRunId,
       executionMode,
-      expectedModelRevision,
+      expectedProjectRevision,
     ) => request<WorkflowRunStart>(
-      `/api/v1/tenants/${tenantId}/models/${modelId}/logical/runs/${workflowRunId}/execute`,
+      `/api/v1/tenants/${tenantId}/projects/${projectId}/logical/runs/${workflowRunId}/execute`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           execution_mode: executionMode,
-          expected_model_revision: expectedModelRevision,
+          expected_project_revision: expectedProjectRevision,
         }),
       },
     ),
     executeDimensionalRun: (
       tenantId,
-      modelId,
+      projectId,
       workflowRunId,
       executionMode,
-      expectedModelRevision,
+      expectedProjectRevision,
     ) => request<WorkflowRunStart>(
-      `/api/v1/tenants/${tenantId}/models/${modelId}/dimensional/runs/${workflowRunId}/execute`,
+      `/api/v1/tenants/${tenantId}/projects/${projectId}/dimensional/runs/${workflowRunId}/execute`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           execution_mode: executionMode,
-          expected_model_revision: expectedModelRevision,
+          expected_project_revision: expectedProjectRevision,
         }),
       },
     ),
     executeMappingRun: (
       tenantId,
-      modelId,
+      projectId,
       workflowRunId,
       executionMode,
-      expectedModelRevision,
+      expectedProjectRevision,
     ) => request<WorkflowRunStart>(
-      `/api/v1/tenants/${tenantId}/models/${modelId}/mapping/runs/${workflowRunId}/execute`,
+      `/api/v1/tenants/${tenantId}/projects/${projectId}/mapping/runs/${workflowRunId}/execute`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           execution_mode: executionMode,
-          expected_model_revision: expectedModelRevision,
+          expected_project_revision: expectedProjectRevision,
         }),
       },
     ),
     executeCodeGenerationRun: (
       tenantId,
-      modelId,
+      projectId,
       workflowRunId,
-      expectedModelRevision,
+      expectedProjectRevision,
     ) => request<WorkflowRunStart>(
-      `/api/v1/tenants/${tenantId}/models/${modelId}/code-generation/runs/${workflowRunId}/execute`,
+      `/api/v1/tenants/${tenantId}/projects/${projectId}/code-generation/runs/${workflowRunId}/execute`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ expected_model_revision: expectedModelRevision }),
+        body: JSON.stringify({ expected_project_revision: expectedProjectRevision }),
       },
     ),
     executeValidationRun: (
       tenantId,
-      modelId,
+      projectId,
       workflowRunId,
-      expectedModelRevision,
+      expectedProjectRevision,
     ) => request<WorkflowRunStart>(
-      `/api/v1/tenants/${tenantId}/models/${modelId}/validation/runs/${workflowRunId}/execute`,
+      `/api/v1/tenants/${tenantId}/projects/${projectId}/validation/runs/${workflowRunId}/execute`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ expected_model_revision: expectedModelRevision }),
+        body: JSON.stringify({ expected_project_revision: expectedProjectRevision }),
       },
     ),
   };
@@ -630,15 +630,15 @@ export interface WorkflowScopeObject {
 }
 
 interface WorkflowScopePage<TScope extends WorkflowScopeObject> {
-  model_revision: number;
+  project_revision: number;
   items: TScope[];
   next_cursor: string | null;
 }
 
 interface WorkflowScopeReader<TScope extends WorkflowScopeObject = WorkflowScopeObject> {
-  listModelInputScope: (
+  listProjectInputScope: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     filters: { zone?: "bronze" },
     pageSize: number,
     cursor?: string,
@@ -661,61 +661,61 @@ export type WorkflowRunMonitorApi = Pick<
 >;
 
 export const workflowRunQueryKeys = {
-  recent: (tenantId: number, modelId: number, workflow: ModelWorkflow) => (
-    ["workflow-runs", tenantId, modelId, workflow] as const
+  recent: (tenantId: number, projectId: number, workflow: ProjectWorkflow) => (
+    ["workflow-runs", tenantId, projectId, workflow] as const
   ),
-  detail: (tenantId: number, modelId: number, workflowRunId: number) => (
-    ["workflow-run", tenantId, modelId, workflowRunId] as const
+  detail: (tenantId: number, projectId: number, workflowRunId: number) => (
+    ["workflow-run", tenantId, projectId, workflowRunId] as const
   ),
-  events: (tenantId: number, modelId: number, workflowRunId: number) => (
-    ["workflow-run-events", tenantId, modelId, workflowRunId] as const
+  events: (tenantId: number, projectId: number, workflowRunId: number) => (
+    ["workflow-run-events", tenantId, projectId, workflowRunId] as const
   ),
-  draftReview: (tenantId: number, modelId: number, modelChangeSetId: string) => (
-    ["workflow-draft-review", tenantId, modelId, modelChangeSetId] as const
+  draftReview: (tenantId: number, projectId: number, projectChangeSetId: string) => (
+    ["workflow-draft-review", tenantId, projectId, projectChangeSetId] as const
   ),
 };
 
 export const workflowCreationQueryKeys = {
   capabilities: ["agent-capabilities"] as const,
-  bronzeScope: (tenantId: number, modelId: number) => (
-    ["workflow-run-bronze-scope", tenantId, modelId] as const
+  bronzeScope: (tenantId: number, projectId: number) => (
+    ["workflow-run-bronze-scope", tenantId, projectId] as const
   ),
-  enrichmentScope: (tenantId: number, modelId: number) => (
-    ["workflow-run-enrichment-scope", tenantId, modelId] as const
+  enrichmentScope: (tenantId: number, projectId: number) => (
+    ["workflow-run-enrichment-scope", tenantId, projectId] as const
   ),
 };
 
 export async function loadWorkflowScope<TScope extends WorkflowScopeObject>(
   api: WorkflowScopeReader<TScope>,
   tenantId: number,
-  modelId: number,
+  projectId: number,
   scope: "bronze" | "enrichment",
-): Promise<{ modelRevision: number; items: TScope[] }> {
+): Promise<{ projectRevision: number; items: TScope[] }> {
   const items: TScope[] = [];
   const seenCursors = new Set<string>();
   let cursor: string | undefined;
-  let modelRevision: number | null = null;
+  let projectRevision: number | null = null;
 
   for (let page = 0; page < 250; page += 1) {
-    const response = await api.listModelInputScope(
+    const response = await api.listProjectInputScope(
       tenantId,
-      modelId,
+      projectId,
       scope === "enrichment" ? {} : { zone: "bronze" },
       200,
       cursor,
     );
-    if (modelRevision !== null && modelRevision !== response.model_revision) {
-      throw new Error("Model Input Scope revision changed while loading");
+    if (projectRevision !== null && projectRevision !== response.project_revision) {
+      throw new Error("Project Input Scope revision changed while loading");
     }
-    modelRevision = response.model_revision;
+    projectRevision = response.project_revision;
     if (scope === "enrichment"
       && response.items.some((item) => item.zone_code !== "source" && item.zone_code !== "bronze")) {
-      throw new Error("Enrichment requires Source and Bronze Model Input Scope");
+      throw new Error("Enrichment requires Source and Bronze Project Input Scope");
     }
     items.push(...response.items);
-    if (!response.next_cursor) return { modelRevision, items };
+    if (!response.next_cursor) return { projectRevision, items };
     if (seenCursors.has(response.next_cursor)) {
-      throw new Error("Model Input Scope cursor repeated");
+      throw new Error("Project Input Scope cursor repeated");
     }
     seenCursors.add(response.next_cursor);
     cursor = response.next_cursor;

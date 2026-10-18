@@ -51,9 +51,9 @@ class MetadataEnrichmentRepository:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
     ) -> tuple[AgentRunPlan, MetadataEnrichmentContext]:
         try:
@@ -69,12 +69,12 @@ class MetadataEnrichmentRepository:
                     "SELECT application.get_metadata_enrichment_execution_context"
                     "(%s,%s,%s,%s,%s) AS context",
                     workflow_identity_triple(principal)
-                    + (workflow_run_id, expected_model_revision),
+                    + (workflow_run_id, expected_project_revision),
                 )
                 plan = await PostgresAgentRunPlanRepository().load(
                     transaction,
                     tenant_id=tenant_id,
-                    model_id=model_id,
+                    project_id=project_id,
                     workflow_run_id=workflow_run_id,
                 )
         except Exception as error:
@@ -88,11 +88,11 @@ class MetadataEnrichmentRepository:
             raise DependencyUnavailableError() from None
         if (
             context.workflow_run_id != workflow_run_id
-            or context.model_id != model_id
-            or context.model_revision != expected_model_revision
-            or plan.model_workflow != "metadata_enrichment"
+            or context.project_id != project_id
+            or context.project_revision != expected_project_revision
+            or plan.project_workflow != "metadata_enrichment"
             or plan.workflow_execution_mode != "one_shot"
-            or plan.model_revision != expected_model_revision
+            or plan.project_revision != expected_project_revision
             or set(plan.selected_object_ids) != {item.object_id for item in context.objects}
             or any(item.source_tenant_id != tenant_id for item in context.objects)
         ):
@@ -111,7 +111,7 @@ class MetadataEnrichmentRepository:
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         connection_id: int,
     ) -> DatabricksSqlConnection | None:
         try:
@@ -122,7 +122,7 @@ class MetadataEnrichmentRepository:
                     workflow_identity_triple(principal)
                     + (
                         workflow_run_id,
-                        expected_model_revision,
+                        expected_project_revision,
                         connection_id,
                         self._environment_code,
                     ),
@@ -133,7 +133,7 @@ class MetadataEnrichmentRepository:
             return None
         if (
             row.get("workflow_run_id") != workflow_run_id
-            or row.get("model_revision") != expected_model_revision
+            or row.get("project_revision") != expected_project_revision
             or row.get("gds_connection_id") != connection_id
         ):
             raise DependencyUnavailableError()
@@ -171,7 +171,7 @@ class MetadataEnrichmentRepository:
                     workflow_identity_triple(principal)
                     + (
                         context.workflow_run_id,
-                        context.model_revision,
+                        context.project_revision,
                         workflow_run_claim_token,
                         context.baseline_digest,
                         Jsonb(documents),

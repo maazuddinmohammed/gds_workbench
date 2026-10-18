@@ -12,7 +12,7 @@ seeds on populated or production databases. Local cleanup is container disposal 
 | `02_human_principal_access.template.sql` | Explicit human Entra Principal/access bootstrap; starts with Viewer. |
 | `01_metadata_snapshot_demo.sql` | Test-only physical metadata fixture. |
 | `03_local_super_admin.template.sql` | Disposable local identity bootstrap; never production. |
-| `08_local_workbench_review.sql` | Review Model fixture installed by the local runner; never run manually against a populated database. |
+| `08_local_workbench_review.sql` | Review Project fixture installed by the local runner; never run manually against a populated database. |
 
 ## Required defaults
 

@@ -12,9 +12,9 @@ const { normalize: normalizedValue, stableStringify } = workbenchCore;
 const workbenchCommon = require("../workbench/validation/common.js");
 const workbenchAreas = {
   metadata: require("../workbench/metadata.js"),
-  model: require("../workbench/model.js"),
+  project: require("../workbench/project.js"),
 };
-const qualityFiles = require("./model-quality-files.js");
+const qualityFiles = require("./project-quality-files.js");
 const evidence = require("./operation-evidence.js");
 
 const stateFiles = require("./workspace-state.js");
@@ -158,9 +158,9 @@ function loadSnapshotRoot(root, session, area, bindSession = true, selectedOwner
   if (catalog.snapshot_kind !== area || manifest.snapshot_kind !== area) {
     fail(`Snapshot kind must match ${area}.`);
   }
-  if (area === "model" && (manifest.schema_version !== "2.0" || catalog.schema_version !== "2.0")) fail("Model Snapshot schema version 2.0 is required.");
+  if (manifest.schema_version !== "3.0" || catalog.schema_version !== "3.0") fail("Snapshot schema version 3.0 is required; download a fresh Snapshot.");
   if (!Array.isArray(catalog.sections)) fail("Snapshot catalog sections are invalid.");
-  if (area === "model" && !workbenchCore.isEntityOwnedModelCatalog(catalog)) fail("Legacy Model Snapshot contract; fetch a new Entity-owned Model Snapshot.");
+  if (area === "project" && !workbenchCore.isEntityOwnedProjectCatalog(catalog)) fail("Legacy Project Snapshot contract; fetch a new Entity-owned Project Snapshot.");
 
   const datasets = [];
   const byName = new Map();
@@ -191,7 +191,7 @@ function inspectSnapshot(options) {
     area: options.area,
     kind: snapshot.catalog.snapshot_kind,
     id: snapshot.manifest.snapshot_id ?? null,
-    revision: snapshot.manifest.model_revision ?? null,
+    revision: snapshot.manifest.project_revision ?? null,
     datasets: snapshot.datasets.map((dataset) => [dataset.name, dataset.row_count]),
   };
 }
@@ -447,6 +447,9 @@ function upsertRecord(options) {
   const dataset = context.byName.get(options.dataset ?? "");
   if (!dataset) fail(`Unknown Snapshot dataset: ${options.dataset}.`);
   const record = parseObjectOption(options.record, "--record");
+  if (options.area === "project" && dataset.name === "context_record" && !Object.hasOwn(record, "context_record_id")) {
+    record.context_record_id = crypto.randomUUID();
+  }
   const issues = schemaIssues(record, editableDatasetSchema(context, dataset));
   if (issues.length) fail(`${dataset.name} record is invalid: ${issues[0]}`);
   const key = stableStringify(canonicalKey(options.area, dataset, record));
@@ -469,7 +472,8 @@ function upsertRecord(options) {
   assertEditableRecords(context, {[dataset.name]: records});
   assertExpectedDigest(options, context);
   writePendingDataset(context, dataset, records);
-  return { dataset: dataset.name, action, count: records.length, digest: workspaceDigest(context) };
+  return { dataset: dataset.name, action, count: records.length, digest: workspaceDigest(context),
+    ...(dataset.name === "context_record" ? {context_record_id: record.context_record_id} : {}) };
 }
 
 function upsertBatch(options) {
@@ -649,7 +653,7 @@ function sameAppliedRecord(local, server, schema, root = schema, recordType = ""
         if (!item || Array.isArray(item) || typeof item !== "object") return null;
         if (collection === "submodels") return typeof item.submodel_name === "string"
           ? stableStringify(["submodel", item.submodel_name]) : null;
-        const field = {object: "source_object", attribute: "source_attribute", logical_entity: "source_logical_entity", logical_attribute: "source_logical_attribute", assertion: "assertion_record"}[item.support_source_type];
+        const field = {object: "source_object", attribute: "source_attribute", logical_entity: "source_logical_entity", logical_attribute: "source_logical_attribute", context_record: "context_record"}[item.support_source_type];
         return field && item[field] && typeof item[field] === "object" && !Array.isArray(item[field])
           ? stableStringify([item.support_source_type, item[field]]) : null;
       };
@@ -801,12 +805,12 @@ function assertSessionSnapshotIdentity(session, area, manifest, catalog, _bind, 
     }
     if (manifest.tenant_id !== undefined && manifest.tenant_id !== owner.id) fail("Metadata Snapshot Tenant ID mismatch.");
   } else {
-    const model = catalog.model;
-    if (!state.model || manifest.model_id !== state.model.id || !model || model.model_id !== manifest.model_id ||
-        model.model_name !== manifest.model_name || model.model_revision !== manifest.model_revision ||
-        !Number.isSafeInteger(manifest.model_revision) || manifest.model_revision < 0) fail("Model Snapshot identity/revision mismatch.");
-    if (model.tenant_code && normalizedValue("metadata", "tenant_code", model.tenant_code) !== normalizedValue("metadata", "tenant_code", state.tenant.code)) {
-      fail("Model Snapshot Tenant mismatch.");
+    const project = catalog.project;
+    if (!state.project || manifest.project_id !== state.project.id || !project || project.project_id !== manifest.project_id ||
+        project.project_name !== manifest.project_name || project.project_revision !== manifest.project_revision ||
+        !Number.isSafeInteger(manifest.project_revision) || manifest.project_revision < 0) fail("Project Snapshot identity/revision mismatch.");
+    if (project.tenant_code && normalizedValue("metadata", "tenant_code", project.tenant_code) !== normalizedValue("metadata", "tenant_code", state.tenant.code)) {
+      fail("Project Snapshot Tenant mismatch.");
     }
   }
 }
@@ -828,15 +832,15 @@ function initializeSession(options) {
   const root = path.resolve(options.root);
   const tenant = {id: Number(options["tenant-id"]), code: options.tenant};
   stateFiles.identity(tenant, "Tenant");
-  const model = options["model-id"] === undefined ? null : {id: Number(options["model-id"]), name: options["model-name"]};
-  if (model && (!Number.isSafeInteger(model.id) || model.id < 1 || typeof model.name !== "string" || !model.name.trim())) fail("Model requires verified --model-id and --model-name.");
+  const project = options["project-id"] === undefined ? null : {id: Number(options["project-id"]), name: options["project-name"]};
+  if (project && (!Number.isSafeInteger(project.id) || project.id < 1 || typeof project.name !== "string" || !project.name.trim())) fail("Project requires verified --project-id and --project-name.");
   fs.mkdirSync(root, {recursive: true, mode: 0o700});
   if (fs.existsSync(path.join(root, ".atlas", "session.json"))) {
     const existing = readSessionState(root);
-    if (existing.tenant.id !== tenant.id || existing.tenant.code !== tenant.code || (model && existing.model?.id !== model.id)) fail("Existing workspace identity differs; use another directory.");
+    if (existing.tenant.id !== tenant.id || existing.tenant.code !== tenant.code || (project && existing.project?.id !== project.id)) fail("Existing workspace identity differs; use another directory.");
     return {workspace: root, reused: true, session: existing};
   }
-  const value = {schema_version: "1.0", tenant, model, active_task: null, metadata_owners: {[String(tenant.id)]: {...tenant, root: "."}}};
+  const value = {schema_version: "2.0", tenant, project, active_task: null, metadata_owners: {[String(tenant.id)]: {...tenant, root: "."}}};
   if (options.policy) value.sql = {policy: options.policy, ...(options.environment ? {environment: options.environment} : {})};
   if (value.sql && (!["never", "essential", "proactive"].includes(value.sql.policy) || (value.sql.environment && !["dev", "qa", "stg", "prod"].includes(value.sql.environment)))) fail("Invalid SQL choices.");
   stateFiles.write(root, ".atlas/session.json", value);
@@ -845,14 +849,14 @@ function initializeSession(options) {
   return {workspace: root, reused: false, session: value};
 }
 
-function selectModel(options) {
+function selectProject(options) {
   const root = requireSessionPath(options.session), document = stateFiles.session(root);
-  const model = {id: Number(options["model-id"]), name: options["model-name"]};
-  if (!Number.isSafeInteger(model.id) || model.id < 1 || typeof model.name !== "string" || !model.name.trim()) fail("Model requires a verified ID and name.");
-  if (document.value.model && document.value.model.id !== model.id) fail("One Model per directory; use a different directory for another Model.");
-  document.value.model = model;
+  const project = {id: Number(options["project-id"]), name: options["project-name"]};
+  if (!Number.isSafeInteger(project.id) || project.id < 1 || typeof project.name !== "string" || !project.name.trim()) fail("Project requires a verified ID and name.");
+  if (document.value.project && document.value.project.id !== project.id) fail("One Project per directory; use a different directory for another Project.");
+  document.value.project = project;
   stateFiles.write(root, ".atlas/session.json", document.value, document.digest);
-  return {model};
+  return {project};
 }
 
 function selectTask(options) {
@@ -868,7 +872,7 @@ function registerOwner(options) {
   const state = document.value;
   const owner = {id: Number(options["tenant-id"]), code: options.tenant};
   stateFiles.identity(owner, "Metadata owner");
-  if (owner.id !== state.tenant.id && !state.model) fail("Additional owners require Model-derived work.");
+  if (owner.id !== state.tenant.id && !state.project) fail("Additional owners require Project-derived work.");
   owner.root = owner.id === state.tenant.id ? "." : `metadata-owners/tenant-${owner.id}`;
   const previous = state.metadata_owners?.[String(owner.id)];
   if (previous && (previous.code !== owner.code || previous.root !== owner.root)) fail("Owner identity cannot be rebound.");
@@ -882,7 +886,7 @@ function addTask(options) {
   const root = requireSessionPath(options.session), document = stateFiles.session(root);
   if (typeof options.outcome !== "string" || !options.outcome.trim()) fail("--outcome is required.");
   const id = crypto.randomUUID();
-  const value = {schema_version: "1.0", outcome: options.outcome};
+  const value = {schema_version: "2.0", outcome: options.outcome};
   if (options.workflow) value.inputs = {workflow: options.workflow};
   stateFiles.write(root, `.atlas/tasks/${id}.json`, value);
   stateFiles.safePath(root, `.atlas/tasks/${id}.evidence/.check`, true);
@@ -897,7 +901,7 @@ function updateTask(options) {
   const previous = stateFiles.task(root, id);
   if (options["expected-digest"] !== previous.digest) fail("Task changed; use its current --expected-digest.");
   const replacement = options.file ? readJsonFile(path.resolve(options.file), "Task") : {...previous.value, progress: options.progress};
-  if (!replacement || replacement.schema_version !== "1.0" || typeof replacement.outcome !== "string" || !replacement.outcome.trim() || (replacement.progress !== undefined && typeof replacement.progress !== "string") || (replacement.inputs !== undefined && !stateFiles.object(replacement.inputs)) || ["work", "evidence"].some((key) => replacement[key] !== undefined && (!Array.isArray(replacement[key]) || replacement[key].some((item) => !stateFiles.object(item) || typeof item.path !== "string" || typeof item.purpose !== "string")))) fail("Task needs schema_version and outcome.");
+  if (!replacement || replacement.schema_version !== "2.0" || typeof replacement.outcome !== "string" || !replacement.outcome.trim() || (replacement.progress !== undefined && typeof replacement.progress !== "string") || (replacement.inputs !== undefined && !stateFiles.object(replacement.inputs)) || ["work", "evidence"].some((key) => replacement[key] !== undefined && (!Array.isArray(replacement[key]) || replacement[key].some((item) => !stateFiles.object(item) || typeof item.path !== "string" || typeof item.purpose !== "string")))) fail("Task needs schema_version and outcome.");
   const digest = stateFiles.write(root, `.atlas/tasks/${id}.json`, replacement, previous.digest);
   return {task: id, digest};
 }
@@ -961,7 +965,7 @@ function snapshotBinding(context) {
   return {area: optionsArea(context), owner_tenant_id: context.owner.id,
     manifest_path: path.relative(context.session, path.join(context.root, "manifest.json")).split(path.sep).join("/"),
     snapshot_id: context.manifest.snapshot_id, manifest_sha256: fileDigest(path.join(context.root, "manifest.json")),
-    ...(optionsArea(context) === "model" ? {model_revision: context.manifest.model_revision} : {})};
+    ...(optionsArea(context) === "project" ? {project_revision: context.manifest.project_revision} : {})};
 }
 
 function reportRelative(context) {
@@ -972,7 +976,7 @@ function loadAppliedMetadata(context) {
   const metadata = new Map(), inputs = [], missingMetadataOwners = [];
   const owners = new Map([[context.state.tenant.id, {...context.state.tenant, root: "."}], ...Object.values(context.state.metadata_owners ?? {}).map((owner) => [owner.id, owner])]);
   for (const owner of owners.values()) {
-    if (context.state.refresh_required?.some((entry) => entry.area === "metadata" && entry.owner_tenant_id === owner.id)) fail("Model work needs refreshed Metadata inputs.");
+    if (context.state.refresh_required?.some((entry) => entry.area === "metadata" && entry.owner_tenant_id === owner.id)) fail("Project work needs refreshed Metadata inputs.");
     let snapshot;
     try { snapshot = locateSnapshot({session: context.session, area: "metadata", owner: owner.id}); }
     catch (error) { if (error.code === "ENOENT" || error.message === "metadata Snapshot directory is missing." || error.message === "Workspace parent directory is missing.") { missingMetadataOwners.push(owner.id); continue; } throw error; }
@@ -1003,28 +1007,28 @@ function validateChangeSet(options) {
     catch (error) { overlayError = error.message; }
     loaded.set(dataset.name, {definition: {...dataset, record_type: schema["x-gds-record-type"] ?? dataset.record_type ?? dataset.name}, schema, baseline, pending: draft, effective, overlayError});
   }
-  const applied = options.area === "model" ? loadAppliedMetadata(context) : {metadata: null, inputs: [], missingMetadataOwners: []};
+  const applied = options.area === "project" ? loadAppliedMetadata(context) : {metadata: null, inputs: [], missingMetadataOwners: []};
   const {metadata, missingMetadataOwners} = applied;
   const inputs = [binding, ...applied.inputs];
-  // A Metadata enrichment task may derive its selection from a Model Snapshot.
+  // A Metadata enrichment task may derive its selection from a Project Snapshot.
   const declared = stateFiles.task(context.session, context.taskId).value.inputs?.snapshots ?? [];
   if (!Array.isArray(declared)) fail("Task Snapshot bindings must be an array.");
   const declaredDigest = digestValue(declared);
   for (const input of declared) {
-    if (!stateFiles.object(input) || !["metadata", "model"].includes(input.area)) fail("Invalid task Snapshot binding.");
+    if (!stateFiles.object(input) || !["metadata", "project"].includes(input.area)) fail("Invalid task Snapshot binding.");
     const actual = snapshotBinding(locateSnapshot({session: context.session, area: input.area, owner: input.owner_tenant_id}));
     if (Object.keys(actual).some((field) => actual[field] !== input[field])) fail("Task Snapshot input changed; review its selection before validation.");
     if (!inputs.some((existing) => existing.manifest_path === actual.manifest_path)) inputs.push(actual);
   }
   let decisions = null, noteFiles = {}, qualityBindings = [];
-  if (options.area === "model" && Object.keys(pending).some((name) => qualityFiles.modelingDatasets.has(name))) {
+  if (options.area === "project" && Object.keys(pending).some((name) => qualityFiles.modelingDatasets.has(name))) {
     const evidence = qualityFiles.readDecisions(context.session, context.taskId);
     decisions = evidence.decisions;
     noteFiles = evidence.noteFiles;
     qualityBindings = evidence.files;
   }
   const evaluated = require("../workbench/validation/run.js").run(options.area, loaded, metadata,
-    {tenantCode: context.owner.code, model: context.catalog.model ?? null, decisions, noteFiles, missingMetadataOwners});
+    {tenantCode: context.owner.code, project: context.catalog.project ?? null, decisions, noteFiles, missingMetadataOwners});
   const {issues, quality} = evaluated;
   for (const evidence of qualityBindings) {
     const file = stateFiles.safePath(context.session, evidence.path);
@@ -1032,9 +1036,9 @@ function validateChangeSet(options) {
   }
   if (digestValue(stateFiles.task(context.session, context.taskId).value.inputs?.snapshots ?? []) !== declaredDigest) fail("Task Snapshot inputs changed during validation.");
   if (workspaceDigest(context) !== inputDigest || inputs.some((input) => fileDigest(stateFiles.safePath(context.session, input.manifest_path)) !== input.manifest_sha256)) fail("Validation inputs changed; run validation again.");
-  const result = {schema_version: "1.0", run_by: "agent", area: options.area, owner_tenant_id: context.owner.id,
+  const result = {schema_version: "2.0", run_by: "agent", area: options.area, owner_tenant_id: context.owner.id,
     generated_at: new Date().toISOString(), digest: inputDigest, inputs,
-    snapshot: {id: binding.snapshot_id, revision: context.manifest.model_revision ?? null, manifest_digest: binding.manifest_sha256},
+    snapshot: {id: binding.snapshot_id, revision: context.manifest.project_revision ?? null, manifest_digest: binding.manifest_sha256},
     valid: evaluated.valid, checks: evaluated.checks,
     issue_count: evaluated.issueCount, truncated: evaluated.truncated,
     issues: issues.slice(0, 200), quality, evidence_files: qualityBindings};
@@ -1069,7 +1073,7 @@ function acceptChangeSet(options) {
   if (options["prepare-stage"] === "true" && (!draft || draft.status !== "active" || !Object.keys(readPending(context)).length)) fail("Preparing Stage requires an active verified server draft and local datasets; supply --draft-file or accept first, then cache the draft.");
   const id = crypto.randomUUID(), relative = `.atlas/tasks/${context.taskId}.evidence/${id}.json`;
   const reportHash = fileDigest(stateFiles.safePath(context.session, validation.report));
-  const operation = {schema_version: "1.0", id, task_id: context.taskId, area: options.area, owner: context.owner,
+  const operation = {schema_version: "2.0", id, task_id: context.taskId, area: options.area, owner: context.owner,
     backend, inputs: validation.inputs,
     local_digest: options.digest, validation: {outcome: "valid", report_path: validation.report, report_sha256: reportHash, checks: validation.checks},
     acknowledgement: {source: "conversation", at: new Date().toISOString(), digest: options.digest, report_sha256: reportHash},
@@ -1082,7 +1086,7 @@ function acceptChangeSet(options) {
   operation.acknowledgement.report_sha256 = operation.validation.report_sha256;
   stateFiles.write(context.session, relative, operation);
   stateDocument.value.operations ??= {};
-  if (options.area === "model") stateDocument.value.operations.model = relative;
+  if (options.area === "project") stateDocument.value.operations.project = relative;
   else { stateDocument.value.operations.metadata ??= {}; stateDocument.value.operations.metadata[String(context.owner.id)] = relative; }
   stateFiles.write(context.session, ".atlas/session.json", stateDocument.value, stateDocument.digest);
   const result = {operation_id: id, task_id: context.taskId, accepted_digest: options.digest, operation: id, path: relative, task: context.taskId, digest: options.digest};
@@ -1093,7 +1097,7 @@ function resolveServerDraft(options, context, previous, acceptedDigest) {
   let id, revision, status;
   if (options.file || options["draft-file"]) {
     if (["id", "revision", "status", "validation-failed"].some((name) => options[name] !== undefined)) fail("Use a draft response file or explicit draft flags, not both.");
-    const response = evidence.serverResponse(evidence.readResponse(path.resolve(options["draft-file"] ?? options.file)), options.area, context.owner, context.state.model?.id);
+    const response = evidence.serverResponse(evidence.readResponse(path.resolve(options["draft-file"] ?? options.file)), options.area, context.owner, context.state.project?.id);
     if (response.draft_revision < 1) fail("Server draft response requires a positive draft revision.");
     id = response.change_set_id; revision = response.draft_revision; status = response.status;
   } else { id = options.id; revision = Number(options.revision); status = options.status; }
@@ -1143,11 +1147,11 @@ function prepareStageRequest(options) {
   if (!names.length) fail("No local datasets to Stage.");
   const relative = `.atlas/tasks/${operation.task_id}.evidence/${operation.id}.stage-request.json`;
   const binding = snapshotBinding(context);
-  const manifest = {schema_version: "1.0", kind: "atlas-stage-request", area: options.area, task: operation.task_id,
+  const manifest = {schema_version: "2.0", kind: "atlas-stage-request", area: options.area, task: operation.task_id,
     accepted_digest: operation.local_digest, failed_retry: operation.draft.validation_failed === true && operation.draft.digest !== operation.local_digest,
     operation: {id: operation.id, path: document.relative}, owner: context.owner, backend: operation.backend,
     snapshot: {snapshot_id: binding.snapshot_id, manifest_sha256: binding.manifest_sha256, manifest_path: binding.manifest_path},
-    target: {...(options.area === "metadata" ? {tenant_code: context.owner.code} : {model_id: context.manifest.model_id, model_name: context.manifest.model_name, model_revision: context.manifest.model_revision}), change_set_id: operation.draft.id, starting_revision: operation.draft.revision},
+    target: {...(options.area === "metadata" ? {tenant_code: context.owner.code} : {project_id: context.manifest.project_id, project_name: context.manifest.project_name, project_revision: context.manifest.project_revision}), change_set_id: operation.draft.id, starting_revision: operation.draft.revision},
     datasets: names.map((name) => ({dataset: name, canonical_key: context.byName.get(name).canonical_key, record_count: pending[name].length,
       payload_file: `${ownerPrefix(context.owner)}${options.area}-change-set/${name}.json`, sha256: fileDigest(path.join(context.directory, `${name}.json`))}))};
   const existing = fs.existsSync(stateFiles.safePath(context.session, relative));
@@ -1160,7 +1164,7 @@ function prepareStageRequest(options) {
 }
 
 function aggregatePlan(options, kind) {
-  const context = changeSetContext({...options, area: "model"});
+  const context = changeSetContext({...options, area: "project"});
   const applied = loadAppliedMetadata(context);
   if (applied.missingMetadataOwners.length) fail("Install every registered owner Metadata Snapshot before planning SQL.");
   if (!options["plan-file"]) fail("--plan-file is required.");
@@ -1169,8 +1173,8 @@ function aggregatePlan(options, kind) {
   if (!stateFiles.object(selections) || !Array.isArray(supplied.execution_connections) || !supplied.execution_connections.length) fail("Plan requires selections and verified execution_connections.");
   const environment = context.state.sql?.environment ?? (context.state.sql?.policy === "never" ? "dev" : null);
   if (!environment) fail("Resolve SQL policy/environment before preparing evidence queries.");
-  const definition = context.byName.get("model_input_scope");
-  if (!definition) fail("Model Input Scope is missing.");
+  const definition = context.byName.get("project_input_scope");
+  if (!definition) fail("Project Input Scope is missing.");
   const datasets = Object.fromEntries([...applied.metadata].map(([name, dataset]) => [name, dataset.baseline]));
   const planner = kind === "analysis" ? require("./analysis.js").planAnalysis : require("./profiling.js").planProfiling;
   const planned = planner(datasets, readSnapshotRecords(context, definition), selections);
@@ -1186,7 +1190,7 @@ function aggregatePlan(options, kind) {
     return {...query, file, sha256: sha256Bytes(Buffer.from(sql, "utf8")), origin: "atlas-generator", generator_version: "1.0",
       environment, connection_id: choices[0].connection_id, expected_row_count: kind === "profiling" ? query.attributes.length : 1};
   });
-  const manifest = {schema_version: "1.0", kind, task: context.taskId, inputs: [snapshotBinding(context), ...applied.inputs],
+  const manifest = {schema_version: "2.0", kind, task: context.taskId, inputs: [snapshotBinding(context), ...applied.inputs],
     environment, selections, queries: entries, ...(kind === "profiling" ? {coverage: planned.coverage} : {})};
   if (manifest.inputs.some((input) => fileDigest(stateFiles.safePath(context.session, input.manifest_path)) !== input.manifest_sha256)) fail("Snapshot changed during planning; discard this plan and retry.");
   writeJsonAtomic(path.join(directory, "plan.json"), manifest);
@@ -1197,7 +1201,7 @@ async function main() {
   const {command, options} = parseArguments(process.argv.slice(2));
   const commands = {
     "command-contract": commandContract, "session-init": initializeSession, "status": sessionStatus,
-    "owner-add": registerOwner, "model-select": selectModel, "sql-policy": setSqlPolicy, "subagent-policy": setSubagentPolicy, "task-add": addTask, "task-update": updateTask, "task-select": selectTask,
+    "owner-add": registerOwner, "project-select": selectProject, "sql-policy": setSqlPolicy, "subagent-policy": setSubagentPolicy, "task-add": addTask, "task-update": updateTask, "task-select": selectTask,
     "inspect": inspectSnapshot, "describe": describeDataset, "select": selectRecords, "copy": copyRecords,
     "upsert": upsertRecord, "upsert-batch": upsertBatch, "discard": discardRecord,
     "review": reviewChangeSet, "validate": validateChangeSet, "accept": acceptChangeSet,
@@ -1279,11 +1283,11 @@ function installSnapshot(options) {
   const candidateRoot = findExtractedSnapshotRoot(extracted);
   const candidate = loadSnapshotRoot(candidateRoot, session, options.area, false, owner);
   if (candidate.manifest.snapshot_id !== options["snapshot-id"]) fail("Extracted Snapshot ID mismatch.");
-  if (options.area === "model") {
-    const previousManifest = path.join(session, "model/model-snapshot/manifest.json");
-    const previousRevision = fs.existsSync(previousManifest) ? readJsonFile(previousManifest, "Previous Snapshot").model_revision : 0;
-    const minimumRevision = Math.max(previousRevision ?? 0, applied?.value.apply?.model_revision ?? 0);
-    if (!Number.isSafeInteger(candidate.manifest.model_revision) || candidate.manifest.model_revision < minimumRevision) fail("Refreshed Model Snapshot is older than the known Model revision.");
+  if (options.area === "project") {
+    const previousManifest = path.join(session, "project/project-snapshot/manifest.json");
+    const previousRevision = fs.existsSync(previousManifest) ? readJsonFile(previousManifest, "Previous Snapshot").project_revision : 0;
+    const minimumRevision = Math.max(previousRevision ?? 0, applied?.value.apply?.project_revision ?? 0);
+    if (!Number.isSafeInteger(candidate.manifest.project_revision) || candidate.manifest.project_revision < minimumRevision) fail("Refreshed Project Snapshot is older than the known Project revision.");
   }
   // Verify every declared file, including datasets not yet opened by a workflow.
   for (const member of candidate.inventory.keys()) resolveSnapshotMember(candidateRoot, member, candidate.inventory);
@@ -1319,7 +1323,7 @@ function installSnapshot(options) {
   document.value.refresh_required = (document.value.refresh_required ?? []).filter((entry) => entry.area !== options.area || entry.owner_tenant_id !== owner.id);
   stateFiles.write(session, ".atlas/session.json", document.value, document.digest);
   return {snapshot_id: candidate.manifest.snapshot_id, area: options.area, owner_tenant_id: owner.id,
-    model_revision: candidate.manifest.model_revision ?? null, dataset_count: candidate.datasets.length, backup: existed ? path.relative(session, backup) : null};
+    project_revision: candidate.manifest.project_revision ?? null, dataset_count: candidate.datasets.length, backup: existed ? path.relative(session, backup) : null};
 }
 
 function recordOperation(options) {
@@ -1328,15 +1332,15 @@ function recordOperation(options) {
   if (!operation.draft) fail("Operation has no bound server draft.");
   if (options["digest-from-operation"] !== undefined && (options["digest-from-operation"] !== "true" || options.checkpoint !== "apply-approval" || options["review-digest"] !== undefined)) fail("Use --digest-from-operation true only for Apply approval, instead of --review-digest.");
   let response;
-  if (options.file) response = evidence.serverResponse(evidence.readResponse(path.resolve(options.file)), options.area, owner, state.model?.id);
+  if (options.file) response = evidence.serverResponse(evidence.readResponse(path.resolve(options.file)), options.area, owner, state.project?.id);
   else if (options.checkpoint === "apply-approval" && operation.server_validation) {
     const saved = stateFiles.read(session, operation.server_validation.path);
     if (saved.digest !== operation.server_validation.sha256 || saved.value.area !== options.area || saved.value.owner_tenant_id !== owner.id) fail("Server review changed or belongs to another owner.");
-    response = evidence.serverResponse({...saved.value, ...(options.area === "model" && saved.value.model_id === undefined ? {model_id: state.model?.id} : {})}, options.area, owner, state.model?.id);
+    response = evidence.serverResponse({...saved.value, ...(options.area === "project" && saved.value.project_id === undefined ? {project_id: state.project?.id} : {})}, options.area, owner, state.project?.id);
   } else fail("--file is required for a server validation or Apply result.");
   const changeId = response.change_set_id;
   if (changeId !== operation.draft.id || response.draft_revision !== operation.draft.revision ||
-      (options.area === "metadata" ? response.tenant_id !== owner.id : response.model_id !== state.model?.id)) fail("Server result does not match the bound owner/draft/revision.");
+      (options.area === "metadata" ? response.tenant_id !== owner.id : response.project_id !== state.project?.id)) fail("Server result does not match the bound owner/draft/revision.");
   const stage = evidence.stageReceipt(operation.stage);
   if (!stage || stage.status !== "staged" || stage.fingerprint_verified !== true || stage.accepted_digest !== operation.local_digest || stage.change_set_id !== operation.draft.id || stage.draft_revision !== operation.draft.revision || !stateFiles.digest.test(stage.stage_fingerprint ?? "") || operation.stage_attempt?.status === "unknown") fail("Resolve and verify Stage before recording server validation or Apply.");
   operation.stage = stage;
@@ -1351,7 +1355,7 @@ function recordOperation(options) {
         !Number.isSafeInteger(response.error_count) || response.error_count < 0 || !Array.isArray(response.action_review)) fail("Invalid server validation result.");
     const relative = `.atlas/tasks/${operation.task_id}.evidence/${operation.id}.server-validation.json`;
     const saved = {schema_version: response.schema_version, area: options.area, owner_tenant_id: owner.id,
-      ...(options.area === "metadata" ? {tenant_id: owner.id} : {model_id: state.model.id}),
+      ...(options.area === "metadata" ? {tenant_id: owner.id} : {project_id: state.project.id}),
       change_set_id: changeId, draft_revision: response.draft_revision, valid: response.valid, status: response.status,
       candidate_digest: response.candidate_digest, error_count: response.error_count,
       action_review: response.action_review, validated_at: response.validated_at, expires_at: response.expires_at};
@@ -1375,7 +1379,7 @@ function recordOperation(options) {
         response.candidate_digest !== operation.apply_approval.candidate_digest) fail("Apply result does not match a separately approved validated candidate.");
     operation.apply = {applied: true, status: "applied", draft_revision: response.draft_revision,
       candidate_digest: response.candidate_digest, applied_at: response.applied_at, action_count: response.action_count,
-      ...(response.model_revision !== undefined ? {model_revision: response.model_revision} : {})};
+      ...(response.project_revision !== undefined ? {project_revision: response.project_revision} : {})};
   } else fail("Checkpoint must be validation, apply-approval or apply.");
   stateFiles.write(session, document.relative, operation, document.digest);
   if (operation.apply) {

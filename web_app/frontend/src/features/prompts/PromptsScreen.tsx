@@ -98,7 +98,7 @@ export function PromptsScreen({
     return [...unique.entries()].sort((left, right) => left[1].localeCompare(right[1]));
   }, [stagesQuery.data]);
   const referenceStages = (stagesQuery.data?.items ?? []).filter((stage) => (
-    (!filters.workflow || stage.model_workflow === filters.workflow)
+    (!filters.workflow || stage.project_workflow === filters.workflow)
     && (!filters.mode || stage.workflow_execution_mode === filters.mode)
     && (!filters.stageCode || stage.workflow_stage_code === filters.stageCode)
   ));
@@ -344,14 +344,14 @@ function AllowedVariableReference({ stages }: { stages: PromptStage[] }) {
               <span>
                 <strong>{stage.workflow_stage_name}</strong>
                 <small>
-                  {humanize(stage.model_workflow)} · {modeLabel(stage.workflow_execution_mode)} · {stage.workflow_stage_code}
+                  {humanize(stage.project_workflow)} · {modeLabel(stage.workflow_execution_mode)} · {stage.workflow_stage_code}
                 </small>
               </span>
               <span>{stage.allowed_variables.length} variables</span>
             </summary>
             <PromptVariables
               variables={stage.allowed_variables}
-              label={`${stage.workflow_stage_name} inputs · ${stage.model_workflow} · ${modeLabel(stage.workflow_execution_mode)}`}
+              label={`${stage.workflow_stage_name} inputs · ${stage.project_workflow} · ${modeLabel(stage.workflow_execution_mode)}`}
             />
           </details>
         ))}

@@ -16,7 +16,7 @@ DATABASE_ROOT = Path(__file__).resolve().parents[2] / "database"
 
 def _seed_demo_if_needed(connection: Connection[TestRow]) -> None:
     exists = connection.execute(
-        "SELECT 1 FROM core.project WHERE project_code = 'DEMO_PROJECT'"
+        "SELECT 1 FROM core.lane WHERE lane_code = 'DEMO_LANE'"
     ).fetchone()
     if exists is None:
         connection.execute(
@@ -29,7 +29,7 @@ def _seed_demo_if_needed(connection: Connection[TestRow]) -> None:
         )
 
 
-def test_direct_model_writes_do_not_require_workflow_provenance(
+def test_direct_project_writes_do_not_require_workflow_provenance(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
@@ -39,18 +39,18 @@ def test_direct_model_writes_do_not_require_workflow_provenance(
                 "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
             ).fetchone()
         )["tenant_id"]
-        model_id = require_row(
+        project_id = require_row(
             connection.execute(
                 """
-            INSERT INTO model.model (tenant_id, model_name, logical_schemas, dimensional_schemas)
-            VALUES (%s, 'Nullable Workflow Provenance Model',
+            INSERT INTO project.project (tenant_id, project_name, logical_schemas, dimensional_schemas)
+            VALUES (%s, 'Nullable Workflow Provenance Project',
                     '[{"schema_name":"silver","description":null}]'::JSONB,
                     '[{"schema_name":"gold","description":null}]'::JSONB)
-            RETURNING model_id
+            RETURNING project_id
             """,
                 (tenant_id,),
             ).fetchone()
-        )["model_id"]
+        )["project_id"]
         bronze = connection.execute(
             """
             SELECT object.object_id, connection.system_id,
@@ -71,17 +71,17 @@ def test_direct_model_writes_do_not_require_workflow_provenance(
         assert len(bronze["attribute_ids"]) >= 2
         connection.execute(
             """
-            INSERT INTO model.model_input_scope (model_id, object_id)
+            INSERT INTO project.project_input_scope (project_id, object_id)
             VALUES (%s, %s)
             """,
-            (model_id, bronze["object_id"]),
+            (project_id, bronze["object_id"]),
         )
 
         analysis_result_id = require_row(
             connection.execute(
                 """
             INSERT INTO workflow.analysis_result (
-                model_id,
+                project_id,
                 agent_run_id,
                 inference_workflow_run_id,
                 validation_workflow_run_id,
@@ -97,7 +97,7 @@ def test_direct_model_writes_do_not_require_workflow_provenance(
             RETURNING analysis_result_id
             """,
                 (
-                    model_id,
+                    project_id,
                     bronze["object_id"],
                     bronze["attribute_ids"][0],
                     bronze["object_id"],
@@ -109,7 +109,7 @@ def test_direct_model_writes_do_not_require_workflow_provenance(
             connection.execute(
                 """
             INSERT INTO workflow.conceptual_object (
-                model_id,
+                project_id,
                 agent_run_id,
                 workflow_run_id,
                 conceptual_object_name,
@@ -121,14 +121,14 @@ def test_direct_model_writes_do_not_require_workflow_provenance(
                     'business_object', 'One customer')
             RETURNING conceptual_object_id
             """,
-                (model_id,),
+                (project_id,),
             ).fetchone()
         )["conceptual_object_id"]
         logical_entity_id = require_row(
             connection.execute(
                 """
             INSERT INTO workflow.logical_entity (
-                model_id,
+                project_id,
                 agent_run_id,
                 workflow_run_id,
                 logical_entity_schema_name,
@@ -141,14 +141,14 @@ def test_direct_model_writes_do_not_require_workflow_provenance(
                     'core', 'One customer')
             RETURNING logical_entity_id
             """,
-                (model_id,),
+                (project_id,),
             ).fetchone()
         )["logical_entity_id"]
         dimensional_entity_id = require_row(
             connection.execute(
                 """
             INSERT INTO workflow.dimensional_entity (
-                model_id,
+                project_id,
                 agent_run_id,
                 workflow_run_id,
                 dimensional_entity_schema_name,
@@ -160,14 +160,14 @@ def test_direct_model_writes_do_not_require_workflow_provenance(
                     'A reusable customer Dimension.', 'dimension')
             RETURNING dimensional_entity_id
             """,
-                (model_id,),
+                (project_id,),
             ).fetchone()
         )["dimensional_entity_id"]
         mapping_object_id = require_row(
             connection.execute(
                 """
             INSERT INTO workflow.mapping_object (
-                model_id,
+                project_id,
                 agent_run_id,
                 workflow_run_id,
                 modeled_entity_type,
@@ -179,7 +179,7 @@ def test_direct_model_writes_do_not_require_workflow_provenance(
             RETURNING mapping_object_id
             """,
                 (
-                    model_id,
+                    project_id,
                     logical_entity_id,
                     bronze["system_id"],
                 ),

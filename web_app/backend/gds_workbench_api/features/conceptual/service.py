@@ -6,9 +6,9 @@ import logging
 from uuid import UUID
 
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.model import StageModelChange
-from gds_etl_workbench.application.change_sets.model_validation import (
-    ModelValidationIssue,
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
+from gds_etl_workbench.application.change_sets.project_validation import (
+    ProjectValidationIssue,
     validate_future_graph,
 )
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
@@ -59,7 +59,7 @@ from gds_workbench_api.features.workflows.authoring.repair import (
     AgentContextPolicy,
     AgentExecutor,
     load_default_agent_context_policy,
-    model_validation_issues,
+    project_validation_issues,
 )
 from gds_workbench_api.features.workflows.authoring.stage_runner import (
     AgentStageRunner,
@@ -124,19 +124,19 @@ class ConceptualWorkflow:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         expected_execution_mode: WorkflowExecutionMode,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart:
         return await self._lifecycle.start(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             workflow_run_id=workflow_run_id,
             expected_workflow="conceptual",
             expected_execution_mode=expected_execution_mode,
-            expected_model_revision=expected_model_revision,
+            expected_project_revision=expected_project_revision,
         )
 
     async def execute_started(
@@ -144,15 +144,15 @@ class ConceptualWorkflow:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
     ) -> ConceptualExecutionResult:
         finalization_attempted = False
-        changes: tuple[StageModelChange, ...] = ()
-        rejected_changes: tuple[StageModelChange, ...] = ()
-        rejected_issues: tuple[ModelValidationIssue, ...] = ()
+        changes: tuple[StageProjectChange, ...] = ()
+        rejected_changes: tuple[StageProjectChange, ...] = ()
+        rejected_issues: tuple[ProjectValidationIssue, ...] = ()
         try:
             async with self._database.write_transaction(
                 isolation=ReadIsolation.REPEATABLE_READ
@@ -161,20 +161,20 @@ class ConceptualWorkflow:
                     transaction,
                     principal,
                     tenant_id=tenant_id,
-                    policy=ToolPolicy.TENANT_MODEL_WRITE,
-                    model_id=model_id,
+                    policy=ToolPolicy.TENANT_PROJECT_WRITE,
+                    project_id=project_id,
                 )
                 plan = await self._plan_repository.load(
                     transaction,
                     tenant_id=tenant_id,
-                    model_id=model_id,
+                    project_id=project_id,
                     workflow_run_id=workflow_run_id,
                 )
                 self._validate_plan(
                     plan,
-                    model_id=model_id,
+                    project_id=project_id,
                     workflow_run_id=workflow_run_id,
-                    expected_model_revision=expected_model_revision,
+                    expected_project_revision=expected_project_revision,
                 )
                 context = await self._context_repository.load(
                     transaction,
@@ -188,7 +188,7 @@ class ConceptualWorkflow:
                 lifecycle=self._lifecycle,
                 principal=principal,
                 workflow_run_id=workflow_run_id,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 workflow_run_claim_token=workflow_run_claim_token,
             )
             await progress.append(
@@ -224,16 +224,16 @@ class ConceptualWorkflow:
                 if checked.issues:
                     rejected_changes = candidate_changes
                     rejected_issues = checked.issues
-                return AgentCandidateValidation(issues=model_validation_issues(checked.issues))
+                return AgentCandidateValidation(issues=project_validation_issues(checked.issues))
 
             resolver_key = f"workflow.conceptual.{execution_mode}.candidate_authoring.context"
             resolver_values: dict[str, object] = {
                 resolver_key: context.embedded_context,
                 "workflow.validation_failures": [],
             }
-            resolver_values["model.naming_instructions"] = effective_naming_instructions(
+            resolver_values["project.naming_instructions"] = effective_naming_instructions(
                 "conceptual",
-                context.context.model_details.silver_model_naming_instructions,
+                context.context.project_details.silver_model_naming_instructions,
             )
             outcome = await self._stage_runner.run(
                 plan=plan,
@@ -259,14 +259,14 @@ class ConceptualWorkflow:
                 return await self._no_op.complete(
                     principal,
                     tenant_id=tenant_id,
-                    model_id=model_id,
+                    project_id=project_id,
                     workflow_run_id=workflow_run_id,
                     workflow_run_claim_token=workflow_run_claim_token,
                     request=AuthoringNoOpRequest(
                         expected_workflow="conceptual",
                         expected_execution_mode=execution_mode,
                         expected_correlation_id=plan.correlation_id,
-                        expected_model_revision=expected_model_revision,
+                        expected_project_revision=expected_project_revision,
                         candidate_digest=authoring_no_op_candidate_digest(plan),
                         final_event=progress.event(
                             attempt=final_attempt,
@@ -285,10 +285,10 @@ class ConceptualWorkflow:
             finalization = await self._handoff.finalize(
                 principal,
                 tenant_id=tenant_id,
-                model_id=model_id,
+                project_id=project_id,
                 workflow_run_id=workflow_run_id,
                 expected_workflow="conceptual",
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 workflow_run_claim_token=workflow_run_claim_token,
                 changes=changes,
                 final_event=progress.event(
@@ -314,10 +314,10 @@ class ConceptualWorkflow:
                     await self._handoff.retain_failed_candidate(
                         principal,
                         tenant_id=tenant_id,
-                        model_id=model_id,
+                        project_id=project_id,
                         workflow_run_id=workflow_run_id,
                         expected_workflow="conceptual",
-                        expected_model_revision=expected_model_revision,
+                        expected_project_revision=expected_project_revision,
                         workflow_run_claim_token=workflow_run_claim_token,
                         changes=changes,
                         issues=retention_issues,
@@ -329,7 +329,7 @@ class ConceptualWorkflow:
                 except Exception as retention_error:
                     _logger.warning(
                         "Rejected Workflow draft retention remains pending.",
-                        extra={"workflow_run_id": workflow_run_id, "model_id": model_id},
+                        extra={"workflow_run_id": workflow_run_id, "project_id": project_id},
                     )
                     raise _safe_execution_error(
                         retention_error,
@@ -345,7 +345,7 @@ class ConceptualWorkflow:
                     "Conceptual Workflow Run finalization remains pending.",
                     extra={
                         "workflow_run_id": workflow_run_id,
-                        "model_id": model_id,
+                        "project_id": project_id,
                         "failure_code": safe_error.code[:100],
                     },
                 )
@@ -354,7 +354,7 @@ class ConceptualWorkflow:
                     await self._lifecycle.fail(
                         principal,
                         workflow_run_id=workflow_run_id,
-                        expected_model_revision=expected_model_revision,
+                        expected_project_revision=expected_project_revision,
                         workflow_run_claim_token=workflow_run_claim_token,
                         failure_code=safe_error.code[:100],
                         safe_failure_message=safe_error.message[:2000],
@@ -364,7 +364,7 @@ class ConceptualWorkflow:
                         "Conceptual failure state could not be persisted.",
                         extra={
                             "workflow_run_id": workflow_run_id,
-                            "model_id": model_id,
+                            "project_id": project_id,
                             "failure_code": safe_error.code[:100],
                         },
                     )
@@ -374,9 +374,9 @@ class ConceptualWorkflow:
     def _validate_plan(
         plan: AgentRunPlan,
         *,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> None:
         stage_codes = tuple(stage.stage_code for stage in plan.stages)
         mode_path_is_valid = plan.workflow_execution_mode in (
@@ -384,10 +384,10 @@ class ConceptualWorkflow:
             "tool_assisted",
         ) and stage_codes == ("candidate_authoring",)
         if (
-            plan.model_id != model_id
+            plan.project_id != project_id
             or plan.workflow_run_id != workflow_run_id
-            or plan.model_revision != expected_model_revision
-            or plan.model_workflow != "conceptual"
+            or plan.project_revision != expected_project_revision
+            or plan.project_workflow != "conceptual"
             or plan.modeled_entity_type is not None
             or not mode_path_is_valid
         ):
@@ -405,12 +405,12 @@ def _candidate_validator(context: AgentContextBundle) -> ConceptualCandidateVali
         )
         for item in context.context.selected_objects
     )
-    assertion_keys = tuple(
-        record.modeling_assertion_record_key for record in context.context.assertion.records
+    context_record_ids = tuple(
+        record.context_record_id for record in context.context.context.records
     )
     return ConceptualCandidateValidator(
         selected_object_keys=selected,
-        assertion_record_keys=assertion_keys,
+        context_record_ids=context_record_ids,
         applied=context.context.applied.conceptual,
     )
 

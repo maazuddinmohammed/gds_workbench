@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import pytest
-from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     LogicalAttributeRecord,
     LogicalEntityRecord,
 )
-from gds_etl_workbench.domain.snapshots.model import LogicalSection
+from gds_etl_workbench.domain.snapshots.project import LogicalSection
 from gds_workbench_api.features.logical.policy import project_logical_audit_policy
 
 
@@ -67,7 +67,7 @@ def _template() -> dict[str, object]:
 
 
 def _attribute_records(
-    changes: tuple[StageModelChange, ...],
+    changes: tuple[StageProjectChange, ...],
 ) -> list[dict[str, object]]:
     change = next(item for item in changes if item.dataset == "logical_attribute")
     return change.records
@@ -85,11 +85,11 @@ def test_projection_adds_policy_columns_to_new_and_applied_active_entities() -> 
         relationships=(),
     )
     changes = (
-        StageModelChange(
+        StageProjectChange(
             dataset="logical_entity",
             records=[new_entity.model_dump(mode="json")],
         ),
-        StageModelChange(
+        StageProjectChange(
             dataset="logical_attribute",
             records=[new_attribute.model_dump(mode="json")],
         ),
@@ -118,7 +118,7 @@ def test_projection_adds_policy_columns_to_new_and_applied_active_entities() -> 
 
 def test_missing_policy_adds_default_audit_columns_and_generated_key() -> None:
     changes = (
-        StageModelChange(
+        StageProjectChange(
             dataset="logical_entity",
             records=[_entity("Customer").model_dump(mode="json")],
         ),
@@ -167,17 +167,26 @@ def test_projection_rejects_non_audit_name_collision() -> None:
         )
 
 
-def test_default_generated_key_never_overwrites_a_same_named_business_attribute() -> None:
+def test_default_generated_key_never_overwrites_a_same_named_business_attribute() -> (
+    None
+):
     business = _business_attribute("Customer").model_copy(
         update={"logical_attribute_name": "CustomerID"}
     )
     with pytest.raises(InvalidRequestError, match="generated key name conflicts"):
         project_logical_audit_policy(
             changes=(
-                StageModelChange(dataset="logical_entity", records=[_entity("Customer").model_dump(mode="json")]),
-                StageModelChange(dataset="logical_attribute", records=[business.model_dump(mode="json")]),
+                StageProjectChange(
+                    dataset="logical_entity",
+                    records=[_entity("Customer").model_dump(mode="json")],
+                ),
+                StageProjectChange(
+                    dataset="logical_attribute",
+                    records=[business.model_dump(mode="json")],
+                ),
             ),
-            applied=None, raw_template=None,
+            applied=None,
+            raw_template=None,
         )
 
 
@@ -221,7 +230,7 @@ def test_source_system_provenance_retains_sources_and_natural_key_membership() -
     )
     result = project_logical_audit_policy(
         changes=(
-            StageModelChange(
+            StageProjectChange(
                 dataset="logical_attribute",
                 records=[provenance.model_dump(mode="json")],
             ),

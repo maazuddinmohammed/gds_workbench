@@ -4,8 +4,8 @@
 
   const FILTERS = {
     metadata: {
-      project: [filter("project_code", "Project"), filter("is_active", "Active")],
-      tenant: [filter("project_code", "Project"), filter("tenant_code", "Tenant"), filter("tenant_visibility", "Visibility")],
+      lane: [filter("lane_code", "Lane"), filter("is_active", "Active")],
+      tenant: [filter("lane_code", "Lane"), filter("tenant_code", "Tenant"), filter("tenant_visibility", "Visibility")],
       system: [filter("system_code", "System"), filter("system_type_code", "System type"), filter("is_active", "Active")],
       connection: [filter("tenant_code", "Tenant"), filter("system_code", "System"), filter("connection_type_code", "Connection type")],
       system_type: [filter("system_type_name", "System type"), filter("is_active", "Active")],
@@ -26,13 +26,14 @@
       process_group: [filter("zone_code", "Zone"), filter("process_group_name", "Process group"), filter("is_active", "Active")],
       process: [filter("process_group_name", "Process group"), filter("object_name", "Target object"), filter("process_type_name", "Process type")],
     },
-    model: {
-      model_details: [],
-      model_input_scope: [filter("system_code", "System"), filter("object_schema", "Object schema"), filter("object_name", "Object")],
+    project: {
+      project_details: [],
+      project_input_scope: [filter("system_code", "System"), filter("object_schema", "Object schema"), filter("object_name", "Object")],
       profiling_profile: [filter("system_code", "System"), filter("object_name", "Object"), filter("attribute_name", "Attribute")],
       analysis_result: [filter("from_object_name", "From object"), filter("to_object_name", "To object"), filter("relationship_kind", "Relationship kind")],
-      modeling_assertion_document: [filter("modeling_assertion_document_name", "Document"), filter("system_code", "System"), filter("modeling_assertion_document_type", "Document type")],
-      modeling_assertion_record: [filter("modeling_assertion_document_name", "Document"), filter("modeling_assertion_record_type", "Record type"), filter("modeling_assertion_record_status", "Status")],
+      context_type: [filter("context_type_name", "Type")],
+      context_group: [filter("context_group_name", "Group"), filter("source_system_code", "Source system"), filter("context_type_name", "Type")],
+      context_record: [filter("context_group_name", "Group"), filter("status", "Status")],
       conceptual_object: [filter("conceptual_object_name", "Concept"), filter("conceptual_object_type", "Concept type"), filter("conceptual_object_status", "Status")],
       conceptual_relationship: [filter("conceptual_relationship_name", "Relationship"), filter("from_conceptual_object_name", "From concept"), filter("to_conceptual_object_name", "To concept")],
       logical_submodel: [filter("logical_submodel_name", "Submodel"), filter("logical_submodel_status", "Status")],
@@ -57,6 +58,7 @@
   }
 
   const DETAIL_FIELDS = {
+    context_record: ["context_text", "source_reference"],
     mapping_object: ["mapping_transformation_document"],
     mapping_attribute: ["attribute_mapping_transformation_document"],
     generated_code: ["generated_code_content", "code_parameters"],

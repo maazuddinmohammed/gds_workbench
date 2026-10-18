@@ -45,7 +45,10 @@ def test_appservice_zip_uses_runtime_only_allowlist(tmp_path: Path) -> None:
         )
         assert names == expected_names
         for path in source_files:
-            assert archive.read(path.relative_to(SOURCE_ROOT).as_posix()) == path.read_bytes()
+            assert (
+                archive.read(path.relative_to(SOURCE_ROOT).as_posix())
+                == path.read_bytes()
+            )
         assert {
             "app.py",
             "startup.sh",
@@ -53,11 +56,11 @@ def test_appservice_zip_uses_runtime_only_allowlist(tmp_path: Path) -> None:
             "BUILD_MANIFEST.json",
             "gds_etl_workbench/application/change_sets/contracts.py",
             "gds_etl_workbench/application/change_sets/metadata.py",
-            "gds_etl_workbench/application/change_sets/model.py",
-            "gds_etl_workbench/application/model_snapshot.py",
+            "gds_etl_workbench/application/change_sets/project.py",
+            "gds_etl_workbench/application/project_snapshot.py",
             "gds_etl_workbench/domain/snapshots/description.py",
             "gds_etl_workbench/domain/snapshots/metadata.py",
-            "gds_etl_workbench/domain/snapshots/model.py",
+            "gds_etl_workbench/domain/snapshots/project.py",
             "gds_etl_workbench/infrastructure/metadata_visibility.py",
             "gds_etl_workbench/tools/snapshots/service.py",
             "gds_etl_workbench/tools/snapshots/storage.py",
@@ -80,7 +83,9 @@ def test_appservice_zip_uses_runtime_only_allowlist(tmp_path: Path) -> None:
             for name in names
         )
         assert all("tests/" not in name and ".env" not in name for name in names)
-        assert all(info.date_time == (1980, 1, 1, 0, 0, 0) for info in archive.infolist())
+        assert all(
+            info.date_time == (1980, 1, 1, 0, 0, 0) for info in archive.infolist()
+        )
 
         manifest = json.loads(archive.read("BUILD_MANIFEST.json"))
         assert manifest["python_version"] == "3.14"
@@ -190,4 +195,6 @@ def test_lock_contains_python_314_windows_wheels() -> None:
 
     for dependency in compiled_dependencies:
         wheel_urls = [wheel["url"] for wheel in packages[dependency]["wheels"]]
-        assert any("cp314" in url and "win_amd64.whl" in url for url in wheel_urls), dependency
+        assert any("cp314" in url and "win_amd64.whl" in url for url in wheel_urls), (
+            dependency
+        )

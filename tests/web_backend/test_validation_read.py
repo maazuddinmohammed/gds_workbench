@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.model_validation import (
+from gds_etl_workbench.application.change_sets.project_validation import (
     validation_code_context_digest,
     validation_mapping_context_digest,
 )
@@ -43,7 +43,8 @@ def _context_row() -> dict[str, object]:
     return {
         "object_id": 91,
         "modeled_entity_type": "logical_entity",
-        "modeled_entity_schema_name": "silver", "modeled_entity_name": "Customer",
+        "modeled_entity_schema_name": "silver",
+        "modeled_entity_name": "Customer",
         "tenant_code": "acme",
         "system_code": "warehouse",
         "connection_code": "gold",
@@ -54,7 +55,8 @@ def _context_row() -> dict[str, object]:
         "generated_code": [
             {
                 "modeled_entity_type": "logical_entity",
-                "modeled_entity_schema_name": "silver", "modeled_entity_name": "Customer",
+                "modeled_entity_schema_name": "silver",
+                "modeled_entity_name": "Customer",
                 "artifact_name": "customer.sql",
                 "artifact_type": "transformation_sql",
                 "source_system_codes": ["erp"],
@@ -97,7 +99,9 @@ def _check_row(*, group_id: int) -> dict[str, object]:
         "validation_category_code": "business.reconciliation",
         "validation_severity": "blocking",
         "validation_query_sql": "SELECT count(*) FROM catalog.silver.customer",
-        "validation_comparison_query_sql": ("SELECT count(*) FROM catalog.gold.dim_customer"),
+        "validation_comparison_query_sql": (
+            "SELECT count(*) FROM catalog.gold.dim_customer"
+        ),
         "validation_result_data_type": "integer",
         "validation_comparison_operator": "equal",
         "validation_comparison_value_type": "query",
@@ -217,9 +221,9 @@ class EligibleSystemsTransaction:
         if "security.entra_principal_identity" in query:
             assert parameters[-1] == 7
             return _authorization_row()
-        assert "SELECT target_model.model_revision" in query
+        assert "SELECT target_project.project_revision" in query
         assert parameters == (7, 18)
-        return {"model_revision": 4}
+        return {"project_revision": 4}
 
     async def fetch_all(
         self,
@@ -258,7 +262,9 @@ class EligibleSystemsDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_validation_eligible_systems_are_authorized_and_complete() -> None:
+async def test_database_validation_eligible_systems_are_authorized_and_complete() -> (
+    None
+):
     service = DatabaseValidationReadService(
         database=EligibleSystemsDatabase(),
         authorizer=AuthorizationService(),
@@ -267,10 +273,10 @@ async def test_database_validation_eligible_systems_are_authorized_and_complete(
     result = await service.list_eligible_systems(
         _principal(),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
     )
 
-    assert result.model_revision == 4
+    assert result.project_revision == 4
     assert [item.system_code for item in result.items] == ["erp"]
     assert result.is_truncated is False
 
@@ -289,8 +295,8 @@ class LedgerTransaction:
     ) -> dict[str, Any] | None:
         if "security.entra_principal_identity" in query:
             return _authorization_row()
-        if "SELECT target_model.model_revision" in query:
-            return {"model_revision": 4}
+        if "SELECT target_project.project_revision" in query:
+            return {"project_revision": 4}
         assert "octet_length(validation_check.validation_query_sql)" in query
         assert parameters == (7, 18)
         return {
@@ -349,9 +355,9 @@ async def test_database_validation_ledger_preflights_and_computes_currentness() 
         authorizer=AuthorizationService(),
     )
 
-    result = await service.read_ledger(_principal(), tenant_id=7, model_id=18)
+    result = await service.read_ledger(_principal(), tenant_id=7, project_id=18)
 
-    assert result.model_revision == 4
+    assert result.project_revision == 4
     assert result.groups[0].validation_group_is_current is True
     assert result.groups[0].checks[0].validation_check_id == 501
 
@@ -364,7 +370,7 @@ async def test_database_validation_ledger_rejects_oversize_before_full_fetch() -
     )
 
     with pytest.raises(InvalidRequestError, match="bounded size"):
-        await service.read_ledger(_principal(), tenant_id=7, model_id=18)
+        await service.read_ledger(_principal(), tenant_id=7, project_id=18)
 
 
 @dataclass
@@ -374,14 +380,14 @@ class StaticValidationService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         entity_type: str | None = None,
     ) -> ValidationEligibleSystemCollection:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id) == (7, 18)
+        assert (tenant_id, project_id) == (7, 18)
         return ValidationEligibleSystemCollection(
-            model_id=18,
-            model_revision=4,
+            project_id=18,
+            project_revision=4,
             items=(
                 ValidationEligibleSystem(
                     system_id=9,
@@ -400,14 +406,14 @@ class StaticValidationService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         entity_type: str | None = None,
     ) -> ValidationLedger:
         del principal
-        assert (tenant_id, model_id) == (7, 18)
+        assert (tenant_id, project_id) == (7, 18)
         return ValidationLedger(
-            model_id=18,
-            model_revision=4,
+            project_id=18,
+            project_revision=4,
             groups=(
                 ValidationValidationGroup(
                     is_locked=False,
@@ -448,12 +454,12 @@ class StaticValidationWorkflow:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart:
         del principal
-        assert (tenant_id, model_id, workflow_run_id, expected_model_revision) == (
+        assert (tenant_id, project_id, workflow_run_id, expected_project_revision) == (
             7,
             18,
             1048,
@@ -464,7 +470,7 @@ class StaticValidationWorkflow:
             workflow_run_id=1048,
             workflow_run_state="running",
             started_at=datetime(2026, 8, 31, 12, 0, tzinfo=UTC),
-            model_revision=4,
+            project_revision=4,
         )
 
 
@@ -484,8 +490,8 @@ def _client() -> TestClient:
 
 def test_validation_read_routes_publish_exact_frontend_contract() -> None:
     with _client() as client:
-        systems = client.get("/api/v1/tenants/7/models/18/validation/systems")
-        ledger = client.get("/api/v1/tenants/7/models/18/validation/ledger")
+        systems = client.get("/api/v1/tenants/7/projects/18/validation/systems")
+        ledger = client.get("/api/v1/tenants/7/projects/18/validation/ledger")
 
     assert systems.status_code == 200
     assert systems.json()["items"][0]["current_code_target_count"] == 2
@@ -497,8 +503,8 @@ def test_validation_read_routes_publish_exact_frontend_contract() -> None:
 def test_validation_execute_route_uses_existing_agent_run_start_contract() -> None:
     with _client() as client:
         response = client.post(
-            "/api/v1/tenants/7/models/18/validation/runs/1048/execute",
-            json={"expected_model_revision": 4},
+            "/api/v1/tenants/7/projects/18/validation/runs/1048/execute",
+            json={"expected_project_revision": 4},
         )
 
     assert response.status_code == 202

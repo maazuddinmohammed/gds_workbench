@@ -69,7 +69,7 @@ OPERATIONAL_DATASETS: tuple[OperationalDataset, ...] = (
 )
 
 FOUNDATIONAL_DATASETS: tuple[MetadataDataset, ...] = (
-    "project",
+    "lane",
     "tenant",
     "system",
     "connection",

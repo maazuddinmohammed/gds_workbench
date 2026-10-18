@@ -28,13 +28,13 @@ from gds_etl_workbench.infrastructure.postgres import (
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from gds_workbench_api.features.models import ModelRevisionConflictError
+from gds_workbench_api.features.projects import ProjectRevisionConflictError
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
     AgentWorkflowRunStart,
 )
 from gds_workbench_api.features.workflows.authoring.plan import (
-    ModelWorkflow,
+    ProjectWorkflow,
     WorkflowExecutionMode,
 )
 from gds_workbench_api.features.workflows.execution.fence import (
@@ -56,17 +56,17 @@ _logger = logging.getLogger(__name__)
 
 _RUN_BINDING_SQL: LiteralString = """
 SELECT run.workflow_run_id,
-       run.model_id,
-       target_model.model_revision,
+       run.project_id,
+       target_project.project_revision,
        run.requested_batch_id
   FROM application.workflow_run AS run
-  JOIN model.model AS target_model
-    ON target_model.model_id = run.model_id
-   AND target_model.tenant_id = %s
-   AND target_model.is_active
- WHERE run.model_id = %s
+  JOIN project.project AS target_project
+    ON target_project.project_id = run.project_id
+   AND target_project.tenant_id = %s
+   AND target_project.is_active
+ WHERE run.project_id = %s
    AND run.workflow_run_id = %s
-   AND run.model_workflow = 'analysis'
+   AND run.project_workflow = 'analysis'
    AND run.workflow_execution_mode IS NULL
    AND run.workflow_run_state = 'running'
 """
@@ -90,8 +90,8 @@ SELECT connection_values.*
 _PERSIST_SQL: LiteralString = """
 SELECT persisted.changed,
        persisted.workflow_run_id,
-       persisted.model_id,
-       persisted.model_revision,
+       persisted.project_id,
+       persisted.project_revision,
        persisted.submitted_result_count,
        persisted.changed_result_count
   FROM application.persist_analysis_validation_results(
@@ -119,8 +119,8 @@ class AnalysisValidationExecutionTarget:
 @dataclass(frozen=True, slots=True)
 class AnalysisValidationExecutionContext:
     workflow_run_id: int
-    model_id: int
-    model_revision: int
+    project_id: int
+    project_revision: int
     requested_batch_id: str | None
     targets: tuple[AnalysisValidationExecutionTarget, ...]
 
@@ -130,8 +130,8 @@ class AnalysisValidationCommitResult(BaseModel):
 
     changed: bool
     workflow_run_id: int = Field(gt=0)
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     submitted_result_count: int = Field(ge=0)
     changed_result_count: int = Field(ge=0)
     workflow_run_state: Literal["completed", "completed_with_repair"]
@@ -159,11 +159,11 @@ class AnalysisValidationLifecycle(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
+        expected_workflow: ProjectWorkflow,
         expected_execution_mode: WorkflowExecutionMode | None,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart: ...
 
     async def append_event(
@@ -171,7 +171,7 @@ class AnalysisValidationLifecycle(Protocol):
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         event: AgentWorkflowEvent,
     ) -> None: ...
@@ -181,7 +181,7 @@ class AnalysisValidationLifecycle(Protocol):
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         failure_code: str,
         safe_failure_message: str,
@@ -194,9 +194,9 @@ class AnalysisValidationRepository(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AnalysisValidationExecutionContext: ...
 
     async def commit(
@@ -204,7 +204,7 @@ class AnalysisValidationRepository(Protocol):
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         validation_results: list[dict[str, object]],
     ) -> AnalysisValidationCommitResult: ...
@@ -240,9 +240,9 @@ class DatabaseAnalysisValidationRepository:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AnalysisValidationExecutionContext:
         identity = _identity_triple(principal)
         try:
@@ -251,28 +251,28 @@ class DatabaseAnalysisValidationRepository:
             ) as transaction:
                 binding = await transaction.fetch_one(
                     _RUN_BINDING_SQL,
-                    (tenant_id, model_id, workflow_run_id),
+                    (tenant_id, project_id, workflow_run_id),
                 )
                 if binding is None:
                     raise WorkflowRunNotFoundError()
-                model_revision = _positive_int(binding.get("model_revision"))
-                if model_revision != expected_model_revision:
-                    raise ModelRevisionConflictError()
+                project_revision = _positive_int(binding.get("project_revision"))
+                if project_revision != expected_project_revision:
+                    raise ProjectRevisionConflictError()
                 requested_batch_id = _optional_text(binding.get("requested_batch_id"))
                 rows = await transaction.fetch_all(
                     _CONTEXT_SQL,
                     identity
                     + (
                         workflow_run_id,
-                        expected_model_revision,
+                        expected_project_revision,
                         self._environment_code,
                     ),
                 )
                 if not rows:
                     return AnalysisValidationExecutionContext(
                         workflow_run_id=workflow_run_id,
-                        model_id=model_id,
-                        model_revision=model_revision,
+                        project_id=project_id,
+                        project_revision=project_revision,
                         requested_batch_id=requested_batch_id,
                         targets=(),
                     )
@@ -280,8 +280,8 @@ class DatabaseAnalysisValidationRepository:
                     _relationship_from_row(
                         row,
                         workflow_run_id=workflow_run_id,
-                        model_id=model_id,
-                        model_revision=model_revision,
+                        project_id=project_id,
+                        project_revision=project_revision,
                         requested_batch_id=requested_batch_id,
                     )
                     for row in rows
@@ -291,15 +291,15 @@ class DatabaseAnalysisValidationRepository:
                     identity
                     + (
                         workflow_run_id,
-                        expected_model_revision,
+                        expected_project_revision,
                         self._environment_code,
                     ),
                 )
                 connections = _connection_map(
                     connection_rows,
                     workflow_run_id=workflow_run_id,
-                    model_id=model_id,
-                    model_revision=model_revision,
+                    project_id=project_id,
+                    project_revision=project_revision,
                     environment_code=self._environment_code,
                 )
         except Exception as error:
@@ -310,8 +310,8 @@ class DatabaseAnalysisValidationRepository:
             raise DatabricksConnectionConfigurationError("missing")
         return AnalysisValidationExecutionContext(
             workflow_run_id=workflow_run_id,
-            model_id=model_id,
-            model_revision=model_revision,
+            project_id=project_id,
+            project_revision=project_revision,
             requested_batch_id=requested_batch_id,
             targets=tuple(
                 AnalysisValidationExecutionTarget(
@@ -327,7 +327,7 @@ class DatabaseAnalysisValidationRepository:
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         validation_results: list[dict[str, object]],
     ) -> AnalysisValidationCommitResult:
@@ -344,20 +344,20 @@ class DatabaseAnalysisValidationRepository:
                     identity
                     + (
                         workflow_run_id,
-                        expected_model_revision,
+                        expected_project_revision,
                         self._environment_code,
                         Jsonb(validation_results),
                     ),
                 )
                 if persisted is None:
                     raise DependencyUnavailableError()
-                model_revision = _positive_int(persisted.get("model_revision"))
+                project_revision = _positive_int(persisted.get("project_revision"))
                 completed = await transaction.fetch_one(
                     _COMPLETE_SQL,
                     identity
                     + (
                         workflow_run_id,
-                        model_revision,
+                        project_revision,
                         len(validation_results),
                     ),
                 )
@@ -399,18 +399,18 @@ class AnalysisValidationWorkflow:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart:
         return await self._lifecycle.start(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             workflow_run_id=workflow_run_id,
             expected_workflow="analysis",
             expected_execution_mode=None,
-            expected_model_revision=expected_model_revision,
+            expected_project_revision=expected_project_revision,
         )
 
     async def execute_started(
@@ -418,30 +418,30 @@ class AnalysisValidationWorkflow:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
     ) -> AnalysisValidationCommitResult | None:
         try:
             context = await self._repository.load_context(
                 principal,
                 tenant_id=tenant_id,
-                model_id=model_id,
+                project_id=project_id,
                 workflow_run_id=workflow_run_id,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
             )
             _validate_context_binding(
                 context,
-                model_id=model_id,
+                project_id=project_id,
                 workflow_run_id=workflow_run_id,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 max_relationships=self._policy.max_relationships,
             )
             await self._lifecycle.append_event(
                 principal,
                 workflow_run_id=workflow_run_id,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 workflow_run_claim_token=workflow_run_claim_token,
                 event=AgentWorkflowEvent(
                     sequence=2,
@@ -462,13 +462,13 @@ class AnalysisValidationWorkflow:
                 principal,
                 context=context,
                 workflow_run_id=workflow_run_id,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 workflow_run_claim_token=workflow_run_claim_token,
             )
             return await self._repository.commit(
                 principal,
                 workflow_run_id=workflow_run_id,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 workflow_run_claim_token=workflow_run_claim_token,
                 validation_results=payload,
             )
@@ -478,7 +478,7 @@ class AnalysisValidationWorkflow:
                 await self._lifecycle.fail(
                     principal,
                     workflow_run_id=workflow_run_id,
-                    expected_model_revision=expected_model_revision,
+                    expected_project_revision=expected_project_revision,
                     workflow_run_claim_token=workflow_run_claim_token,
                     failure_code=safe_error.code[:100],
                     safe_failure_message=safe_error.message[:2000],
@@ -488,7 +488,7 @@ class AnalysisValidationWorkflow:
                     "Analysis validation failure state could not be persisted.",
                     extra={
                         "workflow_run_id": workflow_run_id,
-                        "model_id": model_id,
+                        "project_id": project_id,
                         "failure_code": safe_error.code[:100],
                     },
                 )
@@ -501,7 +501,7 @@ class AnalysisValidationWorkflow:
         *,
         context: AnalysisValidationExecutionContext,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
     ) -> list[dict[str, object]]:
         if not context.targets:
@@ -559,7 +559,7 @@ class AnalysisValidationWorkflow:
                 await self._lifecycle.append_event(
                     principal,
                     workflow_run_id=workflow_run_id,
-                    expected_model_revision=expected_model_revision,
+                    expected_project_revision=expected_project_revision,
                     workflow_run_claim_token=workflow_run_claim_token,
                     event=AgentWorkflowEvent(
                         sequence=sequence,
@@ -595,14 +595,14 @@ def _relationship_from_row(
     row: dict[str, Any],
     *,
     workflow_run_id: int,
-    model_id: int,
-    model_revision: int,
+    project_id: int,
+    project_revision: int,
     requested_batch_id: str | None,
 ) -> AnalysisValidationRelationship:
     if (
         _positive_int(row.get("workflow_run_id")) != workflow_run_id
-        or _positive_int(row.get("model_id")) != model_id
-        or _positive_int(row.get("model_revision")) != model_revision
+        or _positive_int(row.get("project_id")) != project_id
+        or _positive_int(row.get("project_revision")) != project_revision
         or _optional_text(row.get("requested_batch_id")) != requested_batch_id
     ):
         raise DependencyUnavailableError()
@@ -650,8 +650,8 @@ def _connection_map(
     rows: list[dict[str, Any]],
     *,
     workflow_run_id: int,
-    model_id: int,
-    model_revision: int,
+    project_id: int,
+    project_revision: int,
     environment_code: str,
 ) -> dict[int, DatabricksSqlConnection]:
     connections: dict[int, DatabricksSqlConnection] = {}
@@ -662,8 +662,8 @@ def _connection_map(
             raise DatabricksConnectionConfigurationError(reason)
         if (
             _positive_int(row.get("workflow_run_id")) != workflow_run_id
-            or _positive_int(row.get("model_id")) != model_id
-            or _positive_int(row.get("model_revision")) != model_revision
+            or _positive_int(row.get("project_id")) != project_id
+            or _positive_int(row.get("project_revision")) != project_revision
             or _required_text(row.get("environment_code")) != environment_code
         ):
             raise DependencyUnavailableError()
@@ -681,16 +681,16 @@ def _connection_map(
 def _validate_context_binding(
     context: AnalysisValidationExecutionContext,
     *,
-    model_id: int,
+    project_id: int,
     workflow_run_id: int,
-    expected_model_revision: int,
+    expected_project_revision: int,
     max_relationships: int,
 ) -> None:
     result_ids = [target.relationship.analysis_result_id for target in context.targets]
     if (
         context.workflow_run_id != workflow_run_id
-        or context.model_id != model_id
-        or context.model_revision != expected_model_revision
+        or context.project_id != project_id
+        or context.project_revision != expected_project_revision
         or len(context.targets) > max_relationships
         or len(result_ids) != len(set(result_ids))
         or any(target.relationship.source_context_digest is None for target in context.targets)
@@ -742,8 +742,8 @@ def _raise_repository_error(error: Exception) -> Never:
     ):
         raise error
     message = _primary_database_message(error)
-    if message == "stale_model_revision":
-        raise ModelRevisionConflictError() from error
+    if message == "stale_project_revision":
+        raise ProjectRevisionConflictError() from error
     if "analysis_validation_run_not_found" in message:
         raise WorkflowRunNotFoundError() from error
     if "workflow_run_owner_mismatch" in message:

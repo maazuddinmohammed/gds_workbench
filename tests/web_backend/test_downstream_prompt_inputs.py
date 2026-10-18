@@ -43,7 +43,9 @@ FIXTURE: dict[str, Any] = json.loads(
 def test_existing_code_and_validation_resolvers_use_canonical_prompt_evidence(
     workflow: Literal["code_generation", "validation"],
 ) -> None:
-    stage_code = "sql_generation" if workflow == "code_generation" else "validation_generation"
+    stage_code = (
+        "sql_generation" if workflow == "code_generation" else "validation_generation"
+    )
     prefix = f"workflow.{workflow}.common.{stage_code}.inputs."
     contracts = downstream_input_contracts(workflow)
     existing_names = (
@@ -69,7 +71,7 @@ def test_existing_code_and_validation_resolvers_use_canonical_prompt_evidence(
     variables: list[PromptVariableDefinition] = []
     for name in existing_names:
         descriptor = get_prompt_input_contract(
-            model_workflow=workflow,
+            project_workflow=workflow,
             workflow_execution_mode=None,
             stage_code=stage_code,
             resolver_key=prefix + name,
@@ -99,10 +101,10 @@ def test_existing_code_and_validation_resolvers_use_canonical_prompt_evidence(
     is_code = workflow == "code_generation"
     plan = AgentRunPlan(
         workflow_run_id=1,
-        model_id=1,
-        model_revision=1,
+        project_id=1,
+        project_revision=1,
         correlation_id=UUID("11111111-1111-1111-1111-111111111111"),
-        model_workflow=workflow,
+        project_workflow=workflow,
         workflow_execution_mode=None,
         modeled_entity_type="logical_entity" if is_code else None,
         code_generation_coverage_mode="selected_targets" if is_code else None,
@@ -129,7 +131,7 @@ def test_existing_code_and_validation_resolvers_use_canonical_prompt_evidence(
     for key in (prefix + "unknown_input", prefix + "context.targets"):
         assert (
             get_prompt_input_contract(
-                model_workflow=workflow,
+                project_workflow=workflow,
                 workflow_execution_mode=None,
                 stage_code=stage_code,
                 resolver_key=key,
@@ -159,26 +161,38 @@ def test_contract_examples_and_projected_context_have_exact_schema(
 
 def test_validation_code_reader_preserves_git_metadata_without_inline_content() -> None:
     raw = deepcopy(FIXTURE["validation"])
-    raw["generated_code"][0].update({
-        "code_storage_type": "git", "code_repository_url": "any repo",
-        "code_commit_path": "anything", "code_entry_point": None,
-        "code_parameters": [False, {"batch": 42}], "generated_code_content": None,
-    })
+    raw["generated_code"][0].update(
+        {
+            "code_storage_type": "git",
+            "code_repository_url": "any repo",
+            "code_commit_path": "anything",
+            "code_entry_point": None,
+            "code_parameters": [False, {"batch": 42}],
+            "generated_code_content": None,
+        }
+    )
     values = project_downstream_inputs("validation", raw)
     schema = downstream_input_contracts("validation")["current_code"][0]
     assert cast(Any, Draft202012Validator(schema)).is_valid(values["current_code"])
     catalog = build_downstream_readers(
-        "validation", values, max_result_bytes=100_000, max_page_records=200,
+        "validation",
+        values,
+        max_result_bytes=100_000,
+        max_page_records=200,
         max_cumulative_result_bytes=500_000,
     )
     page = catalog.invoke("get_current_code", {})
     assert page["items"] == raw["generated_code"]
-    definition = next(item for item in catalog.definitions if item.name == "get_current_code")
+    definition = next(
+        item for item in catalog.definitions if item.name == "get_current_code"
+    )
     assert definition.result_schema is not None
     assert cast(Any, Draft202012Validator(definition.result_schema)).is_valid(page)
 
 
-def test_mapping_joins_names_from_modeled_attributes_and_keeps_document_business_keys() -> None:
+def test_mapping_joins_names_from_modeled_attributes_and_keeps_document_business_keys() -> (
+    None
+):
     raw = deepcopy(FIXTURE["mapping"])
     child = raw["headers"][0]["attribute_mappings"][0]
     child["transformation_document"] = {
@@ -195,7 +209,9 @@ def test_mapping_joins_names_from_modeled_attributes_and_keeps_document_business
 
 
 @pytest.mark.parametrize("broken", ["modeled_attribute_id"])
-def test_mapping_unknown_attribute_is_not_resolved_by_similar_names(broken: str) -> None:
+def test_mapping_unknown_attribute_is_not_resolved_by_similar_names(
+    broken: str,
+) -> None:
     raw = deepcopy(FIXTURE["mapping"])
     raw["headers"][0]["attribute_mappings"][0][broken] = 999_999
     with pytest.raises(InvalidRequestError):
@@ -205,7 +221,9 @@ def test_mapping_unknown_attribute_is_not_resolved_by_similar_names(broken: str)
 def test_code_system_links_are_resolved_without_replacing_physical_placement() -> None:
     raw = deepcopy(FIXTURE["code_generation"])
     source = raw["targets"][0]["context"]["physical_sources"][0]
-    source["object"].update(tenant_code="GDS", system_code="WAREHOUSE", connection_code="MAIN")
+    source["object"].update(
+        tenant_code="GDS", system_code="WAREHOUSE", connection_code="MAIN"
+    )
     values = project_downstream_inputs("code_generation", raw)
     assert values["source_metadata"][0]["object"]["tenant_code"] == "GDS"
     assert values["source_metadata"][0]["object"]["system_code"] == "WAREHOUSE"
@@ -221,7 +239,11 @@ def test_code_system_links_are_resolved_without_replacing_physical_placement() -
     ("collection", "variable", "reader"),
     [
         ("object_mappings", "object_transformations", "get_object_transformations"),
-        ("attribute_mappings", "attribute_transformations", "get_attribute_transformations"),
+        (
+            "attribute_mappings",
+            "attribute_transformations",
+            "get_attribute_transformations",
+        ),
     ],
 )
 def test_code_partial_mapping_null_survives_projection_contract_and_reader(
@@ -243,7 +265,8 @@ def test_code_partial_mapping_null_survives_projection_contract_and_reader(
     assert page["items"][0]["transformation"] is None
     assert page["items"] == values[variable]
     tool_schema = next(
-        definition.result_schema for definition in catalog.definitions
+        definition.result_schema
+        for definition in catalog.definitions
         if definition.name == reader
     )
     assert tool_schema is not None
@@ -272,7 +295,9 @@ def test_all_readers_accept_no_input_and_preserve_prompt_value_shapes(
 
 
 def test_nested_source_key_filter_is_complete_frozen_and_cursor_bound() -> None:
-    values = project_downstream_inputs("code_generation", deepcopy(FIXTURE["code_generation"]))
+    values = project_downstream_inputs(
+        "code_generation", deepcopy(FIXTURE["code_generation"])
+    )
     first = values["source_metadata"][0]
     second = deepcopy(first)
     second["object"]["connection_code"] = "SECOND"
@@ -304,7 +329,9 @@ def test_nested_source_key_filter_is_complete_frozen_and_cursor_bound() -> None:
     assert page["items"] == [first] and page["is_complete"] is False
     next_page = catalog.invoke("get_code_sources", {"cursor": page["next_cursor"]})
     assert next_page["items"] == [second]
-    assert catalog.invoke("get_code_sources", {"cursor": page["next_cursor"]}) == next_page
+    assert (
+        catalog.invoke("get_code_sources", {"cursor": page["next_cursor"]}) == next_page
+    )
     with pytest.raises(AgentContextToolRequestError):
         catalog.invoke(
             "get_code_sources",
@@ -324,7 +351,9 @@ def test_nested_source_key_filter_is_complete_frozen_and_cursor_bound() -> None:
         )
 
 
-def test_known_validation_group_with_no_checks_returns_empty_and_unknown_group_fails() -> None:
+def test_known_validation_group_with_no_checks_returns_empty_and_unknown_group_fails() -> (
+    None
+):
     values = project_downstream_inputs("validation", deepcopy(FIXTURE["validation"]))
     values["applied_checks"] = []
     name = values["applied_groups"][0]["validation_group_name"]

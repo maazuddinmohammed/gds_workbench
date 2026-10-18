@@ -19,17 +19,17 @@ from psycopg_pool import AsyncConnectionPool
 from gds_etl_workbench.domain.authorization import ActorKind, ToolPolicy
 from gds_etl_workbench.domain.errors import (
     DependencyUnavailableError,
-    ModelLockedError,
-    ModelWorkflowConflictError,
+    ProjectLockedError,
+    ProjectWorkflowConflictError,
 )
 
 
 def raise_postgres_error(error: PsycopgError) -> Never:
     """Translate only recognized database lock failures into safe domain errors."""
-    if error.sqlstate == "55000" and error.diag.message_primary == "model_locked":
-        raise ModelLockedError() from None
-    if error.sqlstate == "55000" and error.diag.message_primary == "model_workflow_conflict":
-        raise ModelWorkflowConflictError() from None
+    if error.sqlstate == "55000" and error.diag.message_primary == "project_locked":
+        raise ProjectLockedError() from None
+    if error.sqlstate == "55000" and error.diag.message_primary == "project_workflow_conflict":
+        raise ProjectWorkflowConflictError() from None
     raise DependencyUnavailableError() from error
 
 

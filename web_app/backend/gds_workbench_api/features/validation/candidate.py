@@ -7,13 +7,13 @@ from dataclasses import dataclass
 from typing import Annotated, Literal, cast
 
 import sqlglot
-from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
 from gds_etl_workbench.domain.databricks_sql import validate_databricks_sql
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     ValidationCheckRecord,
     ValidationGroupRecord,
-    normalize_model_key_value,
+    normalize_project_key_value,
 )
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 from sqlglot import expressions as exp
@@ -253,7 +253,7 @@ class ValidationSystemCandidateValidator:
                 )
                 if not group_name.startswith(prefix):
                     group_name = prefix + group_name
-            normalized_name = normalize_model_key_value(group_name)
+            normalized_name = normalize_project_key_value(group_name)
             if normalized_name in group_names:
                 raise _CandidateIssueError(
                     AgentValidationIssue(
@@ -263,8 +263,8 @@ class ValidationSystemCandidateValidator:
                     )
                 )
             group_names.add(normalized_name)
-            if normalize_model_key_value(group_name) in {
-                normalize_model_key_value(name) for name in self._context.reserved_group_names
+            if normalize_project_key_value(group_name) in {
+                normalize_project_key_value(name) for name in self._context.reserved_group_names
             }:
                 raise _CandidateIssueError(
                     AgentValidationIssue(
@@ -277,7 +277,7 @@ class ValidationSystemCandidateValidator:
                     )
                 )
             check_names = [
-                normalize_model_key_value(check.validation_check_name)
+                normalize_project_key_value(check.validation_check_name)
                 for check in group.validation_checks
             ]
             if len(check_names) != len(set(check_names)):
@@ -396,7 +396,7 @@ def reconcile_validation_candidates(
     *,
     context: ValidationExecutionContext,
     candidates: tuple[ValidatedValidationSystemCandidate, ...],
-) -> tuple[StageModelChange, ...]:
+) -> tuple[StageProjectChange, ...]:
     systems_by_ref = {system.system_ref: system for system in context.systems}
     candidates_by_ref = {candidate.system_ref: candidate for candidate in candidates}
     if (
@@ -431,9 +431,9 @@ def reconcile_validation_candidates(
                 continue
             if desired != applied_groups.get(key) or key not in {
                 (
-                    normalize_model_key_value(system.tenant_code),
-                    normalize_model_key_value(system.system_code),
-                    normalize_model_key_value(name),
+                    normalize_project_key_value(system.tenant_code),
+                    normalize_project_key_value(system.system_code),
+                    normalize_project_key_value(name),
                 )
                 for name in system.current_group_names
             }:
@@ -463,11 +463,11 @@ def reconcile_validation_candidates(
             ):
                 changed_checks.append(applied.model_copy(update={"is_active": False}))
 
-    changes: list[StageModelChange] = []
+    changes: list[StageProjectChange] = []
     if changed_groups:
         changed_groups.sort(key=_group_key)
         changes.append(
-            StageModelChange(
+            StageProjectChange(
                 dataset="validation_group",
                 records=[record.model_dump(mode="json") for record in changed_groups],
             )
@@ -475,7 +475,7 @@ def reconcile_validation_candidates(
     if changed_checks:
         changed_checks.sort(key=_check_key)
         changes.append(
-            StageModelChange(
+            StageProjectChange(
                 dataset="validation_check",
                 records=[record.model_dump(mode="json") for record in changed_checks],
             )
@@ -568,16 +568,16 @@ def _validate_query(
 
 def _group_key(record: ValidationGroupRecord) -> tuple[str, str, str]:
     return (
-        normalize_model_key_value(record.tenant_code),
-        normalize_model_key_value(record.system_code),
-        normalize_model_key_value(record.validation_group_name),
+        normalize_project_key_value(record.tenant_code),
+        normalize_project_key_value(record.system_code),
+        normalize_project_key_value(record.validation_group_name),
     )
 
 
 def _check_key(record: ValidationCheckRecord) -> tuple[str, str, str, str]:
     return (
-        normalize_model_key_value(record.tenant_code),
-        normalize_model_key_value(record.system_code),
-        normalize_model_key_value(record.validation_group_name),
-        normalize_model_key_value(record.validation_check_name),
+        normalize_project_key_value(record.tenant_code),
+        normalize_project_key_value(record.system_code),
+        normalize_project_key_value(record.validation_group_name),
+        normalize_project_key_value(record.validation_check_name),
     )

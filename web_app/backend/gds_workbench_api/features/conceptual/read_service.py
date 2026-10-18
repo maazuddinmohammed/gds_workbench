@@ -11,7 +11,7 @@ from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation, ReadTransaction
 
 from gds_workbench_api.features.conceptual.read_contracts import (
-    ConceptualAssertionSupport,
+    ConceptualContextSupport,
     ConceptualFilters,
     ConceptualObjectDetail,
     ConceptualObjectNotFoundError,
@@ -25,14 +25,14 @@ from gds_workbench_api.features.conceptual.read_contracts import (
     ConceptualSupport,
     ConceptualSupportLimitExceededError,
 )
-from gds_workbench_api.features.models import ModelNotFoundError
+from gds_workbench_api.features.projects import ProjectNotFoundError
 
-_MODEL_HEADER_SQL: LiteralString = """
-SELECT target_model.model_revision
-  FROM model.model AS target_model
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+_PROJECT_HEADER_SQL: LiteralString = """
+SELECT target_project.project_revision
+  FROM project.project AS target_project
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
 """
 
 _CONCEPTUAL_OBJECTS_SQL: LiteralString = """
@@ -45,11 +45,11 @@ SELECT object.conceptual_object_id,
        object.conceptual_object_is_locked,
        object.updated_time AS updated_at
   FROM workflow.conceptual_object AS object
-  JOIN model.model AS target_model
-    ON target_model.model_id = object.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+  JOIN project.project AS target_project
+    ON target_project.project_id = object.project_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND (%s::VARCHAR IS NULL OR object.conceptual_object_status = %s)
    AND (%s::BOOLEAN IS NULL OR object.conceptual_object_is_locked = %s)
    AND (
@@ -86,15 +86,15 @@ SELECT relationship.conceptual_relationship_id,
   JOIN workflow.conceptual_object AS from_object
     ON from_object.conceptual_object_id
        = relationship.from_conceptual_object_id
-   AND from_object.model_id = relationship.model_id
+   AND from_object.project_id = relationship.project_id
   JOIN workflow.conceptual_object AS to_object
     ON to_object.conceptual_object_id = relationship.to_conceptual_object_id
-   AND to_object.model_id = relationship.model_id
-  JOIN model.model AS target_model
-    ON target_model.model_id = relationship.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+   AND to_object.project_id = relationship.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = relationship.project_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND (
        %s::VARCHAR IS NULL
        OR relationship.conceptual_relationship_status = %s
@@ -133,11 +133,11 @@ SELECT object.conceptual_object_id,
        object.created_time AS created_at,
        object.updated_time AS updated_at
   FROM workflow.conceptual_object AS object
-  JOIN model.model AS target_model
-    ON target_model.model_id = object.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+  JOIN project.project AS target_project
+    ON target_project.project_id = object.project_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND object.conceptual_object_id = %s
 """
 
@@ -159,43 +159,44 @@ SELECT support.conceptual_support_id,
        source_connection.connection_code AS source_connection_code,
        source_object.object_schema AS source_object_schema,
        source_object.object_name AS source_object_name,
-       assertion_record.modeling_assertion_record_id,
-       assertion_record.modeling_assertion_record_key,
-       assertion_document.modeling_assertion_document_name,
-       assertion_record.modeling_assertion_record_type,
-       assertion_record.modeling_assertion_text,
-       assertion_record.modeling_assertion_confidence,
-       assertion_record.modeling_assertion_record_status
+       context_record.context_record_id::TEXT AS context_record_id,
+       context_group.name AS context_group_name,
+       context_type.name AS context_type_name,
+       context_record.context_text,
+       context_record.source_reference,
+       context_record.status
   FROM workflow.conceptual_support AS support
   JOIN workflow.conceptual_object AS object
     ON object.conceptual_object_id = support.conceptual_object_id
-   AND object.model_id = support.model_id
-  JOIN model.model AS target_model
-    ON target_model.model_id = support.model_id
+   AND object.project_id = support.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = support.project_id
   LEFT JOIN core.object AS source_object
     ON source_object.object_id = support.source_object_id
   LEFT JOIN core.connection AS source_connection
     ON source_connection.connection_id = source_object.connection_id
-  LEFT JOIN LATERAL workflow.list_model_object_eligibility(
-      support.model_id
+  LEFT JOIN LATERAL workflow.list_project_object_eligibility(
+      support.project_id
   ) AS source_eligibility
     ON source_eligibility.object_id = support.source_object_id
-   AND source_eligibility.is_model_input_eligible
+   AND source_eligibility.is_project_input_eligible
   LEFT JOIN core.tenant AS source_placement_tenant
     ON source_placement_tenant.tenant_id = source_connection.tenant_id
   LEFT JOIN core.system AS source_system
     ON source_system.system_id = source_connection.system_id
-  LEFT JOIN model.modeling_assertion_record AS assertion_record
-    ON assertion_record.modeling_assertion_record_id
-       = support.modeling_assertion_record_id
-   AND assertion_record.model_id = support.model_id
-  LEFT JOIN model.modeling_assertion_document AS assertion_document
-    ON assertion_document.modeling_assertion_document_id
-       = assertion_record.modeling_assertion_document_id
-   AND assertion_document.model_id = assertion_record.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+  LEFT JOIN project.context_record AS context_record
+    ON context_record.context_record_id
+       = support.context_record_id
+   AND context_record.project_id = support.project_id
+  LEFT JOIN project.context_group AS context_group
+    ON context_group.context_group_id
+       = context_record.context_group_id
+   AND context_group.project_id = context_record.project_id
+  LEFT JOIN reference.context_type AS context_type
+    ON context_type.context_type_id = context_group.context_type_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND support.supported_artifact_type = 'conceptual_object'
    AND support.conceptual_object_id = %s
    AND (
@@ -228,15 +229,15 @@ SELECT relationship.conceptual_relationship_id,
   JOIN workflow.conceptual_object AS from_object
     ON from_object.conceptual_object_id
        = relationship.from_conceptual_object_id
-   AND from_object.model_id = relationship.model_id
+   AND from_object.project_id = relationship.project_id
   JOIN workflow.conceptual_object AS to_object
     ON to_object.conceptual_object_id = relationship.to_conceptual_object_id
-   AND to_object.model_id = relationship.model_id
-  JOIN model.model AS target_model
-    ON target_model.model_id = relationship.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+   AND to_object.project_id = relationship.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = relationship.project_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND relationship.conceptual_relationship_id = %s
 """
 
@@ -258,44 +259,45 @@ SELECT support.conceptual_support_id,
        source_connection.connection_code AS source_connection_code,
        source_object.object_schema AS source_object_schema,
        source_object.object_name AS source_object_name,
-       assertion_record.modeling_assertion_record_id,
-       assertion_record.modeling_assertion_record_key,
-       assertion_document.modeling_assertion_document_name,
-       assertion_record.modeling_assertion_record_type,
-       assertion_record.modeling_assertion_text,
-       assertion_record.modeling_assertion_confidence,
-       assertion_record.modeling_assertion_record_status
+       context_record.context_record_id::TEXT AS context_record_id,
+       context_group.name AS context_group_name,
+       context_type.name AS context_type_name,
+       context_record.context_text,
+       context_record.source_reference,
+       context_record.status
   FROM workflow.conceptual_support AS support
   JOIN workflow.conceptual_relationship AS relationship
     ON relationship.conceptual_relationship_id
        = support.conceptual_relationship_id
-   AND relationship.model_id = support.model_id
-  JOIN model.model AS target_model
-    ON target_model.model_id = support.model_id
+   AND relationship.project_id = support.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = support.project_id
   LEFT JOIN core.object AS source_object
     ON source_object.object_id = support.source_object_id
   LEFT JOIN core.connection AS source_connection
     ON source_connection.connection_id = source_object.connection_id
-  LEFT JOIN LATERAL workflow.list_model_object_eligibility(
-      support.model_id
+  LEFT JOIN LATERAL workflow.list_project_object_eligibility(
+      support.project_id
   ) AS source_eligibility
     ON source_eligibility.object_id = support.source_object_id
-   AND source_eligibility.is_model_input_eligible
+   AND source_eligibility.is_project_input_eligible
   LEFT JOIN core.tenant AS source_placement_tenant
     ON source_placement_tenant.tenant_id = source_connection.tenant_id
   LEFT JOIN core.system AS source_system
     ON source_system.system_id = source_connection.system_id
-  LEFT JOIN model.modeling_assertion_record AS assertion_record
-    ON assertion_record.modeling_assertion_record_id
-       = support.modeling_assertion_record_id
-   AND assertion_record.model_id = support.model_id
-  LEFT JOIN model.modeling_assertion_document AS assertion_document
-    ON assertion_document.modeling_assertion_document_id
-       = assertion_record.modeling_assertion_document_id
-   AND assertion_document.model_id = assertion_record.model_id
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.is_active
+  LEFT JOIN project.context_record AS context_record
+    ON context_record.context_record_id
+       = support.context_record_id
+   AND context_record.project_id = support.project_id
+  LEFT JOIN project.context_group AS context_group
+    ON context_group.context_group_id
+       = context_record.context_group_id
+   AND context_group.project_id = context_record.project_id
+  LEFT JOIN reference.context_type AS context_type
+    ON context_type.context_type_id = context_group.context_type_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
    AND support.supported_artifact_type = 'conceptual_relationship'
    AND support.conceptual_relationship_id = %s
    AND (
@@ -315,7 +317,7 @@ class ConceptualService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: ConceptualFilters,
         page_size: int,
         cursor: str | None,
@@ -326,7 +328,7 @@ class ConceptualService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         conceptual_object_id: int,
     ) -> ConceptualObjectDetail: ...
 
@@ -335,7 +337,7 @@ class ConceptualService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: ConceptualFilters,
         page_size: int,
         cursor: str | None,
@@ -346,7 +348,7 @@ class ConceptualService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         conceptual_relationship_id: int,
     ) -> ConceptualRelationshipDetail: ...
 
@@ -376,13 +378,13 @@ class DatabaseConceptualService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: ConceptualFilters,
         page_size: int,
         cursor: str | None,
     ) -> ConceptualObjectPage:
         filter_digest = sha256(filters.model_dump_json().encode()).hexdigest()
-        collection = f"web_conceptual_objects:{tenant_id}:{model_id}:{page_size}:{filter_digest}"
+        collection = f"web_conceptual_objects:{tenant_id}:{project_id}:{page_size}:{filter_digest}"
         offset = self._cursors.decode(cursor, collection=collection)
         async with self._database.read_transaction(
             isolation=ReadIsolation.REPEATABLE_READ
@@ -392,19 +394,19 @@ class DatabaseConceptualService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
             header = await transaction.fetch_one(
-                _MODEL_HEADER_SQL,
-                (tenant_id, model_id),
+                _PROJECT_HEADER_SQL,
+                (tenant_id, project_id),
             )
             if header is None:
-                raise ModelNotFoundError()
+                raise ProjectNotFoundError()
             rows = await transaction.fetch_all(
                 _CONCEPTUAL_OBJECTS_SQL,
                 (
                     tenant_id,
-                    model_id,
+                    project_id,
                     filters.status,
                     filters.status,
                     filters.locked,
@@ -426,8 +428,8 @@ class DatabaseConceptualService:
                 offset=offset + page_size,
             )
         return ConceptualObjectPage(
-            model_id=model_id,
-            model_revision=header["model_revision"],
+            project_id=project_id,
+            project_revision=header["project_revision"],
             items=tuple(ConceptualObjectSummary.model_validate(row) for row in rows[:page_size]),
             next_cursor=next_cursor,
         )
@@ -437,7 +439,7 @@ class DatabaseConceptualService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         conceptual_object_id: int,
     ) -> ConceptualObjectDetail:
         async with self._database.read_transaction(
@@ -448,11 +450,11 @@ class DatabaseConceptualService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
             row = await transaction.fetch_one(
                 _CONCEPTUAL_OBJECT_DETAIL_SQL,
-                (tenant_id, model_id, conceptual_object_id),
+                (tenant_id, project_id, conceptual_object_id),
             )
             if row is None:
                 raise ConceptualObjectNotFoundError()
@@ -460,7 +462,7 @@ class DatabaseConceptualService:
                 CONCEPTUAL_OBJECT_SUPPORT_SQL,
                 (
                     tenant_id,
-                    model_id,
+                    project_id,
                     conceptual_object_id,
                     _MAX_SUPPORT_ROWS + 1,
                 ),
@@ -480,14 +482,14 @@ class DatabaseConceptualService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: ConceptualFilters,
         page_size: int,
         cursor: str | None,
     ) -> ConceptualRelationshipPage:
         filter_digest = sha256(filters.model_dump_json().encode()).hexdigest()
         collection = (
-            f"web_conceptual_relationships:{tenant_id}:{model_id}:{page_size}:{filter_digest}"
+            f"web_conceptual_relationships:{tenant_id}:{project_id}:{page_size}:{filter_digest}"
         )
         offset = self._cursors.decode(cursor, collection=collection)
         async with self._database.read_transaction(
@@ -498,19 +500,19 @@ class DatabaseConceptualService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
             header = await transaction.fetch_one(
-                _MODEL_HEADER_SQL,
-                (tenant_id, model_id),
+                _PROJECT_HEADER_SQL,
+                (tenant_id, project_id),
             )
             if header is None:
-                raise ModelNotFoundError()
+                raise ProjectNotFoundError()
             rows = await transaction.fetch_all(
                 _CONCEPTUAL_RELATIONSHIPS_SQL,
                 (
                     tenant_id,
-                    model_id,
+                    project_id,
                     filters.status,
                     filters.status,
                     filters.locked,
@@ -532,8 +534,8 @@ class DatabaseConceptualService:
                 offset=offset + page_size,
             )
         return ConceptualRelationshipPage(
-            model_id=model_id,
-            model_revision=header["model_revision"],
+            project_id=project_id,
+            project_revision=header["project_revision"],
             items=tuple(
                 ConceptualRelationshipSummary.model_validate(row) for row in rows[:page_size]
             ),
@@ -545,7 +547,7 @@ class DatabaseConceptualService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         conceptual_relationship_id: int,
     ) -> ConceptualRelationshipDetail:
         async with self._database.read_transaction(
@@ -556,11 +558,11 @@ class DatabaseConceptualService:
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
             row = await transaction.fetch_one(
                 _CONCEPTUAL_RELATIONSHIP_DETAIL_SQL,
-                (tenant_id, model_id, conceptual_relationship_id),
+                (tenant_id, project_id, conceptual_relationship_id),
             )
             if row is None:
                 raise ConceptualRelationshipNotFoundError()
@@ -568,7 +570,7 @@ class DatabaseConceptualService:
                 CONCEPTUAL_RELATIONSHIP_SUPPORT_SQL,
                 (
                     tenant_id,
-                    model_id,
+                    project_id,
                     conceptual_relationship_id,
                     _MAX_SUPPORT_ROWS + 1,
                 ),
@@ -613,20 +615,19 @@ def _normalize_support(row: Mapping[str, object]) -> ConceptualSupport:
             },
             strict=False,
         )
-    if row["support_source_type"] != "assertion":
+    if row["support_source_type"] != "context_record":
         raise ValueError("Conceptual Support has an unsupported source type")
-    return ConceptualAssertionSupport.model_validate(
+    return ConceptualContextSupport.model_validate(
         {
             **common,
-            "support_source_type": "assertion",
-            "assertion_record": {
-                "modeling_assertion_record_id": row["modeling_assertion_record_id"],
-                "modeling_assertion_record_key": row["modeling_assertion_record_key"],
-                "modeling_assertion_document_name": row["modeling_assertion_document_name"],
-                "modeling_assertion_record_type": row["modeling_assertion_record_type"],
-                "modeling_assertion_text": row["modeling_assertion_text"],
-                "modeling_assertion_confidence": row["modeling_assertion_confidence"],
-                "modeling_assertion_record_status": row["modeling_assertion_record_status"],
+            "support_source_type": "context_record",
+            "context_record": {
+                "context_record_id": row["context_record_id"],
+                "context_group_name": row["context_group_name"],
+                "context_type_name": row["context_type_name"],
+                "context_text": row["context_text"],
+                "source_reference": row["source_reference"],
+                "status": row["status"],
             },
         },
         strict=False,

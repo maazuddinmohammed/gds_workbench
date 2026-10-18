@@ -26,7 +26,7 @@ from gds_workbench_api.features.metadata.workbook import XLSX_MEDIA_TYPE
 
 class MappingExportRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    expected_model_revision: int = Field(gt=0)
+    expected_project_revision: int = Field(gt=0)
     entity_type: MappingEntityType
     source_system_code: str = Field(min_length=1, max_length=100, pattern=r".*\S.*")
 
@@ -39,13 +39,13 @@ def create_mapping_review_router(
     """Create the Mapping read router for later runtime composition."""
     authenticate = principal_dependency(identity_provider)
     router = APIRouter(
-        prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/mapping",
+        prefix="/api/v1/tenants/{tenant_id}/projects/{project_id}/mapping",
         tags=["mapping"],
     )
 
     async def export_workbook(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         command: MappingExportRequest,
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -53,10 +53,10 @@ def create_mapping_review_router(
         result = await service.export_workbook(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             entity_type=command.entity_type,
             source_system_code=command.source_system_code,
-            expected_model_revision=command.expected_model_revision,
+            expected_project_revision=command.expected_project_revision,
         )
         return Response(
             content=result.content,
@@ -72,7 +72,7 @@ def create_mapping_review_router(
 
     async def list_generation_targets(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         entity_type: Annotated[MappingEntityType, Query()],
         page_size: Annotated[int, Query(ge=1, le=200)] = 200,
         cursor: Annotated[str | None, Query(max_length=2048)] = None,
@@ -82,7 +82,7 @@ def create_mapping_review_router(
         return await service.list_generation_targets(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             entity_type=entity_type,
             page_size=page_size,
             cursor=cursor,
@@ -97,7 +97,7 @@ def create_mapping_review_router(
 
     async def list_objects(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         query: Annotated[MappingListQuery, Query()],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -115,7 +115,7 @@ def create_mapping_review_router(
         return await service.list_objects(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=filters,
             page_size=query.page_size,
             cursor=query.cursor,
@@ -130,7 +130,7 @@ def create_mapping_review_router(
 
     async def read_object(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         mapping_object_id: Annotated[int, Path(gt=0)],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -138,7 +138,7 @@ def create_mapping_review_router(
         return await service.read_object(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             mapping_object_id=mapping_object_id,
         )
 
@@ -151,7 +151,7 @@ def create_mapping_review_router(
 
     async def list_attributes(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         query: Annotated[MappingAttributeListQuery, Query()],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -170,7 +170,7 @@ def create_mapping_review_router(
         return await service.list_attributes(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=filters,
             page_size=query.page_size,
             cursor=query.cursor,
@@ -185,7 +185,7 @@ def create_mapping_review_router(
 
     async def read_attribute(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         mapping_attribute_id: Annotated[int, Path(gt=0)],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -193,7 +193,7 @@ def create_mapping_review_router(
         return await service.read_attribute(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             mapping_attribute_id=mapping_attribute_id,
         )
 

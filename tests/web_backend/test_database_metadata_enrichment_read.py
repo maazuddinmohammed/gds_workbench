@@ -85,7 +85,7 @@ async def test_enrichment_results_are_readable_without_lock_and_hide_reowned_lab
         first = await service.read_results(
             principal,
             tenant_id=context.tenant_id,
-            model_id=context.model_id,
+            project_id=context.project_id,
             workflow_run_id=run_id,
             limit=1,
         )
@@ -105,7 +105,7 @@ async def test_enrichment_results_are_readable_without_lock_and_hide_reowned_lab
         page = await service.read_results(
             principal,
             tenant_id=context.tenant_id,
-            model_id=context.model_id,
+            project_id=context.project_id,
             workflow_run_id=run_id,
         )
         applied = next(row for row in page.results if row.status == "applied")
@@ -117,7 +117,7 @@ async def test_enrichment_results_are_readable_without_lock_and_hide_reowned_lab
             await service.read_results(
                 principal,
                 tenant_id=context.tenant_id,
-                model_id=context.model_id + 1_000_000,
+                project_id=context.project_id + 1_000_000,
                 workflow_run_id=run_id,
             )
         foreign = seed_workflow_context(database)
@@ -125,7 +125,7 @@ async def test_enrichment_results_are_readable_without_lock_and_hide_reowned_lab
             await service.read_results(
                 principal,
                 tenant_id=foreign.tenant_id,
-                model_id=context.model_id,
+                project_id=context.project_id,
                 workflow_run_id=run_id,
             )
         with database.connect_owner() as connection:
@@ -136,7 +136,7 @@ async def test_enrichment_results_are_readable_without_lock_and_hide_reowned_lab
         reowned = await service.read_results(
             principal,
             tenant_id=context.tenant_id,
-            model_id=context.model_id,
+            project_id=context.project_id,
             workflow_run_id=run_id,
         )
         historical = next(

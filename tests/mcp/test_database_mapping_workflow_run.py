@@ -58,8 +58,8 @@ def _parameters(
     return (
         workflow.entra_tenant_id,
         workflow.entra_object_id,
-        workflow.model_id,
-        workflow.model_revision,
+        workflow.project_id,
+        workflow.project_revision,
         context.modeled_entity_type,
         correlation_id,
         operation,
@@ -79,7 +79,7 @@ def _seed_mapping_prompt(
         """
         SELECT workflow_stage_id
           FROM application.workflow_stage
-         WHERE model_workflow = 'mapping'
+         WHERE project_workflow = 'mapping'
            AND workflow_execution_mode = 'one_shot'
            AND workflow_stage_is_agentic
            AND is_active
@@ -92,7 +92,7 @@ def _seed_mapping_prompt(
             connection.execute(
                 """
                 INSERT INTO application.workflow_stage (
-                    model_workflow, workflow_execution_mode,
+                    project_workflow, workflow_execution_mode,
                     workflow_stage_code, workflow_stage_name,
                     workflow_stage_order, workflow_stage_is_agentic
                 ) VALUES (
@@ -183,13 +183,13 @@ def _seed_mapping_prompt(
         """
         INSERT INTO application.prompt_assignment (
             workflow_stage_id, prompt_template_version_id,
-            prompt_assignment_scope, model_id, assigned_by_principal_id
-        ) VALUES (%s, %s, 'model_default', %s, %s)
+            prompt_assignment_scope, project_id, assigned_by_principal_id
+        ) VALUES (%s, %s, 'project_default', %s, %s)
         """,
         (
             stage["workflow_stage_id"],
             version_id,
-            context.model_id,
+            context.project_id,
             context.principal_id,
         ),
     )
@@ -255,24 +255,24 @@ def _seed_mapping_context(
                 connection.execute(
                     """
                     INSERT INTO workflow.dimensional_entity (
-                        model_id, dimensional_entity_name, dimensional_entity_definition,
+                        project_id, dimensional_entity_name, dimensional_entity_definition,
                         dimensional_entity_type, dimensional_entity_grain_definition, dimensional_entity_schema_name
                     ) VALUES (%s, %s, 'Mapping Entity.', 'dimension', 'One row', 'gold')
                     RETURNING dimensional_entity_id
                     """,
-                    (workflow.model_id, f"MappingEntity{suffix}"),
+                    (workflow.project_id, f"MappingEntity{suffix}"),
                 ).fetchone()
             )["dimensional_entity_id"]
         entity_id = require_row(
             connection.execute(
                 """
                 INSERT INTO workflow.logical_entity (
-                    model_id, logical_entity_name, logical_entity_definition,
+                    project_id, logical_entity_name, logical_entity_definition,
                     logical_entity_type, logical_entity_grain, logical_entity_schema_name
                 ) VALUES (%s, %s, 'Mapping Entity.', 'core', 'One row', 'silver')
                 RETURNING logical_entity_id
                 """,
-                (workflow.model_id, f"MappingEntity{suffix}"),
+                (workflow.project_id, f"MappingEntity{suffix}"),
             ).fetchone()
         )["logical_entity_id"]
         _seed_mapping_prompt(connection, workflow)
@@ -448,7 +448,7 @@ def test_mapping_run_replay_is_exact(
         )
 
 
-@pytest.mark.parametrize("invalid_state", ("inactive", "locked", "wrong_model"))
+@pytest.mark.parametrize("invalid_state", ("inactive", "locked", "wrong_project"))
 def test_mapping_run_rejects_invalid_entity_atomically(
     postgres_database: DisposablePostgres,
     invalid_state: str,
@@ -469,11 +469,11 @@ def test_mapping_run_rejects_invalid_entity_atomically(
             connection.execute(
                 """
                 INSERT INTO workflow.mapping_object (
-                    model_id, logical_entity_id, source_system_id, object_mapping_is_locked, modeled_entity_type
+                    project_id, logical_entity_id, source_system_id, object_mapping_is_locked, modeled_entity_type
                 ) VALUES (%s, %s, %s, TRUE, 'logical_entity')
                 """,
                 (
-                    context.workflow.model_id,
+                    context.workflow.project_id,
                     context.modeled_entity_id,
                     context.source_system_id,
                 ),

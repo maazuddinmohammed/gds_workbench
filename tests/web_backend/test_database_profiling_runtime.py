@@ -56,9 +56,9 @@ async def test_web_runtime_loads_the_locked_profiling_context(
                 entra_object_id=seed.context.entra_object_id,
             ),
             tenant_id=seed.context.tenant_id,
-            model_id=seed.context.model_id,
+            project_id=seed.context.project_id,
             workflow_run_id=seed.workflow_run_id,
-            expected_model_revision=seed.context.model_revision,
+            expected_project_revision=seed.context.project_revision,
         )
     finally:
         await database.close()
@@ -93,14 +93,16 @@ async def test_web_runtime_loads_the_locked_analysis_validation_context(
                 entra_object_id=seed.execution.context.entra_object_id,
             ),
             tenant_id=seed.execution.context.tenant_id,
-            model_id=seed.execution.context.model_id,
+            project_id=seed.execution.context.project_id,
             workflow_run_id=seed.execution.workflow_run_id,
-            expected_model_revision=seed.execution.context.model_revision,
+            expected_project_revision=seed.execution.context.project_revision,
         )
     finally:
         await database.close()
 
-    assert tuple(target.relationship.analysis_result_id for target in context.targets) == (
+    assert tuple(
+        target.relationship.analysis_result_id for target in context.targets
+    ) == (
         seed.active_result_id,
         seed.locked_result_id,
     )
@@ -131,7 +133,7 @@ async def test_web_runtime_allows_locking_write_authorization(
                 transaction,
                 principal,
                 tenant_id=seed.context.tenant_id,
-                policy=ToolPolicy.TENANT_MODEL_WRITE,
+                policy=ToolPolicy.TENANT_PROJECT_WRITE,
             )
     finally:
         await database.close()

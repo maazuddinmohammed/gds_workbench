@@ -1,6 +1,6 @@
 # SQL transformation generation
 
-Shared by Code Generation and its later review/Validation. The [Code Generation skill](../../skills/atlas-code-generation/SKILL.md) owns intake and sequence; [Code records](../model/generated-code.md) owns payloads/assignments; [Mapping documents](../model/mapping-documents.md) owns transformation intent and the complete consumer context. This guide owns SQL file structure and translation checks.
+Shared by Code Generation and its later review/Validation. The [Code Generation skill](../../skills/atlas-code-generation/SKILL.md) owns intake and sequence; [Code records](../project/generated-code.md) owns payloads/assignments; [Mapping documents](../project/mapping-documents.md) owns transformation intent and the complete consumer context. This guide owns SQL file structure and translation checks.
 
 ## Translate Mapping without redesigning it
 
@@ -8,7 +8,7 @@ Shared by Code Generation and its later review/Validation. The [Code Generation 
 2. Translate substantial Object steps into successive `CREATE OR REPLACE TEMPORARY VIEW` statements. Each stage implements preparation, joins/filters or projection and consumes earlier results where needed. A simple direct branch needs only one view and a final SELECT; do not create a view per sentence or repeat the full pipeline in every stage.
 3. Use unique unqualified temporary names including target/System context as needed. Declare every temporary dependency before use in the same artifact. Carry all needed later join/expression columns forward; drop unnecessary intermediates from the final result.
 4. Apply Attribute Mapping expressions at their specified stage. Use resolved SQL source names and exact physical target aliases; modeled names may differ. Preserve identifiers, decimal capacity, timezone, nullability and invalid-value behavior. An absent Attribute transformation becomes `CAST(NULL AS <target type>) AS <target column>` and an explicit per-System review finding. It is a placeholder, not a new business rule. If no evidenced row-producing source/join exists, emit a typed zero-row projection; never fabricate a row or join. Proven database/framework omissions still apply. Do not add DISTINCT, TRY_CAST, rounding, COALESCE, deduplication or defaults unless Mapping requires them.
-5. Finish with one explicit target-column SELECT. Use the exact mapped column order through `SourceSystemID`; omit the own generated surrogate, nine framework audit fields and applicable framework-populated Type 2 fields per the [population contract](../model/keys-and-audit.md#population-boundary-and-implementation-alignment). Supply mapped natural-key values, foreign keys and optional Source audit fields. Do not generate history-maintenance SQL. No final `SELECT *`.
+5. Finish with one explicit target-column SELECT. Use the exact mapped column order through `SourceSystemID`; omit the own generated surrogate, nine framework audit fields and applicable framework-populated Type 2 fields per the [population contract](../project/keys-and-audit.md#population-boundary-and-implementation-alignment). Supply mapped natural-key values, foreign keys and optional Source audit fields. Do not generate history-maintenance SQL. No final `SELECT *`.
 
 Framework SQL uses resolved `schema.table` references, with the catalog supplied by runtime. Quote physical identifiers correctly using Databricks syntax; temporary views remain unqualified. Preserve cross-placement requirements and reject unsupported access rather than silently redirecting a source. Governed evidence queries use their separate registered coordinates.
 
@@ -88,6 +88,6 @@ Review with Mapping as the source of expected behavior. Formal Validation defini
 
 ## Source pointers
 
-Atlas contracts: [Generated Code records](../model/generated-code.md) and [Mapping documents](../model/mapping-documents.md). Backend contracts: `mcp_server/gds_etl_workbench/domain/modeling_records.py`, `application/change_sets/model_validation.py`; workflow authoring: `web_app/backend/gds_workbench_api/features/workflows/authoring/`.
+Atlas contracts: [Generated Code records](../project/generated-code.md) and [Mapping documents](../project/mapping-documents.md). Backend contracts: `mcp_server/gds_etl_workbench/domain/modeling_records.py`, `application/change_sets/project_validation.py`; workflow authoring: `web_app/backend/gds_workbench_api/features/workflows/authoring/`.
 
 Preserve confirmed Atlas runtime coordinates over incompatible catalog-qualified seed examples. Python record storage is distinct from actual authoring, download and runtime support; no Python execution contract is invented in this guide.

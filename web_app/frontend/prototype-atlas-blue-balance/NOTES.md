@@ -28,7 +28,7 @@ Left/right arrows also switch directions when focus is outside interactive contr
 | Current Paper | Logo, headings and controls | Baseline: quiet, weak parent-brand presence. |
 | Signature | Continuous deep-blue masthead | Recommended. Recognizable across every surface; data stays white. |
 | Navigator | Navigation rail and ATLAS corner | Strongest desktop presence; heavier. Entry retains the blue corner because it has no rail. |
-| Horizon | Model context band; entry introduction | More expressive, still light around records. Brand presence depends on contextual content. |
+| Horizon | Project context band; entry introduction | More expressive, still light around records. Brand presence depends on contextual content. |
 
 Layout, content, typography, geometry and interactions remain constant to isolate
 colour placement. This is intentionally a focused colour comparison, not a new

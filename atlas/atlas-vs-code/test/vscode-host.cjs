@@ -132,7 +132,7 @@ exports.run = async () => {
           } else {
             assert.deepEqual(receipt, {
               task_id:fixture.task,operation_id:fixture.operation,owner_tenant_id:17,owner_root:'.',backend:fixture.backend,
-              schema_version: '1.0', status: 'staged', area: 'metadata', change_set_id: ID,
+              schema_version: '2.0', status: 'staged', area: 'metadata', change_set_id: ID,
               starting_revision: 1, draft_revision: 2, accepted_digest: fixture.input.expectedDigest,
               stage_fingerprint: server.state.fingerprint, fingerprint_verified: true,
               datasets: [{ dataset: 'source_object', record_count: fixture.records.length }],

@@ -15,34 +15,34 @@ import { MappingLogicDocument } from "./MappingLogicDocument";
 export function MappingObjectDetailPage({
   api,
   tenantId,
-  modelId,
+  projectId,
   mappingObjectId,
-  modelRevision,
+  projectRevision,
   hasTenantLock,
 }: {
   api: MappingApi;
   tenantId: number;
-  modelId: number;
+  projectId: number;
   mappingObjectId: number;
-  modelRevision: number;
+  projectRevision: number;
   hasTenantLock: boolean;
 }) {
   const query = useQuery({
-    queryKey: mappingQueryKeys.object(tenantId, modelId, mappingObjectId),
-    queryFn: () => api.readMappingObject(tenantId, modelId, mappingObjectId),
+    queryKey: mappingQueryKeys.object(tenantId, projectId, mappingObjectId),
+    queryFn: () => api.readMappingObject(tenantId, projectId, mappingObjectId),
   });
   if (query.isPending) return <DetailState label="Loading Object Mapping…" />;
   if (query.isError) return <DetailState label={detailError(query.error, "Object")} error />;
   return (
-    <MappingObjectDetailView tenantId={tenantId} modelId={modelId} detail={query.data}
+    <MappingObjectDetailView tenantId={tenantId} projectId={projectId} detail={query.data}
       editor={<div className="workflow-command-actions mapping-edit-actions">
-        <MappingEditor mode="object" api={api} tenantId={tenantId} modelId={modelId} mappingObjectId={mappingObjectId}
-          modelRevision={modelRevision} hasTenantLock={hasTenantLock} />
-        <MappingEditor mode="attribute" api={api} tenantId={tenantId} modelId={modelId} mappingObjectId={mappingObjectId}
-          modelRevision={modelRevision} hasTenantLock={hasTenantLock} />
+        <MappingEditor mode="object" api={api} tenantId={tenantId} projectId={projectId} mappingObjectId={mappingObjectId}
+          projectRevision={projectRevision} hasTenantLock={hasTenantLock} />
+        <MappingEditor mode="attribute" api={api} tenantId={tenantId} projectId={projectId} mappingObjectId={mappingObjectId}
+          projectRevision={projectRevision} hasTenantLock={hasTenantLock} />
       </div>}>
-      <MappingObjectAttributes key={mappingObjectId} api={api} tenantId={tenantId} modelId={modelId}
-        mappingObjectId={mappingObjectId} modelRevision={modelRevision} hasTenantLock={hasTenantLock} />
+      <MappingObjectAttributes key={mappingObjectId} api={api} tenantId={tenantId} projectId={projectId}
+        mappingObjectId={mappingObjectId} projectRevision={projectRevision} hasTenantLock={hasTenantLock} />
     </MappingObjectDetailView>
   );
 }
@@ -50,31 +50,31 @@ export function MappingObjectDetailPage({
 export function MappingAttributeDetailPage({
   api,
   tenantId,
-  modelId,
+  projectId,
   mappingAttributeId,
 }: {
   api: MappingApi;
   tenantId: number;
-  modelId: number;
+  projectId: number;
   mappingAttributeId: number;
 }) {
   const query = useQuery({
-    queryKey: mappingQueryKeys.attribute(tenantId, modelId, mappingAttributeId),
-    queryFn: () => api.readMappingAttribute(tenantId, modelId, mappingAttributeId),
+    queryKey: mappingQueryKeys.attribute(tenantId, projectId, mappingAttributeId),
+    queryFn: () => api.readMappingAttribute(tenantId, projectId, mappingAttributeId),
   });
   if (query.isPending) return <DetailState label="Loading Attribute Mapping…" />;
   if (query.isError) return <DetailState label={detailError(query.error, "Attribute")} error />;
-  return <MappingAttributeDetailView tenantId={tenantId} modelId={modelId} detail={query.data} />;
+  return <MappingAttributeDetailView tenantId={tenantId} projectId={projectId} detail={query.data} />;
 }
 
 function MappingObjectDetailView({
   tenantId,
-  modelId,
+  projectId,
   detail,
   children, editor,
 }: {
   tenantId: number;
-  modelId: number;
+  projectId: number;
   detail: MappingObjectDetail;
   children: ReactNode; editor?: ReactNode;
 }) {
@@ -84,19 +84,18 @@ function MappingObjectDetailView({
     <article className="workflow-detail-page mapping-detail-page mapping-object-detail page-enter">
       <DetailHeader
         tenantId={tenantId}
-        modelId={modelId}
+        projectId={projectId}
         layer={detail.target.entity_type === "logical_entity" ? "logical" : "dimensional"}
-        eyebrow={detail.target.entity_type === "logical_entity" ? "Logical entity" : "Dimensional entity"}
         title={detail.target.entity_name}
         status={detail.status}
         locked={detail.is_locked}
         headingRef={heading}
-        context={<dl className="mapping-identity-strip">
+        actions={editor}
+        context={<dl className="workspace-identity-context" aria-label="Mapping context">
           <Fact label="Schema" value={detail.target.entity_schema_name} />
           <Fact label="System" value={detail.source_system.system_code} />
         </dl>}
       />
-      {editor}
       <section className="mapping-transformation-panel" aria-label="Entity transformation">
         <header><h2>Entity transformation</h2></header>
         {detail.mapping_document === null ? null
@@ -121,11 +120,11 @@ function MappingObjectDetailView({
 
 function MappingAttributeDetailView({
   tenantId,
-  modelId,
+  projectId,
   detail,
 }: {
   tenantId: number;
-  modelId: number;
+  projectId: number;
   detail: MappingAttributeDetail;
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
@@ -135,10 +134,9 @@ function MappingAttributeDetailView({
     <article className="workflow-detail-page mapping-detail-page page-enter">
       <DetailHeader
         tenantId={tenantId}
-        modelId={modelId}
+        projectId={projectId}
         parentObjectId={detail.parent_object_mapping.mapping_object_id}
         layer={target.entity.entity_type === "logical_entity" ? "logical" : "dimensional"}
-        eyebrow={`Attribute Mapping ${detail.mapping_attribute_id}`}
         title={`${target.entity.entity_schema_name}.${target.entity.entity_name}.${target.attribute_name}`}
         status={detail.status}
         locked={detail.is_locked}
@@ -167,9 +165,9 @@ function MappingAttributeDetailView({
         <summary><h2 id="mapping-parent-object">Parent Object Mapping</h2></summary>
         <dl className="detail-fact-grid">
           <div><dt>Object Mapping</dt><dd>
-            <Link className="text-action" to="/tenants/$tenantId/mapping/models/$modelId/objects/$mappingObjectId"
+            <Link className="text-action" to="/tenants/$tenantId/mapping/projects/$projectId/objects/$mappingObjectId"
               search={{ layer: target.entity.entity_type === "logical_entity" ? "logical" : "dimensional" }}
-              params={{ tenantId: String(tenantId), modelId: String(modelId), mappingObjectId: String(detail.parent_object_mapping.mapping_object_id) }}>
+              params={{ tenantId: String(tenantId), projectId: String(projectId), mappingObjectId: String(detail.parent_object_mapping.mapping_object_id) }}>
               Object Mapping {detail.parent_object_mapping.mapping_object_id}
             </Link>
           </dd></div>
@@ -184,50 +182,52 @@ function MappingAttributeDetailView({
 
 function DetailHeader({
   tenantId,
-  modelId,
+  projectId,
   parentObjectId,
   layer,
-  eyebrow,
   title,
   status,
   locked,
   headingRef,
   context,
+  actions,
 }: {
   tenantId: number;
-  modelId: number;
+  projectId: number;
   parentObjectId?: number;
   layer?: "logical" | "dimensional";
-  eyebrow: string;
   title: string;
   status: string;
   locked: boolean;
   headingRef: React.RefObject<HTMLHeadingElement | null>;
   context?: ReactNode;
+  actions?: ReactNode;
 }) {
   return (
-    <header className="workflow-detail-header mapping-detail-heading">
+    <header className="workflow-detail-header mapping-detail-heading workspace-entity-heading">
         <Link
           className="text-action"
           aria-label={parentObjectId ? "Back to Object Mapping" : "Back to Object mappings"}
           to={parentObjectId
-            ? "/tenants/$tenantId/mapping/models/$modelId/objects/$mappingObjectId"
-            : "/tenants/$tenantId/mapping/models/$modelId"}
-          params={{ tenantId: String(tenantId), modelId: String(modelId),
+            ? "/tenants/$tenantId/mapping/projects/$projectId/objects/$mappingObjectId"
+            : "/tenants/$tenantId/mapping/projects/$projectId"}
+          params={{ tenantId: String(tenantId), projectId: String(projectId),
             ...(parentObjectId ? { mappingObjectId: String(parentObjectId) } : {}) }}
           search={layer ? { layer } : {}}
         >
           ← {parentObjectId ? "Back to Object Mapping" : "Back to Object mappings"}
         </Link>
       <div className="mapping-detail-identity">
-        <div className="mapping-detail-name">
-          <p className="eyebrow">{eyebrow}</p>
+        <div className="mapping-detail-name workspace-record-heading">
           <h1 ref={headingRef} tabIndex={-1}>{title}</h1>
+          {context}
         </div>
-        {context}
-        <div className="detail-badge-stack">
-        <span className={`status-badge ${statusTone(status)}`}>{humanize(status)}</span>
-          <span className="status-badge is-neutral">{locked ? "Locked" : "Open"}</span>
+        <div className="mapping-detail-controls">
+          <div className="detail-badge-stack">
+            <span className={`status-badge ${statusTone(status)}`}>{humanize(status)}</span>
+            <span className="status-badge is-neutral">{locked ? "Locked" : "Open"}</span>
+          </div>
+          {actions}
         </div>
       </div>
     </header>

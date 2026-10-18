@@ -36,16 +36,17 @@ function Get-AtlasResponseAlias($Value, [string]$Canonical, [string[]]$Alternati
     return $result
 }
 
-function ConvertTo-AtlasServerResponse($Value, [string]$Area, $Owner, $ModelId) {
-    $other = if ($Area -ceq 'metadata') { 'model_change_set_id' } else { 'metadata_change_set_id' }
+function ConvertTo-AtlasServerResponse($Value, [string]$Area, $Owner, $ProjectId) {
+    $other = if ($Area -ceq 'metadata') { 'project_change_set_id' } else { 'metadata_change_set_id' }
     $id = Get-AtlasResponseAlias $Value 'change_set_id' @($Area + '_change_set_id')
-    $ownerId = if ($Area -ceq 'metadata') { Get-AtlasResponseAlias $Value 'tenant_id' @('owner_tenant_id') } else { Get-Property $Value 'model_id' }
-    $expectedOwner = if ($Area -ceq 'metadata') { $Owner.id } else { $ModelId }
-    if ((Get-Property $Value 'schema_version') -isnot [string] -or (Get-Property $Value 'schema_version') -cne '1.0' -or (Test-Property $Value $other) -or
+    $ownerId = if ($Area -ceq 'metadata') { Get-AtlasResponseAlias $Value 'tenant_id' @('owner_tenant_id') } else { Get-Property $Value 'project_id' }
+    $expectedVersion = if ($Area -ceq 'project') { '2.0' } else { '1.0' }
+    $expectedOwner = if ($Area -ceq 'metadata') { $Owner.id } else { $ProjectId }
+    if ((Get-Property $Value 'schema_version') -isnot [string] -or (Get-Property $Value 'schema_version') -cne $expectedVersion -or (Test-Property $Value $other) -or
         ((Test-Property $Value 'area') -and (Get-Property $Value 'area') -cne $Area) -or
         ((Test-Property $Value 'owner_tenant_id') -and (-not (Test-SafeJsonInteger (Get-Property $Value 'owner_tenant_id') $false) -or (Get-Property $Value 'owner_tenant_id') -ne $Owner.id)) -or
         -not (Test-SafeJsonInteger $ownerId $false) -or $ownerId -ne $expectedOwner -or $id -isnot [string] -or $id -cnotmatch $script:AtlasUuid -or
-        -not (Test-SafeJsonInteger (Get-Property $Value 'draft_revision'))) { Fail 'Server response does not match the owner, Model or Change Set contract.' }
+        -not (Test-SafeJsonInteger (Get-Property $Value 'draft_revision'))) { Fail 'Server response does not match the owner, Project or Change Set contract.' }
     Set-Property $Value 'change_set_id' $id
     if ($Area -ceq 'metadata') { Set-Property $Value 'tenant_id' $ownerId }
     return $Value

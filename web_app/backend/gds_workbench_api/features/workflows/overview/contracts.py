@@ -1,4 +1,4 @@
-"""Read-only, Tenant-scoped Model Workflow Overview contracts."""
+"""Read-only, Tenant-scoped Project Workflow Overview contracts."""
 
 from datetime import datetime
 from typing import Literal
@@ -9,7 +9,7 @@ type LedgerWorkflow = Literal[
     "scope",
     "profiling",
     "analysis",
-    "assertions",
+    "context",
     "conceptual",
     "logical",
     "dimensional",
@@ -17,13 +17,13 @@ type LedgerWorkflow = Literal[
 type OverviewWorkflow = (
     LedgerWorkflow | Literal["metadata_enrichment", "mapping", "code_generation", "validation"]
 )
-type ModelSection = Literal[
+type ProjectSection = Literal[
     "overview",
     "settings",
     "scope",
     "metadata-enrichment",
     "profiling",
-    "assertions",
+    "context",
     "analysis",
     "conceptual",
     "logical",
@@ -32,7 +32,7 @@ type ModelSection = Literal[
     "code-generation",
     "validation",
 ]
-type ModelSectionState = Literal[
+type ProjectSectionState = Literal[
     "available",
     "ready",
     "empty",
@@ -66,7 +66,6 @@ type WorkflowLedgerState = Literal[
 type QualityWarningCode = Literal[
     "scope_empty",
     "profiling_results_unavailable",
-    "conceptual_results_unavailable",
     "logical_results_unavailable",
 ]
 
@@ -74,8 +73,8 @@ type QualityWarningCode = Literal[
 class WorkflowMetric(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     workflow: OverviewWorkflow
     result_count: int = Field(ge=0)
     locked_count: int = Field(ge=0)
@@ -86,11 +85,11 @@ class WorkflowMetric(BaseModel):
     latest_result_updated_at: datetime | None = None
 
 
-class ModelSectionStatus(BaseModel):
+class ProjectSectionStatus(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    section: ModelSection
-    state: ModelSectionState
+    section: ProjectSection
+    state: ProjectSectionState
 
 
 class WorkflowLedgerEntry(BaseModel):
@@ -106,10 +105,10 @@ class WorkflowLedgerEntry(BaseModel):
     quality_warning_codes: tuple[QualityWarningCode, ...] = Field(max_length=4)
 
 
-class ModelWorkflowOverview(BaseModel):
+class ProjectWorkflowOverview(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     items: tuple[WorkflowLedgerEntry, ...] = Field(min_length=7, max_length=7)
-    section_states: tuple[ModelSectionStatus, ...] = Field(default=(), max_length=13)
+    section_states: tuple[ProjectSectionStatus, ...] = Field(default=(), max_length=13)

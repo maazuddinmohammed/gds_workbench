@@ -83,7 +83,7 @@ class AgentStageRunner:
         local_tool_catalog = configure_tools(
             local_tool_catalog,
             stage.agent_tool_names,
-            workflow=stage.prompt_workflow or plan.model_workflow,
+            workflow=stage.prompt_workflow or plan.project_workflow,
             execution_mode=plan.workflow_execution_mode,
         )
         if stage.agent_tool_names is not None and local_tool_catalog is not None:
@@ -102,7 +102,7 @@ class AgentStageRunner:
             ),
         )
         workflow = (
-            "analysis_inference" if plan.model_workflow == "analysis" else plan.model_workflow
+            "analysis_inference" if plan.project_workflow == "analysis" else plan.project_workflow
         )
         result = await self._repair.run(
             request=AgentExecutionRequest(

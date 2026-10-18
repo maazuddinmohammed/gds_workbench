@@ -1,12 +1,12 @@
-import type { ModelTargetsTransport } from "../model_targets/api";
-import type { ModelRecordReviewApi } from "../model_record_review/api";
+import type { ProjectTargetsTransport } from "../project_targets/api";
+import type { ProjectRecordReviewApi } from "../project_record_review/api";
 import type { HttpRequest } from "../../core/http";
 import type {
   ModelingCardinality,
   ModelingConfidence,
   ReviewStatus,
 } from "../../shared/contracts";
-import type { ModelInputScopeApi } from "../model_input_scope/api";
+import type { ProjectInputScopeApi } from "../project_input_scope/api";
 import type { WorkflowsApi } from "../workflows/api";
 
 export interface LogicalFilters {
@@ -34,8 +34,8 @@ export interface LogicalEntity {
 }
 
 export interface LogicalEntityPage {
-  model_id: number;
-  model_revision: number;
+  project_id: number;
+  project_revision: number;
   items: LogicalEntity[];
   next_cursor: string | null;
 }
@@ -60,14 +60,13 @@ export interface LogicalPhysicalObjectReference {
   object_name: string;
 }
 
-export interface LogicalAssertionReference {
-  modeling_assertion_record_id: number;
-  modeling_assertion_record_key: string;
-  modeling_assertion_document_name: string;
-  modeling_assertion_record_type: string;
-  modeling_assertion_text: string;
-  modeling_assertion_confidence: ModelingConfidence | null;
-  modeling_assertion_record_status: ReviewStatus;
+export interface LogicalContextReference {
+  context_record_id: string;
+  context_group_name: string;
+  context_type_name: string;
+  context_text: string;
+  source_reference: string | null;
+  status: ReviewStatus;
 }
 
 interface LogicalEntitySourceBase {
@@ -86,12 +85,12 @@ export interface LogicalObjectSource extends LogicalEntitySourceBase {
   source_object: LogicalPhysicalObjectReference;
 }
 
-export interface LogicalAssertionSource extends LogicalEntitySourceBase {
-  support_source_type: "assertion";
-  assertion_record: LogicalAssertionReference;
+export interface LogicalContextSource extends LogicalEntitySourceBase {
+  support_source_type: "context_record";
+  context_record: LogicalContextReference;
 }
 
-export type LogicalEntitySource = LogicalObjectSource | LogicalAssertionSource;
+export type LogicalEntitySource = LogicalObjectSource | LogicalContextSource;
 
 export interface LogicalEntityDetail extends LogicalEntity {
   logical_entity_definition: string;
@@ -125,8 +124,8 @@ export interface LogicalAttribute {
 }
 
 export interface LogicalAttributePage {
-  model_id: number;
-  model_revision: number;
+  project_id: number;
+  project_revision: number;
   items: LogicalAttribute[];
   next_cursor: string | null;
 }
@@ -153,14 +152,14 @@ export interface LogicalAttributePhysicalSource extends LogicalAttributeSourceBa
   source_attribute: LogicalPhysicalAttributeReference;
 }
 
-export interface LogicalAttributeAssertionSource extends LogicalAttributeSourceBase {
-  support_source_type: "assertion";
-  assertion_record: LogicalAssertionReference;
+export interface LogicalAttributeContextSource extends LogicalAttributeSourceBase {
+  support_source_type: "context_record";
+  context_record: LogicalContextReference;
 }
 
 export type LogicalAttributeSource =
   | LogicalAttributePhysicalSource
-  | LogicalAttributeAssertionSource;
+  | LogicalAttributeContextSource;
 
 export interface LogicalAttributeDetail extends LogicalAttribute {
   logical_attribute_definition: string;
@@ -194,8 +193,8 @@ export interface LogicalRelationship {
 }
 
 export interface LogicalRelationshipPage {
-  model_id: number;
-  model_revision: number;
+  project_id: number;
+  project_revision: number;
   items: LogicalRelationship[];
   next_cursor: string | null;
 }
@@ -218,8 +217,8 @@ export interface LogicalSubmodel {
 }
 
 export interface LogicalSubmodelPage {
-  model_id: number;
-  model_revision: number;
+  project_id: number;
+  project_revision: number;
   items: LogicalSubmodel[];
   next_cursor: string | null;
 }
@@ -247,55 +246,55 @@ export interface LogicalSubmodelDetail extends LogicalSubmodel {
 export interface LogicalTransport {
   listLogicalEntities: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     filters?: LogicalEntityFilters,
     pageSize?: number,
     cursor?: string,
   ) => Promise<LogicalEntityPage>;
   readLogicalEntity: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     logicalEntityId: number,
   ) => Promise<LogicalEntityDetail>;
   listLogicalAttributes: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     filters?: LogicalAttributeFilters,
     pageSize?: number,
     cursor?: string,
   ) => Promise<LogicalAttributePage>;
   readLogicalAttribute: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     logicalAttributeId: number,
   ) => Promise<LogicalAttributeDetail>;
   listLogicalRelationships: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     filters?: LogicalRelationshipFilters,
     pageSize?: number,
     cursor?: string,
   ) => Promise<LogicalRelationshipPage>;
   readLogicalRelationship: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     logicalRelationshipId: number,
   ) => Promise<LogicalRelationshipDetail>;
   listLogicalSubmodels: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     filters?: LogicalFilters,
     pageSize?: number,
     cursor?: string,
   ) => Promise<LogicalSubmodelPage>;
   readLogicalSubmodel: (
     tenantId: number,
-    modelId: number,
+    projectId: number,
     logicalSubmodelId: number,
   ) => Promise<LogicalSubmodelDetail>;
 }
 
-export type LogicalApi = LogicalTransport & Pick<ModelTargetsTransport, "readTargetOptions" | "exportModelTargets" | "exportModelDdl"> & ModelRecordReviewApi
+export type LogicalApi = LogicalTransport & Pick<ProjectTargetsTransport, "readTargetOptions" | "exportProjectTargets" | "exportProjectDdl"> & ProjectRecordReviewApi
   & Pick<
     WorkflowsApi,
     | "applyWorkflowDraft"
@@ -308,93 +307,93 @@ export type LogicalApi = LogicalTransport & Pick<ModelTargetsTransport, "readTar
     | "readWorkflowDraftReview"
     | "readWorkflowRun"
   >
-  & Pick<ModelInputScopeApi, "listModelInputScope">;
+  & Pick<ProjectInputScopeApi, "listProjectInputScope">;
 
 export function createLogicalApi(request: HttpRequest): LogicalTransport {
   return {
-    listLogicalEntities: (tenantId, modelId, filters = {}, pageSize = 200, cursor) =>
+    listLogicalEntities: (tenantId, projectId, filters = {}, pageSize = 200, cursor) =>
       request<LogicalEntityPage>(
-        logicalCollectionPath(tenantId, modelId, "entities", filters, pageSize, cursor),
+        logicalCollectionPath(tenantId, projectId, "entities", filters, pageSize, cursor),
       ),
-    readLogicalEntity: (tenantId, modelId, logicalEntityId) =>
+    readLogicalEntity: (tenantId, projectId, logicalEntityId) =>
       request<LogicalEntityDetail>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/logical/entities/${logicalEntityId}`,
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/logical/entities/${logicalEntityId}`,
       ),
-    listLogicalAttributes: (tenantId, modelId, filters = {}, pageSize = 200, cursor) =>
+    listLogicalAttributes: (tenantId, projectId, filters = {}, pageSize = 200, cursor) =>
       request<LogicalAttributePage>(
-        logicalCollectionPath(tenantId, modelId, "attributes", filters, pageSize, cursor),
+        logicalCollectionPath(tenantId, projectId, "attributes", filters, pageSize, cursor),
       ),
-    readLogicalAttribute: (tenantId, modelId, logicalAttributeId) =>
+    readLogicalAttribute: (tenantId, projectId, logicalAttributeId) =>
       request<LogicalAttributeDetail>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/logical/attributes/${logicalAttributeId}`,
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/logical/attributes/${logicalAttributeId}`,
       ),
-    listLogicalRelationships: (tenantId, modelId, filters = {}, pageSize = 200, cursor) =>
+    listLogicalRelationships: (tenantId, projectId, filters = {}, pageSize = 200, cursor) =>
       request<LogicalRelationshipPage>(
-        logicalCollectionPath(tenantId, modelId, "relationships", filters, pageSize, cursor),
+        logicalCollectionPath(tenantId, projectId, "relationships", filters, pageSize, cursor),
       ),
-    readLogicalRelationship: (tenantId, modelId, logicalRelationshipId) =>
+    readLogicalRelationship: (tenantId, projectId, logicalRelationshipId) =>
       request<LogicalRelationshipDetail>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/logical/relationships/${logicalRelationshipId}`,
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/logical/relationships/${logicalRelationshipId}`,
       ),
-    listLogicalSubmodels: (tenantId, modelId, filters = {}, pageSize = 200, cursor) =>
+    listLogicalSubmodels: (tenantId, projectId, filters = {}, pageSize = 200, cursor) =>
       request<LogicalSubmodelPage>(
-        logicalCollectionPath(tenantId, modelId, "submodels", filters, pageSize, cursor),
+        logicalCollectionPath(tenantId, projectId, "submodels", filters, pageSize, cursor),
       ),
-    readLogicalSubmodel: (tenantId, modelId, logicalSubmodelId) =>
+    readLogicalSubmodel: (tenantId, projectId, logicalSubmodelId) =>
       request<LogicalSubmodelDetail>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/logical/submodels/${logicalSubmodelId}`,
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/logical/submodels/${logicalSubmodelId}`,
       ),
   };
 }
 
 export const logicalQueryKeys = {
-  entities: (tenantId: number, modelId: number, filters: unknown) => (
-    ["logical-entities", tenantId, modelId, filters] as const
+  entities: (tenantId: number, projectId: number, filters: unknown) => (
+    ["logical-entities", tenantId, projectId, filters] as const
   ),
-  entity: (tenantId: number, modelId: number, entityId: number) => (
-    ["logical-entity", tenantId, modelId, entityId] as const
+  entity: (tenantId: number, projectId: number, entityId: number) => (
+    ["logical-entity", tenantId, projectId, entityId] as const
   ),
-  attributes: (tenantId: number, modelId: number, filters: unknown) => (
-    ["logical-attributes", tenantId, modelId, filters] as const
+  attributes: (tenantId: number, projectId: number, filters: unknown) => (
+    ["logical-attributes", tenantId, projectId, filters] as const
   ),
-  attribute: (tenantId: number, modelId: number, attributeId: number) => (
-    ["logical-attribute", tenantId, modelId, attributeId] as const
+  attribute: (tenantId: number, projectId: number, attributeId: number) => (
+    ["logical-attribute", tenantId, projectId, attributeId] as const
   ),
-  relationships: (tenantId: number, modelId: number, filters: unknown) => (
-    ["logical-relationships", tenantId, modelId, filters] as const
+  relationships: (tenantId: number, projectId: number, filters: unknown) => (
+    ["logical-relationships", tenantId, projectId, filters] as const
   ),
-  relationship: (tenantId: number, modelId: number, relationshipId: number) => (
-    ["logical-relationship", tenantId, modelId, relationshipId] as const
+  relationship: (tenantId: number, projectId: number, relationshipId: number) => (
+    ["logical-relationship", tenantId, projectId, relationshipId] as const
   ),
-  submodels: (tenantId: number, modelId: number, filters: unknown) => (
-    ["logical-submodels", tenantId, modelId, filters] as const
+  submodels: (tenantId: number, projectId: number, filters: unknown) => (
+    ["logical-submodels", tenantId, projectId, filters] as const
   ),
-  submodel: (tenantId: number, modelId: number, submodelId: number) => (
-    ["logical-submodel", tenantId, modelId, submodelId] as const
+  submodel: (tenantId: number, projectId: number, submodelId: number) => (
+    ["logical-submodel", tenantId, projectId, submodelId] as const
   ),
-  submodelOptions: (tenantId: number, modelId: number) => (
-    ["logical-submodel-options", tenantId, modelId] as const
+  submodelOptions: (tenantId: number, projectId: number) => (
+    ["logical-submodel-options", tenantId, projectId] as const
   ),
 };
 
 export async function loadAllLogicalSubmodels(
   api: Pick<LogicalTransport, "listLogicalSubmodels">,
   tenantId: number,
-  modelId: number,
-): Promise<{ modelRevision: number; items: LogicalSubmodel[] }> {
+  projectId: number,
+): Promise<{ projectRevision: number; items: LogicalSubmodel[] }> {
   const items: LogicalSubmodel[] = [];
   const seenCursors = new Set<string>();
   let cursor: string | undefined;
-  let modelRevision: number | null = null;
+  let projectRevision: number | null = null;
 
   for (let page = 0; page < 250; page += 1) {
-    const response = await api.listLogicalSubmodels(tenantId, modelId, {}, 200, cursor);
-    if (modelRevision !== null && modelRevision !== response.model_revision) {
-      throw new Error("Model revision changed while loading Logical Submodels");
+    const response = await api.listLogicalSubmodels(tenantId, projectId, {}, 200, cursor);
+    if (projectRevision !== null && projectRevision !== response.project_revision) {
+      throw new Error("Project revision changed while loading Logical Submodels");
     }
-    modelRevision = response.model_revision;
+    projectRevision = response.project_revision;
     items.push(...response.items);
-    if (!response.next_cursor) return { modelRevision, items };
+    if (!response.next_cursor) return { projectRevision, items };
     if (seenCursors.has(response.next_cursor)) {
       throw new Error("Logical Submodel cursor repeated");
     }
@@ -406,7 +405,7 @@ export async function loadAllLogicalSubmodels(
 
 function logicalCollectionPath(
   tenantId: number,
-  modelId: number,
+  projectId: number,
   collection: "entities" | "attributes" | "relationships" | "submodels",
   filters: LogicalFilters | LogicalEntityFilters | LogicalAttributeFilters | LogicalRelationshipFilters,
   pageSize: number,
@@ -427,7 +426,7 @@ function logicalCollectionPath(
   }
   query.set("page_size", String(pageSize));
   if (cursor) query.set("cursor", cursor);
-  return `/api/v1/tenants/${tenantId}/models/${modelId}/logical/${collection}?${query}`;
+  return `/api/v1/tenants/${tenantId}/projects/${projectId}/logical/${collection}?${query}`;
 }
 
 function normalizeNaturalKeyFilter(value: string | undefined): string {

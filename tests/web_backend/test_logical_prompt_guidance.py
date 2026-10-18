@@ -16,7 +16,10 @@ from pydantic import JsonValue
 from tests.web_backend.test_logical_candidate import _candidate, _validator
 
 DEFAULTS = json.loads(
-    (Path(__file__).resolve().parents[2] / "database/seed/05_global_prompt_defaults.template.sql")
+    (
+        Path(__file__).resolve().parents[2]
+        / "database/seed/05_global_prompt_defaults.template.sql"
+    )
     .read_text()
     .split("$workflow_defaults$")[1]
 )
@@ -27,7 +30,8 @@ def test_logical_defaults_are_compact_and_keep_modeling_boundaries(mode: str) ->
     row = next(
         item
         for item in DEFAULTS
-        if item["model_workflow"] == "logical" and item["workflow_execution_mode"] == mode
+        if item["project_workflow"] == "logical"
+        and item["workflow_execution_mode"] == mode
     )
     system = row["system_prompt"]
     instruction = row["instruction_prompt"]
@@ -66,12 +70,16 @@ def test_logical_defaults_are_compact_and_keep_modeling_boundaries(mode: str) ->
         assert "Reuse complete inline or previously read evidence" in system
     else:
         assert "All selected evidence is inline; there are no readers" in system
-        assert {"object_context", "object_attribute_context", "object_relationship_context"} <= set(
-            placeholders
-        )
+        assert {
+            "object_context",
+            "object_attribute_context",
+            "object_relationship_context",
+        } <= set(placeholders)
 
 
-async def test_referenced_own_surrogate_must_be_explicit_before_policy_projection() -> None:
+async def test_referenced_own_surrogate_must_be_explicit_before_policy_projection() -> (
+    None
+):
     candidate = cast(dict[str, Any], _candidate())
     candidate["attributes"][0]["logical_attribute_name"] = "SourceCustomerID"
     validator = _validator()
@@ -106,7 +114,9 @@ async def test_referenced_own_surrogate_must_be_explicit_before_policy_projectio
         }
     ]
     omitted = await validator.validate(cast(JsonValue, candidate))
-    assert {issue.code for issue in omitted.issues} == {"candidate.relationship_endpoint_missing"}
+    assert {issue.code for issue in omitted.issues} == {
+        "candidate.relationship_endpoint_missing"
+    }
     candidate["attributes"].append(own_key)
     assert (await validator.validate(cast(JsonValue, candidate))).issues == ()
     projected = project_logical_audit_policy(

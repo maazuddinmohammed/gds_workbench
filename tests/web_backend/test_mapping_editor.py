@@ -4,22 +4,22 @@ from copy import deepcopy
 from typing import Any, cast
 
 import pytest
+from gds_etl_workbench.application.project_snapshot import ProjectReviewSnapshot
 from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_etl_workbench.application.model_snapshot import ModelReviewSnapshot
 from gds_workbench_api.features.mapping.editor import (
     mapping_record_editor,
     prepare_mapping_edit,
 )
-from gds_workbench_api.features.model_change_sets.editor import (
-    ModelRecordEditor,
-    ModelRecordEditorRequest,
-    SaveModelRecordRequest,
+from gds_workbench_api.features.project_change_sets.editor import (
+    ProjectRecordEditor,
+    ProjectRecordEditorRequest,
+    SaveProjectRecordRequest,
 )
 
-from tests.mcp.model_test_fixtures import (
-    complete_model_graph,
-    complete_physical_scope,
+from tests.mcp.project_test_fixtures import (
     SOURCE_ORDERS,
+    complete_physical_scope,
+    complete_project_graph,
 )
 from tests.web_backend.test_modeled_record_review import review_graph
 
@@ -57,8 +57,8 @@ SOURCES: list[dict[str, Any]] = [
 
 def edit_context(
     *, locked: str | None = None
-) -> tuple[ModelReviewSnapshot, ModelRecordEditor]:
-    graph = complete_model_graph()
+) -> tuple[ProjectReviewSnapshot, ProjectRecordEditor]:
+    graph = complete_project_graph()
     graph["mapping_object"][0]["mapping_transformation_document"] = {
         "source_tables": [REFERENCE],
         "transformation_logic": "Read orders.",
@@ -80,14 +80,16 @@ def edit_context(
         )
         graph[cast(Any, locked)][0][field] = True
     review = review_graph(graph)
-    command = ModelRecordEditorRequest(
-        dataset="mapping_object", record_id=1, expected_model_revision=1
+    command = ProjectRecordEditorRequest(
+        dataset="mapping_object", record_id=1, expected_project_revision=1
     )
     editor = mapping_record_editor(review, command, SOURCES)
     return review, editor
 
 
-def save_command(editor: ModelRecordEditor, **overrides: Any) -> SaveModelRecordRequest:
+def save_command(
+    editor: ProjectRecordEditor, **overrides: Any
+) -> SaveProjectRecordRequest:
     assert editor.mapping is not None
     changes: dict[str, Any] = {
         "object_mapping": {
@@ -101,10 +103,10 @@ def save_command(editor: ModelRecordEditor, **overrides: Any) -> SaveModelRecord
     if "attribute_mappings" in overrides:
         changes.pop("object_mapping")
     changes.update(overrides)
-    return SaveModelRecordRequest(
+    return SaveProjectRecordRequest(
         dataset="mapping_object",
         record_id=1,
-        expected_model_revision=1,
+        expected_project_revision=1,
         changes=changes,
     )
 

@@ -48,7 +48,7 @@
   function normalize(area, field, value) {
     if (typeof value !== "string") return value;
     const trimmed = value.replace(/^ +| +$/g, "");
-    if (area === "model") {
+    if (area === "project") {
       return unicode?.casefold ? unicode.casefold(trimmed) : trimmed.toLowerCase();
     }
     if (/(_code|_name|_schema)$/.test(field)) {
@@ -69,12 +69,12 @@
     });
   }
 
-  function isEntityOwnedModelCatalog(catalog) {
+  function isEntityOwnedProjectCatalog(catalog) {
     if (!Array.isArray(catalog?.sections)) return false;
     for (const section of catalog.sections) {
-      if (section?.name === "model_binding" || !Array.isArray(section?.datasets)) return false;
+      if (section?.name === "project_binding" || !Array.isArray(section?.datasets)) return false;
       for (const dataset of section.datasets) {
-        if (["model_object_binding", "model_attribute_binding", "mapping_dependency"].includes(dataset?.name)) return false;
+        if (["project_object_binding", "project_attribute_binding", "mapping_dependency"].includes(dataset?.name)) return false;
         let required = [];
         if (["mapping_object", "mapping_attribute", "generated_code", "generated_code_source_system"].includes(dataset?.name)) required = ["modeled_entity_schema_name"];
         for (const layer of ["logical", "dimensional"]) {
@@ -135,5 +135,5 @@
     });
   }
 
-  return { active, isEntityOwnedModelCatalog, key, normalize, overlay, reviewActions, stableStringify, validateSubagentPolicy };
+  return { active, isEntityOwnedProjectCatalog, key, normalize, overlay, reviewActions, stableStringify, validateSubagentPolicy };
 });

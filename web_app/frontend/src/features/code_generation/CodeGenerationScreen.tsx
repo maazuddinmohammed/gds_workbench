@@ -1,12 +1,13 @@
-import { WorkflowCommandCenter, WorkflowCommandTools } from "../workflows/WorkflowCommandCenter";
-import { ModelLayerTabs, type ModelLayer } from "../../shared/ModelLayerTabs";
-import { ModelRecordHistory } from "../model_record_review/ModelRecordHistory";
+import { WorkflowCommandCenter, WorkflowCommandTools, WorkflowMenu } from "../workflows/WorkflowCommandCenter";
+import { ProjectLayerTabs, type ProjectLayer } from "../../shared/ProjectLayerTabs";
+import { ProjectRecordHistory } from "../project_record_review/ProjectRecordHistory";
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError } from "../../core/http";
+import { archiveDownloadError, saveArchiveDownload } from "../../shared/archiveDownload";
 import type { MappingEntityType } from "../mapping/api";
-import type { ModelDetail } from "../models/api";
+import type { ProjectDetail } from "../projects/api";
 import { WorkflowRunMonitor } from "../workflows/WorkflowRunMonitor";
 import {
   codeGenerationQueryKeys,
@@ -31,15 +32,15 @@ interface OpenRunDialog {
 export function CodeGenerationScreen({
   api,
   tenantId,
-  model,
+  project,
   hasTenantLock,
   hasAppPermission,
   layer,
 }: {
-  layer: ModelLayer;
+  layer: ProjectLayer;
   api: CodeGenerationApi;
   tenantId: number;
-  model: ModelDetail;
+  project: ProjectDetail;
   hasTenantLock: boolean;
   hasAppPermission: boolean;
 }) {
@@ -55,9 +56,15 @@ export function CodeGenerationScreen({
   );
   const [runDialog, setRunDialog] = useState<OpenRunDialog | null>(null);
   const [startedRunId, setStartedRunId] = useState<number | null>(null);
+  const download = useMutation({
+    mutationFn: async () => saveArchiveDownload(await api.downloadAllGeneratedSql(tenantId, project.project_id, {
+      entity_type: entityType,
+      expected_project_revision: project.project_revision,
+    })),
+  });
   const targetsQuery = useQuery({
-    queryKey: codeGenerationQueryKeys.targets(tenantId, model.model_id, { entityType }, undefined),
-    queryFn: () => loadCodeGenerationTargets(api, tenantId, model.model_id, entityType),
+    queryKey: codeGenerationQueryKeys.targets(tenantId, project.project_id, { entityType }, undefined),
+    queryFn: () => loadCodeGenerationTargets(api, tenantId, project.project_id, entityType),
   });
   const canGenerate = hasTenantLock && hasAppPermission;
   const permissionLabel = !hasAppPermission
@@ -66,23 +73,23 @@ export function CodeGenerationScreen({
       ? "Tenant Lock required to generate SQL"
       : "Tenant Lock held · ready to generate";
   const revisionMismatch = targetsQuery.data !== undefined
-    && targetsQuery.data.model_revision !== model.model_revision;
+    && targetsQuery.data.project_revision !== project.project_revision;
   const canStartRun = canGenerate
     && !revisionMismatch
     && !targetsQuery.isPending
     && !targetsQuery.isError;
   const generationTitle = revisionMismatch
-    ? "The Model changed; refresh before generating SQL"
+    ? "The Project changed; refresh before generating SQL"
     : permissionLabel;
   const selected = [...selectedTargets.values()];
 
   const refresh = async () => {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["code-generation-targets", tenantId, model.model_id] }),
-      queryClient.invalidateQueries({ queryKey: ["model-record-history", tenantId, model.model_id, "generated_code"] }),
-      queryClient.invalidateQueries({ queryKey: ["validation-systems", tenantId, model.model_id] }),
-      queryClient.invalidateQueries({ queryKey: ["validation-ledger", tenantId, model.model_id] }),
-      queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
+      queryClient.invalidateQueries({ queryKey: ["code-generation-targets", tenantId, project.project_id] }),
+      queryClient.invalidateQueries({ queryKey: ["project-record-history", tenantId, project.project_id, "generated_code"] }),
+      queryClient.invalidateQueries({ queryKey: ["validation-systems", tenantId, project.project_id] }),
+      queryClient.invalidateQueries({ queryKey: ["validation-ledger", tenantId, project.project_id] }),
+      queryClient.invalidateQueries({ queryKey: ["project", tenantId, project.project_id] }),
       queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
     ]);
   };
@@ -112,9 +119,9 @@ export function CodeGenerationScreen({
 
   return (
     <WorkflowCommandCenter filterCount={Number(objectIds.length > 0) + Number(Boolean(artifactStatus))} className="mapping-workspace code-generation-workspace page-enter">
-      <header className="workflow-commandbar code-generation-commandbar model-section-toolbar">
+      <header className="workflow-commandbar code-generation-commandbar project-section-toolbar">
         <div className="workflow-command-context code-generation-command-context">
-          <ModelLayerTabs tenantId={tenantId} modelId={model.model_id} layer={layer} workflow="code-generation" title="Code generation" />
+          <ProjectLayerTabs tenantId={tenantId} projectId={project.project_id} layer={layer} workflow="code-generation" title="Code generation" />
 
       <nav className="workflow-tabs" aria-label="Code views">
         <button type="button" className={view === "targets" ? "is-active" : ""} aria-pressed={view === "targets"} onClick={() => setView("targets")}>Entities</button>
@@ -123,6 +130,12 @@ export function CodeGenerationScreen({
         </div>
         <div className="workflow-command-actions code-generation-command-actions">
           <WorkflowCommandTools filters={view === "targets"} />
+          <WorkflowMenu>
+            <button type="button" className="button button-secondary button-small"
+              disabled={download.isPending} onClick={() => download.mutate()}
+              title="All active SQL files for this layer, including stale files; ignores table filters."
+            >{download.isPending ? "Preparing SQL download…" : "Download all SQL"}</button>
+          </WorkflowMenu>
           <button
             className="button button-secondary button-small"
             type="button"
@@ -145,7 +158,11 @@ export function CodeGenerationScreen({
           </button>
         </div>
       </header>
-
+      {download.isPending ? <p role="status">Preparing all active SQL files for this layer…</p> : null}
+      {download.isError ? <p className="inline-error" role="alert">
+        {archiveDownloadError(download.error, "sql")}{" "}
+        <button type="button" className="text-action" onClick={() => download.mutate()}>Retry export</button>
+      </p> : null}
       <p className="workspace-view-context">{view === "targets" ? "Entities available for SQL generation, with their saved files." : "Saved SQL files, including inactive versions. Lock or change availability here."}</p>
       {startedRunId ? (
         <p className="code-generation-run-notice" role="status">
@@ -155,20 +172,20 @@ export function CodeGenerationScreen({
       <WorkflowRunMonitor
         api={api}
         tenantId={tenantId}
-        modelId={model.model_id}
-        modelRevision={model.model_revision}
+        projectId={project.project_id}
+        projectRevision={project.project_revision}
         workflow="code_generation"
         hasTenantLock={canGenerate}
         focusRunId={startedRunId}
         onApplied={refresh}
       />
-      {view === "artifacts" ? <ModelRecordHistory
-        api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision}
+      {view === "artifacts" ? <ProjectRecordHistory
+        api={api} tenantId={tenantId} projectId={project.project_id} projectRevision={project.project_revision}
         dataset="generated_code" label="SQL files" showHeader={false} hasTenantLock={canGenerate}
         entityType={entityType}
       /> : <CodeGenerationLedger
         tenantId={tenantId}
-        modelId={model.model_id}
+        projectId={project.project_id}
         items={targetsQuery.data?.items ?? []}
         objectIds={objectIds}
         onObjectIdsChange={(ids) => { setObjectIds(ids); setPage(0); }}
@@ -200,7 +217,7 @@ export function CodeGenerationScreen({
         <CodeGenerationRunDialog
           api={api}
           tenantId={tenantId}
-          model={model}
+          project={project}
           entityType={entityType}
           coverage={runDialog.coverage}
           selectedTargets={runDialog.selectedTargets}
@@ -209,7 +226,7 @@ export function CodeGenerationScreen({
             setStartedRunId(workflowRunId);
             setSelectedTargets(new Map());
             await queryClient.invalidateQueries({
-              queryKey: ["code-generation-targets", tenantId, model.model_id],
+              queryKey: ["code-generation-targets", tenantId, project.project_id],
             });
           }}
         />

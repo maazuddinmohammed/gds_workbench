@@ -6,7 +6,7 @@ import { mappingQueryKeys, type MappingApi, type MappingAttribute, type MappingA
 import { MappingDocumentValue } from "./MappingDocumentView";
 
 // Ledger pages contain up to 200 rows. Keep detail reads bounded, including
-// queued reads cancelled when a filter, Entity or Model changes.
+// queued reads cancelled when a filter, Entity or Project changes.
 export function createMappingDetailReader() {
   let active = 0;
   const waiting: (() => void)[] = [];
@@ -31,17 +31,17 @@ interface AttributeDocument {
   retry: () => void;
 }
 
-export function useMappingAttributeDocuments({ api, tenantId, modelId, items, enabled }: {
+export function useMappingAttributeDocuments({ api, tenantId, projectId, items, enabled }: {
   api: Pick<MappingApi, "readMappingAttribute">;
-  tenantId: number; modelId: number; items: MappingAttribute[]; enabled: boolean;
+  tenantId: number; projectId: number; items: MappingAttribute[]; enabled: boolean;
 }) {
   const visibleItems = enabled ? items.filter((item): item is MappingAttribute & { mapping_attribute_id: number } =>
     item.mapping_attribute_id !== null) : [];
   const queries = useQueries({ queries: visibleItems.map((item) => ({
-    queryKey: mappingQueryKeys.attribute(tenantId, modelId, item.mapping_attribute_id),
+    queryKey: mappingQueryKeys.attribute(tenantId, projectId, item.mapping_attribute_id),
     queryFn: ({ signal }: { signal: AbortSignal }) => readDetail(() => {
       signal.throwIfAborted();
-      return api.readMappingAttribute(tenantId, modelId, item.mapping_attribute_id);
+      return api.readMappingAttribute(tenantId, projectId, item.mapping_attribute_id);
     }),
   })) });
   const documents = new Map<number, AttributeDocument>();

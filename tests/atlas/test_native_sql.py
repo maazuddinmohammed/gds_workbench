@@ -154,7 +154,7 @@ def test_native_cli_runs_sql_policy_without_revalidating_retained_code(tmp_path:
     if powershell is None:
         pytest.skip("PowerShell is not installed")
     root = workspace.workspace(tmp_path)
-    snapshot = root / "model/model-snapshot"
+    snapshot = root / "project/project-snapshot"
     catalog_path = snapshot / "catalog.json"
     catalog = json.loads(catalog_path.read_text())
     definition = {
@@ -184,9 +184,9 @@ def test_native_cli_runs_sql_policy_without_revalidating_retained_code(tmp_path:
         )
     )
     workspace.fixtures.write_snapshot_manifest(
-        snapshot, kind="model", snapshot_id="model-snapshot-01", model_revision=8
+        snapshot, kind="project", snapshot_id="project-snapshot-01", project_revision=8
     )
-    pending = root / "model-change-set"
+    pending = root / "project-change-set"
     pending.mkdir()
     retained = [
         original,
@@ -204,7 +204,7 @@ def test_native_cli_runs_sql_policy_without_revalidating_retained_code(tmp_path:
         (pending / "generated_code.json").write_text(json.dumps(records))
         for helper in helpers:
             result = subprocess.run(
-                helper + ["validate", "--session", str(root), "--area", "model"],
+                helper + ["validate", "--session", str(root), "--area", "project"],
                 capture_output=True,
                 text=True,
                 timeout=60,

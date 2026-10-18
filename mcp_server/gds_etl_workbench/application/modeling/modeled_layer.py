@@ -173,9 +173,9 @@ SELECT submodel.{config.submodel_id},
        ) AS entity_count
   FROM {config.submodel_table} AS submodel
   LEFT JOIN {config.membership_table} AS membership
-    ON membership.model_id = submodel.model_id
+    ON membership.project_id = submodel.project_id
    AND membership.{config.submodel_id} = submodel.{config.submodel_id}
- WHERE submodel.model_id = %s
+ WHERE submodel.project_id = %s
  GROUP BY submodel.{config.submodel_id}
  ORDER BY lower(submodel.{config.layer}_submodel_name), submodel.{config.submodel_id}
  LIMIT %s OFFSET %s
@@ -187,7 +187,7 @@ def entities_sql(config: LayerConfig, *, historical: bool = False) -> LiteralStr
     if config.layer == "dimensional":
         return _dimensional_records_sql(attributes=False, historical=historical)
     selected = _select_fields("entity", config.entity_fields)
-    eligibility_field = "is_model_input_eligible"
+    eligibility_field = "is_project_input_eligible"
     role_field = (
         f"'source_role', source.{config.entity_source_role_column},"
         if config.entity_source_role_column is not None
@@ -196,30 +196,30 @@ def entities_sql(config: LayerConfig, *, historical: bool = False) -> LiteralStr
     # Snapshot evidence requires ownership and existence, independent of authoring eligibility.
     object_scope = (
         """
-    SELECT model.model_id, object.object_id,
-           TRUE AS is_model_input_eligible
-      FROM requested_model
-      JOIN model.model AS model USING (model_id)
-      JOIN core.object AS object ON object.source_tenant_id = model.tenant_id
+    SELECT project.project_id, object.object_id,
+           TRUE AS is_project_input_eligible
+      FROM requested_project
+      JOIN project.project AS project USING (project_id)
+      JOIN core.object AS object ON object.source_tenant_id = project.tenant_id
         OR (object.source_tenant_id = ANY(%s::BIGINT[])
-            AND EXISTS (SELECT 1 FROM model.model_input_scope AS retained_scope
-                         WHERE retained_scope.model_id = model.model_id
+            AND EXISTS (SELECT 1 FROM project.project_input_scope AS retained_scope
+                         WHERE retained_scope.project_id = project.project_id
                            AND retained_scope.object_id = object.object_id))
 """
         if historical
         else """
     SELECT eligibility.*
-      FROM requested_model
-      CROSS JOIN LATERAL workflow.list_model_object_eligibility(
-          requested_model.model_id
+      FROM requested_project
+      CROSS JOIN LATERAL workflow.list_project_object_eligibility(
+          requested_project.project_id
       ) AS eligibility
 """
     )
     return cast(
         LiteralString,
         f"""
-WITH requested_model AS (
-    SELECT %s::BIGINT AS model_id
+WITH requested_project AS (
+    SELECT %s::BIGINT AS project_id
 ),
 eligible_objects AS MATERIALIZED (
     {object_scope}
@@ -238,9 +238,9 @@ SELECT entity.{config.entity_id},
                   ) ORDER BY lower(submodel.{config.layer}_submodel_name))
              FROM {config.membership_table} AS membership
              JOIN {config.submodel_table} AS submodel
-               ON submodel.model_id = membership.model_id
+               ON submodel.project_id = membership.project_id
               AND submodel.{config.submodel_id} = membership.{config.submodel_id}
-            WHERE membership.model_id = entity.model_id
+            WHERE membership.project_id = entity.project_id
               AND membership.{config.entity_id} = entity.{config.entity_id}
        ), '[]'::JSONB) AS submodels,
        COALESCE((
@@ -271,12 +271,10 @@ SELECT entity.{config.entity_id},
                           ELSE jsonb_build_object(
                               'entity_source_mapping_id',
                                   source.{config.layer}_entity_source_mapping_id,
-                              'support_source_type', 'assertion',
-                              'assertion_record', jsonb_build_object(
-                                  'modeling_assertion_record_id',
-                                      assertion_record.modeling_assertion_record_id,
-                                  'modeling_assertion_record_key',
-                                      assertion_record.modeling_assertion_record_key
+                              'support_source_type', 'context_record',
+                              'context_record', jsonb_build_object(
+                                  'context_record_id',
+                                      context_record.context_record_id
                               ),
                               {role_field}
                               'source_order',
@@ -297,17 +295,17 @@ SELECT entity.{config.entity_id},
                ON source_connection.connection_id = source_object.connection_id
              LEFT JOIN eligible_objects AS source_eligibility
                ON source_eligibility.object_id = source.source_object_id
-              AND source_eligibility.model_id = source.model_id
+              AND source_eligibility.project_id = source.project_id
               AND source_eligibility.{eligibility_field}
              LEFT JOIN core.tenant AS source_tenant
                ON source_tenant.tenant_id = source_connection.tenant_id
              LEFT JOIN core.system AS source_system
                ON source_system.system_id = source_connection.system_id
-             LEFT JOIN model.modeling_assertion_record AS assertion_record
-               ON assertion_record.modeling_assertion_record_id
-                    = source.modeling_assertion_record_id
-              AND assertion_record.model_id = source.model_id
-            WHERE source.model_id = entity.model_id
+             LEFT JOIN project.context_record AS context_record
+               ON context_record.context_record_id
+                    = source.context_record_id
+              AND context_record.project_id = source.project_id
+            WHERE source.project_id = entity.project_id
               AND source.{config.entity_id} = entity.{config.entity_id}
               AND (
                   source.support_source_type <> 'object'
@@ -315,19 +313,19 @@ SELECT entity.{config.entity_id},
                       SELECT 1
                         FROM eligible_objects AS eligibility
                        WHERE eligibility.object_id = source.source_object_id
-                         AND eligibility.model_id = source.model_id
+                         AND eligibility.project_id = source.project_id
                          AND eligibility.{eligibility_field}
                   )
               )
        ), '[]'::JSONB) AS sources
   FROM {config.entity_table} AS entity
- WHERE entity.model_id = (SELECT model_id FROM requested_model)
+ WHERE entity.project_id = (SELECT project_id FROM requested_project)
    AND (
        cardinality(%s::BIGINT[]) = 0
        OR EXISTS (
            SELECT 1
              FROM {config.entity_source_table} AS selected_source
-            WHERE selected_source.model_id = entity.model_id
+            WHERE selected_source.project_id = entity.project_id
               AND selected_source.{config.entity_id} = entity.{config.entity_id}
               AND selected_source.support_source_type = 'object'
               AND selected_source.source_object_id = ANY(%s::BIGINT[])
@@ -335,7 +333,7 @@ SELECT entity.{config.entity_id},
                   SELECT 1
                     FROM eligible_objects AS eligibility
                    WHERE eligibility.object_id = selected_source.source_object_id
-                     AND eligibility.model_id = selected_source.model_id
+                     AND eligibility.project_id = selected_source.project_id
                      AND eligibility.{eligibility_field}
               )
        )
@@ -353,34 +351,34 @@ def attributes_sql(config: LayerConfig, *, historical: bool = False) -> LiteralS
     if config.layer == "dimensional":
         return _dimensional_records_sql(attributes=True, historical=historical)
     selected = _select_fields("attribute", config.attribute_fields)
-    eligibility_field = "is_model_input_eligible"
+    eligibility_field = "is_project_input_eligible"
     attribute_scope = (
         """
-    SELECT model.model_id, object.object_id, attribute.attribute_id,
-           TRUE AS is_model_input_eligible
-      FROM requested_model
-      JOIN model.model AS model USING (model_id)
-      JOIN core.object AS object ON object.source_tenant_id = model.tenant_id
+    SELECT project.project_id, object.object_id, attribute.attribute_id,
+           TRUE AS is_project_input_eligible
+      FROM requested_project
+      JOIN project.project AS project USING (project_id)
+      JOIN core.object AS object ON object.source_tenant_id = project.tenant_id
         OR (object.source_tenant_id = ANY(%s::BIGINT[])
-            AND EXISTS (SELECT 1 FROM model.model_input_scope AS retained_scope
-                         WHERE retained_scope.model_id = model.model_id
+            AND EXISTS (SELECT 1 FROM project.project_input_scope AS retained_scope
+                         WHERE retained_scope.project_id = project.project_id
                            AND retained_scope.object_id = object.object_id))
       JOIN core.attribute AS attribute ON attribute.object_id = object.object_id
 """
         if historical
         else """
     SELECT eligibility.*
-      FROM requested_model
-      CROSS JOIN LATERAL workflow.list_model_attribute_eligibility(
-          requested_model.model_id
+      FROM requested_project
+      CROSS JOIN LATERAL workflow.list_project_attribute_eligibility(
+          requested_project.project_id
       ) AS eligibility
 """
     )
     return cast(
         LiteralString,
         f"""
-WITH requested_model AS (
-    SELECT %s::BIGINT AS model_id
+WITH requested_project AS (
+    SELECT %s::BIGINT AS project_id
 ),
 eligible_attributes AS MATERIALIZED (
     {attribute_scope}
@@ -421,12 +419,10 @@ SELECT attribute.{config.attribute_id},
                           ELSE jsonb_build_object(
                               'attribute_source_mapping_id',
                                   source.{config.layer}_attribute_source_mapping_id,
-                              'support_source_type', 'assertion',
-                              'assertion_record', jsonb_build_object(
-                                  'modeling_assertion_record_id',
-                                      assertion_record.modeling_assertion_record_id,
-                                  'modeling_assertion_record_key',
-                                      assertion_record.modeling_assertion_record_key
+                              'support_source_type', 'context_record',
+                              'context_record', jsonb_build_object(
+                                  'context_record_id',
+                                      context_record.context_record_id
                               ),
                               'source_order',
                                   source.{config.layer}_attribute_source_mapping_order,
@@ -450,17 +446,17 @@ SELECT attribute.{config.attribute_id},
              LEFT JOIN eligible_attributes AS source_eligibility
                ON source_eligibility.object_id = source.source_object_id
               AND source_eligibility.attribute_id = source.source_attribute_id
-              AND source_eligibility.model_id = source.model_id
+              AND source_eligibility.project_id = source.project_id
               AND source_eligibility.{eligibility_field}
              LEFT JOIN core.tenant AS source_tenant
                ON source_tenant.tenant_id = source_connection.tenant_id
              LEFT JOIN core.system AS source_system
                ON source_system.system_id = source_connection.system_id
-             LEFT JOIN model.modeling_assertion_record AS assertion_record
-               ON assertion_record.modeling_assertion_record_id
-                    = source.modeling_assertion_record_id
-              AND assertion_record.model_id = source.model_id
-            WHERE source.model_id = attribute.model_id
+             LEFT JOIN project.context_record AS context_record
+               ON context_record.context_record_id
+                    = source.context_record_id
+              AND context_record.project_id = source.project_id
+            WHERE source.project_id = attribute.project_id
               AND source.{config.attribute_id} = attribute.{config.attribute_id}
               AND (
                   source.support_source_type <> 'attribute'
@@ -469,7 +465,7 @@ SELECT attribute.{config.attribute_id},
                         FROM eligible_attributes AS eligibility
                        WHERE eligibility.object_id = source.source_object_id
                          AND eligibility.attribute_id = source.source_attribute_id
-                         AND eligibility.model_id = source.model_id
+                         AND eligibility.project_id = source.project_id
                          AND eligibility.{eligibility_field}
                   )
               )
@@ -477,8 +473,8 @@ SELECT attribute.{config.attribute_id},
   FROM {config.attribute_table} AS attribute
   JOIN {config.entity_table} AS entity
     ON entity.{config.entity_id} = attribute.{config.entity_id}
-   AND entity.model_id = attribute.model_id
- WHERE attribute.model_id = (SELECT model_id FROM requested_model)
+   AND entity.project_id = attribute.project_id
+ WHERE attribute.project_id = (SELECT project_id FROM requested_project)
    AND (
        cardinality(%s::BIGINT[]) = 0
        OR attribute.{config.entity_id} = ANY(%s::BIGINT[])
@@ -518,24 +514,24 @@ SELECT relationship.{config.relationship_id},
   JOIN {config.entity_table} AS from_entity
     ON from_entity.{config.entity_id}
         = relationship.{config.layer}_relationship_from_entity_id
-   AND from_entity.model_id = relationship.model_id
+   AND from_entity.project_id = relationship.project_id
   JOIN {config.attribute_table} AS from_attribute
     ON from_attribute.{config.attribute_id}
         = relationship.{config.layer}_relationship_from_attribute_id
    AND from_attribute.{config.entity_id}
         = relationship.{config.layer}_relationship_from_entity_id
-   AND from_attribute.model_id = relationship.model_id
+   AND from_attribute.project_id = relationship.project_id
   JOIN {config.entity_table} AS to_entity
     ON to_entity.{config.entity_id}
         = relationship.{config.layer}_relationship_to_entity_id
-   AND to_entity.model_id = relationship.model_id
+   AND to_entity.project_id = relationship.project_id
   JOIN {config.attribute_table} AS to_attribute
     ON to_attribute.{config.attribute_id}
         = relationship.{config.layer}_relationship_to_attribute_id
    AND to_attribute.{config.entity_id}
         = relationship.{config.layer}_relationship_to_entity_id
-   AND to_attribute.model_id = relationship.model_id
- WHERE relationship.model_id = %s
+   AND to_attribute.project_id = relationship.project_id
+ WHERE relationship.project_id = %s
    AND (
        cardinality(%s::BIGINT[]) = 0
        OR relationship.{config.layer}_relationship_from_entity_id = ANY(%s::BIGINT[])
@@ -579,8 +575,8 @@ def _dimensional_records_sql(*, attributes: bool, historical: bool) -> LiteralSt
            FROM workflow.dimensional_entity_submodel AS membership
            JOIN workflow.dimensional_submodel AS submodel
              ON submodel.dimensional_submodel_id = membership.dimensional_submodel_id
-            AND submodel.model_id = membership.model_id
-           WHERE membership.model_id = entity.model_id
+            AND submodel.project_id = membership.project_id
+           WHERE membership.project_id = entity.project_id
              AND membership.dimensional_entity_id = entity.dimensional_entity_id
        ), '[]'::JSONB) AS submodels,
 """
@@ -599,7 +595,7 @@ def _dimensional_records_sql(*, attributes: bool, historical: bool) -> LiteralSt
              LEFT JOIN workflow.logical_attribute AS logical_attribute
                ON logical_attribute.logical_attribute_id = source.source_logical_attribute_id
               AND logical_attribute.logical_entity_id = source.source_logical_entity_id
-              AND logical_attribute.model_id = source.model_id
+              AND logical_attribute.project_id = source.project_id
 """
     )
     active_source = (
@@ -613,7 +609,7 @@ def _dimensional_records_sql(*, attributes: bool, historical: bool) -> LiteralSt
     from_records = (
         "workflow.dimensional_attribute AS attribute JOIN workflow.dimensional_entity AS entity "
         "ON entity.dimensional_entity_id = attribute.dimensional_entity_id "
-        "AND entity.model_id = attribute.model_id"
+        "AND entity.project_id = attribute.project_id"
         if attributes
         else "workflow.dimensional_entity AS entity"
     )
@@ -622,7 +618,7 @@ def _dimensional_records_sql(*, attributes: bool, historical: bool) -> LiteralSt
         if attributes
         else """
        EXISTS (SELECT 1 FROM workflow.dimensional_entity_source_mapping AS selected_source
-                WHERE selected_source.model_id = entity.model_id
+                WHERE selected_source.project_id = entity.project_id
                   AND selected_source.dimensional_entity_id = entity.dimensional_entity_id
                   AND selected_source.support_source_type = 'logical_entity'
                   AND selected_source.source_logical_entity_id = ANY(%s::BIGINT[]))
@@ -661,29 +657,27 @@ SELECT {identity}
                            {key_attribute}
                        )
                    ) ELSE jsonb_build_object(
-                       'assertion_record', jsonb_build_object(
-                           'modeling_assertion_record_id',
-                           assertion_record.modeling_assertion_record_id,
-                           'modeling_assertion_record_key',
-                           assertion_record.modeling_assertion_record_key
+                       'context_record', jsonb_build_object(
+                           'context_record_id',
+                           context_record.context_record_id
                        )
                    ) END ORDER BY source.dimensional_{kind}_source_mapping_id
            )
              FROM workflow.dimensional_{kind}_source_mapping AS source
              LEFT JOIN workflow.logical_entity AS logical_entity
                ON logical_entity.logical_entity_id = source.source_logical_entity_id
-              AND logical_entity.model_id = source.model_id
+              AND logical_entity.project_id = source.project_id
              {source_attribute_join}
-             LEFT JOIN model.modeling_assertion_record AS assertion_record
-               ON assertion_record.modeling_assertion_record_id =
-                   source.modeling_assertion_record_id
-              AND assertion_record.model_id = source.model_id
-            WHERE source.model_id = {record}.model_id
+             LEFT JOIN project.context_record AS context_record
+               ON context_record.context_record_id =
+                   source.context_record_id
+              AND context_record.project_id = source.project_id
+            WHERE source.project_id = {record}.project_id
               AND source.dimensional_{kind}_id = {record}.dimensional_{kind}_id
-              AND (source.support_source_type = 'assertion' OR ({active_source}))
+              AND (source.support_source_type = 'context_record' OR ({active_source}))
        ), '[]'::JSONB) AS sources
   FROM {from_records}
- WHERE {record}.model_id = %s
+ WHERE {record}.project_id = %s
    AND (cardinality(%s::BIGINT[]) = 0 OR {selection})
  ORDER BY {order}
  LIMIT %s OFFSET %s

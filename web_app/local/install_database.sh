@@ -58,7 +58,7 @@ release_files=(
     01_reference.sql
     02_core.sql
     03_security.sql
-    04_model.sql
+    04_project.sql
     05_workflow_analysis.sql
     06_workflow_conceptual.sql
     07_workflow_logical.sql

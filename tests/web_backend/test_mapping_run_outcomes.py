@@ -14,21 +14,30 @@ from gds_etl_workbench.infrastructure.postgres import ReadIsolation, ReadTransac
 from gds_workbench_api.features.workflows.overview.contracts import WorkflowMetric
 from gds_workbench_api.features.workflows.overview.service import _section_state
 from gds_workbench_api.features.workflows.runs import service as run_service
-from gds_workbench_api.features.workflows.runs.contracts import MappingRunOutcome, RunState
-from gds_workbench_api.features.workflows.usage.read_service import WorkflowTokenUsageSummary
+from gds_workbench_api.features.workflows.runs.contracts import (
+    MappingRunOutcome,
+    RunState,
+)
+from gds_workbench_api.features.workflows.usage.read_service import (
+    WorkflowTokenUsageSummary,
+)
 
 
 class MappingRunTransaction:
-    def __init__(self, *, failure_count: int = 1, run_state: RunState = "completed") -> None:
+    def __init__(
+        self, *, failure_count: int = 1, run_state: RunState = "completed"
+    ) -> None:
         self.failure_count = failure_count
         self.run_state = run_state
         self.failure_reads = 0
         self.summary_run_ids: list[int] = []
 
-    def run_row(self, *, run_id: int = 1048, workflow: str = "mapping") -> dict[str, Any]:
+    def run_row(
+        self, *, run_id: int = 1048, workflow: str = "mapping"
+    ) -> dict[str, Any]:
         return {
             "workflow_run_id": run_id,
-            "model_workflow": workflow,
+            "project_workflow": workflow,
             "workflow_run_state": self.run_state,
             "selected_scope_count": 2,
             "actor_display_name": "Reviewer",
@@ -50,9 +59,9 @@ class MappingRunTransaction:
                 "lock_owner_display_name": None,
                 "lock_expires_time": None,
             }
-        if query == run_service._MODEL_EXISTS_SQL:
+        if query == run_service._PROJECT_EXISTS_SQL:
             assert parameters == (7, 18)
-            return {"model_id": 18}
+            return {"project_id": 18}
         assert query == run_service._RUN_DETAIL_SQL
         assert parameters == (7, 18, 1048)
         return {
@@ -79,13 +88,15 @@ class MappingRunTransaction:
             self.summary_run_ids = parameters[2]
             if self.failure_count < 0:
                 return []  # Legacy Run without typed pair outcomes.
-            return [{
-                "workflow_run_id": 1048,
-                "completed_pair_count": 0 if self.run_state == "failed" else 1,
-                "preserved_pair_count": 0,
-                "no_source_pair_count": 0,
-                "failed_pair_count": self.failure_count,
-            }]
+            return [
+                {
+                    "workflow_run_id": 1048,
+                    "completed_pair_count": 0 if self.run_state == "failed" else 1,
+                    "preserved_pair_count": 0,
+                    "no_source_pair_count": 0,
+                    "failed_pair_count": self.failure_count,
+                }
+            ]
         assert query == run_service._MAPPING_FAILURES_SQL
         self.failure_reads += 1
         return [
@@ -113,7 +124,9 @@ class MappingRunDatabase:
         yield self.transaction
 
 
-def _service(transaction: MappingRunTransaction) -> run_service.DatabaseWorkflowRunService:
+def _service(
+    transaction: MappingRunTransaction,
+) -> run_service.DatabaseWorkflowRunService:
     return run_service.DatabaseWorkflowRunService(
         database=MappingRunDatabase(transaction),
         authorizer=AuthorizationService(),
@@ -130,24 +143,38 @@ def _principal() -> RequestPrincipal:
 
 
 async def _usage(
-    transaction: ReadTransaction, *, tenant_id: int, model_id: int, workflow_run_id: int
+    transaction: ReadTransaction,
+    *,
+    tenant_id: int,
+    project_id: int,
+    workflow_run_id: int,
 ) -> WorkflowTokenUsageSummary:
-    assert (tenant_id, model_id, workflow_run_id) == (7, 18, 1048)
+    assert (tenant_id, project_id, workflow_run_id) == (7, 18, 1048)
     return WorkflowTokenUsageSummary()
 
 
 @pytest.mark.asyncio
-async def test_ledger_projects_coverage_only_for_mapping_runs_on_the_requested_page() -> None:
+async def test_ledger_projects_coverage_only_for_mapping_runs_on_the_requested_page() -> (
+    None
+):
     transaction = MappingRunTransaction()
     result = await _service(transaction).list_runs(
-        _principal(), tenant_id=7, model_id=18, workflow=None,
-        run_state=None, page_size=2, cursor=None,
+        _principal(),
+        tenant_id=7,
+        project_id=18,
+        workflow=None,
+        run_state=None,
+        page_size=2,
+        cursor=None,
     )
     assert result.next_cursor is not None
     assert len(result.items) == 2
     assert transaction.summary_run_ids == [1048]
     assert result.items[0].mapping_outcome == MappingRunOutcome(
-        completed_pair_count=1, preserved_pair_count=0, no_source_pair_count=0, failed_pair_count=1,
+        completed_pair_count=1,
+        preserved_pair_count=0,
+        no_source_pair_count=0,
+        failed_pair_count=1,
     )
     assert result.items[1].mapping_outcome is None
     assert transaction.failure_reads == 0
@@ -156,12 +183,16 @@ async def test_ledger_projects_coverage_only_for_mapping_runs_on_the_requested_p
 @pytest.mark.asyncio
 @pytest.mark.parametrize("state", ["completed", "failed"])
 async def test_detail_exposes_bounded_failed_pairs_for_partial_and_all_failed_runs(
-    monkeypatch: pytest.MonkeyPatch, state: RunState,
+    monkeypatch: pytest.MonkeyPatch,
+    state: RunState,
 ) -> None:
     monkeypatch.setattr(run_service, "read_run_token_usage", _usage)
     transaction = MappingRunTransaction(failure_count=205, run_state=state)
     detail = await _service(transaction).read_run(
-        _principal(), tenant_id=7, model_id=18, workflow_run_id=1048,
+        _principal(),
+        tenant_id=7,
+        project_id=18,
+        workflow_run_id=1048,
     )
     assert detail.mapping_outcome is not None
     assert detail.mapping_outcome.failed_pair_count == 205
@@ -178,11 +209,16 @@ async def test_detail_exposes_bounded_failed_pairs_for_partial_and_all_failed_ru
 
 
 @pytest.mark.asyncio
-async def test_legacy_run_has_no_inferred_mapping_outcome(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_legacy_run_has_no_inferred_mapping_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(run_service, "read_run_token_usage", _usage)
     transaction = MappingRunTransaction(failure_count=-1)
     detail = await _service(transaction).read_run(
-        _principal(), tenant_id=7, model_id=18, workflow_run_id=1048,
+        _principal(),
+        tenant_id=7,
+        project_id=18,
+        workflow_run_id=1048,
     )
     assert detail.mapping_outcome is None
     assert detail.mapping_failures == ()
@@ -190,17 +226,27 @@ async def test_legacy_run_has_no_inferred_mapping_outcome(monkeypatch: pytest.Mo
     assert transaction.failure_reads == 0
 
 
-@pytest.mark.parametrize("run_state", ["completed", "completed_with_repair", "running", "failed"])
+@pytest.mark.parametrize(
+    "run_state", ["completed", "completed_with_repair", "running", "failed"]
+)
 @pytest.mark.parametrize("result_count", [0, 1])
 def test_partial_mapping_ribbon_does_not_claim_complete_coverage(
-    run_state: RunState, result_count: int,
+    run_state: RunState,
+    result_count: int,
 ) -> None:
     metric = WorkflowMetric(
-        model_id=18, model_revision=4, workflow="mapping", result_count=result_count,
-        locked_count=0, latest_run_state=run_state,
+        project_id=18,
+        project_revision=4,
+        workflow="mapping",
+        result_count=result_count,
+        locked_count=0,
+        latest_run_state=run_state,
     )
     outcome = MappingRunOutcome(
-        completed_pair_count=1, preserved_pair_count=0, no_source_pair_count=0, failed_pair_count=1,
+        completed_pair_count=1,
+        preserved_pair_count=0,
+        no_source_pair_count=0,
+        failed_pair_count=1,
     )
     assert _section_state(metric, mapping_outcome=outcome) == (
         run_state if run_state in ("running", "failed") else "results_available"

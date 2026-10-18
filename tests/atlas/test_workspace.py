@@ -7,9 +7,9 @@ from typing import Any
 from uuid import uuid4
 
 from gds_etl_workbench.domain.modeling_records import AnalysisResultRecord
-from gds_etl_workbench.domain.snapshots.model import (
+from gds_etl_workbench.domain.snapshots.project import (
     DATASETS_BY_NAME,
-    build_model_dataset_schema,
+    build_project_dataset_schema,
 )
 
 from tests.atlas import snapshot_fixtures as fixtures
@@ -39,18 +39,20 @@ def workspace(tmp_path: Path) -> Path:
         "TENANT_A",
         "--tenant-id",
         "1",
-        "--model-id",
+        "--project-id",
         "41",
-        "--model-name",
-        "Customer Model",
+        "--project-name",
+        "Customer Project",
     )
     run("task-add", "--session", str(root), "--outcome", "Review customer metadata")
     fixtures.write_metadata_snapshot(root)
-    fixtures.write_model_snapshot(root)
+    fixtures.write_project_snapshot(root)
     return root
 
 
-def test_selection_pages_cover_large_inventory_and_keep_canonical_keys(tmp_path: Path) -> None:
+def test_selection_pages_cover_large_inventory_and_keep_canonical_keys(
+    tmp_path: Path,
+) -> None:
     root = workspace(tmp_path)
     snapshot = root / "metadata/metadata-snapshot"
     rows_path = snapshot / "data/source_object.jsonl"
@@ -101,9 +103,19 @@ def test_selection_pages_cover_large_inventory_and_keep_canonical_keys(tmp_path:
     assert rows_path.read_bytes() == before
 
 
-def test_selection_cursor_rejects_changed_query_draft_and_baseline(tmp_path: Path) -> None:
+def test_selection_cursor_rejects_changed_query_draft_and_baseline(
+    tmp_path: Path,
+) -> None:
     root = workspace(tmp_path)
-    args = ("select", "--session", str(root), "--area", "metadata", "--dataset", "source_object")
+    args = (
+        "select",
+        "--session",
+        str(root),
+        "--area",
+        "metadata",
+        "--dataset",
+        "source_object",
+    )
     page = run(*args, "--view", "effective", "--limit", "1")
     cursor = page["next_cursor"]
     for changes in (
@@ -135,15 +147,82 @@ def test_selection_cursor_rejects_changed_query_draft_and_baseline(tmp_path: Pat
     assert draft.read_bytes() == saved
 
 
+def test_logical_projection_excludes_independent_conceptual_records(
+    tmp_path: Path,
+) -> None:
+    root = workspace(tmp_path)
+    snapshot = root / "project/project-snapshot"
+    catalog = json.loads((snapshot / "catalog.json").read_text())
+    dataset = {
+        "name": "conceptual_object",
+        "row_count": 1,
+        "canonical_key": ["conceptual_object_name"],
+        "rows_file": "data/conceptual_object.jsonl",
+        "schema_file": "schemas/conceptual_object.schema.json",
+    }
+    catalog["sections"].append({"name": "conceptual", "datasets": [dataset]})
+    (snapshot / "catalog.json").write_text(json.dumps(catalog))
+    concept = {"conceptual_object_name": "IndependentBusinessConcept"}
+    (snapshot / "data/conceptual_object.jsonl").write_text(json.dumps(concept) + "\n")
+    (snapshot / "schemas/conceptual_object.schema.json").write_text(
+        json.dumps(
+            {
+                "type": "object",
+                "properties": {"conceptual_object_name": {"type": "string"}},
+                "required": ["conceptual_object_name"],
+                "x-gds-change-set-eligible": True,
+            }
+        )
+    )
+    logical = {
+        "logical_entity_schema_name": "silver",
+        "logical_entity_name": "Customer",
+    }
+    (snapshot / "data/logical_entity.jsonl").write_text(json.dumps(logical) + "\n")
+    fixtures.write_snapshot_manifest(
+        snapshot, kind="project", snapshot_id=str(uuid4()), project_revision=8
+    )
+    draft = root / "project-change-set"
+    draft.mkdir(exist_ok=True)
+    (draft / "conceptual_object.json").write_text(
+        json.dumps([{**concept, "conceptual_object_definition": "Separate Conceptual edit"}])
+    )
+    args = (
+        "select",
+        "--session",
+        str(root),
+        "--area",
+        "project",
+        "--view",
+        "effective",
+    )
+    assert "--dataset is required" in run(*args, success=False)["error"]
+    selected = run(*args, "--dataset", "logical_entity", "--fields", '["logical_entity_name"]')
+    assert selected["records"] == [logical]
+    assert selected["next_cursor"] is None
+
+
 def test_invalid_projection_and_cursor_do_not_change_workspace(tmp_path: Path) -> None:
     root = workspace(tmp_path)
     before = {
         path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()
     }
-    args = ("select", "--session", str(root), "--area", "metadata", "--dataset", "source_object")
+    args = (
+        "select",
+        "--session",
+        str(root),
+        "--area",
+        "metadata",
+        "--dataset",
+        "source_object",
+    )
     for fields in ('["made_up"]', "[]", "{}", "[true]", "null", "not json"):
         run(*args, "--fields", fields, success=False)
-    for cursor in ("invalid", "v1." + "a" * 64 + ".-1", "v1." + "a" * 64 + ".9007199254740992"):
+    for cursor in (
+        "invalid",
+        "v1." + "a" * 64 + ".-1",
+        "v1." + "a" * 64 + ".9007199254740992",
+    ):
         run(*args, "--cursor", cursor, success=False)
     run(*args, "--limit", "1.5", success=False)
     after = {
@@ -211,7 +290,13 @@ def test_status_is_compact_and_history_is_explicitly_paged(tmp_path: Path) -> No
     second = run(*args, "--cursor", page["next_cursor"])
     assert {item["id"] for item in page["tasks"] + second["tasks"]} == ids
     assert second["next_cursor"] is None
-    run("task-add", "--session", str(root), "--outcome", "New task invalidates traversal")
+    run(
+        "task-add",
+        "--session",
+        str(root),
+        "--outcome",
+        "New task invalidates traversal",
+    )
     assert (
         "Selection changed" in run(*args, "--cursor", page["next_cursor"], success=False)["error"]
     )
@@ -272,7 +357,9 @@ def test_initialize_reuse_flexible_task_and_owner_roots(tmp_path: Path) -> None:
     )
 
 
-def test_subagent_policy_is_saved_and_survives_task_switch_and_resume(tmp_path: Path) -> None:
+def test_subagent_policy_is_saved_and_survives_task_switch_and_resume(
+    tmp_path: Path,
+) -> None:
     root = workspace(tmp_path)
     session_file = root / ".atlas/session.json"
     original = session_file.read_bytes()
@@ -302,13 +389,13 @@ def test_subagent_policy_is_saved_and_survives_task_switch_and_resume(tmp_path: 
     ]
     assert resumed["subagent_policy"] == policy
     assert resumed["active_task"] == initial["active_task"]
-    assert resumed["model"] == initial["model"]
+    assert resumed["project"] == initial["project"]
     assert resumed["sql"] == {"policy": "never"}
     for mode in ("auto", "current"):
         run("subagent-policy", "--session", str(root), "--mode", mode)
         saved = run("status", "--session", str(root))["session"]
         assert saved["subagent_policy"] == {"mode": mode}
-        assert saved["model"] == initial["model"]
+        assert saved["project"] == initial["project"]
 
 
 def test_invalid_subagent_policy_command_preserves_saved_choice(tmp_path: Path) -> None:
@@ -341,7 +428,9 @@ def test_invalid_subagent_policy_command_preserves_saved_choice(tmp_path: Path) 
         assert session_file.read_bytes() == before
 
 
-def test_invalid_saved_subagent_policy_is_rejected_without_rewriting(tmp_path: Path) -> None:
+def test_invalid_saved_subagent_policy_is_rejected_without_rewriting(
+    tmp_path: Path,
+) -> None:
     root = workspace(tmp_path)
     session_file = root / ".atlas/session.json"
     initial = json.loads(session_file.read_text())
@@ -480,7 +569,7 @@ def test_snapshot_install_checks_hash_and_archive_paths(tmp_path: Path) -> None:
 
 def test_agent_runtime_does_not_expose_or_read_user_dbml(tmp_path: Path) -> None:
     root = workspace(tmp_path)
-    export = root / "model-dbml"
+    export = root / "project-dbml"
     export.mkdir()
     # User-owned exports are opaque to the agent runtime, including their manifest.
     manifest = export / "manifest.json"
@@ -491,9 +580,9 @@ def test_agent_runtime_does_not_expose_or_read_user_dbml(tmp_path: Path) -> None
 
     assert "generate-dbml" not in run("command-contract")["commands"]
     run("command-contract", "--command", "generate-dbml", success=False)
-    run("generate-dbml", "--session", str(root), "--area", "model", success=False)
+    run("generate-dbml", "--session", str(root), "--area", "project", success=False)
     run("status", "--session", str(root))
-    run("inspect", "--session", str(root), "--area", "model")
+    run("inspect", "--session", str(root), "--area", "project")
     assert {path.name: path.read_bytes() for path in export.iterdir()} == before
 
 
@@ -501,7 +590,7 @@ def test_cli_validation_report_matches_workbench_owner_and_evidence_contract(
     tmp_path: Path,
 ) -> None:
     root = workspace(tmp_path)
-    result = run("validate", "--session", str(root), "--area", "model")
+    result = run("validate", "--session", str(root), "--area", "project")
     assert result["run_by"] == "agent"
     assert result["owner_tenant_id"] == 1
     assert result["checks"]
@@ -510,19 +599,19 @@ def test_cli_validation_report_matches_workbench_owner_and_evidence_contract(
         for item in result["inputs"]
     )
     assert result["report"].startswith(".atlas/tasks/")
-    assert result["report"].endswith("/model-1-validation.json")
+    assert result["report"].endswith("/project-1-validation.json")
 
 
-def test_missing_metadata_owner_blocks_model_edits_but_not_independent_metadata(
+def test_missing_metadata_owner_blocks_project_edits_but_not_independent_metadata(
     tmp_path: Path,
 ) -> None:
     root = workspace(tmp_path)
     run("owner-add", "--session", str(root), "--tenant-id", "2", "--tenant", "TENANT_B")
-    context_only = run("validate", "--session", str(root), "--area", "model")
+    context_only = run("validate", "--session", str(root), "--area", "project")
     assert context_only["valid"]
     missing = [i for i in context_only["issues"] if i["code"] == "metadata_owner_snapshot_missing"]
     assert len(missing) == 1 and missing[0]["severity"] == "warning"
-    pending = root / "model-change-set"
+    pending = root / "project-change-set"
     pending.mkdir(exist_ok=True)
     (pending / "logical_entity.json").write_text(
         json.dumps(
@@ -535,7 +624,7 @@ def test_missing_metadata_owner_blocks_model_edits_but_not_independent_metadata(
             ]
         )
     )
-    result = run("validate", "--session", str(root), "--area", "model")
+    result = run("validate", "--session", str(root), "--area", "project")
     assert not result["valid"]
     assert any(
         i["code"] == "metadata_owner_snapshot_missing" and i["severity"] == "error"
@@ -546,7 +635,7 @@ def test_missing_metadata_owner_blocks_model_edits_but_not_independent_metadata(
         "--session",
         str(root),
         "--area",
-        "model",
+        "project",
         "--digest",
         result["digest"],
         "--backend-profile",
@@ -558,7 +647,7 @@ def test_missing_metadata_owner_blocks_model_edits_but_not_independent_metadata(
     assert run("validate", "--session", str(root), "--area", "metadata")["valid"]
 
 
-def test_metadata_task_binds_its_model_snapshot_before_validation_and_acceptance(
+def test_metadata_task_binds_its_project_snapshot_before_validation_and_acceptance(
     tmp_path: Path,
 ) -> None:
     root = workspace(tmp_path)
@@ -575,8 +664,8 @@ def test_metadata_task_binds_its_model_snapshot_before_validation_and_acceptance
         "--expected-digest",
         "empty",
     )
-    inputs = run("validate", "--session", str(root), "--area", "model")["inputs"]
-    binding = next(item for item in inputs if item["area"] == "model")
+    inputs = run("validate", "--session", str(root), "--area", "project")["inputs"]
+    binding = next(item for item in inputs if item["area"] == "project")
     task_id = json.loads((root / ".atlas/session.json").read_text())["active_task"]
     task_path = root / f".atlas/tasks/{task_id}.json"
     task = json.loads(task_path.read_text())
@@ -609,7 +698,7 @@ def test_metadata_task_binds_its_model_snapshot_before_validation_and_acceptance
         assert operation.read_bytes() == before
 
 
-def test_model_metadata_merge_requires_matching_owner_key_contracts(
+def test_project_metadata_merge_requires_matching_owner_key_contracts(
     tmp_path: Path,
 ) -> None:
     root = workspace(tmp_path)
@@ -620,7 +709,7 @@ def test_model_metadata_merge_requires_matching_owner_key_contracts(
     fixtures.write_snapshot_manifest(
         snapshot, kind="metadata", snapshot_id=str(uuid4()), tenant_code="TENANT_B"
     )
-    assert run("validate", "--session", str(root), "--area", "model")["valid"]
+    assert run("validate", "--session", str(root), "--area", "project")["valid"]
     catalog_path = snapshot / "catalog.json"
     catalog = json.loads(catalog_path.read_text())
     attributes = next(
@@ -634,13 +723,13 @@ def test_model_metadata_merge_requires_matching_owner_key_contracts(
     fixtures.write_snapshot_manifest(
         snapshot, kind="metadata", snapshot_id=str(uuid4()), tenant_code="TENANT_B"
     )
-    result = run("validate", "--session", str(root), "--area", "model", success=False)
+    result = run("validate", "--session", str(root), "--area", "project", success=False)
     assert "key contracts" in result["error"]
 
 
 def test_generated_sql_policy_runs_before_local_acceptance(tmp_path: Path) -> None:
     root = workspace(tmp_path)
-    snapshot = root / "model/model-snapshot"
+    snapshot = root / "project/project-snapshot"
     catalog_path = snapshot / "catalog.json"
     catalog = json.loads(catalog_path.read_text())
     dataset = {
@@ -667,9 +756,9 @@ def test_generated_sql_policy_runs_before_local_acceptance(tmp_path: Path) -> No
         )
     )
     fixtures.write_snapshot_manifest(
-        snapshot, kind="model", snapshot_id=str(uuid4()), model_revision=8
+        snapshot, kind="project", snapshot_id=str(uuid4()), project_revision=8
     )
-    pending = root / "model-change-set"
+    pending = root / "project-change-set"
     pending.mkdir()
     for sql, rule in (
         ("SELECT * FROM bronze.Customer", "code.projection"),
@@ -688,7 +777,7 @@ def test_generated_sql_policy_runs_before_local_acceptance(tmp_path: Path) -> No
                 ]
             )
         )
-        result = run("validate", "--session", str(root), "--area", "model")
+        result = run("validate", "--session", str(root), "--area", "project")
         assert not result["valid"]
         assert any(issue["code"] == rule for issue in result["issues"])
         run(
@@ -696,7 +785,7 @@ def test_generated_sql_policy_runs_before_local_acceptance(tmp_path: Path) -> No
             "--session",
             str(root),
             "--area",
-            "model",
+            "project",
             "--digest",
             result["digest"],
             "--backend-profile",
@@ -709,7 +798,7 @@ def test_generated_sql_policy_runs_before_local_acceptance(tmp_path: Path) -> No
 
 def test_schema_qualified_entities_remain_distinct_in_overlay(tmp_path: Path) -> None:
     root = workspace(tmp_path)
-    snapshot = root / "model/model-snapshot"
+    snapshot = root / "project/project-snapshot"
     catalog_path = snapshot / "catalog.json"
     catalog = json.loads(catalog_path.read_text())
     entity = next(
@@ -729,9 +818,9 @@ def test_schema_qualified_entities_remain_distinct_in_overlay(tmp_path: Path) ->
         "".join(json.dumps(item) + "\n" for item in records)
     )
     fixtures.write_snapshot_manifest(
-        snapshot, kind="model", snapshot_id="snapshot-model-01", model_revision=8
+        snapshot, kind="project", snapshot_id="snapshot-project-01", project_revision=8
     )
-    pending = root / "model-change-set"
+    pending = root / "project-change-set"
     pending.mkdir()
     (pending / "logical_entity.json").write_text(
         json.dumps([{**records[0], "logical_entity_status": "inactive"}])
@@ -741,7 +830,7 @@ def test_schema_qualified_entities_remain_distinct_in_overlay(tmp_path: Path) ->
         "--session",
         str(root),
         "--area",
-        "model",
+        "project",
         "--dataset",
         "logical_entity",
         "--view",
@@ -776,9 +865,9 @@ def test_analysis_inferred_cardinality_uses_published_schema_and_preserves_measu
     (metadata / "catalog.json").write_text(json.dumps(metadata_catalog))
     fixtures.write_snapshot_manifest(metadata, kind="metadata", snapshot_id="metadata-analysis")
 
-    snapshot = root / "model/model-snapshot"
+    snapshot = root / "project/project-snapshot"
     catalog = json.loads((snapshot / "catalog.json").read_text())
-    for name, rows in (("model_input_scope", objects), ("analysis_result", [])):
+    for name, rows in (("project_input_scope", objects), ("analysis_result", [])):
         definition = DATASETS_BY_NAME[name]
         catalog["sections"].append(
             {
@@ -798,11 +887,11 @@ def test_analysis_inferred_cardinality_uses_published_schema_and_preserves_measu
             "".join(json.dumps(record) + "\n" for record in rows)
         )
         (snapshot / f"schemas/{name}.schema.json").write_text(
-            json.dumps(build_model_dataset_schema(definition))
+            json.dumps(build_project_dataset_schema(definition))
         )
     (snapshot / "catalog.json").write_text(json.dumps(catalog))
     fixtures.write_snapshot_manifest(
-        snapshot, kind="model", snapshot_id="model-analysis", model_revision=8
+        snapshot, kind="project", snapshot_id="project-analysis", project_revision=8
     )
     record = AnalysisResultRecord.model_validate(
         {
@@ -836,7 +925,7 @@ def test_analysis_inferred_cardinality_uses_published_schema_and_preserves_measu
         }
     ).model_dump(mode="json")
     assert record["inferred_cardinality"] == "unknown"
-    pending = root / "model-change-set"
+    pending = root / "project-change-set"
     pending.mkdir()
     path = pending / "analysis_result.json"
     for cardinality in (
@@ -848,7 +937,7 @@ def test_analysis_inferred_cardinality_uses_published_schema_and_preserves_measu
     ):
         record["inferred_cardinality"] = cardinality
         path.write_text(json.dumps([record]))
-        result = run("validate", "--session", str(root), "--area", "model")
+        result = run("validate", "--session", str(root), "--area", "project")
         assert result["valid"], result["issues"]
 
     record.update(
@@ -866,7 +955,7 @@ def test_analysis_inferred_cardinality_uses_published_schema_and_preserves_measu
         }
     )
     path.write_text(json.dumps([record]))
-    result = run("validate", "--session", str(root), "--area", "model")
+    result = run("validate", "--session", str(root), "--area", "project")
     assert result["valid"], result["issues"]
     assert any(
         issue["code"] == "analysis_inferred_cardinality_mismatch" and issue["severity"] == "warning"
@@ -876,14 +965,14 @@ def test_analysis_inferred_cardinality_uses_published_schema_and_preserves_measu
 
     for invalid in (None, "many", 1):
         path.write_text(json.dumps([{**record, "inferred_cardinality": invalid}]))
-        result = run("validate", "--session", str(root), "--area", "model")
+        result = run("validate", "--session", str(root), "--area", "project")
         assert not result["valid"]
         assert any(issue["code"] == "schema" for issue in result["issues"])
 
 
-def test_legacy_model_catalog_is_rejected_before_selection(tmp_path: Path) -> None:
+def test_legacy_project_catalog_is_rejected_before_selection(tmp_path: Path) -> None:
     root = workspace(tmp_path)
-    snapshot = root / "model/model-snapshot"
+    snapshot = root / "project/project-snapshot"
     catalog_path = snapshot / "catalog.json"
     catalog = json.loads(catalog_path.read_text())
     entity = next(
@@ -892,26 +981,26 @@ def test_legacy_model_catalog_is_rejected_before_selection(tmp_path: Path) -> No
     entity["canonical_key"] = ["logical_entity_name"]
     catalog_path.write_text(json.dumps(catalog))
     fixtures.write_snapshot_manifest(
-        snapshot, kind="model", snapshot_id="model-snapshot-01", model_revision=8
+        snapshot, kind="project", snapshot_id="project-snapshot-01", project_revision=8
     )
     result = run(
         "select",
         "--session",
         str(root),
         "--area",
-        "model",
+        "project",
         "--dataset",
         "logical_entity",
         success=False,
     )
-    assert "Legacy Model Snapshot" in result["error"]
+    assert "Legacy Project Snapshot" in result["error"]
 
 
 def test_retired_mapping_dependency_catalog_is_rejected_before_selection(
     tmp_path: Path,
 ) -> None:
     root = workspace(tmp_path)
-    snapshot = root / "model/model-snapshot"
+    snapshot = root / "project/project-snapshot"
     catalog_path = snapshot / "catalog.json"
     catalog = json.loads(catalog_path.read_text())
     catalog["sections"].append(
@@ -927,16 +1016,225 @@ def test_retired_mapping_dependency_catalog_is_rejected_before_selection(
     )
     catalog_path.write_text(json.dumps(catalog))
     fixtures.write_snapshot_manifest(
-        snapshot, kind="model", snapshot_id="model-snapshot-01", model_revision=8
+        snapshot, kind="project", snapshot_id="project-snapshot-01", project_revision=8
     )
     result = run(
         "select",
         "--session",
         str(root),
         "--area",
-        "model",
+        "project",
         "--dataset",
         "logical_entity",
         success=False,
     )
-    assert "Legacy Model Snapshot" in result["error"]
+    assert "Legacy Project Snapshot" in result["error"]
+
+
+def test_context_uuid_is_created_once_and_published_schema_rejects_legacy_fields(
+    tmp_path: Path,
+) -> None:
+    from uuid import UUID
+
+    root = workspace(tmp_path)
+    snapshot = root / "project/project-snapshot"
+    catalog = json.loads((snapshot / "catalog.json").read_text())
+    for name, rows in (
+        (
+            "context_type",
+            [
+                {
+                    "context_type_name": "Business Requirement",
+                    "context_type_description": None,
+                }
+            ],
+        ),
+        ("context_group", []),
+        ("context_record", []),
+    ):
+        definition = DATASETS_BY_NAME[name]
+        catalog["sections"].append(
+            {
+                "name": "context",
+                "datasets": [
+                    {
+                        "name": name,
+                        "record_type": name,
+                        "canonical_key": list(definition.canonical_key),
+                        "row_count": len(rows),
+                        "rows_file": f"data/{name}.jsonl",
+                        "schema_file": f"schemas/{name}.schema.json",
+                    }
+                ],
+            }
+        )
+        (snapshot / f"data/{name}.jsonl").write_text(
+            "".join(json.dumps(row) + "\n" for row in rows)
+        )
+        (snapshot / f"schemas/{name}.schema.json").write_text(
+            json.dumps(build_project_dataset_schema(definition))
+        )
+    (snapshot / "catalog.json").write_text(json.dumps(catalog))
+    fixtures.write_snapshot_manifest(
+        snapshot, kind="project", snapshot_id="context-fixture", project_revision=8
+    )
+    args = ("--session", str(root), "--area", "project")
+    group = {
+        "context_group_name": "Identity",
+        "context_type_name": "Business Requirement",
+        "context_group_description": None,
+        "source_system_code": None,
+        "is_active": True,
+    }
+    first = run(
+        "upsert",
+        *args,
+        "--dataset",
+        "context_group",
+        "--record",
+        json.dumps(group),
+        "--expected-digest",
+        "empty",
+    )
+    record = {
+        "context_group_name": "Identity",
+        "context_text": "Customer numbers preserve leading zeros.",
+        "source_reference": "Requirements §2",
+        "status": "active",
+        "is_locked": False,
+    }
+    created = run(
+        "upsert",
+        *args,
+        "--dataset",
+        "context_record",
+        "--record",
+        json.dumps(record),
+        "--expected-digest",
+        first["digest"],
+    )
+    record_id = created["context_record_id"]
+    assert str(UUID(record_id)) == record_id
+    pending = root / "project-change-set/context_record.json"
+    saved = json.loads(pending.read_text())
+    assert len(saved) == 1 and saved[0] == {**record, "context_record_id": record_id}
+    before = pending.read_bytes()
+    run(
+        "upsert",
+        *args,
+        "--dataset",
+        "context_record",
+        "--record",
+        json.dumps(record),
+        "--expected-digest",
+        first["digest"],
+        success=False,
+    )
+    assert pending.read_bytes() == before
+    record.update(
+        context_record_id=record_id,
+        context_text="Customer numbers retain leading zeros after import.",
+    )
+    edited = run(
+        "upsert",
+        *args,
+        "--dataset",
+        "context_record",
+        "--record",
+        json.dumps(record),
+        "--expected-digest",
+        created["digest"],
+    )
+    assert edited["context_record_id"] == record_id
+    assert json.loads(pending.read_text()) == [record]
+    for invalid in (
+        {**record, "context_record_id": "human-entered-key"},
+        {**record, "record_key": "identity"},
+        {**record, "source_reference": {"section": "2"}},
+        {**record, "source_reference": "é" * 32769},
+    ):
+        run(
+            "upsert",
+            *args,
+            "--dataset",
+            "context_record",
+            "--record",
+            json.dumps(invalid),
+            "--expected-digest",
+            edited["digest"],
+            success=False,
+        )
+        assert json.loads(pending.read_text()) == [record]
+    rejected = run(
+        "upsert",
+        *args,
+        "--dataset",
+        "context_type",
+        "--record",
+        json.dumps({"context_type_name": "New type", "context_type_description": None}),
+        "--expected-digest",
+        edited["digest"],
+        success=False,
+    )
+    assert "read-only" in rejected["error"].lower() or "eligible" in rejected["error"].lower()
+
+
+def test_context_group_locks_and_active_supports_are_checked_locally(
+    tmp_path: Path,
+) -> None:
+    from copy import deepcopy
+
+    from tests.mcp.project_test_fixtures import (
+        complete_project_graph,
+        snapshot_from_graph,
+    )
+
+    root = workspace(tmp_path)
+    snapshot = root / "project/project-snapshot"
+    graph: dict[str, list[dict[str, object]]] = {
+        name: rows for name, rows in complete_project_graph().items()
+    }
+    graph["context_type"] = [
+        record.model_dump(mode="json")
+        for record in snapshot_from_graph(complete_project_graph()).context.types
+    ]
+    graph["context_record"][0]["is_locked"] = True
+    datasets: list[dict[str, Any]] = []
+    for name, definition in DATASETS_BY_NAME.items():
+        rows = graph.get(name, [])
+        datasets.append(
+            {
+                "name": name,
+                "record_type": name,
+                "canonical_key": list(definition.canonical_key),
+                "row_count": len(rows),
+                "rows_file": f"data/{name}.jsonl",
+                "schema_file": f"schemas/{name}.schema.json",
+            }
+        )
+        (snapshot / f"data/{name}.jsonl").write_text(
+            "".join(json.dumps(row) + "\n" for row in rows)
+        )
+        (snapshot / f"schemas/{name}.schema.json").write_text(
+            json.dumps(build_project_dataset_schema(definition))
+        )
+    (snapshot / "catalog.json").write_text(
+        json.dumps(
+            {
+                "snapshot_kind": "project",
+                "sections": [{"name": "project", "datasets": datasets}],
+            }
+        )
+    )
+    fixtures.write_snapshot_manifest(
+        snapshot, kind="project", snapshot_id="context-locks", project_revision=8
+    )
+    pending = root / "project-change-set"
+    pending.mkdir()
+    group = deepcopy(graph["context_group"][0])
+    group["is_active"] = False
+    (pending / "context_group.json").write_text(json.dumps([group]))
+    result = run("validate", "--session", str(root), "--area", "project")
+    codes = {issue["code"] for issue in result["issues"]}
+    assert "context_group_child_locked" in codes
+    assert "active_dependency_invalid" in codes

@@ -81,8 +81,8 @@ class AnalysisFindingSummary(ReviewContract):
 
 
 class AnalysisFindingPage(ReviewContract):
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
     items: tuple[AnalysisFindingSummary, ...] = Field(max_length=200)
     next_cursor: str | None = Field(default=None, max_length=2048)
 
@@ -130,5 +130,5 @@ class AnalysisFindingNotFoundError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(
             code="analysis_finding_not_found",
-            message="The requested Analysis finding was not found in the active Model.",
+            message="The requested Analysis finding was not found in the active Project.",
         )

@@ -66,10 +66,12 @@ def _run(
                 context.entra_tenant_id,
                 context.entra_object_id,
                 run_id,
-                context.model_revision,
+                context.project_revision,
             ),
         )
-    claim = WorkflowExecutionClaim.model_validate(_claim_specific_workflow_run(database, run_id))
+    claim = WorkflowExecutionClaim.model_validate(
+        _claim_specific_workflow_run(database, run_id)
+    )
     runtime = WebPostgresDatabase(
         dsn=database.web_runtime_dsn(), pool_min=1, pool_max=1, pool_timeout_seconds=5
     )
@@ -134,7 +136,9 @@ async def test_receipts_are_exact_idempotent_and_preserve_partial_failed_attempt
             await first.complete_request(request_id, usage)
             await first.complete_request(request_id, usage)
             with pytest.raises(DependencyUnavailableError):
-                await first.complete_request(request_id, ModelTokenUsage(input_tokens=11))
+                await first.complete_request(
+                    request_id, ModelTokenUsage(input_tokens=11)
+                )
             # A later transport failure leaves a pending receipt; prior numeric evidence survives.
             pending = await first.begin_request(2)
             repair = _invocation(recorder, claim, authoring_attempt=2)
@@ -165,7 +169,9 @@ async def test_usage_rechecks_actor_claim_revision_and_tenant_lock(
     elif failure == "claim":
         claim = claim.model_copy(update={"workflow_run_claim_token": uuid4()})
     elif failure == "revision":
-        claim = claim.model_copy(update={"model_revision": claim.model_revision + 1})
+        claim = claim.model_copy(
+            update={"project_revision": claim.project_revision + 1}
+        )
     else:
         with web_postgres_database.connect_owner() as connection:
             if failure == "lock":
@@ -226,7 +232,9 @@ async def test_usage_persists_last_allowed_attempt_and_request(
     web_postgres_database: DisposablePostgres,
     mode: str,
 ) -> None:
-    _, claim, runtime = _run(web_postgres_database, mode=mode, max_turns=100, retries=25)
+    _, claim, runtime = _run(
+        web_postgres_database, mode=mode, max_turns=100, retries=25
+    )
     await runtime.open()
     recorder = DatabaseWorkflowUsageRecorder(database=runtime)
     try:
@@ -361,7 +369,9 @@ async def test_database_rejects_invalid_numeric_receipts_independently(
                 ModelTokenUsage.model_construct(input_tokens=-1),
                 ModelTokenUsage.model_construct(output_tokens=1_000_000_000_001),
                 ModelTokenUsage.model_construct(input_tokens=2, cached_input_tokens=3),
-                ModelTokenUsage.model_construct(input_tokens=2, output_tokens=3, total_tokens=4),
+                ModelTokenUsage.model_construct(
+                    input_tokens=2, output_tokens=3, total_tokens=4
+                ),
             ):
                 with pytest.raises(DependencyUnavailableError):
                     await invocation.complete_request(request_id, invalid)
@@ -409,7 +419,7 @@ async def test_dispatcher_records_before_terminal_transition_clears_claim(
                     await transaction.fetch_one(
                         "SELECT application.complete_workflow_run(%s,%s,%s,%s,%s,%s)",
                         workflow_identity_triple(principal)
-                        + (claim.workflow_run_id, claim.model_revision, 0),
+                        + (claim.workflow_run_id, claim.project_revision, 0),
                     )
                 else:
                     await transaction.fetch_one(
@@ -417,7 +427,7 @@ async def test_dispatcher_records_before_terminal_transition_clears_claim(
                         workflow_identity_triple(principal)
                         + (
                             claim.workflow_run_id,
-                            claim.model_revision,
+                            claim.project_revision,
                             "agent_execution_failed",
                             "The agent could not finish.",
                         ),

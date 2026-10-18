@@ -1,4 +1,4 @@
-"""Shared default naming guidance for Model authoring agents."""
+"""Shared default naming guidance for Project authoring agents."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def effective_naming_instructions(
     workflow: NamingWorkflow,
     override: str | None,
 ) -> str:
-    """Use Model/user policy when supplied; otherwise use the shared default."""
+    """Use Project/user policy when supplied; otherwise use the shared default."""
 
     if override is not None and override.strip():
         return override

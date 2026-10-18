@@ -9,8 +9,10 @@ from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import TenantNotFoundError
 from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.models import DatabaseModelService
-from gds_workbench_api.features.workflows.overview import DatabaseWorkflowOverviewService
+from gds_workbench_api.features.projects import DatabaseProjectService
+from gds_workbench_api.features.workflows.overview import (
+    DatabaseWorkflowOverviewService,
+)
 from gds_workbench_api.features.workflows.runs import DatabaseWorkflowRunService
 from gds_workbench_api.features.workflows.runs.contracts import MappingRunOutcome
 from gds_workbench_api.features.workflows.runs.service import read_mapping_run_outcomes
@@ -28,25 +30,36 @@ async def test_mapping_outcomes_use_frozen_ordinals_and_bounded_tenant_scoped_re
     scenario: Literal["legacy", "mixed", "recovered", "partial", "empty", "all_failed"],
 ) -> None:
     scope = _seed_mapping_scope(web_postgres_database, dimensional=False)
-    model_id, run_id = scope.plan.model_id, scope.plan.workflow_run_id
+    project_id, run_id = scope.plan.project_id, scope.plan.workflow_run_id
     pair_count = {
-        "legacy": 1, "mixed": 4, "recovered": 4, "partial": 2, "empty": 1, "all_failed": 205,
+        "legacy": 1,
+        "mixed": 4,
+        "recovered": 4,
+        "partial": 2,
+        "empty": 1,
+        "all_failed": 205,
     }[scenario]
     with web_postgres_database.connect_owner() as connection:
-        actor = require_row(connection.execute(
-            "SELECT entra_tenant_id, entra_object_id FROM security.entra_principal_identity "
-            "WHERE principal_id=%s", (scope.plan.actor_principal_id,),
-        ).fetchone())
-        system = require_row(connection.execute(
-            "SELECT system_code FROM core.system WHERE system_id=%s", (scope.source_system_id,),
-        ).fetchone())
+        actor = require_row(
+            connection.execute(
+                "SELECT entra_tenant_id, entra_object_id FROM security.entra_principal_identity "
+                "WHERE principal_id=%s",
+                (scope.plan.actor_principal_id,),
+            ).fetchone()
+        )
+        system = require_row(
+            connection.execute(
+                "SELECT system_code FROM core.system WHERE system_id=%s",
+                (scope.source_system_id,),
+            ).fetchone()
+        )
         # Frozen history deliberately need not resolve to live Entity rows.
         # Sparse selection_order values must still map to one-based event ordinals.
         connection.execute(
             """
             WITH entities AS (
                 INSERT INTO application.workflow_run_entity_selection (
-                    workflow_run_id, model_id, modeled_entity_type, modeled_entity_id,
+                    workflow_run_id, project_id, modeled_entity_type, modeled_entity_id,
                     modeled_entity_schema_name, modeled_entity_name, selection_order
                 ) SELECT %s, %s, 'logical_entity', 1000000 + ordinal,
                          'historical_schema', 'HistoricalEntity' || ordinal, ordinal * 10
@@ -54,66 +67,111 @@ async def test_mapping_outcomes_use_frozen_ordinals_and_bounded_tenant_scoped_re
                 RETURNING workflow_run_entity_selection_id, selection_order
             )
             INSERT INTO application.workflow_run_mapping_target_selection (
-                workflow_run_id, model_id, workflow_run_entity_selection_id,
+                workflow_run_id, project_id, workflow_run_entity_selection_id,
                 source_system_id, selection_order
             ) SELECT %s, %s, workflow_run_entity_selection_id, %s, selection_order FROM entities
             """,
-            (run_id, model_id, pair_count, run_id, model_id, scope.source_system_id),
+            (
+                run_id,
+                project_id,
+                pair_count,
+                run_id,
+                project_id,
+                scope.source_system_id,
+            ),
         )
         events: list[tuple[str, int, int, str]]
         if scenario in {"mixed", "recovered"}:
             events = [
-                ("mapping.pair_failed", 1, 4, "An earlier outcome must not override the latest."),
+                (
+                    "mapping.pair_failed",
+                    1,
+                    4,
+                    "An earlier outcome must not override the latest.",
+                ),
                 ("mapping.pair_completed", 1, 4, "Completed."),
                 ("mapping.pair_preserved", 2, 4, "Preserved."),
                 ("mapping.pair_no_source", 3, 4, "No applicable source."),
                 ("mapping.pair_failed", 4, 4, "First bounded diagnostic."),
                 ("mapping.pair_failed", 4, 4, "Required join evidence is unavailable."),
-                ("mapping.mapping_authoring", 2, 4, "Failed: legacy prose is not an outcome."),
+                (
+                    "mapping.mapping_authoring",
+                    2,
+                    4,
+                    "Failed: legacy prose is not an outcome.",
+                ),
                 ("mapping.pair_failed", 3, 5, "Wrong frozen total is ignored."),
                 ("mapping.pair_completed", 0, 4, "Zero is not a frozen ordinal."),
             ]
             if scenario == "recovered":
                 events.append(("mapping.pair_completed", 4, 4, "Completed on retry."))
         elif scenario == "partial":
-            events = [("mapping.pair_partial", 1, 2, "Available transformations retained."),
-                      ("mapping.pair_empty", 2, 2, "No transformation output.")]
+            events = [
+                ("mapping.pair_partial", 1, 2, "Available transformations retained."),
+                ("mapping.pair_empty", 2, 2, "No transformation output."),
+            ]
         elif scenario == "empty":
             events = [("mapping.pair_empty", 1, 1, "No transformation output.")]
         elif scenario == "legacy":
             events = [("mapping.mapping_authoring", 1, 1, "Failed: legacy prose only.")]
         else:
             events = [
-                ("mapping.pair_failed", ordinal, pair_count, "Required evidence is unavailable.")
+                (
+                    "mapping.pair_failed",
+                    ordinal,
+                    pair_count,
+                    "Required evidence is unavailable.",
+                )
                 for ordinal in range(1, pair_count + 1)
             ]
         with connection.cursor() as cursor:
             cursor.executemany(
                 """
-                INSERT INTO model.model_event_log (
-                    model_id, correlation_id, workflow_run_id, model_event_log_sequence,
-                    model_event_log_attempt, model_workflow, model_event_log_stage,
-                    model_event_log_status, model_event_log_message,
-                    model_event_log_current, model_event_log_total
+                INSERT INTO project.project_event_log (
+                    project_id, correlation_id, workflow_run_id, project_event_log_sequence,
+                    project_event_log_attempt, project_workflow, project_event_log_stage,
+                    project_event_log_status, project_event_log_message,
+                    project_event_log_current, project_event_log_total
                 ) VALUES (%s, %s, %s, %s, 1, 'mapping', %s, 'warning', %s, %s, %s)
                 """,
                 [
-                    (model_id, scope.plan.correlation_id, run_id, sequence, stage,
-                     message, current, total)
-                    for sequence, (stage, current, total, message) in enumerate(events, start=1)
+                    (
+                        project_id,
+                        scope.plan.correlation_id,
+                        run_id,
+                        sequence,
+                        stage,
+                        message,
+                        current,
+                        total,
+                    )
+                    for sequence, (stage, current, total, message) in enumerate(
+                        events, start=1
+                    )
                 ],
             )
-        acquired = require_row(connection.execute(
-            "SELECT acquired FROM security.acquire_tenant_lock(%s,%s,'user',%s,60,%s)",
-            (actor["entra_tenant_id"], actor["entra_object_id"], scope.tenant_id,
-             "Disposable read projection verification"),
-        ).fetchone())
+        acquired = require_row(
+            connection.execute(
+                "SELECT acquired FROM security.acquire_tenant_lock(%s,%s,'user',%s,60,%s)",
+                (
+                    actor["entra_tenant_id"],
+                    actor["entra_object_id"],
+                    scope.tenant_id,
+                    "Disposable read projection verification",
+                ),
+            ).fetchone()
+        )
         assert acquired["acquired"]
         if scenario == "all_failed":
             connection.execute(
                 "SELECT * FROM application.fail_workflow_run(%s,%s,'user',%s,1,%s,%s)",
-                (actor["entra_tenant_id"], actor["entra_object_id"], run_id,
-                 "mapping_evidence_unresolved", "Required evidence is unavailable."),
+                (
+                    actor["entra_tenant_id"],
+                    actor["entra_object_id"],
+                    run_id,
+                    "mapping_evidence_unresolved",
+                    "Required evidence is unavailable.",
+                ),
             )
         else:
             connection.execute(
@@ -127,49 +185,75 @@ async def test_mapping_outcomes_use_frozen_ordinals_and_bounded_tenant_scoped_re
         entra_object_id=actor["entra_object_id"],
     )
     runtime = WebPostgresDatabase(
-        dsn=web_postgres_database.web_runtime_dsn(), pool_min=1, pool_max=1,
+        dsn=web_postgres_database.web_runtime_dsn(),
+        pool_min=1,
+        pool_max=1,
         pool_timeout_seconds=5,
     )
     service = DatabaseWorkflowRunService(
-        database=runtime, authorizer=AuthorizationService(),
+        database=runtime,
+        authorizer=AuthorizationService(),
         cursor_signing_key=b"disposable-mapping-read-test-key-32-bytes",
     )
     await runtime.open()
     try:
         detail = await service.read_run(
-            principal, tenant_id=scope.tenant_id, model_id=model_id, workflow_run_id=run_id,
+            principal,
+            tenant_id=scope.tenant_id,
+            project_id=project_id,
+            workflow_run_id=run_id,
         )
         ledger = await service.list_runs(
-            principal, tenant_id=scope.tenant_id, model_id=model_id, workflow="mapping",
-            run_state=None, page_size=25, cursor=None,
+            principal,
+            tenant_id=scope.tenant_id,
+            project_id=project_id,
+            workflow="mapping",
+            run_state=None,
+            page_size=25,
+            cursor=None,
         )
         assert ledger.items[0].mapping_outcome == detail.mapping_outcome
-        models = await DatabaseModelService(
-            database=runtime, authorizer=AuthorizationService(),
-            cursor_signing_key=b"disposable-model-read-test-key-32-bytes",
-        ).list_models(
-            principal, tenant_id=scope.tenant_id, model_status="active", page_size=25, cursor=None,
+        projects = await DatabaseProjectService(
+            database=runtime,
+            authorizer=AuthorizationService(),
+            cursor_signing_key=b"disposable-project-read-test-key-32-bytes",
+        ).list_projects(
+            principal,
+            tenant_id=scope.tenant_id,
+            project_status="active",
+            page_size=25,
+            cursor=None,
         )
-        assert models.items[0].latest_run_status == {
-            "legacy": "completed", "mixed": "partial_results",
-            "recovered": "completed", "all_failed": "failed",
-            "partial": "partial_results", "empty": "completed",
-        }[scenario]
+        assert (
+            projects.items[0].latest_run_status
+            == {
+                "legacy": "completed",
+                "mixed": "partial_results",
+                "recovered": "completed",
+                "all_failed": "failed",
+                "partial": "partial_results",
+                "empty": "completed",
+            }[scenario]
+        )
         if scenario == "legacy":
             assert detail.mapping_outcome is None
             assert detail.mapping_failures == ()
             assert not detail.mapping_failures_truncated
         elif scenario == "recovered":
             assert detail.mapping_outcome == MappingRunOutcome(
-                completed_pair_count=2, preserved_pair_count=1,
-                no_source_pair_count=1, failed_pair_count=0,
+                completed_pair_count=2,
+                preserved_pair_count=1,
+                no_source_pair_count=1,
+                failed_pair_count=0,
             )
             assert not detail.mapping_failures
             assert not detail.mapping_failures_truncated
         elif scenario == "mixed":
             assert detail.mapping_outcome == MappingRunOutcome(
-                completed_pair_count=1, preserved_pair_count=1,
-                no_source_pair_count=1, failed_pair_count=1,
+                completed_pair_count=1,
+                preserved_pair_count=1,
+                no_source_pair_count=1,
+                failed_pair_count=1,
             )
             assert len(detail.mapping_failures) == 1
             assert detail.mapping_failures[0].model_dump() == {
@@ -183,49 +267,73 @@ async def test_mapping_outcomes_use_frozen_ordinals_and_bounded_tenant_scoped_re
             assert not detail.mapping_failures_truncated
         elif scenario in {"partial", "empty"}:
             assert detail.mapping_outcome == MappingRunOutcome(
-                completed_pair_count=0, preserved_pair_count=0,
-                no_source_pair_count=0, failed_pair_count=0,
-                partial_pair_count=1 if scenario == "partial" else 0, empty_pair_count=1,
+                completed_pair_count=0,
+                preserved_pair_count=0,
+                no_source_pair_count=0,
+                failed_pair_count=0,
+                partial_pair_count=1 if scenario == "partial" else 0,
+                empty_pair_count=1,
             )
             assert not detail.mapping_failures
             assert not detail.mapping_failures_truncated
         else:
             assert detail.workflow_run_state == "failed"
             assert detail.mapping_outcome == MappingRunOutcome(
-                completed_pair_count=0, preserved_pair_count=0,
-                no_source_pair_count=0, failed_pair_count=205,
+                completed_pair_count=0,
+                preserved_pair_count=0,
+                no_source_pair_count=0,
+                failed_pair_count=205,
             )
             assert len(detail.mapping_failures) == 200
             assert detail.mapping_failures[-1].entity_name == "HistoricalEntity200"
             assert detail.mapping_failures_truncated
 
         overview = await DatabaseWorkflowOverviewService(
-            database=runtime, authorizer=AuthorizationService(),
-        ).read_overview(principal, tenant_id=scope.tenant_id, model_id=model_id)
+            database=runtime,
+            authorizer=AuthorizationService(),
+        ).read_overview(principal, tenant_id=scope.tenant_id, project_id=project_id)
         mapping_section = next(
             item for item in overview.section_states if item.section == "mapping"
         )
-        assert mapping_section.state == {
-            "legacy": "completed", "mixed": "results_available",
-            "recovered": "completed", "all_failed": "failed",
-            "partial": "results_available", "empty": "completed",
-        }[scenario]
+        assert (
+            mapping_section.state
+            == {
+                "legacy": "completed",
+                "mixed": "results_available",
+                "recovered": "completed",
+                "all_failed": "failed",
+                "partial": "results_available",
+                "empty": "completed",
+            }[scenario]
+        )
 
-        # The query itself fences Tenant and Model, even independently of the
+        # The query itself fences Tenant and Project, even independently of the
         # public read service's authorization check.
         async with runtime.read_transaction() as transaction:
-            assert await read_mapping_run_outcomes(
-                transaction, tenant_id=scope.placement_tenant_id,
-                model_id=model_id, workflow_run_ids=(run_id,),
-            ) == {}
-            assert await read_mapping_run_outcomes(
-                transaction, tenant_id=scope.tenant_id,
-                model_id=model_id + 100000, workflow_run_ids=(run_id,),
-            ) == {}
+            assert (
+                await read_mapping_run_outcomes(
+                    transaction,
+                    tenant_id=scope.placement_tenant_id,
+                    project_id=project_id,
+                    workflow_run_ids=(run_id,),
+                )
+                == {}
+            )
+            assert (
+                await read_mapping_run_outcomes(
+                    transaction,
+                    tenant_id=scope.tenant_id,
+                    project_id=project_id + 100000,
+                    workflow_run_ids=(run_id,),
+                )
+                == {}
+            )
         with pytest.raises(TenantNotFoundError):
             await service.read_run(
-                principal, tenant_id=scope.placement_tenant_id,
-                model_id=model_id, workflow_run_id=run_id,
+                principal,
+                tenant_id=scope.placement_tenant_id,
+                project_id=project_id,
+                workflow_run_id=run_id,
             )
     finally:
         await runtime.close()

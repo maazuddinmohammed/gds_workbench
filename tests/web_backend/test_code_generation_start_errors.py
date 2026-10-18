@@ -36,7 +36,10 @@ from tests.web_backend.test_workflow_commands import (
             "workflow_prompt_unavailable",
         ),
         ("Code Generation has no eligible target set", "code_no_eligible_targets"),
-        ("private diagnostic sentinel: database connection failed", "dependency_unavailable"),
+        (
+            "private diagnostic sentinel: database connection failed",
+            "dependency_unavailable",
+        ),
     ],
 )
 def test_code_creation_reports_safe_prerequisites_over_http(
@@ -49,7 +52,7 @@ def test_code_creation_reports_safe_prerequisites_over_http(
             query: LiteralString,
             parameters: tuple[Any, ...] = (),
         ) -> dict[str, Any] | None:
-            if "model.assert_writable" in query:
+            if "project.assert_writable" in query:
                 return {"assert_writable": None}
             if "application.create_workflow_run" in query:
                 raise RuntimeError(database_message)
@@ -70,18 +73,20 @@ def test_code_creation_reports_safe_prerequisites_over_http(
     )
     with TestClient(app) as client:
         response = client.post(
-            "/api/v1/tenants/7/models/18/runs",
+            "/api/v1/tenants/7/projects/18/runs",
             headers={"Idempotency-Key": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"},
             json={
-                "expected_model_revision": 4,
-                "model_workflow": "code_generation",
+                "expected_project_revision": 4,
+                "project_workflow": "code_generation",
                 "selected_entity_ids": [101],
                 "selected_system_codes": ["CRM"],
                 "modeled_entity_type": "logical_entity",
                 "code_generation_coverage_mode": "selected_targets",
             },
         )
-    assert response.status_code == (503 if public_code == "dependency_unavailable" else 400)
+    assert response.status_code == (
+        503 if public_code == "dependency_unavailable" else 400
+    )
     error = response.json()["error"]
     assert error["code"] == public_code
     assert database_message not in response.text

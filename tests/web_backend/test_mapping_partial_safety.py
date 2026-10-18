@@ -3,7 +3,9 @@
 from typing import cast
 
 import pytest
-from gds_workbench_api.features.mapping.complete_candidate import CompleteMappingCandidateValidator
+from gds_workbench_api.features.mapping.complete_candidate import (
+    CompleteMappingCandidateValidator,
+)
 from gds_workbench_api.features.mapping.contracts import (
     MappingAttributeCandidate,
     MappingObjectCandidate,
@@ -33,7 +35,9 @@ async def test_new_object_logic_cannot_change_a_protected_authored_attribute(
     protected = protected.model_copy(
         update={
             "is_locked": protection == "locked",
-            "transformation_document": protected.transformation_document if saved_logic else None,
+            "transformation_document": protected.transformation_document
+            if saved_logic
+            else None,
         }
     )
     header = header.model_copy(
@@ -60,7 +64,9 @@ async def test_new_object_logic_cannot_change_a_protected_authored_attribute(
         "schema_version": "1.0",
         "object_mapping": {
             "object_dependency_order": 0,
-            "mapping_transformation_document": {"steps": ["Synthetic new Object grain."]},
+            "mapping_transformation_document": {
+                "steps": ["Synthetic new Object grain."]
+            },
         },
         "attribute_mappings": [],
     }
@@ -91,7 +97,9 @@ async def test_virtual_unselected_attributes_allow_initial_object_authoring() ->
     preparation = preparation.model_copy(
         update={
             "plan": plan,
-            "readiness": assess_mapping_readiness(plan=plan, context=preparation.context),
+            "readiness": assess_mapping_readiness(
+                plan=plan, context=preparation.context
+            ),
         }
     )
     candidate: JsonValue = {
@@ -135,7 +143,9 @@ def test_recursively_empty_mapping_documents_become_null(document: JsonValue) ->
 
 
 @pytest.mark.parametrize("value", [False, 0, 0.0, " 0 ", "  custom rule  "])
-def test_meaningful_custom_mapping_values_are_preserved_exactly(value: JsonValue) -> None:
+def test_meaningful_custom_mapping_values_are_preserved_exactly(
+    value: JsonValue,
+) -> None:
     document: JsonValue = {"custom": {"value": [None, value], "empty": []}}
     assert (
         MappingObjectCandidate.model_validate(

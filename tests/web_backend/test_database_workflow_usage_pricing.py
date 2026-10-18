@@ -7,13 +7,19 @@ from uuid import uuid4
 
 import pytest
 from gds_etl_workbench.domain.errors import DependencyUnavailableError
-from gds_workbench_api.features.workflows.authoring.lifecycle import workflow_identity_triple
-from gds_workbench_api.features.workflows.execution.contracts import WorkflowExecutionClaim
+from gds_workbench_api.features.workflows.authoring.lifecycle import (
+    workflow_identity_triple,
+)
+from gds_workbench_api.features.workflows.execution.contracts import (
+    WorkflowExecutionClaim,
+)
 from gds_workbench_api.features.workflows.usage.contracts import (
     FoundryModelPricing,
     ModelTokenUsage,
 )
-from gds_workbench_api.features.workflows.usage.service import DatabaseWorkflowUsageRecorder
+from gds_workbench_api.features.workflows.usage.service import (
+    DatabaseWorkflowUsageRecorder,
+)
 from psycopg.errors import RaiseException
 from psycopg.types.json import Jsonb
 
@@ -55,7 +61,7 @@ def _pricing_rows(database: DisposablePostgres, claim: WorkflowExecutionClaim):
 
 
 @pytest.mark.asyncio
-async def test_pricing_uses_frozen_run_model_and_exact_normalized_replay(
+async def test_pricing_uses_frozen_run_project_and_exact_normalized_replay(
     web_postgres_database: DisposablePostgres,
 ) -> None:
     _, claim, runtime = _run(web_postgres_database)
@@ -77,7 +83,10 @@ async def test_pricing_uses_frozen_run_model_and_exact_normalized_replay(
             assert row["completed_time"] is None
             assert row["pricing_basis"] == price.basis
             assert row["pricing_input_usd_per_million"] == price.input_usd_per_million
-            assert row["pricing_cached_input_usd_per_million"] == price.cached_input_usd_per_million
+            assert (
+                row["pricing_cached_input_usd_per_million"]
+                == price.cached_input_usd_per_million
+            )
             assert (
                 row["pricing_cache_write_input_usd_per_million"]
                 == price.cache_write_input_usd_per_million
@@ -91,7 +100,7 @@ async def test_pricing_uses_frozen_run_model_and_exact_normalized_replay(
             replay["valid_from"] = "2026-01-01T01:00:00+01:00"
             parameters = workflow_identity_triple(claim.principal) + (
                 claim.workflow_run_id,
-                claim.model_revision,
+                claim.project_revision,
                 claim.workflow_run_claim_token,
                 request_id,
                 invocation_id,
@@ -106,18 +115,22 @@ async def test_pricing_uses_frozen_run_model_and_exact_normalized_replay(
                     async with runtime.write_transaction() as transaction:
                         await transaction.fetch_one(
                             BEGIN_REQUEST_SQL,
-                            parameters + (Jsonb(changed) if changed is not None else None,),
+                            parameters
+                            + (Jsonb(changed) if changed is not None else None,),
                         )
             await invocation.complete_request(
-                request_id, ModelTokenUsage(input_tokens=2, output_tokens=1, total_tokens=3)
+                request_id,
+                ModelTokenUsage(input_tokens=2, output_tokens=1, total_tokens=3),
             )
             assert await invocation.begin_request(1) == request_id
-        # Re-entering an already tracked claim still returns its frozen model code.
+        # Re-entering an already tracked claim still returns its frozen project code.
         async with recorder.track_run(claim):
             await _invocation(recorder, claim).begin_request(1)
     finally:
         await runtime.close()
-    assert [row["pricing_basis"] for row in _pricing_rows(web_postgres_database, claim)] == [
+    assert [
+        row["pricing_basis"] for row in _pricing_rows(web_postgres_database, claim)
+    ] == [
         price.basis,
         price.basis,
     ]
@@ -162,7 +175,7 @@ async def test_sql_rejects_invalid_pricing_before_persisting_receipts(
                             workflow_identity_triple(claim.principal)
                             + (
                                 claim.workflow_run_id,
-                                claim.model_revision,
+                                claim.project_revision,
                                 claim.workflow_run_claim_token,
                                 uuid4(),
                                 uuid4(),
@@ -262,7 +275,7 @@ async def test_recovered_run_freezes_new_schedule_without_repricing_old_request(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("workflow", ["conceptual", "profiling"])
-async def test_tracking_returns_frozen_model_on_replay_and_optional_pricing_defaults_unknown(
+async def test_tracking_returns_frozen_project_on_replay_and_optional_pricing_defaults_unknown(
     web_postgres_database: DisposablePostgres,
     workflow: str,
 ) -> None:
@@ -271,12 +284,18 @@ async def test_tracking_returns_frozen_model_on_replay_and_optional_pricing_defa
         for _ in range(2):
             row = require_row(
                 connection.execute(
-                    "SELECT application.begin_workflow_run_usage(%s,%s,%s,%s,%s,%s) AS model",
+                    "SELECT application.begin_workflow_run_usage(%s,%s,%s,%s,%s,%s) AS project",
                     workflow_identity_triple(claim.principal)
-                    + (claim.workflow_run_id, claim.model_revision, claim.workflow_run_claim_token),
+                    + (
+                        claim.workflow_run_id,
+                        claim.project_revision,
+                        claim.workflow_run_claim_token,
+                    ),
                 ).fetchone()
             )
-            assert row["model"] == ("foundry-primary" if workflow == "conceptual" else None)
+            assert row["project"] == (
+                "foundry-primary" if workflow == "conceptual" else None
+            )
         if workflow == "conceptual":
             # An old caller can omit the final optional pricing argument.
             connection.execute(
@@ -285,7 +304,7 @@ async def test_tracking_returns_frozen_model_on_replay_and_optional_pricing_defa
                 workflow_identity_triple(claim.principal)
                 + (
                     claim.workflow_run_id,
-                    claim.model_revision,
+                    claim.project_revision,
                     claim.workflow_run_claim_token,
                     uuid4(),
                     uuid4(),

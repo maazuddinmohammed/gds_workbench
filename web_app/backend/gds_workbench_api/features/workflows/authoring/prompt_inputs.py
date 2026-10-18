@@ -10,12 +10,12 @@ from typing import Annotated, Any, Literal, cast
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     AnalysisResultRecord,
-    ModelSchemaDefinition,
     ProfilingProfileRecord,
+    ProjectSchemaDefinition,
 )
-from gds_etl_workbench.domain.snapshots.model import (
-    AssertionSection,
+from gds_etl_workbench.domain.snapshots.project import (
     ConceptualSection,
+    ContextSection,
     DimensionalSection,
     LogicalSection,
     MappingSection,
@@ -47,29 +47,32 @@ class _PromptInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True, hide_input_in_errors=True)
 
 
-class _ModelBrief(_PromptInput):
-    model_name: str = Field(min_length=1, max_length=255, pattern=r"\S", repr=False)
-    model_revision: int = Field(gt=0)
-    model_description: str | None = Field(min_length=1, max_length=2_000, pattern=r"\S", repr=False)
+class _ProjectBrief(_PromptInput):
+    project_name: str = Field(min_length=1, max_length=255, pattern=r"\S", repr=False)
+    project_revision: int = Field(gt=0)
+    project_description: str | None = Field(
+        min_length=1, max_length=2_000, pattern=r"\S", repr=False
+    )
 
 
-class _AuthoringModelIdentity(_PromptInput):
-    model_name: str = Field(min_length=1, max_length=255, pattern=r"\S", repr=False)
-    model_revision: int = Field(gt=0)
-    model_workflow: Literal["analysis", "conceptual", "logical", "dimensional"]
+class _AuthoringProjectIdentity(_PromptInput):
+    project_name: str = Field(min_length=1, max_length=255, pattern=r"\S", repr=False)
+    project_revision: int = Field(gt=0)
+    project_workflow: Literal["analysis", "conceptual", "logical", "dimensional"]
     workflow_execution_mode: Literal["tool_assisted"]
     selected_scope_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 type _ContextDataset = Literal[
-    "model_details",
+    "project_details",
     "selected_object",
     "selected_attribute",
     "selected_logical_entity",
     "profiling_profile",
     "analysis_result",
-    "modeling_assertion_document",
-    "modeling_assertion_record",
+    "context_type",
+    "context_group",
+    "context_record",
     "conceptual_object",
     "conceptual_relationship",
     "logical_submodel",
@@ -123,15 +126,15 @@ class _EvidenceManifest(_PromptInput):
 
 
 _AUTHORING_ADAPTERS: dict[str, TypeAdapter[Any]] = {
-    "model_brief": TypeAdapter(_ModelBrief),
+    "project_brief": TypeAdapter(_ProjectBrief),
     "selected_metadata": TypeAdapter(list[SelectedObjectContext]),
     "selected_logical_entities": TypeAdapter(list[SelectedLogicalEntityContext]),
-    "logical_schemas": TypeAdapter(list[ModelSchemaDefinition]),
-    "dimensional_schemas": TypeAdapter(list[ModelSchemaDefinition]),
+    "logical_schemas": TypeAdapter(list[ProjectSchemaDefinition]),
+    "dimensional_schemas": TypeAdapter(list[ProjectSchemaDefinition]),
     "profile_evidence": TypeAdapter(list[ProfilingProfileRecord]),
     "applied_relationships": TypeAdapter(list[AnalysisResultRecord]),
-    "modeling_assertions": TypeAdapter(AssertionSection),
-    "model_identity": TypeAdapter(_AuthoringModelIdentity),
+    "context_records": TypeAdapter(ContextSection),
+    "project_identity": TypeAdapter(_AuthoringProjectIdentity),
     "evidence_datasets": TypeAdapter(list[_EvidenceDataset]),
     "analysis_evidence": TypeAdapter(list[AnalysisResultRecord]),
     "applied_conceptual": TypeAdapter(ConceptualSection | None),
@@ -156,11 +159,11 @@ def _authoring_input_adapter(name: str) -> TypeAdapter[Any]:
 
 
 _ANALYSIS_INPUTS: dict[str, tuple[str, str, str, JsonValue]] = {
-    "model_brief": (
+    "project_brief": (
         "one_shot",
         "",
-        "Model name, current revision and business description for interpreting the selection.",
-        {"model_name": "Customer Model", "model_revision": 7, "model_description": None},
+        "Project name, current revision and business description for interpreting the selection.",
+        {"project_name": "Customer Project", "project_revision": 7, "project_description": None},
     ),
     "selected_metadata": (
         "one_shot",
@@ -229,22 +232,22 @@ _ANALYSIS_INPUTS: dict[str, tuple[str, str, str, JsonValue]] = {
         "A hypothesis is not proof of referential integrity; preserve exact endpoint keys.",
         [],
     ),
-    "modeling_assertions": (
+    "context_records": (
         "one_shot",
-        "assertion",
-        "Applicable business Assertion documents and records, including their provenance. "
+        "context",
+        "Applicable saved Context groups and records, with source references. "
         "Distinguish explicit business rules from weaker naming or type clues.",
-        {"documents": [], "records": []},
+        {"types": [], "groups": [], "records": []},
     ),
-    "model_identity": (
+    "project_identity": (
         "tool_assisted",
         "",
-        "Frozen Model and selection identity for bounded evidence retrieval. The scope digest "
+        "Frozen Project and selection identity for bounded evidence retrieval. The scope digest "
         "identifies the selection; it does not contain its records.",
         {
-            "model_name": "Customer Model",
-            "model_revision": 7,
-            "model_workflow": "analysis",
+            "project_name": "Customer Project",
+            "project_revision": 7,
+            "project_workflow": "analysis",
             "workflow_execution_mode": "tool_assisted",
             "selected_scope_digest": "a" * 64,
         },
@@ -270,21 +273,21 @@ _ANALYSIS_INPUTS: dict[str, tuple[str, str, str, JsonValue]] = {
 _CONCEPTUAL_INPUTS: dict[str, tuple[str, str, str, JsonValue]] = {
     name: _ANALYSIS_INPUTS[name]
     for name in (
-        "model_brief",
+        "project_brief",
         "selected_metadata",
         "profile_evidence",
-        "modeling_assertions",
-        "model_identity",
+        "context_records",
+        "project_identity",
         "evidence_datasets",
     )
 }
-_CONCEPTUAL_INPUTS["model_identity"] = (
+_CONCEPTUAL_INPUTS["project_identity"] = (
     "tool_assisted",
     "",
-    _ANALYSIS_INPUTS["model_identity"][2],
+    _ANALYSIS_INPUTS["project_identity"][2],
     {
-        **cast(dict[str, JsonValue], _ANALYSIS_INPUTS["model_identity"][3]),
-        "model_workflow": "conceptual",
+        **cast(dict[str, JsonValue], _ANALYSIS_INPUTS["project_identity"][3]),
+        "project_workflow": "conceptual",
     },
 )
 _CONCEPTUAL_INPUTS["analysis_evidence"] = _ANALYSIS_INPUTS["applied_relationships"]
@@ -296,14 +299,18 @@ _CONCEPTUAL_INPUTS["applied_conceptual"] = (
     "Conceptual section is available; it does not establish that a business concept is absent.",
     {"objects": [], "relationships": []},
 )
-_LOGICAL_INPUTS = dict(_CONCEPTUAL_INPUTS)
-_LOGICAL_INPUTS["model_identity"] = (
+_LOGICAL_INPUTS = {
+    name: definition
+    for name, definition in _CONCEPTUAL_INPUTS.items()
+    if name != "applied_conceptual"
+}
+_LOGICAL_INPUTS["project_identity"] = (
     "tool_assisted",
     "",
-    _ANALYSIS_INPUTS["model_identity"][2],
+    _ANALYSIS_INPUTS["project_identity"][2],
     {
-        **cast(dict[str, JsonValue], _ANALYSIS_INPUTS["model_identity"][3]),
-        "model_workflow": "logical",
+        **cast(dict[str, JsonValue], _ANALYSIS_INPUTS["project_identity"][3]),
+        "project_workflow": "logical",
     },
 )
 _LOGICAL_INPUTS["applied_logical"] = (
@@ -318,17 +325,15 @@ _LOGICAL_INPUTS["applied_logical"] = (
 )
 _LOGICAL_INPUTS["logical_schemas"] = (
     "one_shot",
-    "model_details.logical_schemas",
+    "project_details.logical_schemas",
     "Allowed Logical schema names with placement descriptions. Every Entity must use one.",
     [{"schema_name": "silver", "description": "Operational entities."}],
 )
-_DIMENSIONAL_INPUTS = {
-    name: definition for name, definition in _LOGICAL_INPUTS.items() if name != "applied_conceptual"
-}
+_DIMENSIONAL_INPUTS = dict(_LOGICAL_INPUTS)
 _DIMENSIONAL_INPUTS.pop("logical_schemas", None)
 _DIMENSIONAL_INPUTS["dimensional_schemas"] = (
     "one_shot",
-    "model_details.dimensional_schemas",
+    "project_details.dimensional_schemas",
     "Allowed Dimensional schema names with placement descriptions. Every Entity must use one.",
     [{"schema_name": "gold", "description": "Analytical entities."}],
 )
@@ -343,13 +348,13 @@ _DIMENSIONAL_INPUTS["selected_logical_entities"] = (
         JsonValue, workflow_input_contracts("dimensional")["selected_logical_entities"]["example"]
     ),
 )
-_DIMENSIONAL_INPUTS["model_identity"] = (
+_DIMENSIONAL_INPUTS["project_identity"] = (
     "tool_assisted",
     "",
-    _ANALYSIS_INPUTS["model_identity"][2],
+    _ANALYSIS_INPUTS["project_identity"][2],
     {
-        **cast(dict[str, JsonValue], _ANALYSIS_INPUTS["model_identity"][3]),
-        "model_workflow": "dimensional",
+        **cast(dict[str, JsonValue], _ANALYSIS_INPUTS["project_identity"][3]),
+        "project_workflow": "dimensional",
     },
 )
 _DIMENSIONAL_INPUTS["applied_logical"] = (
@@ -379,7 +384,7 @@ _DIMENSIONAL_INPUTS["applied_mapping"] = (
 )
 _DIMENSIONAL_INPUTS["gold_technical_policy"] = (
     "one_shot",
-    "model_details.gold_model_technical_columns_template",
+    "project_details.gold_model_technical_columns_template",
     "Frozen required Gold technical policy: dimension surrogate-key naming/type, role-aware "
     "fact/bridge foreign-key names, and Type2 validity columns. Follow these exact templates "
     "and nullability rules. Required columns must remain compatible with saved Entities and "
@@ -421,7 +426,7 @@ _DIMENSIONAL_INPUTS["gold_technical_policy"] = (
 )
 _DIMENSIONAL_INPUTS["gold_audit_policy"] = (
     "one_shot",
-    "model_details.gold_model_audit_columns_template",
+    "project_details.gold_model_audit_columns_template",
     "Frozen required audit columns with exact semantic names, types, nullability and "
     "definitions. Keep these distinct from source business Attributes and represent them "
     "explicitly. This policy does not establish source mappings or measured source values.",
@@ -540,8 +545,8 @@ def _mapping_inputs(
             "MappingToolIdentity",
             __base__=_PromptInput,
             workflow_run_id=(Annotated[int, Field(gt=0)], ...),
-            model_id=(Annotated[int, Field(gt=0)], ...),
-            model_revision=(Annotated[int, Field(gt=0)], ...),
+            project_id=(Annotated[int, Field(gt=0)], ...),
+            project_revision=(Annotated[int, Field(gt=0)], ...),
             pair=(MappingPairIdentity, ...),
         )
         dataset = create_model(
@@ -576,12 +581,12 @@ def _mapping_inputs(
             "run_identity": (
                 TypeAdapter(identity),
                 "",
-                "Frozen Model revision and target/System pair for this tool-assisted run. "
+                "Frozen Project revision and target/System pair for this tool-assisted run. "
                 "Retrieve the run dataset for route, operation and template selections.",
                 {
                     "workflow_run_id": 1048,
-                    "model_id": 18,
-                    "model_revision": 7,
+                    "project_id": 18,
+                    "project_revision": 7,
                     "pair": {"modeled_entity_id": 201, "source_system_id": 31},
                 },
             ),
@@ -608,7 +613,7 @@ def _mapping_inputs(
     examples: dict[str, JsonValue] = {
         "authoring_policy": {
             "audit_columns_template": None,
-            "model_name": "Customer Model",
+            "project_name": "Customer Project",
             "naming_instructions": "Use PascalCase names.",
             "technical_columns_template": None,
         },
@@ -828,7 +833,7 @@ def _mapping_inputs(
         "authoring_policy": (
             TypeAdapter(MappingAuthoringPolicy),
             "authoring",
-            "Model name, naming instructions and audit/technical templates. Apply only "
+            "Project name, naming instructions and audit/technical templates. Apply only "
             "recorded policy to transformation content; use existing modeled Attributes.",
             examples["authoring_policy"],
         ),
@@ -868,20 +873,20 @@ def _mapping_inputs(
 
 def get_prompt_input_contract(
     *,
-    model_workflow: str,
+    project_workflow: str,
     workflow_execution_mode: str | None,
     stage_code: str,
     resolver_key: str,
 ) -> PromptInputContract | None:
     """Return a known stage contract; never infer a resolver from a dotted path."""
 
-    prefix = f"workflow.{model_workflow}.common.{stage_code}.inputs."
-    if model_workflow in {"mapping", "code_generation", "validation"} and resolver_key.startswith(
+    prefix = f"workflow.{project_workflow}.common.{stage_code}.inputs."
+    if project_workflow in {"mapping", "code_generation", "validation"} and resolver_key.startswith(
         prefix
     ):
         from .downstream_inputs import downstream_input_contracts
 
-        entry = downstream_input_contracts(model_workflow).get(resolver_key.removeprefix(prefix))
+        entry = downstream_input_contracts(project_workflow).get(resolver_key.removeprefix(prefix))
         if entry is not None:
             schema, description, example = entry
             return PromptInputContract(
@@ -896,9 +901,9 @@ def get_prompt_input_contract(
                 delivery="inline_value",
                 context_path=None,
             )
-    if stage_code == _AUTHORING_STAGES.get(model_workflow) and resolver_key.startswith(prefix):
+    if stage_code == _AUTHORING_STAGES.get(project_workflow) and resolver_key.startswith(prefix):
         name = resolver_key.removeprefix(prefix)
-        spec = workflow_input_contracts(model_workflow).get(name)
+        spec = workflow_input_contracts(project_workflow).get(name)
         if spec is not None:
             return PromptInputContract(
                 name=name,
@@ -917,8 +922,8 @@ def get_prompt_input_contract(
         resolver_key == "workflow.tools.available"
         and workflow_execution_mode == "tool_assisted"
         and (
-            stage_code == _AUTHORING_STAGES.get(model_workflow)
-            or (model_workflow == "mapping" and stage_code == "mapping_authoring")
+            stage_code == _AUTHORING_STAGES.get(project_workflow)
+            or (project_workflow == "mapping" and stage_code == "mapping_authoring")
         )
     ):
         return PromptInputContract(
@@ -928,7 +933,8 @@ def get_prompt_input_contract(
             description="Enabled read-only tools: names, descriptions and JSON input schemas. "
             "Use only these tools; dataset names and counts come from the context manifest.",
             example=[
-                tool.model_dump(mode="json") for tool in registered_tool_definitions(model_workflow)
+                tool.model_dump(mode="json")
+                for tool in registered_tool_definitions(project_workflow)
             ],
             value_schema=cast(
                 dict[str, JsonValue], TypeAdapter(list[LocalAgentToolDefinition]).json_schema()
@@ -940,7 +946,7 @@ def get_prompt_input_contract(
             context_path=None,
         )
 
-    if model_workflow == "mapping":
+    if project_workflow == "mapping":
         for name, (adapter, path, description, example) in _mapping_inputs(
             workflow_execution_mode or "", stage_code
         ).items():
@@ -963,17 +969,17 @@ def get_prompt_input_contract(
             )
         return None
 
-    if model_workflow in _AUTHORING_STAGES and stage_code == _AUTHORING_STAGES[model_workflow]:
-        for name, (mode, path, description, example) in _AUTHORING_INPUTS[model_workflow].items():
+    if project_workflow in _AUTHORING_STAGES and stage_code == _AUTHORING_STAGES[project_workflow]:
+        for name, (mode, path, description, example) in _AUTHORING_INPUTS[project_workflow].items():
             if mode != workflow_execution_mode or resolver_key != (
-                f"workflow.{model_workflow}.{mode}.{stage_code}.inputs.{name}"
+                f"workflow.{project_workflow}.{mode}.{stage_code}.inputs.{name}"
             ):
                 continue
             value_schema = _authoring_input_adapter(name).json_schema()
-            if name == "model_identity":
-                value_schema["properties"]["model_workflow"] = {
+            if name == "project_identity":
+                value_schema["properties"]["project_workflow"] = {
                     "type": "string",
-                    "const": model_workflow,
+                    "const": project_workflow,
                 }
             return PromptInputContract(
                 name=name,
@@ -983,9 +989,12 @@ def get_prompt_input_contract(
                 example=example,
                 value_schema=cast(dict[str, JsonValue], value_schema),
                 source=(
-                    "Immutable Model selection and applicable metadata, profiles and Assertions."
+                    (
+                        "Immutable Project selection and applicable metadata, "
+                        "profiles and Context records."
+                    )
                     if mode == "one_shot"
-                    else "Immutable bounded context-tool manifest for this Model selection."
+                    else "Immutable bounded context-tool manifest for this Project selection."
                 ),
                 availability=(
                     "Complete frozen selection. Empty collections mean no applicable evidence "
@@ -999,7 +1008,7 @@ def get_prompt_input_contract(
             )
         return None
 
-    if (model_workflow, workflow_execution_mode, stage_code) != (
+    if (project_workflow, workflow_execution_mode, stage_code) != (
         "metadata_enrichment",
         "one_shot",
         "candidate_authoring",
@@ -1086,11 +1095,21 @@ def project_prompt_input_values(
     """Add registered named inputs without changing legacy values or stage evidence."""
 
     values = dict(resolver_values)
-    prompt_workflow = stage.prompt_workflow or plan.model_workflow
+    prompt_workflow = stage.prompt_workflow or plan.project_workflow
     requested: set[str] = set()
     for variable in stage.variables:
+        if prompt_workflow != "conceptual" and variable.resolver_key.rsplit(".", 1)[-1] in {
+            "applied_conceptual",
+            "conceptual_object_list",
+            "conceptual_objects",
+            "conceptual_relationship_list",
+            "conceptual_relationships",
+        }:
+            raise InvalidRequestError(
+                "Conceptual inputs are available only to Conceptual authoring."
+            )
         descriptor = get_prompt_input_contract(
-            model_workflow=prompt_workflow,
+            project_workflow=prompt_workflow,
             workflow_execution_mode=plan.workflow_execution_mode,
             stage_code=stage.stage_code,
             resolver_key=variable.resolver_key,
@@ -1149,7 +1168,7 @@ def project_prompt_input_values(
     if not requested:
         return values
 
-    if plan.model_workflow == "mapping":
+    if plan.project_workflow == "mapping":
         try:
             if not isinstance(context, dict):
                 raise ValueError
@@ -1165,7 +1184,7 @@ def project_prompt_input_values(
                 if name == "run_identity":
                     mapping_value = {
                         field: context[field]
-                        for field in ("workflow_run_id", "model_id", "model_revision", "pair")
+                        for field in ("workflow_run_id", "project_id", "project_revision", "pair")
                     }
                 else:
                     for component in path.split("."):
@@ -1182,29 +1201,29 @@ def project_prompt_input_values(
         except KeyError, TypeError, ValueError:
             raise InvalidRequestError("The Mapping Prompt inputs are inconsistent.") from None
 
-    if plan.model_workflow in _AUTHORING_STAGES:
+    if plan.project_workflow in _AUTHORING_STAGES:
         try:
             if not isinstance(context, dict):
                 raise ValueError
             projected: dict[str, object] = {}
-            for name, (mode, path, _, _) in _AUTHORING_INPUTS[plan.model_workflow].items():
-                key = f"workflow.{plan.model_workflow}.{mode}.{stage.stage_code}.inputs.{name}"
+            for name, (mode, path, _, _) in _AUTHORING_INPUTS[plan.project_workflow].items():
+                key = f"workflow.{plan.project_workflow}.{mode}.{stage.stage_code}.inputs.{name}"
                 if key not in requested:
                     continue
-                if name == "model_brief":
-                    details = context["model_details"]
+                if name == "project_brief":
+                    details = context["project_details"]
                     if not isinstance(details, dict):
                         raise ValueError
                     value: object = {
-                        "model_name": context["model_name"],
-                        "model_revision": context["model_revision"],
-                        "model_description": details["model_description"],
+                        "project_name": context["project_name"],
+                        "project_revision": context["project_revision"],
+                        "project_description": details["project_description"],
                     }
-                elif name == "model_identity":
+                elif name == "project_identity":
                     value = {
-                        field: context[field] for field in _AuthoringModelIdentity.model_fields
+                        field: context[field] for field in _AuthoringProjectIdentity.model_fields
                     }
-                    if value["model_workflow"] != plan.model_workflow:
+                    if value["project_workflow"] != plan.project_workflow:
                         raise ValueError
                 elif name == "evidence_datasets":
                     manifest = _EvidenceManifest.model_validate(
@@ -1248,13 +1267,13 @@ def project_prompt_input_values(
                     "logical_schemas",
                     "dimensional_schemas",
                 }:
-                    model_details = context["model_details"]
-                    if not isinstance(model_details, dict):
+                    project_details = context["project_details"]
+                    if not isinstance(project_details, dict):
                         raise ValueError
-                    value = model_details[path.removeprefix("model_details.")]
+                    value = project_details[path.removeprefix("project_details.")]
                     if name in {"gold_technical_policy", "gold_audit_policy"}:
-                        raw_technical = model_details["gold_model_technical_columns_template"]
-                        raw_audit = model_details["gold_model_audit_columns_template"]
+                        raw_technical = project_details["gold_model_technical_columns_template"]
+                        raw_audit = project_details["gold_model_audit_columns_template"]
                         if (raw_technical is not None and not isinstance(raw_technical, dict)) or (
                             raw_audit is not None and not isinstance(raw_audit, dict)
                         ):
@@ -1263,7 +1282,7 @@ def project_prompt_input_values(
                         value = technical if name == "gold_technical_policy" else audit
                 else:
                     value = context[path]
-                # Existing canonical models contain tuples and Decimal values whose
+                # Existing canonical Pydantic models contain tuples and Decimal values whose
                 # strict wire representation is JSON, as supplied to the provider.
                 _authoring_input_adapter(name).validate_json(
                     json.dumps(value, ensure_ascii=False, allow_nan=False), strict=True
@@ -1304,23 +1323,23 @@ def project_prompt_input_values(
 
 def list_prompt_input_contracts(
     *,
-    model_workflow: str,
+    project_workflow: str,
     workflow_execution_mode: str | None,
     stage_code: str,
 ) -> tuple[PromptInputContract, ...]:
     """Canonical workflow-local author choices; compatibility aliases are not advertised."""
-    names = tuple(workflow_input_contracts(model_workflow))
-    if model_workflow in {"mapping", "code_generation", "validation"}:
+    names = tuple(workflow_input_contracts(project_workflow))
+    if project_workflow in {"mapping", "code_generation", "validation"}:
         from .downstream_inputs import downstream_input_contracts
 
-        names = tuple(downstream_input_contracts(model_workflow))
+        names = tuple(downstream_input_contracts(project_workflow))
     contracts: list[PromptInputContract] = []
     for name in names:
         descriptor = get_prompt_input_contract(
-            model_workflow=model_workflow,
+            project_workflow=project_workflow,
             workflow_execution_mode=workflow_execution_mode,
             stage_code=stage_code,
-            resolver_key=f"workflow.{model_workflow}.common.{stage_code}.inputs.{name}",
+            resolver_key=f"workflow.{project_workflow}.common.{stage_code}.inputs.{name}",
         )
         if descriptor is not None:
             contracts.append(descriptor)

@@ -20,11 +20,11 @@ Atlas preserves the verified Snapshot format. Use the [runtime reference](../loc
 
 Sections are foundational, reference and operational. Follow the catalog's actual paths; do not construct paths from table names.
 
-The layout above shows the primary owner root. For Model-derived work with other Metadata owners, resolve the owner's root through the [workspace contract](../workspace-contract.md#model-derived-metadata-owners), then use these same relative paths. Keep each owner's Snapshot, pending records, digest and report separate; selecting an owner does not switch the active Model.
+The layout above shows the primary owner root. For Project-derived work with other Metadata owners, resolve the owner's root through the [workspace contract](../workspace-contract.md#project-derived-metadata-owners), then use these same relative paths. Keep each owner's Snapshot, pending records, digest and report separate; selecting an owner does not switch the active Project.
 
 | File | Read it for |
 |---|---|
-| manifest.json | Snapshot ID, owning Tenant code, format version and member integrity information. Format version 2.0 is not a metadata revision; the manifest does not list every included Source Tenant. |
+| manifest.json | Snapshot ID, owning Tenant code, format version and member integrity information. Format version 3.0 is not a metadata revision; the manifest does not list every included Source Tenant. |
 | catalog.json | Dataset inventory, counts, canonical keys, rows_file, search_file, schema_file and search_result_complete. Search may point to a compact lookup or the rows file itself. |
 | Dataset schema | Required fields, types, nullability and x-gds authoring rules: change-set eligibility, keys, normalization, uniqueness, references and fixed values. |
 | rows.jsonl | Complete flat metadata records, one JSON object per line. Record references use published natural keys rather than database IDs. |

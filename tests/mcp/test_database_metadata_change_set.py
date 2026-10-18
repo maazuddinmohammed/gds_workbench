@@ -270,7 +270,10 @@ def test_metadata_change_set_has_exact_sixteen_documents(
     assert event_section_check is not None
     for column_name in DOCUMENT_COLUMNS:
         assert f"jsonb_typeof({column_name})" in document_check["definition"]
-        assert f"octet_length(({column_name})::text) <= 16777216" in document_check["definition"]
+        assert (
+            f"octet_length(({column_name})::text) <= 16777216"
+            in document_check["definition"]
+        )
     for section_name in NEW_SECTION_NAMES:
         assert section_name in event_section_check["definition"]
 
@@ -320,10 +323,16 @@ def test_metadata_stage_batch_storage_is_bounded_and_not_directly_accessible(
     assert "total_record_count <= 50000" in definitions
     assert "total_chunk_count >= 1" in definitions
     assert "total_chunk_count <= 64" in definitions
-    assert "active" in definitions and "committed" in definitions and "expired" in definitions
+    assert (
+        "active" in definitions
+        and "committed" in definitions
+        and "expired" in definitions
+    )
     assert chunk_check is not None
     assert "jsonb_typeof(records_document) = 'array'" in chunk_check["definition"]
-    assert "octet_length((records_document)::text) <= 524288" in chunk_check["definition"]
+    assert (
+        "octet_length((records_document)::text) <= 524288" in chunk_check["definition"]
+    )
 
 
 def test_runtime_can_only_mutate_metadata_change_sets_through_governed_functions(
@@ -432,7 +441,9 @@ def test_metadata_change_set_enforces_new_document_and_event_contract(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
-        tenant_id, principal_id = _seed_change_set_parents(connection, suffix="DOCUMENTS")
+        tenant_id, principal_id = _seed_change_set_parents(
+            connection, suffix="DOCUMENTS"
+        )
         change_set_id = uuid4()
         correlation_id = uuid4()
         documents = connection.execute(
@@ -864,7 +875,9 @@ def test_metadata_stage_batch_commits_complete_chunks_once_and_replays_safely(
             }
         ],
     ]
-    chunk_sha256s = [hashlib.sha256(f"chunk-{index}".encode()).hexdigest() for index in (1, 2)]
+    chunk_sha256s = [
+        hashlib.sha256(f"chunk-{index}".encode()).hexdigest() for index in (1, 2)
+    ]
     batch_sha256 = hashlib.sha256("".join(chunk_sha256s).encode("ascii")).hexdigest()
 
     with postgres_database.connect_runtime() as connection:
@@ -1580,7 +1593,9 @@ def test_metadata_expiry_clock_is_captured_after_waiting_for_row_lock(
                 if waiting == {"waiting": True}:
                     break
                 if time.monotonic() >= deadline:
-                    raise AssertionError("runtime did not wait for the change-set row lock")
+                    raise AssertionError(
+                        "runtime did not wait for the change-set row lock"
+                    )
                 time.sleep(0.01)
 
             deadline = time.monotonic() + 2
@@ -2153,7 +2168,13 @@ def test_apply_metadata_change_set_checks_seal_and_upserts_natural_key_record(
 
 
 @pytest.mark.parametrize(
-    ("suffix", "entra_tenant_id", "entra_object_id", "stage_attribute", "lock_attribute"),
+    (
+        "suffix",
+        "entra_tenant_id",
+        "entra_object_id",
+        "stage_attribute",
+        "lock_attribute",
+    ),
     (
         (
             "LOCKED_OBJECT_APPLY",
@@ -2541,7 +2562,9 @@ def test_late_copy_failure_rolls_back_earlier_object_insert(
             ),
         )
 
-    with pytest.raises(psycopg.errors.SerializationFailure, match="Copy dependency changed"):
+    with pytest.raises(
+        psycopg.errors.SerializationFailure, match="Copy dependency changed"
+    ):
         with postgres_database.connect_runtime() as connection:
             connection.execute(
                 """
@@ -2718,9 +2741,16 @@ def test_apply_metadata_change_set_writes_all_seventeen_datasets(
     gds_tenant_code = "GLOBAL_ALL_APPLY"
     documents = _all_apply_documents(tenant_code, gds_tenant_code)
     for dataset, records in documents.items():
-        if dataset not in {"ingestion_object_mapping", "ingestion_attribute_mapping", "copy_group_control"}:
+        if dataset not in {
+            "ingestion_object_mapping",
+            "ingestion_attribute_mapping",
+            "copy_group_control",
+        }:
             for record in records:
-                record["value"] = {"dataset": dataset, "details": [None, False, 0, "north", {"count": 2}]}
+                record["value"] = {
+                    "dataset": dataset,
+                    "details": [None, False, 0, "north", {"count": 2}],
+                }
     # Two distinct source mappings in one Copy Group may share order 1.
     documents["source_object"].append(
         {**documents["source_object"][0], "object_name": "source_customers_again"}
@@ -2736,26 +2766,28 @@ def test_apply_metadata_change_set_writes_all_seventeen_datasets(
     )
     for zone in ("source", "bronze", "silver", "gold"):
         documents[f"{zone}_attribute"][0].update(
-            attribute_data_type="STRING", attribute_inferred_data_type="BIGINT", is_locked=True
+            attribute_data_type="STRING",
+            attribute_inferred_data_type="BIGINT",
+            is_locked=True,
         )
     digest = "d" * 64
 
     with postgres_database.connect_owner() as connection:
-        project = connection.execute(
-            "SELECT project_id FROM core.tenant WHERE tenant_id = %s",
+        lane = connection.execute(
+            "SELECT lane_id FROM core.tenant WHERE tenant_id = %s",
             (tenant_id,),
         ).fetchone()
-        assert project is not None
+        assert lane is not None
         gds_tenant = connection.execute(
             """
             INSERT INTO core.tenant (
-                project_id, tenant_code, tenant_name, tenant_catalog,
+                lane_id, tenant_code, tenant_name, tenant_catalog,
                 gds_admin_catalog, tenant_visibility
             ) VALUES (%s, %s, 'Global All Apply', 'global_all_apply',
                       'global_all_apply_admin', 'global')
             RETURNING tenant_id
             """,
-            (project["project_id"], gds_tenant_code),
+            (lane["lane_id"], gds_tenant_code),
         ).fetchone()
         assert gds_tenant is not None
         system_type = connection.execute(
@@ -2982,7 +3014,8 @@ def test_apply_metadata_change_set_writes_all_seventeen_datasets(
                 tenant_id,
             ),
         ).fetchone()
-        values = connection.execute("""
+        values = connection.execute(
+            """
             SELECT 'member' AS dataset, member.value FROM core.member AS member
             JOIN core.member_group AS parent USING(member_group_id) WHERE parent.tenant_id=%s
             UNION ALL SELECT 'copy', copy.value FROM core.copy AS copy
@@ -2992,9 +3025,20 @@ def test_apply_metadata_change_set_writes_all_seventeen_datasets(
             UNION ALL SELECT 'copy_group', value FROM core.copy_group WHERE tenant_id=%s
             UNION ALL SELECT 'member_group', value FROM core.member_group WHERE tenant_id=%s
             UNION ALL SELECT 'process_group', value FROM core.process_group WHERE tenant_id=%s
-        """, (tenant_id,) * 6).fetchall()
-        assert {row["dataset"] for row in values} == {"member", "copy", "process", "copy_group", "member_group", "process_group"}
-        assert all(row["value"] == documents[row["dataset"]][0]["value"] for row in values)
+        """,
+            (tenant_id,) * 6,
+        ).fetchall()
+        assert {row["dataset"] for row in values} == {
+            "member",
+            "copy",
+            "process",
+            "copy_group",
+            "member_group",
+            "process_group",
+        }
+        assert all(
+            row["value"] == documents[row["dataset"]][0]["value"] for row in values
+        )
         connection.rollback()
 
     assert applied == {"applied": True, "denial_code": None, "action_count": 20}
@@ -3043,16 +3087,16 @@ def test_apply_assigns_locked_tenant_to_object_on_global_connection(
     }
 
     with postgres_database.connect_owner() as connection:
-        project = connection.execute(
-            "SELECT project_id FROM core.tenant WHERE tenant_id = %s",
+        lane = connection.execute(
+            "SELECT lane_id FROM core.tenant WHERE tenant_id = %s",
             (tenant_id,),
         ).fetchone()
-        assert project is not None
-        project_id = project["project_id"]
+        assert lane is not None
+        lane_id = lane["lane_id"]
         global_tenant = connection.execute(
             """
             INSERT INTO core.tenant (
-                project_id, tenant_code, tenant_name, tenant_catalog,
+                lane_id, tenant_code, tenant_name, tenant_catalog,
                 gds_admin_catalog, tenant_visibility
             ) VALUES (
                 %s, 'GLOBAL_SCOPED_APPLY', 'Global Scoped Apply',
@@ -3060,7 +3104,7 @@ def test_apply_assigns_locked_tenant_to_object_on_global_connection(
             )
             RETURNING tenant_id
             """,
-            (project_id,),
+            (lane_id,),
         ).fetchone()
         assert global_tenant is not None
         global_tenant_id = global_tenant["tenant_id"]
@@ -3258,7 +3302,11 @@ def _all_apply_documents(
         "ingestion_object_mapping": [object_mapping],
         "ingestion_attribute_mapping": [
             {
-                **{key: value for key, value in object_mapping.items() if key != "is_active"},
+                **{
+                    key: value
+                    for key, value in object_mapping.items()
+                    if key != "is_active"
+                },
                 "source_attribute_name": "customer_id",
                 "target_attribute_name": "customer_id",
                 "is_active": True,
@@ -3284,12 +3332,18 @@ def _all_apply_documents(
                 "is_active": True,
             }
         ],
-        "member": [{
-            "tenant_code": tenant_code, "system_code": system_code,
-            "member_group_name": "DAILY", "member_code": "NORTH",
-            "member_name": "North", "member_description": "North region",
-            "member_attribute_name": "region", "is_active": True,
-        }],
+        "member": [
+            {
+                "tenant_code": tenant_code,
+                "system_code": system_code,
+                "member_group_name": "DAILY",
+                "member_code": "NORTH",
+                "member_name": "North",
+                "member_description": "North region",
+                "member_attribute_name": "region",
+                "is_active": True,
+            }
+        ],
         "copy_group_control": [
             {
                 "tenant_code": tenant_code,
@@ -3306,7 +3360,11 @@ def _all_apply_documents(
                 "tenant_code": tenant_code,
                 "system_code": system_code,
                 "copy_group_name": "CUSTOMERS",
-                **{key: value for key, value in object_mapping.items() if key != "is_active"},
+                **{
+                    key: value
+                    for key, value in object_mapping.items()
+                    if key != "is_active"
+                },
                 "copy_source_record_limit": "100",
                 "copy_source_record_limit_attribute": None,
                 "chunk_type_name": None,
@@ -3355,7 +3413,9 @@ def _all_apply_documents(
     }
 
 
-def _age_metadata_change_set_past_expiry(connection: Connection[Any], change_set_id: UUID) -> None:
+def _age_metadata_change_set_past_expiry(
+    connection: Connection[Any], change_set_id: UUID
+) -> None:
     connection.execute(
         """
         UPDATE mcp.metadata_change_set
@@ -3388,19 +3448,19 @@ def _seed_change_set_parents(
     *,
     suffix: str,
 ) -> tuple[int, int]:
-    project = connection.execute(
+    lane = connection.execute(
         """
-        INSERT INTO core.project (project_code, project_name)
+        INSERT INTO core.lane (lane_code, lane_name)
         VALUES (%s, %s)
-        RETURNING project_id
+        RETURNING lane_id
         """,
-        (f"CHANGE_SET_PROJECT_{suffix}", f"Change Set Project {suffix}"),
+        (f"CHANGE_SET_PROJECT_{suffix}", f"Change Set Lane {suffix}"),
     ).fetchone()
-    assert project is not None
+    assert lane is not None
     tenant = connection.execute(
         """
         INSERT INTO core.tenant (
-            project_id,
+            lane_id,
             tenant_code,
             tenant_name,
             tenant_catalog,
@@ -3410,7 +3470,7 @@ def _seed_change_set_parents(
         RETURNING tenant_id
         """,
         (
-            project["project_id"],
+            lane["lane_id"],
             f"CHANGE_SET_TENANT_{suffix}",
             f"Change Set Tenant {suffix}",
             f"change_set_catalog_{suffix.lower()}",

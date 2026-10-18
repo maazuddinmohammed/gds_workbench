@@ -62,7 +62,7 @@ export function PromptsLedger({
       header: "Workflow / stage",
       cell: ({ row }) => (
         <span className="prompt-stage-cell">
-          <strong>{humanize(row.original.model_workflow)}</strong>
+          <strong>{humanize(row.original.project_workflow)}</strong>
           <small>
             {modeLabel(row.original.workflow_execution_mode)} · {row.original.workflow_stage_name}
           </small>

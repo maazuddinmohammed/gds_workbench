@@ -1,15 +1,15 @@
-import { createModelTargetsApi, type ModelTargetsTransport } from "./features/model_targets/api";
+import { createProjectTargetsApi, type ProjectTargetsTransport } from "./features/project_targets/api";
 import { createMetadataEnrichmentApi, type MetadataEnrichmentTransport } from "./features/metadata_enrichment/api";
-import { createModelRecordReviewApi, type ModelRecordEditorApi } from "./features/model_record_review/api";
+import { createProjectRecordReviewApi, type ProjectRecordEditorApi } from "./features/project_record_review/api";
 import { ApiError, createHttpRequest } from "./core/http";
 import {
   createAnalysisApi,
   type AnalysisTransport,
 } from "./features/analysis/api";
 import {
-  createAssertionsApi,
-  type AssertionsApi,
-} from "./features/assertions/api";
+  createContextApi,
+  type ContextApi,
+} from "./features/context/api";
 import {
   createCodeGenerationApi,
   type CodeGenerationTransport,
@@ -35,13 +35,13 @@ import {
   type MetadataApi,
 } from "./features/metadata/api";
 import {
-  createModelsApi,
-  type ModelsApi,
-} from "./features/models/api";
+  createProjectsApi,
+  type ProjectsApi,
+} from "./features/projects/api";
 import {
-  createModelInputScopeApi,
-  type ModelInputScopeApi,
-} from "./features/model_input_scope/api";
+  createProjectInputScopeApi,
+  type ProjectInputScopeApi,
+} from "./features/project_input_scope/api";
 import {
   createTenantLockApi,
   type TenantLockApi,
@@ -74,19 +74,18 @@ export type {
   AnalysisValidationState,
 } from "./features/analysis/api";
 export type {
-  ApplicableLayer,
-  AssertionDocument,
-  AssertionDocumentDetail,
-  AssertionDocumentFilters,
-  AssertionDocumentPage,
-  AssertionDocumentReference,
-  AssertionRecord,
-  AssertionRecordDetail,
-  AssertionRecordFilters,
-  AssertionRecordPage,
-  AssertionSourceSystem,
-  AssertionSourceTenant,
-} from "./features/assertions/api";
+  ContextGroup,
+  ContextGroupDetail,
+  ContextGroupFilters,
+  ContextGroupPage,
+  ContextGroupReference,
+  ContextRecord,
+  ContextRecordDetail,
+  ContextRecordFilters,
+  ContextRecordPage,
+  ContextSourceSystem,
+  ContextType,
+} from "./features/context/api";
 export type {
   CodeGenerationTarget,
   CodeGenerationTargetFilters,
@@ -97,8 +96,8 @@ export type {
   StoredSqlArtifactSummary,
 } from "./features/code_generation/api";
 export type {
-  ConceptualAssertionReference,
-  ConceptualAssertionSupport,
+  ConceptualContextReference,
+  ConceptualContextSupport,
   ConceptualCardinality,
   ConceptualConfidence,
   ConceptualFilters,
@@ -114,9 +113,9 @@ export type {
   ConceptualSupport,
 } from "./features/conceptual/api";
 export type {
-  DimensionalAssertionSource,
+  DimensionalContextSource,
   DimensionalAttribute,
-  DimensionalAttributeAssertionSource,
+  DimensionalAttributeContextSource,
   DimensionalAttributeDetail,
   DimensionalAttributeFilters,
   DimensionalAttributePage,
@@ -135,10 +134,10 @@ export type {
   DimensionalSubmodelMembership,
 } from "./features/dimensional/api";
 export type {
-  LogicalAssertionReference,
-  LogicalAssertionSource,
+  LogicalContextReference,
+  LogicalContextSource,
   LogicalAttribute,
-  LogicalAttributeAssertionSource,
+  LogicalAttributeContextSource,
   LogicalAttributeDetail,
   LogicalAttributeFilters,
   LogicalAttributePage,
@@ -205,23 +204,23 @@ export type {
 } from "./features/metadata/api";
 export type {
   LedgerWorkflow,
-  ModelCollection,
-  ModelDetail,
-  ModelLedgerRecord,
-  ModelStatus,
-  ModelWorkflowOverview,
+  ProjectCollection,
+  ProjectDetail,
+  ProjectLedgerRecord,
+  ProjectStatus,
+  ProjectWorkflowOverview,
   QualityWarningCode,
   WorkflowLedgerEntry,
   WorkflowLedgerState,
-} from "./features/models/api";
+} from "./features/projects/api";
 export type {
-  ModelInputScopeDetail,
-  ModelInputScopeFilters,
-  ModelInputScopeObject,
-  ModelInputScopePage,
+  ProjectInputScopeDetail,
+  ProjectInputScopeFilters,
+  ProjectInputScopeObject,
+  ProjectInputScopePage,
   ObjectAttribute,
   ZoneCode,
-} from "./features/model_input_scope/api";
+} from "./features/project_input_scope/api";
 export type {
   SessionRecord,
   SystemRecord,
@@ -241,8 +240,8 @@ export type {
 } from "./features/profiling/api";
 export type {
   CreatePromptTemplateCommand,
-  ModelPromptAssignmentState,
-  ModelPromptAssignments,
+  ProjectPromptAssignmentState,
+  ProjectPromptAssignments,
   PromptAssignmentTarget,
   PromptOwnershipScope,
   PromptStage,
@@ -256,7 +255,7 @@ export type {
   PromptTemplateVersion,
   PromptVersionStatus,
   SavePromptDraftCommand,
-  SetModelPromptAssignmentCommand,
+  SetProjectPromptAssignmentCommand,
   UpdatePromptTemplateCommand,
 } from "./features/prompts/api";
 export type {
@@ -271,7 +270,7 @@ export type {
   AgentCapabilities,
   AgentRunSelection,
   CreateWorkflowRunCommand,
-  ModelWorkflow,
+  ProjectWorkflow,
   WorkflowExecutionMode,
   WorkflowRunCollection,
   WorkflowRunCommandResult,
@@ -288,15 +287,15 @@ export type { JsonObject, JsonValue, ReviewStatus } from "./shared/contracts";
 export interface WorkbenchApi
   extends TenantsApi,
   TenantLockApi,
-  ModelsApi,
-  ModelInputScopeApi,
+  ProjectsApi,
+  ProjectInputScopeApi,
   MetadataApi,
-  ModelRecordEditorApi,
+  ProjectRecordEditorApi,
   WorkflowsApi,
   ProfilingTransport,
   PromptsApi,
   AnalysisTransport,
-  AssertionsApi,
+  ContextApi,
   ConceptualTransport,
   LogicalTransport,
   DimensionalTransport,
@@ -304,7 +303,7 @@ export interface WorkbenchApi
   CodeGenerationTransport,
   ValidationTransport,
   MetadataEnrichmentTransport,
-  ModelTargetsTransport {}
+  ProjectTargetsTransport {}
 
 export function createApiClient(fetcher: typeof fetch = globalThis.fetch): WorkbenchApi {
   const request = createHttpRequest(fetcher);
@@ -312,22 +311,22 @@ export function createApiClient(fetcher: typeof fetch = globalThis.fetch): Workb
   return {
     ...createTenantsApi(request),
     ...createTenantLockApi(request),
-    ...createModelsApi(request),
-    ...createModelInputScopeApi(request),
+    ...createProjectsApi(request),
+    ...createProjectInputScopeApi(request),
     ...createWorkflowsApi(request),
     ...createProfilingApi(request),
     ...createPromptsApi(request),
     ...createAnalysisApi(request),
-    ...createAssertionsApi(request),
+    ...createContextApi(request),
     ...createConceptualApi(request),
     ...createLogicalApi(request),
-    ...createModelTargetsApi(request),
+    ...createProjectTargetsApi(request),
     ...createDimensionalApi(request),
     ...createMappingApi(request),
     ...createCodeGenerationApi(request),
     ...createValidationApi(request),
     ...createMetadataEnrichmentApi(request),
     ...createMetadataApi(request),
-    ...createModelRecordReviewApi(request),
+    ...createProjectRecordReviewApi(request),
   };
 }

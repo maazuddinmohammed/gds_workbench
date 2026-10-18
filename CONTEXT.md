@@ -8,24 +8,25 @@ fixes domain vocabulary; it does not duplicate field contracts or prompt bodies.
 
 | Term | Meaning |
 | --- | --- |
-| Tenant | Ownership and authorization scope for metadata, Models and Principals. |
-| Active Tenant | Current navigation and authorization scope; it need not select a Model. |
+| Lane | Foundational grouping of Tenants (`core.lane`); independent of a modeling Project. |
+| Tenant | Ownership and authorization scope for metadata, Projects and Principals. |
+| Active Tenant | Current navigation and authorization scope; it need not select a Project. |
 | Source Tenant | `Object.source_tenant_id`: whose metadata/data an Object represents, independent of Connection placement. |
 | Principal | One internal human or workload identity resolved from authenticated Entra identity. |
 | Tenant Role | Viewer, Developer, Architect or Tenant Admin; roles are cumulative. |
 | Super Admin | Explicit Principal capability across active Tenants; never bypasses locks, revisions or audit. |
 | Tenant Lock | Database-time lease for one exact Principal. Ordinary writes require its ownership; override is explicit and audited. |
-| Model Lock | Persistent read-only fence for all Model-owned records and workflows; only a human through the web UI or engineering SQL may toggle it. Metadata is independent. |
-| Model | Tenant-owned aggregate: input scope, schema/policy settings, authored sections and current revision. |
-| Model Input Scope | Saved eligible physical Source/Bronze Objects; it may span readable Source Tenants. |
-| Selected Scope | Exact Objects or modeled Entities selected for one workflow; does not change Model Input Scope. |
-| Modeled Entity | Logical or Dimensional Entity identified by Model, layer, schema and name; Attribute identity extends that key. |
+| Project Lock | Persistent read-only fence for all Project-owned records and workflows; only a human through the web UI or engineering SQL may toggle it. Metadata is independent. |
+| Project | Tenant-owned aggregate: input scope, schema/policy settings, authored sections and current revision. |
+| Project Input Scope | Saved eligible physical Source/Bronze Objects; it may span readable Source Tenants. |
+| Selected Scope | Exact Objects or modeled Entities selected for one workflow; does not change Project Input Scope. |
+| Modeled Entity | Logical or Dimensional Entity identified by Project, layer, schema and name; Attribute identity extends that key. |
 | Zone | Source: original system; Bronze: ingested physical data; Silver: Logical output; Gold: Dimensional output. |
 
 Source Objects use their source Connection. Bronze/Silver/Gold physical placement
 uses the selected Source Tenant's active GDS Connection and that Connection's
 Tenant/System keys. Never substitute source ownership for placement identity.
-Model-generated executable coordinates use the Model Tenant's configured GDS
+Project-generated executable coordinates use the Project Tenant's configured GDS
 placement. Authoring an Entity does not register a physical Object.
 
 Natural keys retain the complete Tenant/System/Connection/schema/Object/Attribute
@@ -38,17 +39,19 @@ Systems are independent. Internal numeric IDs are not business identifiers.
 | --- | --- |
 | Profiling | Deterministic measurements for selected physical Attributes, over all rows or an explicit batch. |
 | Attribute Profile | Current saved measurements with time/row-scope provenance; refresh replaces current measurements. |
-| Metadata Enrichment | Runs after Profiling. Model-owned Object descriptions and Attribute descriptions, inferred types, natural/primary key, nullability and PII findings; human edits and locks stay Model-specific. Data Dictionary and Technical Data Dictionary export current saved results. |
+| Metadata Enrichment | Runs after Profiling. Project-owned Object descriptions and Attribute descriptions, inferred types, natural/primary key, nullability and PII findings; human edits and locks stay Project-specific. Data Dictionary and Technical Data Dictionary export current saved results. |
 | Ingestion Mapping | Registered Source-to-Bronze Object/Attribute lineage; source provenance cannot be guessed from names. |
 | Analysis Result | Inferred relationship between real physical Attributes, including reasoning and confidence. Inferred cardinality and measured validation remain separate. |
-| Modeling Assertion | Persisted contextual statement, requirement, KPI/reporting need or source fact with document provenance. Requirements are not proof that data exists. |
-| Conceptual Model | Business concepts and relationships supported by physical evidence or Assertions. |
-| Logical Model | Schema-qualified normalized Entities, Attributes and relationships supported by physical inputs or Assertions. |
-| Dimensional Model | Schema-qualified dimensions, facts and bridges supported by applied Logical Entities/Attributes or Assertions. |
+| Context Type | Global read-only classification shared across Projects; defined by name and description. |
+| Context Group | Project-owned collection of related knowledge with one Context Type, optional description and source System. |
+| Context Record | Reusable requirement, source information, convention, decision or other knowledge. Contains a stable UUID, text, optional plain-text source reference, status and lock. Requirements are not proof that data exists. |
+| Conceptual Model | Standalone business concepts and relationships supported by physical evidence or Context records; never an input or prerequisite for Logical or Dimensional modeling. |
+| Logical Model | Schema-qualified normalized Entities, Attributes and relationships supported by physical inputs or Context records. |
+| Dimensional Model | Schema-qualified dimensions, facts and bridges supported by applied Logical Entities/Attributes or Context records. |
 | Source Context | Business/physical source dictionary used to interpret evidence. Exact fields come from workflow input contracts. |
-| GDS Context | Target platform placement and model configuration; not source business evidence. |
+| GDS Context | Target platform placement and project configuration; not source business evidence. |
 
-Logical and Dimensional SCD policies are independent Model settings (`type_1`,
+Logical and Dimensional SCD policies are independent Project settings (`type_1`,
 `type_2`, or unspecified). Dimensional Type 1 overwrites mutable descriptors;
 Type 2 preserves Dimension versions. Stable identity stays fixed; Fact/Bridge
 behavior is unchanged. Runs freeze both policies and Mapping receives both.
@@ -60,29 +63,31 @@ PipelineRunID STRING, CreatedDate/UpdatedDate TIMESTAMP, CreatedBy/UpdatedBy STR
 These audit fields default nullable; history current/start fields are required and
 end time nullable. History fields follow SourceSystemID, before GDSBatchID. The orchestrator
 projects these columns; agents cannot omit them. Settings display effective defaults
-and allow per-Model overrides or reset; an explicit empty audit column list disables common audit fields.
-Existing saved Models change only through reviewed authoring, never a backfill.
+and allow per-Project overrides or reset; an explicit empty audit column list disables common audit fields.
+Existing saved Projects change only through reviewed authoring, never a backfill.
 
-Web Logical authoring is independent of Conceptual. It uses selected physical
-metadata, enrichment, Profiles, Analysis, Assertions and applicable Logical history.
+Conceptual is an independent deliverable in both web and Atlas workflows. Its
+records never feed Logical or Dimensional authoring. Logical uses selected physical
+metadata, enrichment, Profiles, Analysis, Context records and applicable Logical history.
+Dimensional uses selected Logical Entities/Attributes and their supporting evidence.
 Logical coverage defaults to 70% of distinct physical Objects selected for the run;
 Dimensional coverage defaults to 60% of selected Logical Entities, rounding counts up.
 Physical Attributes may be selected, consolidated or omitted for the Logical
 design; included Attributes still require valid references and source evidence.
 Consolidation may map several physical inputs to one modeled record. Existing
 active applied coverage counts alongside new mappings. Below target, missing-source
-feedback triggers the configured repair attempts. Each layer has a Model-owned
+feedback triggers the configured repair attempts. Each layer has a Project-owned
 Enforce coverage threshold switch, default off. After the final attempt, enabled
 enforcement rejects below-target candidates; disabled enforcement returns otherwise
 valid partial coverage with a warning. Other validation failures always block handoff.
 Analytical Attribute selection and aggregation remain valid.
 
 Missing information, measured zero, failed validation and contradictory evidence
-are different states. Preserve each. An Assertion can explain required behavior;
+are different states. Preserve each. A Context Record can explain required behavior;
 it cannot invent physical columns or executable lineage. Saved Analysis confidence
 must not replace observed validation results. Assess relevance at the current grain.
 Prompt Attribute context preserves registered natural-key metadata separately from
-Model enrichment. Unknown enrichment never erases registered evidence; disagreement
+Project enrichment. Unknown enrichment never erases registered evidence; disagreement
 remains visible, and neither flag alone proves measured uniqueness.
 
 ## Mapping, Code and Validation
@@ -114,7 +119,7 @@ remain Mapping-owned. The external orchestration layer owns loads and merges.
 **Validation Group / Check** stores deterministic query/comparison definitions.
 Validation authoring consumes complete Mapping and relevant current Code when
 available. Apply never executes these definitions or stores physical query results.
-**Change Set Validation** checks candidate/model integrity; **SQL Preflight** is a
+**Change Set Validation** checks candidate/project integrity; **SQL Preflight** is a
 separate governed bounded query check. Neither proves all business results.
 
 **Target Registration** is optional export of applied Logical/Dimensional Entities
@@ -123,7 +128,7 @@ not a prerequisite for Mapping or Code. **Code Handoff** is manual file placemen
 and external orchestration, requiring separate authorization.
 
 Analysis Excel export includes all findings matching the active filters, fenced to
-the current Model revision. Databricks DDL downloads use applied active Logical or
+the current Project revision. Databricks DDL downloads use applied active Logical or
 Dimensional fields; Conceptual downloads use one export-only ConceptID per concept.
 Downloads do not execute SQL or change physical metadata. Agent call/transport
 timeout defaults to 120 minutes; an explicit configured override wins. This limits
@@ -135,27 +140,27 @@ Long runs still require a valid Tenant Lock through completion.
 
 | Term | Meaning |
 | --- | --- |
-| Section | An authored Model area with a shared Snapshot/Change Set contract. |
+| Section | An authored Project area with a shared Snapshot/Change Set contract. |
 | Candidate | Uncommitted workflow output; validation and review precede Apply. |
-| Model Change Set | Revision-fenced draft for Model scope and authored sections. |
+| Project Change Set | Revision-fenced draft for Project scope and authored sections. |
 | Metadata Change Set | Governed draft for physical metadata registration/changes. |
-| Snapshot | Immutable authorized metadata/model export, with versioned schemas and natural keys; Model snapshots pin a revision. |
-| Local Reference | Typed draft-local identity for a new record; Apply resolves the server-generated ID. |
+| Snapshot | Immutable authorized metadata/project export, with versioned schemas, natural keys and stable Context Record UUIDs; Project snapshots pin a revision. |
+| Local Reference | Typed draft-local identity for a new record; Apply resolves the server-generated ID where that record type uses one. Context Records keep their draft-created UUID as the saved identity. |
 | Stage Batch | Atomic bounded transport for replacing complete datasets. Code fragments reassemble into complete records before validation. |
 | Workflow Run | Durable queued/running/terminal execution. At most one runs per Tenant, independently of Tenant Lock ownership. The run owner holding the Tenant Lock can cancel queued/running runs; cancellation revokes the claim and retains saved results. |
 | Prompt Template | Versioned system/instruction text, selected variables and readers. Runs freeze their effective published versions. |
 | Default Prompt | Published assignment resolved through supported scope/default rules; editing seed files does not update an installed database. |
 | Apply Receipt | Durable result of explicit governed Apply, including resulting revision and idempotent replay identity. |
-| DBML Export | Local display of the effective Model graph, not executable database deployment. |
+| DBML Export | Local display of the effective Project graph, not executable database deployment. |
 
 Plugin and web use the same persisted contracts and governed Change Sets, with
 independent orchestration. Plugin Profiling runs deterministically in the MCP
-backend: start, status, cancel, then refresh the Model Snapshot. The web
+backend: start, status, cancel, then refresh the Project Snapshot. The web
 application never calls MCP internally.
-Plugin Model enrichment and allowed settings use the existing reviewed Model Change Set.
-Model names and web-agent defaults are not plugin-editable. Pending enrichment and
+Plugin Project enrichment and allowed settings use the existing reviewed Project Change Set.
+Project names and web-agent defaults are not plugin-editable. Pending enrichment and
 analysis may feed subsequent local design before one related submission.
-A stale Snapshot/revision requires refresh and reassessment. Model-owned authored
+A stale Snapshot/revision requires refresh and reassessment. Project-owned authored
 state, physical metadata, and external deployment remain separate boundaries.
 
 See [architecture](docs/architecture/overview.md), [decisions](docs/architecture/decisions.md),
@@ -178,7 +183,7 @@ Connection and Connection Location. It has no implicit execution semantics.
 Preserve existing details; populate only when requested. Never store credentials
 or secret references there. Foundational records remain read-only in authoring.
 
-Model coverage settings are whole percentages from 1–100, stored with database
+Project coverage settings are whole percentages from 1–100, stored with database
 defaults of 70 for Logical and 60 for Dimensional. Independent enforcement switches
 default false. Run context and validation use the same saved settings. Gold settings
 expose one audit template including generated

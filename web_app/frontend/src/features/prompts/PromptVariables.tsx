@@ -20,8 +20,8 @@ export function PromptVariables({
     || (variable.name.startsWith("conceptual_") ? "Conceptual results"
       : variable.name.startsWith("logical_") ? "Logical results"
         : variable.name.startsWith("dimensional_") ? "Dimensional results"
-          : ["naming_instructions", "audit_columns", "technical_columns"].includes(variable.name) ? "Model settings"
-            : variable.name === "modeling_assertions" ? "Modeling assertions"
+          : ["naming_instructions", "audit_columns", "technical_columns"].includes(variable.name) ? "Project settings"
+            : variable.name === "contexts" ? "Modeling context"
               : ["source_context", "gds_context", "object_context", "object_attribute_context", "object_relationship_context", "ingestion_mapping"].includes(variable.name) ? "Physical context"
                 : "Workflow context");
   const groups = [...new Set(variables.map(groupOf))];

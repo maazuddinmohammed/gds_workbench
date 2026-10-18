@@ -6,13 +6,13 @@ import type { CreateWorkflowRunCommand, WorkflowsApi } from "./api";
 export function useWorkflowRunSubmission({
   api,
   tenantId,
-  modelId,
+  projectId,
   execute,
   onSuccess,
 }: {
   api: Pick<WorkflowsApi, "createWorkflowRun">;
   tenantId: number;
-  modelId: number;
+  projectId: number;
   execute?: ((workflowRunId: number, command: CreateWorkflowRunCommand) => Promise<unknown>) | undefined;
   onSuccess: (workflowRunId: number) => Promise<void>;
 }) {
@@ -38,7 +38,7 @@ export function useWorkflowRunSubmission({
           };
           attemptRef.current = attempt;
         }
-        const result = await api.createWorkflowRun(tenantId, modelId, attempt.command, attempt.key);
+        const result = await api.createWorkflowRun(tenantId, projectId, attempt.command, attempt.key);
         attempt.workflowRunId = result.workflow_run_id;
         if (execute) setPendingRunId(result.workflow_run_id);
       }

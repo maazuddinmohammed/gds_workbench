@@ -13,7 +13,7 @@ import type {
   AnalysisFinding,
   AnalysisReviewAction,
 } from "./api";
-import type { ModelInputScopeObject } from "../model_input_scope/api";
+import type { ProjectInputScopeObject } from "../project_input_scope/api";
 
 export function AnalysisResults({
   items,
@@ -37,7 +37,7 @@ export function AnalysisResults({
   onLoadMore,
 }: {
   items: AnalysisFinding[];
-  endpointOptions: ModelInputScopeObject[];
+  endpointOptions: ProjectInputScopeObject[];
   filters: AnalysisFilters;
   selectedIds: Set<number>;
   isLoading: boolean;
@@ -180,7 +180,7 @@ export function AnalysisResults({
       : reviewRetryable
         ? "Retry the pending review before changing your selection."
         : revisionMismatch
-          ? "Refresh before reviewing findings from a different Model revision."
+          ? "Refresh before reviewing findings from a different Project revision."
           : selectedIds.size > 200
             ? "Select at most 200 findings per review."
             : "";
@@ -317,7 +317,7 @@ export function AnalysisResults({
         </div>
       ) : revisionMismatch ? (
         <div className="surface-state is-error" role="alert">
-          The Model changed while Analysis results were loading. Refresh to reconcile revisions.
+          The Project changed while Analysis results were loading. Refresh to reconcile revisions.
         </div>
       ) : items.length === 0 ? (
         <div className="empty-state compact">No Analysis findings match these filters.</div>

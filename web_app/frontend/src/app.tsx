@@ -1,5 +1,5 @@
-import { ModelRecordTools } from "./features/model_record_review/ModelRecordEditor";
-import { modelLayerSearch } from "./shared/ModelLayerTabs";
+import { ProjectRecordTools } from "./features/project_record_review/ProjectRecordEditor";
+import { projectLayerSearch } from "./shared/ProjectLayerTabs";
 import {
   QueryClient,
   QueryClientProvider,
@@ -24,10 +24,10 @@ import { ProfilingObjectDetailPage } from "./features/profiling/ProfilingDetail"
 import { ProfilingScreen } from "./features/profiling/ProfilingScreen";
 import { AnalysisScreen } from "./features/analysis/AnalysisScreen";
 import {
-  AssertionDocumentDetailPage,
-  AssertionRecordDetailPage,
-} from "./features/assertions/AssertionDetail";
-import { AssertionsScreen } from "./features/assertions/AssertionsScreen";
+  ContextGroupDetailPage,
+  ContextRecordDetailPage,
+} from "./features/context/ContextDetail";
+import { ContextScreen } from "./features/context/ContextScreen";
 import {
   ConceptualObjectDetailPage,
   ConceptualRelationshipDetailPage,
@@ -55,21 +55,21 @@ import {
 import { CodeGenerationScreen } from "./features/code_generation/CodeGenerationScreen";
 import { GeneratedSqlDetailPage } from "./features/code_generation/GeneratedSqlDetail";
 import { ValidationScreen } from "./features/validation/ValidationScreen";
-import { ModelPromptSettings } from "./features/prompts/ModelPromptSettings";
+import { ProjectPromptSettings } from "./features/prompts/ProjectPromptSettings";
 import { PromptsScreen } from "./features/prompts/PromptsScreen";
 import { PromptTemplateDetailPage } from "./features/prompts/PromptTemplateDetail";
 import { MetadataScreen, type MetadataCategory } from "./features/metadata/MetadataScreen";
 import { PhysicalMetadataScreen } from "./features/metadata/PhysicalMetadataScreen";
 import { TenantEntryScreen } from "./features/tenants/TenantEntryScreen";
 import { TenantHomeScreen } from "./features/tenants/TenantHomeScreen";
-import { WorkflowModels } from "./features/models/WorkflowModels";
-import { ModelsLedgerScreen } from "./features/models/ModelsLedgerScreen";
-import { ModelOverviewScreen } from "./features/models/ModelOverviewScreen";
-import { ModelSettingsScreen } from "./features/models/ModelSettingsScreen";
-import { ModelRouteFrame } from "./features/models/ModelRouteFrame";
-import { ModelInputScopeScreen } from "./features/model_input_scope/ModelInputScopeScreen";
+import { WorkflowProjects } from "./features/projects/WorkflowProjects";
+import { ProjectsLedgerScreen } from "./features/projects/ProjectsLedgerScreen";
+import { ProjectOverviewScreen } from "./features/projects/ProjectOverviewScreen";
+import { ProjectSettingsScreen } from "./features/projects/ProjectSettingsScreen";
+import { ProjectRouteFrame } from "./features/projects/ProjectRouteFrame";
+import { ProjectInputScopeScreen } from "./features/project_input_scope/ProjectInputScopeScreen";
 import { TenantRouteFrame } from "./app/TenantRouteFrame";
-import { canAuthorModels } from "./features/tenants/presentation";
+import { canAuthorProjects } from "./features/tenants/presentation";
 import {
   ErrorPage,
 } from "./shared/ui";
@@ -127,10 +127,10 @@ const tenantMetadataObjectsRoute = createRoute({
   component: TenantMetadataObjects,
 });
 
-const tenantModelsRoute = createRoute({
+const tenantProjectsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models",
-  component: ModelsLedger,
+  path: "/tenants/$tenantId/projects",
+  component: ProjectsLedger,
 });
 
 const tenantMappingRoute = createRoute({
@@ -139,24 +139,24 @@ const tenantMappingRoute = createRoute({
   component: TenantMapping,
 });
 
-const tenantMappingModelRoute = createRoute({
+const tenantMappingProjectRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/mapping/models/$modelId",
-  validateSearch: modelLayerSearch,
-  component: TenantMappingModel,
+  path: "/tenants/$tenantId/mapping/projects/$projectId",
+  validateSearch: projectLayerSearch,
+  component: TenantMappingProject,
 });
 
 const tenantMappingObjectRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/mapping/models/$modelId/objects/$mappingObjectId",
-  validateSearch: modelLayerSearch,
+  path: "/tenants/$tenantId/mapping/projects/$projectId/objects/$mappingObjectId",
+  validateSearch: projectLayerSearch,
   component: TenantMappingObject,
 });
 
 const tenantMappingAttributeRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/mapping/models/$modelId/attributes/$mappingAttributeId",
-  validateSearch: modelLayerSearch,
+  path: "/tenants/$tenantId/mapping/projects/$projectId/attributes/$mappingAttributeId",
+  validateSearch: projectLayerSearch,
   component: TenantMappingAttribute,
 });
 
@@ -166,17 +166,17 @@ const tenantCodeGenerationRoute = createRoute({
   component: TenantCodeGeneration,
 });
 
-const tenantCodeGenerationModelRoute = createRoute({
+const tenantCodeGenerationProjectRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/code-generation/models/$modelId",
-  validateSearch: modelLayerSearch,
-  component: TenantCodeGenerationModel,
+  path: "/tenants/$tenantId/code-generation/projects/$projectId",
+  validateSearch: projectLayerSearch,
+  component: TenantCodeGenerationProject,
 });
 
 const tenantGeneratedSqlArtifactRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/code-generation/models/$modelId/artifacts/$artifactId",
-  validateSearch: modelLayerSearch,
+  path: "/tenants/$tenantId/code-generation/projects/$projectId/artifacts/$artifactId",
+  validateSearch: projectLayerSearch,
   component: TenantGeneratedSqlArtifact,
 });
 
@@ -186,25 +186,25 @@ const tenantValidationRoute = createRoute({
   component: TenantValidation,
 });
 
-const tenantValidationModelRoute = createRoute({
+const tenantValidationProjectRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/validation/models/$modelId",
-  component: TenantValidationModel,
-  validateSearch: modelLayerSearch,
+  path: "/tenants/$tenantId/validation/projects/$projectId",
+  component: TenantValidationProject,
+  validateSearch: projectLayerSearch,
 });
 
 const tenantValidationGroupRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/validation/models/$modelId/groups/$groupId",
-  component: TenantValidationModel,
-  validateSearch: modelLayerSearch,
+  path: "/tenants/$tenantId/validation/projects/$projectId/groups/$groupId",
+  component: TenantValidationProject,
+  validateSearch: projectLayerSearch,
 });
 
 const tenantValidationCheckRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/validation/models/$modelId/groups/$groupId/checks/$checkId",
-  component: TenantValidationModel,
-  validateSearch: modelLayerSearch,
+  path: "/tenants/$tenantId/validation/projects/$projectId/groups/$groupId/checks/$checkId",
+  component: TenantValidationProject,
+  validateSearch: projectLayerSearch,
 });
 
 const tenantPromptsRoute = createRoute({
@@ -219,179 +219,179 @@ const tenantPromptTemplateRoute = createRoute({
   component: TenantPromptTemplate,
 });
 
-const tenantModelSettingsRoute = createRoute({
+const tenantProjectSettingsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/settings",
-  validateSearch: modelLayerSearch,
-  component: TenantModelSettings,
+  path: "/tenants/$tenantId/projects/$projectId/settings",
+  validateSearch: projectLayerSearch,
+  component: TenantProjectSettings,
 });
 
-const tenantModelPromptSettingsRoute = createRoute({
+const tenantProjectPromptSettingsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/settings/prompts",
-  validateSearch: modelLayerSearch,
-  component: TenantModelPromptSettings,
+  path: "/tenants/$tenantId/projects/$projectId/settings/prompts",
+  validateSearch: projectLayerSearch,
+  component: TenantProjectPromptSettings,
 });
 
-const tenantModelRoute = createRoute({
+const tenantProjectRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId",
-  validateSearch: modelLayerSearch,
-  component: ModelOverview,
+  path: "/tenants/$tenantId/projects/$projectId",
+  validateSearch: projectLayerSearch,
+  component: ProjectOverview,
 });
 
-const tenantModelInputScopeRoute = createRoute({
+const tenantProjectInputScopeRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/input-scope",
-  validateSearch: modelLayerSearch,
-  component: ModelInputScope,
+  path: "/tenants/$tenantId/projects/$projectId/input-scope",
+  validateSearch: projectLayerSearch,
+  component: ProjectInputScope,
 });
 
-const tenantModelProfilingRoute = createRoute({
+const tenantProjectProfilingRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/profiling",
-  validateSearch: (search) => ({ ...validateProfilingRouteSearch(search), ...modelLayerSearch(search) }),
-  component: ModelProfiling,
+  path: "/tenants/$tenantId/projects/$projectId/profiling",
+  validateSearch: (search) => ({ ...validateProfilingRouteSearch(search), ...projectLayerSearch(search) }),
+  component: ProjectProfiling,
 });
 
-const tenantModelProfilingDetailRoute = createRoute({
+const tenantProjectProfilingDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/profiling/$objectId",
-  validateSearch: (search) => ({ ...validateProfilingRouteSearch(search), ...modelLayerSearch(search) }),
-  component: ModelProfilingDetail,
+  path: "/tenants/$tenantId/projects/$projectId/profiling/$objectId",
+  validateSearch: (search) => ({ ...validateProfilingRouteSearch(search), ...projectLayerSearch(search) }),
+  component: ProjectProfilingDetail,
 });
 
-const tenantModelAnalysisRoute = createRoute({
+const tenantProjectAnalysisRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/analysis",
-  validateSearch: modelLayerSearch,
-  component: ModelAnalysis,
+  path: "/tenants/$tenantId/projects/$projectId/analysis",
+  validateSearch: projectLayerSearch,
+  component: ProjectAnalysis,
 });
 
-const tenantModelAnalysisDetailRoute = createRoute({
+const tenantProjectAnalysisDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/analysis/$findingId",
-  validateSearch: modelLayerSearch,
+  path: "/tenants/$tenantId/projects/$projectId/analysis/$findingId",
+  validateSearch: projectLayerSearch,
   beforeLoad: ({ params, search }) => {
     throw redirect({
-      to: "/tenants/$tenantId/models/$modelId/analysis",
-      params: { tenantId: params.tenantId, modelId: params.modelId },
+      to: "/tenants/$tenantId/projects/$projectId/analysis",
+      params: { tenantId: params.tenantId, projectId: params.projectId },
       search,
       replace: true,
     });
   },
 });
 
-const tenantModelAssertionsRoute = createRoute({
+const tenantProjectContextRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/assertions",
-  validateSearch: modelLayerSearch,
-  component: ModelAssertions,
+  path: "/tenants/$tenantId/projects/$projectId/context",
+  validateSearch: projectLayerSearch,
+  component: ProjectContext,
 });
 
-const tenantModelAssertionDocumentRoute = createRoute({
+const tenantProjectContextGroupRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/assertions/documents/$documentId",
-  validateSearch: modelLayerSearch,
-  component: ModelAssertionDocument,
+  path: "/tenants/$tenantId/projects/$projectId/context/groups/$groupId",
+  validateSearch: projectLayerSearch,
+  component: ProjectContextGroup,
 });
 
-const tenantModelAssertionRecordRoute = createRoute({
+const tenantProjectContextRecordRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/assertions/records/$recordId",
-  validateSearch: modelLayerSearch,
-  component: ModelAssertionRecord,
+  path: "/tenants/$tenantId/projects/$projectId/context/records/$recordId",
+  validateSearch: projectLayerSearch,
+  component: ProjectContextRecord,
 });
 
-const tenantModelMetadataEnrichmentRoute = createRoute({
+const tenantProjectMetadataEnrichmentRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/metadata-enrichment",
-  validateSearch: modelLayerSearch,
-  component: ModelMetadataEnrichment,
+  path: "/tenants/$tenantId/projects/$projectId/metadata-enrichment",
+  validateSearch: projectLayerSearch,
+  component: ProjectMetadataEnrichment,
 });
 
-const tenantModelConceptualRoute = createRoute({
+const tenantProjectConceptualRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/conceptual",
-  validateSearch: modelLayerSearch,
-  component: ModelConceptual,
+  path: "/tenants/$tenantId/projects/$projectId/conceptual",
+  validateSearch: projectLayerSearch,
+  component: ProjectConceptual,
 });
 
-const tenantModelConceptualObjectRoute = createRoute({
+const tenantProjectConceptualObjectRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/conceptual/objects/$objectId",
-  validateSearch: modelLayerSearch,
-  component: ModelConceptualObject,
+  path: "/tenants/$tenantId/projects/$projectId/conceptual/objects/$objectId",
+  validateSearch: projectLayerSearch,
+  component: ProjectConceptualObject,
 });
 
-const tenantModelConceptualRelationshipRoute = createRoute({
+const tenantProjectConceptualRelationshipRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/conceptual/relationships/$relationshipId",
-  validateSearch: modelLayerSearch,
-  component: ModelConceptualRelationship,
+  path: "/tenants/$tenantId/projects/$projectId/conceptual/relationships/$relationshipId",
+  validateSearch: projectLayerSearch,
+  component: ProjectConceptualRelationship,
 });
 
-const tenantModelLogicalRoute = createRoute({
+const tenantProjectLogicalRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/logical",
-  validateSearch: modelLayerSearch,
-  component: ModelLogical,
+  path: "/tenants/$tenantId/projects/$projectId/logical",
+  validateSearch: projectLayerSearch,
+  component: ProjectLogical,
 });
 
-const tenantModelLogicalEntityRoute = createRoute({
+const tenantProjectLogicalEntityRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/logical/entities/$entityId",
-  validateSearch: modelLayerSearch,
-  component: ModelLogicalEntity,
+  path: "/tenants/$tenantId/projects/$projectId/logical/entities/$entityId",
+  validateSearch: projectLayerSearch,
+  component: ProjectLogicalEntity,
 });
 
-const tenantModelLogicalAttributeRoute = createRoute({
+const tenantProjectLogicalAttributeRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/logical/attributes/$attributeId",
-  validateSearch: modelLayerSearch,
-  component: ModelLogicalAttribute,
+  path: "/tenants/$tenantId/projects/$projectId/logical/attributes/$attributeId",
+  validateSearch: projectLayerSearch,
+  component: ProjectLogicalAttribute,
 });
 
-const tenantModelLogicalRelationshipRoute = createRoute({
+const tenantProjectLogicalRelationshipRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/logical/relationships/$relationshipId",
-  validateSearch: modelLayerSearch,
-  component: ModelLogicalRelationship,
+  path: "/tenants/$tenantId/projects/$projectId/logical/relationships/$relationshipId",
+  validateSearch: projectLayerSearch,
+  component: ProjectLogicalRelationship,
 });
 
-const tenantModelLogicalSubmodelRoute = createRoute({
+const tenantProjectLogicalSubmodelRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/logical/submodels/$submodelId",
-  validateSearch: modelLayerSearch,
-  component: ModelLogicalSubmodel,
+  path: "/tenants/$tenantId/projects/$projectId/logical/submodels/$submodelId",
+  validateSearch: projectLayerSearch,
+  component: ProjectLogicalSubmodel,
 });
 
-const tenantModelDimensionalRoute = createRoute({
+const tenantProjectDimensionalRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/dimensional",
-  validateSearch: modelLayerSearch,
-  component: ModelDimensional,
+  path: "/tenants/$tenantId/projects/$projectId/dimensional",
+  validateSearch: projectLayerSearch,
+  component: ProjectDimensional,
 });
 
-const tenantModelDimensionalObjectRoute = createRoute({
+const tenantProjectDimensionalObjectRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/dimensional/objects/$entityId",
-  validateSearch: modelLayerSearch,
-  component: ModelDimensionalObject,
+  path: "/tenants/$tenantId/projects/$projectId/dimensional/objects/$entityId",
+  validateSearch: projectLayerSearch,
+  component: ProjectDimensionalObject,
 });
 
-const tenantModelDimensionalAttributeRoute = createRoute({
+const tenantProjectDimensionalAttributeRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/dimensional/attributes/$attributeId",
-  validateSearch: modelLayerSearch,
-  component: ModelDimensionalAttribute,
+  path: "/tenants/$tenantId/projects/$projectId/dimensional/attributes/$attributeId",
+  validateSearch: projectLayerSearch,
+  component: ProjectDimensionalAttribute,
 });
 
-const tenantModelDimensionalRelationshipRoute = createRoute({
+const tenantProjectDimensionalRelationshipRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/dimensional/relationships/$relationshipId",
-  validateSearch: modelLayerSearch,
-  component: ModelDimensionalRelationship,
+  path: "/tenants/$tenantId/projects/$projectId/dimensional/relationships/$relationshipId",
+  validateSearch: projectLayerSearch,
+  component: ProjectDimensionalRelationship,
 });
 
 const routeTree = rootRoute.addChildren([
@@ -399,44 +399,44 @@ const routeTree = rootRoute.addChildren([
   tenantHomeRoute,
   tenantMetadataRoute,
   tenantMetadataObjectsRoute,
-  tenantModelsRoute,
+  tenantProjectsRoute,
   tenantMappingRoute,
-  tenantMappingModelRoute,
+  tenantMappingProjectRoute,
   tenantMappingObjectRoute,
   tenantMappingAttributeRoute,
   tenantCodeGenerationRoute,
-  tenantCodeGenerationModelRoute,
+  tenantCodeGenerationProjectRoute,
   tenantGeneratedSqlArtifactRoute,
   tenantValidationRoute,
-  tenantValidationModelRoute,
+  tenantValidationProjectRoute,
   tenantValidationGroupRoute,
   tenantValidationCheckRoute,
   tenantPromptsRoute,
   tenantPromptTemplateRoute,
-  tenantModelSettingsRoute,
-  tenantModelPromptSettingsRoute,
-  tenantModelRoute,
-  tenantModelInputScopeRoute,
-  tenantModelProfilingRoute,
-  tenantModelProfilingDetailRoute,
-  tenantModelAnalysisRoute,
-  tenantModelAnalysisDetailRoute,
-  tenantModelAssertionsRoute,
-  tenantModelAssertionDocumentRoute,
-  tenantModelAssertionRecordRoute,
-  tenantModelMetadataEnrichmentRoute,
-  tenantModelConceptualRoute,
-  tenantModelConceptualObjectRoute,
-  tenantModelConceptualRelationshipRoute,
-  tenantModelLogicalRoute,
-  tenantModelLogicalEntityRoute,
-  tenantModelLogicalAttributeRoute,
-  tenantModelLogicalRelationshipRoute,
-  tenantModelLogicalSubmodelRoute,
-  tenantModelDimensionalRoute,
-  tenantModelDimensionalObjectRoute,
-  tenantModelDimensionalAttributeRoute,
-  tenantModelDimensionalRelationshipRoute,
+  tenantProjectSettingsRoute,
+  tenantProjectPromptSettingsRoute,
+  tenantProjectRoute,
+  tenantProjectInputScopeRoute,
+  tenantProjectProfilingRoute,
+  tenantProjectProfilingDetailRoute,
+  tenantProjectAnalysisRoute,
+  tenantProjectAnalysisDetailRoute,
+  tenantProjectContextRoute,
+  tenantProjectContextGroupRoute,
+  tenantProjectContextRecordRoute,
+  tenantProjectMetadataEnrichmentRoute,
+  tenantProjectConceptualRoute,
+  tenantProjectConceptualObjectRoute,
+  tenantProjectConceptualRelationshipRoute,
+  tenantProjectLogicalRoute,
+  tenantProjectLogicalEntityRoute,
+  tenantProjectLogicalAttributeRoute,
+  tenantProjectLogicalRelationshipRoute,
+  tenantProjectLogicalSubmodelRoute,
+  tenantProjectDimensionalRoute,
+  tenantProjectDimensionalObjectRoute,
+  tenantProjectDimensionalAttributeRoute,
+  tenantProjectDimensionalRelationshipRoute,
 ]);
 
 export function createWorkbenchRouter(options: {
@@ -449,6 +449,7 @@ export function createWorkbenchRouter(options: {
         retry: false,
         staleTime: 30_000,
         refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
       },
       mutations: { retry: false },
     },
@@ -540,10 +541,10 @@ function TenantMetadataObjects() {
   </TenantRouteFrame>;
 }
 
-function ModelsLedger() {
+function ProjectsLedger() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId } = tenantModelsRoute.useParams();
-  return <ModelsLedgerScreen api={api} tenantId={Number(tenantId)} />;
+  const { tenantId } = tenantProjectsRoute.useParams();
+  return <ProjectsLedgerScreen api={api} tenantId={Number(tenantId)} />;
 }
 
 function TenantMapping() {
@@ -559,50 +560,50 @@ function TenantMapping() {
     >
       {() => (
         <main className="workspace workspace-ledger">
-          <WorkflowModels api={api} tenantId={numericTenantId} workflow="mapping" />
+          <WorkflowProjects api={api} tenantId={numericTenantId} workflow="mapping" />
         </main>
       )}
     </TenantRouteFrame>
   );
 }
 
-function TenantMappingModel() {
+function TenantMappingProject() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId } = tenantMappingModelRoute.useParams();
+  const { tenantId, projectId } = tenantMappingProjectRoute.useParams();
   const numericTenantId = Number(tenantId);
-  const numericModelId = Number(modelId);
-  const { layer = "logical" } = tenantMappingModelRoute.useSearch();
+  const numericProjectId = Number(projectId);
+  const { layer = "logical" } = tenantMappingProjectRoute.useSearch();
   return (
-    <ModelRouteFrame
+    <ProjectRouteFrame
       tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
-      modelId={numericModelId}
+      projectId={numericProjectId}
       activeStage="mapping"
       loadingLabel="Loading Mapping"
     >
-      {({ home, model }) => (
+      {({ home, project }) => (
         <MappingScreen
-          key={`${numericTenantId}:${numericModelId}:${layer}`}
+          key={`${numericTenantId}:${numericProjectId}:${layer}`}
           layer={layer}
           api={api}
           tenantId={numericTenantId}
-          model={model}
-          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
-          hasAppPermission={canAuthorModels(home.tenant.effective_role)}
+          project={project}
+          hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true}
+          hasAppPermission={canAuthorProjects(home.tenant.effective_role)}
         />
       )}
-    </ModelRouteFrame>
+    </ProjectRouteFrame>
   );
 }
 
 function TenantMappingObject() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId, mappingObjectId } = tenantMappingObjectRoute.useParams();
+  const { tenantId, projectId, mappingObjectId } = tenantMappingObjectRoute.useParams();
   return <TenantMappingDetail
     api={api}
     tenantId={Number(tenantId)}
-    modelId={Number(modelId)}
+    projectId={Number(projectId)}
     detailId={Number(mappingObjectId)}
     kind="object"
   />;
@@ -610,11 +611,11 @@ function TenantMappingObject() {
 
 function TenantMappingAttribute() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId, mappingAttributeId } = tenantMappingAttributeRoute.useParams();
+  const { tenantId, projectId, mappingAttributeId } = tenantMappingAttributeRoute.useParams();
   return <TenantMappingDetail
     api={api}
     tenantId={Number(tenantId)}
-    modelId={Number(modelId)}
+    projectId={Number(projectId)}
     detailId={Number(mappingAttributeId)}
     kind="attribute"
   />;
@@ -623,39 +624,39 @@ function TenantMappingAttribute() {
 function TenantMappingDetail({
   api,
   tenantId,
-  modelId,
+  projectId,
   detailId,
   kind,
 }: {
   api: WorkbenchApi;
   tenantId: number;
-  modelId: number;
+  projectId: number;
   detailId: number;
   kind: "object" | "attribute";
 }) {
   if (!Number.isSafeInteger(detailId) || detailId <= 0) return <ErrorPage />;
   return (
-    <ModelRouteFrame
+    <ProjectRouteFrame
       tenantLockApi={api}
       api={api}
       tenantId={tenantId}
-      modelId={modelId}
+      projectId={projectId}
       activeStage="mapping"
       loadingLabel="Loading Mapping"
     >
-      {({ home, model }) => (
+      {({ home, project }) => (
         <div className="mapping-workspace">
           {kind === "object" ? (
-            <MappingObjectDetailPage api={api} tenantId={tenantId} modelId={modelId} mappingObjectId={detailId}
-              modelRevision={model.model_revision}
-              hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true && canAuthorModels(home.tenant.effective_role)}
+            <MappingObjectDetailPage api={api} tenantId={tenantId} projectId={projectId} mappingObjectId={detailId}
+              projectRevision={project.project_revision}
+              hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true && canAuthorProjects(home.tenant.effective_role)}
             />
           ) : (
-            <MappingAttributeDetailPage api={api} tenantId={tenantId} modelId={modelId} mappingAttributeId={detailId} />
+            <MappingAttributeDetailPage api={api} tenantId={tenantId} projectId={projectId} mappingAttributeId={detailId} />
           )}
         </div>
       )}
-    </ModelRouteFrame>
+    </ProjectRouteFrame>
   );
 }
 
@@ -672,74 +673,74 @@ function TenantCodeGeneration() {
     >
       {() => (
         <main className="workspace workspace-ledger">
-          <WorkflowModels api={api} tenantId={numericTenantId} workflow="code_generation" />
+          <WorkflowProjects api={api} tenantId={numericTenantId} workflow="code_generation" />
         </main>
       )}
     </TenantRouteFrame>
   );
 }
 
-function TenantCodeGenerationModel() {
+function TenantCodeGenerationProject() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId } = tenantCodeGenerationModelRoute.useParams();
-  const { layer = "logical" } = tenantCodeGenerationModelRoute.useSearch();
+  const { tenantId, projectId } = tenantCodeGenerationProjectRoute.useParams();
+  const { layer = "logical" } = tenantCodeGenerationProjectRoute.useSearch();
   const numericTenantId = Number(tenantId);
-  const numericModelId = Number(modelId);
+  const numericProjectId = Number(projectId);
   return (
-    <ModelRouteFrame
+    <ProjectRouteFrame
       tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
-      modelId={numericModelId}
+      projectId={numericProjectId}
       activeStage="code-generation"
       loadingLabel="Loading Code Generation"
     >
-      {({ home, model }) => (
+      {({ home, project }) => (
         <CodeGenerationScreen
-          key={`${tenantId}/${modelId}/${layer}`}
+          key={`${tenantId}/${projectId}/${layer}`}
           layer={layer}
           api={api}
           tenantId={numericTenantId}
-          model={model}
-          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
-          hasAppPermission={canAuthorModels(home.tenant.effective_role)}
+          project={project}
+          hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true}
+          hasAppPermission={canAuthorProjects(home.tenant.effective_role)}
         />
       )}
-    </ModelRouteFrame>
+    </ProjectRouteFrame>
   );
 }
 
 function TenantGeneratedSqlArtifact() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId, artifactId } = tenantGeneratedSqlArtifactRoute.useParams();
+  const { tenantId, projectId, artifactId } = tenantGeneratedSqlArtifactRoute.useParams();
   const numericTenantId = Number(tenantId);
-  const numericModelId = Number(modelId);
+  const numericProjectId = Number(projectId);
   const numericArtifactId = Number(artifactId);
   if (!Number.isSafeInteger(numericArtifactId) || numericArtifactId <= 0) {
     return <ErrorPage />;
   }
   return (
-    <ModelRouteFrame
+    <ProjectRouteFrame
       tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
-      modelId={numericModelId}
+      projectId={numericProjectId}
       activeStage="code-generation"
       loadingLabel="Loading stored SQL"
     >
-      {({ home, model }) => (
+      {({ home, project }) => (
         <div className="mapping-workspace code-generation-workspace">
           <GeneratedSqlDetailPage
             api={api}
             tenantId={numericTenantId}
-            model={model}
+            project={project}
             artifactId={numericArtifactId}
-            hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
-            hasAppPermission={canAuthorModels(home.tenant.effective_role)}
+            hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true}
+            hasAppPermission={canAuthorProjects(home.tenant.effective_role)}
           />
         </div>
       )}
-    </ModelRouteFrame>
+    </ProjectRouteFrame>
   );
 }
 
@@ -756,42 +757,42 @@ function TenantValidation() {
     >
       {() => (
         <main className="workspace workspace-ledger">
-          <WorkflowModels api={api} tenantId={numericTenantId} workflow="validation" />
+          <WorkflowProjects api={api} tenantId={numericTenantId} workflow="validation" />
         </main>
       )}
     </TenantRouteFrame>
   );
 }
 
-function TenantValidationModel() {
+function TenantValidationProject() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId, groupId, checkId } = useParams({ strict: false });
+  const { tenantId, projectId, groupId, checkId } = useParams({ strict: false });
   const { layer = "logical" } = useSearch({ strict: false });
   const numericTenantId = Number(tenantId);
-  const numericModelId = Number(modelId);
+  const numericProjectId = Number(projectId);
   return (
-    <ModelRouteFrame
+    <ProjectRouteFrame
       tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
-      modelId={numericModelId}
+      projectId={numericProjectId}
       activeStage="validation"
       loadingLabel="Loading Validation"
     >
-      {({ home, model }) => (
+      {({ home, project }) => (
         <ValidationScreen
-          key={`${tenantId}/${modelId}/${layer}/${groupId ?? ""}/${checkId ?? ""}`}
+          key={`${tenantId}/${projectId}/${layer}/${groupId ?? ""}/${checkId ?? ""}`}
           layer={layer}
           api={api}
           tenantId={numericTenantId}
-          model={model}
-          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
-          hasAppPermission={canAuthorModels(home.tenant.effective_role)}
+          project={project}
+          hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true}
+          hasAppPermission={canAuthorProjects(home.tenant.effective_role)}
           groupId={groupId === undefined ? undefined : Number(groupId)}
           checkId={checkId === undefined ? undefined : Number(checkId)}
         />
       )}
-    </ModelRouteFrame>
+    </ProjectRouteFrame>
   );
 }
 
@@ -811,7 +812,7 @@ function TenantPrompts() {
           api={api}
           tenantId={numericTenantId}
           tenantName={home.tenant.tenant_name}
-          canAuthorPrompts={canAuthorModels(home.tenant.effective_role)}
+          canAuthorPrompts={canAuthorProjects(home.tenant.effective_role)}
           isSuperAdmin={home.tenant.effective_role === "super_admin"}
           hasTenantLock={home.lock.owned_by_current_principal === true}
         />
@@ -840,7 +841,7 @@ function TenantPromptTemplate() {
           api={api}
           tenantId={numericTenantId}
           promptTemplateId={numericPromptTemplateId}
-          canAuthorPrompts={canAuthorModels(home.tenant.effective_role)}
+          canAuthorPrompts={canAuthorProjects(home.tenant.effective_role)}
           isSuperAdmin={home.tenant.effective_role === "super_admin"}
           hasTenantLock={home.lock.owned_by_current_principal === true}
         />
@@ -849,76 +850,76 @@ function TenantPromptTemplate() {
   );
 }
 
-function TenantModelSettings() {
+function TenantProjectSettings() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId } = tenantModelSettingsRoute.useParams();
-  return <ModelRouteFrame tenantLockApi={api} api={api} tenantId={Number(tenantId)} modelId={Number(modelId)}
-    activeStage="settings" loadingLabel="Loading Model Settings">
-    {({ home, model }) => <ModelSettingsScreen key={`${tenantId}:${modelId}`} api={api} home={home} model={model} />}
-  </ModelRouteFrame>;
+  const { tenantId, projectId } = tenantProjectSettingsRoute.useParams();
+  return <ProjectRouteFrame tenantLockApi={api} api={api} tenantId={Number(tenantId)} projectId={Number(projectId)}
+    activeStage="settings" loadingLabel="Loading Project Settings">
+    {({ home, project }) => <ProjectSettingsScreen key={`${tenantId}:${projectId}`} api={api} home={home} project={project} />}
+  </ProjectRouteFrame>;
 }
 
-function TenantModelPromptSettings() {
+function TenantProjectPromptSettings() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId } = tenantModelPromptSettingsRoute.useParams();
+  const { tenantId, projectId } = tenantProjectPromptSettingsRoute.useParams();
   const numericTenantId = Number(tenantId);
-  const numericModelId = Number(modelId);
+  const numericProjectId = Number(projectId);
   return (
-    <ModelRouteFrame
+    <ProjectRouteFrame
       tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
-      modelId={numericModelId}
+      projectId={numericProjectId}
       activeStage="settings-prompts"
-      loadingLabel="Loading Model Prompt Settings"
+      loadingLabel="Loading Project Prompt Settings"
     >
-      {({ home, model }) => (
-        <ModelPromptSettings
+      {({ home, project }) => (
+        <ProjectPromptSettings
           api={api}
           tenantId={numericTenantId}
-          model={model}
-          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
-          hasAppPermission={canAuthorModels(home.tenant.effective_role)}
+          project={project}
+          hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true}
+          hasAppPermission={canAuthorProjects(home.tenant.effective_role)}
         />
       )}
-    </ModelRouteFrame>
+    </ProjectRouteFrame>
   );
 }
 
-function ModelOverview() {
+function ProjectOverview() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId } = tenantModelRoute.useParams();
-  return <ModelOverviewScreen api={api} tenantId={Number(tenantId)} modelId={Number(modelId)} />;
+  const { tenantId, projectId } = tenantProjectRoute.useParams();
+  return <ProjectOverviewScreen api={api} tenantId={Number(tenantId)} projectId={Number(projectId)} />;
 }
 
-function ModelInputScope() {
+function ProjectInputScope() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId } = tenantModelInputScopeRoute.useParams();
-  return <ModelInputScopeScreen api={api} tenantId={Number(tenantId)} modelId={Number(modelId)} />;
+  const { tenantId, projectId } = tenantProjectInputScopeRoute.useParams();
+  return <ProjectInputScopeScreen api={api} tenantId={Number(tenantId)} projectId={Number(projectId)} />;
 }
 
-function ModelProfiling() {
+function ProjectProfiling() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId } = tenantModelProfilingRoute.useParams();
-  const { returnObjectId, ...resultFilters } = tenantModelProfilingRoute.useSearch();
-  const navigate = useNavigate({ from: "/tenants/$tenantId/models/$modelId/profiling" });
+  const { tenantId, projectId } = tenantProjectProfilingRoute.useParams();
+  const { returnObjectId, ...resultFilters } = tenantProjectProfilingRoute.useSearch();
+  const navigate = useNavigate({ from: "/tenants/$tenantId/projects/$projectId/profiling" });
   const numericTenantId = Number(tenantId);
-  const numericModelId = Number(modelId);
+  const numericProjectId = Number(projectId);
   return (
-    <ModelRouteFrame
+    <ProjectRouteFrame
       tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
-      modelId={numericModelId}
+      projectId={numericProjectId}
       activeStage="profiling"
       loadingLabel="Loading Profiling"
     >
-      {({ home, model }) => (
+      {({ home, project }) => (
         <ProfilingScreen
           api={api}
           tenantId={numericTenantId}
-          model={model}
-          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
+          project={project}
+          hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true}
           resultFilters={resultFilters}
           {...(returnObjectId === undefined ? {} : { returnObjectId })}
           onApplyResultFilters={(filters) => {
@@ -927,24 +928,24 @@ function ModelProfiling() {
           onReturnFocusHandled={() => navigate({ search: resultFilters, replace: true })}
         />
       )}
-    </ModelRouteFrame>
+    </ProjectRouteFrame>
   );
 }
 
-function ModelProfilingDetail() {
+function ProjectProfilingDetail() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId, objectId } = tenantModelProfilingDetailRoute.useParams();
-  const returnSearch = tenantModelProfilingDetailRoute.useSearch();
+  const { tenantId, projectId, objectId } = tenantProjectProfilingDetailRoute.useParams();
+  const returnSearch = tenantProjectProfilingDetailRoute.useSearch();
   const numericTenantId = Number(tenantId);
-  const numericModelId = Number(modelId);
+  const numericProjectId = Number(projectId);
   const numericObjectId = Number(objectId);
   if (!Number.isSafeInteger(numericObjectId) || numericObjectId <= 0) return <ErrorPage />;
   return (
-    <ModelRouteFrame
+    <ProjectRouteFrame
       tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
-      modelId={numericModelId}
+      projectId={numericProjectId}
       activeStage="profiling"
       loadingLabel="Loading profile evidence"
     >
@@ -952,202 +953,145 @@ function ModelProfilingDetail() {
         <ProfilingObjectDetailPage
           api={api}
           tenantId={numericTenantId}
-          modelId={numericModelId}
+          projectId={numericProjectId}
           objectId={numericObjectId}
           returnSearch={returnSearch}
         />
       )}
-    </ModelRouteFrame>
+    </ProjectRouteFrame>
   );
 }
 
-function ModelAnalysis() {
+function ProjectAnalysis() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId } = tenantModelAnalysisRoute.useParams();
+  const { tenantId, projectId } = tenantProjectAnalysisRoute.useParams();
   const numericTenantId = Number(tenantId);
-  const numericModelId = Number(modelId);
+  const numericProjectId = Number(projectId);
   return (
-    <ModelRouteFrame
+    <ProjectRouteFrame
       tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
-      modelId={numericModelId}
+      projectId={numericProjectId}
       activeStage="analysis"
       loadingLabel="Loading Analysis"
     >
-      {({ home, model }) => (
+      {({ home, project }) => (
         <AnalysisScreen
           api={api}
           tenantId={numericTenantId}
-          model={model}
-          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
+          project={project}
+          hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true}
         />
       )}
-    </ModelRouteFrame>
+    </ProjectRouteFrame>
   );
 }
 
-function ModelAssertions() {
+function ProjectContext() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId } = tenantModelAssertionsRoute.useParams();
+  const { tenantId, projectId } = tenantProjectContextRoute.useParams();
   const numericTenantId = Number(tenantId);
-  const numericModelId = Number(modelId);
+  const numericProjectId = Number(projectId);
   return (
-    <ModelRouteFrame
+    <ProjectRouteFrame
       tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
-      modelId={numericModelId}
-      activeStage="assertions"
-      loadingLabel="Loading Assertions"
+      projectId={numericProjectId}
+      activeStage="context"
+      loadingLabel="Loading Context"
     >
-      {({ home, model }) => (
-        <AssertionsScreen api={api} tenantId={numericTenantId} model={model} hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true} />
+      {({ home, project }) => (
+        <ContextScreen api={api} tenantId={numericTenantId} project={project} hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true && canAuthorProjects(home.tenant.effective_role)} authoringDisabledReason={!canAuthorProjects(home.tenant.effective_role) ? "Your role can view Context but cannot change it." : project.is_locked ? "Unlock this Project from the Projects list before changing Context." : !home.lock.owned_by_current_principal ? "Acquire the Tenant Lock before changing Context." : undefined} />
       )}
-    </ModelRouteFrame>
+    </ProjectRouteFrame>
   );
 }
 
-function ModelAssertionDocument() {
+function ProjectContextGroup() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId, documentId } = tenantModelAssertionDocumentRoute.useParams();
-  return (
-    <AssertionDetailRoute
-      api={api}
-      tenantId={Number(tenantId)}
-      modelId={Number(modelId)}
-      detailId={Number(documentId)}
-      kind="document"
-    />
-  );
+  const { tenantId, projectId, groupId } = tenantProjectContextGroupRoute.useParams();
+  const numericGroupId = Number(groupId);
+  if (!Number.isSafeInteger(numericGroupId) || numericGroupId <= 0) return <ErrorPage />;
+  return <ProjectRouteFrame tenantLockApi={api} api={api} tenantId={Number(tenantId)} projectId={Number(projectId)} activeStage="context" loadingLabel="Loading Context group">
+    {({ home, project }) => <ContextGroupDetailPage api={api} tenantId={Number(tenantId)} projectId={Number(projectId)} groupId={numericGroupId} key={groupId} projectRevision={project.project_revision} hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true && canAuthorProjects(home.tenant.effective_role)} authoringDisabledReason={!canAuthorProjects(home.tenant.effective_role) ? "Your role can view Context but cannot change it." : project.is_locked ? "Unlock this Project from the Projects list before changing Context." : !home.lock.owned_by_current_principal ? "Acquire the Tenant Lock before changing Context." : undefined} />}
+  </ProjectRouteFrame>;
 }
 
-function ModelAssertionRecord() {
+function ProjectContextRecord() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId, recordId } = tenantModelAssertionRecordRoute.useParams();
-  return (
-    <AssertionDetailRoute
-      api={api}
-      tenantId={Number(tenantId)}
-      modelId={Number(modelId)}
-      detailId={Number(recordId)}
-      kind="record"
-    />
-  );
+  const { tenantId, projectId, recordId } = tenantProjectContextRecordRoute.useParams();
+  const canonicalRecordId = recordId.toLowerCase();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(canonicalRecordId)) return <ErrorPage />;
+  return <ProjectRouteFrame tenantLockApi={api} api={api} tenantId={Number(tenantId)} projectId={Number(projectId)} activeStage="context" loadingLabel="Loading Context record">
+    {({ home, project }) => <ContextRecordDetailPage api={api} tenantId={Number(tenantId)} projectId={Number(projectId)} recordId={canonicalRecordId} key={canonicalRecordId} projectRevision={project.project_revision} hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true && canAuthorProjects(home.tenant.effective_role)} authoringDisabledReason={!canAuthorProjects(home.tenant.effective_role) ? "Your role can view Context but cannot change it." : project.is_locked ? "Unlock this Project from the Projects list before changing Context." : !home.lock.owned_by_current_principal ? "Acquire the Tenant Lock before changing Context." : undefined} />}
+  </ProjectRouteFrame>;
 }
 
-function AssertionDetailRoute({
-  api,
-  tenantId,
-  modelId,
-  detailId,
-  kind,
-}: {
-  api: WorkbenchApi;
-  tenantId: number;
-  modelId: number;
-  detailId: number;
-  kind: "document" | "record";
-}) {
-  if (!Number.isSafeInteger(detailId) || detailId <= 0) return <ErrorPage />;
-  return (
-    <ModelRouteFrame
-      tenantLockApi={api}
-      api={api}
-      tenantId={tenantId}
-      modelId={modelId}
-      activeStage="assertions"
-      loadingLabel="Loading Assertion"
-    >
-      {({ home, model }) => (
-        kind === "document" ? (
-          <AssertionDocumentDetailPage
-            api={api}
-            tenantId={tenantId}
-            modelId={modelId}
-            key={detailId}
-            documentId={detailId}
-            modelRevision={model.model_revision}
-            hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
-          />
-        ) : (
-          <AssertionRecordDetailPage
-            api={api}
-            tenantId={tenantId}
-            modelId={modelId}
-            recordId={detailId}
-            modelRevision={model.model_revision}
-            hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
-          />
-        )
-      )}
-    </ModelRouteFrame>
-  );
-}
-
-function ModelMetadataEnrichment() {
+function ProjectMetadataEnrichment() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId } = tenantModelMetadataEnrichmentRoute.useParams();
+  const { tenantId, projectId } = tenantProjectMetadataEnrichmentRoute.useParams();
   return (
-    <ModelRouteFrame tenantLockApi={api} api={api} tenantId={Number(tenantId)} modelId={Number(modelId)}
+    <ProjectRouteFrame tenantLockApi={api} api={api} tenantId={Number(tenantId)} projectId={Number(projectId)}
       activeStage="metadata-enrichment" loadingLabel="Loading Metadata enrichment">
-      {({ home, model }) => (
-        <MetadataEnrichmentScreen api={api} tenantId={Number(tenantId)} model={model}
-          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true} />
+      {({ home, project }) => (
+        <MetadataEnrichmentScreen api={api} tenantId={Number(tenantId)} project={project}
+          hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true} />
       )}
-    </ModelRouteFrame>
+    </ProjectRouteFrame>
   );
 }
 
-function ModelConceptual() {
+function ProjectConceptual() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId } = tenantModelConceptualRoute.useParams();
+  const { tenantId, projectId } = tenantProjectConceptualRoute.useParams();
   const numericTenantId = Number(tenantId);
-  const numericModelId = Number(modelId);
+  const numericProjectId = Number(projectId);
   return (
-    <ModelRouteFrame
+    <ProjectRouteFrame
       tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
-      modelId={numericModelId}
+      projectId={numericProjectId}
       activeStage="conceptual"
       loadingLabel="Loading Conceptual"
     >
-      {({ home, model }) => (
+      {({ home, project }) => (
         <ConceptualScreen
           api={api}
           tenantId={numericTenantId}
-          model={model}
+          project={project}
           canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"}
-          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
+          hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true}
         />
       )}
-    </ModelRouteFrame>
+    </ProjectRouteFrame>
   );
 }
 
-function ModelConceptualObject() {
+function ProjectConceptualObject() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId, objectId } = tenantModelConceptualObjectRoute.useParams();
+  const { tenantId, projectId, objectId } = tenantProjectConceptualObjectRoute.useParams();
   return (
     <ConceptualDetailRoute
       api={api}
       tenantId={Number(tenantId)}
-      modelId={Number(modelId)}
+      projectId={Number(projectId)}
       detailId={Number(objectId)}
       kind="object"
     />
   );
 }
 
-function ModelConceptualRelationship() {
+function ProjectConceptualRelationship() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId, relationshipId } = tenantModelConceptualRelationshipRoute.useParams();
+  const { tenantId, projectId, relationshipId } = tenantProjectConceptualRelationshipRoute.useParams();
   return (
     <ConceptualDetailRoute
       api={api}
       tenantId={Number(tenantId)}
-      modelId={Number(modelId)}
+      projectId={Number(projectId)}
       detailId={Number(relationshipId)}
       kind="relationship"
     />
@@ -1157,146 +1101,152 @@ function ModelConceptualRelationship() {
 function ConceptualDetailRoute({
   api,
   tenantId,
-  modelId,
+  projectId,
   detailId,
   kind,
 }: {
   api: WorkbenchApi;
   tenantId: number;
-  modelId: number;
+  projectId: number;
   detailId: number;
   kind: "object" | "relationship";
 }) {
   if (!Number.isSafeInteger(detailId) || detailId <= 0) return <ErrorPage />;
   return (
-    <ModelRouteFrame
+    <ProjectRouteFrame
       tenantLockApi={api}
       api={api}
       tenantId={tenantId}
-      modelId={modelId}
+      projectId={projectId}
       activeStage="conceptual"
       loadingLabel="Loading Conceptual"
     >
-      {({ home, model }) => (<>
-        <ModelRecordTools canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"} api={api} tenantId={tenantId} modelId={modelId} modelRevision={model.model_revision}
-          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true} dataset={`conceptual_${kind}`} recordId={detailId} />
-        {
-        kind === "object" ? (
-          <ConceptualObjectDetailPage
-            api={api}
-            tenantId={tenantId}
-            modelId={modelId}
-            objectId={detailId}
-          />
-        ) : (
-          <ConceptualRelationshipDetailPage
-            api={api}
-            tenantId={tenantId}
-            modelId={modelId}
-            relationshipId={detailId}
-          />
-        )
-      }</>)}
-    </ModelRouteFrame>
+      {({ home, project }) => {
+        const actions = <ProjectRecordTools canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"} api={api} tenantId={tenantId} projectId={projectId} projectRevision={project.project_revision}
+          hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true} dataset={`conceptual_${kind}`} recordId={detailId} />;
+        return (
+          kind === "object" ? (
+            <ConceptualObjectDetailPage
+              actions={actions}
+              api={api}
+              tenantId={tenantId}
+              projectId={projectId}
+              objectId={detailId}
+            />
+          ) : (
+            <ConceptualRelationshipDetailPage
+              actions={actions}
+              api={api}
+              tenantId={tenantId}
+              projectId={projectId}
+              relationshipId={detailId}
+            />
+          )
+        );
+      }}
+    </ProjectRouteFrame>
   );
 }
 
 
-function ModelLogical() {
+function ProjectLogical() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId } = tenantModelLogicalRoute.useParams();
+  const { tenantId, projectId } = tenantProjectLogicalRoute.useParams();
   const numericTenantId = Number(tenantId);
-  const numericModelId = Number(modelId);
+  const numericProjectId = Number(projectId);
   return (
-    <ModelRouteFrame
+    <ProjectRouteFrame
       tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
-      modelId={numericModelId}
+      projectId={numericProjectId}
       activeStage="logical"
       loadingLabel="Loading Logical"
     >
-      {({ home, model }) => (
+      {({ home, project }) => (
         <LogicalScreen
           api={api}
           tenantId={numericTenantId}
-          model={model}
+          project={project}
           canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"}
-          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
+          hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true}
         />
       )}
-    </ModelRouteFrame>
+    </ProjectRouteFrame>
   );
 }
 
-function ModelLogicalEntity() {
+function ProjectLogicalEntity() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId, entityId } = tenantModelLogicalEntityRoute.useParams();
+  const { tenantId, projectId, entityId } = tenantProjectLogicalEntityRoute.useParams();
   const numericTenantId = Number(tenantId);
-  const numericModelId = Number(modelId);
+  const numericProjectId = Number(projectId);
   const numericEntityId = Number(entityId);
   if (!Number.isSafeInteger(numericEntityId) || numericEntityId <= 0) return <ErrorPage />;
   return (
-    <ModelRouteFrame
+    <ProjectRouteFrame
       tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
-      modelId={numericModelId}
+      projectId={numericProjectId}
       activeStage="logical"
       loadingLabel="Loading Logical"
     >
-      {({ home, model }) => (<>
-        <ModelRecordTools canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"} api={api} tenantId={numericTenantId} modelId={numericModelId} modelRevision={model.model_revision}
-          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true} dataset="logical_entity" recordId={numericEntityId} />
-        <LogicalEntityDetailPage
-          api={api}
-          tenantId={numericTenantId}
-          modelId={numericModelId}
-          entityId={numericEntityId}
-          modelRevision={model.model_revision}
-          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
-        />
-      </>)}
-    </ModelRouteFrame>
+      {({ home, project }) => {
+        const actions = <ProjectRecordTools canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"} api={api} tenantId={numericTenantId} projectId={numericProjectId} projectRevision={project.project_revision}
+          hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true} dataset="logical_entity" recordId={numericEntityId} />;
+        return (
+          <LogicalEntityDetailPage
+            actions={actions}
+            api={api}
+            tenantId={numericTenantId}
+            projectId={numericProjectId}
+            entityId={numericEntityId}
+            projectRevision={project.project_revision}
+            hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true}
+          />
+        );
+      }}
+    </ProjectRouteFrame>
   );
 }
 
-function ModelLogicalAttribute() {
+function ProjectLogicalAttribute() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId, attributeId } = tenantModelLogicalAttributeRoute.useParams();
+  const { tenantId, projectId, attributeId } = tenantProjectLogicalAttributeRoute.useParams();
   return (
     <LogicalDetailRoute
       api={api}
       tenantId={Number(tenantId)}
-      modelId={Number(modelId)}
+      projectId={Number(projectId)}
       detailId={Number(attributeId)}
       kind="attribute"
     />
   );
 }
 
-function ModelLogicalRelationship() {
+function ProjectLogicalRelationship() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId, relationshipId } = tenantModelLogicalRelationshipRoute.useParams();
+  const { tenantId, projectId, relationshipId } = tenantProjectLogicalRelationshipRoute.useParams();
   return (
     <LogicalDetailRoute
       api={api}
       tenantId={Number(tenantId)}
-      modelId={Number(modelId)}
+      projectId={Number(projectId)}
       detailId={Number(relationshipId)}
       kind="relationship"
     />
   );
 }
 
-function ModelLogicalSubmodel() {
+function ProjectLogicalSubmodel() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId, submodelId } = tenantModelLogicalSubmodelRoute.useParams();
+  const { tenantId, projectId, submodelId } = tenantProjectLogicalSubmodelRoute.useParams();
   return (
     <LogicalDetailRoute
       api={api}
       tenantId={Number(tenantId)}
-      modelId={Number(modelId)}
+      projectId={Number(projectId)}
       detailId={Number(submodelId)}
       kind="submodel"
     />
@@ -1306,135 +1256,142 @@ function ModelLogicalSubmodel() {
 function LogicalDetailRoute({
   api,
   tenantId,
-  modelId,
+  projectId,
   detailId,
   kind,
 }: {
   api: WorkbenchApi;
   tenantId: number;
-  modelId: number;
+  projectId: number;
   detailId: number;
   kind: "attribute" | "relationship" | "submodel";
 }) {
   if (!Number.isSafeInteger(detailId) || detailId <= 0) return <ErrorPage />;
   return (
-    <ModelRouteFrame
+    <ProjectRouteFrame
       tenantLockApi={api}
       api={api}
       tenantId={tenantId}
-      modelId={modelId}
+      projectId={projectId}
       activeStage="logical"
       loadingLabel="Loading Logical"
     >
-      {({ home, model }) => (<>
-        <ModelRecordTools canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"} api={api} tenantId={tenantId} modelId={modelId} modelRevision={model.model_revision}
-          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true} dataset={`logical_${kind}`} recordId={detailId} />
-        {
-        kind === "attribute" ? (
-          <LogicalAttributeDetailPage
-            api={api}
-            tenantId={tenantId}
-            modelId={modelId}
-            attributeId={detailId}
-          />
-        ) : kind === "relationship" ? (
-          <LogicalRelationshipDetailPage
-            api={api}
-            tenantId={tenantId}
-            modelId={modelId}
-            relationshipId={detailId}
-          />
-        ) : (
-          <LogicalSubmodelDetailPage
-            api={api}
-            tenantId={tenantId}
-            modelId={modelId}
-            submodelId={detailId}
-          />
-        )
-      }</>)}
-    </ModelRouteFrame>
+      {({ home, project }) => {
+        const actions = <ProjectRecordTools canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"} api={api} tenantId={tenantId} projectId={projectId} projectRevision={project.project_revision}
+          hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true} dataset={`logical_${kind}`} recordId={detailId} />;
+        return (
+          kind === "attribute" ? (
+            <LogicalAttributeDetailPage
+              actions={actions}
+              api={api}
+              tenantId={tenantId}
+              projectId={projectId}
+              attributeId={detailId}
+            />
+          ) : kind === "relationship" ? (
+            <LogicalRelationshipDetailPage
+              actions={actions}
+              api={api}
+              tenantId={tenantId}
+              projectId={projectId}
+              relationshipId={detailId}
+            />
+          ) : (
+            <LogicalSubmodelDetailPage
+              actions={actions}
+              api={api}
+              tenantId={tenantId}
+              projectId={projectId}
+              submodelId={detailId}
+            />
+          )
+        );
+      }}
+    </ProjectRouteFrame>
   );
 }
 
-function ModelDimensional() {
+function ProjectDimensional() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId } = tenantModelDimensionalRoute.useParams();
+  const { tenantId, projectId } = tenantProjectDimensionalRoute.useParams();
   const numericTenantId = Number(tenantId);
-  const numericModelId = Number(modelId);
+  const numericProjectId = Number(projectId);
   return (
-    <ModelRouteFrame
+    <ProjectRouteFrame
       tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
-      modelId={numericModelId}
+      projectId={numericProjectId}
       activeStage="dimensional"
       loadingLabel="Loading Dimensional"
     >
-      {({ home, model }) => (
+      {({ home, project }) => (
         <DimensionalScreen
           api={api}
           tenantId={numericTenantId}
-          model={model}
+          project={project}
           canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"}
-          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
+          hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true}
         />
       )}
-    </ModelRouteFrame>
+    </ProjectRouteFrame>
   );
 }
 
-function ModelDimensionalObject() {
+function ProjectDimensionalObject() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId, entityId } = tenantModelDimensionalObjectRoute.useParams();
+  const { tenantId, projectId, entityId } = tenantProjectDimensionalObjectRoute.useParams();
   const numericTenantId = Number(tenantId);
-  const numericModelId = Number(modelId);
+  const numericProjectId = Number(projectId);
   const numericEntityId = Number(entityId);
   if (!Number.isSafeInteger(numericEntityId) || numericEntityId <= 0) return <ErrorPage />;
   return (
-    <ModelRouteFrame
+    <ProjectRouteFrame
       tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
-      modelId={numericModelId}
+      projectId={numericProjectId}
       activeStage="dimensional"
       loadingLabel="Loading Dimensional"
     >
-      {({ home, model }) => (<>
-        <ModelRecordTools canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"} api={api} tenantId={numericTenantId} modelId={numericModelId} modelRevision={model.model_revision}
-          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true} dataset="dimensional_entity" recordId={numericEntityId} />
-        <DimensionalObjectDetailPage
-          api={api}
-          tenantId={numericTenantId}
-          modelId={numericModelId}
-          entityId={numericEntityId}
-          modelRevision={model.model_revision}
-          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
-        />
-      </>)}
-    </ModelRouteFrame>
+      {({ home, project }) => {
+        const actions = <ProjectRecordTools canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"} api={api} tenantId={numericTenantId} projectId={numericProjectId} projectRevision={project.project_revision}
+          hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true} dataset="dimensional_entity" recordId={numericEntityId} />;
+        return (
+          <DimensionalObjectDetailPage
+            actions={actions}
+            api={api}
+            tenantId={numericTenantId}
+            projectId={numericProjectId}
+            entityId={numericEntityId}
+            projectRevision={project.project_revision}
+            hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true}
+          />
+        );
+      }}
+    </ProjectRouteFrame>
   );
 }
 
-function ModelDimensionalAttribute() {
+function ProjectDimensionalAttribute() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId, attributeId } = tenantModelDimensionalAttributeRoute.useParams();
+  const { tenantId, projectId, attributeId } = tenantProjectDimensionalAttributeRoute.useParams();
   return <DimensionalDetailRoute
     api={api}
     tenantId={Number(tenantId)}
-    modelId={Number(modelId)}
+    projectId={Number(projectId)}
     detailId={Number(attributeId)}
     kind="attribute"
   />;
 }
 
-function ModelDimensionalRelationship() {
+function ProjectDimensionalRelationship() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId, relationshipId } = tenantModelDimensionalRelationshipRoute.useParams();
+  const { tenantId, projectId, relationshipId } = tenantProjectDimensionalRelationshipRoute.useParams();
   return <DimensionalDetailRoute
     api={api}
     tenantId={Number(tenantId)}
-    modelId={Number(modelId)}
+    projectId={Number(projectId)}
     detailId={Number(relationshipId)}
     kind="relationship"
   />;
@@ -1443,46 +1400,49 @@ function ModelDimensionalRelationship() {
 function DimensionalDetailRoute({
   api,
   tenantId,
-  modelId,
+  projectId,
   detailId,
   kind,
 }: {
   api: WorkbenchApi;
   tenantId: number;
-  modelId: number;
+  projectId: number;
   detailId: number;
   kind: "attribute" | "relationship";
 }) {
   if (!Number.isSafeInteger(detailId) || detailId <= 0) return <ErrorPage />;
   return (
-    <ModelRouteFrame
+    <ProjectRouteFrame
       tenantLockApi={api}
       api={api}
       tenantId={tenantId}
-      modelId={modelId}
+      projectId={projectId}
       activeStage="dimensional"
       loadingLabel="Loading Dimensional"
     >
-      {({ home, model }) => (<>
-        <ModelRecordTools canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"} api={api} tenantId={tenantId} modelId={modelId} modelRevision={model.model_revision}
-          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true} dataset={`dimensional_${kind}`} recordId={detailId} />
-        {
-        kind === "attribute" ? (
-          <DimensionalAttributeDetailPage
-            api={api}
-            tenantId={tenantId}
-            modelId={modelId}
-            attributeId={detailId}
-          />
-        ) : (
-          <DimensionalRelationshipDetailPage
-            api={api}
-            tenantId={tenantId}
-            modelId={modelId}
-            relationshipId={detailId}
-          />
-        )
-      }</>)}
-    </ModelRouteFrame>
+      {({ home, project }) => {
+        const actions = <ProjectRecordTools canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"} api={api} tenantId={tenantId} projectId={projectId} projectRevision={project.project_revision}
+          hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true} dataset={`dimensional_${kind}`} recordId={detailId} />;
+        return (
+          kind === "attribute" ? (
+            <DimensionalAttributeDetailPage
+              actions={actions}
+              api={api}
+              tenantId={tenantId}
+              projectId={projectId}
+              attributeId={detailId}
+            />
+          ) : (
+            <DimensionalRelationshipDetailPage
+              actions={actions}
+              api={api}
+              tenantId={tenantId}
+              projectId={projectId}
+              relationshipId={detailId}
+            />
+          )
+        );
+      }}
+    </ProjectRouteFrame>
   );
 }

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "../../core/http";
 import { trapDialogFocus, useDialogFocus } from "../../shared/dialog";
 import type { MappingApi } from "./api";
-import type { MappingEditorData, ModelRecordEditorApi } from "../model_record_review/api";
+import type { MappingEditorData, ProjectRecordEditorApi } from "../project_record_review/api";
 import "./mapping-ledger.css";
 
 type Document = Record<string, unknown> | null;
@@ -23,42 +23,42 @@ function sourceKey(reference: Record<string, unknown>, column = false): string {
 }
 function editorError(error: unknown): string {
   if (error instanceof ApiError) {
-    if (error.code === "model_locked") return "The Model is locked. A human must unlock it before saving. Your edits are preserved.";
+    if (error.code === "project_locked") return "The Project is locked. A human must unlock it before saving. Your edits are preserved.";
     if (error.code === "record_locked") return "A Mapping or modeled record is locked. Review its locks before saving.";
-    if (error.code === "model_revision_conflict") return "The Model changed. Your edits are preserved; close and refresh before retrying.";
+    if (error.code === "project_revision_conflict") return "The Project changed. Your edits are preserved; close and refresh before retrying.";
     if (error.code === "invalid_request") return "Check source table and column selections, document size, and protected records. Every source column must belong to a selected table.";
     if (["tenant_locked", "tenant_lock_required", "authorization_denied"].includes(error.code)) return "Architect permission and the Tenant Lock are required.";
   }
   return "The save could not be confirmed. Retry the same save before making further edits.";
 }
 
-export function MappingEditor({ api, tenantId, modelId, mappingObjectId, modelRevision, hasTenantLock, mode }: {
-  api: Pick<MappingApi, "readModelRecordEditor" | "saveModelRecord">;
-  tenantId: number; modelId: number; mappingObjectId: number; modelRevision: number;
+export function MappingEditor({ api, tenantId, projectId, mappingObjectId, projectRevision, hasTenantLock, mode }: {
+  api: Pick<MappingApi, "readProjectRecordEditor" | "saveProjectRecord">;
+  tenantId: number; projectId: number; mappingObjectId: number; projectRevision: number;
   hasTenantLock: boolean; mode: "object" | "attribute";
 }) {
   const [open, setOpen] = useState(false);
-  const [openedRevision, setOpenedRevision] = useState(modelRevision);
+  const [openedRevision, setOpenedRevision] = useState(projectRevision);
   const trigger = useRef<HTMLButtonElement>(null);
   const client = useQueryClient();
   const title = mode === "object" ? "Edit Object Mapping" : "Edit Attribute Mapping";
   const query = useQuery({
-    queryKey: ["mapping-editor", tenantId, modelId, mappingObjectId, openedRevision],
-    queryFn: () => api.readModelRecordEditor(tenantId, modelId, { dataset: "mapping_object", record_id: mappingObjectId, expected_model_revision: openedRevision }),
+    queryKey: ["mapping-editor", tenantId, projectId, mappingObjectId, openedRevision],
+    queryFn: () => api.readProjectRecordEditor(tenantId, projectId, { dataset: "mapping_object", record_id: mappingObjectId, expected_project_revision: openedRevision }),
     enabled: open, retry: false,
   });
   const close = () => { setOpen(false); requestAnimationFrame(() => trigger.current?.focus()); };
   return <div className="mapping-editor-entry">
     <button ref={trigger} type="button" className="button button-secondary button-small" disabled={!hasTenantLock || open}
       title={!hasTenantLock ? "Architect permission and Tenant Lock required" : undefined}
-      onClick={() => { setOpenedRevision(modelRevision); setOpen(true); }}>{title}</button>
+      onClick={() => { setOpenedRevision(projectRevision); setOpen(true); }}>{title}</button>
     {open && query.isPending ? <p aria-busy="true">Loading Mapping editor…</p> : null}
     {open && query.isError ? <><p role="alert">{editorError(query.error)}</p><button type="button" className="text-action" onClick={close}>Close editor</button></> : null}
-    {open && query.data?.mapping ? <MappingEditForm key={`${mode}:${mappingObjectId}:${query.data.model_revision}`}
-      data={query.data.mapping} isLocked={query.data.is_locked} stale={query.data.model_revision !== modelRevision}
+    {open && query.data?.mapping ? <MappingEditForm key={`${mode}:${mappingObjectId}:${query.data.project_revision}`}
+      data={query.data.mapping} isLocked={query.data.is_locked} stale={query.data.project_revision !== projectRevision}
       mode={mode} title={title} hasTenantLock={hasTenantLock} onClose={close}
-      save={(changes, key) => api.saveModelRecord(tenantId, modelId, {
-        dataset: "mapping_object", record_id: mappingObjectId, expected_model_revision: query.data!.model_revision, changes,
+      save={(changes, key) => api.saveProjectRecord(tenantId, projectId, {
+        dataset: "mapping_object", record_id: mappingObjectId, expected_project_revision: query.data!.project_revision, changes,
       }, key)} onSaved={async () => {
         close();
         await client.invalidateQueries({ predicate: (item) => item.queryKey[1] === tenantId });
@@ -69,7 +69,7 @@ export function MappingEditor({ api, tenantId, modelId, mappingObjectId, modelRe
 function MappingEditForm({ data, isLocked, stale, hasTenantLock, mode, title, save, onSaved, onClose }: {
   data: MappingEditorData; isLocked: boolean; stale: boolean; hasTenantLock: boolean;
   mode: "object" | "attribute"; title: string;
-  save: (changes: Record<string, unknown>, key: string) => ReturnType<ModelRecordEditorApi["saveModelRecord"]>;
+  save: (changes: Record<string, unknown>, key: string) => ReturnType<ProjectRecordEditorApi["saveProjectRecord"]>;
   onSaved: () => Promise<void>; onClose: () => void;
 }) {
   const headingId = useId();
@@ -145,16 +145,16 @@ function MappingEditForm({ data, isLocked, stale, hasTenantLock, mode, title, sa
   const requestClose = () => { if (!mutation.isPending && !uncertain) { if (dirty) setDiscard(true); else onClose(); } };
   const sourceTitle = attributeMode ? "source columns" : "source tables";
   return <div className="dialog-scrim" role="presentation"><section
-    className="run-configuration-dialog model-record-review-dialog mapping-edit-dialog" role="dialog" aria-modal="true" aria-labelledby={headingId}
+    className="run-configuration-dialog project-record-review-dialog mapping-edit-dialog" role="dialog" aria-modal="true" aria-labelledby={headingId}
     onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); requestClose(); } trapDialogFocus(event); }}>
     <header className="drawer-header"><h2 id={headingId}>{title}</h2>
       <button ref={closeButton} type="button" className="panel-close" aria-label="Close Mapping editor" disabled={mutation.isPending || uncertain} onClick={requestClose}>×</button></header>
-    <form className="model-record-review-body mapping-edit-panel model-record-editor" onSubmit={submit} aria-label="Mapping editor" aria-busy={mutation.isPending}>
+    <form className="project-record-review-body mapping-edit-panel project-record-editor" onSubmit={submit} aria-label="Mapping editor" aria-busy={mutation.isPending}>
     {attributeMode ? <label>Target attribute<select value={active} disabled={mutation.isPending || uncertain} onChange={(event) => { setActive(event.target.value); setSearch(""); setMessage(""); }}>
       {!data.attributes.length ? <option value="">No active attributes</option> : null}
       {data.attributes.map((item) => <option key={item.name} value={item.name}>{item.name} · {item.data_type}{item.is_locked ? " · Locked" : ""}</option>)}
     </select></label> : null}
-    {protectedDocument ? <p className="field-help">{stale ? "Model revision changed. Close and refresh before editing." : uncertain ? "Retry the pending save to confirm its outcome." : "This Mapping is read-only. Locked Attributes also protect their Object Mapping."}</p> : null}
+    {protectedDocument ? <p className="field-help">{stale ? "Project revision changed. Close and refresh before editing." : uncertain ? "Retry the pending save to confirm its outcome." : "This Mapping is read-only. Locked Attributes also protect their Object Mapping."}</p> : null}
     <fieldset disabled={Boolean(protectedDocument)}>
       {structured ? <>
         <section className="mapping-source-picker" aria-label={attributeMode ? "Selected source columns" : "Selected source tables"}>

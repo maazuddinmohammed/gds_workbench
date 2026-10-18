@@ -26,13 +26,13 @@ def create_conceptual_router(
     """Create the Conceptual read router for later runtime composition."""
     authenticate = principal_dependency(identity_provider)
     router = APIRouter(
-        prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/conceptual",
+        prefix="/api/v1/tenants/{tenant_id}/projects/{project_id}/conceptual",
         tags=["conceptual"],
     )
 
     async def list_objects(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         query: Annotated[ConceptualListQuery, Query()],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -49,7 +49,7 @@ def create_conceptual_router(
         return await service.list_objects(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=filters,
             page_size=query.page_size,
             cursor=query.cursor,
@@ -64,7 +64,7 @@ def create_conceptual_router(
 
     async def read_object(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         conceptual_object_id: Annotated[int, Path(gt=0)],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -72,7 +72,7 @@ def create_conceptual_router(
         return await service.read_object(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             conceptual_object_id=conceptual_object_id,
         )
 
@@ -85,7 +85,7 @@ def create_conceptual_router(
 
     async def list_relationships(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         query: Annotated[ConceptualListQuery, Query()],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -102,7 +102,7 @@ def create_conceptual_router(
         return await service.list_relationships(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=filters,
             page_size=query.page_size,
             cursor=query.cursor,
@@ -117,7 +117,7 @@ def create_conceptual_router(
 
     async def read_relationship(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         conceptual_relationship_id: Annotated[int, Path(gt=0)],
         *,
         principal: RequestPrincipal = Depends(authenticate),
@@ -125,7 +125,7 @@ def create_conceptual_router(
         return await service.read_relationship(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             conceptual_relationship_id=conceptual_relationship_id,
         )
 

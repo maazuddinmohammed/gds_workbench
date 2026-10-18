@@ -9,13 +9,13 @@ from typing import Any, Protocol, cast
 from uuid import UUID
 
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.contracts import MAX_MODEL_STAGE_PAYLOAD_BYTES
-from gds_etl_workbench.application.change_sets.model import (
-    StageModelChange,
-    validate_model_stage_changes,
+from gds_etl_workbench.application.change_sets.contracts import MAX_PROJECT_STAGE_PAYLOAD_BYTES
+from gds_etl_workbench.application.change_sets.project import (
+    StageProjectChange,
+    validate_project_stage_changes,
 )
-from gds_etl_workbench.application.change_sets.model_validation import (
-    ModelValidationIssue,
+from gds_etl_workbench.application.change_sets.project_validation import (
+    ProjectValidationIssue,
     validate_future_graph,
 )
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
@@ -55,8 +55,8 @@ from gds_workbench_api.features.workflows.authoring.no_op import (
 from gds_workbench_api.features.workflows.authoring.plan import (
     AgentRunPlan,
     AgentRunPlanRepository,
-    ModelWorkflow,
     PostgresAgentRunPlanRepository,
+    ProjectWorkflow,
 )
 from gds_workbench_api.features.workflows.authoring.progress import (
     AgentWorkflowProgress,
@@ -69,7 +69,7 @@ from gds_workbench_api.features.workflows.authoring.repair import (
     AgentExecutor,
     AgentValidationIssue,
     load_default_agent_context_policy,
-    model_validation_issues,
+    project_validation_issues,
 )
 from gds_workbench_api.features.workflows.authoring.stage_runner import AgentStageRunner
 from gds_workbench_api.features.workflows.execution.contracts import WorkflowExecutionDatabase
@@ -104,11 +104,11 @@ class CodeGenerationLifecycle(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
+        expected_workflow: ProjectWorkflow,
         expected_execution_mode: None,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart: ...
 
     async def append_event(
@@ -116,7 +116,7 @@ class CodeGenerationLifecycle(Protocol):
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         event: AgentWorkflowEvent,
     ) -> None: ...
@@ -126,7 +126,7 @@ class CodeGenerationLifecycle(Protocol):
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         failure_code: str,
         safe_failure_message: str,
@@ -186,18 +186,18 @@ class CodeGenerationWorkflow:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart:
         return await self._lifecycle.start(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             workflow_run_id=workflow_run_id,
             expected_workflow="code_generation",
             expected_execution_mode=None,
-            expected_model_revision=expected_model_revision,
+            expected_project_revision=expected_project_revision,
         )
 
     async def execute_started(
@@ -205,15 +205,15 @@ class CodeGenerationWorkflow:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
     ) -> CodeGenerationExecutionResult:
         finalization_attempted = False
-        changes: tuple[StageModelChange, ...] = ()
-        rejected_changes: tuple[StageModelChange, ...] = ()
-        rejected_issues: tuple[ModelValidationIssue, ...] = ()
+        changes: tuple[StageProjectChange, ...] = ()
+        rejected_changes: tuple[StageProjectChange, ...] = ()
+        rejected_issues: tuple[ProjectValidationIssue, ...] = ()
         try:
             async with self._database.write_transaction(
                 isolation=ReadIsolation.REPEATABLE_READ
@@ -222,20 +222,20 @@ class CodeGenerationWorkflow:
                     transaction,
                     principal,
                     tenant_id=tenant_id,
-                    policy=ToolPolicy.TENANT_MODEL_WRITE,
-                    model_id=model_id,
+                    policy=ToolPolicy.TENANT_PROJECT_WRITE,
+                    project_id=project_id,
                 )
                 plan = await self._plan_repository.load(
                     transaction,
                     tenant_id=tenant_id,
-                    model_id=model_id,
+                    project_id=project_id,
                     workflow_run_id=workflow_run_id,
                 )
                 self._validate_plan(
                     plan,
-                    model_id=model_id,
+                    project_id=project_id,
                     workflow_run_id=workflow_run_id,
-                    expected_model_revision=expected_model_revision,
+                    expected_project_revision=expected_project_revision,
                 )
                 context = await self._context_repository.load(
                     transaction,
@@ -251,7 +251,7 @@ class CodeGenerationWorkflow:
                 lifecycle=self._lifecycle,
                 principal=principal,
                 workflow_run_id=workflow_run_id,
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 workflow_run_claim_token=workflow_run_claim_token,
             )
             await progress.append(
@@ -349,7 +349,7 @@ class CodeGenerationWorkflow:
                             contexts=context.targets[:position],
                             modeled_entity_type=cast(ModeledEntityType, plan.modeled_entity_type),
                         )
-                        validate_model_stage_changes(list(candidate_changes))
+                        validate_project_stage_changes(list(candidate_changes))
                     except InvalidRequestError, ValidationError:
                         return AgentCandidateValidation(
                             issues=(
@@ -357,7 +357,7 @@ class CodeGenerationWorkflow:
                                     code="candidate.change_set_bounds",
                                     path=(),
                                     message=(
-                                        "Combined Code exceeds Model Change Set limits. "
+                                        "Combined Code exceeds Project Change Set limits. "
                                         "Reduce redundant artifacts while retaining all target "
                                         "and System coverage."
                                     ),
@@ -373,7 +373,9 @@ class CodeGenerationWorkflow:
                     )
                     if checked.issues and position == target_count:
                         rejected_changes, rejected_issues = candidate_changes, checked.issues
-                    return AgentCandidateValidation(issues=model_validation_issues(checked.issues))
+                    return AgentCandidateValidation(
+                        issues=project_validation_issues(checked.issues)
+                    )
 
                 outcome = await self._stage_runner.run(
                     plan=stage_plan,
@@ -389,7 +391,7 @@ class CodeGenerationWorkflow:
                     allowed_tool_names=readers.allowed_tool_names,
                     local_tool_catalog=readers,
                     validator=validator,
-                    max_candidate_bytes=MAX_MODEL_STAGE_PAYLOAD_BYTES,
+                    max_candidate_bytes=MAX_PROJECT_STAGE_PAYLOAD_BYTES,
                     final_validation=validate_complete_candidate,
                 )
                 artifacts.extend(validator.parse_validated(outcome.candidate))
@@ -431,14 +433,14 @@ class CodeGenerationWorkflow:
                 return await self._no_op.complete(
                     principal,
                     tenant_id=tenant_id,
-                    model_id=model_id,
+                    project_id=project_id,
                     workflow_run_id=workflow_run_id,
                     workflow_run_claim_token=workflow_run_claim_token,
                     request=AuthoringNoOpRequest(
                         expected_workflow="code_generation",
                         expected_execution_mode=None,
                         expected_correlation_id=plan.correlation_id,
-                        expected_model_revision=expected_model_revision,
+                        expected_project_revision=expected_project_revision,
                         candidate_digest=authoring_no_op_candidate_digest(plan),
                         final_event=progress.event(
                             attempt=highest_attempt,
@@ -463,10 +465,10 @@ class CodeGenerationWorkflow:
             finalization = await self._handoff.finalize(
                 principal,
                 tenant_id=tenant_id,
-                model_id=model_id,
+                project_id=project_id,
                 workflow_run_id=workflow_run_id,
                 expected_workflow="code_generation",
-                expected_model_revision=expected_model_revision,
+                expected_project_revision=expected_project_revision,
                 workflow_run_claim_token=workflow_run_claim_token,
                 changes=changes,
                 final_event=progress.event(
@@ -496,10 +498,10 @@ class CodeGenerationWorkflow:
                     await self._handoff.retain_failed_candidate(
                         principal,
                         tenant_id=tenant_id,
-                        model_id=model_id,
+                        project_id=project_id,
                         workflow_run_id=workflow_run_id,
                         expected_workflow="code_generation",
-                        expected_model_revision=expected_model_revision,
+                        expected_project_revision=expected_project_revision,
                         workflow_run_claim_token=workflow_run_claim_token,
                         changes=changes,
                         issues=retention_issues,
@@ -511,7 +513,7 @@ class CodeGenerationWorkflow:
                 except Exception as retention_error:
                     _logger.warning(
                         "Rejected Workflow draft retention remains pending.",
-                        extra={"workflow_run_id": workflow_run_id, "model_id": model_id},
+                        extra={"workflow_run_id": workflow_run_id, "project_id": project_id},
                     )
                     raise _safe_execution_error(
                         retention_error,
@@ -527,7 +529,7 @@ class CodeGenerationWorkflow:
                     "Code Generation Workflow Run finalization remains pending.",
                     extra={
                         "workflow_run_id": workflow_run_id,
-                        "model_id": model_id,
+                        "project_id": project_id,
                         "failure_code": safe_error.code[:100],
                     },
                 )
@@ -536,7 +538,7 @@ class CodeGenerationWorkflow:
                 await self._lifecycle.fail(
                     principal,
                     workflow_run_id=workflow_run_id,
-                    expected_model_revision=expected_model_revision,
+                    expected_project_revision=expected_project_revision,
                     workflow_run_claim_token=workflow_run_claim_token,
                     failure_code=safe_error.code[:100],
                     safe_failure_message=safe_error.message[:2000],
@@ -546,7 +548,7 @@ class CodeGenerationWorkflow:
                     "Code Generation failure state could not be persisted.",
                     extra={
                         "workflow_run_id": workflow_run_id,
-                        "model_id": model_id,
+                        "project_id": project_id,
                         "failure_code": safe_error.code[:100],
                     },
                 )
@@ -560,15 +562,15 @@ class CodeGenerationWorkflow:
     def _validate_plan(
         plan: AgentRunPlan,
         *,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> None:
         if (
-            plan.model_id != model_id
+            plan.project_id != project_id
             or plan.workflow_run_id != workflow_run_id
-            or plan.model_revision != expected_model_revision
-            or plan.model_workflow != "code_generation"
+            or plan.project_revision != expected_project_revision
+            or plan.project_workflow != "code_generation"
             or plan.workflow_execution_mode is not None
             or plan.modeled_entity_type
             not in {
@@ -588,7 +590,7 @@ def _generated_code_changes(
     artifacts: tuple[GeneratedSqlArtifact, ...],
     contexts: tuple[CodeGenerationArtifactContext, ...],
     modeled_entity_type: ModeledEntityType,
-) -> tuple[StageModelChange, ...]:
+) -> tuple[StageProjectChange, ...]:
     by_ref = {context.target_ref: context for context in contexts}
     if (
         not artifacts
@@ -633,17 +635,17 @@ def _generated_code_changes(
 
     staged_code = _reconcile_generated_code(code_records, contexts)
     staged_systems = _reconcile_generated_code_source_systems(system_records, contexts)
-    changes: list[StageModelChange] = []
+    changes: list[StageProjectChange] = []
     if staged_code:
         changes.append(
-            StageModelChange(
+            StageProjectChange(
                 dataset="generated_code",
                 records=[record.model_dump(mode="json") for record in staged_code],
             )
         )
     if staged_systems:
         changes.append(
-            StageModelChange(
+            StageProjectChange(
                 dataset="generated_code_source_system",
                 records=[record.model_dump(mode="json") for record in staged_systems],
             )

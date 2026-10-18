@@ -3,21 +3,21 @@
 import pytest
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_workbench_api.features.metadata.workbook import parse_metadata_workbook
-from gds_workbench_api.features.model_targets.contracts import (
-    ExportModelTargetsRequest,
+from gds_workbench_api.features.project_targets.contracts import (
+    ExportProjectTargetsRequest,
     TargetLayer,
     TargetPlacement,
 )
-from gds_workbench_api.features.model_targets.service import registration_workbook
+from gds_workbench_api.features.project_targets.service import registration_workbook
 
 
 @pytest.mark.parametrize("layer,zone", [("logical", "silver"), ("dimensional", "gold")])
 def test_logical_workbook_preserves_the_applied_design(
     layer: TargetLayer, zone: str
 ) -> None:
-    command = ExportModelTargetsRequest(
+    command = ExportProjectTargetsRequest(
         layer=layer,
-        expected_model_revision=3,
+        expected_project_revision=3,
         entity_ids=[10],
         object_type_code="table",
     )

@@ -26,8 +26,8 @@ from gds_workbench_api.features.metadata_enrichment.repository import (
 from gds_workbench_api.features.metadata_enrichment.service import (
     DatabaseMetadataEnrichmentExecutor,
 )
-from gds_workbench_api.features.model_input_scope.service import (
-    DatabaseModelInputScopeService,
+from gds_workbench_api.features.project_input_scope.service import (
+    DatabaseProjectInputScopeService,
 )
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionFailedError,
@@ -49,7 +49,7 @@ from tests.mcp.conftest import (
     bootstrap_postgres_database as bootstrap_postgres_database,
 )
 from tests.mcp.database_test_support import require_row
-from tests.mcp.enrichment_test_support import seed_model_enrichment
+from tests.mcp.enrichment_test_support import seed_project_enrichment
 from tests.mcp.test_database_global_prompt_seed import (
     REFERENCE_SEED,
     _apply_sql,
@@ -223,11 +223,11 @@ async def test_shared_executor_completes_physical_enrichment(
     before_attributes: dict[int, dict[str, Any]] = {}
     with database.connect_owner() as connection:
         connection.execute(
-            "UPDATE model.model SET default_agent_sdk_code='langchain_create_agent', "
+            "UPDATE project.project SET default_agent_sdk_code='langchain_create_agent', "
             "default_agent_provider_code='databricks',"
             "default_agent_model_code='databricks-primary' "
-            "WHERE model_id=%s",
-            (context.model_id,),
+            "WHERE project_id=%s",
+            (context.project_id,),
         )
         connection.execute(
             "INSERT INTO reference.zone(zone_code,zone_name) "
@@ -347,7 +347,7 @@ async def test_shared_executor_completes_physical_enrichment(
                 (list(context.selected_object_ids),),
             )
     with database.connect_owner() as connection:
-        seed_model_enrichment(connection, context.model_id)
+        seed_project_enrichment(connection, context.project_id)
         regenerations = [
             EnrichmentDescriptionTarget(
                 object_id=object_id,
@@ -355,7 +355,7 @@ async def test_shared_executor_completes_physical_enrichment(
                 expected_revision=require_row(
                     connection.execute(
                         "SELECT workflow.enrichment_review_revision(%s,%s,%s) AS revision",
-                        (context.model_id, object_id, attribute_id),
+                        (context.project_id, object_id, attribute_id),
                     ).fetchone()
                 )["revision"],
             )
@@ -378,7 +378,7 @@ async def test_shared_executor_completes_physical_enrichment(
     result = None
     try:
         if behavior == "regenerate_bulk_attributes":
-            scope = DatabaseModelInputScopeService(
+            scope = DatabaseProjectInputScopeService(
                 database=runtime,
                 authorizer=AuthorizationService(),
                 cursor_signing_key=b"fixture-only-cursor-signing-key-32",
@@ -386,7 +386,7 @@ async def test_shared_executor_completes_physical_enrichment(
             detail = await scope.read_input_scope_object(
                 principal,
                 tenant_id=context.tenant_id,
-                model_id=context.model_id,
+                project_id=context.project_id,
                 object_id=first_object,
             )
             assert detail.total_attribute_count == 5
@@ -398,11 +398,11 @@ async def test_shared_executor_completes_physical_enrichment(
         ).create_run(
             principal,
             tenant_id=context.tenant_id,
-            model_id=context.model_id,
+            project_id=context.project_id,
             correlation_id=uuid4(),
             command=CreateWorkflowRunRequest(
-                expected_model_revision=context.model_revision,
-                model_workflow="metadata_enrichment",
+                expected_project_revision=context.project_revision,
+                project_workflow="metadata_enrichment",
                 workflow_execution_mode="one_shot",
                 selected_object_ids=sorted(
                     {target.object_id for target in regenerations}
@@ -460,9 +460,9 @@ async def test_shared_executor_completes_physical_enrichment(
         await service.start(
             principal,
             tenant_id=context.tenant_id,
-            model_id=context.model_id,
+            project_id=context.project_id,
             workflow_run_id=run_id,
-            expected_model_revision=context.model_revision,
+            expected_project_revision=context.project_revision,
         )
         claim = UUID(
             str(
@@ -473,14 +473,16 @@ async def test_shared_executor_completes_physical_enrichment(
         )
         with (
             patch.object(repository, "complete", completion),
-            pytest.raises(DependencyUnavailableError) if completion_error else nullcontext(),
+            pytest.raises(DependencyUnavailableError)
+            if completion_error
+            else nullcontext(),
         ):
             result = await service.execute_started(
                 principal,
                 tenant_id=context.tenant_id,
-                model_id=context.model_id,
+                project_id=context.project_id,
                 workflow_run_id=run_id,
-                expected_model_revision=context.model_revision,
+                expected_project_revision=context.project_revision,
                 workflow_run_claim_token=claim,
             )
     finally:
@@ -504,8 +506,8 @@ async def test_shared_executor_completes_physical_enrichment(
             )["count"]
             last_event = require_row(
                 connection.execute(
-                    "SELECT model_event_log_status AS status FROM model.model_event_log "
-                    "WHERE workflow_run_id=%s ORDER BY model_event_log_sequence DESC LIMIT 1",
+                    "SELECT project_event_log_status AS status FROM project.project_event_log "
+                    "WHERE workflow_run_id=%s ORDER BY project_event_log_sequence DESC LIMIT 1",
                     (run_id,),
                 ).fetchone()
             )["status"]
@@ -529,7 +531,7 @@ async def test_shared_executor_completes_physical_enrichment(
     assert result.workflow_run_state == (
         "completed_with_repair" if behavior == "repair" else "completed"
     )
-    assert result.model_revision == context.model_revision
+    assert result.project_revision == context.project_revision
     with database.connect_owner() as connection:
         attribute = require_row(
             connection.execute(
@@ -538,8 +540,8 @@ async def test_shared_executor_completes_physical_enrichment(
                 "enrichment.is_primary_key,enrichment.is_nullable,enrichment.is_pii "
                 "FROM core.attribute JOIN workflow.attribute_enrichment AS enrichment "
                 "USING(attribute_id) "
-                "WHERE attribute_id=%s AND enrichment.model_id=%s",
-                (first_attribute, context.model_id),
+                "WHERE attribute_id=%s AND enrichment.project_id=%s",
+                (first_attribute, context.project_id),
             ).fetchone()
         )
         outcomes = connection.execute(
@@ -556,10 +558,10 @@ async def test_shared_executor_completes_physical_enrichment(
         )
         if behavior == "context_exhausted":
             events = connection.execute(
-                "SELECT model_event_log_stage AS stage,model_event_log_status AS status,"
-                "model_event_log_message AS message,model_event_log_current AS current,"
-                "model_event_log_total AS total,finding_count FROM model.model_event_log "
-                "WHERE workflow_run_id=%s ORDER BY model_event_log_sequence",
+                "SELECT project_event_log_stage AS stage,project_event_log_status AS status,"
+                "project_event_log_message AS message,project_event_log_current AS current,"
+                "project_event_log_total AS total,finding_count FROM project.project_event_log "
+                "WHERE workflow_run_id=%s ORDER BY project_event_log_sequence",
                 (run_id,),
             ).fetchall()
             units = [

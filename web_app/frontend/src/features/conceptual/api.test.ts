@@ -24,11 +24,11 @@ describe("Conceptual HTTP adapter", () => {
     await api.readConceptualRelationship(7, 18, 51);
 
     expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
-      "/api/v1/tenants/7/models/18/conceptual/objects?status=inactive&locked=false&name_exact=customer+account&name_prefix=customer&page_size=25&cursor=opaque%2B%2F%3D",
-      "/api/v1/tenants/7/models/18/conceptual/objects?page_size=200",
-      "/api/v1/tenants/7/models/18/conceptual/objects/41",
-      "/api/v1/tenants/7/models/18/conceptual/relationships?status=active&locked=true&name_exact=places+order&page_size=50&cursor=next%2B%2F%3D",
-      "/api/v1/tenants/7/models/18/conceptual/relationships/51",
+      "/api/v1/tenants/7/projects/18/conceptual/objects?status=inactive&locked=false&name_exact=customer+account&name_prefix=customer&page_size=25&cursor=opaque%2B%2F%3D",
+      "/api/v1/tenants/7/projects/18/conceptual/objects?page_size=200",
+      "/api/v1/tenants/7/projects/18/conceptual/objects/41",
+      "/api/v1/tenants/7/projects/18/conceptual/relationships?status=active&locked=true&name_exact=places+order&page_size=50&cursor=next%2B%2F%3D",
+      "/api/v1/tenants/7/projects/18/conceptual/relationships/51",
     ]);
     for (const [, init] of fetcher.mock.calls) {
       expect(init).toEqual({

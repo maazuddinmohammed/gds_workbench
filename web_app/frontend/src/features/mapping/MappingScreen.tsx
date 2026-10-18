@@ -1,11 +1,11 @@
 import { WorkflowCommandCenter, WorkflowCommandTools, WorkflowMenu } from "../workflows/WorkflowCommandCenter";
 import { Link } from "@tanstack/react-router";
-import { ModelRecordReview } from "../model_record_review/ModelRecordReview";
+import { ProjectRecordReview } from "../project_record_review/ProjectRecordReview";
 import { useRef, useState } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError } from "../../core/http";
-import type { ModelDetail } from "../models/api";
+import type { ProjectDetail } from "../projects/api";
 import { WorkflowRunMonitor } from "../workflows/WorkflowRunMonitor";
 import { loadMappingFilterSystems, mappingQueryKeys, type MappingApi, type MappingFilters, type MappingEntityType } from "./api";
 import {
@@ -18,14 +18,14 @@ import { MappingRunDialog } from "./MappingRunDialog";
 export function MappingScreen({
   api,
   tenantId,
-  model,
+  project,
   hasTenantLock,
   hasAppPermission,
   layer,
 }: {
   api: MappingApi;
   tenantId: number;
-  model: ModelDetail;
+  project: ProjectDetail;
   hasTenantLock: boolean;
   hasAppPermission: boolean;
   layer: "logical" | "dimensional";
@@ -41,14 +41,14 @@ export function MappingScreen({
   const entityType: MappingEntityType = layer === "logical" ? "logical_entity" : "dimensional_entity";
   const objectFilters = { ...filters, entityType };
   const sourceChoices = useQuery({
-    queryKey: ["mapping-filter-systems", tenantId, model.model_id, entityType],
-    queryFn: () => loadMappingFilterSystems(api, tenantId, model.model_id, entityType),
+    queryKey: ["mapping-filter-systems", tenantId, project.project_id, entityType],
+    queryFn: () => loadMappingFilterSystems(api, tenantId, project.project_id, entityType),
   });
   const objects = useInfiniteQuery({
-    queryKey: mappingQueryKeys.objects(tenantId, model.model_id, objectFilters),
+    queryKey: mappingQueryKeys.objects(tenantId, project.project_id, objectFilters),
     queryFn: ({ pageParam }) => api.listMappingObjects(
       tenantId,
-      model.model_id,
+      project.project_id,
       objectFilters,
       200,
       pageParam,
@@ -56,7 +56,7 @@ export function MappingScreen({
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.next_cursor ?? undefined,
   });
-  const permissionLabel = model.is_locked ? "Model locked. Unlock it before making changes." : !hasAppPermission
+  const permissionLabel = project.is_locked ? "Project locked. Unlock it before making changes." : !hasAppPermission
     ? "Architect permission required to run"
     : !hasTenantLock
       ? "Tenant Lock required to run"
@@ -68,8 +68,8 @@ export function MappingScreen({
       objects.refetch(),
       sourceChoices.refetch(),
       ...["mapping-object", "mapping-attribute", "mapping-attributes"].map((prefix) =>
-        queryClient.invalidateQueries({ queryKey: [prefix, tenantId, model.model_id] })),
-      queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
+        queryClient.invalidateQueries({ queryKey: [prefix, tenantId, project.project_id] })),
+      queryClient.invalidateQueries({ queryKey: ["project", tenantId, project.project_id] }),
       queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
     ]);
   };
@@ -80,29 +80,29 @@ export function MappingScreen({
   const invalidateLedgers = async () => {
     await Promise.all([
       queryClient.invalidateQueries({
-        queryKey: ["mapping-objects", tenantId, model.model_id],
+        queryKey: ["mapping-objects", tenantId, project.project_id],
       }),
       queryClient.invalidateQueries({
-        queryKey: ["mapping-attributes", tenantId, model.model_id],
+        queryKey: ["mapping-attributes", tenantId, project.project_id],
       }),
-      queryClient.invalidateQueries({ queryKey: ["mapping-filter-systems", tenantId, model.model_id] }),
-      queryClient.invalidateQueries({ queryKey: ["mapping-object", tenantId, model.model_id] }),
-      queryClient.invalidateQueries({ queryKey: ["mapping-attribute", tenantId, model.model_id] }),
+      queryClient.invalidateQueries({ queryKey: ["mapping-filter-systems", tenantId, project.project_id] }),
+      queryClient.invalidateQueries({ queryKey: ["mapping-object", tenantId, project.project_id] }),
+      queryClient.invalidateQueries({ queryKey: ["mapping-attribute", tenantId, project.project_id] }),
     ]);
   };
 
   return (
     <WorkflowCommandCenter filterCount={Object.values(filters).filter(Boolean).length} className={`mapping-workspace page-enter${selectedIds.size ? " has-selection" : ""}`}>
-      <h1 className="model-section-title sr-only">Mapping</h1>
-      <header className="workflow-commandbar mapping-commandbar model-section-toolbar">
+      <h1 className="project-section-title sr-only">Mapping</h1>
+      <header className="workflow-commandbar mapping-commandbar project-section-toolbar">
         <div className="workflow-command-context mapping-command-context">
           <div className="mapping-layer-header">
             <nav className="target-layer-switch" aria-label="Mapping layer">
               {(["logical", "dimensional"] as const).map((value) => (
                 <Link
                   key={value}
-                  to="/tenants/$tenantId/mapping/models/$modelId"
-                  params={{ tenantId: String(tenantId), modelId: String(model.model_id) }}
+                  to="/tenants/$tenantId/mapping/projects/$projectId"
+                  params={{ tenantId: String(tenantId), projectId: String(project.project_id) }}
                   search={{ layer: value }}
                   className={layer === value ? "is-active" : ""}
                   aria-current={layer === value ? "page" : undefined}
@@ -137,22 +137,22 @@ export function MappingScreen({
       <WorkflowRunMonitor
         api={api}
         tenantId={tenantId}
-        modelId={model.model_id}
-        modelRevision={model.model_revision}
+        projectId={project.project_id}
+        projectRevision={project.project_revision}
         workflow="mapping"
         hasTenantLock={hasTenantLock && hasAppPermission}
         focusRunId={recentRunId}
         onApplied={invalidateLedgers}
       />
-      <ModelRecordReview
-        api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision}
+      <ProjectRecordReview
+        api={api} tenantId={tenantId} projectId={project.project_id} projectRevision={project.project_revision}
         dataset="mapping_object"
         actions={["lock", "unlock", "deactivate", "reactivate", "delete"]}
         deleteIds={new Set(objects.data?.pages.flatMap((page) => page.items)
           .filter((item) => selectedIds.has(item.mapping_object_id) && !item.is_locked)
           .map((item) => item.mapping_object_id) ?? [])}
         selectedIds={selectedIds} hasTenantLock={hasTenantLock && hasAppPermission}
-        disabled={objects.isPending || objects.isError || objects.data?.pages.some((page) => page.model_revision !== model.model_revision) === true}
+        disabled={objects.isPending || objects.isError || objects.data?.pages.some((page) => page.project_revision !== project.project_revision) === true}
         onApplied={async () => {
           setSelectedIds(new Set());
           await queryClient.invalidateQueries({ predicate: (query) => query.queryKey[1] === tenantId });
@@ -161,31 +161,31 @@ export function MappingScreen({
       />
       <MappingObjectsLedger
         sourceChoices={{ codes: sourceChoices.data?.codes ?? [], isLoading: sourceChoices.isPending,
-          isUnavailable: sourceChoices.isError || (sourceChoices.data !== undefined && sourceChoices.data.modelRevision !== model.model_revision) }}
+          isUnavailable: sourceChoices.isError || (sourceChoices.data !== undefined && sourceChoices.data.projectRevision !== project.project_revision) }}
         selectedIds={selectedIds} onSelectionChange={setSelectedIds}
         tenantId={tenantId}
-        modelId={model.model_id}
+        projectId={project.project_id}
         items={objects.data?.pages.flatMap((page) => page.items) ?? []}
         filters={filters}
-        state={queryState(objects, model.model_revision)}
+        state={queryState(objects, project.project_revision)}
         onApplyFilters={applyFilters}
         onLoadMore={() => void objects.fetchNextPage()}
       />
-      {exportOpen ? <MappingExportDialog api={api} tenantId={tenantId} model={model} entityType={entityType}
+      {exportOpen ? <MappingExportDialog api={api} tenantId={tenantId} project={project} entityType={entityType}
         systemCodes={sourceChoices.data?.codes ?? []} loading={sourceChoices.isPending}
-        unavailable={sourceChoices.isError || sourceChoices.data?.modelRevision !== model.model_revision}
+        unavailable={sourceChoices.isError || sourceChoices.data?.projectRevision !== project.project_revision}
         initialSystem={filters.sourceSystemCode} onClose={() => setExportOpen(false)} /> : null}
       {runDialogOpen ? (
         <MappingRunDialog
           entityType={entityType}
           api={api}
           tenantId={tenantId}
-          model={model}
+          project={project}
           onClose={() => { setRunDialogOpen(false); commandButton.current?.focus(); }}
           onCompleted={async (workflowRunId) => {
             setRecentRunId(workflowRunId);
             await Promise.all([
-              queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
+              queryClient.invalidateQueries({ queryKey: ["project", tenantId, project.project_id] }),
               queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
             ]);
           }}
@@ -200,18 +200,18 @@ function queryState(
     isPending: boolean;
     isError: boolean;
     error: Error | null;
-    data: { pages: { model_revision: number }[] } | undefined;
+    data: { pages: { project_revision: number }[] } | undefined;
     hasNextPage: boolean;
     isFetchingNextPage: boolean;
   },
-  modelRevision: number,
+  projectRevision: number,
 ): MappingLedgerState {
   return {
     isLoading: query.isPending,
     isError: query.isError,
     isDenied: query.error instanceof ApiError && query.error.status === 403,
     revisionMismatch: query.data !== undefined
-      && query.data.pages.some((page) => page.model_revision !== modelRevision),
+      && query.data.pages.some((page) => page.project_revision !== projectRevision),
     hasMore: query.hasNextPage,
     isLoadingMore: query.isFetchingNextPage,
   };

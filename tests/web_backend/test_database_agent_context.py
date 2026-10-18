@@ -46,14 +46,14 @@ def _required_int(row: Mapping[str, object] | None, field: str) -> int:
     return value
 
 
-def _plan(*, model_id: int, model_revision: int, object_id: int) -> AgentRunPlan:
+def _plan(*, project_id: int, project_revision: int, object_id: int) -> AgentRunPlan:
     return AgentRunPlan.model_validate(
         {
             "workflow_run_id": 1048,
-            "model_id": model_id,
+            "project_id": project_id,
             "correlation_id": uuid4(),
-            "model_revision": model_revision,
-            "model_workflow": "conceptual",
+            "project_revision": project_revision,
+            "project_workflow": "conceptual",
             "workflow_execution_mode": "one_shot",
             "modeled_entity_type": None,
             "selected_scope_digest": "a" * 64,
@@ -97,7 +97,7 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
 ) -> None:
     with web_postgres_database.connect_owner() as connection:
         seeded = connection.execute(
-            "SELECT 1 FROM core.project WHERE project_code = 'DEMO_PROJECT'"
+            "SELECT 1 FROM core.lane WHERE lane_code = 'DEMO_LANE'"
         ).fetchone()
         if seeded is None:
             connection.execute(
@@ -122,21 +122,21 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
         ).fetchone()
         tenant_id = _required_int(foundation, "tenant_id")
         object_id = _required_int(foundation, "object_id")
-        model = connection.execute(
+        project = connection.execute(
             """
-            INSERT INTO model.model (tenant_id, model_name, logical_schemas, dimensional_schemas)
+            INSERT INTO project.project (tenant_id, project_name, logical_schemas, dimensional_schemas)
             VALUES (%s, %s,
                     '[{"schema_name":"silver","description":null}]',
                     '[{"schema_name":"gold","description":null}]')
-            RETURNING model_id, model_revision
+            RETURNING project_id, project_revision
             """,
             (tenant_id, f"Agent Context {uuid4().hex}"),
         ).fetchone()
-        model_id = _required_int(model, "model_id")
-        model_revision = _required_int(model, "model_revision")
+        project_id = _required_int(project, "project_id")
+        project_revision = _required_int(project, "project_revision")
         connection.execute(
-            "INSERT INTO model.model_input_scope (model_id, object_id) VALUES (%s, %s)",
-            (model_id, object_id),
+            "INSERT INTO project.project_input_scope (project_id, object_id) VALUES (%s, %s)",
+            (project_id, object_id),
         )
         attributes = connection.execute(
             "SELECT attribute_id FROM core.attribute WHERE object_id=%s "
@@ -145,11 +145,11 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
         ).fetchall()
         connection.execute(
             """INSERT INTO workflow.analysis_result (
-                model_id,from_object_id,from_attribute_id,to_object_id,to_attribute_id,
+                project_id,from_object_id,from_attribute_id,to_object_id,to_attribute_id,
                 relationship_kind,relationship_confidence,relationship_basis,analysis_result_is_locked
             ) VALUES (%s,%s,%s,%s,%s,'reference','high','Synthetic stored relationship.',TRUE)""",
             (
-                model_id,
+                project_id,
                 object_id,
                 attributes[0]["attribute_id"],
                 object_id,
@@ -158,27 +158,27 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
         )
         connection.execute(
             """INSERT INTO workflow.attribute_profile (
-                model_id,object_id,attribute_id,source_context_digest,
+                project_id,object_id,attribute_id,source_context_digest,
                 row_count,non_null_count,null_count,avg_data_length,percent_populated
             ) VALUES (%s,%s,%s,%s,2,2,0,3.500000,100.0000)""",
-            (model_id, object_id, attributes[0]["attribute_id"], "a" * 64),
+            (project_id, object_id, attributes[0]["attribute_id"], "a" * 64),
         )
 
         connection.execute(
-            "INSERT INTO workflow.object_enrichment(model_id,object_id,object_description) VALUES(%s,%s,'Model object description')",
-            (model_id, object_id),
+            "INSERT INTO workflow.object_enrichment(project_id,object_id,object_description) VALUES(%s,%s,'Project object description')",
+            (project_id, object_id),
         )
         connection.execute(
-            "INSERT INTO workflow.attribute_enrichment(model_id,object_id,attribute_id,attribute_description,attribute_inferred_data_type,is_natural_key,is_primary_key,is_nullable,is_pii) VALUES(%s,%s,%s,'Model attribute description','BIGINT',TRUE,TRUE,FALSE,NULL)",
-            (model_id, object_id, attributes[0]["attribute_id"]),
+            "INSERT INTO workflow.attribute_enrichment(project_id,object_id,attribute_id,attribute_description,attribute_inferred_data_type,is_natural_key,is_primary_key,is_nullable,is_pii) VALUES(%s,%s,%s,'Project attribute description','BIGINT',TRUE,TRUE,FALSE,NULL)",
+            (project_id, object_id, attributes[0]["attribute_id"]),
         )
 
     stages = installed_stages[(workflow, mode)]
     plan = _plan(
-        model_id=model_id, model_revision=model_revision, object_id=object_id
+        project_id=project_id, project_revision=project_revision, object_id=object_id
     ).model_copy(
         update={
-            "model_workflow": workflow,
+            "project_workflow": workflow,
             "workflow_execution_mode": mode,
             "stages": stages,
         },
@@ -213,7 +213,7 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
     ]
     assert isinstance(result.embedded_context, dict)
     assert "workflow_run_id" not in result.embedded_context
-    assert "model_id" not in result.embedded_context
+    assert "project_id" not in result.embedded_context
     for stage in stages:
         catalog = result.tool_catalog
         values = project_prompt_input_values(
@@ -252,7 +252,7 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
         )
         assert attribute_groups[0]["attributes"][0]["profile"]["avg_data_length"] == 3.5
         enriched = attribute_groups[0]["attributes"][0]
-        assert enriched["attribute_description"] == "Model attribute description"
+        assert enriched["attribute_description"] == "Project attribute description"
         assert enriched["attribute_inferred_data_type"] == "BIGINT"
         assert [
             enriched[flag]

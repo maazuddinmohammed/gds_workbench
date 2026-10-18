@@ -28,7 +28,9 @@ def test_local_settings_are_explicit_and_hide_the_database_dsn() -> None:
 
     assert settings.environment is Environment.LOCAL
     assert settings.entra_tenant_id == UUID("11111111-1111-1111-1111-111111111111")
-    assert settings.local_principal_object_id == UUID("22222222-2222-2222-2222-222222222222")
+    assert settings.local_principal_object_id == UUID(
+        "22222222-2222-2222-2222-222222222222"
+    )
     assert settings.databricks_environment_code == "TEST"
     assert settings.databricks_execution_mode == "fake"
     assert settings.static_directory is None
@@ -93,7 +95,9 @@ def test_complete_databricks_app_environment_builds_production_settings() -> Non
 
 def test_remote_agent_configuration_binds_multiple_registered_deployments() -> None:
     registry = load_default_agent_capabilities()
-    primary = next(model for model in registry.models if model.code == "foundry-primary")
+    primary = next(
+        model for model in registry.models if model.code == "foundry-primary"
+    )
     secondary = primary.model_copy(
         update={
             "code": "foundry-secondary",
@@ -109,7 +113,9 @@ def test_remote_agent_configuration_binds_multiple_registered_deployments() -> N
             "GDS_WEB_AGENT_EXECUTION_MODE": "remote",
         },
         production=True,
-        capabilities=registry.model_copy(update={"models": (*registry.models, secondary)}),
+        capabilities=registry.model_copy(
+            update={"models": (*registry.models, secondary)}
+        ),
     )
 
     assert [
@@ -132,12 +138,12 @@ def test_remote_agent_configuration_requires_explicit_foundry_settings() -> None
 @pytest.mark.parametrize(
     ("legacy_key", "legacy_value"),
     (
-        ("GDS_WEB_DATABRICKS_MODEL_ENDPOINT", "legacy-endpoint"),
-        ("GDS_WEB_FOUNDRY_MODEL_DEPLOYMENT", "legacy-deployment"),
+        ("GDS_WEB_DATABRICKS_PROJECT_ENDPOINT", "legacy-endpoint"),
+        ("GDS_WEB_FOUNDRY_PROJECT_DEPLOYMENT", "legacy-deployment"),
         ("GDS_WEB_AGENT_PROVIDER", "databricks"),
     ),
 )
-def test_runtime_settings_reject_legacy_model_routing_variables(
+def test_runtime_settings_reject_legacy_project_routing_variables(
     legacy_key: str,
     legacy_value: str,
 ) -> None:
@@ -253,13 +259,22 @@ def test_production_requires_the_exact_web_runtime_database_login() -> None:
             }
         )
 
-    assert str(captured.value) == ("production database DSN requires user=gds_web_runtime")
+    assert str(captured.value) == (
+        "production database DSN requires user=gds_web_runtime"
+    )
     assert "top-secret" not in str(captured.value)
 
 
 @pytest.mark.parametrize(
     "configured, expected",
-    [(None, 7200), ("", 7200), (" 480 ", 480), ("90", 90), ("3600", 3600), ("7200", 7200)],
+    [
+        (None, 7200),
+        ("", 7200),
+        (" 480 ", 480),
+        ("90", 90),
+        ("3600", 3600),
+        ("7200", 7200),
+    ],
 )
 def test_agent_request_timeout_defaults_to_two_hours_and_allows_overrides(
     configured: str | None, expected: int
@@ -273,7 +288,10 @@ def test_agent_request_timeout_defaults_to_two_hours_and_allows_overrides(
     configuration = AgentRuntimeConfiguration.from_environment(source, production=True)
     assert configuration.timeout_seconds == expected
     assert configuration.connections
-    assert all(connection.timeout_seconds == expected for connection in configuration.connections)
+    assert all(
+        connection.timeout_seconds == expected
+        for connection in configuration.connections
+    )
 
 
 @pytest.mark.parametrize("configured", ["0", "-1", "none", "invalid", "1.5"])
@@ -319,7 +337,9 @@ def test_remote_agent_settings_support_direct_foundry_authentication() -> None:
             "GDS_WEB_LOCAL_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
             "GDS_WEB_LOCAL_PRINCIPAL_OBJECT_ID": "22222222-2222-2222-2222-222222222222",
             "GDS_WEB_AGENT_EXECUTION_MODE": "remote",
-            "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": ("https://fixture.openai.azure.com/openai/v1/"),
+            "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": (
+                "https://fixture.openai.azure.com/openai/v1/"
+            ),
             "GDS_WEB_FOUNDRY_ENTRA_TENANT_ID": ("33333333-3333-3333-3333-333333333333"),
             "GDS_WEB_FOUNDRY_CLIENT_ID": ("44444444-4444-4444-4444-444444444444"),
             "GDS_WEB_FOUNDRY_CLIENT_SECRET": "never-log-this-foundry-secret",
@@ -365,7 +385,9 @@ def test_remote_agent_settings_support_foundry_api_key_authentication() -> None:
             "GDS_WEB_LOCAL_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
             "GDS_WEB_LOCAL_PRINCIPAL_OBJECT_ID": "22222222-2222-2222-2222-222222222222",
             "GDS_WEB_AGENT_EXECUTION_MODE": "remote",
-            "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": ("https://fixture.openai.azure.com/openai/v1/"),
+            "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": (
+                "https://fixture.openai.azure.com/openai/v1/"
+            ),
             "GDS_WEB_FOUNDRY_API_KEY": "never-log-this-foundry-api-key",
         }
     )
@@ -378,7 +400,10 @@ def test_remote_agent_settings_support_foundry_api_key_authentication() -> None:
     assert connection.token_scope is None
     assert connection.foundry_client_credentials is None
     assert connection.foundry_api_key is not None
-    assert connection.foundry_api_key.get_secret_value() == "never-log-this-foundry-api-key"
+    assert (
+        connection.foundry_api_key.get_secret_value()
+        == "never-log-this-foundry-api-key"
+    )
     assert "never-log-this-foundry-api-key" not in repr(connection)
     assert "never-log-this-foundry-api-key" not in connection.model_dump_json()
     assert "never-log-this-foundry-api-key" not in repr(settings)
@@ -392,12 +417,20 @@ def test_remote_foundry_rejects_mixed_authentication_methods() -> None:
                 "GDS_WEB_DATABASE_DSN": "postgresql://fixture.invalid/workbench",
                 "GDS_WEB_CURSOR_SIGNING_KEY": "development-only-key-32-bytes-long",
                 "GDS_WEB_DATABRICKS_ENVIRONMENT_CODE": "TEST",
-                "GDS_WEB_LOCAL_ENTRA_TENANT_ID": ("11111111-1111-1111-1111-111111111111"),
-                "GDS_WEB_LOCAL_PRINCIPAL_OBJECT_ID": ("22222222-2222-2222-2222-222222222222"),
+                "GDS_WEB_LOCAL_ENTRA_TENANT_ID": (
+                    "11111111-1111-1111-1111-111111111111"
+                ),
+                "GDS_WEB_LOCAL_PRINCIPAL_OBJECT_ID": (
+                    "22222222-2222-2222-2222-222222222222"
+                ),
                 "GDS_WEB_AGENT_EXECUTION_MODE": "remote",
-                "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": ("https://fixture.openai.azure.com/openai/v1/"),
+                "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": (
+                    "https://fixture.openai.azure.com/openai/v1/"
+                ),
                 "GDS_WEB_FOUNDRY_API_KEY": "never-log-this-foundry-api-key",
-                "GDS_WEB_FOUNDRY_ENTRA_TENANT_ID": ("33333333-3333-3333-3333-333333333333"),
+                "GDS_WEB_FOUNDRY_ENTRA_TENANT_ID": (
+                    "33333333-3333-3333-3333-333333333333"
+                ),
                 "GDS_WEB_FOUNDRY_CLIENT_ID": ("44444444-4444-4444-4444-444444444444"),
                 "GDS_WEB_FOUNDRY_CLIENT_SECRET": "never-log-this-foundry-secret",
             }
@@ -416,7 +449,9 @@ def test_remote_foundry_rejects_mixed_authentication_methods() -> None:
     (
         (
             {
-                "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": ("https://fixture.openai.azure.com/openai/v1/"),
+                "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": (
+                    "https://fixture.openai.azure.com/openai/v1/"
+                ),
             },
             "requires either an API key or complete Entra tenant, client ID, and client secret",
         ),
@@ -426,44 +461,62 @@ def test_remote_foundry_rejects_mixed_authentication_methods() -> None:
         ),
         (
             {
-                "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": ("https://fixture.openai.azure.com/openai/v1/"),
-                "GDS_WEB_FOUNDRY_ENTRA_TENANT_ID": ("33333333-3333-3333-3333-333333333333"),
+                "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": (
+                    "https://fixture.openai.azure.com/openai/v1/"
+                ),
+                "GDS_WEB_FOUNDRY_ENTRA_TENANT_ID": (
+                    "33333333-3333-3333-3333-333333333333"
+                ),
             },
             "requires either an API key or complete Entra tenant, client ID, and client secret",
         ),
         (
             {
-                "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": ("https://fixture.openai.azure.com/openai/v1/"),
+                "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": (
+                    "https://fixture.openai.azure.com/openai/v1/"
+                ),
                 "GDS_WEB_FOUNDRY_CLIENT_ID": ("44444444-4444-4444-4444-444444444444"),
             },
             "requires either an API key or complete Entra tenant, client ID, and client secret",
         ),
         (
             {
-                "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": ("https://fixture.openai.azure.com/openai/v1/"),
+                "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": (
+                    "https://fixture.openai.azure.com/openai/v1/"
+                ),
                 "GDS_WEB_FOUNDRY_CLIENT_SECRET": "fixture-foundry-secret",
             },
             "requires either an API key or complete Entra tenant, client ID, and client secret",
         ),
         (
             {
-                "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": ("https://fixture.openai.azure.com/openai/v1/"),
-                "GDS_WEB_FOUNDRY_ENTRA_TENANT_ID": ("33333333-3333-3333-3333-333333333333"),
+                "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": (
+                    "https://fixture.openai.azure.com/openai/v1/"
+                ),
+                "GDS_WEB_FOUNDRY_ENTRA_TENANT_ID": (
+                    "33333333-3333-3333-3333-333333333333"
+                ),
                 "GDS_WEB_FOUNDRY_CLIENT_ID": ("44444444-4444-4444-4444-444444444444"),
             },
             "requires either an API key or complete Entra tenant, client ID, and client secret",
         ),
         (
             {
-                "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": ("https://fixture.openai.azure.com/openai/v1/"),
-                "GDS_WEB_FOUNDRY_ENTRA_TENANT_ID": ("33333333-3333-3333-3333-333333333333"),
+                "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": (
+                    "https://fixture.openai.azure.com/openai/v1/"
+                ),
+                "GDS_WEB_FOUNDRY_ENTRA_TENANT_ID": (
+                    "33333333-3333-3333-3333-333333333333"
+                ),
                 "GDS_WEB_FOUNDRY_CLIENT_SECRET": "fixture-foundry-secret",
             },
             "requires either an API key or complete Entra tenant, client ID, and client secret",
         ),
         (
             {
-                "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": ("https://fixture.openai.azure.com/openai/v1/"),
+                "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": (
+                    "https://fixture.openai.azure.com/openai/v1/"
+                ),
                 "GDS_WEB_FOUNDRY_CLIENT_ID": ("44444444-4444-4444-4444-444444444444"),
                 "GDS_WEB_FOUNDRY_CLIENT_SECRET": "fixture-foundry-secret",
             },
@@ -482,8 +535,12 @@ def test_remote_foundry_rejects_every_partial_configuration(
                 "GDS_WEB_DATABASE_DSN": "postgresql://fixture.invalid/workbench",
                 "GDS_WEB_CURSOR_SIGNING_KEY": "development-only-key-32-bytes-long",
                 "GDS_WEB_DATABRICKS_ENVIRONMENT_CODE": "TEST",
-                "GDS_WEB_LOCAL_ENTRA_TENANT_ID": ("11111111-1111-1111-1111-111111111111"),
-                "GDS_WEB_LOCAL_PRINCIPAL_OBJECT_ID": ("22222222-2222-2222-2222-222222222222"),
+                "GDS_WEB_LOCAL_ENTRA_TENANT_ID": (
+                    "11111111-1111-1111-1111-111111111111"
+                ),
+                "GDS_WEB_LOCAL_PRINCIPAL_OBJECT_ID": (
+                    "22222222-2222-2222-2222-222222222222"
+                ),
                 "GDS_WEB_AGENT_EXECUTION_MODE": "remote",
                 **foundry_values,
             }
@@ -515,7 +572,9 @@ def test_remote_foundry_rejects_non_resource_chat_completion_routes(
                 "GDS_WEB_LOCAL_PRINCIPAL_OBJECT_ID": "22222222-2222-2222-2222-222222222222",
                 "GDS_WEB_AGENT_EXECUTION_MODE": "remote",
                 "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": base_url,
-                "GDS_WEB_FOUNDRY_ENTRA_TENANT_ID": ("33333333-3333-3333-3333-333333333333"),
+                "GDS_WEB_FOUNDRY_ENTRA_TENANT_ID": (
+                    "33333333-3333-3333-3333-333333333333"
+                ),
                 "GDS_WEB_FOUNDRY_CLIENT_ID": "44444444-4444-4444-4444-444444444444",
                 "GDS_WEB_FOUNDRY_CLIENT_SECRET": "never-log-this-foundry-secret",
             }
@@ -532,7 +591,9 @@ def test_remote_foundry_accepts_the_services_resource_openai_route() -> None:
             "GDS_WEB_LOCAL_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
             "GDS_WEB_LOCAL_PRINCIPAL_OBJECT_ID": "22222222-2222-2222-2222-222222222222",
             "GDS_WEB_AGENT_EXECUTION_MODE": "remote",
-            "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": ("https://fixture.services.ai.azure.com/openai/v1/"),
+            "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": (
+                "https://fixture.services.ai.azure.com/openai/v1/"
+            ),
             "GDS_WEB_FOUNDRY_API_KEY": "never-log-this-foundry-api-key",
         }
     )
@@ -547,7 +608,7 @@ def test_remote_foundry_accepts_the_services_resource_openai_route() -> None:
     )
 
 
-def test_remote_agent_provider_rejects_legacy_model_endpoint_settings() -> None:
+def test_remote_agent_provider_rejects_legacy_project_endpoint_settings() -> None:
     with pytest.raises(ConfigurationError, match="unsupported GDS web setting"):
         RuntimeSettings.from_environment(
             {
@@ -555,11 +616,17 @@ def test_remote_agent_provider_rejects_legacy_model_endpoint_settings() -> None:
                 "GDS_WEB_DATABASE_DSN": "postgresql://fixture.invalid/workbench",
                 "GDS_WEB_CURSOR_SIGNING_KEY": "development-only-key-32-bytes-long",
                 "GDS_WEB_DATABRICKS_ENVIRONMENT_CODE": "TEST",
-                "GDS_WEB_LOCAL_ENTRA_TENANT_ID": ("11111111-1111-1111-1111-111111111111"),
-                "GDS_WEB_LOCAL_PRINCIPAL_OBJECT_ID": ("22222222-2222-2222-2222-222222222222"),
+                "GDS_WEB_LOCAL_ENTRA_TENANT_ID": (
+                    "11111111-1111-1111-1111-111111111111"
+                ),
+                "GDS_WEB_LOCAL_PRINCIPAL_OBJECT_ID": (
+                    "22222222-2222-2222-2222-222222222222"
+                ),
                 "GDS_WEB_AGENT_EXECUTION_MODE": "remote",
-                "GDS_WEB_DATABRICKS_MODEL_ENDPOINT": "must-not-route-through-databricks",
-                "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": ("https://fixture.openai.azure.com/openai/v1/"),
+                "GDS_WEB_DATABRICKS_PROJECT_ENDPOINT": "must-not-route-through-databricks",
+                "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": (
+                    "https://fixture.openai.azure.com/openai/v1/"
+                ),
             }
         )
 

@@ -26,11 +26,11 @@ test('Dimensional source uniqueness distinguishes complete Logical Entity and At
   }
 });
 
-test('Model schema configuration preserves normalized uniqueness and bounded UTF-8 size', () => {
+test('Project schema configuration preserves normalized uniqueness and bounded UTF-8 size', () => {
   const record = {logical_schemas:[{schema_name:'Straße',description:null},{schema_name:'STRASSE',description:'different description'}],dimensional_schemas:[],silver_model_naming_instructions:null,gold_model_naming_instructions:null,silver_model_audit_columns_template:null,gold_model_technical_columns_template:null,gold_model_audit_columns_template:null};
-  assert.ok(validation.validateSchema(record,schema('model_details_policy')).some(issue=>issue.includes('schema names must be unique')));
+  assert.ok(validation.validateSchema(record,schema('project_details_policy')).some(issue=>issue.includes('schema names must be unique')));
   record.logical_schemas = Array.from({length:100},(_,index)=>({schema_name:`schema${index}`,description:'界'.repeat(2000)}));
-  assert.ok(validation.validateSchema(record,schema('model_details_policy')).some(issue=>issue.includes('262,144 JSON bytes')));
+  assert.ok(validation.validateSchema(record,schema('project_details_policy')).some(issue=>issue.includes('262,144 JSON bytes')));
   record.logical_schemas = [{schema_name:'one',description:null},{schema_name:'two',description:null}];
-  assert.deepEqual(validation.validateSchema(record,schema('model_details_policy')),[]);
+  assert.deepEqual(validation.validateSchema(record,schema('project_details_policy')),[]);
 });

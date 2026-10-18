@@ -32,10 +32,10 @@ from pydantic import JsonValue
 def _plan(*, execution_mode: WorkflowExecutionMode = "one_shot") -> AgentRunPlan:
     return AgentRunPlan(
         workflow_run_id=1048,
-        model_id=18,
+        project_id=18,
         correlation_id=UUID("33333333-3333-3333-3333-333333333333"),
-        model_revision=7,
-        model_workflow="conceptual",
+        project_revision=7,
+        project_workflow="conceptual",
         workflow_execution_mode=execution_mode,
         modeled_entity_type=None,
         selected_scope_digest="a" * 64,
@@ -56,14 +56,14 @@ def _plan(*, execution_mode: WorkflowExecutionMode = "one_shot") -> AgentRunPlan
                 prompt_template_version_id=81,
                 prompt_template_digest="b" * 64,
                 templates=PromptComponentTemplates(
-                    system="Model {{model_name}}; preserve saved locks",
+                    system="Project {{project_name}}; preserve saved locks",
                     instruction="Use {{stage_context}}",
                     tool_instruction=None,
                 ),
                 variables=(
                     PromptVariableDefinition(
-                        name="model_name",
-                        resolver_key="model.name",
+                        name="project_name",
+                        resolver_key="project.name",
                         data_type="text",
                         is_required=True,
                     ),
@@ -139,7 +139,7 @@ async def test_stage_runner_uses_frozen_prompt_and_allowlisted_variables() -> No
         plan=_plan(),
         stage_code="candidate_authoring",
         resolver_values={
-            "model.name": "Customer 360",
+            "project.name": "Customer 360",
             "context.stage": {"scope_count": 2},
         },
         context=cast(JsonValue, {"scope": [501, 502]}),
@@ -150,7 +150,7 @@ async def test_stage_runner_uses_frozen_prompt_and_allowlisted_variables() -> No
 
     request = executor.requests[0]
     assert request.workflow == "conceptual"
-    assert request.system_prompt == "Model Customer 360; preserve saved locks"
+    assert request.system_prompt == "Project Customer 360; preserve saved locks"
     assert request.instruction_prompt == 'Use {"scope_count":2}'
     assert outcome.warning_codes == ()
     assert outcome.attempt_count == 1
@@ -202,7 +202,7 @@ async def test_stage_runner_keeps_the_exact_run_local_catalog() -> None:
         plan=_plan(execution_mode="tool_assisted"),
         stage_code="candidate_authoring",
         resolver_values={
-            "model.name": "Customer 360",
+            "project.name": "Customer 360",
             "context.stage": {"dataset_counts": {"selected_object": 2}},
         },
         context={"dataset_counts": {"selected_object": 2}},
@@ -219,7 +219,9 @@ async def test_stage_runner_keeps_the_exact_run_local_catalog() -> None:
 
 
 @pytest.mark.asyncio
-async def test_frozen_tool_selection_controls_discovery_variables_and_invocation() -> None:
+async def test_frozen_tool_selection_controls_discovery_variables_and_invocation() -> (
+    None
+):
     from gds_workbench_api.features.workflows.authoring.tool_configuration import (
         registered_tool_definitions,
     )
@@ -228,7 +230,9 @@ async def test_frozen_tool_selection_controls_discovery_variables_and_invocation
         max_cumulative_result_bytes = 4096
         definitions = registered_tool_definitions("conceptual", max_page_records=7)
 
-        def invoke(self, tool_name: str, arguments: Mapping[str, JsonValue]) -> JsonValue:
+        def invoke(
+            self, tool_name: str, arguments: Mapping[str, JsonValue]
+        ) -> JsonValue:
             assert tool_name == "get_object_details"
             return {"items": [], "next_offset": None}
 
@@ -323,7 +327,9 @@ def test_prompt_tool_policy_rejects_duplicates_cross_family_and_one_shot(
                 execution_mode="tool_assisted",
             )
     with pytest.raises(InvalidRequestError):
-        configure_tools(catalog, (dataset,), workflow=workflow, execution_mode="one_shot")
+        configure_tools(
+            catalog, (dataset,), workflow=workflow, execution_mode="one_shot"
+        )
 
 
 @pytest.mark.asyncio
@@ -342,7 +348,7 @@ async def test_stage_runner_rejects_unknown_variable_before_model_execution() ->
     stage = plan.stages[0].model_copy(
         update={
             "templates": PromptComponentTemplates(
-                system="Model {{model_name}}; preserve {{unknown_rule}}",
+                system="Project {{project_name}}; preserve {{unknown_rule}}",
                 instruction="Use {{stage_context}}",
                 tool_instruction=None,
             )
@@ -353,7 +359,7 @@ async def test_stage_runner_rejects_unknown_variable_before_model_execution() ->
             plan=plan.model_copy(update={"stages": (stage,)}),
             stage_code="candidate_authoring",
             resolver_values={
-                "model.name": "Customer 360",
+                "project.name": "Customer 360",
                 "context.stage": {"scope_count": 2},
             },
             context={},

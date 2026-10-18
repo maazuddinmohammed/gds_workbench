@@ -10,11 +10,11 @@ from gds_etl_workbench.domain.errors import (
     TenantLockRequiredError,
 )
 from gds_etl_workbench.domain.snapshots.metadata import DATASETS_BY_NAME
+from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.metadata.workbook import (
     MetadataWorkbookSheet,
     build_metadata_workbook,
 )
-from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.metadata_change_sets.contracts import (
     CreateMetadataChangeSetRequest,
     ExpectedDraftRevisionRequest,

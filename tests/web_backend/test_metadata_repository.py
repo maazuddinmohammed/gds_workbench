@@ -634,10 +634,10 @@ async def test_metadata_hierarchy_sort_spans_pages_and_all_zones(
         connection.execute(
             """
             INSERT INTO core.tenant
-                (project_id, tenant_code, tenant_name, tenant_catalog, gds_admin_catalog)
-            SELECT project_id, %s || label, label, label, label
-              FROM core.project CROSS JOIN (VALUES ('Z'), ('a')) AS labels(label)
-             WHERE project_code = 'DEMO_PROJECT'
+                (lane_id, tenant_code, tenant_name, tenant_catalog, gds_admin_catalog)
+            SELECT lane_id, %s || label, label, label, label
+              FROM core.lane CROSS JOIN (VALUES ('Z'), ('a')) AS labels(label)
+             WHERE lane_code = 'DEMO_LANE'
              ORDER BY lower(label) DESC
             """,
             (prefix,),
@@ -765,19 +765,19 @@ async def test_all_repository_queries_execute_with_the_web_role(
 ) -> None:
     suffix = uuid4().hex[:12]
     with web_postgres_database.connect_owner() as connection:
-        project = connection.execute(
+        lane = connection.execute(
             """
-            INSERT INTO core.project (project_code, project_name)
+            INSERT INTO core.lane (lane_code, lane_name)
             VALUES (%s, %s)
-            RETURNING project_id
+            RETURNING lane_id
             """,
-            (f"WEB_META_PROJECT_{suffix}", f"Web Metadata Project {suffix}"),
+            (f"WEB_META_PROJECT_{suffix}", f"Web Metadata Lane {suffix}"),
         ).fetchone()
-        assert project is not None
+        assert lane is not None
         tenant = connection.execute(
             """
             INSERT INTO core.tenant (
-                project_id,
+                lane_id,
                 tenant_code,
                 tenant_name,
                 tenant_catalog,
@@ -787,7 +787,7 @@ async def test_all_repository_queries_execute_with_the_web_role(
             RETURNING tenant_id
             """,
             (
-                project["project_id"],
+                lane["lane_id"],
                 f"WEB_META_TENANT_{suffix}",
                 f"Web Metadata Tenant {suffix}",
                 f"web_meta_{suffix}",
@@ -1029,15 +1029,15 @@ async def test_all_metadata_rows_and_object_details_match_shared_contracts(
         hidden_tenant = connection.execute(
             """
             INSERT INTO core.tenant (
-                project_id,
+                lane_id,
                 tenant_code,
                 tenant_name,
                 tenant_catalog,
                 gds_admin_catalog
             )
-            SELECT project_id, %s, %s, %s, %s
-              FROM core.project
-             WHERE project_code = 'DEMO_PROJECT'
+            SELECT lane_id, %s, %s, %s, %s
+              FROM core.lane
+             WHERE lane_code = 'DEMO_LANE'
             RETURNING tenant_id
             """,
             (
@@ -1127,9 +1127,9 @@ async def test_all_metadata_rows_and_object_details_match_shared_contracts(
                 assert rows
                 for row in rows:
                     document = dict(row)
-                    model = DATASETS_BY_NAME[dataset].row_model
-                    validated = model.model_validate(document, strict=True)
-                    assert set(validated.model_dump()) == set(model.model_fields)
+                    project = DATASETS_BY_NAME[dataset].row_model
+                    validated = project.model_validate(document, strict=True)
+                    assert set(validated.model_dump()) == set(project.model_fields)
                     assert not any(column.endswith("_id") for column in document)
                     assert not {
                         "created_time",

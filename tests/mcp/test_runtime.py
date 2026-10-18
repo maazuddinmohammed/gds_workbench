@@ -27,11 +27,11 @@ from gds_etl_workbench.domain.snapshots.description import (
     compact_authoring_schema,
 )
 from gds_etl_workbench.domain.snapshots.metadata import DATASETS_BY_NAME
-from gds_etl_workbench.domain.snapshots.model import (
+from gds_etl_workbench.domain.snapshots.project import (
     CHANGE_SET_DATASETS_BY_NAME,
 )
-from gds_etl_workbench.domain.snapshots.model import (
-    DATASETS_BY_NAME as MODEL_DATASETS_BY_NAME,
+from gds_etl_workbench.domain.snapshots.project import (
+    DATASETS_BY_NAME as PROJECT_DATASETS_BY_NAME,
 )
 from gds_etl_workbench.infrastructure.postgres import (
     ReadinessRecord,
@@ -67,7 +67,9 @@ class FakeReadTransaction:
         self, query: LiteralString, parameters: tuple[Any, ...] = ()
     ) -> dict[str, Any] | None:
         if self._database.resolved_principal is None:
-            raise AssertionError("development mode must not resolve a production Principal")
+            raise AssertionError(
+                "development mode must not resolve a production Principal"
+            )
         return self._database.resolved_principal
 
     async def fetch_all(
@@ -162,7 +164,9 @@ class FakeSnapshotStore:
         created_at: datetime,
         available_until: datetime,
     ) -> None:
-        raise AssertionError("tool orchestration is replaced in this HTTP contract test")
+        raise AssertionError(
+            "tool orchestration is replaced in this HTTP contract test"
+        )
 
     async def create_read_url(
         self,
@@ -179,7 +183,7 @@ class FakeSnapshotStore:
         assert tenant_id == scope_id
         assert created_at <= now
         assert snapshot_kind == "metadata"
-        assert schema_version == "2.0"
+        assert schema_version == "3.0"
         self.read_url_calls.append((scope_id, snapshot_id, now, ttl_seconds))
         return self.read_url
 
@@ -194,7 +198,9 @@ def development_settings() -> RuntimeSettings:
             "GDS_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
             "GDS_LOCAL_PRINCIPAL_OBJECT_ID": ("33333333-3333-3333-3333-333333333333"),
             "GDS_MCP_PUBLIC_URL": "https://testserver/mcp",
-            "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": ("https://snapshot.blob.core.windows.net"),
+            "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": (
+                "https://snapshot.blob.core.windows.net"
+            ),
             "GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER": "snapshots",
         }
     )
@@ -233,8 +239,8 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
     assert [tool.name for tool in tools.tools] == [
         "list_tenants",
         "get_tenant_details",
-        "list_models",
-        "get_model_input_scope",
+        "list_projects",
+        "get_project_input_scope",
         "check_tenant_lock",
         "acquire_tenant_lock",
         "renew_tenant_lock",
@@ -250,42 +256,49 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
         "validate_metadata_change_set",
         "apply_metadata_change_set",
         "archive_metadata_change_set",
-        "create_model_change_set",
-        "stage_model_change_set",
-        "begin_model_stage_batch",
-        "put_model_stage_chunk",
-        "commit_model_stage_batch",
-        "get_model_change_set",
-        "get_model_change_set_fingerprint",
-        "validate_model_change_set",
-        "apply_model_change_set",
-        "archive_model_change_set",
+        "create_project_change_set",
+        "stage_project_change_set",
+        "begin_project_stage_batch",
+        "put_project_stage_chunk",
+        "commit_project_stage_batch",
+        "get_project_change_set",
+        "get_project_change_set_fingerprint",
+        "validate_project_change_set",
+        "apply_project_change_set",
+        "archive_project_change_set",
         "inspect_metadata",
-        "read_model_section",
+        "read_project_section",
         "read_mapping_context",
         "execute_databricks_sql",
         "start_profiling_run",
         "get_profiling_run_status",
         "cancel_profiling_run",
-        "describe_model_dataset",
-        "create_model_snapshot",
+        "describe_project_dataset",
+        "create_project_snapshot",
         "describe_metadata_dataset",
         "create_metadata_snapshot",
     ]
     tools_by_name = {tool.name: tool for tool in tools.tools}
-    section_reader = tools_by_name["read_model_section"]
+    section_reader = tools_by_name["read_project_section"]
     assert section_reader.annotations is not None
     assert section_reader.annotations.read_only_hint is True
     assert section_reader.annotations.destructive_hint is False
     assert section_reader.annotations.idempotent_hint is True
-    assert tools_by_name["validate_model_change_set"].annotations is not None
-    assert tools_by_name["validate_model_change_set"].annotations.idempotent_hint is False
-    assert tools_by_name["apply_model_change_set"].annotations is not None
-    assert tools_by_name["apply_model_change_set"].annotations.destructive_hint is True
-    assert tools_by_name["archive_model_change_set"].annotations is not None
-    assert tools_by_name["archive_model_change_set"].annotations.destructive_hint is True
-    assert tools_by_name["create_model_snapshot"].annotations is not None
-    assert tools_by_name["create_model_snapshot"].annotations.idempotent_hint is False
+    assert tools_by_name["validate_project_change_set"].annotations is not None
+    assert (
+        tools_by_name["validate_project_change_set"].annotations.idempotent_hint
+        is False
+    )
+    assert tools_by_name["apply_project_change_set"].annotations is not None
+    assert (
+        tools_by_name["apply_project_change_set"].annotations.destructive_hint is True
+    )
+    assert tools_by_name["archive_project_change_set"].annotations is not None
+    assert (
+        tools_by_name["archive_project_change_set"].annotations.destructive_hint is True
+    )
+    assert tools_by_name["create_project_snapshot"].annotations is not None
+    assert tools_by_name["create_project_snapshot"].annotations.idempotent_hint is False
     assert all(
         tool.meta
         == {
@@ -301,18 +314,18 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
                     "validate_metadata_change_set",
                     "apply_metadata_change_set",
                 }
-                else "tenant_model_write"
+                else "tenant_project_write"
                 if tool.name
                 in {
-                    "create_model_change_set",
+                    "create_project_change_set",
                     "start_profiling_run",
                     "cancel_profiling_run",
-                    "stage_model_change_set",
-                    "begin_model_stage_batch",
-                    "put_model_stage_chunk",
-                    "commit_model_stage_batch",
-                    "validate_model_change_set",
-                    "apply_model_change_set",
+                    "stage_project_change_set",
+                    "begin_project_stage_batch",
+                    "put_project_stage_chunk",
+                    "commit_project_stage_batch",
+                    "validate_project_change_set",
+                    "apply_project_change_set",
                 }
                 else "tenant_lock_manage"
                 if "tenant_lock" in tool.name
@@ -353,7 +366,9 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
 
 
 @pytest.mark.asyncio
-async def test_model_dataset_tool_inputs_separate_reads_from_change_set_writes() -> None:
+async def test_project_dataset_tool_inputs_separate_reads_from_change_set_writes() -> (
+    None
+):
     settings = development_settings()
     server = create_mcp_server(
         settings,
@@ -366,31 +381,47 @@ async def test_model_dataset_tool_inputs_separate_reads_from_change_set_writes()
 
     tools = {tool.name: tool for tool in listed.tools}
     schemas = {name: tool.input_schema for name, tool in tools.items()}
-    expected = list(MODEL_DATASETS_BY_NAME)
+    expected = list(PROJECT_DATASETS_BY_NAME)
     writable = list(CHANGE_SET_DATASETS_BY_NAME)
-    assert schemas["stage_model_change_set"]["$defs"]["ModelChangeSetDataset"]["enum"] == writable
-    assert schemas["begin_model_stage_batch"]["$defs"]["ModelChangeSetDataset"]["enum"] == writable
-    assert schemas["put_model_stage_chunk"]["$defs"]["ModelChangeSetDataset"]["enum"] == writable
-    assert schemas["get_model_change_set"]["$defs"]["ModelDataset"]["enum"] == expected
-    assert schemas["describe_model_dataset"]["$defs"]["ModelDataset"]["enum"] == expected
-    assert schemas["describe_model_dataset"]["properties"]["dataset"] == {
-        "$ref": "#/$defs/ModelDataset"
+    assert (
+        schemas["stage_project_change_set"]["$defs"]["ProjectChangeSetDataset"]["enum"]
+        == writable
+    )
+    assert (
+        schemas["begin_project_stage_batch"]["$defs"]["ProjectChangeSetDataset"]["enum"]
+        == writable
+    )
+    assert (
+        schemas["put_project_stage_chunk"]["$defs"]["ProjectChangeSetDataset"]["enum"]
+        == writable
+    )
+    assert (
+        schemas["get_project_change_set"]["$defs"]["ProjectDataset"]["enum"] == expected
+    )
+    assert (
+        schemas["describe_project_dataset"]["$defs"]["ProjectDataset"]["enum"]
+        == expected
+    )
+    assert schemas["describe_project_dataset"]["properties"]["dataset"] == {
+        "$ref": "#/$defs/ProjectDataset"
     }
     for tool_name in (
-        "stage_model_change_set",
-        "begin_model_stage_batch",
-        "put_model_stage_chunk",
-        "commit_model_stage_batch",
-        "validate_model_change_set",
-        "apply_model_change_set",
+        "stage_project_change_set",
+        "begin_project_stage_batch",
+        "put_project_stage_chunk",
+        "commit_project_stage_batch",
+        "validate_project_change_set",
+        "apply_project_change_set",
     ):
         tool = tools[tool_name]
-        schemas_text = json.dumps({"input": tool.input_schema, "output": tool.output_schema})
-        assert '"model_scope"' not in schemas_text, tool_name
+        schemas_text = json.dumps(
+            {"input": tool.input_schema, "output": tool.output_schema}
+        )
+        assert '"project_scope"' not in schemas_text, tool_name
 
 
 @pytest.mark.asyncio
-async def test_describe_model_input_scope_is_change_set_eligible() -> None:
+async def test_describe_project_input_scope_is_change_set_eligible() -> None:
     settings = development_settings()
     server = create_mcp_server(
         settings,
@@ -400,14 +431,17 @@ async def test_describe_model_input_scope_is_change_set_eligible() -> None:
 
     async with Client(server) as client:
         result = await client.call_tool(
-            "describe_model_dataset",
-            {"dataset": "model_input_scope"},
+            "describe_project_dataset",
+            {"dataset": "project_input_scope"},
         )
 
     assert result.is_error is False
     assert result.structured_content is not None
     assert result.structured_content["change_set_eligible"] is True
-    assert result.structured_content["authoring_schema"]["x-gds-change-set-eligible"] is True
+    assert (
+        result.structured_content["authoring_schema"]["x-gds-change-set-eligible"]
+        is True
+    )
     assert result.structured_content["detail"] == "compact"
     assert result.structured_content["columns"] is None
     assert result.structured_content["record_schema"] is None
@@ -488,7 +522,9 @@ async def test_create_metadata_snapshot_returns_only_bounded_descriptor_over_htt
     }
     store = FakeSnapshotStore()
 
-    async def fake_create_metadata_snapshot(*_args: Any, **kwargs: Any) -> ReadyMetadataSnapshot:
+    async def fake_create_metadata_snapshot(
+        *_args: Any, **kwargs: Any
+    ) -> ReadyMetadataSnapshot:
         assert kwargs["tenant_id"] == 123
         return ReadyMetadataSnapshot(
             snapshot_id=snapshot_id,
@@ -531,7 +567,7 @@ async def test_create_metadata_snapshot_returns_only_bounded_descriptor_over_htt
         descriptor.pop("download_url_expires_at").replace("Z", "+00:00")
     )
     assert descriptor == {
-        "schema_version": "2.0",
+        "schema_version": "3.0",
         "snapshot_id": str(snapshot_id),
         "snapshot_kind": "metadata",
         "status": "ready",
@@ -557,14 +593,16 @@ async def test_create_metadata_snapshot_returns_only_bounded_descriptor_over_htt
     assert database.audit_records[0].tool_name == "create_metadata_snapshot"
     assert database.audit_records[0].tenant_id == 123
     assert database.audit_records[0].input_metadata == {
-        "schema_version": "2.0",
+        "schema_version": "3.0",
         "tenant_id": 123,
     }
     assert store.closed is True
     assert len(store.read_url_calls) == 1
     assert store.read_url_calls[0][0:2] == (123, snapshot_id)
     assert store.read_url_calls[0][3] == 900
-    assert download_available_until == store.read_url_calls[0][2] + timedelta(seconds=900)
+    assert download_available_until == store.read_url_calls[0][2] + timedelta(
+        seconds=900
+    )
 
 
 @pytest.mark.asyncio
@@ -721,16 +759,16 @@ async def test_easy_auth_list_tenants_uses_the_production_postgres_path(
     with postgres_database.connect_owner() as connection:
         project = connection.execute(
             """
-            INSERT INTO core.project (project_code, project_name)
+            INSERT INTO core.lane (lane_code, lane_name)
             VALUES ('HTTP_RUNTIME', 'HTTP Runtime Project')
-            RETURNING project_id
+            RETURNING lane_id
             """
         ).fetchone()
         assert project is not None
         tenant = connection.execute(
             """
             INSERT INTO core.tenant (
-                project_id,
+                lane_id,
                 tenant_code,
                 tenant_name,
                 tenant_catalog,
@@ -741,7 +779,7 @@ async def test_easy_auth_list_tenants_uses_the_production_postgres_path(
                     'http_runtime', 'http_runtime_admin', 'private')
             RETURNING tenant_id
             """,
-            (project["project_id"],),
+            (project["lane_id"],),
         ).fetchone()
         assert tenant is not None
         principal = connection.execute(
@@ -854,16 +892,16 @@ async def test_local_super_admin_reads_locks_and_writes_through_postgres(
     with postgres_database.connect_owner() as connection:
         project = connection.execute(
             """
-            INSERT INTO core.project (project_code, project_name)
+            INSERT INTO core.lane (lane_code, lane_name)
             VALUES ('LOCAL_RUNTIME', 'Local Runtime Project')
-            RETURNING project_id
+            RETURNING lane_id
             """
         ).fetchone()
         assert project is not None
         tenant = connection.execute(
             """
             INSERT INTO core.tenant (
-                project_id,
+                lane_id,
                 tenant_code,
                 tenant_name,
                 tenant_catalog,
@@ -874,18 +912,18 @@ async def test_local_super_admin_reads_locks_and_writes_through_postgres(
                     'local_runtime', 'local_runtime_admin', 'private')
             RETURNING tenant_id
             """,
-            (project["project_id"],),
+            (project["lane_id"],),
         ).fetchone()
         assert tenant is not None
-        model = connection.execute(
+        project = connection.execute(
             """
-            INSERT INTO model.model (tenant_id, model_name)
-            VALUES (%s, 'Local Runtime Model')
-            RETURNING model_id
+            INSERT INTO project.project (tenant_id, project_name)
+            VALUES (%s, 'Local Runtime Project')
+            RETURNING project_id
             """,
             (tenant["tenant_id"],),
         ).fetchone()
-        assert model is not None
+        assert project is not None
         principal = connection.execute(
             """
             INSERT INTO security.principal (
@@ -959,9 +997,9 @@ async def test_local_super_admin_reads_locks_and_writes_through_postgres(
                 "create_metadata_change_set",
                 {"tenant_id": tenant["tenant_id"]},
             )
-            model_change_set_result = await client.call_tool(
-                "create_model_change_set",
-                {"model_id": model["model_id"]},
+            project_change_set_result = await client.call_tool(
+                "create_project_change_set",
+                {"project_id": project["project_id"]},
             )
 
     assert readiness.status_code == 200
@@ -975,19 +1013,22 @@ async def test_local_super_admin_reads_locks_and_writes_through_postgres(
     )
     assert returned_tenant["tenant_code"] == "LOCAL_RUNTIME"
     assert all(
-        tenant["effective_role"] == "super_admin" for tenant in result.structured_content["tenants"]
+        tenant["effective_role"] == "super_admin"
+        for tenant in result.structured_content["tenants"]
     )
     assert lock_result.is_error is False
     assert lock_result.structured_content is not None
-    assert lock_result.structured_content["lock"]["owner_display_name"] == ("Local Developer")
+    assert lock_result.structured_content["lock"]["owner_display_name"] == (
+        "Local Developer"
+    )
     assert change_set_result.is_error is False
     assert change_set_result.structured_content is not None
     assert change_set_result.structured_content["created"] is True
     assert change_set_result.structured_content["status"] == "active"
-    assert model_change_set_result.is_error is False
-    assert model_change_set_result.structured_content is not None
-    assert model_change_set_result.structured_content["created"] is True
-    assert model_change_set_result.structured_content["status"] == "active"
+    assert project_change_set_result.is_error is False
+    assert project_change_set_result.structured_content is not None
+    assert project_change_set_result.structured_content["created"] is True
+    assert project_change_set_result.structured_content["status"] == "active"
     with postgres_database.connect_owner() as connection:
         audit = connection.execute(
             """
@@ -1002,7 +1043,7 @@ async def test_local_super_admin_reads_locks_and_writes_through_postgres(
                            'list_tenants',
                            'acquire_tenant_lock',
                            'create_metadata_change_set',
-                           'create_model_change_set'
+                           'create_project_change_set'
                        )
                 """,
             (principal["principal_id"], principal["principal_id"]),
@@ -1012,7 +1053,7 @@ async def test_local_super_admin_reads_locks_and_writes_through_postgres(
             "list_tenants",
             "acquire_tenant_lock",
             "create_metadata_change_set",
-            "create_model_change_set",
+            "create_project_change_set",
         ],
         "principal_resolved": True,
         "human_actor": True,
@@ -1028,16 +1069,16 @@ async def test_local_application_builds_metadata_snapshot_end_to_end(
     with postgres_database.connect_owner() as connection:
         project = connection.execute(
             """
-            INSERT INTO core.project (project_code, project_name)
+            INSERT INTO core.lane (lane_code, lane_name)
             VALUES ('LOCAL_SNAPSHOT_RUNTIME', 'Local Snapshot Runtime Project')
-            RETURNING project_id
+            RETURNING lane_id
             """
         ).fetchone()
         assert project is not None
         tenant = connection.execute(
             """
             INSERT INTO core.tenant (
-                project_id,
+                lane_id,
                 tenant_code,
                 tenant_name,
                 tenant_catalog,
@@ -1047,7 +1088,7 @@ async def test_local_application_builds_metadata_snapshot_end_to_end(
                     'local_snapshot_runtime', 'local_snapshot_runtime_admin')
             RETURNING tenant_id
             """,
-            (project["project_id"],),
+            (project["lane_id"],),
         ).fetchone()
         assert tenant is not None
         principal = connection.execute(
@@ -1089,7 +1130,9 @@ async def test_local_application_builds_metadata_snapshot_end_to_end(
 
     class CapturingSnapshotStore(FakeSnapshotStore):
         def __init__(self) -> None:
-            super().__init__("https://snapshot.example.test/metadata/local.zip?read-only=true")
+            super().__init__(
+                "https://snapshot.example.test/metadata/local.zip?read-only=true"
+            )
             self.archive_bytes = b""
             self.archive_path = None
 
@@ -1136,7 +1179,10 @@ async def test_local_application_builds_metadata_snapshot_end_to_end(
     assert result.structured_content["tenant_id"] == tenant["tenant_id"]
     assert result.structured_content["download_url"] == store.read_url
     assert result.structured_content["size_bytes"] == len(store.archive_bytes)
-    assert result.structured_content["sha256"] == hashlib.sha256(store.archive_bytes).hexdigest()
+    assert (
+        result.structured_content["sha256"]
+        == hashlib.sha256(store.archive_bytes).hexdigest()
+    )
     assert store.archive_path is not None and not store.archive_path.exists()
     assert store.closed is True
     with zipfile.ZipFile(BytesIO(store.archive_bytes)) as archive:

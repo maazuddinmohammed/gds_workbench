@@ -254,7 +254,9 @@ async def test_each_entity_requires_only_its_mapped_systems_including_default() 
         | {"artifact_name": "orders_web.sql"},
         _artifact("calendar", "SELECT 1 AS DayID", systems=["DEFAULT"]),
     ]
-    assert (await validator.validate(cast(JsonValue, {"artifacts": artifacts}))).issues == ()
+    assert (
+        await validator.validate(cast(JsonValue, {"artifacts": artifacts}))
+    ).issues == ()
     missing_system = artifacts[:2] + artifacts[3:]
     result = await validator.validate(cast(JsonValue, {"artifacts": missing_system}))
     assert result.issues[0].code == "candidate.source_system_coverage"
@@ -289,7 +291,9 @@ async def test_selected_file_layout_is_enforced_and_preserved_names_cannot_be_re
     ]
     correct = [combined] if layout == "combined" else separate
     wrong = separate if layout == "combined" else [combined]
-    assert not (await validator.validate(cast(JsonValue, {"artifacts": correct}))).issues
+    assert not (
+        await validator.validate(cast(JsonValue, {"artifacts": correct}))
+    ).issues
     assert (await validator.validate(cast(JsonValue, {"artifacts": wrong}))).issues[
         0
     ].code == "candidate.file_layout"
@@ -342,8 +346,12 @@ async def test_requested_transformation_layout_rejects_loading_sql_and_implicit_
     ).issues
 
 
-@pytest.mark.parametrize("code", ["missing_requirement_evidence", "conflicting_requirement"])
-async def test_requirement_failure_returns_safe_diagnostic_and_cannot_be_applied(code: str) -> None:
+@pytest.mark.parametrize(
+    "code", ["missing_requirement_evidence", "conflicting_requirement"]
+)
+async def test_requirement_failure_returns_safe_diagnostic_and_cannot_be_applied(
+    code: str,
+) -> None:
     from gds_etl_workbench.domain.errors import InvalidRequestError
 
     candidate = cast(JsonValue, {"artifacts": [], "issues": [code]})
@@ -377,14 +385,19 @@ async def test_missing_evidence_keeps_covered_typed_null_sql_for_review(
 
     assert not (await validator.validate(candidate)).issues
     assert len(validator.parse_validated(candidate)) == 2
-    assert "code_generation.typed_null_placeholder" in validator.warning_codes(candidate)
+    assert "code_generation.typed_null_placeholder" in validator.warning_codes(
+        candidate
+    )
     assert (
-        "code_generation.missing_requirement_evidence" in validator.warning_codes(candidate)
+        "code_generation.missing_requirement_evidence"
+        in validator.warning_codes(candidate)
     ) == reported_missing
 
     assert isinstance(candidate, dict) and isinstance(candidate["artifacts"], list)
     candidate["artifacts"].pop()
-    assert (await validator.validate(candidate)).issues[0].code == "candidate.target_coverage"
+    assert (await validator.validate(candidate)).issues[
+        0
+    ].code == "candidate.target_coverage"
 
 
 async def test_conflicting_requirements_still_reject_otherwise_covered_sql() -> None:
@@ -394,14 +407,18 @@ async def test_conflicting_requirements_still_reject_otherwise_covered_sql() -> 
             "issues": ["missing_requirement_evidence", "conflicting_requirement"],
             "artifacts": [
                 _artifact(
-                    "target_1", "SELECT CAST(NULL AS STRING) AS name", systems=["CRM", "ERP"]
+                    "target_1",
+                    "SELECT CAST(NULL AS STRING) AS name",
+                    systems=["CRM", "ERP"],
                 ),
                 _artifact("target_2", "SELECT 2 AS id", systems=["MDM"]),
             ],
         },
     )
     result = await _validator().validate(candidate)
-    assert [issue.code for issue in result.issues] == ["code_generation.conflicting_requirement"]
+    assert [issue.code for issue in result.issues] == [
+        "code_generation.conflicting_requirement"
+    ]
 
 
 @pytest.mark.asyncio
@@ -433,7 +450,9 @@ async def test_support_artifacts_cannot_bypass_sql_write_restrictions(sql: str) 
             ]
         },
     )
-    assert (await validator.validate(candidate)).issues[0].code == "candidate.support_sql_contract"
+    assert (await validator.validate(candidate)).issues[
+        0
+    ].code == "candidate.support_sql_contract"
     with pytest.raises(InvalidRequestError, match="artifact delivery contract"):
         validator.parse_validated(candidate)
 

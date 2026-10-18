@@ -4,7 +4,7 @@ Load only when delegation is useful and authorized by the user and host. A saved
 
 
 A sub-agent is a helper agent assigned part of the work. This policy controls its
-AI model. It does not change the main chat model or the Atlas data Model.
+AI model. It does not change the main chat model or the Atlas Project.
 
 Ask: **Which model rule should Atlas use for sub-agents?**
 

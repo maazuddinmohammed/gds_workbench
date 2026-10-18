@@ -28,7 +28,7 @@ class MetadataEnrichmentReadService(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         limit: int = 100,
         offset: int = 0,
@@ -47,7 +47,7 @@ class DatabaseMetadataEnrichmentReadService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         limit: int = 100,
         offset: int = 0,
@@ -69,12 +69,12 @@ class DatabaseMetadataEnrichmentReadService:
                 """
                 SELECT run.workflow_run_id
                   FROM application.workflow_run AS run
-                  JOIN model.model AS model USING (model_id, tenant_id)
-                 WHERE run.tenant_id = %s AND run.model_id = %s
-                   AND run.workflow_run_id = %s AND model.is_active
-                   AND run.model_workflow = 'metadata_enrichment'
+                  JOIN project.project AS project USING (project_id, tenant_id)
+                 WHERE run.tenant_id = %s AND run.project_id = %s
+                   AND run.workflow_run_id = %s AND project.is_active
+                   AND run.project_workflow = 'metadata_enrichment'
                 """,
-                (tenant_id, model_id, workflow_run_id),
+                (tenant_id, project_id, workflow_run_id),
             )
             if route is None:
                 raise WorkflowRunNotFoundError()
@@ -102,9 +102,9 @@ class DatabaseMetadataEnrichmentReadService:
                 ),
                 strict=True,
             )
-            if (page.tenant_id, page.model_id, page.workflow_run_id) != (
+            if (page.tenant_id, page.project_id, page.workflow_run_id) != (
                 tenant_id,
-                model_id,
+                project_id,
                 workflow_run_id,
             ):
                 raise ValueError("Enrichment result identity differs from the route")

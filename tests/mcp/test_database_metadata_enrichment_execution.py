@@ -11,7 +11,7 @@ from psycopg.errors import InsufficientPrivilege, RaiseException
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from tests.mcp.enrichment_test_support import seed_model_enrichment
+from tests.mcp.enrichment_test_support import seed_project_enrichment
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.database_test_support import require_row
 from tests.mcp.test_database_metadata_enrichment_registration import _context, _create
@@ -39,7 +39,7 @@ def _start(
                 context.entra_tenant_id,
                 context.entra_object_id,
                 run_id,
-                context.model_revision,
+                context.project_revision,
             ),
         )
     claim = _claim_specific_workflow_run(database, run_id)
@@ -50,7 +50,7 @@ def _load(
     database: DisposablePostgres, context: WorkflowContext, run_id: int
 ) -> dict[str, Any]:
     with database.connect_owner() as connection:
-        seed_model_enrichment(connection, context.model_id)
+        seed_project_enrichment(connection, context.project_id)
     with psycopg.Connection[dict[str, Any]].connect(
         database.web_runtime_dsn(), row_factory=dict_row
     ) as connection:
@@ -62,7 +62,7 @@ def _load(
                     context.entra_tenant_id,
                     context.entra_object_id,
                     run_id,
-                    context.model_revision,
+                    context.project_revision,
                 ),
             ).fetchone()
         )["result"]
@@ -91,7 +91,7 @@ def _complete(
                     context.entra_tenant_id,
                     context.entra_object_id,
                     run_id,
-                    context.model_revision,
+                    context.project_revision,
                     claim,
                     baseline,
                     Jsonb(results),
@@ -222,8 +222,8 @@ def test_context_missing_relations_and_atomic_completion_replay(
     with database.connect_owner() as connection:
         row = require_row(
             connection.execute(
-                "SELECT attribute_data_type,enrichment.attribute_inferred_data_type,enrichment.attribute_description,enrichment.is_locked FROM core.attribute JOIN workflow.attribute_enrichment AS enrichment USING(attribute_id) WHERE attribute_id=%s AND enrichment.model_id=%s",
-                (attribute_id, context.model_id),
+                "SELECT attribute_data_type,enrichment.attribute_inferred_data_type,enrichment.attribute_description,enrichment.is_locked FROM core.attribute JOIN workflow.attribute_enrichment AS enrichment USING(attribute_id) WHERE attribute_id=%s AND enrichment.project_id=%s",
+                (attribute_id, context.project_id),
             ).fetchone()
         )
         assert row == dict(
@@ -235,11 +235,11 @@ def test_context_missing_relations_and_atomic_completion_replay(
         assert (
             require_row(
                 connection.execute(
-                    "SELECT model_revision FROM model.model WHERE model_id=%s",
-                    (context.model_id,),
+                    "SELECT project_revision FROM project.project WHERE project_id=%s",
+                    (context.project_id,),
                 ).fetchone()
-            )["model_revision"]
-            == context.model_revision
+            )["project_revision"]
+            == context.project_revision
         )
         assert require_row(
             connection.execute(
@@ -254,7 +254,7 @@ def test_context_missing_relations_and_atomic_completion_replay(
                     context.entra_tenant_id,
                     context.entra_object_id,
                     run_id,
-                    context.model_revision,
+                    context.project_revision,
                 ),
             )
 
@@ -340,8 +340,8 @@ def test_generated_null_clears_unlocked_description_but_not_inferred_type(
     with database.connect_owner() as connection:
         row = require_row(
             connection.execute(
-                "SELECT object_description, attribute_description, attribute_inferred_data_type FROM workflow.object_enrichment JOIN workflow.attribute_enrichment USING(model_id,object_id) WHERE attribute_id=%s AND model_id=%s",
-                (first[1], context.model_id),
+                "SELECT object_description, attribute_description, attribute_inferred_data_type FROM workflow.object_enrichment JOIN workflow.attribute_enrichment USING(project_id,object_id) WHERE attribute_id=%s AND project_id=%s",
+                (first[1], context.project_id),
             ).fetchone()
         )
         assert row == {
@@ -414,15 +414,15 @@ def test_completion_denials_leave_no_receipt_or_writes(
     if fence == "claim":
         claim = uuid4()
     elif fence == "revision":
-        context = replace(context, model_revision=context.model_revision + 1)
+        context = replace(context, project_revision=context.project_revision + 1)
     elif fence == "identity":
         context = replace(context, entra_object_id=uuid4())
     else:
         with database.connect_owner() as connection:
             if fence == "scope":
                 connection.execute(
-                    "UPDATE model.model_input_scope SET is_active=FALSE WHERE model_id=%s AND object_id=%s",
-                    (context.model_id, first[0]),
+                    "UPDATE project.project_input_scope SET is_active=FALSE WHERE project_id=%s AND object_id=%s",
+                    (context.project_id, first[0]),
                 )
             elif fence == "role":
                 connection.execute(
@@ -480,7 +480,7 @@ def test_generic_completion_denied_and_paginated_read_needs_no_lock(
                     context.entra_tenant_id,
                     context.entra_object_id,
                     run_id,
-                    context.model_revision,
+                    context.project_revision,
                 ),
             )
     snapshot = _load(database, context, run_id)
@@ -508,7 +508,7 @@ def test_generic_completion_denied_and_paginated_read_needs_no_lock(
             ).fetchone()
         )["result"]
         assert page["tenant_id"] == context.tenant_id
-        assert page["model_id"] == context.model_id
+        assert page["project_id"] == context.project_id
         assert len(page["results"]) == 1
         assert page["total_count"] == len(_full_results(database, run_id, []))
         with pytest.raises(InsufficientPrivilege):
@@ -636,7 +636,7 @@ def test_source_evidence_requires_exact_active_unambiguous_ingestion(
     bootstrap_postgres_database: DisposablePostgres, mapping: str
 ) -> None:
     from tests.mcp.test_database_workflow_run_lifecycle import (
-        _seed_model_input_scope_object_in_zone,
+        _seed_project_input_scope_object_in_zone,
         seed_workflow_context,
     )
 
@@ -645,7 +645,7 @@ def test_source_evidence_requires_exact_active_unambiguous_ingestion(
     target_object, target_attribute = attributes[0]
     source_ids: list[int] = []
     for _ in range(2 if mapping == "ambiguous" else 1):
-        source_object = _seed_model_input_scope_object_in_zone(
+        source_object = _seed_project_input_scope_object_in_zone(
             database, context, zone_code="source"
         )
         with database.connect_owner() as connection:
@@ -730,12 +730,12 @@ def test_source_relation_uses_gds_execution_connection_and_credentials_are_exact
     bootstrap_postgres_database: DisposablePostgres,
 ) -> None:
     from tests.mcp.test_database_workflow_run_lifecycle import (
-        _seed_model_input_scope_object_in_zone,
+        _seed_project_input_scope_object_in_zone,
     )
 
     database = bootstrap_postgres_database
     context = _context(database)
-    source_object = _seed_model_input_scope_object_in_zone(
+    source_object = _seed_project_input_scope_object_in_zone(
         database, context, zone_code="source"
     )
     with database.connect_owner() as connection:
@@ -801,7 +801,7 @@ def test_source_relation_uses_gds_execution_connection_and_credentials_are_exact
                 context.entra_tenant_id,
                 context.entra_object_id,
                 run_id,
-                context.model_revision,
+                context.project_revision,
             ),
         )
     snapshot = _load(database, context, run_id)
@@ -826,7 +826,7 @@ def test_source_relation_uses_gds_execution_connection_and_credentials_are_exact
                     context.entra_tenant_id,
                     context.entra_object_id,
                     run_id,
-                    context.model_revision,
+                    context.project_revision,
                     gds_connection,
                     environment,
                 ),
@@ -848,7 +848,7 @@ def test_source_relation_uses_gds_execution_connection_and_credentials_are_exact
                     context.entra_tenant_id,
                     context.entra_object_id,
                     run_id,
-                    context.model_revision,
+                    context.project_revision,
                     source_connection,
                     environment,
                 ),

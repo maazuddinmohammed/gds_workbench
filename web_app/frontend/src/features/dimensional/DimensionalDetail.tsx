@@ -1,6 +1,6 @@
-import { SourceMappings } from "../models/SourceMappings";
-import { EntityAttributes } from "../models/EntityAttributes";
-import { useEffect, useRef } from "react";
+import { SourceMappings } from "../projects/SourceMappings";
+import { EntityAttributes } from "../projects/EntityAttributes";
+import { useEffect, useRef, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 
@@ -15,95 +15,105 @@ import { formatRequiredDateTime as formatDateTime } from "../../shared/presentat
 import { dimensionalQueryKeys, type DimensionalApi } from "./api";
 
 export function DimensionalObjectDetailPage({
+  actions,
   api,
   tenantId,
-  modelId,
-  modelRevision,
+  projectId,
+  projectRevision,
   hasTenantLock,
   entityId,
 }: {
+  actions?: ReactNode;
   api: DimensionalApi;
   tenantId: number;
-  modelId: number;
-  modelRevision: number;
+  projectId: number;
+  projectRevision: number;
   hasTenantLock: boolean;
   entityId: number;
 }) {
   const query = useQuery({
-    queryKey: dimensionalQueryKeys.object(tenantId, modelId, entityId),
-    queryFn: () => api.readDimensionalObject(tenantId, modelId, entityId),
+    queryKey: dimensionalQueryKeys.object(tenantId, projectId, entityId),
+    queryFn: () => api.readDimensionalObject(tenantId, projectId, entityId),
   });
-  if (query.isPending) return <DetailState label="Loading Dimensional Object…" />;
+  if (query.isPending) return <DetailState label="Loading Dimensional Entity…" />;
   if (query.isError) {
     return <DetailState
       label={query.error instanceof ApiError && query.error.status === 403
-        ? "You do not have permission to view this Dimensional Object."
-        : "Dimensional Object details could not be loaded."}
+        ? "You do not have permission to view this Dimensional Entity."
+        : "Dimensional Entity details could not be loaded."}
       error
     />;
   }
-  return <DimensionalObjectView modelRevision={modelRevision} hasTenantLock={hasTenantLock} api={api} tenantId={tenantId} modelId={modelId} object={query.data} />;
+  return <DimensionalObjectView actions={actions} projectRevision={projectRevision} hasTenantLock={hasTenantLock} api={api} tenantId={tenantId} projectId={projectId} object={query.data} />;
 }
 
 export function DimensionalAttributeDetailPage({
+  actions,
   api,
   tenantId,
-  modelId,
+  projectId,
   attributeId,
 }: {
+  actions?: ReactNode;
   api: DimensionalApi;
   tenantId: number;
-  modelId: number;
+  projectId: number;
   attributeId: number;
 }) {
   const query = useQuery({
-    queryKey: dimensionalQueryKeys.attribute(tenantId, modelId, attributeId),
-    queryFn: () => api.readDimensionalAttribute(tenantId, modelId, attributeId),
+    queryKey: dimensionalQueryKeys.attribute(tenantId, projectId, attributeId),
+    queryFn: () => api.readDimensionalAttribute(tenantId, projectId, attributeId),
   });
   if (query.isPending) return <DetailState label="Loading Dimensional Attribute…" />;
   if (query.isError) return <DetailState label={detailErrorLabel(query.error, "Attribute")} error />;
   return <DimensionalAttributeView
+    actions={actions}
     tenantId={tenantId}
-    modelId={modelId}
+    projectId={projectId}
     attribute={query.data}
   />;
 }
 
 export function DimensionalRelationshipDetailPage({
+  actions,
   api,
   tenantId,
-  modelId,
+  projectId,
   relationshipId,
 }: {
+  actions?: ReactNode;
   api: DimensionalApi;
   tenantId: number;
-  modelId: number;
+  projectId: number;
   relationshipId: number;
 }) {
   const query = useQuery({
-    queryKey: dimensionalQueryKeys.relationship(tenantId, modelId, relationshipId),
-    queryFn: () => api.readDimensionalRelationship(tenantId, modelId, relationshipId),
+    queryKey: dimensionalQueryKeys.relationship(tenantId, projectId, relationshipId),
+    queryFn: () => api.readDimensionalRelationship(tenantId, projectId, relationshipId),
   });
   if (query.isPending) return <DetailState label="Loading Dimensional Relationship…" />;
   if (query.isError) return <DetailState label={detailErrorLabel(query.error, "Relationship")} error />;
   return <DimensionalRelationshipView
+    actions={actions}
     tenantId={tenantId}
-    modelId={modelId}
+    projectId={projectId}
     relationship={query.data}
   />;
 }
 
 function DimensionalObjectView({
+  actions,
   api,
   tenantId,
-  modelId,
-  modelRevision,
+  projectId,
+  projectRevision,
   hasTenantLock,
   object,
 }: {
+  actions?: ReactNode;
   tenantId: number;
-  modelId: number;
-  modelRevision: number;
+  projectId: number;
+  projectRevision: number;
   hasTenantLock: boolean;
   object: DimensionalObjectDetail;
   api: DimensionalApi;
@@ -111,33 +121,35 @@ function DimensionalObjectView({
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
   return (
-    <article className="workflow-detail-page dimensional-detail-page page-enter">
-      <header className="workflow-detail-header">
+    <article className="workflow-detail-page dimensional-detail-page modeled-detail-page page-enter">
+      <header className="workflow-detail-header workspace-entity-heading">
         <div>
           <Link
             className="text-action"
             aria-label="Back to Dimensional"
-            to="/tenants/$tenantId/models/$modelId/dimensional"
-            params={{ tenantId: String(tenantId), modelId: String(modelId) }}
+            to="/tenants/$tenantId/projects/$projectId/dimensional"
+            params={{ tenantId: String(tenantId), projectId: String(projectId) }}
           >
             ← Back to Dimensional
           </Link>
-          <p className="eyebrow">Dimensional Object {object.dimensional_entity_id}</p>
           <h1 ref={heading} tabIndex={-1}>{object.dimensional_entity_schema_name}.{object.dimensional_entity_name}</h1>
         </div>
-        <div className="detail-badge-stack">
-          <span className={`status-badge ${statusTone(object.dimensional_entity_status)}`}>
-            {humanize(object.dimensional_entity_status)}
-          </span>
-          <span className="status-badge is-neutral">
-            {object.dimensional_entity_is_locked ? "Locked" : "Open"}
-          </span>
+        <div className="workflow-command-actions">
+          <div className="detail-badge-stack">
+            <span className={`status-badge ${statusTone(object.dimensional_entity_status)}`}>
+              {humanize(object.dimensional_entity_status)}
+            </span>
+            <span className="status-badge is-neutral">
+              {object.dimensional_entity_is_locked ? "Locked" : "Open"}
+            </span>
+          </div>
+          {actions}
         </div>
       </header>
       <section className="detail-section detail-primary" aria-labelledby="dimensional-object-overview">
-        <header><h2 id="dimensional-object-overview">Object definition</h2></header>
-        <p className="detail-prose is-prominent">{object.dimensional_entity_definition}</p>
-        <dl className="detail-fact-grid">
+        <header><h2 id="dimensional-object-overview">Entity definition</h2></header>
+        <dl className="modeled-detail-fields">
+          <div className="is-definition"><dt>Definition</dt><dd>{object.dimensional_entity_definition}</dd></div>
           <Fact label="Type" value={humanize(object.dimensional_entity_type)} />
           {object.dimensional_fact_type !== null ? <Fact label="Fact type" value={humanize(object.dimensional_fact_type)} /> : null}
           <Fact label="Grain" value={object.dimensional_entity_grain_definition ?? "Not specified"} />
@@ -146,7 +158,7 @@ function DimensionalObjectView({
           <Fact label="Updated" value={formatDateTime(object.updated_at)} />
         </dl>
       </section>
-      <EntityAttributes modelRevision={modelRevision} hasTenantLock={hasTenantLock} api={api} layer="dimensional" tenantId={tenantId} modelId={modelId} entityId={object.dimensional_entity_id} />
+      <EntityAttributes projectRevision={projectRevision} hasTenantLock={hasTenantLock} api={api} layer="dimensional" tenantId={tenantId} projectId={projectId} entityId={object.dimensional_entity_id} />
       <SourceMappings sources={object.sources} />
       <details className="detail-section detail-disclosure" aria-labelledby="dimensional-submodel-membership">
         <summary>
@@ -156,7 +168,7 @@ function DimensionalObjectView({
         {object.submodels.length === 0 ? (
           <p className="detail-empty">No Submodel membership is recorded.</p>
         ) : (
-          <div className="table-scroll">
+          <div className="table-scroll" role="region" aria-label="Scrollable Submodel memberships" tabIndex={0}>
             <table aria-label="Submodel memberships">
               <thead><tr><th>Submodel</th><th>ID</th><th>Status</th><th>Lock</th></tr></thead>
               <tbody>{object.submodels.map((membership) => (
@@ -176,33 +188,36 @@ function DimensionalObjectView({
 }
 
 function DimensionalAttributeView({
+  actions,
   tenantId,
-  modelId,
+  projectId,
   attribute,
 }: {
+  actions?: ReactNode;
   tenantId: number;
-  modelId: number;
+  projectId: number;
   attribute: DimensionalAttributeDetail;
 }) {
   return (
-    <article className="workflow-detail-page dimensional-detail-page page-enter">
+    <article className="workflow-detail-page dimensional-detail-page modeled-detail-page page-enter">
       <DimensionalDetailHeader
+        actions={actions}
         tenantId={tenantId}
-        modelId={modelId}
-        eyebrow={`Dimensional Attribute ${attribute.dimensional_attribute_id}`}
+        projectId={projectId}
+        parentEntityId={attribute.dimensional_entity_id}
         title={attribute.dimensional_attribute_name}
         status={attribute.dimensional_attribute_status}
         locked={attribute.dimensional_attribute_is_locked}
       />
       <section className="detail-section detail-primary" aria-labelledby="dimensional-attribute-overview">
         <header><h2 id="dimensional-attribute-overview">Attribute definition</h2></header>
-        <p className="detail-prose is-prominent">{attribute.dimensional_attribute_definition}</p>
-        <dl className="detail-fact-grid">
-          <Fact label="Object" value={`${attribute.dimensional_entity_schema_name}.${attribute.dimensional_entity_name}`} />
+        <dl className="modeled-detail-fields">
+          <div className="is-definition"><dt>Definition</dt><dd>{attribute.dimensional_attribute_definition}</dd></div>
+          <Fact label="Entity" value={`${attribute.dimensional_entity_schema_name}.${attribute.dimensional_entity_name}`} />
           <Fact label="Confidence" value={humanize(attribute.dimensional_attribute_confidence)} />
         </dl>
         <h3>Type and role</h3>
-        <dl className="detail-fact-grid">
+        <dl className="modeled-detail-fields">
           <Fact label="Data type" value={attribute.dimensional_attribute_data_type} />
           <Fact label="Ordinal" value={String(attribute.dimensional_attribute_ordinal_position)} />
           <Fact label="Role" value={humanize(attribute.dimensional_attribute_role)} />
@@ -210,7 +225,7 @@ function DimensionalAttributeView({
           <Fact label="Audit column" value={attribute.dimensional_attribute_is_audit_column ? "Yes" : "No"} />
         </dl>
         <h3>Keys and grain</h3>
-        <dl className="detail-fact-grid">
+        <dl className="modeled-detail-fields">
           <Fact label="Surrogate key" value={attribute.dimensional_attribute_key_role === "surrogate" ? "Yes" : "No"} />
           <Fact label="Natural key" value={attribute.dimensional_attribute_key_role === "business" ? "Yes" : "No"} />
           {attribute.dimensional_attribute_key_role === "foreign" ? <Fact label="Foreign key" value="Yes" /> : null}
@@ -222,11 +237,9 @@ function DimensionalAttributeView({
           || attribute.dimensional_attribute_aggregation_basis !== null ? (
           <>
             <h3>Aggregation</h3>
-            <dl className="detail-fact-grid">
+            <dl className="modeled-detail-fields">
               <Fact label="Additivity" value={attribute.dimensional_attribute_additivity === null ? "Not recorded" : humanize(attribute.dimensional_attribute_additivity)} />
               <Fact label="Default aggregation" value={attribute.dimensional_attribute_default_aggregation ?? "Not recorded"} />
-            </dl>
-            <dl className="conceptual-reasoning">
               <Fact label="Aggregation basis" value={attribute.dimensional_attribute_aggregation_basis ?? "Not recorded"} />
             </dl>
           </>
@@ -244,39 +257,32 @@ function DimensionalAttributeView({
 }
 
 function DimensionalRelationshipView({
+  actions,
   tenantId,
-  modelId,
+  projectId,
   relationship,
 }: {
+  actions?: ReactNode;
   tenantId: number;
-  modelId: number;
+  projectId: number;
   relationship: DimensionalRelationshipDetail;
 }) {
   return (
-    <article className="workflow-detail-page dimensional-detail-page page-enter">
+    <article className="workflow-detail-page dimensional-detail-page modeled-detail-page page-enter">
       <DimensionalDetailHeader
+        actions={actions}
         tenantId={tenantId}
-        modelId={modelId}
-        eyebrow={`Dimensional Relationship ${relationship.dimensional_relationship_id}`}
+        projectId={projectId}
         title={relationship.dimensional_relationship_name}
         status={relationship.dimensional_relationship_status}
         locked={relationship.dimensional_relationship_is_locked}
       />
       <section className="detail-section detail-primary" aria-labelledby="dimensional-relationship-overview">
         <header><h2 id="dimensional-relationship-overview">Relationship definition</h2></header>
-        <p className="detail-prose is-prominent">{relationship.dimensional_relationship_definition}</p>
-        <div className="conceptual-endpoints" aria-label="Relationship endpoints">
-          <section>
-            <small>From</small>
-            <strong>{relationship.from_dimensional_entity_schema_name}.{relationship.from_dimensional_entity_name}.{relationship.from_dimensional_attribute_name}</strong>
-          </section>
-          <span aria-hidden="true">→</span>
-          <section>
-            <small>To</small>
-            <strong>{relationship.to_dimensional_entity_schema_name}.{relationship.to_dimensional_entity_name}.{relationship.to_dimensional_attribute_name}</strong>
-          </section>
-        </div>
-        <dl className="detail-fact-grid">
+        <dl className="modeled-detail-fields">
+          <div className="is-definition"><dt>Definition</dt><dd>{relationship.dimensional_relationship_definition}</dd></div>
+          <Fact label="From" value={`${relationship.from_dimensional_entity_schema_name}.${relationship.from_dimensional_entity_name}.${relationship.from_dimensional_attribute_name}`} />
+          <Fact label="To" value={`${relationship.to_dimensional_entity_schema_name}.${relationship.to_dimensional_entity_name}.${relationship.to_dimensional_attribute_name}`} />
           <Fact label="Kind" value={humanize(relationship.dimensional_relationship_kind)} />
           <Fact label="Cardinality" value={humanize(relationship.dimensional_relationship_cardinality)} />
           <Fact label="Optional" value={relationship.dimensional_relationship_is_optional ? "Yes" : "No"} />
@@ -287,7 +293,7 @@ function DimensionalRelationshipView({
       </section>
       <section className="detail-section" aria-labelledby="dimensional-relationship-reasoning">
         <header><h2 id="dimensional-relationship-reasoning">Reasoning</h2></header>
-        <dl className="conceptual-reasoning">
+        <dl className="modeled-detail-fields">
           <Fact label="Relationship basis" value={relationship.dimensional_relationship_basis} />
           <Fact label="Cardinality basis" value={relationship.dimensional_relationship_cardinality_basis} />
         </dl>
@@ -297,16 +303,18 @@ function DimensionalRelationshipView({
 }
 
 function DimensionalDetailHeader({
+  actions,
   tenantId,
-  modelId,
-  eyebrow,
+  projectId,
+  parentEntityId,
   title,
   status,
   locked,
 }: {
+  actions?: ReactNode;
   tenantId: number;
-  modelId: number;
-  eyebrow: string;
+  projectId: number;
+  parentEntityId?: number;
   title: string;
   status: string;
   locked: boolean;
@@ -314,22 +322,24 @@ function DimensionalDetailHeader({
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
   return (
-    <header className="workflow-detail-header">
+    <header className="workflow-detail-header workspace-entity-heading">
       <div>
         <Link
           className="text-action"
-          aria-label="Back to Dimensional"
-          to="/tenants/$tenantId/models/$modelId/dimensional"
-          params={{ tenantId: String(tenantId), modelId: String(modelId) }}
+          aria-label={parentEntityId ? "Back to Entity" : "Back to Dimensional"}
+          to={parentEntityId ? "/tenants/$tenantId/projects/$projectId/dimensional/objects/$entityId" : "/tenants/$tenantId/projects/$projectId/dimensional"}
+          params={{ tenantId: String(tenantId), projectId: String(projectId), ...(parentEntityId ? { entityId: String(parentEntityId) } : {}) }}
         >
-          ← Back to Dimensional
+          ← {parentEntityId ? "Back to Entity" : "Back to Dimensional"}
         </Link>
-        <p className="eyebrow">{eyebrow}</p>
         <h1 ref={heading} tabIndex={-1}>{title}</h1>
       </div>
-      <div className="detail-badge-stack">
-        <span className={`status-badge ${statusTone(status)}`}>{humanize(status)}</span>
-        <span className="status-badge is-neutral">{locked ? "Locked" : "Open"}</span>
+      <div className="workflow-command-actions">
+        <div className="detail-badge-stack">
+          <span className={`status-badge ${statusTone(status)}`}>{humanize(status)}</span>
+          <span className="status-badge is-neutral">{locked ? "Locked" : "Open"}</span>
+        </div>
+        {actions}
       </div>
     </header>
   );

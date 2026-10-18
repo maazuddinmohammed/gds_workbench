@@ -1,4 +1,4 @@
-import { withRecordReview } from "../../test/modelRecordReview";
+import { withRecordReview } from "../../test/projectRecordReview";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryHistory } from "@tanstack/react-router";
@@ -7,7 +7,33 @@ import { describe, expect, it, vi } from "vitest";
 import { createApiClient } from "../../api";
 import { WorkbenchApp, createWorkbenchRouter } from "../../app";
 
-describe("Model Logical", () => {
+describe("Project Logical", () => {
+  it.each([
+    ["entities/71", "silver.customer_account"],
+    ["attributes/81", "customer_id"],
+    ["relationships/101", "customer places order"],
+    ["submodels/91", "Customer domain"],
+  ])("keeps %s record actions beside its heading with lifecycle commands under More", async (detail, title) => {
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({
+      api: createApiClient(logicalFetchStub()),
+      history: createMemoryHistory({ initialEntries: [`/tenants/7/projects/18/logical/${detail}`] }),
+    })} />);
+    const heading = await screen.findByRole("heading", { level: 1, name: title });
+    const header = heading.closest("header")!;
+    expect(within(header).queryByText(/^Logical (Entity|Attribute|Relationship|Submodel) \d+$/)).not.toBeInTheDocument();
+    expect(within(header).getByRole("button", { name: "Edit definition" })).toBeVisible();
+    expect(within(header).getByRole("button", { name: "Lock" })).not.toBeVisible();
+    const more = within(header).getByText("More", { selector: "summary" });
+    await user.click(more);
+    expect(within(header).getByRole("button", { name: "Lock" })).toBeVisible();
+    expect(within(header).getByRole("button", { name: "Deactivate" })).toBeVisible();
+    within(header).getByRole("button", { name: "Lock" }).focus();
+    await user.keyboard("{Escape}");
+    expect(more).toHaveFocus();
+    expect(within(header).getByRole("button", { name: "Lock" })).not.toBeVisible();
+  });
+
   it("reviews a Logical Entity and its complete normalized context on a detail page", async () => {
     const fetcher = logicalFetchStub();
     const user = userEvent.setup();
@@ -36,7 +62,7 @@ describe("Model Logical", () => {
     const membershipHeading = screen.getByRole("heading", { name: "Submodel membership" });
     expect(sourceHeading.compareDocumentPosition(membershipHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByRole("table", { name: "Submodel memberships" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Customer domain" })).toHaveAttribute("href", "/tenants/7/models/18/logical/submodels/91");
+    expect(screen.getByRole("link", { name: "Customer domain" })).toHaveAttribute("href", "/tenants/7/projects/18/logical/submodels/91");
     await user.click(within(screen.getByRole("table", { name: "Source mappings" })).getAllByText("Show details")[1]!);
     expect(screen.getByText("Customer identity is governed across systems.")).toBeVisible();
     expect(screen.queryByText("Source mapping id")).not.toBeInTheDocument();
@@ -97,7 +123,7 @@ describe("Model Logical", () => {
     await user.selectOptions(screen.getByLabelText("Entity lock"), "true");
     await user.click(screen.getByRole("button", { name: "Apply Entity filters" }));
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/logical/entities?status=inactive&locked=true&name_prefix=customer&logical_submodel_id=91&page_size=200",
+      "/api/v1/tenants/7/projects/18/logical/entities?status=inactive&locked=true&name_prefix=customer&logical_submodel_id=91&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
     await user.click(screen.getByRole("button", { name: "Clear" }));
@@ -107,7 +133,7 @@ describe("Model Logical", () => {
     expect(screen.getByLabelText("Entity lock")).toHaveValue("");
     expect(screen.queryByRole("button", { name: "Activate selected" })).not.toBeInTheDocument();
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/logical/entities?status=active&page_size=200",
+      "/api/v1/tenants/7/projects/18/logical/entities?status=active&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
     filtered.unmount();
@@ -119,10 +145,10 @@ describe("Model Logical", () => {
     empty.unmount();
 
     const mismatch = render(
-      <WorkbenchApp router={logicalRouter(logicalFetchStub({ modelRevision: 19 }))} />,
+      <WorkbenchApp router={logicalRouter(logicalFetchStub({ projectRevision: 19 }))} />,
     );
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The Model changed while Logical Entities were loading.",
+      "The Project changed while Logical Entities were loading.",
     );
     mismatch.unmount();
 
@@ -151,17 +177,17 @@ describe("Model Logical", () => {
     await user.click(screen.getByRole("button", { name: "Create and run Logical" }));
 
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/runs",
+      "/api/v1/tenants/7/projects/18/runs",
       expect.objectContaining({
         method: "POST",
-        body: expect.stringContaining('"model_workflow":"logical"'),
+        body: expect.stringContaining('"project_workflow":"logical"'),
       }),
     );
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/logical/runs/1050/execute",
+      "/api/v1/tenants/7/projects/18/logical/runs/1050/execute",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ execution_mode: "tool_assisted", expected_model_revision: 18 }),
+        body: JSON.stringify({ execution_mode: "tool_assisted", expected_project_revision: 18 }),
       }),
     );
   });
@@ -171,7 +197,7 @@ function logicalRouter(fetcher: ReturnType<typeof logicalFetchStub>) {
   return createWorkbenchRouter({
     api: createApiClient(fetcher),
     history: createMemoryHistory({
-      initialEntries: ["/tenants/7/models/18/logical"],
+      initialEntries: ["/tenants/7/projects/18/logical"],
     }),
   });
 }
@@ -179,7 +205,7 @@ function logicalRouter(fetcher: ReturnType<typeof logicalFetchStub>) {
 function logicalFetchStub(options: {
   empty?: boolean;
   error?: boolean;
-  modelRevision?: number;
+  projectRevision?: number;
   hasLock?: boolean;
 } = {}) {
   return vi.fn<typeof fetch>(async (input, init) => {
@@ -194,56 +220,56 @@ function logicalFetchStub(options: {
         },
       });
     }
-    if (url === "/api/v1/tenants/7/models/18") return jsonResponse(modelPayload);
-    if (url.startsWith("/api/v1/tenants/7/models/18/logical/entities?")) {
+    if (url === "/api/v1/tenants/7/projects/18") return jsonResponse(projectPayload);
+    if (url.startsWith("/api/v1/tenants/7/projects/18/logical/entities?")) {
       if (options.error) return jsonResponse({ error: { code: "unavailable" } }, 503);
       return jsonResponse({
-        model_id: 18,
-        model_revision: options.modelRevision ?? 18,
+        project_id: 18,
+        project_revision: options.projectRevision ?? 18,
         items: options.empty ? [] : [logicalEntityPayload],
         next_cursor: null,
       });
     }
-    if (url === "/api/v1/tenants/7/models/18/logical/entities/71") {
+    if (url === "/api/v1/tenants/7/projects/18/logical/entities/71") {
       return jsonResponse(logicalEntityDetailPayload);
     }
-    if (url.startsWith("/api/v1/tenants/7/models/18/logical/submodels?")) {
+    if (url.startsWith("/api/v1/tenants/7/projects/18/logical/submodels?")) {
       return jsonResponse({
-        model_id: 18,
-        model_revision: 18,
+        project_id: 18,
+        project_revision: 18,
         items: [logicalSubmodelPayload],
         next_cursor: null,
       });
     }
-    if (url === "/api/v1/tenants/7/models/18/logical/submodels/91") {
+    if (url === "/api/v1/tenants/7/projects/18/logical/submodels/91") {
       return jsonResponse(logicalSubmodelDetailPayload);
     }
-    if (url.startsWith("/api/v1/tenants/7/models/18/logical/attributes?")) {
+    if (url.startsWith("/api/v1/tenants/7/projects/18/logical/attributes?")) {
       return jsonResponse({
-        model_id: 18,
-        model_revision: 18,
+        project_id: 18,
+        project_revision: 18,
         items: [logicalAttributePayload],
         next_cursor: null,
       });
     }
-    if (url === "/api/v1/tenants/7/models/18/logical/attributes/81") {
+    if (url === "/api/v1/tenants/7/projects/18/logical/attributes/81") {
       return jsonResponse(logicalAttributeDetailPayload);
     }
-    if (url.startsWith("/api/v1/tenants/7/models/18/logical/relationships?")) {
+    if (url.startsWith("/api/v1/tenants/7/projects/18/logical/relationships?")) {
       return jsonResponse({
-        model_id: 18,
-        model_revision: 18,
+        project_id: 18,
+        project_revision: 18,
         items: [logicalRelationshipPayload],
         next_cursor: null,
       });
     }
-    if (url === "/api/v1/tenants/7/models/18/logical/relationships/101") {
+    if (url === "/api/v1/tenants/7/projects/18/logical/relationships/101") {
       return jsonResponse(logicalRelationshipDetailPayload);
     }
-    if (url === "/api/v1/tenants/7/models/18/input-scope?zone=bronze&page_size=200") {
+    if (url === "/api/v1/tenants/7/projects/18/input-scope?zone=bronze&page_size=200") {
       return jsonResponse({
-        model_id: 18,
-        model_revision: 18,
+        project_id: 18,
+        project_revision: 18,
         items: [scopeObjectPayload],
         next_cursor: null,
       });
@@ -251,10 +277,10 @@ function logicalFetchStub(options: {
     if (url === "/api/v1/config/agent-capabilities") {
       return jsonResponse(agentCapabilitiesPayload);
     }
-    if (url === "/api/v1/tenants/7/models/18/runs?workflow=logical&page_size=5") {
+    if (url === "/api/v1/tenants/7/projects/18/runs?workflow=logical&page_size=5") {
       return jsonResponse({ items: [], next_cursor: null });
     }
-    if (url === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST") {
+    if (url === "/api/v1/tenants/7/projects/18/runs" && init?.method === "POST") {
       return jsonResponse({
         created: true,
         workflow_run_id: 1050,
@@ -265,14 +291,14 @@ function logicalFetchStub(options: {
       }, 201);
     }
     if (
-      url === "/api/v1/tenants/7/models/18/logical/runs/1050/execute"
+      url === "/api/v1/tenants/7/projects/18/logical/runs/1050/execute"
       && init?.method === "POST"
     ) {
       return jsonResponse({
         changed: true,
         workflow_run_id: 1050,
         workflow_run_state: "running",
-        model_revision: 18,
+        project_revision: 18,
       }, 202);
     }
     return jsonResponse({ error: { code: "not_found" } }, 404);
@@ -299,7 +325,7 @@ const tenantHomePayload = {
     is_locked: true,
     owner_display_name: "Maaz",
     owned_by_current_principal: true,
-    purpose: "Model authoring",
+    purpose: "Project authoring",
     acquired_at: "2026-08-24T14:12:00Z",
     expires_at: "2026-08-24T16:12:00Z",
   },
@@ -307,13 +333,13 @@ const tenantHomePayload = {
   systems: [],
 };
 
-const modelPayload = {
-  model_id: 18,
+const projectPayload = {
+  project_id: 18,
   tenant_id: 7,
-  model_name: "Customer 360",
-  model_description: "Cross-system customer domain",
-  model_revision: 18,
-  model_input_scope_object_count: 25,
+  project_name: "Customer 360",
+  project_description: "Cross-system customer domain",
+  project_revision: 18,
+  project_input_scope_object_count: 25,
   logical_schemas: [], dimensional_schemas: [], silver_model_naming_instructions: null,
   silver_model_audit_columns_template: null,
   gold_model_naming_instructions: null,
@@ -343,7 +369,7 @@ const logicalEntityPayload = {
 
 const logicalEntityDetailPayload = {
   ...logicalEntityPayload,
-  logical_entity_definition: "A governed customer identity used by downstream models.",
+  logical_entity_definition: "A governed customer identity used by downstream projects.",
   logical_entity_type_detail: null,
   logical_entity_grain: "One row per recognized customer.",
   created_at: "2026-08-24T14:40:00Z",
@@ -382,21 +408,20 @@ const logicalEntityDetailPayload = {
     {
       logical_entity_source_mapping_id: 902,
       workflow_run_id: null,
-      support_source_type: "assertion",
+      support_source_type: "context_record",
       source_order: 2,
-      rationale: "The assertion confirms cross-system semantics.",
+      rationale: "The context confirms cross-system semantics.",
       status: "active",
       is_locked: true,
       created_at: "2026-08-24T14:46:00Z",
       updated_at: "2026-08-24T15:00:00Z",
-      assertion_record: {
-        modeling_assertion_record_id: 91,
-        modeling_assertion_record_key: "customer.identity.governed",
-        modeling_assertion_document_name: "Customer governance rules",
-        modeling_assertion_record_type: "identity_rule",
-        modeling_assertion_text: "Customer identity is governed across systems.",
-        modeling_assertion_confidence: "high",
-        modeling_assertion_record_status: "active",
+      context_record: {
+        context_record_id: "00000000-0000-4000-8000-000000000091",
+        context_group_name: "Customer governance rules",
+        context_type_name: "Business Requirements",
+        source_reference: null,
+        context_text: "Customer identity is governed across systems.",
+        status: "active",
       },
     },
   ],
@@ -507,7 +532,7 @@ const logicalRelationshipDetailPayload = {
 };
 
 const scopeObjectPayload = {
-  model_input_scope_id: 201,
+  project_input_scope_id: 201,
   object_id: 501,
   connection_id: 301,
   system_id: 401,
@@ -521,7 +546,7 @@ const scopeObjectPayload = {
   zone_code: "bronze",
   batch_attribute_name: "batch_id",
   attribute_count: 12,
-  is_model_input_eligible: true,
+  is_project_input_eligible: true,
   created_at: "2026-08-24T14:00:00Z",
   updated_at: "2026-08-24T14:00:00Z",
 };
@@ -550,7 +575,7 @@ const agentCapabilitiesPayload = {
 it.each([["Entities", "logical_entity", 71], ["Attributes", "logical_attribute", 81], ["Relationships", "logical_relationship", 101], ["Submodels", "logical_submodel", 91]] as const)("reviews selected %s through the governed endpoint", async (view, dataset, recordId) => {
   const { fetcher, commands } = withRecordReview(logicalFetchStub());
   render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
-    history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/logical"] }),
+    history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/logical"] }),
   })} />);
   const user = userEvent.setup();
   if (view === "Attributes") await user.click(await screen.findByRole("link", { name: "Open Logical Entity 71" }));
@@ -559,7 +584,7 @@ it.each([["Entities", "logical_entity", 71], ["Attributes", "logical_attribute",
   await user.click(selection);
   await user.click(screen.getByRole("button", { name: "Lock selected" }));
   const apply = await screen.findByRole("button", { name: "Apply this change" });
-  expect(commands[0]).toEqual({ dataset, record_ids: [recordId], action: "lock", expected_model_revision: 18 });
+  expect(commands[0]).toEqual({ dataset, record_ids: [recordId], action: "lock", expected_project_revision: 18 });
   await user.click(apply);
   expect(commands[1]).toEqual({ ...commands[0], expected_plan_digest: "c".repeat(64) });
 });

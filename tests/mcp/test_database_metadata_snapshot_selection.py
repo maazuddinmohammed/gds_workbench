@@ -57,7 +57,9 @@ async def test_selection_uses_source_tenant_ownership_and_relational_closure(
     encoded = selected.datasets
     build_root_documents(encoded)
     assert selected.tenant_code == seed.tenant_code
-    rows_by_dataset = {dataset.definition.name: _decode_rows(dataset) for dataset in encoded}
+    rows_by_dataset = {
+        dataset.definition.name: _decode_rows(dataset) for dataset in encoded
+    }
 
     assert list(rows_by_dataset) == [dataset.name for dataset in DATASETS]
     forbidden_columns = {"created_time", "created_by", "updated_time", "updated_by"}
@@ -67,8 +69,10 @@ async def test_selection_uses_source_tenant_ownership_and_relational_closure(
         for rows in rows_by_dataset.values()
         for row in rows
     )
-    assert len(rows_by_dataset["project"]) == 1
-    assert {row["tenant_code"] for row in rows_by_dataset["tenant"]} >= {seed.tenant_code}
+    assert len(rows_by_dataset["lane"]) == 1
+    assert {row["tenant_code"] for row in rows_by_dataset["tenant"]} >= {
+        seed.tenant_code
+    }
     assert len(rows_by_dataset["system"]) == 1
     assert len(rows_by_dataset["connection"]) == 2
     for dataset_name in (
@@ -115,7 +119,9 @@ async def test_selection_uses_source_tenant_ownership_and_relational_closure(
         seed.tenant_code,
         seed.global_tenant_code,
     }
-    assert {row["target_tenant_code"] for row in mapping_rows} == {seed.global_tenant_code}
+    assert {row["target_tenant_code"] for row in mapping_rows} == {
+        seed.global_tenant_code
+    }
     assert [row["is_active"] for row in mapping_rows].count(True) == 2
     assert [row["is_active"] for row in mapping_rows].count(False) == 2
     assert len(attribute_mapping_rows) == 2
@@ -140,7 +146,9 @@ async def test_selection_uses_source_tenant_ownership_and_relational_closure(
     assert rows_by_dataset["copy"][0]["is_active"] is False
     assert rows_by_dataset["process_group"][0]["tenant_code"] == seed.tenant_code
     assert rows_by_dataset["process_group"][0]["is_active"] is False
-    assert rows_by_dataset["process"][0]["object_tenant_code"] == seed.global_tenant_code
+    assert (
+        rows_by_dataset["process"][0]["object_tenant_code"] == seed.global_tenant_code
+    )
     assert rows_by_dataset["process"][0]["is_active"] is False
 
 
@@ -179,19 +187,19 @@ async def test_complete_database_snapshot_builds_uploads_and_cleans_archive(
 ) -> None:
     prefix = f"SNAPSHOT_EMPTY_{uuid4().hex[:12].upper()}"
     with postgres_database.connect_owner() as connection:
-        project = connection.execute(
+        lane = connection.execute(
             """
-            INSERT INTO core.project (project_code, project_name)
+            INSERT INTO core.lane (lane_code, lane_name)
             VALUES (%s, %s)
-            RETURNING project_id
+            RETURNING lane_id
             """,
-            (f"{prefix}_PROJECT", f"{prefix} Project"),
+            (f"{prefix}_PROJECT", f"{prefix} Lane"),
         ).fetchone()
-        assert project is not None
+        assert lane is not None
         tenant = connection.execute(
             """
             INSERT INTO core.tenant (
-                project_id,
+                lane_id,
                 tenant_code,
                 tenant_name,
                 tenant_catalog,
@@ -201,7 +209,7 @@ async def test_complete_database_snapshot_builds_uploads_and_cleans_archive(
             RETURNING tenant_id
             """,
             (
-                project["project_id"],
+                lane["lane_id"],
                 f"{prefix}_TENANT",
                 f"{prefix} Tenant",
                 f"{prefix.lower()}_catalog",
@@ -289,19 +297,19 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
         zone_code: _ensure_zone(connection, zone_code)
         for zone_code in ("source", "bronze", "silver", "gold")
     }
-    project = connection.execute(
+    lane = connection.execute(
         """
-        INSERT INTO core.project (project_code, project_name)
+        INSERT INTO core.lane (lane_code, lane_name)
         VALUES (%s, %s)
-        RETURNING project_id
+        RETURNING lane_id
         """,
-        (f"{prefix}_PROJECT", f"{prefix} Project"),
+        (f"{prefix}_PROJECT", f"{prefix} Lane"),
     ).fetchone()
-    assert project is not None
+    assert lane is not None
     requested_tenant = connection.execute(
         """
         INSERT INTO core.tenant (
-            project_id,
+            lane_id,
             tenant_code,
             tenant_name,
             tenant_catalog,
@@ -311,7 +319,7 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
         RETURNING tenant_id
         """,
         (
-            project["project_id"],
+            lane["lane_id"],
             f"{prefix}_TENANT",
             f"{prefix} Tenant",
             f"{prefix.lower()}_catalog",
@@ -321,7 +329,7 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
     global_tenant = connection.execute(
         """
         INSERT INTO core.tenant (
-            project_id,
+            lane_id,
             tenant_code,
             tenant_name,
             tenant_catalog,
@@ -332,7 +340,7 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
         RETURNING tenant_id
         """,
         (
-            project["project_id"],
+            lane["lane_id"],
             f"{prefix}_GLOBAL_TENANT",
             f"{prefix} Global Tenant",
             f"{prefix.lower()}_global_catalog",
@@ -500,19 +508,19 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
             True,
         ),
         (
-            "model_silver",
+            "project_silver",
             "silver",
             global_connection["connection_id"],
             requested_tenant["tenant_id"],
-            "model",
+            "project",
             True,
         ),
         (
-            "inactive_model_gold",
+            "inactive_project_gold",
             "gold",
             global_connection["connection_id"],
             requested_tenant["tenant_id"],
-            "inactive_model",
+            "inactive_project",
             True,
         ),
         (
@@ -574,7 +582,9 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
         """,
         (list(object_ids.values()),),
     ).fetchall()
-    attribute_id_by_object_id = {row["object_id"]: row["attribute_id"] for row in attribute_rows}
+    attribute_id_by_object_id = {
+        row["object_id"]: row["attribute_id"] for row in attribute_rows
+    }
     first_mapping = connection.execute(
         """
         INSERT INTO core.ingestion_object_mapping (
@@ -619,7 +629,7 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
         VALUES (%s, %s, FALSE)
         RETURNING ingestion_object_mapping_id
         """,
-        (object_ids["discovered_bronze"], object_ids["model_silver"]),
+        (object_ids["discovered_bronze"], object_ids["project_silver"]),
     ).fetchone()
     unrelated_mapping = connection.execute(
         """
@@ -630,7 +640,7 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
         VALUES (%s, %s)
         RETURNING ingestion_object_mapping_id
         """,
-        (object_ids["unrelated_bronze"], object_ids["inactive_model_gold"]),
+        (object_ids["unrelated_bronze"], object_ids["inactive_project_gold"]),
     ).fetchone()
     unassigned_branch_mapping = connection.execute(
         """
@@ -643,7 +653,11 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
         """,
         (object_ids["mapped_silver"], object_ids["unrelated_bronze"]),
     ).fetchone()
-    assert first_mapping is not None and second_mapping is not None and copy_mapping is not None
+    assert (
+        first_mapping is not None
+        and second_mapping is not None
+        and copy_mapping is not None
+    )
     assert inactive_unreferenced_mapping is not None and unrelated_mapping is not None
     assert unassigned_branch_mapping is not None
     connection.execute(
@@ -886,39 +900,39 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
         """,
         (
             global_connection["connection_id"],
-            object_ids["inactive_model_gold"],
+            object_ids["inactive_project_gold"],
             f"/{prefix.lower()}/other-process",
             "other.py",
             process_type["process_type_id"],
             other_process_group["process_group_id"],
         ),
     )
-    active_model = connection.execute(
+    active_project = connection.execute(
         """
-        INSERT INTO model.model (tenant_id, model_name)
+        INSERT INTO project.project (tenant_id, project_name)
         VALUES (%s, %s)
-        RETURNING model_id
+        RETURNING project_id
         """,
-        (requested_tenant["tenant_id"], f"{prefix} Active Model"),
+        (requested_tenant["tenant_id"], f"{prefix} Active Project"),
     ).fetchone()
-    inactive_model = connection.execute(
+    inactive_project = connection.execute(
         """
-        INSERT INTO model.model (tenant_id, model_name, is_active)
+        INSERT INTO project.project (tenant_id, project_name, is_active)
         VALUES (%s, %s, FALSE)
-        RETURNING model_id
+        RETURNING project_id
         """,
-        (requested_tenant["tenant_id"], f"{prefix} Inactive Model"),
+        (requested_tenant["tenant_id"], f"{prefix} Inactive Project"),
     ).fetchone()
-    assert active_model is not None and inactive_model is not None
+    assert active_project is not None and inactive_project is not None
     connection.execute(
         """
-        INSERT INTO model.model_input_scope (model_id, object_id)
+        INSERT INTO project.project_input_scope (project_id, object_id)
         VALUES (%s, %s), (%s, %s)
         """,
         (
-            active_model["model_id"],
+            active_project["project_id"],
             object_ids["mapped_bronze"],
-            inactive_model["model_id"],
+            inactive_project["project_id"],
             object_ids["discovered_bronze"],
         ),
     )
@@ -939,12 +953,12 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
             },
             "silver": {
                 object_names["mapped_silver"],
-                object_names["model_silver"],
+                object_names["project_silver"],
             },
             "gold": {
                 object_names["copy_gold"],
                 object_names["process_gold"],
-                object_names["inactive_model_gold"],
+                object_names["inactive_project_gold"],
             },
         },
         excluded_object_names={

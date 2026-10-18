@@ -1,34 +1,111 @@
-import { withRecordReview } from "../../test/modelRecordReview";
+import { withRecordReview } from "../../test/projectRecordReview";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryHistory } from "@tanstack/react-router";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createApiClient } from "../../api";
 import { WorkbenchApp, createWorkbenchRouter } from "../../app";
 import { validateSelectedSystemCodes } from "./ValidationRunDialog";
 import type { ValidationValidationGroup } from "./api";
 
+afterEach(() => vi.restoreAllMocks());
+
 describe("Validation journey", () => {
-  it("keeps the legacy Model picker bookmark usable", async () => {
+  it.each(["", "/groups/91"])("lets viewers export all layer and shared checks from %s without a Tenant Lock", async (path) => {
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:validations");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const clicked = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const base = validationFetchStub({ role: "viewer", hasLock: false });
+    const exports: unknown[] = [];
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input).endsWith("/validation/downloads/all.zip")) {
+        exports.push(JSON.parse(String(init?.body)));
+        return new Response("zip fixture", { headers: {
+          "content-type": "application/zip", "content-disposition": 'attachment; filename="validations.zip"',
+        } });
+      }
+      return base(input, init);
+    });
+    const user = userEvent.setup();
+    renderValidation(fetcher, `${path}?layer=dimensional`);
+    await screen.findByRole("table", { name: path ? "Order reconciliation Validation Checks" : "Validation Groups" });
+    if (!path) {
+      expect(screen.getByRole("button", { name: "Run Validation" })).toBeDisabled();
+      await user.click(screen.getByRole("button", { name: /^Filters/ }));
+      await user.selectOptions(screen.getByLabelText("Status"), "stale");
+    }
+    await user.click(screen.getByText("More", { selector: "summary" }));
+    const download = screen.getByRole("button", { name: "Export all validations" });
+    expect(download).toBeEnabled();
+    expect(download).toHaveAttribute("title", expect.stringContaining("shared groups, including stale checks, SQL and criteria; ignores table filters"));
+    await user.click(download);
+    await waitFor(() => expect(clicked).toHaveBeenCalledOnce());
+    expect(exports).toEqual([{ entity_type: "dimensional_entity", expected_project_revision: 18 }]);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:validations");
+  });
+
+  it("keeps export failures outside More and refreshes the revision before retry", async () => {
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:validations");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const clicked = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const base = validationFetchStub();
+    let revision = 18;
+    const exports: unknown[] = [];
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input) === "/api/v1/tenants/7/projects/18") return jsonResponse({ ...projectDetail, project_revision: revision });
+      if (String(input).endsWith("/validation/downloads/all.zip")) {
+        exports.push(JSON.parse(String(init?.body)));
+        if (exports.length === 1) {
+          revision = 19;
+          return jsonResponse({ error: { code: "project_revision_conflict" } }, 409);
+        }
+        return new Response("zip fixture", { headers: {
+          "content-type": "application/zip", "content-disposition": 'attachment; filename="validations.zip"',
+        } });
+      }
+      return base(input, init);
+    });
+    const user = userEvent.setup();
+    renderValidation(fetcher);
+    await screen.findByRole("table", { name: "Validation Groups" });
+    await user.click(screen.getByText("More", { selector: "summary" }));
+    await user.click(screen.getByRole("button", { name: "Export all validations" }));
+    const error = await screen.findByRole("alert");
+    await user.keyboard("{Escape}");
+    expect(error.closest("details")).toBeNull();
+    expect(error).toBeVisible();
+    expect(error).toHaveTextContent("The Project changed. Refresh, then retry the export.");
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    await screen.findByText("Revision 19");
+    await user.click(within(error).getByRole("button", { name: "Retry export" }));
+    await waitFor(() => expect(clicked).toHaveBeenCalledOnce());
+    expect(exports[1]).toEqual({ entity_type: "logical_entity", expected_project_revision: 19 });
+    expect(screen.queryByText("The Project changed. Refresh, then retry the export.")).not.toBeInTheDocument();
+    await user.click(within(screen.getByRole("navigation", { name: "Validation layer" })).getByRole("link", { name: "Dimensional" }));
+    await waitFor(() => expect(within(screen.getByRole("navigation", { name: "Validation layer" })).getByRole("link", { name: "Dimensional" })).toHaveAttribute("aria-current", "page"));
+    expect(screen.queryByRole("button", { name: "Retry export" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the legacy Project picker bookmark usable", async () => {
     const fetcher = validationFetchStub();
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/validation"] }),
     })} />);
 
-    const ledger = await screen.findByRole("table", { name: "Models for Validation" });
+    const ledger = await screen.findByRole("table", { name: "Projects for Validation" });
     expect(within(ledger).getByText("Customer 360")).toBeVisible();
     expect(within(ledger).getByText("Validation", { exact: true })).toBeVisible();
     expect(within(ledger).getByRole("link", { name: "Open Customer 360 Validation" })).toHaveAttribute(
       "href",
-      "/tenants/7/validation/models/18",
+      "/tenants/7/validation/projects/18",
     );
   });
 
   it("keeps the Group page and opens only SQL checks in an expandable inspector", async () => {
     const user = userEvent.setup();
-    const history = createMemoryHistory({ initialEntries: ["/tenants/7/validation/models/18?layer=dimensional"] });
+    const history = createMemoryHistory({ initialEntries: ["/tenants/7/validation/projects/18?layer=dimensional"] });
     render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(validationFetchStub()), history })} />);
     const groups = await screen.findByRole("table", { name: "Validation Groups" });
     expect(within(groups).getAllByRole("columnheader").slice(1, 5).map((cell) => cell.textContent)).toEqual(["System", "Group", "Group description", "Checks"]);
@@ -37,14 +114,14 @@ describe("Validation journey", () => {
     groupLink.focus();
     await user.keyboard("{Enter}");
     const checks = await screen.findByRole("table", { name: "Order reconciliation Validation Checks" });
-    expect(history.location.pathname).toBe("/tenants/7/validation/models/18/groups/91");
+    expect(history.location.pathname).toBe("/tenants/7/validation/projects/18/groups/91");
     expect(screen.queryByRole("complementary", { name: "Validation details" })).not.toBeInTheDocument();
     expect(within(checks).getAllByRole("columnheader").slice(1, 3).map((cell) => cell.textContent)).toEqual(["Check", "Description"]);
     const trigger = within(checks).getByRole("button", { name: "Show details for Source and target counts match" });
     await user.click(trigger);
     const panel = screen.getByRole("complementary", { name: "Validation details" });
     expect(checks).toBeVisible();
-    expect(history.location.pathname).toBe("/tenants/7/validation/models/18/groups/91");
+    expect(history.location.pathname).toBe("/tenants/7/validation/projects/18/groups/91");
     expect(history.location.search).toBe("?layer=dimensional");
     const detail = within(panel).getByRole("region", { name: "Source and target counts match details" });
     expect(detail).toHaveTextContent("Pass whenQuery A’s result equals the result of Query B.");
@@ -66,7 +143,7 @@ describe("Validation journey", () => {
   });
 
   it.each([
-    ["/groups/999", "This Validation Group is not available in this Model."],
+    ["/groups/999", "This Validation Group is not available in this Project."],
     ["/groups/91/checks/999", "This Validation Check is not available in this Group."],
     ["/groups/92/checks/301", "This Validation Check is not available in this Group."],
   ])("keeps missing or unrelated detail routes inside their scope (%s)", async (path, message) => {
@@ -131,7 +208,7 @@ describe("Validation journey", () => {
     const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: [`/tenants/7/validation/models/18?layer=${layer}`] }),
+      history: createMemoryHistory({ initialEntries: [`/tenants/7/validation/projects/18?layer=${layer}`] }),
     })} />);
 
     const runButton = await screen.findByRole("button", { name: "Run Validation" });
@@ -151,11 +228,11 @@ describe("Validation journey", () => {
       "Validation run 2251 started. Refresh runs to review the draft, then Apply the validated draft.",
     )).toBeVisible();
     const create = fetcher.mock.calls.find(([input, init]) => (
-      String(input) === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST"
+      String(input) === "/api/v1/tenants/7/projects/18/runs" && init?.method === "POST"
     ));
     expect(JSON.parse(String(create?.[1]?.body))).toEqual({
-      expected_model_revision: 18,
-      model_workflow: "validation",
+      expected_project_revision: 18,
+      project_workflow: "validation",
       workflow_execution_mode: null,
       selected_object_ids: [],
       selected_system_codes: ["CRM"],
@@ -172,10 +249,10 @@ describe("Validation journey", () => {
       prompt_overrides: {},
     });
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/validation/runs/2251/execute",
+      "/api/v1/tenants/7/projects/18/validation/runs/2251/execute",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ expected_model_revision: 18 }),
+        body: JSON.stringify({ expected_project_revision: 18 }),
       }),
     );
   });
@@ -184,7 +261,7 @@ describe("Validation journey", () => {
     const success = validationFetchStub();
     let attempts = 0;
     const fetcher = vi.fn<typeof fetch>(async (input, init) => {
-      if (String(input) === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST" && ++attempts === 1) {
+      if (String(input) === "/api/v1/tenants/7/projects/18/runs" && init?.method === "POST" && ++attempts === 1) {
         if (failure === "network") throw new TypeError("Synthetic network failure");
         return jsonResponse({ error: { code: "unavailable" } }, 503);
       }
@@ -193,7 +270,7 @@ describe("Validation journey", () => {
     const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/validation/models/18"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/validation/projects/18"] }),
     })} />);
     await screen.findByRole("button", { name: "Run Validation" });
     await waitFor(() => expect(screen.getByRole("button", { name: "Run Validation" })).toBeEnabled());
@@ -211,7 +288,7 @@ describe("Validation journey", () => {
     await user.click(submit);
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     const creates = fetcher.mock.calls.filter(([input, init]) =>
-      String(input) === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST");
+      String(input) === "/api/v1/tenants/7/projects/18/runs" && init?.method === "POST");
     expect(creates).toHaveLength(2);
     expect(creates[1]?.[1]?.body).toBe(creates[0]?.[1]?.body);
     const firstKey = new Headers(creates[0]?.[1]?.headers).get("Idempotency-Key");
@@ -219,7 +296,7 @@ describe("Validation journey", () => {
     expect(new Headers(creates[1]?.[1]?.headers).get("Idempotency-Key")).toBe(firstKey);
   });
 
-  it("uses tool-supported model and reasoning profiles while keeping the public mode unset", async () => {
+  it("uses tool-supported project and reasoning profiles while keeping the public mode unset", async () => {
     const success = validationFetchStub();
     const fetcher = vi.fn<typeof fetch>(async (input, init) => {
       if (String(input) === "/api/v1/config/agent-capabilities") return jsonResponse({
@@ -249,7 +326,7 @@ describe("Validation journey", () => {
     await user.click(within(dialog).getByRole("button", { name: "Create and start Validation" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     const create = fetcher.mock.calls.find(([input, init]) =>
-      String(input) === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST");
+      String(input) === "/api/v1/tenants/7/projects/18/runs" && init?.method === "POST");
     expect(JSON.parse(String(create?.[1]?.body))).toMatchObject({
       workflow_execution_mode: null, selected_system_codes: ["CRM"], agent: {
         sdk_code: "openai_agents_sdk", provider_code: "microsoft_foundry",
@@ -262,7 +339,7 @@ describe("Validation journey", () => {
     const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(validationFetchStub()),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/validation/models/18"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/validation/projects/18"] }),
     })} />);
     const runButton = await screen.findByRole("button", { name: "Run Validation" });
     await user.click(runButton);
@@ -282,7 +359,7 @@ describe("Validation journey", () => {
   it("keeps empty, denied, error, and revision-drift states explicit", async () => {
     const empty = renderValidation(validationFetchStub({ empty: true }));
     expect(await screen.findByText(
-      "No Validation Groups are applied to this Model. Run Validation to author the first draft.",
+      "No Validation Groups are applied to this Project. Run Validation to author the first draft.",
     )).toBeVisible();
     expect(screen.getByRole("button", { name: "Run Validation" })).toBeDisabled();
     empty.unmount();
@@ -292,12 +369,12 @@ describe("Validation journey", () => {
     expect(screen.getByText("You do not have permission to load eligible Validation Systems.")).toBeVisible();
     denied.unmount();
 
-    const drift = renderValidation(validationFetchStub({ modelRevision: 19 }));
+    const drift = renderValidation(validationFetchStub({ projectRevision: 19 }));
     expect(await screen.findByText(
-      "The Model changed while the Validation ledger was loading. Refresh before authoring Validation.",
+      "The Project changed while the Validation ledger was loading. Refresh before authoring Validation.",
     )).toBeVisible();
     expect(screen.getByText(
-      "The Model changed while eligible Validation Systems were loading. Refresh before starting a run.",
+      "The Project changed while eligible Validation Systems were loading. Refresh before starting a run.",
     )).toBeVisible();
     drift.unmount();
 
@@ -321,7 +398,7 @@ describe("Validation journey", () => {
 function renderValidation(fetcher: ReturnType<typeof vi.fn<typeof fetch>>, path = "") {
   return render(<WorkbenchApp router={createWorkbenchRouter({
     api: createApiClient(fetcher),
-    history: createMemoryHistory({ initialEntries: [`/tenants/7/validation/models/18${path}`] }),
+    history: createMemoryHistory({ initialEntries: [`/tenants/7/validation/projects/18${path}`] }),
   })} />);
 }
 
@@ -330,39 +407,45 @@ function validationFetchStub(options: {
   empty?: boolean;
   denied?: boolean;
   error?: boolean;
-  modelRevision?: number;
+  projectRevision?: number;
+  hasLock?: boolean;
+  role?: string;
 } = {}) {
   return vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input);
-    if (url === "/api/v1/tenants/7/home") return jsonResponse(tenantHome);
-    if (url === "/api/v1/tenants/7/models?status=active&page_size=200") {
-      return jsonResponse({ items: [modelLedger], next_cursor: null });
+    if (url === "/api/v1/tenants/7/home") return jsonResponse({
+      ...tenantHome,
+      tenant: { ...tenantHome.tenant, effective_role: options.role ?? "tenant_admin" },
+      lock: { ...tenantHome.lock, is_locked: options.hasLock ?? true, owned_by_current_principal: options.hasLock ?? true },
+    });
+    if (url === "/api/v1/tenants/7/projects?status=active&page_size=200") {
+      return jsonResponse({ items: [projectLedger], next_cursor: null });
     }
-    if (url === "/api/v1/tenants/7/models/18") return jsonResponse(modelDetail);
-    if (url.startsWith("/api/v1/tenants/7/models/18/validation/systems")) {
+    if (url === "/api/v1/tenants/7/projects/18") return jsonResponse(projectDetail);
+    if (url.startsWith("/api/v1/tenants/7/projects/18/validation/systems")) {
       if (options.denied) return jsonResponse({ error: { code: "authorization_denied" } }, 403);
       if (options.error) return new Response("secret physical row", { status: 503 });
       return jsonResponse({
-        model_id: 18,
-        model_revision: options.modelRevision ?? 18,
+        project_id: 18,
+        project_revision: options.projectRevision ?? 18,
         items: options.empty ? [] : eligibleSystems,
         is_truncated: false,
       });
     }
-    if (url.startsWith("/api/v1/tenants/7/models/18/validation/ledger")) {
+    if (url.startsWith("/api/v1/tenants/7/projects/18/validation/ledger")) {
       if (options.denied) return jsonResponse({ error: { code: "authorization_denied" } }, 403);
       if (options.error) return new Response("secret physical row", { status: 503 });
       return jsonResponse({
-        model_id: 18,
-        model_revision: options.modelRevision ?? 18,
+        project_id: 18,
+        project_revision: options.projectRevision ?? 18,
         groups: options.empty ? [] : options.groups ?? validationGroups,
       });
     }
     if (url === "/api/v1/config/agent-capabilities") return jsonResponse(agentCapabilities);
-    if (url === "/api/v1/tenants/7/models/18/runs?workflow=validation&page_size=5") {
+    if (url === "/api/v1/tenants/7/projects/18/runs?workflow=validation&page_size=5") {
       return jsonResponse({ items: [], next_cursor: null });
     }
-    if (url === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST") {
+    if (url === "/api/v1/tenants/7/projects/18/runs" && init?.method === "POST") {
       return jsonResponse({
         created: true,
         workflow_run_id: 2251,
@@ -372,18 +455,18 @@ function validationFetchStub(options: {
         created_at: "2026-08-31T10:00:00Z",
       }, 201);
     }
-    if (url === "/api/v1/tenants/7/models/18/validation/runs/2251/execute") {
+    if (url === "/api/v1/tenants/7/projects/18/validation/runs/2251/execute") {
       return jsonResponse({
         changed: true,
         workflow_run_id: 2251,
         workflow_run_state: "running",
-        model_revision: 18,
+        project_revision: 18,
       }, 202);
     }
-    if (url === "/api/v1/tenants/7/models/18/runs/2251") {
+    if (url === "/api/v1/tenants/7/projects/18/runs/2251") {
       return jsonResponse(runningRun);
     }
-    if (url === "/api/v1/tenants/7/models/18/runs/2251/events?after_sequence=0&page_size=200") {
+    if (url === "/api/v1/tenants/7/projects/18/runs/2251/events?after_sequence=0&page_size=200") {
       return jsonResponse({ items: [], next_after_sequence: 0 });
     }
     return new Response(null, { status: 404 });
@@ -418,19 +501,19 @@ const tenantHome = {
   systems: [],
 };
 
-const modelLedger = {
-  model_id: 18,
-  model_name: "Customer 360",
-  model_description: "Cross-system customer domain",
-  model_revision: 18,
-  model_input_scope_object_count: 25,
+const projectLedger = {
+  project_id: 18,
+  project_name: "Customer 360",
+  project_description: "Cross-system customer domain",
+  project_revision: 18,
+  project_input_scope_object_count: 25,
   latest_workflow: "validation",
   latest_run_status: "completed",
   updated_at: "2026-08-31T09:00:00Z",
 };
 
-const modelDetail = {
-  ...modelLedger,
+const projectDetail = {
+  ...projectLedger,
   tenant_id: 7,
   logical_schemas: [], dimensional_schemas: [], silver_model_naming_instructions: null,
   silver_model_audit_columns_template: null,
@@ -516,7 +599,7 @@ const agentCapabilities = {
 
 const runningRun = {
   workflow_run_id: 2251,
-  model_workflow: "validation",
+  project_workflow: "validation",
   workflow_execution_mode: "one_shot",
   modeled_entity_type: null,
   selected_scope_count: 1,
@@ -535,8 +618,8 @@ const runningRun = {
   validation_retry_count: 1,
   failure_code: null,
   failure_message: null,
-  model_change_set_id: null,
-  model_change_set_status: null,
+  project_change_set_id: null,
+  project_change_set_status: null,
   draft_revision: null,
   candidate_digest: null,
   validated_at: null,
@@ -547,14 +630,14 @@ it.each([["Groups", "validation_group", 91], ["Checks", "validation_check", 301]
   "reviews selected Validation %s", async (kind, dataset, id) => {
     const { fetcher, commands } = withRecordReview(validationFetchStub());
     render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/validation/models/18"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/validation/projects/18"] }),
     })} />);
     const user = userEvent.setup();
     if (kind === "Checks") await user.click(await screen.findByRole("link", { name: "Show details for Order reconciliation" }));
     await user.click(await screen.findByRole("checkbox", { name: `Select Validation ${kind === "Groups" ? "Group" : "Check"} ${id}` }));
     await user.click(screen.getByRole("button", { name: "Lock selected" }));
     await user.click(await screen.findByRole("button", { name: "Apply this change" }));
-    expect(commands[0]).toEqual({ dataset, record_ids: [id], action: "lock", expected_model_revision: 18 });
+    expect(commands[0]).toEqual({ dataset, record_ids: [id], action: "lock", expected_project_revision: 18 });
     expect(commands[1]?.expected_plan_digest).toBe("c".repeat(64));
   },
 );

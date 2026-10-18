@@ -9,9 +9,6 @@ from gds_etl_workbench.application.mapping_context import (
     OPAQUE_CONTEXT_DOCUMENT_FIELDS,
     without_internal_fields,
 )
-from jsonschema import Draft202012Validator
-from tests.web_backend.mapping_fixtures import mapping_preparation
-
 from gds_workbench_api.features.mapping.execution_context import (
     build_mapping_execution_context,
 )
@@ -22,6 +19,9 @@ from gds_workbench_api.features.workflows.authoring.mapping_input_schemas import
     _project_schema,
     mapping_input_schemas,
 )
+from jsonschema import Draft202012Validator
+
+from tests.web_backend.mapping_fixtures import mapping_preparation
 
 
 def test_schema_and_payload_share_exact_metadata_filter_and_opaque_boundaries() -> None:

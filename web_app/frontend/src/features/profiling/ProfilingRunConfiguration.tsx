@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { useForm, useStore } from "@tanstack/react-form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
-import type { ModelDetail } from "../models/api";
+import type { ProjectDetail } from "../projects/api";
 import { SelectAllCheckbox } from "../../shared/ui";
 import { loadWorkflowScope } from "../workflows/api";
 import { profilingQueryKeys, type ProfilingApi } from "./api";
@@ -11,20 +11,20 @@ import { DrawerHeader } from "./shared";
 export function ProfilingRunConfiguration({
   api,
   tenantId,
-  model,
+  project,
   onClose,
   onCreated,
 }: {
   api: ProfilingApi;
   tenantId: number;
-  model: ModelDetail;
+  project: ProjectDetail;
   onClose: () => void;
   onCreated: (workflowRunId: number) => Promise<void>;
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
   const scopeQuery = useQuery({
-    queryKey: profilingQueryKeys.scope(tenantId, model.model_id),
-    queryFn: () => loadWorkflowScope(api, tenantId, model.model_id, "bronze"),
+    queryKey: profilingQueryKeys.scope(tenantId, project.project_id),
+    queryFn: () => loadWorkflowScope(api, tenantId, project.project_id, "bronze"),
   });
   const createMutation = useMutation({
     mutationFn: ({
@@ -35,10 +35,10 @@ export function ProfilingRunConfiguration({
       requestedBatchId: string | null;
     }) => api.createProfilingRun(
       tenantId,
-      model.model_id,
+      project.project_id,
       {
-        expected_model_revision: model.model_revision,
-        model_workflow: "profiling",
+        expected_project_revision: project.project_revision,
+        project_workflow: "profiling",
         selected_object_ids: objectIds,
         requested_batch_id: requestedBatchId,
       },
@@ -70,7 +70,7 @@ export function ProfilingRunConfiguration({
     : (scopeQuery.data?.items.filter((item) => selectedObjectIds.includes(item.object_id)) ?? []);
   const selectedSystemIds = new Set(effectiveObjects.map((item) => item.system_id));
   const batchIsIncoherent = Boolean(requestedBatchId.trim()) && selectedSystemIds.size > 1;
-  const revisionChanged = scopeQuery.data && scopeQuery.data.modelRevision !== model.model_revision;
+  const revisionChanged = scopeQuery.data && scopeQuery.data.projectRevision !== project.project_revision;
 
   useEffect(() => closeButton.current?.focus(), []);
 
@@ -214,7 +214,7 @@ export function ProfilingRunConfiguration({
           ) : null}
           {revisionChanged ? (
             <p className="inline-error" role="alert">
-              The Model changed. Close this dialog and refresh before creating the run.
+              The Project changed. Close this dialog and refresh before creating the run.
             </p>
           ) : null}
           {createMutation.isError ? (

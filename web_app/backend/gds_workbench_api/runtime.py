@@ -21,9 +21,9 @@ from gds_workbench_api.capabilities import (
 from gds_workbench_api.configuration import RuntimeSettings
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.analysis import DatabaseAnalysisReviewService
-from gds_workbench_api.features.assertions import DatabaseAssertionsService
 from gds_workbench_api.features.code_generation import DatabaseCodeGenerationService
 from gds_workbench_api.features.conceptual import DatabaseConceptualService
+from gds_workbench_api.features.context import DatabaseContextService
 from gds_workbench_api.features.dimensional import DatabaseDimensionalService
 from gds_workbench_api.features.logical import DatabaseLogicalService
 from gds_workbench_api.features.mapping import DatabaseMappingReviewService
@@ -39,15 +39,15 @@ from gds_workbench_api.features.metadata_enrichment.read_service import (
     DatabaseMetadataEnrichmentReadService,
 )
 from gds_workbench_api.features.metadata_enrichment.review import DatabaseEnrichmentReviewService
-from gds_workbench_api.features.model_change_sets.service import DatabaseModelChangeSetService
-from gds_workbench_api.features.model_input_scope import DatabaseModelInputScopeService
-from gds_workbench_api.features.model_targets.service import DatabaseModelTargetsService
-from gds_workbench_api.features.models import (
-    DatabaseModelCommandService,
-    DatabaseModelService,
-)
 from gds_workbench_api.features.output_templates import DatabaseOutputTemplateService
 from gds_workbench_api.features.profiling import DatabaseProfilingReviewService
+from gds_workbench_api.features.project_change_sets.service import DatabaseProjectChangeSetService
+from gds_workbench_api.features.project_input_scope import DatabaseProjectInputScopeService
+from gds_workbench_api.features.project_targets.service import DatabaseProjectTargetsService
+from gds_workbench_api.features.projects import (
+    DatabaseProjectCommandService,
+    DatabaseProjectService,
+)
 from gds_workbench_api.features.prompts import DatabasePromptService
 from gds_workbench_api.features.session import DatabaseSessionService
 from gds_workbench_api.features.tenant_locks import DatabaseTenantLockService
@@ -153,17 +153,17 @@ def create_runtime_app(
             authorizer=authorizer,
             cursor_signing_key=runtime_settings.cursor_signing_key,
         ),
-        model_service=DatabaseModelService(
+        project_service=DatabaseProjectService(
             database=runtime_database,
             authorizer=authorizer,
             cursor_signing_key=runtime_settings.cursor_signing_key,
         ),
-        model_command_service=DatabaseModelCommandService(
+        project_command_service=DatabaseProjectCommandService(
             database=runtime_database,
             authorizer=authorizer,
             agent_capability_registry=agent_capability_registry,
         ),
-        model_change_set_service=DatabaseModelChangeSetService(
+        project_change_set_service=DatabaseProjectChangeSetService(
             database=runtime_database,
             authorizer=authorizer,
         ),
@@ -171,7 +171,7 @@ def create_runtime_app(
             database=runtime_database,
             authorizer=authorizer,
         ),
-        model_input_scope_service=DatabaseModelInputScopeService(
+        project_input_scope_service=DatabaseProjectInputScopeService(
             database=runtime_database,
             authorizer=authorizer,
             cursor_signing_key=runtime_settings.cursor_signing_key,
@@ -215,7 +215,7 @@ def create_runtime_app(
         ),
         analysis_inference_workflow_service=workflow_services.analysis_inference,
         analysis_validation_workflow_service=workflow_services.analysis_validation,
-        assertions_service=DatabaseAssertionsService(
+        context_service=DatabaseContextService(
             database=runtime_database,
             authorizer=authorizer,
             cursor_signing_key=runtime_settings.cursor_signing_key,
@@ -226,7 +226,7 @@ def create_runtime_app(
             cursor_signing_key=runtime_settings.cursor_signing_key,
         ),
         conceptual_workflow_service=workflow_services.conceptual,
-        model_targets_service=DatabaseModelTargetsService(
+        project_targets_service=DatabaseProjectTargetsService(
             database=runtime_database, authorizer=authorizer
         ),
         logical_service=DatabaseLogicalService(

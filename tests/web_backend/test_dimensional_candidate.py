@@ -11,7 +11,7 @@ from gds_etl_workbench.domain.modeling_records import (
     LogicalAttributeKey,
     LogicalEntityKey,
 )
-from gds_etl_workbench.domain.snapshots.model import DimensionalSection
+from gds_etl_workbench.domain.snapshots.project import DimensionalSection
 from gds_workbench_api.features.dimensional.candidate import (
     DimensionalCandidateValidator,
 )
@@ -19,12 +19,13 @@ from pydantic import JsonValue
 
 
 def _object(name: str = "dim_customer") -> LogicalEntityKey:
-    return LogicalEntityKey(logical_entity_schema_name="silver_nwa", logical_entity_name=name)
+    return LogicalEntityKey(
+        logical_entity_schema_name="silver_nwa", logical_entity_name=name
+    )
 
 
 def _attribute(name: str = "customer_id") -> LogicalAttributeKey:
     return LogicalAttributeKey(**_object().model_dump(), logical_attribute_name=name)
-
 
 
 def _candidate() -> dict[str, object]:
@@ -39,7 +40,8 @@ def _candidate() -> dict[str, object]:
         ],
         "entities": [
             {
-                "dimensional_entity_schema_name": "gold", "dimensional_entity_name": "Customer Dimension",
+                "dimensional_entity_schema_name": "gold",
+                "dimensional_entity_name": "Customer Dimension",
                 "dimensional_entity_definition": "One customer.",
                 "dimensional_entity_type": "dimension",
                 "dimensional_fact_type": None,
@@ -70,7 +72,8 @@ def _candidate() -> dict[str, object]:
         ],
         "attributes": [
             {
-                "dimensional_entity_schema_name": "gold", "dimensional_entity_name": "Customer Dimension",
+                "dimensional_entity_schema_name": "gold",
+                "dimensional_entity_name": "Customer Dimension",
                 "dimensional_attribute_name": "Customer ID",
                 "dimensional_attribute_definition": "Customer identifier.",
                 "dimensional_attribute_data_type": "bigint",
@@ -90,7 +93,9 @@ def _candidate() -> dict[str, object]:
                 "sources": [
                     {
                         "support_source_type": "logical_attribute",
-                        "source_logical_attribute": _attribute().model_dump(mode="json"),
+                        "source_logical_attribute": _attribute().model_dump(
+                            mode="json"
+                        ),
                         "source_order": 1,
                         "rationale": "Silver business key.",
                         "status": "active",
@@ -128,12 +133,12 @@ def _applied(candidate: dict[str, object] | None = None) -> DimensionalSection:
 def _validator(
     *,
     applied: DimensionalSection | None = None,
-    assertion_record_keys: tuple[str, ...] = (),
+    context_record_ids: tuple[str, ...] = (),
 ) -> DimensionalCandidateValidator:
     return DimensionalCandidateValidator(
         selected_entity_keys=(_object(),),
         selected_attribute_keys=(_attribute(),),
-        assertion_record_keys=assertion_record_keys,
+        context_record_ids=context_record_ids,
         applied=applied,
     )
 
@@ -158,36 +163,48 @@ async def test_valid_candidate_normalizes_to_exact_dimensional_changes() -> None
 
 async def test_dimensional_coverage_rejects_ignored_selected_logical_entities() -> None:
     validator = DimensionalCandidateValidator(
-        selected_entity_keys=(_object(), *(_object(f"entity_{i}") for i in range(1, 27))),
-        selected_attribute_keys=(_attribute(),), assertion_record_keys=(), applied=None,
+        selected_entity_keys=(
+            _object(),
+            *(_object(f"entity_{i}") for i in range(1, 27)),
+        ),
+        selected_attribute_keys=(_attribute(),),
+        context_record_ids=(),
+        applied=None,
     )
     issues = validator.validate_coverage(cast(JsonValue, _candidate()))
     assert len(issues) == 1
     assert issues[0].code == "candidate.entity_coverage_incomplete"
     assert "26 of 27" in issues[0].message
-    assert _validator(applied=_applied()).validate_coverage(cast(JsonValue, _candidate())) == ()
+    assert (
+        _validator(applied=_applied()).validate_coverage(cast(JsonValue, _candidate()))
+        == ()
+    )
 
 
 async def test_candidate_rejects_silver_evidence_outside_frozen_selection() -> None:
     candidate = _candidate()
     entity = _first_record(candidate, "entities")
     source = cast(dict[str, object], cast(list[object], entity["sources"])[0])
-    source["source_logical_entity"] = _object("unselected_silver").model_dump(mode="json")
+    source["source_logical_entity"] = _object("unselected_silver").model_dump(
+        mode="json"
+    )
 
     issues = (await _validator().validate(cast(JsonValue, candidate))).issues
 
     assert {issue.code for issue in issues} == {"candidate.source_outside_selection"}
 
 
-async def test_candidate_rejects_assertion_evidence_outside_frozen_context() -> None:
+async def test_candidate_rejects_context_evidence_outside_frozen_context() -> None:
     candidate = _candidate()
     entity = _first_record(candidate, "entities")
     entity["sources"] = [
         {
-            "support_source_type": "assertion",
-            "assertion_record": {"modeling_assertion_record_key": "assertion.customer"},
+            "support_source_type": "context_record",
+            "context_record": {
+                "context_record_id": "00000000-0000-4000-8000-000000000098"
+            },
             "source_order": 1,
-            "rationale": "Business assertion.",
+            "rationale": "Business Context record.",
             "status": "active",
             "is_locked": False,
             "source_role": "business_context",
@@ -196,10 +213,12 @@ async def test_candidate_rejects_assertion_evidence_outside_frozen_context() -> 
     attribute = _first_record(candidate, "attributes")
     attribute["sources"] = [
         {
-            "support_source_type": "assertion",
-            "assertion_record": {"modeling_assertion_record_key": "assertion.customer_key"},
+            "support_source_type": "context_record",
+            "context_record": {
+                "context_record_id": "00000000-0000-4000-8000-000000000099"
+            },
             "source_order": 1,
-            "rationale": "Key assertion.",
+            "rationale": "Key Context record.",
             "status": "active",
             "is_locked": False,
         }
@@ -207,7 +226,7 @@ async def test_candidate_rejects_assertion_evidence_outside_frozen_context() -> 
 
     issues = (await _validator().validate(cast(JsonValue, candidate))).issues
 
-    assert [issue.code for issue in issues].count("candidate.assertion_unavailable") == 2
+    assert [issue.code for issue in issues].count("candidate.context_unavailable") == 2
 
 
 async def test_candidate_requires_complete_future_references() -> None:
@@ -221,9 +240,11 @@ async def test_candidate_requires_complete_future_references() -> None:
         {
             "dimensional_relationship_name": "Missing relationship",
             "dimensional_relationship_definition": "Missing endpoint.",
-            "from_dimensional_entity_schema_name": "gold", "from_dimensional_entity_name": "Customer Dimension",
+            "from_dimensional_entity_schema_name": "gold",
+            "from_dimensional_entity_name": "Customer Dimension",
             "from_dimensional_attribute_name": "Customer ID",
-            "to_dimensional_entity_schema_name": "gold", "to_dimensional_entity_name": "Missing Dimension",
+            "to_dimensional_entity_schema_name": "gold",
+            "to_dimensional_entity_name": "Missing Dimension",
             "to_dimensional_attribute_name": "Missing ID",
             "dimensional_relationship_kind": "foreign_key",
             "dimensional_relationship_cardinality": "many_to_one",
@@ -277,18 +298,28 @@ async def test_candidate_schema_forbids_agent_lock_authority() -> None:
 
 async def test_candidate_rejects_changes_to_applied_main_and_nested_locks() -> None:
     applied = _applied()
-    locked_source = applied.entities[0].sources[0].model_copy(update={"is_locked": True})
+    locked_source = (
+        applied.entities[0].sources[0].model_copy(update={"is_locked": True})
+    )
     entity = applied.entities[0].model_copy(update={"sources": (locked_source,)})
-    attribute = applied.attributes[0].model_copy(update={"dimensional_attribute_is_locked": True})
-    applied = applied.model_copy(update={"entities": (entity,), "attributes": (attribute,)})
+    attribute = applied.attributes[0].model_copy(
+        update={"dimensional_attribute_is_locked": True}
+    )
+    applied = applied.model_copy(
+        update={"entities": (entity,), "attributes": (attribute,)}
+    )
     candidate = _candidate()
     candidate_entity = _first_record(candidate, "entities")
     source = cast(dict[str, object], cast(list[object], candidate_entity["sources"])[0])
     source["rationale"] = "Agent changed locked lineage."
     candidate_attribute = _first_record(candidate, "attributes")
-    candidate_attribute["dimensional_attribute_definition"] = "Agent changed locked row."
+    candidate_attribute["dimensional_attribute_definition"] = (
+        "Agent changed locked row."
+    )
 
-    issues = (await _validator(applied=applied).validate(cast(JsonValue, candidate))).issues
+    issues = (
+        await _validator(applied=applied).validate(cast(JsonValue, candidate))
+    ).issues
 
     assert [issue.code for issue in issues].count("candidate.record_locked") == 2
 
@@ -314,4 +345,6 @@ async def test_candidate_forbids_all_agent_authored_gold_policy_columns() -> Non
 
     issues = (await _validator().validate(cast(JsonValue, candidate))).issues
 
-    assert [issue.code for issue in issues].count("candidate.policy_column_forbidden") == 4
+    assert [issue.code for issue in issues].count(
+        "candidate.policy_column_forbidden"
+    ) == 4

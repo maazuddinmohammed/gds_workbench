@@ -83,8 +83,8 @@ def context():
 def page(value, **options):
     return mapping_context_page(
         context=value,
-        model_id=1,
-        model_revision=3,
+        project_id=1,
+        project_revision=3,
         entity_type="logical_entity",
         entity_name="Customer",
         entity_schema_name="silver",

@@ -118,13 +118,17 @@ async def test_real_code_tool_conversation_preserves_later_rejection_in_run(
         if sends > 5:
             return httpx2.Response(
                 400,
-                json={"error": {"code": "content_filter", "message": "private-message"}},
+                json={
+                    "error": {"code": "content_filter", "message": "private-message"}
+                },
             )
         name = body["tools"][sends - 1]["name"]
         tool_names.append(name)
         return httpx2.Response(
             200,
-            json=_responses_response(None, tool=True, tool_name=name, call_id=f"call_{sends}"),
+            json=_responses_response(
+                None, tool=True, tool_name=name, call_id=f"call_{sends}"
+            ),
         )
 
     router = _router(monkeypatch, None, handler)
@@ -134,9 +138,9 @@ async def test_real_code_tool_conversation_preserves_later_rejection_in_run(
             await service.execute_started(
                 code._principal(),
                 tenant_id=7,
-                model_id=18,
+                project_id=18,
                 workflow_run_id=1048,
-                expected_model_revision=7,
+                expected_project_revision=7,
                 workflow_run_claim_token=code._CLAIM_TOKEN,
             )
     finally:

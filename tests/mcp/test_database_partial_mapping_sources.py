@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Literal
 import pytest
 from psycopg import sql
 
-from tests.mcp.test_database_model_eligibility import (
+from tests.mcp.test_database_project_eligibility import (
     _required_row,
     _seed_demo_if_needed,
 )
@@ -41,11 +41,11 @@ def test_partial_mapping_is_not_an_executable_modeled_source(
                 "SELECT system_id FROM core.system WHERE system_code = 'DEMO_CUSTOMER_SYSTEM'"
             ).fetchone()
         )
-        model = _required_row(
+        project = _required_row(
             connection.execute(
-                """INSERT INTO model.model (tenant_id,model_name,logical_schemas,dimensional_schemas)
+                """INSERT INTO project.project (tenant_id,project_name,logical_schemas,dimensional_schemas)
                    VALUES (%s,%s,'[{"schema_name":"silver","description":null}]',
-                           '[{"schema_name":"gold","description":null}]') RETURNING model_id""",
+                           '[{"schema_name":"gold","description":null}]') RETURNING project_id""",
                 (tenant["tenant_id"], f"Partial peer {source_layer} to {target_layer}"),
             ).fetchone()
         )
@@ -54,7 +54,7 @@ def test_partial_mapping_is_not_an_executable_modeled_source(
             entity = _required_row(
                 connection.execute(
                     sql.SQL(
-                        "INSERT INTO workflow.{} (model_id,{},{},{},{},{}) "
+                        "INSERT INTO workflow.{} (project_id,{},{},{},{},{}) "
                         "VALUES (%s,%s,%s,%s,%s,%s) RETURNING {} AS entity_id"
                     ).format(
                         sql.Identifier(f"{layer}_entity"),
@@ -70,7 +70,7 @@ def test_partial_mapping_is_not_an_executable_modeled_source(
                         sql.Identifier(f"{layer}_entity_id"),
                     ),
                     (
-                        model["model_id"],
+                        project["project_id"],
                         "silver" if layer == "logical" else "gold",
                         name,
                         "Synthetic source eligibility fixture",
@@ -96,26 +96,26 @@ def test_partial_mapping_is_not_an_executable_modeled_source(
             attribute = _required_row(
                 connection.execute(
                     sql.SQL(
-                        "INSERT INTO workflow.{} (model_id,{}) VALUES (%s,{}) RETURNING {} AS attribute_id"
+                        "INSERT INTO workflow.{} (project_id,{}) VALUES (%s,{}) RETURNING {} AS attribute_id"
                     ).format(
                         sql.Identifier(f"{source_layer}_attribute"),
                         sql.SQL(",").join(map(sql.Identifier, columns)),
                         sql.SQL(",").join(sql.Placeholder() for _ in values),
                         sql.Identifier(f"{source_layer}_attribute_id"),
                     ),
-                    (model["model_id"], *values),
+                    (project["project_id"], *values),
                 ).fetchone()
             )
             attribute_ids.append(attribute["attribute_id"])
         mapping = _required_row(
             connection.execute(
                 sql.SQL(
-                    "INSERT INTO workflow.mapping_object (model_id,modeled_entity_type,{},"
+                    "INSERT INTO workflow.mapping_object (project_id,modeled_entity_type,{},"
                     "source_system_id,mapping_transformation_document) VALUES (%s,%s,%s,%s,'{{}}') "
                     "RETURNING mapping_object_id"
                 ).format(sql.Identifier(f"{source_layer}_entity_id")),
                 (
-                    model["model_id"],
+                    project["project_id"],
                     f"{source_layer}_entity",
                     entity_ids[0],
                     system["system_id"],
@@ -123,7 +123,7 @@ def test_partial_mapping_is_not_an_executable_modeled_source(
             ).fetchone()
         )
         parameters = (
-            model["model_id"],
+            project["project_id"],
             entity_ids[1],
             f"{target_layer}_entity",
             system["system_id"],
@@ -137,7 +137,7 @@ def test_partial_mapping_is_not_an_executable_modeled_source(
             mapped = _required_row(
                 connection.execute(
                     sql.SQL(
-                        "INSERT INTO workflow.mapping_attribute (mapping_object_id,model_id,"
+                        "INSERT INTO workflow.mapping_attribute (mapping_object_id,project_id,"
                         "modeled_entity_type,{},{},attribute_mapping_transformation_document) "
                         "VALUES (%s,%s,%s,%s,%s,%s::jsonb) RETURNING mapping_attribute_id"
                     ).format(
@@ -146,7 +146,7 @@ def test_partial_mapping_is_not_an_executable_modeled_source(
                     ),
                     (
                         mapping["mapping_object_id"],
-                        model["model_id"],
+                        project["project_id"],
                         f"{source_layer}_entity",
                         entity_ids[0],
                         attribute_id,

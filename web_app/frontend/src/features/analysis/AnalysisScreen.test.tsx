@@ -7,13 +7,14 @@ import { createApiClient } from "../../api";
 import { WorkbenchApp, createWorkbenchRouter } from "../../app";
 import type { AnalysisFinding } from "./api";
 
-describe("Model Analysis", () => {
+describe("Project Analysis", () => {
   it("filters either relationship endpoint and reviews findings in the complete table", async () => {
     const fetcher = analysisFetchStub();
     const user = userEvent.setup();
     render(<WorkbenchApp router={analysisRouter(fetcher)} />);
 
     const ledger = await screen.findByRole("table", { name: "Analysis findings" });
+    expect(screen.queryByText("Findings", { exact: true })).not.toBeInTheDocument();
     expect(within(ledger).getByText("customer_raw")).toBeVisible();
     expect(within(ledger).getByText("invoice_raw")).toBeVisible();
     expect(within(ledger).getByRole("columnheader", { name: "Inferred cardinality" })).toBeVisible();
@@ -39,7 +40,7 @@ describe("Model Analysis", () => {
     await user.click(screen.getByRole("button", { name: "Apply finding filters" }));
 
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/analysis?object_id=501&validation_state=unvalidated&show_inactive=true&page_size=200",
+      "/api/v1/tenants/7/projects/18/analysis?object_id=501&validation_state=unvalidated&show_inactive=true&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
 
@@ -53,7 +54,7 @@ describe("Model Analysis", () => {
     });
     const reviewCall = fetcher.mock.calls.find(([input]) => String(input).endsWith("/change-sets/review"));
     expect(JSON.parse(String(reviewCall?.[1]?.body))).toEqual({
-      dataset: "analysis_result", record_ids: [81], action: "lock", expected_model_revision: 18,
+      dataset: "analysis_result", record_ids: [81], action: "lock", expected_project_revision: 18,
     });
     expect(new Headers(reviewCall?.[1]?.headers).get("Idempotency-Key"))
       .toMatch(/^[0-9a-f-]{36}$/);
@@ -89,20 +90,20 @@ describe("Model Analysis", () => {
     expect(cells.slice(11, 17).map((cell) => cell.textContent)).toEqual(["Not profiled", "0", "3", "0", "100.00%", "N/A"]);
   });
 
-  it("redirects old finding links to the table and preserves the Model layer", async () => {
+  it("redirects old finding links to the table and preserves the Project layer", async () => {
     const fetcher = analysisFetchStub();
     const router = createWorkbenchRouter({
       api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/analysis/81?layer=dimensional"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/analysis/81?layer=dimensional"] }),
     });
     render(<WorkbenchApp router={router} />);
     await screen.findByRole("table", { name: "Analysis findings" });
-    expect(router.state.location.pathname).toBe("/tenants/7/models/18/analysis");
+    expect(router.state.location.pathname).toBe("/tenants/7/projects/18/analysis");
     expect(router.state.location.search).toEqual({ layer: "dimensional" });
     expect(fetcher.mock.calls.some(([input]) => String(input).endsWith("/analysis/81"))).toBe(false);
   });
 
-  it("unlocks, deactivates, and reactivates findings using each refreshed Model revision", async () => {
+  it("unlocks, deactivates, and reactivates findings using each refreshed Project revision", async () => {
     const fetcher = analysisFetchStub({ findingLocked: true });
     const user = userEvent.setup();
     render(<WorkbenchApp router={analysisRouter(fetcher)} />);
@@ -125,9 +126,9 @@ describe("Model Analysis", () => {
       .filter(([input]) => String(input).endsWith("/change-sets/review"))
       .map(([, init]) => JSON.parse(String(init?.body)));
     expect(commands).toEqual([
-      { dataset: "analysis_result", record_ids: [81], action: "unlock", expected_model_revision: 18 },
-      { dataset: "analysis_result", record_ids: [81], action: "deactivate", expected_model_revision: 19 },
-      { dataset: "analysis_result", record_ids: [81], action: "reactivate", expected_model_revision: 20 },
+      { dataset: "analysis_result", record_ids: [81], action: "unlock", expected_project_revision: 18 },
+      { dataset: "analysis_result", record_ids: [81], action: "deactivate", expected_project_revision: 19 },
+      { dataset: "analysis_result", record_ids: [81], action: "reactivate", expected_project_revision: 20 },
     ]);
   });
 
@@ -212,7 +213,7 @@ describe("Model Analysis", () => {
     await user.click(within(inferenceDialog).getByRole("button", { name: "Create and run inference" }));
 
     await waitFor(() => expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/runs",
+      "/api/v1/tenants/7/projects/18/runs",
       expect.objectContaining({ method: "POST" }),
     ));
     const inferenceCall = fetcher.mock.calls.find(([, init]) => (
@@ -220,20 +221,20 @@ describe("Model Analysis", () => {
       && String(init.body).includes('"workflow_execution_mode":"tool_assisted"')
     ));
     expect(JSON.parse(String(inferenceCall?.[1]?.body))).toEqual(expect.objectContaining({
-      expected_model_revision: 18,
-      model_workflow: "analysis",
+      expected_project_revision: 18,
+      project_workflow: "analysis",
       workflow_execution_mode: "tool_assisted",
       selected_object_ids: [501, 502],
       requested_batch_id: null,
       agent: expect.objectContaining({ model_code: "foundry-primary" }),
     }));
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/analysis/inference-runs/1051/execute",
+      "/api/v1/tenants/7/projects/18/analysis/inference-runs/1051/execute",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({
           execution_mode: "tool_assisted",
-          expected_model_revision: 18,
+          expected_project_revision: 18,
         }),
       }),
     );
@@ -246,15 +247,15 @@ describe("Model Analysis", () => {
       init?.method === "POST" && String(init.body).includes('"workflow_execution_mode":null')
     ));
     expect(JSON.parse(String(validationCall?.[1]?.body))).toEqual(expect.objectContaining({
-      model_workflow: "analysis",
+      project_workflow: "analysis",
       workflow_execution_mode: null,
       agent: null,
     }));
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/analysis/validation-runs/1051/execute",
+      "/api/v1/tenants/7/projects/18/analysis/validation-runs/1051/execute",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ expected_model_revision: 18 }),
+        body: JSON.stringify({ expected_project_revision: 18 }),
       }),
     );
   });
@@ -314,10 +315,10 @@ describe("Model Analysis", () => {
     )).not.toBeInTheDocument());
 
     const createCalls = fetcher.mock.calls.filter(([input, init]) => (
-      String(input) === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST"
+      String(input) === "/api/v1/tenants/7/projects/18/runs" && init?.method === "POST"
     ));
     const executeCalls = fetcher.mock.calls.filter(([input, init]) => (
-      String(input) === "/api/v1/tenants/7/models/18/analysis/inference-runs/1051/execute"
+      String(input) === "/api/v1/tenants/7/projects/18/analysis/inference-runs/1051/execute"
       && init?.method === "POST"
     ));
     expect(createCalls).toHaveLength(1);
@@ -331,10 +332,10 @@ describe("Model Analysis", () => {
     expect(await screen.findByText("No Analysis findings match these filters.")).toBeVisible();
     unmount();
 
-    const mismatchFetcher = analysisFetchStub({ modelRevision: 19 });
+    const mismatchFetcher = analysisFetchStub({ projectRevision: 19 });
     const mismatchRender = render(<WorkbenchApp router={analysisRouter(mismatchFetcher)} />);
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The Model changed while Analysis results were loading.",
+      "The Project changed while Analysis results were loading.",
     );
     expect(screen.getByRole("button", { name: "Lock selected", hidden: true })).toBeDisabled();
     mismatchRender.unmount();
@@ -350,7 +351,7 @@ function analysisRouter(fetcher: ReturnType<typeof analysisFetchStub>) {
   return createWorkbenchRouter({
     api: createApiClient(fetcher),
     history: createMemoryHistory({
-      initialEntries: ["/tenants/7/models/18/analysis"],
+      initialEntries: ["/tenants/7/projects/18/analysis"],
     }),
   });
 }
@@ -359,7 +360,7 @@ function analysisFetchStub(options: {
   empty?: boolean;
   error?: boolean;
   inferenceStartConflictsOnce?: boolean;
-  modelRevision?: number;
+  projectRevision?: number;
   hasTenantLock?: boolean;
   findingLocked?: boolean;
   findingOverrides?: Partial<AnalysisFinding>;
@@ -376,23 +377,23 @@ function analysisFetchStub(options: {
       ...tenantHomePayload,
       lock: { ...tenantHomePayload.lock, owned_by_current_principal: options.hasTenantLock ?? true },
     });
-    if (url === "/api/v1/tenants/7/models/18") return jsonResponse({ ...modelPayload, model_revision: revision });
-    if (url === "/api/v1/tenants/7/models/18/input-scope?zone=bronze&page_size=200") {
-      return jsonResponse({ ...scopePayload, model_revision: revision });
+    if (url === "/api/v1/tenants/7/projects/18") return jsonResponse({ ...projectPayload, project_revision: revision });
+    if (url === "/api/v1/tenants/7/projects/18/input-scope?zone=bronze&page_size=200") {
+      return jsonResponse({ ...scopePayload, project_revision: revision });
     }
-    if (url.startsWith("/api/v1/tenants/7/models/18/analysis?") && init?.method !== "POST") {
+    if (url.startsWith("/api/v1/tenants/7/projects/18/analysis?") && init?.method !== "POST") {
       if (options.error) return jsonResponse({ error: { code: "unavailable" } }, 503);
       return jsonResponse({
-        model_id: 18,
-        model_revision: options.modelRevision ?? revision,
+        project_id: 18,
+        project_revision: options.projectRevision ?? revision,
         items: options.empty || (finding.status === "inactive" && !url.includes("show_inactive=true")) ? [] : [finding],
         next_cursor: null,
       });
     }
-    if (url === "/api/v1/tenants/7/models/18/change-sets/review") {
+    if (url === "/api/v1/tenants/7/projects/18/change-sets/review") {
       reviewAttempts += 1;
       if (options.reviewFailureOnce === "conflict" && reviewAttempts === 1) {
-        return jsonResponse({ error: { code: "model_revision_conflict" } }, 409);
+        return jsonResponse({ error: { code: "project_revision_conflict" } }, 409);
       }
       const key = new Headers(init?.headers).get("Idempotency-Key") ?? "";
       const command = JSON.parse(String(init?.body));
@@ -405,13 +406,13 @@ function analysisFetchStub(options: {
       if (reviewAttempts === 1 && options.reviewFailureOnce === "network") throw new TypeError("Synthetic network failure");
       if (reviewAttempts === 1 && options.reviewFailureOnce === "server") return jsonResponse({ error: { code: "unavailable" } }, 503);
       return jsonResponse({
-        model_id: 18, model_change_set_id: "11111111-1111-4111-8111-111111111111", model_revision: revision, action_count: 1,
+        project_id: 18, project_change_set_id: "11111111-1111-4111-8111-111111111111", project_revision: revision, action_count: 1,
       });
     }
-    if (url.startsWith("/api/v1/tenants/7/models/18/runs?workflow=analysis")) {
+    if (url.startsWith("/api/v1/tenants/7/projects/18/runs?workflow=analysis")) {
       return jsonResponse({ items: analysisRunsPayload, next_cursor: null });
     }
-    if (/\/api\/v1\/tenants\/7\/models\/18\/runs\/(1048|1049|1051)$/.test(url)) {
+    if (/\/api\/v1\/tenants\/7\/projects\/18\/runs\/(1048|1049|1051)$/.test(url)) {
       const runId = Number(url.split("/").at(-1));
       const summary = analysisRunsPayload.find((item) => item.workflow_run_id === runId)
         ?? {
@@ -432,18 +433,18 @@ function analysisFetchStub(options: {
         validation_retry_count: summary.workflow_execution_mode ? 1 : null,
         failure_code: null,
         failure_message: null,
-        model_change_set_id: null,
-        model_change_set_status: null,
+        project_change_set_id: null,
+        project_change_set_status: null,
         draft_revision: null,
         candidate_digest: null,
         validated_at: null,
       });
     }
-    if (/\/api\/v1\/tenants\/7\/models\/18\/runs\/(1048|1049|1051)\/events\?/.test(url)) {
+    if (/\/api\/v1\/tenants\/7\/projects\/18\/runs\/(1048|1049|1051)\/events\?/.test(url)) {
       return jsonResponse({ items: [], next_after_sequence: 0 });
     }
     if (url === "/api/v1/config/agent-capabilities") return jsonResponse(capabilitiesPayload);
-    if (url === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST") {
+    if (url === "/api/v1/tenants/7/projects/18/runs" && init?.method === "POST") {
       return jsonResponse({
         created: true,
         workflow_run_id: 1051,
@@ -453,14 +454,14 @@ function analysisFetchStub(options: {
         created_at: "2026-08-24T15:00:00Z",
       }, 201);
     }
-    if (url === "/api/v1/tenants/7/models/18/analysis/inference-runs/1051/execute") {
+    if (url === "/api/v1/tenants/7/projects/18/analysis/inference-runs/1051/execute") {
       inferenceStartAttempts += 1;
       if (options.inferenceStartConflictsOnce && inferenceStartAttempts === 1) {
         return jsonResponse({ error: { code: "tenant_workflow_conflict" } }, 409);
       }
       return jsonResponse(workflowStartPayload, 202);
     }
-    if (url === "/api/v1/tenants/7/models/18/analysis/validation-runs/1051/execute") {
+    if (url === "/api/v1/tenants/7/projects/18/analysis/validation-runs/1051/execute") {
       return jsonResponse(workflowStartPayload, 202);
     }
     return jsonResponse({ error: { code: "not_found" } }, 404);
@@ -478,7 +479,7 @@ const workflowStartPayload = {
   changed: true,
   workflow_run_id: 1051,
   workflow_run_state: "running",
-  model_revision: 18,
+  project_revision: 18,
 };
 
 const tenantHomePayload = {
@@ -494,7 +495,7 @@ const tenantHomePayload = {
     is_locked: true,
     owner_display_name: "Maaz",
     owned_by_current_principal: true,
-    purpose: "Model authoring",
+    purpose: "Project authoring",
     acquired_at: "2026-08-24T14:12:00Z",
     expires_at: "2026-08-24T16:12:00Z",
   },
@@ -502,13 +503,13 @@ const tenantHomePayload = {
   systems: [],
 };
 
-const modelPayload = {
-  model_id: 18,
+const projectPayload = {
+  project_id: 18,
   tenant_id: 7,
-  model_name: "Customer 360",
-  model_description: "Cross-system customer domain",
-  model_revision: 18,
-  model_input_scope_object_count: 2,
+  project_name: "Customer 360",
+  project_description: "Cross-system customer domain",
+  project_revision: 18,
+  project_input_scope_object_count: 2,
   logical_schemas: [], dimensional_schemas: [], silver_model_naming_instructions: null,
   silver_model_audit_columns_template: null,
   gold_model_naming_instructions: null,
@@ -525,8 +526,8 @@ const modelPayload = {
 };
 
 const scopePayload = {
-  model_id: 18,
-  model_revision: 18,
+  project_id: 18,
+  project_revision: 18,
   items: [
     scopeObject(501, "customer_raw", "CRM"),
     scopeObject(502, "invoice_raw", "ERP"),
@@ -536,7 +537,7 @@ const scopePayload = {
 
 function scopeObject(objectId: number, objectName: string, systemCode: string) {
   return {
-    model_input_scope_id: objectId + 1000,
+    project_input_scope_id: objectId + 1000,
     object_id: objectId,
     connection_id: objectId + 2000,
     system_id: objectId + 3000,
@@ -550,7 +551,7 @@ function scopeObject(objectId: number, objectName: string, systemCode: string) {
     zone_code: "bronze",
     attribute_count: 12,
     batch_attribute_name: "batch_id",
-    is_model_input_eligible: true,
+    is_project_input_eligible: true,
     created_at: "2026-08-24T12:00:00Z",
     updated_at: "2026-08-24T12:00:00Z",
   };
@@ -610,7 +611,7 @@ const analysisFindingPayload: AnalysisFinding = {
 const analysisRunsPayload = [
   {
     workflow_run_id: 1048,
-    model_workflow: "analysis",
+    project_workflow: "analysis",
     workflow_execution_mode: "tool_assisted",
     modeled_entity_type: null,
     selected_scope_count: 2,
@@ -623,7 +624,7 @@ const analysisRunsPayload = [
   },
   {
     workflow_run_id: 1049,
-    model_workflow: "analysis",
+    project_workflow: "analysis",
     workflow_execution_mode: null,
     modeled_entity_type: null,
     selected_scope_count: 2,

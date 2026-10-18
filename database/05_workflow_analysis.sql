@@ -3,7 +3,7 @@
 CREATE SCHEMA workflow;
 
 CREATE TABLE workflow.attribute_profile (
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     attribute_id BIGINT NOT NULL,
     object_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
@@ -26,11 +26,11 @@ CREATE TABLE workflow.attribute_profile (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    PRIMARY KEY (model_id, attribute_id),
-    CONSTRAINT fk_attribute_profile_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_attribute_profile_scope FOREIGN KEY (model_id, object_id)
-        REFERENCES model.model_input_scope (model_id, object_id) ON DELETE NO ACTION,
+    PRIMARY KEY (project_id, attribute_id),
+    CONSTRAINT fk_attribute_profile_project FOREIGN KEY (project_id)
+        REFERENCES project.project (project_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_attribute_profile_scope FOREIGN KEY (project_id, object_id)
+        REFERENCES project.project_input_scope (project_id, object_id) ON DELETE NO ACTION,
     CONSTRAINT fk_attribute_profile_attribute FOREIGN KEY (
         attribute_id,
         object_id
@@ -65,10 +65,10 @@ CREATE TABLE workflow.attribute_profile (
     )
 );
 
--- Current enrichment belongs to the Model, independently of physical metadata.
+-- Current enrichment belongs to the Project, independently of physical metadata.
 -- Object and Attribute enrichment may be saved independently.
 CREATE TABLE workflow.object_enrichment (
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     object_id BIGINT NOT NULL,
     object_description TEXT,
     workflow_run_id BIGINT,
@@ -77,11 +77,11 @@ CREATE TABLE workflow.object_enrichment (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    PRIMARY KEY (model_id, object_id),
-    CONSTRAINT fk_object_enrichment_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_object_enrichment_scope FOREIGN KEY (model_id, object_id)
-        REFERENCES model.model_input_scope (model_id, object_id) ON DELETE NO ACTION,
+    PRIMARY KEY (project_id, object_id),
+    CONSTRAINT fk_object_enrichment_project FOREIGN KEY (project_id)
+        REFERENCES project.project (project_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_object_enrichment_scope FOREIGN KEY (project_id, object_id)
+        REFERENCES project.project_input_scope (project_id, object_id) ON DELETE NO ACTION,
     CONSTRAINT ck_object_enrichment_description CHECK (
         object_description IS NULL OR (
             reference.is_nonblank(object_description)
@@ -91,7 +91,7 @@ CREATE TABLE workflow.object_enrichment (
 );
 
 CREATE TABLE workflow.attribute_enrichment (
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     attribute_id BIGINT NOT NULL,
     object_id BIGINT NOT NULL,
     attribute_description TEXT,
@@ -107,11 +107,11 @@ CREATE TABLE workflow.attribute_enrichment (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    PRIMARY KEY (model_id, attribute_id),
-    CONSTRAINT fk_attribute_enrichment_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_attribute_enrichment_scope FOREIGN KEY (model_id, object_id)
-        REFERENCES model.model_input_scope (model_id, object_id) ON DELETE NO ACTION,
+    PRIMARY KEY (project_id, attribute_id),
+    CONSTRAINT fk_attribute_enrichment_project FOREIGN KEY (project_id)
+        REFERENCES project.project (project_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_attribute_enrichment_scope FOREIGN KEY (project_id, object_id)
+        REFERENCES project.project_input_scope (project_id, object_id) ON DELETE NO ACTION,
     CONSTRAINT fk_attribute_enrichment_attribute FOREIGN KEY (attribute_id, object_id)
         REFERENCES core.attribute (attribute_id, object_id) ON DELETE NO ACTION,
     CONSTRAINT ck_attribute_enrichment_description CHECK (
@@ -126,33 +126,33 @@ CREATE TABLE workflow.attribute_enrichment (
     )
 );
 
--- Model-local review witnesses include the physical identity and parent lock.
+-- Project-local review witnesses include the physical identity and parent lock.
 CREATE FUNCTION workflow.enrichment_review_revision(
-    p_model_id BIGINT, p_object_id BIGINT, p_attribute_id BIGINT DEFAULT NULL
+    p_project_id BIGINT, p_object_id BIGINT, p_attribute_id BIGINT DEFAULT NULL
 )
 RETURNS TEXT LANGUAGE sql STABLE SET search_path = pg_catalog SET timezone = 'UTC'
 AS $enrichment_review_revision$
     SELECT encode(sha256(convert_to(jsonb_build_object(
-        'model_id', scope.model_id, 'scope', to_jsonb(scope),
+        'project_id', scope.project_id, 'scope', to_jsonb(scope),
         'object', to_jsonb(object), 'object_enrichment', to_jsonb(enriched_object),
         'attribute', to_jsonb(attribute), 'attribute_enrichment', to_jsonb(enriched_attribute)
     )::TEXT, 'UTF8')), 'hex')
-    FROM model.model_input_scope AS scope
+    FROM project.project_input_scope AS scope
     JOIN core.object AS object USING (object_id)
     LEFT JOIN core.attribute AS attribute ON attribute.object_id = object.object_id
         AND attribute.attribute_id = p_attribute_id
     LEFT JOIN workflow.object_enrichment AS enriched_object
-        ON enriched_object.model_id = scope.model_id AND enriched_object.object_id = scope.object_id
+        ON enriched_object.project_id = scope.project_id AND enriched_object.object_id = scope.object_id
     LEFT JOIN workflow.attribute_enrichment AS enriched_attribute
-        ON enriched_attribute.model_id = scope.model_id
+        ON enriched_attribute.project_id = scope.project_id
         AND enriched_attribute.attribute_id = attribute.attribute_id
-    WHERE scope.model_id = p_model_id AND scope.object_id = p_object_id
+    WHERE scope.project_id = p_project_id AND scope.object_id = p_object_id
         AND (p_attribute_id IS NULL OR attribute.attribute_id IS NOT NULL);
 $enrichment_review_revision$;
 
 CREATE TABLE workflow.analysis_result (
     analysis_result_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    model_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     inference_workflow_run_id BIGINT,
     validation_workflow_run_id BIGINT,
@@ -181,12 +181,12 @@ CREATE TABLE workflow.analysis_result (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_analysis_result_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_analysis_from_scope FOREIGN KEY (model_id, from_object_id)
-        REFERENCES model.model_input_scope (model_id, object_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_analysis_to_scope FOREIGN KEY (model_id, to_object_id)
-        REFERENCES model.model_input_scope (model_id, object_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_analysis_result_project FOREIGN KEY (project_id)
+        REFERENCES project.project (project_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_analysis_from_scope FOREIGN KEY (project_id, from_object_id)
+        REFERENCES project.project_input_scope (project_id, object_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_analysis_to_scope FOREIGN KEY (project_id, to_object_id)
+        REFERENCES project.project_input_scope (project_id, object_id) ON DELETE NO ACTION,
     CONSTRAINT fk_analysis_from_attribute FOREIGN KEY (
         from_attribute_id,
         from_object_id
@@ -196,7 +196,7 @@ CREATE TABLE workflow.analysis_result (
         to_object_id
     ) REFERENCES core.attribute (attribute_id, object_id) ON DELETE NO ACTION,
     CONSTRAINT uq_analysis_result_identity UNIQUE (
-        model_id,
+        project_id,
         from_attribute_id,
         to_attribute_id,
         relationship_kind
@@ -271,14 +271,14 @@ CREATE TABLE workflow.analysis_result (
 );
 
 CREATE INDEX ix_attribute_profile_object
-    ON workflow.attribute_profile (model_id, object_id, attribute_id);
+    ON workflow.attribute_profile (project_id, object_id, attribute_id);
 CREATE INDEX ix_attribute_profile_digest
-    ON workflow.attribute_profile (model_id, source_context_digest);
+    ON workflow.attribute_profile (project_id, source_context_digest);
 CREATE INDEX ix_attribute_enrichment_object
-    ON workflow.attribute_enrichment (model_id, object_id, attribute_id);
-CREATE INDEX ix_analysis_result_model_status
-    ON workflow.analysis_result (model_id, analysis_result_status);
+    ON workflow.attribute_enrichment (project_id, object_id, attribute_id);
+CREATE INDEX ix_analysis_result_project_status
+    ON workflow.analysis_result (project_id, analysis_result_status);
 CREATE INDEX ix_analysis_result_from_endpoint
-    ON workflow.analysis_result (model_id, from_object_id, from_attribute_id);
+    ON workflow.analysis_result (project_id, from_object_id, from_attribute_id);
 CREATE INDEX ix_analysis_result_to_endpoint
-    ON workflow.analysis_result (model_id, to_object_id, to_attribute_id);
+    ON workflow.analysis_result (project_id, to_object_id, to_attribute_id);

@@ -1,5 +1,5 @@
 import type { LogicalTransport, LogicalEntity } from "../logical/api";
-import type { ModelInputScopeApi, ModelInputScopeDetail } from "../model_input_scope/api";
+import type { ProjectInputScopeApi, ProjectInputScopeDetail } from "../project_input_scope/api";
 import { EnrichmentAttributeSelection, type EnrichmentAttributeSelectionValue } from "../metadata_enrichment/EnrichmentAttributeSelection";
 import { useEffect, useRef, useState } from "react";
 import { useForm, useStore } from "@tanstack/react-form";
@@ -8,7 +8,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ApiError } from "../../core/http";
 import { SelectAllCheckbox } from "../../shared/ui";
 import { useWorkflowRunSubmission } from "./useWorkflowRunSubmission";
-import type { ModelDetail } from "../models/api";
+import type { ProjectDetail } from "../projects/api";
 import type { CreateWorkflowRunCommand } from "./api";
 import {
   findAgentExecutionProfile,
@@ -32,7 +32,7 @@ type WorkflowExecutionMode = NonNullable<CreateWorkflowRunCommand["workflow_exec
 export function WorkflowRunDialog({
   api,
   tenantId,
-  model,
+  project,
   kind,
   workflow = "analysis",
   executeCreated,
@@ -47,20 +47,20 @@ export function WorkflowRunDialog({
 }: {
   api: WorkflowCreationApi;
   tenantId: number;
-  model: ModelDetail;
+  project: ProjectDetail;
   kind: AnalysisRunKind;
   workflow?: AgenticWorkflow;
-  enrichmentObject?: ModelInputScopeDetail;
+  enrichmentObject?: ProjectInputScopeDetail;
   logicalEntitySource?: Pick<LogicalTransport, "listLogicalEntities">;
   enrichmentTarget?: "object" | "attribute";
-  readEnrichmentObject?: ModelInputScopeApi["readModelInputScopeObject"];
+  readEnrichmentObject?: ProjectInputScopeApi["readProjectInputScopeObject"];
   initialSelectedIds?: number[];
   executeCreated?: (
     workflowRunId: number,
     executionMode: WorkflowExecutionMode,
-    expectedModelRevision: number,
+    expectedProjectRevision: number,
   ) => Promise<void>;
-  executeValidationCreated?: (workflowRunId: number, expectedModelRevision: number) => Promise<void>;
+  executeValidationCreated?: (workflowRunId: number, expectedProjectRevision: number) => Promise<void>;
   onClose: () => void;
   onCreated: (workflowRunId: number) => Promise<void>;
 }) {
@@ -79,28 +79,28 @@ export function WorkflowRunDialog({
   const scopeZoneName = isEnrichment ? "Source and Bronze" : isDimensional ? "Logical Entity" : "Bronze";
   const scopeQuery = useQuery({
     queryKey: isEnrichment
-      ? workflowCreationQueryKeys.enrichmentScope(tenantId, model.model_id)
-      : workflowCreationQueryKeys.bronzeScope(tenantId, model.model_id),
+      ? workflowCreationQueryKeys.enrichmentScope(tenantId, project.project_id)
+      : workflowCreationQueryKeys.bronzeScope(tenantId, project.project_id),
     enabled: !isDimensional,
     queryFn: () => loadWorkflowScope(
-      api, tenantId, model.model_id, isEnrichment ? "enrichment" : "bronze",
+      api, tenantId, project.project_id, isEnrichment ? "enrichment" : "bronze",
     ),
   });
   const entityQuery = useQuery({
-    queryKey: ["dimensional-logical-inputs", tenantId, model.model_id],
+    queryKey: ["dimensional-logical-inputs", tenantId, project.project_id],
     enabled: isDimensional,
     queryFn: async () => {
       if (!logicalEntitySource) throw new Error("Logical Entity selection unavailable.");
       const items: LogicalEntity[] = [];
       const cursors = new Set<string>();
       let cursor: string | undefined;
-      let modelRevision: number | undefined;
+      let projectRevision: number | undefined;
       for (;;) {
-        const page = await logicalEntitySource.listLogicalEntities(tenantId, model.model_id, { status: "active" }, 200, cursor);
-        if (modelRevision !== undefined && page.model_revision !== modelRevision) throw new Error("Model changed while loading Entities.");
-        modelRevision = page.model_revision;
+        const page = await logicalEntitySource.listLogicalEntities(tenantId, project.project_id, { status: "active" }, 200, cursor);
+        if (projectRevision !== undefined && page.project_revision !== projectRevision) throw new Error("Project changed while loading Entities.");
+        projectRevision = page.project_revision;
         items.push(...page.items);
-        if (!page.next_cursor) return { items, modelRevision };
+        if (!page.next_cursor) return { items, projectRevision };
         if (cursors.has(page.next_cursor)) throw new Error("Entity cursor repeated.");
         cursors.add(page.next_cursor);
         cursor = page.next_cursor;
@@ -128,8 +128,8 @@ export function WorkflowRunDialog({
       selectedObjectIds: initialSelectedIds,
       executionMode: (isEnrichment ? "one_shot" : "tool_assisted") as "one_shot" | "tool_assisted",
       requestedBatchId: "",
-      modelCode: model.default_agent_model_code ?? "",
-      reasoningEffortCode: model.default_reasoning_effort_code ?? "",
+      modelCode: project.default_agent_model_code ?? "",
+      reasoningEffortCode: project.default_reasoning_effort_code ?? "",
     },
     onSubmit: ({ value }) => {
       if (pendingStart) {
@@ -147,8 +147,8 @@ export function WorkflowRunDialog({
         || value.executionMode !== "one_shot" || selectedObjectIds.some((id) =>
           !scopeQuery.data?.items.some((item) => item.object_id === id)))) return;
       runMutation.mutate({
-        expected_model_revision: model.model_revision,
-        model_workflow: workflow,
+        expected_project_revision: project.project_revision,
+        project_workflow: workflow,
         workflow_execution_mode: kind === "inference" ? value.executionMode : null,
         selected_object_ids: isDimensional ? [] : selectedObjectIds,
         ...(isDimensional ? { selected_entity_ids: selectedObjectIds, modeled_entity_type: "logical_entity" as const } : {}),
@@ -169,19 +169,19 @@ export function WorkflowRunDialog({
   const effectiveObjects = scopeQuery.data?.items.filter((item) => effectiveRows.some((row) => row.objectId === item.object_id)) ?? [];
   const batchSystems = new Set(effectiveObjects.map((item) => item.system_id));
   const batchIsIncoherent = Boolean(requestedBatchId.trim()) && batchSystems.size > 1;
-  const revisionChanged = selectionQuery.data?.modelRevision !== undefined
-    && selectionQuery.data.modelRevision !== model.model_revision;
+  const revisionChanged = selectionQuery.data?.projectRevision !== undefined
+    && selectionQuery.data.projectRevision !== project.project_revision;
   const { mutation: runMutation, pendingRunId: pendingStart } = useWorkflowRunSubmission({
     api,
     tenantId,
-    modelId: model.model_id,
+    projectId: project.project_id,
     execute: kind === "validation"
       ? executeValidationCreated && ((workflowRunId, command) => executeValidationCreated(
-        workflowRunId, command.expected_model_revision,
+        workflowRunId, command.expected_project_revision,
       ))
       : executeCreated && ((workflowRunId, command) => {
         if (!command.workflow_execution_mode) throw new Error("Workflow execution mode is required.");
-        return executeCreated(workflowRunId, command.workflow_execution_mode, command.expected_model_revision);
+        return executeCreated(workflowRunId, command.workflow_execution_mode, command.expected_project_revision);
       }),
     onSuccess: async (workflowRunId) => {
       await onCreated(workflowRunId);
@@ -205,8 +205,8 @@ export function WorkflowRunDialog({
   const agent = capabilities ? resolveDefaultAgent(capabilities, executionMode, {
     modelCode,
     reasoningEffortCode,
-    maxTurns: model.default_max_turns,
-    validationRetryCount: model.default_validation_retry_count,
+    maxTurns: project.default_max_turns,
+    validationRetryCount: project.default_validation_retry_count,
   }) : null;
   const agentSelectionValid = agent !== null
     && compatibleExecutionModes.includes(executionMode)
@@ -354,7 +354,7 @@ export function WorkflowRunDialog({
           {isAttributeEnrichment ? scopeQuery.isPending ? <p className="surface-state compact" aria-busy="true">Loading active Scope…</p>
             : scopeQuery.isError ? <p className="inline-error" role="alert">Active Scope could not be loaded. Close and refresh to retry.</p>
               : readEnrichmentObject && scopeQuery.data ? <EnrichmentAttributeSelection
-                objects={scopeQuery.data.items} tenantId={tenantId} modelId={model.model_id}
+                objects={scopeQuery.data.items} tenantId={tenantId} projectId={project.project_id}
                 readObject={readEnrichmentObject} {...(enrichmentObject ? { initialObject: enrichmentObject } : {})}
                 initialSelectedIds={initialSelectedIds} disabled={runMutation.isPending || pendingStart !== null || scopeQuery.isFetching || revisionChanged}
                 onChange={setAttributeSelection} />
@@ -467,7 +467,7 @@ export function WorkflowRunDialog({
           ) : null}
           {revisionChanged ? (
             <p className="inline-error" role="alert">
-              The Model changed. Close this dialog and refresh before creating the run.
+              The Project changed. Close this dialog and refresh before creating the run.
             </p>
           ) : null}
           {runMutation.isError ? (

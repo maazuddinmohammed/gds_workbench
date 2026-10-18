@@ -1,14 +1,15 @@
-import { WorkflowCommandCenter, WorkflowCommandTools, WorkflowFilters } from "../workflows/WorkflowCommandCenter";
+import { WorkflowCommandCenter, WorkflowCommandTools, WorkflowFilters, WorkflowMenu } from "../workflows/WorkflowCommandCenter";
 import { MultiSelectField } from "../../shared/MultiSelectField";
-import { ModelLayerTabs, type ModelLayer } from "../../shared/ModelLayerTabs";
+import { ProjectLayerTabs, type ProjectLayer } from "../../shared/ProjectLayerTabs";
 import type { MappingEntityType } from "../mapping/api";
-import { ModelRecordReview } from "../model_record_review/ModelRecordReview";
+import { ProjectRecordReview } from "../project_record_review/ProjectRecordReview";
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 
 import { ApiError } from "../../core/http";
-import type { ModelDetail } from "../models/api";
+import { archiveDownloadError, saveArchiveDownload } from "../../shared/archiveDownload";
+import type { ProjectDetail } from "../projects/api";
 import { WorkflowRunMonitor } from "../workflows/WorkflowRunMonitor";
 import { validationQueryKeys, type ValidationApi } from "./api";
 import { ValidationLedger } from "./ValidationLedger";
@@ -18,17 +19,17 @@ import { ValidationInspector } from "./ValidationInspector";
 export function ValidationScreen({
   api,
   tenantId,
-  model,
+  project,
   hasTenantLock,
   hasAppPermission,
   layer,
   groupId,
   checkId,
 }: {
-  layer: ModelLayer;
+  layer: ProjectLayer;
   api: ValidationApi;
   tenantId: number;
-  model: ModelDetail;
+  project: ProjectDetail;
   hasTenantLock: boolean;
   hasAppPermission: boolean;
   groupId?: number | undefined;
@@ -44,17 +45,23 @@ export function ValidationScreen({
   const [lockFilter, setLockFilter] = useState("");
   const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [startedRunId, setStartedRunId] = useState<number | null>(null);
+  const download = useMutation({
+    mutationFn: async () => saveArchiveDownload(await api.exportAllValidations(tenantId, project.project_id, {
+      entity_type: entityType,
+      expected_project_revision: project.project_revision,
+    })),
+  });
   const systemsQuery = useQuery({
-    queryKey: validationQueryKeys.systems(tenantId, model.model_id, entityType),
-    queryFn: () => api.listValidationEligibleSystems(tenantId, model.model_id, entityType),
+    queryKey: validationQueryKeys.systems(tenantId, project.project_id, entityType),
+    queryFn: () => api.listValidationEligibleSystems(tenantId, project.project_id, entityType),
   });
   const ledgerQuery = useQuery({
-    queryKey: validationQueryKeys.ledger(tenantId, model.model_id, entityType),
-    queryFn: () => api.readValidationLedger(tenantId, model.model_id, entityType),
+    queryKey: validationQueryKeys.ledger(tenantId, project.project_id, entityType),
+    queryFn: () => api.readValidationLedger(tenantId, project.project_id, entityType),
   });
   const canAuthor = hasTenantLock && hasAppPermission;
   const systemsRevisionMismatch = systemsQuery.data !== undefined
-    && systemsQuery.data.model_revision !== model.model_revision;
+    && systemsQuery.data.project_revision !== project.project_revision;
   const canOpenRun = canAuthor
     && !systemsQuery.isPending
     && !systemsQuery.isError
@@ -69,40 +76,40 @@ export function ValidationScreen({
         : systemsQuery.isError
           ? "Eligible Validation Systems are unavailable; refresh to try again"
           : systemsRevisionMismatch
-            ? "The Model changed; refresh before running Validation"
+            ? "The Project changed; refresh before running Validation"
             : !systemsQuery.data?.items.length
               ? "No eligible Systems are available for Validation"
               : "Tenant Lock held · ready to run Validation";
   const invalidateValidation = async () => {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["validation-systems", tenantId, model.model_id] }),
-      queryClient.invalidateQueries({ queryKey: ["validation-ledger", tenantId, model.model_id] }),
-      queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
+      queryClient.invalidateQueries({ queryKey: ["validation-systems", tenantId, project.project_id] }),
+      queryClient.invalidateQueries({ queryKey: ["validation-ledger", tenantId, project.project_id] }),
+      queryClient.invalidateQueries({ queryKey: ["project", tenantId, project.project_id] }),
       queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
     ]);
   };
   const refresh = async () => {
     setSelectedIds(new Set());
-    await Promise.all([systemsQuery.refetch(), ledgerQuery.refetch()]);
+    await invalidateValidation();
   };
 
   return (
     <WorkflowCommandCenter filterCount={Number(systemFilter.length > 0) + Number(Boolean(statusFilter)) + Number(Boolean(lockFilter))} className="mapping-workspace validation-workspace page-enter">
-      <header className="workflow-commandbar validation-commandbar model-section-toolbar">
+      <header className="workflow-commandbar validation-commandbar project-section-toolbar">
         <div className="workflow-command-context validation-command-context">
-          <ModelLayerTabs tenantId={tenantId} modelId={model.model_id} layer={layer} workflow="validation" title="Validation" />
+          <ProjectLayerTabs tenantId={tenantId} projectId={project.project_id} layer={layer} workflow="validation" title="Validation" />
           {checkId !== undefined && groupId !== undefined ? <Link
             className="text-action"
             search={{ layer }}
             aria-label="Back to Checks"
-            to="/tenants/$tenantId/validation/models/$modelId/groups/$groupId"
-            params={{ tenantId: String(tenantId), modelId: String(model.model_id), groupId: String(groupId) }}
+            to="/tenants/$tenantId/validation/projects/$projectId/groups/$groupId"
+            params={{ tenantId: String(tenantId), projectId: String(project.project_id), groupId: String(groupId) }}
           >← Back to Checks</Link> : groupId !== undefined ? <Link
             className="text-action"
             search={{ layer }}
             aria-label="Back to Groups"
-            to="/tenants/$tenantId/validation/models/$modelId"
-            params={{ tenantId: String(tenantId), modelId: String(model.model_id) }}
+            to="/tenants/$tenantId/validation/projects/$projectId"
+            params={{ tenantId: String(tenantId), projectId: String(project.project_id) }}
           >← Back to Groups</Link> : null}
           <span className={canAuthor ? "lock-context is-held" : "lock-context"}>
             {permissionLabel}
@@ -110,6 +117,12 @@ export function ValidationScreen({
         </div>
         <div className="workflow-command-actions">
           <WorkflowCommandTools filters={groupId === undefined} />
+          <WorkflowMenu>
+            <button type="button" className="button button-secondary button-small"
+              disabled={download.isPending} onClick={() => download.mutate()}
+              title="All active validation checks for this layer and shared groups, including stale checks, SQL and criteria; ignores table filters."
+            >{download.isPending ? "Preparing validation export…" : "Export all validations"}</button>
+          </WorkflowMenu>
           <button
             className="button button-secondary button-small"
             type="button"
@@ -129,6 +142,11 @@ export function ValidationScreen({
           </button> : null}
         </div>
       </header>
+      {download.isPending ? <p role="status">Preparing all active validation checks for this layer and shared groups…</p> : null}
+      {download.isError ? <p className="inline-error" role="alert">
+        {archiveDownloadError(download.error, "validation")}{" "}
+        <button type="button" className="text-action" onClick={() => download.mutate()}>Retry export</button>
+      </p> : null}
       {systemsQuery.error instanceof ApiError && systemsQuery.error.status === 403 ? (
         <p className="inline-error validation-system-error" role="alert">
           You do not have permission to load eligible Validation Systems.
@@ -139,7 +157,7 @@ export function ValidationScreen({
         </p>
       ) : systemsRevisionMismatch ? (
         <p className="inline-error validation-system-error" role="alert">
-          The Model changed while eligible Validation Systems were loading. Refresh before starting a run.
+          The Project changed while eligible Validation Systems were loading. Refresh before starting a run.
         </p>
       ) : systemsQuery.data?.is_truncated ? (
         <p className="code-generation-run-notice" role="status">
@@ -154,17 +172,17 @@ export function ValidationScreen({
       {groupId === undefined ? <WorkflowRunMonitor
         api={api}
         tenantId={tenantId}
-        modelId={model.model_id}
-        modelRevision={model.model_revision}
+        projectId={project.project_id}
+        projectRevision={project.project_revision}
         workflow="validation"
         hasTenantLock={canAuthor}
         focusRunId={startedRunId}
         onApplied={invalidateValidation}
       /> : null}
-      {checkId === undefined ? <ModelRecordReview
-        api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision}
+      {checkId === undefined ? <ProjectRecordReview
+        api={api} tenantId={tenantId} projectId={project.project_id} projectRevision={project.project_revision}
         dataset={reviewDataset} selectedIds={selectedIds} hasTenantLock={canAuthor}
-        disabled={ledgerQuery.isPending || ledgerQuery.isError || ledgerQuery.data?.model_revision !== model.model_revision}
+        disabled={ledgerQuery.isPending || ledgerQuery.isError || ledgerQuery.data?.project_revision !== project.project_revision}
         onApplied={async () => { setSelectedIds(new Set()); await queryClient.invalidateQueries({ predicate: (query) => query.queryKey[1] === tenantId }); }}
       /> : null}
       {groupId === undefined ? <WorkflowFilters><div className="workflow-filterbar validation-filterbar">
@@ -180,7 +198,7 @@ export function ValidationScreen({
       </div></WorkflowFilters> : null}
       <ValidationLedger
         tenantId={tenantId}
-        modelId={model.model_id}
+        projectId={project.project_id}
         layer={layer}
         isFiltered={Boolean(systemFilter.length || statusFilter || lockFilter)}
         groupId={groupId}
@@ -196,22 +214,22 @@ export function ValidationScreen({
           && (!statusFilter || group.validation_group_is_current === (statusFilter === "current"))
           && (!lockFilter || group.is_locked === (lockFilter === "locked"))
         ))}
-        modelRevision={model.model_revision}
-        loadedModelRevision={ledgerQuery.data?.model_revision}
+        projectRevision={project.project_revision}
+        loadedProjectRevision={ledgerQuery.data?.project_revision}
         isLoading={ledgerQuery.isPending}
         error={ledgerQuery.error}
       />
       {inspected ? <ValidationInspector returnFocus={inspected.returnFocus} onClose={() => setInspected(null)}>
-        <ValidationLedger tenantId={tenantId} modelId={model.model_id} layer={layer}
+        <ValidationLedger tenantId={tenantId} projectId={project.project_id} layer={layer}
           groupId={inspected.groupId} checkId={inspected.checkId}
-          groups={ledgerQuery.data?.groups ?? []} modelRevision={model.model_revision}
-          loadedModelRevision={ledgerQuery.data?.model_revision} isLoading={ledgerQuery.isPending} error={ledgerQuery.error} />
+          groups={ledgerQuery.data?.groups ?? []} projectRevision={project.project_revision}
+          loadedProjectRevision={ledgerQuery.data?.project_revision} isLoading={ledgerQuery.isPending} error={ledgerQuery.error} />
       </ValidationInspector> : null}
       {runDialogOpen && systemsQuery.data ? (
         <ValidationRunDialog
           api={api}
           tenantId={tenantId}
-          model={model}
+          project={project}
           entityType={entityType}
           systems={systemsQuery.data.items}
           systemsTruncated={systemsQuery.data.is_truncated}

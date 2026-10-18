@@ -1,4 +1,4 @@
-"""Model dictionary reads and a consistent, authorized workbook export."""
+"""Project dictionary reads and a consistent, authorized workbook export."""
 
 # pyright: reportPrivateUsage=false
 
@@ -13,17 +13,17 @@ from gds_etl_workbench.infrastructure.postgres import ReadIsolation
 from starlette.concurrency import run_in_threadpool
 
 from gds_workbench_api.dependencies import principal_dependency
-from gds_workbench_api.features.model_input_scope.contracts import (
-    ModelInputScopeAttribute,
-    ModelInputScopeObject,
+from gds_workbench_api.features.project_input_scope.contracts import (
+    ProjectInputScopeAttribute,
+    ProjectInputScopeObject,
 )
-from gds_workbench_api.features.model_input_scope.router import create_input_scope_router
-from gds_workbench_api.features.model_input_scope.service import (
+from gds_workbench_api.features.project_input_scope.router import create_input_scope_router
+from gds_workbench_api.features.project_input_scope.service import (
     _ENRICHMENT_ATTRIBUTES_SQL,
     _ENRICHMENT_OBJECT_SQL,
-    DatabaseModelInputScopeService,
+    DatabaseProjectInputScopeService,
 )
-from gds_workbench_api.features.models import ModelNotFoundError
+from gds_workbench_api.features.projects import ProjectNotFoundError
 
 from .workbook import MAX_DICTIONARY_ROWS, build_enrichment_workbook
 
@@ -35,13 +35,13 @@ _EXPORT_ATTRIBUTES_SQL: LiteralString = (
 )
 
 
-class DatabaseEnrichmentDictionaryService(DatabaseModelInputScopeService):
+class DatabaseEnrichmentDictionaryService(DatabaseProjectInputScopeService):
     async def export_workbook(
         self,
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
     ) -> tuple[str, bytes]:
         async with self._database.read_transaction(
             isolation=ReadIsolation.REPEATABLE_READ
@@ -51,37 +51,37 @@ class DatabaseEnrichmentDictionaryService(DatabaseModelInputScopeService):
                 principal,
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
-                model_id=model_id,
+                project_id=project_id,
             )
-            model = await transaction.fetch_one(
-                "SELECT model_name FROM model.model "
-                "WHERE tenant_id = %s AND model_id = %s AND is_active",
-                (tenant_id, model_id),
+            project = await transaction.fetch_one(
+                "SELECT project_name FROM project.project "
+                "WHERE tenant_id = %s AND project_id = %s AND is_active",
+                (tenant_id, project_id),
             )
-            if model is None:
-                raise ModelNotFoundError()
+            if project is None:
+                raise ProjectNotFoundError()
             objects = await transaction.fetch_all(
                 _ENRICHMENT_OBJECT_SQL[0],
-                (tenant_id, model_id, None, None, None, None, None, None, None, None, 1001, 0),
+                (tenant_id, project_id, None, None, None, None, None, None, None, None, 1001, 0),
             )
             if len(objects) > 1000:
                 raise InvalidRequestError("Enrichment export supports at most 1,000 Objects.")
             attributes = await transaction.fetch_all(
                 _EXPORT_ATTRIBUTES_SQL,
-                (model_id, [obj["object_id"] for obj in objects]),
+                (project_id, [obj["object_id"] for obj in objects]),
             )
             if len(attributes) > MAX_DICTIONARY_ROWS:
                 raise InvalidRequestError("Enrichment export supports at most 50,000 Attributes.")
-        grouped: dict[int, list[ModelInputScopeAttribute]] = {}
+        grouped: dict[int, list[ProjectInputScopeAttribute]] = {}
         for row in attributes:
             grouped.setdefault(row["object_id"], []).append(
-                ModelInputScopeAttribute.model_validate(
+                ProjectInputScopeAttribute.model_validate(
                     {key: value for key, value in row.items() if key != "object_id"}
                 )
             )
-        rows: list[tuple[ModelInputScopeObject, ModelInputScopeAttribute | None]] = []
+        rows: list[tuple[ProjectInputScopeObject, ProjectInputScopeAttribute | None]] = []
         for item in objects:
-            obj = ModelInputScopeObject.model_validate(item)
+            obj = ProjectInputScopeObject.model_validate(item)
             rows.extend((obj, attr) for attr in grouped.get(obj.object_id, [None]))
         try:
             content = await run_in_threadpool(build_enrichment_workbook, rows)
@@ -89,8 +89,8 @@ class DatabaseEnrichmentDictionaryService(DatabaseModelInputScopeService):
             raise InvalidRequestError(
                 "The enrichment dictionary exceeds Excel export limits."
             ) from None
-        name = re.sub(r"[^A-Za-z0-9_-]+", "_", model["model_name"]).strip("_")[:100]
-        return f"{name or 'Model'}_Enrichment.xlsx", content
+        name = re.sub(r"[^A-Za-z0-9_-]+", "_", project["project_name"]).strip("_")[:100]
+        return f"{name or 'Project'}_Enrichment.xlsx", content
 
 
 def create_enrichment_dictionary_router(
@@ -110,13 +110,13 @@ def create_enrichment_dictionary_router(
 
     async def export_workbook(
         tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
         principal: RequestPrincipal = Depends(authenticate),
     ) -> Response:
         filename, content = await service.export_workbook(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
         )
         return Response(
             content,
@@ -128,7 +128,7 @@ def create_enrichment_dictionary_router(
         )
 
     router.add_api_route(
-        "/api/v1/tenants/{tenant_id}/models/{model_id}/metadata-enrichment/export",
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/metadata-enrichment/export",
         export_workbook,
         methods=["GET"],
     )

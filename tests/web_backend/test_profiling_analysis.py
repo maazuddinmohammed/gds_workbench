@@ -30,8 +30,8 @@ from gds_workbench_api.features.analysis import (
 from gds_workbench_api.features.analysis.read_service import (
     _normalize_analysis_summary,  # pyright: ignore[reportPrivateUsage]
 )
-from gds_workbench_api.features.metadata.contracts import MetadataWorkbookDownload
 from gds_workbench_api.features.analysis.workbook import build_analysis_workbook
+from gds_workbench_api.features.metadata.contracts import MetadataWorkbookDownload
 from gds_workbench_api.features.profiling import (
     AttributeProfile,
     DatabaseProfilingReviewService,
@@ -66,17 +66,17 @@ class StaticProfilingReviewService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: ProfilingObjectFilters,
         page_size: int,
         cursor: str | None,
     ) -> ProfilingObjectPage:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, page_size, cursor) == (7, 18, 25, None)
+        assert (tenant_id, project_id, page_size, cursor) == (7, 18, 25, None)
         self.profiling_filters = filters
         return ProfilingObjectPage(
-            model_id=18,
-            model_revision=4,
+            project_id=18,
+            project_revision=4,
             items=(
                 ProfilingObjectLedgerItem(
                     object_id=501,
@@ -102,14 +102,14 @@ class StaticProfilingReviewService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         object_id: int,
     ) -> ProfilingObjectDetail:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, object_id) == (7, 18, 501)
+        assert (tenant_id, project_id, object_id) == (7, 18, 501)
         return ProfilingObjectDetail(
-            model_id=18,
-            model_revision=4,
+            project_id=18,
+            project_revision=4,
             object_id=501,
             source_tenant_id=8,
             source_tenant_code="GRDM",
@@ -159,17 +159,17 @@ class StaticProfilingReviewService:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         filters: AnalysisFindingFilters,
         page_size: int,
         cursor: str | None,
     ) -> AnalysisFindingPage:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, page_size, cursor) == (7, 18, 25, None)
+        assert (tenant_id, project_id, page_size, cursor) == (7, 18, 25, None)
         self.analysis_filters = filters
         return AnalysisFindingPage(
-            model_id=18,
-            model_revision=4,
+            project_id=18,
+            project_revision=4,
             items=(
                 AnalysisFindingSummary(
                     analysis_result_id=701,
@@ -218,29 +218,41 @@ class StaticProfilingReviewService:
         )
 
     async def export_analysis_findings(
-        self, principal: RequestPrincipal, *, tenant_id: int, model_id: int,
-        filters: AnalysisFindingFilters, expected_model_revision: int,
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        project_id: int,
+        filters: AnalysisFindingFilters,
+        expected_project_revision: int,
     ) -> MetadataWorkbookDownload:
-        assert expected_model_revision == 4
+        assert expected_project_revision == 4
         page = await self.list_analysis_findings(
-            principal, tenant_id=tenant_id, model_id=model_id, filters=filters,
-            page_size=25, cursor=None,
+            principal,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            filters=filters,
+            page_size=25,
+            cursor=None,
         )
-        return MetadataWorkbookDownload(content=build_analysis_workbook(findings=page.items),
-                                        filename="analysis.xlsx", sheet_count=1)
+        return MetadataWorkbookDownload(
+            content=build_analysis_workbook(findings=page.items),
+            filename="analysis.xlsx",
+            sheet_count=1,
+        )
 
     async def read_analysis_finding(
         self,
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         analysis_result_id: int,
     ) -> AnalysisFindingDetail:
         page = await self.list_analysis_findings(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=AnalysisFindingFilters(show_inactive=True),
             page_size=25,
             cursor=None,
@@ -291,7 +303,7 @@ def test_profiling_ledger_is_object_level_and_normalizes_filters() -> None:
 
     with TestClient(app) as client:
         response = client.get(
-            "/api/v1/tenants/7/models/18/profiling"
+            "/api/v1/tenants/7/projects/18/profiling"
             "?source_tenant_code=%20GRDM%20&system_code=CRM"
             "&object_schema=Bronze_CRM&object_name=Customer_Raw&page_size=25"
         )
@@ -304,13 +316,15 @@ def test_profiling_ledger_is_object_level_and_normalizes_filters() -> None:
         object_name="customer_raw",
     )
     payload = response.json()
-    assert payload["model_revision"] == 4
+    assert payload["project_revision"] == 4
     assert payload["items"][0]["object_id"] == 501
     assert payload["items"][0]["profiled_attribute_count"] == 12
     assert "attribute_profiles" not in payload["items"][0]
 
 
-def test_profiling_object_detail_returns_normalized_profiles_with_nullable_provenance() -> None:
+def test_profiling_object_detail_returns_normalized_profiles_with_nullable_provenance() -> (
+    None
+):
     app = FastAPI()
     app.include_router(
         create_profiling_router(
@@ -320,7 +334,7 @@ def test_profiling_object_detail_returns_normalized_profiles_with_nullable_prove
     )
 
     with TestClient(app) as client:
-        response = client.get("/api/v1/tenants/7/models/18/profiling/501")
+        response = client.get("/api/v1/tenants/7/projects/18/profiling/501")
 
     assert response.status_code == 200
     profile = response.json()["attribute_profiles"][0]
@@ -345,7 +359,7 @@ def test_analysis_ledger_keeps_from_and_to_filters_directional() -> None:
 
     with TestClient(app) as client:
         response = client.get(
-            "/api/v1/tenants/7/models/18/analysis"
+            "/api/v1/tenants/7/projects/18/analysis"
             "?object_id=501&from_object_id=501&to_object_id=502"
             "&validation_state=VALIDATED"
             "&status=Inactive&locked=true&show_inactive=true&page_size=25"
@@ -378,7 +392,7 @@ def test_analysis_detail_normalizes_endpoints_and_evidence() -> None:
     )
 
     with TestClient(app) as client:
-        response = client.get("/api/v1/tenants/7/models/18/analysis/701")
+        response = client.get("/api/v1/tenants/7/projects/18/analysis/701")
 
     assert response.status_code == 200
     payload = response.json()
@@ -405,7 +419,7 @@ def test_analysis_defaults_hide_inactive_findings() -> None:
     )
 
     with TestClient(app) as client:
-        response = client.get("/api/v1/tenants/7/models/18/analysis?page_size=25")
+        response = client.get("/api/v1/tenants/7/projects/18/analysis?page_size=25")
 
     assert response.status_code == 200
     assert service.analysis_filters == AnalysisFindingFilters(show_inactive=False)
@@ -429,10 +443,12 @@ def test_profiling_and_analysis_routes_are_read_only() -> None:
 
     paths = app.openapi()["paths"]
     for path in (
-        "/api/v1/tenants/{tenant_id}/models/{model_id}/profiling",
-        "/api/v1/tenants/{tenant_id}/models/{model_id}/profiling/{object_id}",
-        "/api/v1/tenants/{tenant_id}/models/{model_id}/analysis",
-        ("/api/v1/tenants/{tenant_id}/models/{model_id}/analysis/{analysis_result_id}"),
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/profiling",
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/profiling/{object_id}",
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/analysis",
+        (
+            "/api/v1/tenants/{tenant_id}/projects/{project_id}/analysis/{analysis_result_id}"
+        ),
     ):
         methods = {method for method in paths[path] if method != "parameters"}
         assert methods == {"get"}
@@ -450,7 +466,7 @@ class ReviewTransaction:
     ) -> dict[str, Any] | None:
         if "workflow.analysis_result" in query:
             assert parameters == (7, 7, 18, 701)
-            assert "target_model.tenant_id = %s" in query
+            assert "target_project.tenant_id = %s" in query
             return {
                 "analysis_result_id": 701,
                 "from_object_id": 501,
@@ -509,7 +525,7 @@ class ReviewTransaction:
             }
         if "count(profile.attribute_id)" in query:
             assert parameters == (7, 7, 18, 501)
-            assert "target_model.tenant_id = %s" in query
+            assert "target_project.tenant_id = %s" in query
             return {
                 "object_id": 501,
                 "source_tenant_id": 8,
@@ -526,10 +542,10 @@ class ReviewTransaction:
                 "profiled_attribute_count": 1,
                 "last_profiled_at": datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
             }
-        if "SELECT target_model.model_id" in query:
+        if "SELECT target_project.project_id" in query:
             assert parameters == (7, 18)
-            assert "target_model.tenant_id = %s" in query
-            return {"model_id": 18, "model_revision": 4}
+            assert "target_project.tenant_id = %s" in query
+            return {"project_id": 18, "project_revision": 4}
         assert "security.entra_principal_identity" in query
         assert parameters[-1] == 7
         return {
@@ -554,7 +570,7 @@ class ReviewTransaction:
         if "core.tenant AS tenant" in query and "effective_role" in query:
             return []
         if "workflow.analysis_result" in query:
-            assert "target_model.tenant_id = %s" in query
+            assert "target_project.tenant_id = %s" in query
             assert parameters[:18] == (
                 7,
                 7,
@@ -636,7 +652,7 @@ class ReviewTransaction:
             ]
             return rows[offset : offset + limit]
         assert "workflow.attribute_profile" in query
-        assert "target_model.tenant_id = %s" in query
+        assert "target_project.tenant_id = %s" in query
         if "profile.agent_run_id" in query:
             assert parameters == (7, 18, 501, 2001)
             return [
@@ -754,7 +770,7 @@ async def test_database_profiling_ledger_is_tenant_scoped_and_cursor_paged() -> 
     first = await service.list_profiling_objects(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         filters=filters,
         page_size=1,
         cursor=None,
@@ -762,7 +778,7 @@ async def test_database_profiling_ledger_is_tenant_scoped_and_cursor_paged() -> 
     second = await service.list_profiling_objects(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         filters=filters,
         page_size=1,
         cursor=first.next_cursor,
@@ -770,7 +786,7 @@ async def test_database_profiling_ledger_is_tenant_scoped_and_cursor_paged() -> 
 
     assert [item.object_name for item in first.items] == ["customer_raw"]
     assert [item.object_name for item in second.items] == ["country_raw"]
-    assert first.model_revision == 4
+    assert first.project_revision == 4
     assert second.next_cursor is None
     assert database.transaction.profiling_offsets == [0, 1]
 
@@ -791,7 +807,7 @@ async def test_database_cursor_is_bound_to_normalized_filters() -> None:
     first = await service.list_profiling_objects(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         filters=ProfilingObjectFilters(
             source_tenant_code="grdm",
             system_code="crm",
@@ -805,7 +821,7 @@ async def test_database_cursor_is_bound_to_normalized_filters() -> None:
         await service.list_profiling_objects(
             principal,
             tenant_id=7,
-            model_id=18,
+            project_id=18,
             filters=ProfilingObjectFilters(object_name="different_object"),
             page_size=1,
             cursor=first.next_cursor,
@@ -828,14 +844,16 @@ async def test_database_profiling_detail_preserves_nullable_run_provenance() -> 
     detail = await service.read_profiling_object(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         object_id=501,
     )
 
-    assert detail.model_revision == 4
+    assert detail.project_revision == 4
     assert detail.object_description == "Customer records."
     assert detail.attribute_profiles[0].attribute_inferred_data_type == "integer"
-    assert detail.attribute_profiles[0].attribute_description == ("Stable customer identifier.")
+    assert detail.attribute_profiles[0].attribute_description == (
+        "Stable customer identifier."
+    )
     assert detail.attribute_profiles[0].provenance == ProfileWorkflowProvenance(
         agent_run_id=None,
         workflow_run_id=None,
@@ -869,7 +887,7 @@ async def test_database_analysis_ledger_applies_directional_review_filters() -> 
     first = await service.list_analysis_findings(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         filters=filters,
         page_size=1,
         cursor=None,
@@ -877,7 +895,7 @@ async def test_database_analysis_ledger_applies_directional_review_filters() -> 
     second = await service.list_analysis_findings(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         filters=filters,
         page_size=1,
         cursor=first.next_cursor,
@@ -891,7 +909,9 @@ async def test_database_analysis_ledger_applies_directional_review_filters() -> 
 
 
 @pytest.mark.asyncio
-async def test_database_analysis_detail_normalizes_evidence_and_nullable_provenance() -> None:
+async def test_database_analysis_detail_normalizes_evidence_and_nullable_provenance() -> (
+    None
+):
     service = DatabaseAnalysisReviewService(
         database=ReviewDatabase(),
         authorizer=AuthorizationService(),
@@ -906,7 +926,7 @@ async def test_database_analysis_detail_normalizes_evidence_and_nullable_provena
     detail = await service.read_analysis_finding(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         analysis_result_id=701,
     )
 
@@ -952,7 +972,7 @@ async def test_analysis_cardinality_requires_recorded_nonempty_evidence(
     expected: str | None,
 ) -> None:
     row = await ReviewTransaction().fetch_one(
-        "SELECT * FROM workflow.analysis_result WHERE target_model.tenant_id = %s",
+        "SELECT * FROM workflow.analysis_result WHERE target_project.tenant_id = %s",
         (7, 7, 18, 701),
     )
     assert row is not None
@@ -969,7 +989,14 @@ async def test_analysis_cardinality_requires_recorded_nonempty_evidence(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("source_distinct", "target_distinct", "missing", "unused", "validated", "expected"),
+    (
+        "source_distinct",
+        "target_distinct",
+        "missing",
+        "unused",
+        "validated",
+        "expected",
+    ),
     [
         (80, 100, 4, 24, True, (5.0, 24.0)),
         (3, 4, 1, 2, True, (33.3333, 50.0)),
@@ -989,7 +1016,7 @@ async def test_analysis_mismatch_percentages_use_validation_distinct_counts(
     expected: tuple[float | None, float | None],
 ) -> None:
     row = await ReviewTransaction().fetch_one(
-        "SELECT * FROM workflow.analysis_result WHERE target_model.tenant_id = %s",
+        "SELECT * FROM workflow.analysis_result WHERE target_project.tenant_id = %s",
         (7, 7, 18, 701),
     )
     assert row is not None
@@ -1009,7 +1036,10 @@ async def test_analysis_mismatch_percentages_use_validation_distinct_counts(
     assert (summary.from_row_count, summary.to_row_count) == (1000, 2000)
     assert summary.source_missing_target_count == (missing if validated else None)
     assert summary.unused_target_count == (unused if validated else None)
-    assert (summary.source_missing_target_percent, summary.unused_target_percent) == expected
+    assert (
+        summary.source_missing_target_percent,
+        summary.unused_target_percent,
+    ) == expected
 
 
 @pytest.mark.asyncio
@@ -1022,18 +1052,20 @@ async def test_database_review_labels_objects_from_source_tenant(
             "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
         ).fetchone()
         if existing is None:
-            connection.execute(cast(LiteralString, DEMO_METADATA_SEED.read_text(encoding="utf-8")))
+            connection.execute(
+                cast(LiteralString, DEMO_METADATA_SEED.read_text(encoding="utf-8"))
+            )
         tenant = connection.execute(
             "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
         ).fetchone()
         assert tenant is not None
         tenant_id = tenant["tenant_id"]
         assert isinstance(tenant_id, int) and not isinstance(tenant_id, bool)
-        model = connection.execute(
+        project = connection.execute(
             """
-            INSERT INTO model.model (tenant_id, model_name)
+            INSERT INTO project.project (tenant_id, project_name)
             VALUES (%s, %s)
-            RETURNING model_id
+            RETURNING project_id
             """,
             (tenant_id, f"Profiling analysis source Tenant {suffix}"),
         ).fetchone()
@@ -1049,7 +1081,7 @@ async def test_database_review_labels_objects_from_source_tenant(
              WHERE object_record.object_schema IN ('source_demo', 'bronze_demo')
             """
         ).fetchall()
-        assert model is not None and len(endpoints) == 2
+        assert project is not None and len(endpoints) == 2
         by_schema = {str(row["object_schema"]): row for row in endpoints}
         source = by_schema["source_demo"]
         bronze = by_schema["bronze_demo"]
@@ -1095,22 +1127,22 @@ async def test_database_review_labels_objects_from_source_tenant(
         assert unassigned_attribute is not None
         connection.execute(
             """
-            INSERT INTO model.model_input_scope (model_id, object_id)
+            INSERT INTO project.project_input_scope (project_id, object_id)
             VALUES (%s, %s), (%s, %s), (%s, %s)
             """,
             (
-                model["model_id"],
+                project["project_id"],
                 source["object_id"],
-                model["model_id"],
+                project["project_id"],
                 bronze["object_id"],
-                model["model_id"],
+                project["project_id"],
                 unassigned["object_id"],
             ),
         )
         connection.execute(
             """
             INSERT INTO workflow.attribute_profile (
-                model_id,
+                project_id,
                 attribute_id,
                 object_id,
                 source_context_digest,
@@ -1122,11 +1154,11 @@ async def test_database_review_labels_objects_from_source_tenant(
                 (%s, %s, %s, %s, 10, 8, 2)
             """,
             (
-                model["model_id"],
+                project["project_id"],
                 bronze["attribute_id"],
                 bronze["object_id"],
                 "a" * 64,
-                model["model_id"],
+                project["project_id"],
                 unassigned_attribute["attribute_id"],
                 unassigned["object_id"],
                 "b" * 64,
@@ -1135,7 +1167,7 @@ async def test_database_review_labels_objects_from_source_tenant(
         valid_finding = connection.execute(
             """
             INSERT INTO workflow.analysis_result (
-                model_id,
+                project_id,
                 from_object_id,
                 from_attribute_id,
                 to_object_id,
@@ -1146,7 +1178,7 @@ async def test_database_review_labels_objects_from_source_tenant(
             RETURNING analysis_result_id
             """,
             (
-                model["model_id"],
+                project["project_id"],
                 source["object_id"],
                 source["attribute_id"],
                 bronze["object_id"],
@@ -1157,7 +1189,7 @@ async def test_database_review_labels_objects_from_source_tenant(
         connection.execute(
             """
             INSERT INTO workflow.analysis_result (
-                model_id,
+                project_id,
                 from_object_id,
                 from_attribute_id,
                 to_object_id,
@@ -1167,7 +1199,7 @@ async def test_database_review_labels_objects_from_source_tenant(
             ) VALUES (%s, %s, %s, %s, %s, %s, 'Unassigned endpoint')
             """,
             (
-                model["model_id"],
+                project["project_id"],
                 source["object_id"],
                 source["attribute_id"],
                 unassigned["object_id"],
@@ -1176,7 +1208,7 @@ async def test_database_review_labels_objects_from_source_tenant(
             ),
         )
         assert valid_finding is not None
-        model_id = model["model_id"]
+        project_id = project["project_id"]
         valid_finding_id = valid_finding["analysis_result_id"]
 
     database = WebPostgresDatabase(
@@ -1205,7 +1237,7 @@ async def test_database_review_labels_objects_from_source_tenant(
         profile_page = await profiling_service.list_profiling_objects(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=ProfilingObjectFilters(),
             page_size=20,
             cursor=None,
@@ -1213,13 +1245,13 @@ async def test_database_review_labels_objects_from_source_tenant(
         profile_detail = await profiling_service.read_profiling_object(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             object_id=bronze["object_id"],
         )
         finding_page = await analysis_service.list_analysis_findings(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             filters=AnalysisFindingFilters(show_inactive=True),
             page_size=20,
             cursor=None,
@@ -1227,7 +1259,7 @@ async def test_database_review_labels_objects_from_source_tenant(
         finding_detail = await analysis_service.read_analysis_finding(
             principal,
             tenant_id=tenant_id,
-            model_id=model_id,
+            project_id=project_id,
             analysis_result_id=valid_finding_id,
         )
     finally:
@@ -1236,7 +1268,9 @@ async def test_database_review_labels_objects_from_source_tenant(
     assert [item.object_id for item in profile_page.items] == [bronze["object_id"]]
     assert profile_page.items[0].source_tenant_code == "DEMO_TENANT"
     assert profile_detail.source_tenant_code == "DEMO_TENANT"
-    assert [item.analysis_result_id for item in finding_page.items] == [valid_finding_id]
+    assert [item.analysis_result_id for item in finding_page.items] == [
+        valid_finding_id
+    ]
     assert finding_page.items[0].from_endpoint.source_tenant_code == "DEMO_TENANT"
     assert finding_page.items[0].to_endpoint.source_tenant_code == "DEMO_TENANT"
     assert finding_detail.from_endpoint.source_tenant_code == "DEMO_TENANT"
@@ -1260,7 +1294,7 @@ def test_review_features_mount_independently(feature: str) -> None:
         analysis_review_service=service if feature == "analysis" else None,
     )
     with TestClient(app) as client:
-        response = client.get(f"/api/v1/tenants/7/models/18/{feature}?page_size=25")
+        response = client.get(f"/api/v1/tenants/7/projects/18/{feature}?page_size=25")
     assert response.status_code == 200
 
 
@@ -1281,7 +1315,7 @@ async def test_cardinality_inference_is_independent_of_measured_counts(
     mismatch: bool,
 ) -> None:
     row = await ReviewTransaction().fetch_one(
-        "SELECT * FROM workflow.analysis_result WHERE target_model.tenant_id = %s",
+        "SELECT * FROM workflow.analysis_result WHERE target_project.tenant_id = %s",
         (7, 7, 18, 701),
     )
     assert row is not None
@@ -1298,41 +1332,69 @@ async def test_cardinality_inference_is_independent_of_measured_counts(
 async def test_analysis_export_loads_all_matching_rows_and_checks_revision() -> None:
     from io import BytesIO
 
-    from gds_workbench_api.features.models import ModelRevisionConflictError
+    from gds_workbench_api.features.projects import ProjectRevisionConflictError
     from openpyxl import load_workbook
 
     database = ReviewDatabase()
     service = DatabaseAnalysisReviewService(
-        database=database, authorizer=AuthorizationService(),
+        database=database,
+        authorizer=AuthorizationService(),
         cursor_signing_key=b"development-only-key-32-bytes-long",
     )
     principal = _identity_provider().request_principal(None)
     result = await service.export_analysis_findings(
-        principal, tenant_id=7, model_id=18, filters=AnalysisFindingFilters(object_id=501, from_object_id=501, to_object_id=502,
-                                      validation_state="validated", status="active", locked=True, show_inactive=True),
-        expected_model_revision=4,
+        principal,
+        tenant_id=7,
+        project_id=18,
+        filters=AnalysisFindingFilters(
+            object_id=501,
+            from_object_id=501,
+            to_object_id=502,
+            validation_state="validated",
+            status="active",
+            locked=True,
+            show_inactive=True,
+        ),
+        expected_project_revision=4,
     )
     workbook = load_workbook(BytesIO(result.content))
     assert workbook.active is not None
     assert workbook.active.max_row == 3
     assert result.filename.endswith("__r4.xlsx")
-    with pytest.raises(ModelRevisionConflictError):
+    with pytest.raises(ProjectRevisionConflictError):
         await service.export_analysis_findings(
-            principal, tenant_id=7, model_id=18, filters=AnalysisFindingFilters(object_id=501, from_object_id=501, to_object_id=502,
-                                      validation_state="validated", status="active", locked=True, show_inactive=True),
-            expected_model_revision=3,
+            principal,
+            tenant_id=7,
+            project_id=18,
+            filters=AnalysisFindingFilters(
+                object_id=501,
+                from_object_id=501,
+                to_object_id=502,
+                validation_state="validated",
+                status="active",
+                locked=True,
+                show_inactive=True,
+            ),
+            expected_project_revision=3,
         )
 
 
 def test_analysis_export_endpoint_downloads_excel_with_safe_headers() -> None:
     app = FastAPI()
-    app.include_router(create_analysis_review_router(
-        identity_provider=_identity_provider(), service=StaticProfilingReviewService(),
-    ))
+    app.include_router(
+        create_analysis_review_router(
+            identity_provider=_identity_provider(),
+            service=StaticProfilingReviewService(),
+        )
+    )
     with TestClient(app) as client:
-        result = client.post("/api/v1/tenants/7/models/18/analysis/export", json={
-            "expected_model_revision": 4, "filters": {"locked": True},
-        })
+        result = client.post(
+            "/api/v1/tenants/7/projects/18/analysis/export",
+            json={
+                "expected_project_revision": 4,
+                "filters": {"locked": True},
+            },
+        )
     assert result.status_code == 200
     assert result.content.startswith(b"PK")
     assert result.headers["cache-control"] == "no-store"

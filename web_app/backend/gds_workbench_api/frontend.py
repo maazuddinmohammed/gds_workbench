@@ -34,7 +34,7 @@ class RequestBodyLimitMiddleware:
                 path[4] == "prompts"
                 or (
                     len(path) >= 7
-                    and path[4] == "models"
+                    and path[4] == "projects"
                     and path[5].isdecimal()
                     and path[6] == "runs"
                 )

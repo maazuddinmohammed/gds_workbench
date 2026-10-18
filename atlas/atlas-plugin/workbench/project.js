@@ -1,0 +1,93 @@
+(function (root, factory) {
+  "use strict";
+  let common = root.GDSCommonValidation;
+  let projectValidation = root.GDSProjectValidation;
+  let core = root.GDSCore;
+  if (typeof module === "object" && module.exports) {
+    common = require("./validation/common.js");
+    projectValidation = require("./validation/project.js");
+    core = require("./core.js");
+  }
+  const api = factory(common, projectValidation, core);
+  if (typeof module === "object" && module.exports) module.exports = api;
+  root.GDSProject = api;
+})(typeof globalThis === "object" ? globalThis : this, function (common, projectValidation, core) {
+  "use strict";
+
+  const GROUP_FIELDS = new Map([
+    [
+      "mapping_object",
+      ["modeled_entity_type", "modeled_entity_schema_name", "modeled_entity_name", "source_system_code"],
+    ],
+    [
+      "mapping_attribute",
+      ["modeled_entity_type", "modeled_entity_schema_name", "modeled_entity_name", "source_system_code"],
+    ],
+  ]);
+
+  function entityTypeLabel(value) {
+    return String(value ?? "unspecified")
+      .split("_")
+      .filter(Boolean)
+      .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+      .join(" ");
+  }
+
+  function reviewGroups(definition, records) {
+    const fields = GROUP_FIELDS.get(definition?.name);
+    if (!fields || !Array.isArray(records)) return [];
+    const groups = new Map();
+    for (const record of records) {
+      const values = fields.map((field) => record[field] ?? null);
+      const normalized = values.map((value, index) =>
+        core.normalize("project", fields[index], value),
+      );
+      const key = core.stableStringify(normalized);
+      if (!groups.has(key)) {
+        const entity = `${entityTypeLabel(values[0])} ${values[1] ?? "unspecified"}.${values[2] ?? "unspecified"}`;
+        const suffix = fields.includes("source_system_code")
+          ? `source System ${values[3] ?? "unspecified"}`
+          : "Entity";
+        groups.set(key, {
+          label: `${entity} · ${suffix}`,
+          records: [],
+        });
+      }
+      groups.get(key).records.push(record);
+    }
+    return [...groups.entries()]
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([, group]) => group);
+  }
+
+  function validate(loaded, metadataLoaded = null, context = {}) {
+    const effective = new Map();
+    for (const [name, value] of loaded) {
+      effective.set(name, {
+        definition: value.definition,
+        schema: value.schema,
+        records: value.effective,
+        baseline: value.baseline,
+        pending: value.pending,
+      });
+    }
+    const metadata = metadataLoaded instanceof Map
+      ? new Map(
+        [...metadataLoaded].map(([name, value]) => [
+          name,
+          {
+            definition: value.definition,
+            schema: value.schema,
+            records: value.effective ?? value.baseline ?? value.records ?? [],
+          },
+        ]),
+      )
+      : null;
+    return [
+      ...common.validateLoaded("project", loaded),
+      ...projectValidation.validateGraph(effective, metadata, context),
+    ];
+  }
+
+  return { label: "Project", reviewGroups, validate };
+});

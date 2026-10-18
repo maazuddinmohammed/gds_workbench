@@ -22,7 +22,12 @@ def test_attribute_reads_scope_sql_and_pagination_to_the_parent_object() -> None
         "mapping_attribute_id": 91,
         "mapping_object_id": 81,
         "target": {
-            "entity": {"entity_type": "logical_entity", "entity_id": 41, "entity_schema_name": "silver", "entity_name": "Customer"},
+            "entity": {
+                "entity_type": "logical_entity",
+                "entity_id": 41,
+                "entity_schema_name": "silver",
+                "entity_name": "Customer",
+            },
             "attribute_id": 51,
             "attribute_name": "name",
             "ordinal_position": 1,
@@ -34,7 +39,7 @@ def test_attribute_reads_scope_sql_and_pagination_to_the_parent_object() -> None
         "updated_at": datetime(2026, 9, 1, tzinfo=UTC),
     }
     transaction = MagicMock()
-    transaction.fetch_one = AsyncMock(return_value={"model_revision": 4})
+    transaction.fetch_one = AsyncMock(return_value={"project_revision": 4})
     transaction.fetch_all = AsyncMock(
         side_effect=[
             [row, {**row, "mapping_attribute_id": 92}],
@@ -60,7 +65,7 @@ def test_attribute_reads_scope_sql_and_pagination_to_the_parent_object() -> None
             service=service,
         )
     )
-    path = "/api/v1/tenants/7/models/18/mapping/attributes"
+    path = "/api/v1/tenants/7/projects/18/mapping/attributes"
     with TestClient(app) as client:
         first = client.get(path, params={"mapping_object_id": 81, "page_size": 1})
         assert first.status_code == 200
@@ -74,20 +79,25 @@ def test_attribute_reads_scope_sql_and_pagination_to_the_parent_object() -> None
         assert [item["mapping_attribute_id"] for item in second.json()["items"]] == [92]
         assert second.json()["next_cursor"] is None
         with pytest.raises(InvalidRequestError):
-            client.get(path, params={"mapping_object_id": 82, "page_size": 1, "cursor": cursor})
+            client.get(
+                path, params={"mapping_object_id": 82, "page_size": 1, "cursor": cursor}
+            )
         for invalid in (0, -1, "invalid"):
-            assert client.get(path, params={"mapping_object_id": invalid}).status_code == 422
+            assert (
+                client.get(path, params={"mapping_object_id": invalid}).status_code
+                == 422
+            )
 
     assert transaction.fetch_all.await_count == 2
     for offset, call in enumerate(transaction.fetch_all.call_args_list):
         sql, parameters = call.args
-        assert "target_model.tenant_id = %s" in sql
+        assert "target_project.tenant_id = %s" in sql
         assert "object_mapping.mapping_object_id = %s" in sql
         assert parameters[:2] == (7, 18)
         assert parameters[-4:] == (81, 81, 2, offset)
     assert authorizer.authorize_tenant.await_count == 2
     assert authorizer.authorize_tenant.call_args.kwargs == {
         "tenant_id": 7,
-        "model_id": 18,
+        "project_id": 18,
         "policy": ToolPolicy.TENANT_READ,
     }

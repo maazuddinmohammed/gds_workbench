@@ -1,6 +1,6 @@
 ---
 name: atlas-registration
-description: Register applied model targets or generated transformation artifacts in Atlas physical/runtime Metadata, with optional local creation DDL. Use for target or Process registration; does not deploy, upload files or execute pipelines.
+description: Register applied project targets or generated transformation artifacts in Atlas physical/runtime Metadata, with optional local creation DDL. Use for target or Process registration; does not deploy, upload files or execute pipelines.
 ---
 
 # Register approved outputs
@@ -14,7 +14,7 @@ Select the requested registration procedure; these are independent operations wi
 
 Follow [working context](../../references/working-method.md), [record state](../../references/record-state.md) and [impact/update scope](../../references/methods/change-impact.md). Reuse verified choices and valid existing registrations. Scope a change from actual dependencies; changed code text alone does not require a new Process identity.
 
-Resolve physical owner separately from Model Tenant and GDS placement. Multiple owners use separate Metadata roots and Change Sets. Show unresolved ownership, schema assignments or runtime locations before completing dependent records. A local output folder is not automatically a deployed runtime path.
+Resolve physical owner separately from Project Tenant and GDS placement. Multiple owners use separate Metadata roots and Change Sets. Show unresolved ownership, schema assignments or runtime locations before completing dependent records. A local output folder is not automatically a deployed runtime path.
 
 Creation DDL remains an optional, separately selected local artifact. It cannot be executed by `execute_databricks_sql`; registration Apply does not create/alter tables. Registration is not a prerequisite for Mapping or Code generation. Process order is a positive runtime stage, not a mechanical offset of Mapping order.
 

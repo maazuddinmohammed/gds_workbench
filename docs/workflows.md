@@ -14,7 +14,7 @@ into this navigation guide.
 | Variable registration and projection | [prompt_inputs.py](../web_app/backend/gds_workbench_api/features/workflows/authoring/prompt_inputs.py), [context_inputs.py](../web_app/backend/gds_workbench_api/features/workflows/authoring/context_inputs.py), [downstream_inputs.py](../web_app/backend/gds_workbench_api/features/workflows/authoring/downstream_inputs.py) |
 | Reader contracts, selection and paging | [context_contracts.py](../web_app/backend/gds_workbench_api/features/workflows/authoring/context_contracts.py), [context_readers.py](../web_app/backend/gds_workbench_api/features/workflows/authoring/context_readers.py) |
 | Downstream variable schemas | [downstream_contracts.py](../web_app/backend/gds_workbench_api/features/workflows/authoring/downstream_contracts.py) |
-| Models, limits and worker policy | [backend config](../web_app/backend/gds_workbench_api/config/README.md) |
+| Projects, limits and worker policy | [backend config](../web_app/backend/gds_workbench_api/config/README.md) |
 | Candidate validation | Each backend `features/<workflow>/` contract/validator/policy and shared `mcp_server/gds_etl_workbench/application/change_sets/` graph validation |
 
 Seeds update database configuration only when explicitly run using their documented
@@ -27,12 +27,12 @@ not silently change installed or already-running prompts.
 | Workflow | Main evidence and intended output |
 | --- | --- |
 | Profiling | Exact selected physical Attributes and row scope → deterministic current measurements with provenance. |
-| Object/Attribute Enrichment | Source context, selected physical metadata, ingestion lineage and current Profiles → Model-owned descriptions, inferred types and natural/primary key, nullability and PII findings. Human edits and locks stay Model-specific. |
-| Analysis | Physical Objects/Attributes with available Model-owned enrichment, Profiles, lineage and relevant context → supported relationship inference; measured validation remains separate. |
-| Conceptual | Source context, physical evidence, Analysis and applicable Assertions → business concepts and relationships. |
-| Logical | Physical metadata with available Model-owned enrichment, Profiles, Analysis, Assertions and model naming/key/audit policy → normalized Entity/Attribute/relationship design. Web runs exclude Conceptual records and use the Model coverage setting (default 70%) for distinct selected Objects. After retries, below-target candidates fail when Logical enforcement is on; otherwise valid partial coverage returns with a warning when off (default). Attribute selection follows the design. |
-| Dimensional | Selected applied Logical Entities/Attributes, their authorized physical support, Profiles, Analysis, Assertions and Gold policy → dimensions, facts, bridges, grains and measures. Use the Model coverage setting (default 60%) for distinct selected Logical Entities. After retries, below-target candidates fail when Dimensional enforcement is on; otherwise valid partial coverage returns with a warning when off (default). |
-| Mapping | Modeled target/Attributes, eligible physical or modeled sources, support evidence, Assertions, existing protected Mapping and selected templates → Object/Attribute transformation documents per Entity/System pair. |
+| Object/Attribute Enrichment | Source context, selected physical metadata, ingestion lineage and current Profiles → Project-owned descriptions, inferred types and natural/primary key, nullability and PII findings. Human edits and locks stay Project-specific. |
+| Analysis | Physical Objects/Attributes with available Project-owned enrichment, Profiles, lineage and relevant context → supported relationship inference; measured validation remains separate. |
+| Conceptual | Source context, physical evidence, Analysis and applicable Context records → standalone business concepts and relationships. Its output does not feed Logical or Dimensional. |
+| Logical | Physical metadata with available Project-owned enrichment, Profiles, Analysis, Context records and project naming/key/audit policy → normalized Entity/Attribute/relationship design. Excludes Conceptual records and uses the Project coverage setting (default 70%) for distinct selected Objects. After retries, below-target candidates fail when Logical enforcement is on; otherwise valid partial coverage returns with a warning when off (default). Attribute selection follows the design. |
+| Dimensional | Selected applied Logical Entities/Attributes, their authorized physical support, Profiles, Analysis, Context records and Gold policy → dimensions, facts, bridges, grains and measures. Use the Project coverage setting (default 60%) for distinct selected Logical Entities. After retries, below-target candidates fail when Dimensional enforcement is on; otherwise valid partial coverage returns with a warning when off (default). |
+| Mapping | Modeled target/Attributes, eligible physical or modeled sources, support evidence, Context records, existing protected Mapping and selected templates → Object/Attribute transformation documents per Entity/System pair. |
 | Code | Applied transformation documents, their exact saved template definitions, modeled target shape, eligible sources and frozen artifact requirements → SQL artifacts with exact source-System assignment. Partial Mapping requires explicit gaps and placeholders. |
 | Validation | Complete Mapping, relevant current Code, metadata and applicable requirements → deterministic Validation Groups/Checks. |
 
@@ -46,18 +46,21 @@ consolidation decisions. One-shot embeds enrichment, Profiles with provenance an
 Analysis validation in Object/Attribute/Relationship context; tool-assisted readers
 expose the same evidence across complete pages. Recorded conflicts remain visible
 for design decisions; synthetic transport tests do not prove provider reasoning.
-Registered natural-key metadata and Model enrichment have separate fields, including
+Registered natural-key metadata and Project enrichment have separate fields, including
 when enrichment is unknown or disagrees. Logical defaults plan business Submodels
 and Entity grain before evaluating relationships. Referenced generated surrogate
 keys must be explicit candidate Attributes so initial reference validation succeeds.
 Common audit fields remain backend-projected.
 
-Profiling precedes Model-owned Enrichment. The plugin prefers Profiling → Enrichment
-→ Analysis → Conceptual → Logical, reusing valid evidence and pending local records.
+Profiling precedes Project-owned Enrichment. The plugin prefers Profiling → Enrichment
+→ Analysis, then the requested independent design: Conceptual or Logical. Dimensional
+consumes Logical. Conceptual is never a prerequisite, source, or design constraint
+for Logical or Dimensional, including pending local records. Shared physical evidence,
+Analysis and Context records remain reusable by each design.
 Refresh the Snapshot after backend Profiling; related authored phases can remain in
 one local draft until reviewed submission. Actual applied downstream prerequisites
-still apply. [Plugin enrichment](../atlas/atlas-plugin/references/model/enrichment.md)
-uses Model Change Sets; physical Metadata correction remains separate.
+still apply. [Plugin enrichment](../atlas/atlas-plugin/references/project/enrichment.md)
+uses Project Change Sets; physical Metadata correction remains separate.
 
 Only configured variables/readers enter an agent request; do not assume an earlier
 workflow's whole output is implicitly appended. One-shot and tool-assisted modes
@@ -67,7 +70,7 @@ not an empty result or permission to fabricate details.
 
 Coverage means assessing all selected inputs and required outputs. Unsupported
 relationships, fields, joins, conversions or KPI calculations must remain explicit
-gaps. Examples teach format, not facts for the current Model. Preserve evidence
+gaps. Examples teach format, not facts for the current Project. Preserve evidence
 provenance and distinguish unknown, absent, zero, failed and contradictory states.
 
 ## Mapping and Code
@@ -97,12 +100,26 @@ and temporary stages. Missing expressions may use typed-null placeholders with
 warnings; unknown rowsets use zero-row branches. Conflicting rules remain blocking.
 SQL parsing proves syntax/shape only, not live business correctness.
 
+## Saved output downloads
+
+Code generation → More → Download all SQL produces a ZIP of all active saved SQL
+files for the selected Logical or Dimensional layer, across pages and table filters.
+Stale files remain included; `manifest.json` records each file's identity, source
+Systems and currentness. Individual downloads remain available for inactive history.
+
+Validation → More → Export all validations produces a ZIP of active groups/checks
+for the selected layer, including shared groups. Each check's SQL and optional
+comparison SQL are separate files; `manifest.json` preserves descriptions, severity,
+operators, operands and currentness. Exporting does not execute or validate the SQL.
+Both downloads authorize the Project and check its expected revision server-side;
+oversized exports fail explicitly rather than returning a partial archive.
+
 ## Target registration
 
 Logical/Dimensional Export produces Silver/Gold metadata workbooks from applied
 Entities using their saved schemas and configured GDS placement. Metadata draft
 import, validation, review and Apply register physical Objects/Attributes; they do
-not create tables or bind Models to physical IDs. Process configuration and external
+not create tables or bind Projects to physical IDs. Process configuration and external
 file placement happen later. Mapping/Code do not require this export.
 
 ## Changing a workflow

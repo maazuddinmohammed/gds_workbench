@@ -1,14 +1,14 @@
-from gds_etl_workbench.application.model_snapshot import (
+from gds_etl_workbench.application.project_snapshot import (
     _MAPPING_ATTRIBUTE_SQL,
     _MAPPING_OBJECT_SQL,
-    _MODEL_INPUT_SCOPE_SQL,
+    _PROJECT_INPUT_SCOPE_SQL,
 )
 from gds_etl_workbench.application.modeling.profiling_analysis import (
     ANALYSIS_SQL,
     PROFILING_SQL,
 )
-from gds_etl_workbench.tools.modeling.model_input_scope import (
-    _MODEL_INPUT_SCOPE_SQL as MODEL_INPUT_SCOPE_TOOL_SQL,
+from gds_etl_workbench.tools.modeling.project_input_scope import (
+    _PROJECT_INPUT_SCOPE_SQL as PROJECT_INPUT_SCOPE_TOOL_SQL,
 )
 
 
@@ -20,29 +20,29 @@ def test_profiling_and_analysis_use_physical_connection_placement_keys() -> None
     profiling = compact(PROFILING_SQL)
     analysis = compact(ANALYSIS_SQL)
 
-    assert "eligible_attribute.is_model_input_eligible" in profiling
+    assert "eligible_attribute.is_project_input_eligible" in profiling
     assert "tenant.tenant_id = connection.tenant_id" in profiling
     assert "eligible_attribute.object_tenant_id" not in profiling
-    assert "eligible_from_attribute.is_model_input_eligible" in analysis
-    assert "eligible_to_attribute.is_model_input_eligible" in analysis
+    assert "eligible_from_attribute.is_project_input_eligible" in analysis
+    assert "eligible_to_attribute.is_project_input_eligible" in analysis
     assert "from_tenant.tenant_id = from_connection.tenant_id" in analysis
     assert "to_tenant.tenant_id = to_connection.tenant_id" in analysis
     assert "object_tenant_id" not in analysis
 
 
-def test_model_input_scope_snapshot_uses_connection_placement_natural_key() -> None:
-    sql = compact(_MODEL_INPUT_SCOPE_SQL)
+def test_project_input_scope_snapshot_uses_connection_placement_natural_key() -> None:
+    sql = compact(_PROJECT_INPUT_SCOPE_SQL)
 
     assert "placement_tenant.tenant_code" in sql
     assert "placement_tenant.tenant_id = connection.tenant_id" in sql
-    assert "scope.model_input_scope_is_locked" in sql
+    assert "scope.project_input_scope_is_locked" in sql
     assert "object.source_tenant_id" not in sql
 
 
-def test_model_input_scope_reader_exposes_source_owner_and_foreign_catalog() -> None:
-    sql = compact(MODEL_INPUT_SCOPE_TOOL_SQL)
+def test_project_input_scope_reader_exposes_source_owner_and_foreign_catalog() -> None:
+    sql = compact(PROJECT_INPUT_SCOPE_TOOL_SQL)
 
-    assert "object.source_tenant_id = model.tenant_id" not in sql
+    assert "object.source_tenant_id = project.tenant_id" not in sql
     assert "source_tenant.tenant_code AS source_tenant_code" in sql
     assert "placement_tenant.tenant_code AS placement_tenant_code" in sql
     assert "connection.foreign_catalog" in sql

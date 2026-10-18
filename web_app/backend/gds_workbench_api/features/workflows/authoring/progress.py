@@ -17,7 +17,7 @@ class AgentWorkflowProgressLifecycle(Protocol):
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         event: AgentWorkflowEvent,
     ) -> None: ...
@@ -32,13 +32,13 @@ class AgentWorkflowProgress:
         lifecycle: AgentWorkflowProgressLifecycle,
         principal: RequestPrincipal,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
     ) -> None:
         self._lifecycle = lifecycle
         self._principal = principal
         self._workflow_run_id = workflow_run_id
-        self._expected_model_revision = expected_model_revision
+        self._expected_project_revision = expected_project_revision
         self._workflow_run_claim_token = workflow_run_claim_token
         self._next_sequence = 2
 
@@ -80,7 +80,7 @@ class AgentWorkflowProgress:
         await self._lifecycle.append_event(
             self._principal,
             workflow_run_id=self._workflow_run_id,
-            expected_model_revision=self._expected_model_revision,
+            expected_project_revision=self._expected_project_revision,
             workflow_run_claim_token=self._workflow_run_claim_token,
             event=self.event(
                 attempt=attempt,

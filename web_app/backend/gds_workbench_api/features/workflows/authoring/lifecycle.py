@@ -21,9 +21,9 @@ from gds_etl_workbench.domain.errors import (
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from gds_workbench_api.capabilities import MAX_AUTHORING_ATTEMPTS
-from gds_workbench_api.features.models import ModelRevisionConflictError
+from gds_workbench_api.features.projects import ProjectRevisionConflictError
 from gds_workbench_api.features.workflows.authoring.plan import (
-    ModelWorkflow,
+    ProjectWorkflow,
     WorkflowExecutionMode,
 )
 from gds_workbench_api.features.workflows.execution.fence import (
@@ -32,15 +32,15 @@ from gds_workbench_api.features.workflows.execution.fence import (
 from gds_workbench_api.features.workflows.runs import WorkflowRunNotFoundError
 
 _RUN_BINDING_SQL: LiteralString = """
-SELECT target_model.model_revision
+SELECT target_project.project_revision
   FROM application.workflow_run AS run
-  JOIN model.model AS target_model
-    ON target_model.model_id = run.model_id
-   AND target_model.tenant_id = %s
-   AND target_model.is_active
- WHERE run.model_id = %s
+  JOIN project.project AS target_project
+    ON target_project.project_id = run.project_id
+   AND target_project.tenant_id = %s
+   AND target_project.is_active
+ WHERE run.project_id = %s
    AND run.workflow_run_id = %s
-   AND run.model_workflow = %s
+   AND run.project_workflow = %s
    AND run.workflow_execution_mode IS NOT DISTINCT FROM %s
 """
 
@@ -53,7 +53,7 @@ SELECT started.changed,
 """
 
 _APPEND_EVENT_SQL: LiteralString = """
-SELECT event.model_event_log_id
+SELECT event.project_event_log_id
   FROM application.append_workflow_run_event(
        %s, %s, %s, %s, %s, %s, %s,
        %s, %s, %s, %s, %s, %s
@@ -109,7 +109,7 @@ class AgentWorkflowRunStart(BaseModel):
     workflow_run_id: int = Field(gt=0)
     workflow_run_state: RunningState
     started_at: datetime | None
-    model_revision: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
 
 
 class AgentWorkflowTerminalResult(BaseModel):
@@ -154,7 +154,7 @@ async def append_agent_workflow_event(
     principal: RequestPrincipal,
     *,
     workflow_run_id: int,
-    expected_model_revision: int,
+    expected_project_revision: int,
     event: AgentWorkflowEvent,
 ) -> None:
     """Append or exactly replay one event inside the caller's transaction."""
@@ -165,7 +165,7 @@ async def append_agent_workflow_event(
             identity
             + (
                 workflow_run_id,
-                expected_model_revision,
+                expected_project_revision,
                 event.sequence,
                 event.attempt,
                 event.stage,
@@ -187,7 +187,7 @@ async def complete_agent_workflow_run(
     principal: RequestPrincipal,
     *,
     workflow_run_id: int,
-    expected_model_revision: int,
+    expected_project_revision: int,
     finding_count: int,
 ) -> AgentWorkflowTerminalResult:
     """Complete or exactly replay one Run inside the caller's transaction."""
@@ -195,7 +195,7 @@ async def complete_agent_workflow_run(
     try:
         row = await transaction.fetch_one(
             _COMPLETE_SQL,
-            identity + (workflow_run_id, expected_model_revision, finding_count),
+            identity + (workflow_run_id, expected_project_revision, finding_count),
         )
     except Exception as error:
         raise_workflow_lifecycle_error(error)
@@ -209,7 +209,7 @@ async def fail_agent_workflow_run(
     principal: RequestPrincipal,
     *,
     workflow_run_id: int,
-    expected_model_revision: int,
+    expected_project_revision: int,
     failure_code: str,
     safe_failure_message: str,
 ) -> AgentWorkflowTerminalResult:
@@ -228,7 +228,7 @@ async def fail_agent_workflow_run(
             workflow_identity_triple(principal)
             + (
                 workflow_run_id,
-                expected_model_revision,
+                expected_project_revision,
                 failure_code,
                 safe_failure_message,
             ),
@@ -246,11 +246,11 @@ class AgentWorkflowLifecycle(Protocol):
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
+        expected_workflow: ProjectWorkflow,
         expected_execution_mode: WorkflowExecutionMode | None,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart: ...
 
     async def append_event(
@@ -258,7 +258,7 @@ class AgentWorkflowLifecycle(Protocol):
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         event: AgentWorkflowEvent,
     ) -> None: ...
@@ -268,7 +268,7 @@ class AgentWorkflowLifecycle(Protocol):
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         failure_code: str,
         safe_failure_message: str,
@@ -286,11 +286,11 @@ class DatabaseAgentWorkflowLifecycle:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
+        expected_workflow: ProjectWorkflow,
         expected_execution_mode: WorkflowExecutionMode | None,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart:
         identity = workflow_identity_triple(principal)
         try:
@@ -299,7 +299,7 @@ class DatabaseAgentWorkflowLifecycle:
                     _RUN_BINDING_SQL,
                     (
                         tenant_id,
-                        model_id,
+                        project_id,
                         workflow_run_id,
                         expected_workflow,
                         expected_execution_mode,
@@ -309,14 +309,14 @@ class DatabaseAgentWorkflowLifecycle:
                     raise WorkflowRunNotFoundError()
                 row = await transaction.fetch_one(
                     _START_SQL,
-                    identity + (workflow_run_id, expected_model_revision),
+                    identity + (workflow_run_id, expected_project_revision),
                 )
         except Exception as error:
             raise_workflow_lifecycle_error(error)
         if row is None:
             raise DependencyUnavailableError()
         return AgentWorkflowRunStart.model_validate(
-            {**row, "model_revision": expected_model_revision},
+            {**row, "project_revision": expected_project_revision},
             strict=True,
         )
 
@@ -325,7 +325,7 @@ class DatabaseAgentWorkflowLifecycle:
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         event: AgentWorkflowEvent,
     ) -> None:
@@ -340,7 +340,7 @@ class DatabaseAgentWorkflowLifecycle:
                     transaction,
                     principal,
                     workflow_run_id=workflow_run_id,
-                    expected_model_revision=expected_model_revision,
+                    expected_project_revision=expected_project_revision,
                     event=event,
                 )
         except Exception as error:
@@ -351,7 +351,7 @@ class DatabaseAgentWorkflowLifecycle:
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         finding_count: int,
     ) -> AgentWorkflowTerminalResult:
@@ -366,7 +366,7 @@ class DatabaseAgentWorkflowLifecycle:
                     transaction,
                     principal,
                     workflow_run_id=workflow_run_id,
-                    expected_model_revision=expected_model_revision,
+                    expected_project_revision=expected_project_revision,
                     finding_count=finding_count,
                 )
         except Exception as error:
@@ -378,7 +378,7 @@ class DatabaseAgentWorkflowLifecycle:
         principal: RequestPrincipal,
         *,
         workflow_run_id: int,
-        expected_model_revision: int,
+        expected_project_revision: int,
         workflow_run_claim_token: UUID,
         failure_code: str,
         safe_failure_message: str,
@@ -394,7 +394,7 @@ class DatabaseAgentWorkflowLifecycle:
                     transaction,
                     principal,
                     workflow_run_id=workflow_run_id,
-                    expected_model_revision=expected_model_revision,
+                    expected_project_revision=expected_project_revision,
                     failure_code=failure_code,
                     safe_failure_message=safe_failure_message,
                 )
@@ -416,8 +416,8 @@ def raise_workflow_lifecycle_error(error: Exception) -> Never:
     ):
         raise error
     message = _primary_database_message(error)
-    if message == "stale_model_revision":
-        raise ModelRevisionConflictError() from error
+    if message == "stale_project_revision":
+        raise ProjectRevisionConflictError() from error
     if message == "Workflow Run is unavailable":
         raise WorkflowRunNotFoundError() from error
     if message == "Workflow Run belongs to another Principal":

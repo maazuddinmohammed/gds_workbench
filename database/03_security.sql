@@ -244,7 +244,7 @@ BEGIN
        OR p_policy NOT IN (
         'tenant_read',
         'tenant_metadata_write',
-        'tenant_model_write',
+        'tenant_project_write',
         'tenant_lock_manage',
         'super_admin_only'
     ) THEN
@@ -331,7 +331,7 @@ BEGIN
     v_required_role_rank := CASE p_policy
         WHEN 'tenant_read' THEN 1
         WHEN 'tenant_metadata_write' THEN 2
-        WHEN 'tenant_model_write' THEN 3
+        WHEN 'tenant_project_write' THEN 3
         WHEN 'tenant_lock_manage' THEN 2
         WHEN 'super_admin_only' THEN 4
     END;
@@ -353,7 +353,7 @@ BEGIN
         RETURN;
     END IF;
 
-    IF p_policy IN ('tenant_metadata_write', 'tenant_model_write') THEN
+    IF p_policy IN ('tenant_metadata_write', 'tenant_project_write') THEN
         SELECT tenant_lock.locked_by_principal_id,
                lock_owner.principal_display_name,
                tenant_lock.tenant_lock_expires_time

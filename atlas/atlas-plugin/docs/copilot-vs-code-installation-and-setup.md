@@ -94,7 +94,7 @@ can list your available Tenants. Continue with the [usage guide](usage-guide.md)
 
 Before useful, authorized delegation, Atlas asks for a **sub-agent policy**: **Current model only**,
 **Agent selects the model**, or **Specified model only**. For the last choice,
-give an exact available model name or ID. The choice is saved per working folder;
+give an exact available project name or ID. The choice is saved per working folder;
 see [the shared policy steps](usage-guide.md#choose-the-sub-agent-policy).
 If your VS Code agent cannot enforce the rule, Atlas continues without sub-agents.
 

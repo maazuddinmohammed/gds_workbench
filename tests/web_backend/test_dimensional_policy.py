@@ -5,14 +5,14 @@ from copy import deepcopy
 from typing import Literal
 
 import pytest
-from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     DimensionalAttributeRecord,
     DimensionalEntityRecord,
     DimensionalRelationshipRecord,
 )
-from gds_etl_workbench.domain.snapshots.model import DimensionalSection
+from gds_etl_workbench.domain.snapshots.project import DimensionalSection
 from gds_workbench_api.features.dimensional.policy import (
     DimensionalProjectionConflictError,
     project_dimensional_foreign_key_policy,
@@ -173,20 +173,24 @@ def _audit_template() -> dict[str, object]:
 
 
 def _attribute_records(
-    changes: tuple[StageModelChange, ...],
+    changes: tuple[StageProjectChange, ...],
 ) -> list[dict[str, object]]:
-    return next(change.records for change in changes if change.dataset == "dimensional_attribute")
+    return next(
+        change.records
+        for change in changes
+        if change.dataset == "dimensional_attribute"
+    )
 
 
 def test_projection_adds_dimension_surrogate_before_business_and_audit() -> None:
     entity = _entity()
     business = _business_attribute()
     changes = (
-        StageModelChange(
+        StageProjectChange(
             dataset="dimensional_entity",
             records=[entity.model_dump(mode="json")],
         ),
-        StageModelChange(
+        StageProjectChange(
             dataset="dimensional_attribute",
             records=[business.model_dump(mode="json")],
         ),
@@ -224,11 +228,11 @@ def test_projection_adds_type_2_columns_only_when_dimension_historizes() -> None
     historized = _business_attribute(change_behavior="historize")
     projected = project_dimensional_gold_policy(
         changes=(
-            StageModelChange(
+            StageProjectChange(
                 dataset="dimensional_entity",
                 records=[entity.model_dump(mode="json")],
             ),
-            StageModelChange(
+            StageProjectChange(
                 dataset="dimensional_attribute",
                 records=[historized.model_dump(mode="json")],
             ),
@@ -247,7 +251,9 @@ def test_projection_adds_type_2_columns_only_when_dimension_historizes() -> None
         "Effective To",
         "Loaded At",
     ]
-    assert [item["dimensional_attribute_role"] for item in [attributes[0], *attributes[2:5]]] == [
+    assert [
+        item["dimensional_attribute_role"] for item in [attributes[0], *attributes[2:5]]
+    ] == [
         "technical",
         "audit",
         "audit",
@@ -283,7 +289,7 @@ def test_projection_covers_applied_active_and_new_active_entities() -> None:
 
     projected = project_dimensional_gold_policy(
         changes=(
-            StageModelChange(
+            StageProjectChange(
                 dataset="dimensional_entity",
                 records=[fact.model_dump(mode="json")],
             ),
@@ -295,7 +301,8 @@ def test_projection_covers_applied_active_and_new_active_entities() -> None:
     attributes = _attribute_records(projected)
 
     assert {
-        (item["dimensional_entity_name"], item["dimensional_attribute_name"]) for item in attributes
+        (item["dimensional_entity_name"], item["dimensional_attribute_name"])
+        for item in attributes
     } == {
         ("Account Dimension", "Account Dimension key"),
         ("Account Dimension", "Loaded At"),
@@ -306,7 +313,7 @@ def test_projection_covers_applied_active_and_new_active_entities() -> None:
 
 def test_missing_policy_group_is_an_exact_no_op() -> None:
     changes = (
-        StageModelChange(
+        StageProjectChange(
             dataset="dimensional_entity",
             records=[_entity().model_dump(mode="json")],
         ),
@@ -488,21 +495,21 @@ def test_foreign_key_projection_binds_role_aware_endpoints_and_nullability() -> 
     fact_attribute = _fact_business_attribute()
     first = project_dimensional_gold_policy(
         changes=(
-            StageModelChange(
+            StageProjectChange(
                 dataset="dimensional_entity",
                 records=[
                     dimension.model_dump(mode="json"),
                     fact.model_dump(mode="json"),
                 ],
             ),
-            StageModelChange(
+            StageProjectChange(
                 dataset="dimensional_attribute",
                 records=[
                     dimension_attribute.model_dump(mode="json"),
                     fact_attribute.model_dump(mode="json"),
                 ],
             ),
-            StageModelChange(
+            StageProjectChange(
                 dataset="dimensional_relationship",
                 records=[_relationship().model_dump(mode="json")],
             ),
@@ -519,10 +526,14 @@ def test_foreign_key_projection_binds_role_aware_endpoints_and_nullability() -> 
     )
     attributes = _attribute_records(projected)
     foreign_key = next(
-        item for item in attributes if item["dimensional_attribute_key_role"] == "foreign"
+        item
+        for item in attributes
+        if item["dimensional_attribute_key_role"] == "foreign"
     )
     relationship = next(
-        change.records[0] for change in projected if change.dataset == "dimensional_relationship"
+        change.records[0]
+        for change in projected
+        if change.dataset == "dimensional_relationship"
     )
 
     assert foreign_key["dimensional_entity_name"] == "Sales Fact"
@@ -541,7 +552,9 @@ def test_foreign_key_projection_binds_role_aware_endpoints_and_nullability() -> 
         "Bill To Customer key",
         "Loaded At",
     ]
-    assert [item["dimensional_attribute_ordinal_position"] for item in fact_attributes] == [
+    assert [
+        item["dimensional_attribute_ordinal_position"] for item in fact_attributes
+    ] == [
         1,
         2,
         3,
@@ -552,24 +565,26 @@ def test_foreign_key_projection_binds_role_aware_endpoints_and_nullability() -> 
     assert relationship["dimensional_relationship_is_optional"] is True
 
 
-def test_complete_gold_projection_is_idempotent_with_existing_fact_foreign_key() -> None:
+def test_complete_gold_projection_is_idempotent_with_existing_fact_foreign_key() -> (
+    None
+):
     first = project_dimensional_gold_policy(
         changes=(
-            StageModelChange(
+            StageProjectChange(
                 dataset="dimensional_entity",
                 records=[
                     _entity().model_dump(mode="json"),
                     _fact().model_dump(mode="json"),
                 ],
             ),
-            StageModelChange(
+            StageProjectChange(
                 dataset="dimensional_attribute",
                 records=[
                     _business_attribute().model_dump(mode="json"),
                     _fact_business_attribute().model_dump(mode="json"),
                 ],
             ),
-            StageModelChange(
+            StageProjectChange(
                 dataset="dimensional_relationship",
                 records=[_relationship().model_dump(mode="json")],
             ),
@@ -612,23 +627,27 @@ def test_complete_gold_projection_is_idempotent_with_existing_fact_foreign_key()
 def test_foreign_key_projection_uses_dimension_name_without_role() -> None:
     first = project_dimensional_gold_policy(
         changes=(
-            StageModelChange(
+            StageProjectChange(
                 dataset="dimensional_entity",
                 records=[
                     _entity().model_dump(mode="json"),
                     _fact().model_dump(mode="json"),
                 ],
             ),
-            StageModelChange(
+            StageProjectChange(
                 dataset="dimensional_attribute",
                 records=[
                     _business_attribute().model_dump(mode="json"),
                     _fact_business_attribute().model_dump(mode="json"),
                 ],
             ),
-            StageModelChange(
+            StageProjectChange(
                 dataset="dimensional_relationship",
-                records=[_relationship(is_optional=False, role_name=None).model_dump(mode="json")],
+                records=[
+                    _relationship(is_optional=False, role_name=None).model_dump(
+                        mode="json"
+                    )
+                ],
             ),
         ),
         applied=None,
@@ -663,21 +682,21 @@ def test_foreign_key_projection_rejects_reversed_fact_dimension_orientation() ->
         }
     )
     changes = (
-        StageModelChange(
+        StageProjectChange(
             dataset="dimensional_entity",
             records=[
                 _entity().model_dump(mode="json"),
                 _fact().model_dump(mode="json"),
             ],
         ),
-        StageModelChange(
+        StageProjectChange(
             dataset="dimensional_attribute",
             records=[
                 _business_attribute().model_dump(mode="json"),
                 _fact_business_attribute().model_dump(mode="json"),
             ],
         ),
-        StageModelChange(
+        StageProjectChange(
             dataset="dimensional_relationship",
             records=[relationship.model_dump(mode="json")],
         ),
@@ -691,20 +710,29 @@ def test_foreign_key_projection_rejects_reversed_fact_dimension_orientation() ->
         )
 
 
-@pytest.mark.parametrize("scd_type,behavior", [("type_1", "historize"), ("type_2", "overwrite")])
+@pytest.mark.parametrize(
+    "scd_type,behavior", [("type_1", "historize"), ("type_2", "overwrite")]
+)
 def test_dimension_scd_policy_rejects_conflicting_candidate_behavior(
     scd_type: Literal["type_1", "type_2"],
     behavior: Literal["historize", "overwrite"],
 ) -> None:
-    with pytest.raises(DimensionalProjectionConflictError, match="change_behavior conflicts"):
+    with pytest.raises(
+        DimensionalProjectionConflictError, match="change_behavior conflicts"
+    ):
         project_dimensional_gold_policy(
             changes=(
-                StageModelChange(
-                    dataset="dimensional_entity", records=[_entity().model_dump(mode="json")]
+                StageProjectChange(
+                    dataset="dimensional_entity",
+                    records=[_entity().model_dump(mode="json")],
                 ),
-                StageModelChange(
+                StageProjectChange(
                     dataset="dimensional_attribute",
-                    records=[_business_attribute(change_behavior=behavior).model_dump(mode="json")],
+                    records=[
+                        _business_attribute(change_behavior=behavior).model_dump(
+                            mode="json"
+                        )
+                    ],
                 ),
             ),
             applied=None,
@@ -714,21 +742,28 @@ def test_dimension_scd_policy_rejects_conflicting_candidate_behavior(
         )
 
 
-@pytest.mark.parametrize("scd_type,behavior", [("type_1", "overwrite"), ("type_2", "historize")])
+@pytest.mark.parametrize(
+    "scd_type,behavior", [("type_1", "overwrite"), ("type_2", "historize")]
+)
 def test_dimension_scd_policy_preserves_business_behavior_and_excludes_fact_history(
     scd_type: Literal["type_1", "type_2"],
     behavior: Literal["historize", "overwrite"],
 ) -> None:
     projected = project_dimensional_gold_policy(
         changes=(
-            StageModelChange(
+            StageProjectChange(
                 dataset="dimensional_entity",
-                records=[_entity().model_dump(mode="json"), _fact().model_dump(mode="json")],
+                records=[
+                    _entity().model_dump(mode="json"),
+                    _fact().model_dump(mode="json"),
+                ],
             ),
-            StageModelChange(
+            StageProjectChange(
                 dataset="dimensional_attribute",
                 records=[
-                    _business_attribute(change_behavior=behavior).model_dump(mode="json"),
+                    _business_attribute(change_behavior=behavior).model_dump(
+                        mode="json"
+                    ),
                     _fact_business_attribute().model_dump(mode="json"),
                 ],
             ),
@@ -739,30 +774,50 @@ def test_dimension_scd_policy_preserves_business_behavior_and_excludes_fact_hist
         scd_type=scd_type,
     )
     rows = _attribute_records(projected)
-    business = next(row for row in rows if row["dimensional_attribute_name"] == "Customer Name")
+    business = next(
+        row for row in rows if row["dimensional_attribute_name"] == "Customer Name"
+    )
     assert business["dimensional_attribute_change_behavior"] == behavior
-    history = [row for row in rows if row["dimensional_attribute_name"] == "Effective From"]
+    history = [
+        row for row in rows if row["dimensional_attribute_name"] == "Effective From"
+    ]
     assert len(history) == (1 if scd_type == "type_2" else 0)
-    assert all(row["dimensional_entity_name"] == "Customer Dimension" for row in history)
+    assert all(
+        row["dimensional_entity_name"] == "Customer Dimension" for row in history
+    )
 
 
 def test_combined_audit_template_projects_history_in_audit_order() -> None:
-    from gds_workbench_api.features.models.templates import default_model_templates
-    from gds_workbench_api.features.workflows.authoring.gold_policy import effective_gold_templates
+    from gds_workbench_api.features.projects.templates import default_project_templates
+    from gds_workbench_api.features.workflows.authoring.gold_policy import (
+        effective_gold_templates,
+    )
 
-    combined = default_model_templates()["gold_model_audit_columns_template"]
+    combined = default_project_templates()["gold_model_audit_columns_template"]
     assert isinstance(combined, dict)
     technical, audit = effective_gold_templates(None, combined)
     projected = project_dimensional_gold_policy(
-        changes=(StageModelChange(dataset="dimensional_entity", records=[_entity().model_dump(mode="json")]),),
-        applied=None, raw_technical_template=technical, raw_audit_template=audit, scd_type="type_2",
+        changes=(
+            StageProjectChange(
+                dataset="dimensional_entity",
+                records=[_entity().model_dump(mode="json")],
+            ),
+        ),
+        applied=None,
+        raw_technical_template=technical,
+        raw_audit_template=audit,
+        scd_type="type_2",
     )
     attributes = _attribute_records(projected)
     names = [item["dimensional_attribute_name"] for item in attributes]
     source_index = names.index("SourceSystemID")
-    assert names[source_index + 1:source_index + 4] == ["IsCurrentRecord", "RecordStartTime", "RecordEndTime"]
+    assert names[source_index + 1 : source_index + 4] == [
+        "IsCurrentRecord",
+        "RecordStartTime",
+        "RecordEndTime",
+    ]
     assert names.index("RecordEndTime") < names.index("GDSBatchID")
-    for item in attributes[source_index + 1:source_index + 4]:
+    for item in attributes[source_index + 1 : source_index + 4]:
         assert item["dimensional_attribute_role"] == "audit"
         assert item["dimensional_attribute_is_audit_column"] is True
 
@@ -771,21 +826,62 @@ def test_combined_audit_template_projects_history_in_audit_order() -> None:
 def test_existing_history_can_join_audit_group_only_when_unlocked(locked: bool) -> None:
     entity = _entity()
     projected = project_dimensional_gold_policy(
-        changes=(StageModelChange(dataset="dimensional_entity", records=[entity.model_dump(mode="json")]),),
-        applied=None, raw_technical_template=_technical_template(), raw_audit_template=_audit_template(), scd_type="type_2",
+        changes=(
+            StageProjectChange(
+                dataset="dimensional_entity", records=[entity.model_dump(mode="json")]
+            ),
+        ),
+        applied=None,
+        raw_technical_template=_technical_template(),
+        raw_audit_template=_audit_template(),
+        scd_type="type_2",
     )
-    attributes = [DimensionalAttributeRecord.model_validate_json(json.dumps(row)) for row in _attribute_records(projected)]
-    old = tuple(row.model_copy(update={
-        "dimensional_attribute_role": "technical",
-        "dimensional_attribute_is_audit_column": False,
-        "dimensional_attribute_is_locked": locked,
-    }) if row.dimensional_attribute_name in {"Is Current", "Effective From", "Effective To"} else row for row in attributes)
-    baseline = DimensionalSection(submodels=(), entities=(entity,), attributes=old, relationships=())
+    attributes = [
+        DimensionalAttributeRecord.model_validate_json(json.dumps(row))
+        for row in _attribute_records(projected)
+    ]
+    old = tuple(
+        row.model_copy(
+            update={
+                "dimensional_attribute_role": "technical",
+                "dimensional_attribute_is_audit_column": False,
+                "dimensional_attribute_is_locked": locked,
+            }
+        )
+        if row.dimensional_attribute_name
+        in {"Is Current", "Effective From", "Effective To"}
+        else row
+        for row in attributes
+    )
+    baseline = DimensionalSection(
+        submodels=(), entities=(entity,), attributes=old, relationships=()
+    )
     if locked:
         with pytest.raises(DimensionalProjectionConflictError):
-            project_dimensional_gold_policy(changes=(), applied=baseline, raw_technical_template=_technical_template(), raw_audit_template=_audit_template(), scd_type="type_2")
+            project_dimensional_gold_policy(
+                changes=(),
+                applied=baseline,
+                raw_technical_template=_technical_template(),
+                raw_audit_template=_audit_template(),
+                scd_type="type_2",
+            )
     else:
-        result = project_dimensional_gold_policy(changes=(), applied=baseline, raw_technical_template=_technical_template(), raw_audit_template=_audit_template(), scd_type="type_2")
-        history = [row for row in _attribute_records(result) if row["dimensional_attribute_name"] in {"Is Current", "Effective From", "Effective To"}]
+        result = project_dimensional_gold_policy(
+            changes=(),
+            applied=baseline,
+            raw_technical_template=_technical_template(),
+            raw_audit_template=_audit_template(),
+            scd_type="type_2",
+        )
+        history = [
+            row
+            for row in _attribute_records(result)
+            if row["dimensional_attribute_name"]
+            in {"Is Current", "Effective From", "Effective To"}
+        ]
         assert len(history) == 3
-        assert all(row["dimensional_attribute_role"] == "audit" and row["dimensional_attribute_is_audit_column"] for row in history)
+        assert all(
+            row["dimensional_attribute_role"] == "audit"
+            and row["dimensional_attribute_is_audit_column"]
+            for row in history
+        )

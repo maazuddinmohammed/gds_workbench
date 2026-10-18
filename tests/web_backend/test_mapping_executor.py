@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, patch
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.application.change_sets.model import StageModelChange
-from gds_etl_workbench.application.change_sets.model_validation import (
-    ModelValidationIssue,
+from gds_etl_workbench.application.change_sets.project import StageProjectChange
+from gds_etl_workbench.application.change_sets.project_validation import (
+    ProjectValidationIssue,
 )
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import (
@@ -84,21 +84,21 @@ class _Lifecycle:
         principal: RequestPrincipal,
         *,
         tenant_id: int,
-        model_id: int,
+        project_id: int,
         workflow_run_id: int,
         expected_workflow: str,
         expected_execution_mode: str | None,
-        expected_model_revision: int,
+        expected_project_revision: int,
     ) -> AgentWorkflowRunStart:
         self.starts.append(
             (
                 principal,
                 tenant_id,
-                model_id,
+                project_id,
                 workflow_run_id,
                 expected_workflow,
                 expected_execution_mode,
-                expected_model_revision,
+                expected_project_revision,
             )
         )
         return AgentWorkflowRunStart(
@@ -106,7 +106,7 @@ class _Lifecycle:
             workflow_run_id=workflow_run_id,
             workflow_run_state="running",
             started_at=datetime(2026, 8, 24, 10, tzinfo=UTC),
-            model_revision=expected_model_revision,
+            project_revision=expected_project_revision,
         )
 
 
@@ -122,14 +122,14 @@ def _executor(
     async def finalize(
         _: RequestPrincipal,
         *,
-        changes: tuple[StageModelChange, ...],
+        changes: tuple[StageProjectChange, ...],
         **__: object,
     ) -> WorkflowChangeSetFinalizationResult:
         return WorkflowChangeSetFinalizationResult(
             handoff=WorkflowChangeSetHandoffResult(
-                model_id=18,
+                project_id=18,
                 workflow_run_id=1048,
-                model_change_set_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+                project_change_set_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
                 replayed=False,
                 draft_revision=1,
                 candidate_digest="c" * 64,
@@ -147,11 +147,11 @@ def _executor(
     handoff = AsyncMock(side_effect=finalize)
     no_op = AsyncMock(
         return_value=AuthoringNoOpReceipt(
-            model_id=18,
-            model_revision=7,
+            project_id=18,
+            project_revision=7,
             workflow_run_id=1048,
             workflow_run_state="completed",
-            model_workflow="mapping",
+            project_workflow="mapping",
             workflow_execution_mode=preparation.plan.agent_plan.workflow_execution_mode,
             correlation_id=preparation.plan.correlation_id,
             candidate_digest="d" * 64,
@@ -202,10 +202,10 @@ async def _execute(
             entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
         ),
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
         workflow_run_claim_token=UUID("44444444-4444-4444-4444-444444444444"),
-        expected_model_revision=7,
+        expected_project_revision=7,
     )
 
 
@@ -252,15 +252,15 @@ async def test_start_binds_mapping_without_executing(
     result = await service.start(
         principal,
         tenant_id=7,
-        model_id=18,
+        project_id=18,
         workflow_run_id=1048,
         expected_execution_mode=mode,
-        expected_model_revision=7,
+        expected_project_revision=7,
     )
 
     assert lifecycle.starts == [(principal, 7, 18, 1048, "mapping", mode, 7)]
     assert result.workflow_run_id == 1048
-    assert result.model_revision == 7
+    assert result.project_revision == 7
     assert agent.requests == []
     handoff.assert_not_awaited()
     no_op.assert_not_awaited()
@@ -283,7 +283,7 @@ async def test_mapping_local_fake_completes_each_mode(
     assert preparation.snapshot is not None
     service, handoff, no_op, fail = _executor(preparation, agent)
 
-    from gds_etl_workbench.application.change_sets.model_validation import (
+    from gds_etl_workbench.application.change_sets.project_validation import (
         validate_future_graph,
     )
 
@@ -293,7 +293,7 @@ async def test_mapping_local_fake_completes_each_mode(
     ) as validate:
         result = await _execute(service)
     validate.assert_called_once()
-    assert validate.call_args.kwargs["snapshot"].model_id == 18
+    assert validate.call_args.kwargs["snapshot"].project_id == 18
     assert set(validate.call_args.kwargs["staged_documents"]) == {
         "mapping_object",
         "mapping_attribute",
@@ -505,7 +505,7 @@ async def test_mapping_safety_fence_failure_never_becomes_partial_success(
         "tenant_lock": TenantLockRequiredError(),
         "claim": DependencyUnavailableError(),
         "revision": WorkbenchError(
-            "model_revision_conflict", "Model revision changed."
+            "project_revision_conflict", "Project revision changed."
         ),
     }[failure_code]
 
@@ -539,7 +539,7 @@ async def test_mapping_context_identity_drift_aborts_even_with_a_valid_sibling(
     failed_pair_first: bool,
 ) -> None:
     first, second = _two_system_preparations("one_shot")
-    context = second.context.model_copy(update={"model_revision": 8})
+    context = second.context.model_copy(update={"project_revision": 8})
     second = second.model_copy(
         update={
             "context": context,
@@ -578,7 +578,7 @@ async def test_partial_mapping_still_requires_authoritative_finalizer_validation
     service, handoff, no_op, fail = _executor(
         first, OneFailedPair(), additional_preparations=(second,), retention=retention
     )
-    issue = ModelValidationIssue(
+    issue = ProjectValidationIssue(
         code="mapping.full_graph_conflict",
         dataset="mapping_object",
         record_number=1,
@@ -652,7 +652,7 @@ async def test_failed_candidate_retention_belongs_to_the_reported_pair(
                 )
             return result
 
-    issue = ModelValidationIssue(
+    issue = ProjectValidationIssue(
         code="mapping.full_graph_conflict",
         dataset="mapping_object",
         record_number=1,

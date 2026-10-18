@@ -53,7 +53,7 @@ INPUT_SHAPES: dict[str, Any] = {
     },
     "gds_context": {
         "description": "GDS Connection/zone placements for selected physical inputs "
-        "or the Model-assigned placement of modeled Entity outputs.",
+        "or the Project-assigned placement of modeled Entity outputs.",
         "schema": {
             "type": "array",
             "items": {"$ref": "#/$defs/gds_context_entry"},
@@ -139,7 +139,7 @@ INPUT_SHAPES: dict[str, Any] = {
                                     "registered_is_natural_key": {
                                         "type": "boolean",
                                         "description": "Registered physical key flag; independent "
-                                        "of the nullable Model-enriched is_natural_key finding.",
+                                        "of the nullable Project-enriched is_natural_key finding.",
                                     },
                                     "is_natural_key": {"type": ["boolean", "null"]},
                                     "is_primary_key": {"type": ["boolean", "null"]},
@@ -472,9 +472,9 @@ INPUT_SHAPES: dict[str, Any] = {
             },
         },
     },
-    "modeling_assertions": {
-        "description": "Active assertions from active documents in authorized "
-        "Model/System scope, available automatically to all "
+    "context_records": {
+        "description": "Active context records from active documents in authorized "
+        "Project/System scope, available automatically to all "
         "downstream workflows. Determine relevance from the "
         "statement and task, not legacy layer flags. "
         "record_type is a free-text classification of facts, "
@@ -485,32 +485,33 @@ INPUT_SHAPES: dict[str, Any] = {
         "exclusions, history or acceptance_criteria; missing "
         "details are unspecified. document_name and "
         "source_location identify provenance. confidence is "
-        "evidence confidence, not priority. Keys link model "
-        "support to assertions; they are not physical lineage "
+        "evidence confidence, not priority. Keys link project "
+        "support to context records; they are not physical lineage "
         "or proof of source data.",
         "schema": {
             "type": "array",
-            "items": {"$ref": "#/$defs/modeling_assertions_entry"},
+            "items": {"$ref": "#/$defs/context_records_entry"},
             "$defs": {
-                "modeling_assertions_entry": {
+                "context_records_entry": {
                     "type": "object",
                     "properties": {
-                        "modeling_assertion_record_key": {"type": "string", "minLength": 1},
-                        "modeling_assertion_document_name": {"type": "string", "minLength": 1},
-                        "modeling_assertion_record_type": {"type": "string", "minLength": 1},
-                        "modeling_assertion_text": {"type": "string", "minLength": 1},
-                        "modeling_assertion_details": {"type": "object"},
-                        "modeling_assertion_source_location": {"type": ["object", "null"]},
-                        "modeling_assertion_confidence": {"enum": ["low", "medium", "high", None]},
+                        "context_record_id": {
+                            "type": "string",
+                            "pattern": (
+                                "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                            ),
+                        },
+                        "context_group_name": {"type": "string", "minLength": 1, "maxLength": 255},
+                        "context_type_name": {"type": "string", "minLength": 1, "maxLength": 200},
+                        "context_text": {"type": "string", "minLength": 1, "maxLength": 262144},
+                        "source_reference": {"type": ["string", "null"]},
                     },
                     "required": [
-                        "modeling_assertion_record_key",
-                        "modeling_assertion_document_name",
-                        "modeling_assertion_record_type",
-                        "modeling_assertion_text",
-                        "modeling_assertion_details",
-                        "modeling_assertion_source_location",
-                        "modeling_assertion_confidence",
+                        "context_record_id",
+                        "context_group_name",
+                        "context_type_name",
+                        "context_text",
+                        "source_reference",
                     ],
                     "additionalProperties": False,
                 }
@@ -519,7 +520,7 @@ INPUT_SHAPES: dict[str, Any] = {
     },
     "conceptual_object_list": {
         "description": "Compact directory of all existing eligible "
-        "Conceptual record identities in the frozen Model. "
+        "Conceptual record identities in the frozen Project. "
         "Natural-key fields only; no descriptions, types, "
         "supports, status, or locks. Use the corresponding "
         "detail variable or reader to interpret a record. "
@@ -550,35 +551,35 @@ INPUT_SHAPES: dict[str, Any] = {
     },
     "conceptual_objects": {
         "description": "Existing Conceptual objects, retaining all existing "
-        "record fields and nested Object/Assertion supports, "
+        "record fields and nested Object/Context supports, "
         "confidence, lifecycle status, and locks. Known empty "
         "is []; null means the applied section is unavailable.",
         "schema": {
             "$defs": {
-                "AssertionRecordKey": {
+                "ContextRecordReference": {
                     "additionalProperties": False,
                     "properties": {
-                        "modeling_assertion_record_key": {
-                            "maxLength": 100,
-                            "minLength": 1,
-                            "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,99}$",
-                            "title": "Modeling Assertion Record Key",
+                        "context_record_id": {
+                            "pattern": (
+                                "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                            ),
+                            "title": "Context Record Id",
                             "type": "string",
                         }
                     },
-                    "required": ["modeling_assertion_record_key"],
-                    "title": "AssertionRecordKey",
+                    "required": ["context_record_id"],
+                    "title": "ContextRecordReference",
                     "type": "object",
                 },
-                "AssertionSupportRecord": {
+                "ContextSupportRecord": {
                     "additionalProperties": False,
                     "properties": {
                         "support_source_type": {
-                            "const": "assertion",
+                            "const": "context_record",
                             "title": "Support Source Type",
                             "type": "string",
                         },
-                        "assertion_record": {"$ref": "#/$defs/AssertionRecordKey"},
+                        "context_record": {"$ref": "#/$defs/ContextRecordReference"},
                         "support_role": {
                             "anyOf": [
                                 {
@@ -618,7 +619,7 @@ INPUT_SHAPES: dict[str, Any] = {
                     },
                     "required": [
                         "support_source_type",
-                        "assertion_record",
+                        "context_record",
                         "support_role",
                         "support_reason",
                         "support_reason_detail",
@@ -626,7 +627,7 @@ INPUT_SHAPES: dict[str, Any] = {
                         "support_status",
                         "support_is_locked",
                     ],
-                    "title": "AssertionSupportRecord",
+                    "title": "ContextSupportRecord",
                     "type": "object",
                 },
                 "ConceptualObjectRecord": {
@@ -808,14 +809,14 @@ INPUT_SHAPES: dict[str, Any] = {
                 "SupportRecord": {
                     "discriminator": {
                         "mapping": {
-                            "assertion": "#/$defs/AssertionSupportRecord",
+                            "context_record": "#/$defs/ContextSupportRecord",
                             "object": "#/$defs/ObjectSupportRecord",
                         },
                         "propertyName": "support_source_type",
                     },
                     "oneOf": [
                         {"$ref": "#/$defs/ObjectSupportRecord"},
-                        {"$ref": "#/$defs/AssertionSupportRecord"},
+                        {"$ref": "#/$defs/ContextSupportRecord"},
                     ],
                 },
             },
@@ -828,7 +829,7 @@ INPUT_SHAPES: dict[str, Any] = {
     "conceptual_relationship_list": {
         "description": "Compact directory of all existing eligible "
         "Conceptual record identities in the frozen "
-        "Model. Natural-key fields only; no "
+        "Project. Natural-key fields only; no "
         "descriptions, types, supports, status, or "
         "locks. Use the corresponding detail variable "
         "or reader to interpret a record. [] means "
@@ -878,35 +879,35 @@ INPUT_SHAPES: dict[str, Any] = {
     "conceptual_relationships": {
         "description": "Existing Conceptual relationships, retaining all "
         "existing record fields and nested "
-        "Object/Assertion supports, confidence, lifecycle "
+        "Object/Context supports, confidence, lifecycle "
         "status, and locks. Known empty is []; null means "
         "the applied section is unavailable.",
         "schema": {
             "$defs": {
-                "AssertionRecordKey": {
+                "ContextRecordReference": {
                     "additionalProperties": False,
                     "properties": {
-                        "modeling_assertion_record_key": {
-                            "maxLength": 100,
-                            "minLength": 1,
-                            "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,99}$",
-                            "title": "Modeling Assertion Record Key",
+                        "context_record_id": {
+                            "pattern": (
+                                "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                            ),
+                            "title": "Context Record Id",
                             "type": "string",
                         }
                     },
-                    "required": ["modeling_assertion_record_key"],
-                    "title": "AssertionRecordKey",
+                    "required": ["context_record_id"],
+                    "title": "ContextRecordReference",
                     "type": "object",
                 },
-                "AssertionSupportRecord": {
+                "ContextSupportRecord": {
                     "additionalProperties": False,
                     "properties": {
                         "support_source_type": {
-                            "const": "assertion",
+                            "const": "context_record",
                             "title": "Support Source Type",
                             "type": "string",
                         },
-                        "assertion_record": {"$ref": "#/$defs/AssertionRecordKey"},
+                        "context_record": {"$ref": "#/$defs/ContextRecordReference"},
                         "support_role": {
                             "anyOf": [
                                 {
@@ -946,7 +947,7 @@ INPUT_SHAPES: dict[str, Any] = {
                     },
                     "required": [
                         "support_source_type",
-                        "assertion_record",
+                        "context_record",
                         "support_role",
                         "support_reason",
                         "support_reason_detail",
@@ -954,7 +955,7 @@ INPUT_SHAPES: dict[str, Any] = {
                         "support_status",
                         "support_is_locked",
                     ],
-                    "title": "AssertionSupportRecord",
+                    "title": "ContextSupportRecord",
                     "type": "object",
                 },
                 "ConceptualRelationshipRecord": {
@@ -1169,14 +1170,14 @@ INPUT_SHAPES: dict[str, Any] = {
                 "SupportRecord": {
                     "discriminator": {
                         "mapping": {
-                            "assertion": "#/$defs/AssertionSupportRecord",
+                            "context_record": "#/$defs/ContextSupportRecord",
                             "object": "#/$defs/ObjectSupportRecord",
                         },
                         "propertyName": "support_source_type",
                     },
                     "oneOf": [
                         {"$ref": "#/$defs/ObjectSupportRecord"},
-                        {"$ref": "#/$defs/AssertionSupportRecord"},
+                        {"$ref": "#/$defs/ContextSupportRecord"},
                     ],
                 },
             },
@@ -1302,30 +1303,30 @@ INPUT_SHAPES: dict[str, Any] = {
         "saved statuses and locks.",
         "schema": {
             "$defs": {
-                "AssertionRecordKey": {
+                "ContextRecordReference": {
                     "additionalProperties": False,
                     "properties": {
-                        "modeling_assertion_record_key": {
-                            "maxLength": 100,
-                            "minLength": 1,
-                            "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,99}$",
-                            "title": "Modeling Assertion Record Key",
+                        "context_record_id": {
+                            "pattern": (
+                                "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                            ),
+                            "title": "Context Record Id",
                             "type": "string",
                         }
                     },
-                    "required": ["modeling_assertion_record_key"],
-                    "title": "AssertionRecordKey",
+                    "required": ["context_record_id"],
+                    "title": "ContextRecordReference",
                     "type": "object",
                 },
-                "LogicalAssertionSourceRecord": {
+                "LogicalContextSourceRecord": {
                     "additionalProperties": False,
                     "properties": {
                         "support_source_type": {
-                            "const": "assertion",
+                            "const": "context_record",
                             "title": "Support Source Type",
                             "type": "string",
                         },
-                        "assertion_record": {"$ref": "#/$defs/AssertionRecordKey"},
+                        "context_record": {"$ref": "#/$defs/ContextRecordReference"},
                         "source_order": {
                             "anyOf": [{"exclusiveMinimum": 0, "type": "integer"}, {"type": "null"}],
                             "default": None,
@@ -1346,12 +1347,12 @@ INPUT_SHAPES: dict[str, Any] = {
                     },
                     "required": [
                         "support_source_type",
-                        "assertion_record",
+                        "context_record",
                         "rationale",
                         "status",
                         "is_locked",
                     ],
-                    "title": "LogicalAssertionSourceRecord",
+                    "title": "LogicalContextSourceRecord",
                     "type": "object",
                 },
                 "LogicalEntityRecord": {
@@ -1456,14 +1457,14 @@ INPUT_SHAPES: dict[str, Any] = {
                 "LogicalEntitySourceRecord": {
                     "discriminator": {
                         "mapping": {
-                            "assertion": "#/$defs/LogicalAssertionSourceRecord",
+                            "context_record": "#/$defs/LogicalContextSourceRecord",
                             "object": "#/$defs/LogicalObjectSourceRecord",
                         },
                         "propertyName": "support_source_type",
                     },
                     "oneOf": [
                         {"$ref": "#/$defs/LogicalObjectSourceRecord"},
-                        {"$ref": "#/$defs/LogicalAssertionSourceRecord"},
+                        {"$ref": "#/$defs/LogicalContextSourceRecord"},
                     ],
                 },
                 "LogicalObjectSourceRecord": {
@@ -1634,30 +1635,30 @@ INPUT_SHAPES: dict[str, Any] = {
         "current saved statuses and locks.",
         "schema": {
             "$defs": {
-                "AssertionRecordKey": {
+                "ContextRecordReference": {
                     "additionalProperties": False,
                     "properties": {
-                        "modeling_assertion_record_key": {
-                            "maxLength": 100,
-                            "minLength": 1,
-                            "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,99}$",
-                            "title": "Modeling Assertion Record Key",
+                        "context_record_id": {
+                            "pattern": (
+                                "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                            ),
+                            "title": "Context Record Id",
                             "type": "string",
                         }
                     },
-                    "required": ["modeling_assertion_record_key"],
-                    "title": "AssertionRecordKey",
+                    "required": ["context_record_id"],
+                    "title": "ContextRecordReference",
                     "type": "object",
                 },
-                "AttributeAssertionSourceRecord": {
+                "AttributeContextSourceRecord": {
                     "additionalProperties": False,
                     "properties": {
                         "support_source_type": {
-                            "const": "assertion",
+                            "const": "context_record",
                             "title": "Support Source Type",
                             "type": "string",
                         },
-                        "assertion_record": {"$ref": "#/$defs/AssertionRecordKey"},
+                        "context_record": {"$ref": "#/$defs/ContextRecordReference"},
                         "source_order": {
                             "anyOf": [{"exclusiveMinimum": 0, "type": "integer"}, {"type": "null"}],
                             "default": None,
@@ -1678,12 +1679,12 @@ INPUT_SHAPES: dict[str, Any] = {
                     },
                     "required": [
                         "support_source_type",
-                        "assertion_record",
+                        "context_record",
                         "rationale",
                         "status",
                         "is_locked",
                     ],
-                    "title": "AttributeAssertionSourceRecord",
+                    "title": "AttributeContextSourceRecord",
                     "type": "object",
                 },
                 "AttributePhysicalSourceRecord": {
@@ -1726,14 +1727,14 @@ INPUT_SHAPES: dict[str, Any] = {
                 "AttributeSourceRecord": {
                     "discriminator": {
                         "mapping": {
-                            "assertion": "#/$defs/AttributeAssertionSourceRecord",
+                            "context_record": "#/$defs/AttributeContextSourceRecord",
                             "attribute": "#/$defs/AttributePhysicalSourceRecord",
                         },
                         "propertyName": "support_source_type",
                     },
                     "oneOf": [
                         {"$ref": "#/$defs/AttributePhysicalSourceRecord"},
-                        {"$ref": "#/$defs/AttributeAssertionSourceRecord"},
+                        {"$ref": "#/$defs/AttributeContextSourceRecord"},
                     ],
                 },
                 "LogicalAttributeRecord": {
@@ -2092,7 +2093,7 @@ INPUT_SHAPES: dict[str, Any] = {
     },
     "logical.naming_instructions": {
         "description": "Effective Logical naming guidance. Use the "
-        "saved Silver Model override when present, "
+        "saved Silver Project override when present, "
         "otherwise the existing Logical default. "
         "Advisory guidance; preserve saved identities. "
         "This is resolved before rendering and remains "
@@ -2107,7 +2108,7 @@ INPUT_SHAPES: dict[str, Any] = {
         "for framework Attributes; source/business fields need distinct names. Preserve "
         "the existing"
         "deterministic backend projection and lock/conflict "
-        "checks. The complete model includes required audit "
+        "checks. The complete project includes required audit "
         "Attributes; do not invent physical sources for "
         "configured audit columns.",
         "schema": {
@@ -2287,30 +2288,30 @@ INPUT_SHAPES: dict[str, Any] = {
         "lifecycle, and locks.",
         "schema": {
             "$defs": {
-                "AssertionRecordKey": {
+                "ContextRecordReference": {
                     "additionalProperties": False,
                     "properties": {
-                        "modeling_assertion_record_key": {
-                            "maxLength": 100,
-                            "minLength": 1,
-                            "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,99}$",
-                            "title": "Modeling Assertion Record Key",
+                        "context_record_id": {
+                            "pattern": (
+                                "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                            ),
+                            "title": "Context Record Id",
                             "type": "string",
                         }
                     },
-                    "required": ["modeling_assertion_record_key"],
-                    "title": "AssertionRecordKey",
+                    "required": ["context_record_id"],
+                    "title": "ContextRecordReference",
                     "type": "object",
                 },
-                "DimensionalAssertionSourceRecord": {
+                "DimensionalContextSourceRecord": {
                     "additionalProperties": False,
                     "properties": {
                         "support_source_type": {
-                            "const": "assertion",
+                            "const": "context_record",
                             "title": "Support Source Type",
                             "type": "string",
                         },
-                        "assertion_record": {"$ref": "#/$defs/AssertionRecordKey"},
+                        "context_record": {"$ref": "#/$defs/ContextRecordReference"},
                         "source_order": {
                             "anyOf": [{"exclusiveMinimum": 0, "type": "integer"}, {"type": "null"}],
                             "default": None,
@@ -2338,13 +2339,13 @@ INPUT_SHAPES: dict[str, Any] = {
                     },
                     "required": [
                         "support_source_type",
-                        "assertion_record",
+                        "context_record",
                         "rationale",
                         "status",
                         "is_locked",
                         "source_role",
                     ],
-                    "title": "DimensionalAssertionSourceRecord",
+                    "title": "DimensionalContextSourceRecord",
                     "type": "object",
                 },
                 "DimensionalEntityRecord": {
@@ -2447,14 +2448,14 @@ INPUT_SHAPES: dict[str, Any] = {
                 "DimensionalEntitySourceRecord": {
                     "discriminator": {
                         "mapping": {
-                            "assertion": "#/$defs/DimensionalAssertionSourceRecord",
+                            "context_record": "#/$defs/DimensionalContextSourceRecord",
                             "logical_entity": "#/$defs/DimensionalLogicalEntitySourceRecord",
                         },
                         "propertyName": "support_source_type",
                     },
                     "oneOf": [
                         {"$ref": "#/$defs/DimensionalLogicalEntitySourceRecord"},
-                        {"$ref": "#/$defs/DimensionalAssertionSourceRecord"},
+                        {"$ref": "#/$defs/DimensionalContextSourceRecord"},
                     ],
                 },
                 "DimensionalLogicalEntitySourceRecord": {
@@ -2607,30 +2608,30 @@ INPUT_SHAPES: dict[str, Any] = {
         "sources/memberships, lifecycle, and locks.",
         "schema": {
             "$defs": {
-                "AssertionRecordKey": {
+                "ContextRecordReference": {
                     "additionalProperties": False,
                     "properties": {
-                        "modeling_assertion_record_key": {
-                            "maxLength": 100,
-                            "minLength": 1,
-                            "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,99}$",
-                            "title": "Modeling Assertion Record Key",
+                        "context_record_id": {
+                            "pattern": (
+                                "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                            ),
+                            "title": "Context Record Id",
                             "type": "string",
                         }
                     },
-                    "required": ["modeling_assertion_record_key"],
-                    "title": "AssertionRecordKey",
+                    "required": ["context_record_id"],
+                    "title": "ContextRecordReference",
                     "type": "object",
                 },
-                "AttributeAssertionSourceRecord": {
+                "AttributeContextSourceRecord": {
                     "additionalProperties": False,
                     "properties": {
                         "support_source_type": {
-                            "const": "assertion",
+                            "const": "context_record",
                             "title": "Support Source Type",
                             "type": "string",
                         },
-                        "assertion_record": {"$ref": "#/$defs/AssertionRecordKey"},
+                        "context_record": {"$ref": "#/$defs/ContextRecordReference"},
                         "source_order": {
                             "anyOf": [{"exclusiveMinimum": 0, "type": "integer"}, {"type": "null"}],
                             "default": None,
@@ -2651,12 +2652,12 @@ INPUT_SHAPES: dict[str, Any] = {
                     },
                     "required": [
                         "support_source_type",
-                        "assertion_record",
+                        "context_record",
                         "rationale",
                         "status",
                         "is_locked",
                     ],
-                    "title": "AttributeAssertionSourceRecord",
+                    "title": "AttributeContextSourceRecord",
                     "type": "object",
                 },
                 "AttributeLogicalSourceRecord": {
@@ -2851,14 +2852,14 @@ INPUT_SHAPES: dict[str, Any] = {
                 "DimensionalAttributeSourceRecord": {
                     "discriminator": {
                         "mapping": {
-                            "assertion": "#/$defs/AttributeAssertionSourceRecord",
+                            "context_record": "#/$defs/AttributeContextSourceRecord",
                             "logical_attribute": "#/$defs/AttributeLogicalSourceRecord",
                         },
                         "propertyName": "support_source_type",
                     },
                     "oneOf": [
                         {"$ref": "#/$defs/AttributeLogicalSourceRecord"},
-                        {"$ref": "#/$defs/AttributeAssertionSourceRecord"},
+                        {"$ref": "#/$defs/AttributeContextSourceRecord"},
                     ],
                 },
                 "LogicalAttributeKey": {
@@ -3316,7 +3317,7 @@ INPUT_SHAPES: dict[str, Any] = {
         },
     },
     "dimensional.dimensional_entity_scd_type": {
-        "description": "Frozen Model policy for Dimension history, independent of Logical SCD. "
+        "description": "Frozen Project policy for Dimension history, independent of Logical SCD. "
         "type_1 overwrites mutable descriptors (change_behavior=overwrite); type_2 preserves "
         "Dimension versions (change_behavior=historize). Stable identity Attributes remain fixed. "
         "Null is unspecified: use evidenced per-Attribute behavior. Applies to Dimensions, not "
@@ -3326,7 +3327,7 @@ INPUT_SHAPES: dict[str, Any] = {
         "schema": {"enum": ["type_1", "type_2", None]},
     },
     "coverage_threshold_percent": {
-        "description": "Frozen Model coverage target, a whole percentage from 1 to 100. "
+        "description": "Frozen Project coverage target, a whole percentage from 1 to 100. "
         "Count distinct inputs selected for this run with active support on active Entities, "
         "including retained applied support; round the required input count up. "
         "Below target, repair the missing sources listed by backend validation. "
@@ -3334,7 +3335,7 @@ INPUT_SHAPES: dict[str, Any] = {
         "schema": {"type": "integer", "minimum": 1, "maximum": 100},
     },
     "logical.logical_entity_scd_type": {
-        "description": "Frozen Model guidance for Logical Entity change history. type_1 means "
+        "description": "Frozen Project guidance for Logical Entity change history. type_1 means "
         "overwrite current values; type_2 means preserve versions. Null means unspecified. "
         "This setting does not create history columns, prove a natural key, or change saved "
         "Entities. Use supported source evidence and configured policy; report missing "
@@ -3346,7 +3347,7 @@ INPUT_SHAPES: dict[str, Any] = {
         "descriptions. Assign every Entity to one listed schema.",
         "schema": {
             "$defs": {
-                "ModelSchemaDefinition": {
+                "ProjectSchemaDefinition": {
                     "additionalProperties": False,
                     "properties": {
                         "schema_name": {
@@ -3370,11 +3371,11 @@ INPUT_SHAPES: dict[str, Any] = {
                         },
                     },
                     "required": ["schema_name", "description"],
-                    "title": "ModelSchemaDefinition",
+                    "title": "ProjectSchemaDefinition",
                     "type": "object",
                 }
             },
-            "items": {"$ref": "#/$defs/ModelSchemaDefinition"},
+            "items": {"$ref": "#/$defs/ProjectSchemaDefinition"},
             "type": "array",
         },
     },
@@ -3384,7 +3385,7 @@ INPUT_SHAPES: dict[str, Any] = {
         "schema.",
         "schema": {
             "$defs": {
-                "ModelSchemaDefinition": {
+                "ProjectSchemaDefinition": {
                     "additionalProperties": False,
                     "properties": {
                         "schema_name": {
@@ -3408,11 +3409,11 @@ INPUT_SHAPES: dict[str, Any] = {
                         },
                     },
                     "required": ["schema_name", "description"],
-                    "title": "ModelSchemaDefinition",
+                    "title": "ProjectSchemaDefinition",
                     "type": "object",
                 }
             },
-            "items": {"$ref": "#/$defs/ModelSchemaDefinition"},
+            "items": {"$ref": "#/$defs/ProjectSchemaDefinition"},
             "type": "array",
         },
     },
@@ -3422,30 +3423,30 @@ INPUT_SHAPES: dict[str, Any] = {
         "source identities for Dimensional generation.",
         "schema": {
             "$defs": {
-                "AssertionRecordKey": {
+                "ContextRecordReference": {
                     "additionalProperties": False,
                     "properties": {
-                        "modeling_assertion_record_key": {
-                            "maxLength": 100,
-                            "minLength": 1,
-                            "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,99}$",
-                            "title": "Modeling Assertion Record Key",
+                        "context_record_id": {
+                            "pattern": (
+                                "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                            ),
+                            "title": "Context Record Id",
                             "type": "string",
                         }
                     },
-                    "required": ["modeling_assertion_record_key"],
-                    "title": "AssertionRecordKey",
+                    "required": ["context_record_id"],
+                    "title": "ContextRecordReference",
                     "type": "object",
                 },
-                "AttributeAssertionSourceRecord": {
+                "AttributeContextSourceRecord": {
                     "additionalProperties": False,
                     "properties": {
                         "support_source_type": {
-                            "const": "assertion",
+                            "const": "context_record",
                             "title": "Support Source Type",
                             "type": "string",
                         },
-                        "assertion_record": {"$ref": "#/$defs/AssertionRecordKey"},
+                        "context_record": {"$ref": "#/$defs/ContextRecordReference"},
                         "source_order": {
                             "anyOf": [{"exclusiveMinimum": 0, "type": "integer"}, {"type": "null"}],
                             "default": None,
@@ -3466,12 +3467,12 @@ INPUT_SHAPES: dict[str, Any] = {
                     },
                     "required": [
                         "support_source_type",
-                        "assertion_record",
+                        "context_record",
                         "rationale",
                         "status",
                         "is_locked",
                     ],
-                    "title": "AttributeAssertionSourceRecord",
+                    "title": "AttributeContextSourceRecord",
                     "type": "object",
                 },
                 "AttributePhysicalSourceRecord": {
@@ -3514,25 +3515,25 @@ INPUT_SHAPES: dict[str, Any] = {
                 "AttributeSourceRecord": {
                     "discriminator": {
                         "mapping": {
-                            "assertion": "#/$defs/AttributeAssertionSourceRecord",
+                            "context_record": "#/$defs/AttributeContextSourceRecord",
                             "attribute": "#/$defs/AttributePhysicalSourceRecord",
                         },
                         "propertyName": "support_source_type",
                     },
                     "oneOf": [
                         {"$ref": "#/$defs/AttributePhysicalSourceRecord"},
-                        {"$ref": "#/$defs/AttributeAssertionSourceRecord"},
+                        {"$ref": "#/$defs/AttributeContextSourceRecord"},
                     ],
                 },
-                "LogicalAssertionSourceRecord": {
+                "LogicalContextSourceRecord": {
                     "additionalProperties": False,
                     "properties": {
                         "support_source_type": {
-                            "const": "assertion",
+                            "const": "context_record",
                             "title": "Support Source Type",
                             "type": "string",
                         },
-                        "assertion_record": {"$ref": "#/$defs/AssertionRecordKey"},
+                        "context_record": {"$ref": "#/$defs/ContextRecordReference"},
                         "source_order": {
                             "anyOf": [{"exclusiveMinimum": 0, "type": "integer"}, {"type": "null"}],
                             "default": None,
@@ -3553,12 +3554,12 @@ INPUT_SHAPES: dict[str, Any] = {
                     },
                     "required": [
                         "support_source_type",
-                        "assertion_record",
+                        "context_record",
                         "rationale",
                         "status",
                         "is_locked",
                     ],
-                    "title": "LogicalAssertionSourceRecord",
+                    "title": "LogicalContextSourceRecord",
                     "type": "object",
                 },
                 "LogicalAttributeRecord": {
@@ -3754,14 +3755,14 @@ INPUT_SHAPES: dict[str, Any] = {
                 "LogicalEntitySourceRecord": {
                     "discriminator": {
                         "mapping": {
-                            "assertion": "#/$defs/LogicalAssertionSourceRecord",
+                            "context_record": "#/$defs/LogicalContextSourceRecord",
                             "object": "#/$defs/LogicalObjectSourceRecord",
                         },
                         "propertyName": "support_source_type",
                     },
                     "oneOf": [
                         {"$ref": "#/$defs/LogicalObjectSourceRecord"},
-                        {"$ref": "#/$defs/LogicalAssertionSourceRecord"},
+                        {"$ref": "#/$defs/LogicalContextSourceRecord"},
                     ],
                 },
                 "LogicalObjectSourceRecord": {
@@ -3965,7 +3966,7 @@ WORKFLOW_INPUTS: dict[str, dict[str, str]] = {
         "object_attribute_context": "object_attribute_context",
         "ingestion_mapping": "ingestion_mapping",
         "object_relationship_context": "object_relationship_context",
-        "modeling_assertions": "modeling_assertions",
+        "context_records": "context_records",
     },
     "conceptual": {
         "source_context": "source_context",
@@ -3974,7 +3975,7 @@ WORKFLOW_INPUTS: dict[str, dict[str, str]] = {
         "object_attribute_context": "object_attribute_context",
         "ingestion_mapping": "ingestion_mapping",
         "object_relationship_context": "object_relationship_context",
-        "modeling_assertions": "modeling_assertions",
+        "context_records": "context_records",
         "conceptual_object_list": "conceptual_object_list",
         "conceptual_objects": "conceptual_objects",
         "conceptual_relationship_list": "conceptual_relationship_list",
@@ -3987,11 +3988,7 @@ WORKFLOW_INPUTS: dict[str, dict[str, str]] = {
         "object_attribute_context": "object_attribute_context",
         "ingestion_mapping": "ingestion_mapping",
         "object_relationship_context": "object_relationship_context",
-        "modeling_assertions": "modeling_assertions",
-        "conceptual_object_list": "conceptual_object_list",
-        "conceptual_objects": "conceptual_objects",
-        "conceptual_relationship_list": "conceptual_relationship_list",
-        "conceptual_relationships": "conceptual_relationships",
+        "context_records": "context_records",
         "logical_submodel_list": "logical_submodel_list",
         "logical_submodels": "logical_submodels",
         "logical_entity_list": "logical_entity_list",
@@ -4029,7 +4026,7 @@ WORKFLOW_INPUTS: dict[str, dict[str, str]] = {
         "dimensional_attributes": "dimensional_attributes",
         "dimensional_relationship_list": "dimensional_relationship_list",
         "dimensional_relationships": "dimensional_relationships",
-        "modeling_assertions": "modeling_assertions",
+        "context_records": "context_records",
         "naming_instructions": "dimensional.naming_instructions",
         "audit_columns": "dimensional.audit_columns",
         "technical_columns": "dimensional.technical_columns",
@@ -4230,36 +4227,17 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "outgoing_relationships": [],
             },
         ],
-        "modeling_assertions": [
+        "context_records": [
             {
-                "modeling_assertion_record_key": "order_customer_reference",
-                "modeling_assertion_document_name": "ERP relationship notes",
-                "modeling_assertion_record_type": "relationship",
-                "modeling_assertion_text": "Within this ERP source, "
-                "Orders.CustomerCode "
-                "references the customer "
-                "account identified by "
-                "Customers.CustomerCode.",
-                "modeling_assertion_details": {
-                    "from": {
-                        "tenant_code": "GDS",
-                        "system_code": "WAREHOUSE",
-                        "connection_code": "MAIN",
-                        "object_schema": "bronze",
-                        "object_name": "Orders",
-                        "attribute_name": "CustomerCode",
-                    },
-                    "to": {
-                        "tenant_code": "GDS",
-                        "system_code": "WAREHOUSE",
-                        "connection_code": "MAIN",
-                        "object_schema": "bronze",
-                        "object_name": "Customers",
-                        "attribute_name": "CustomerCode",
-                    },
-                },
-                "modeling_assertion_source_location": {"section": "Orders and customers"},
-                "modeling_assertion_confidence": "high",
+                "context_record_id": "90b6320b-c2e0-5e9d-bd00-0e14e6d259fe",
+                "context_group_name": "ERP relationship notes",
+                "context_type_name": "Business Requirement",
+                "context_text": (
+                    "Within this ERP source, Orders.CustomerCode references "
+                    "the customer account identified by "
+                    "Customers.CustomerCode."
+                ),
+                "source_reference": '{"section": "Orders and customers"}',
             }
         ],
     },
@@ -4453,36 +4431,17 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "outgoing_relationships": [],
             },
         ],
-        "modeling_assertions": [
+        "context_records": [
             {
-                "modeling_assertion_record_key": "order_customer_reference",
-                "modeling_assertion_document_name": "ERP relationship notes",
-                "modeling_assertion_record_type": "relationship",
-                "modeling_assertion_text": "Within this ERP source, "
-                "Orders.CustomerCode "
-                "references the customer "
-                "account identified by "
-                "Customers.CustomerCode.",
-                "modeling_assertion_details": {
-                    "from": {
-                        "tenant_code": "GDS",
-                        "system_code": "WAREHOUSE",
-                        "connection_code": "MAIN",
-                        "object_schema": "bronze",
-                        "object_name": "Orders",
-                        "attribute_name": "CustomerCode",
-                    },
-                    "to": {
-                        "tenant_code": "GDS",
-                        "system_code": "WAREHOUSE",
-                        "connection_code": "MAIN",
-                        "object_schema": "bronze",
-                        "object_name": "Customers",
-                        "attribute_name": "CustomerCode",
-                    },
-                },
-                "modeling_assertion_source_location": {"section": "Orders and customers"},
-                "modeling_assertion_confidence": "high",
+                "context_record_id": "90b6320b-c2e0-5e9d-bd00-0e14e6d259fe",
+                "context_group_name": "ERP relationship notes",
+                "context_type_name": "Business Requirement",
+                "context_text": (
+                    "Within this ERP source, Orders.CustomerCode references "
+                    "the customer account identified by "
+                    "Customers.CustomerCode."
+                ),
+                "source_reference": '{"section": "Orders and customers"}',
             }
         ],
         "conceptual_object_list": [],
@@ -4661,30 +4620,21 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "outgoing_relationships": [],
             },
         ],
-        "modeling_assertions": [
+        "context_records": [
             {
-                "modeling_assertion_record_key": "order_customer_reference",
-                "modeling_assertion_document_name": "ERP relationship notes",
-                "modeling_assertion_record_type": "relationship",
-                "modeling_assertion_text": "Within this ERP source, "
-                "Orders.order_id identifies "
-                "one order. Each order "
-                "belongs to exactly one "
-                "customer identified by "
-                "Customers.customer_id "
-                "through Orders.customer_id; "
-                "one customer may have many "
-                "orders. Customer IDs are "
-                "stable within this source.",
-                "modeling_assertion_details": {},
-                "modeling_assertion_source_location": {"section": "Orders and customers"},
-                "modeling_assertion_confidence": "high",
+                "context_record_id": "90b6320b-c2e0-5e9d-bd00-0e14e6d259fe",
+                "context_group_name": "ERP relationship notes",
+                "context_type_name": "Business Requirement",
+                "context_text": (
+                    "Within this ERP source, Orders.order_id identifies one "
+                    "order. Each order belongs to exactly one customer "
+                    "identified by Customers.customer_id through "
+                    "Orders.customer_id; one customer may have many orders. "
+                    "Customer IDs are stable within this source."
+                ),
+                "source_reference": '{"section": "Orders and customers"}',
             }
         ],
-        "conceptual_object_list": [],
-        "conceptual_objects": [],
-        "conceptual_relationship_list": [],
-        "conceptual_relationships": [],
         "logical_submodel_list": [{"logical_submodel_name": "Sales"}],
         "logical_submodels": [
             {
@@ -4767,9 +4717,9 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "is_locked": False,
                     },
                     {
-                        "support_source_type": "assertion",
-                        "assertion_record": {
-                            "modeling_assertion_record_key": "order_customer_reference"
+                        "support_source_type": "context_record",
+                        "context_record": {
+                            "context_record_id": "90b6320b-c2e0-5e9d-bd00-0e14e6d259fe"
                         },
                         "source_order": 2,
                         "rationale": "Approved rule defines each Order "
@@ -4890,9 +4840,9 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "is_locked": False,
                     },
                     {
-                        "support_source_type": "assertion",
-                        "assertion_record": {
-                            "modeling_assertion_record_key": "order_customer_reference"
+                        "support_source_type": "context_record",
+                        "context_record": {
+                            "context_record_id": "90b6320b-c2e0-5e9d-bd00-0e14e6d259fe"
                         },
                         "source_order": 2,
                         "rationale": "Approved rule defines each "
@@ -5062,9 +5012,9 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "is_locked": False,
                     },
                     {
-                        "support_source_type": "assertion",
-                        "assertion_record": {
-                            "modeling_assertion_record_key": "order_customer_reference"
+                        "support_source_type": "context_record",
+                        "context_record": {
+                            "context_record_id": "90b6320b-c2e0-5e9d-bd00-0e14e6d259fe"
                         },
                         "source_order": 2,
                         "rationale": "Approved rule defines each "
@@ -5170,9 +5120,9 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "is_locked": False,
                     },
                     {
-                        "support_source_type": "assertion",
-                        "assertion_record": {
-                            "modeling_assertion_record_key": "order_customer_reference"
+                        "support_source_type": "context_record",
+                        "context_record": {
+                            "context_record_id": "90b6320b-c2e0-5e9d-bd00-0e14e6d259fe"
                         },
                         "source_order": 2,
                         "rationale": "Approved rule defines each "
@@ -5300,8 +5250,10 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 ],
                 "sources": [
                     {
-                        "support_source_type": "assertion",
-                        "assertion_record": {"modeling_assertion_record_key": "order.customer"},
+                        "support_source_type": "context_record",
+                        "context_record": {
+                            "context_record_id": "0be08a40-db09-52da-b889-c1615c8533c1"
+                        },
                         "source_role": "business_rule",
                         "source_order": 1,
                         "rationale": "Approved dimensional requirement.",
@@ -5309,8 +5261,10 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "is_locked": False,
                     },
                     {
-                        "support_source_type": "assertion",
-                        "assertion_record": {"modeling_assertion_record_key": "sales_order_count"},
+                        "support_source_type": "context_record",
+                        "context_record": {
+                            "context_record_id": "9bbdef91-d027-58a3-b22f-92ef90293cd0"
+                        },
                         "source_order": 2,
                         "rationale": "The confirmed rule "
                         "defines one order per "
@@ -5342,8 +5296,10 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 ],
                 "sources": [
                     {
-                        "support_source_type": "assertion",
-                        "assertion_record": {"modeling_assertion_record_key": "order.customer"},
+                        "support_source_type": "context_record",
+                        "context_record": {
+                            "context_record_id": "0be08a40-db09-52da-b889-c1615c8533c1"
+                        },
                         "source_role": "business_rule",
                         "source_order": 1,
                         "rationale": "Approved dimensional requirement.",
@@ -5397,8 +5353,10 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "dimensional_attribute_is_locked": False,
                 "sources": [
                     {
-                        "support_source_type": "assertion",
-                        "assertion_record": {"modeling_assertion_record_key": "order.customer"},
+                        "support_source_type": "context_record",
+                        "context_record": {
+                            "context_record_id": "0be08a40-db09-52da-b889-c1615c8533c1"
+                        },
                         "source_order": 1,
                         "rationale": "Approved dimensional requirement.",
                         "status": "active",
@@ -5427,8 +5385,10 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "dimensional_attribute_is_locked": False,
                 "sources": [
                     {
-                        "support_source_type": "assertion",
-                        "assertion_record": {"modeling_assertion_record_key": "order.customer"},
+                        "support_source_type": "context_record",
+                        "context_record": {
+                            "context_record_id": "0be08a40-db09-52da-b889-c1615c8533c1"
+                        },
                         "source_order": 1,
                         "rationale": "Approved dimensional requirement.",
                         "status": "active",
@@ -5477,8 +5437,10 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "dimensional_attribute_is_locked": False,
                 "sources": [
                     {
-                        "support_source_type": "assertion",
-                        "assertion_record": {"modeling_assertion_record_key": "sales_order_count"},
+                        "support_source_type": "context_record",
+                        "context_record": {
+                            "context_record_id": "9bbdef91-d027-58a3-b22f-92ef90293cd0"
+                        },
                         "source_order": 2,
                         "rationale": "The confirmed rule "
                         "defines one order per "
@@ -5510,8 +5472,10 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "dimensional_attribute_is_locked": True,
                 "sources": [
                     {
-                        "support_source_type": "assertion",
-                        "assertion_record": {"modeling_assertion_record_key": "order.customer"},
+                        "support_source_type": "context_record",
+                        "context_record": {
+                            "context_record_id": "0be08a40-db09-52da-b889-c1615c8533c1"
+                        },
                         "source_order": 1,
                         "rationale": "Approved dimensional requirement.",
                         "status": "active",
@@ -5574,21 +5538,17 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "to_dimensional_entity_schema_name": "gold",
             }
         ],
-        "modeling_assertions": [
+        "context_records": [
             {
-                "modeling_assertion_record_key": "sales_order_count",
-                "modeling_assertion_document_name": "Sales analytics rules",
-                "modeling_assertion_record_type": "business_rule",
-                "modeling_assertion_text": "One fact row represents "
-                "one governed order. "
-                "OrderCount is one for "
-                "that row. Sum counts "
-                "orders only across "
-                "compatible aggregation "
-                "levels.",
-                "modeling_assertion_details": {},
-                "modeling_assertion_source_location": None,
-                "modeling_assertion_confidence": "high",
+                "context_record_id": "9bbdef91-d027-58a3-b22f-92ef90293cd0",
+                "context_group_name": "Sales analytics rules",
+                "context_type_name": "Business Requirement",
+                "context_text": (
+                    "One fact row represents one governed order. OrderCount "
+                    "is one for that row. Sum counts orders only across "
+                    "compatible aggregation levels."
+                ),
+                "source_reference": None,
             }
         ],
         "naming_instructions": "Use PascalCase for Dimensional submodel, entity, "
@@ -5676,9 +5636,9 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                             "is_locked": False,
                         },
                         {
-                            "support_source_type": "assertion",
-                            "assertion_record": {
-                                "modeling_assertion_record_key": "order_customer_reference"
+                            "support_source_type": "context_record",
+                            "context_record": {
+                                "context_record_id": "90b6320b-c2e0-5e9d-bd00-0e14e6d259fe"
                             },
                             "source_order": 2,
                             "rationale": "Approved "
@@ -5756,9 +5716,9 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                                 "is_locked": False,
                             },
                             {
-                                "support_source_type": "assertion",
-                                "assertion_record": {
-                                    "modeling_assertion_record_key": "order_customer_reference"
+                                "support_source_type": "context_record",
+                                "context_record": {
+                                    "context_record_id": "90b6320b-c2e0-5e9d-bd00-0e14e6d259fe"
                                 },
                                 "source_order": 2,
                                 "rationale": "Approved "
@@ -5888,7 +5848,7 @@ for _enrichment_workflow in ("metadata_enrichment_object", "metadata_enrichment_
         [] if _enrichment_workflow == "metadata_enrichment_object" else ["CustomerCode"]
     )
 
-# Saved Model findings remain distinct from registered physical key/nullability/masking.
+# Saved Project findings remain distinct from registered physical key/nullability/masking.
 for _examples in INPUT_EXAMPLES.values():
     for _group in _examples.get("object_attribute_context", []):
         for _attribute in _group.get("attributes", []):
@@ -5897,7 +5857,7 @@ for _examples in INPUT_EXAMPLES.values():
                 _attribute.setdefault(_flag, None)
 INPUT_SHAPES["object_attribute_context"]["description"] += (
     " Descriptions, inferred types and is_natural_key/is_primary_key/is_nullable/is_pii "
-    "are current Model enrichment. NULL means unknown, not false. Multiple true key flags "
+    "are current Project enrichment. NULL means unknown, not false. Multiple true key flags "
     "identify members of the chosen composite key, not independently unique columns. "
     "registered_is_natural_key, attribute_nullability and is_masking_required remain "
     "registered physical metadata. Keep registered and enriched key findings separate, "

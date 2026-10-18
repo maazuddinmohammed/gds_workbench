@@ -52,7 +52,7 @@ type AgentToolName = Literal[
     "get_objects",
     "get_object_details",
     "get_object_relationships",
-    "get_modeling_assertions",
+    "get_context_records",
     "get_selected_logical_entities",
     "list_conceptual_objects",
     "get_conceptual_objects",

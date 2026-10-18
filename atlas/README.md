@@ -66,8 +66,8 @@ Code owns exact fields, limits and behavior. Distributed skills and references a
 | `workbench/app.js`, `ui/`, `ui-state.js` | Browser operation flows, record editing and findings. |
 | `workbench/workspace.js` | Snapshot integrity, local persistence, conflicts and exports. |
 | `workbench/core.js` | Shared identity, overlay and Python-compatible serialization. |
-| `workbench/validation/`, `model-quality.js` | Shared browser/helper checks; server remains authoritative. |
-| `workbench/dbml.js` | Pure effective-Model rendering; export is a user-only Atlas Local Workbench action. |
+| `workbench/validation/`, `project-quality.js` | Shared browser/helper checks; server remains authoritative. |
+| `workbench/dbml.js` | Pure effective-Project rendering; export is a user-only Atlas Local Workbench action. |
 | `scripts/atlas-local.js`, `scripts/*.ps1` | Local command execution and Windows fallback. Exact flags live in `contracts/local-helper.json`. |
 | `atlas-vs-code/src/connector/` | Private local bridge, reviewed MCP proxy and install wiring for Codex. |
 | `atlas-vs-code/src/stage-runner.ts`, `stage-request.ts`, `stage-transport.ts` | Approval/input binding, revision checks, transport and uncertain-write recovery. |

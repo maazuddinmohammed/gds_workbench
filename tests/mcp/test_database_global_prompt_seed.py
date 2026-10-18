@@ -61,7 +61,11 @@ VALIDATION_STAGE: StageIdentity = ("validation", None, "validation_generation")
 
 
 def _render_seed(template: str | None = None) -> str:
-    rendered = PROMPT_SEED_TEMPLATE.read_text(encoding="utf-8") if template is None else template
+    rendered = (
+        PROMPT_SEED_TEMPLATE.read_text(encoding="utf-8")
+        if template is None
+        else template
+    )
     replacements = {
         "__REPLACE_WITH_ENTRA_TENANT_ID__": str(ENTRA_TENANT_ID),
         "__REPLACE_WITH_ENTRA_OBJECT_ID__": str(ENTRA_OBJECT_ID),
@@ -76,6 +80,32 @@ def _render_seed(template: str | None = None) -> str:
 def _apply_sql(postgres_database: DisposablePostgres, content: str) -> None:
     with postgres_database.connect_owner() as connection:
         connection.execute(cast(LiteralString, content))
+
+
+@pytest.mark.parametrize(
+    "filename",
+    ["05_global_prompt_defaults.template.sql", "05_global_prompt_defaults.template.v2.sql"],
+)
+def test_default_prompt_versions_keep_conceptual_out_of_downstream_inputs(
+    filename: str,
+) -> None:
+    defaults = json.loads(
+        (SEED_ROOT / filename).read_text().split("$workflow_defaults$")[1]
+    )
+    for default in defaults:
+        workflow = default["project_workflow"]
+        if workflow not in {"logical", "dimensional"}:
+            continue
+        placeholders = set(PLACEHOLDER.findall(default["system_prompt"])) | set(
+            PLACEHOLDER.findall(default["instruction_prompt"])
+        )
+        tools = set(default["agent_tool_names"] or [])
+        assert not any("conceptual" in name for name in placeholders | tools)
+        if workflow == "dimensional":
+            if default["workflow_execution_mode"] == "tool_assisted":
+                assert "get_selected_logical_entities" in tools
+            else:
+                assert "selected_logical_entities" in placeholders
 
 
 def _seed_super_admin(postgres_database: DisposablePostgres) -> int:
@@ -116,7 +146,7 @@ def _snapshot(postgres_database: DisposablePostgres) -> list[TestRow]:
     with postgres_database.connect_owner() as connection:
         return connection.execute(
             """
-            SELECT stage.model_workflow,
+            SELECT stage.project_workflow,
                    stage.workflow_execution_mode,
                    stage.workflow_stage_code,
                    template.prompt_template_id,
@@ -144,7 +174,7 @@ def _snapshot(postgres_database: DisposablePostgres) -> list[TestRow]:
               JOIN application.prompt_assignment AS assignment
                 ON assignment.workflow_stage_id = stage.workflow_stage_id
                AND assignment.prompt_assignment_scope = 'global_default'
-               AND assignment.model_id IS NULL
+               AND assignment.project_id IS NULL
                AND assignment.is_active
               JOIN application.prompt_template_version AS version
                 ON version.prompt_template_version_id =
@@ -153,7 +183,7 @@ def _snapshot(postgres_database: DisposablePostgres) -> list[TestRow]:
                AND version.prompt_template_id = template.prompt_template_id
              WHERE stage.workflow_stage_is_agentic
                AND stage.is_active
-             ORDER BY stage.model_workflow,
+             ORDER BY stage.project_workflow,
                       stage.workflow_execution_mode NULLS FIRST,
                       stage.workflow_stage_order,
                       stage.workflow_stage_code
@@ -184,7 +214,7 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
     assert all("\\n" not in str(row["instruction_prompt_template"]) for row in first)
     stage_identities = [
         (
-            row["model_workflow"],
+            row["project_workflow"],
             row["workflow_execution_mode"],
             row["workflow_stage_code"],
         )
@@ -202,7 +232,7 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
 
     tool_stages = {
         (
-            row["model_workflow"],
+            row["project_workflow"],
             row["workflow_execution_mode"],
             row["workflow_stage_code"],
         )
@@ -217,7 +247,7 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
     with postgres_database.connect_owner() as connection:
         variables = connection.execute(
             """
-            SELECT stage.model_workflow,
+            SELECT stage.project_workflow,
                    stage.workflow_execution_mode,
                    stage.workflow_stage_code,
                    array_agg(
@@ -235,7 +265,7 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
         ).fetchall()
         variable_contract_rows = connection.execute(
             """
-            SELECT stage.model_workflow,
+            SELECT stage.project_workflow,
                    stage.workflow_execution_mode,
                    stage.workflow_stage_code,
                    variable.workflow_stage_variable_name AS name,
@@ -248,7 +278,7 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
                AND variable.is_active
              WHERE stage.workflow_stage_is_agentic
                AND stage.is_active
-             ORDER BY stage.model_workflow,
+             ORDER BY stage.project_workflow,
                       stage.workflow_execution_mode NULLS FIRST,
                       stage.workflow_stage_order,
                       variable.workflow_stage_variable_order
@@ -274,7 +304,7 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
         )
     allowed = {
         (
-            row["model_workflow"],
+            row["project_workflow"],
             row["workflow_execution_mode"],
             row["workflow_stage_code"],
         ): set(row["names"])
@@ -291,28 +321,34 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
         }
     for variable in variable_contract_rows:
         assert variable["resolver_key"] == (
-            f"workflow.{variable['model_workflow']}.common."
+            f"workflow.{variable['project_workflow']}.common."
             f"{variable['workflow_stage_code']}.inputs.{variable['name']}"
         )
         assert variable["is_required"] is False
     defaults = {
-        (item["model_workflow"], item["workflow_execution_mode"], item["workflow_stage_code"]): item
+        (
+            item["project_workflow"],
+            item["workflow_execution_mode"],
+            item["workflow_stage_code"],
+        ): item
         for item in json.loads(rendered.split("$workflow_defaults$")[1])
     }
     for row in first:
         identity = (
-            row["model_workflow"],
+            row["project_workflow"],
             row["workflow_execution_mode"],
             row["workflow_stage_code"],
         )
         default = defaults[identity]
         # Hash comparisons keep prompt bodies out of assertion failure output.
-        assert sha256(row["system_prompt_template"].encode()).digest() == sha256(
-            default["system_prompt"].encode()
-        ).digest()
-        assert sha256(row["instruction_prompt_template"].encode()).digest() == sha256(
-            default["instruction_prompt"].encode()
-        ).digest()
+        assert (
+            sha256(row["system_prompt_template"].encode()).digest()
+            == sha256(default["system_prompt"].encode()).digest()
+        )
+        assert (
+            sha256(row["instruction_prompt_template"].encode()).digest()
+            == sha256(default["instruction_prompt"].encode()).digest()
+        )
         assert row["tool_instruction_prompt_template"] is None
         assert row["agent_tool_names"] == default["agent_tool_names"]
         referenced = set(PLACEHOLDER.findall(default["system_prompt"])) | set(
@@ -334,13 +370,16 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
     _apply_sql(postgres_database, rendered)
     assert _snapshot(postgres_database) == first
 
-    match = re.search(r"\$workflow_defaults\$\n(.*?)\n\$workflow_defaults\$", rendered, re.DOTALL)
+    match = re.search(
+        r"\$workflow_defaults\$\n(.*?)\n\$workflow_defaults\$", rendered, re.DOTALL
+    )
     assert match is not None
     payload = json.loads(match.group(1))
     target = next(
         row
         for row in payload
-        if row["model_workflow"] == "analysis" and row["workflow_execution_mode"] == "one_shot"
+        if row["project_workflow"] == "analysis"
+        and row["workflow_execution_mode"] == "one_shot"
     )
     target["system_prompt"] += "\nApply conservative evidence thresholds."
     changed = (
@@ -355,7 +394,7 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
     identity = ("analysis", "one_shot", "relationship_inference")
     first_by_identity = {
         (
-            row["model_workflow"],
+            row["project_workflow"],
             row["workflow_execution_mode"],
             row["workflow_stage_code"],
         ): row
@@ -363,7 +402,7 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
     }
     second_by_identity = {
         (
-            row["model_workflow"],
+            row["project_workflow"],
             row["workflow_execution_mode"],
             row["workflow_stage_code"],
         ): row
@@ -446,7 +485,9 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
         + json.dumps(payload, ensure_ascii=False, indent=2)
         + rendered[match.end(1) :]
     )
-    with pytest.raises(psycopg.errors.RaiseException, match="will not overwrite an existing draft"):
+    with pytest.raises(
+        psycopg.errors.RaiseException, match="will not overwrite an existing draft"
+    ):
         _apply_sql(postgres_database, conflicting)
     with postgres_database.connect_owner() as connection:
         assert (
@@ -468,7 +509,9 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
     _apply_sql(postgres_database, matching)
     third = _snapshot(postgres_database)
     updated = next(
-        row for row in third if row["prompt_template_id"] == current["prompt_template_id"]
+        row
+        for row in third
+        if row["prompt_template_id"] == current["prompt_template_id"]
     )
     assert updated["prompt_template_version_id"] == draft["prompt_template_version_id"]
     assert updated["prompt_template_version_number"] == 3

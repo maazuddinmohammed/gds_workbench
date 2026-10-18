@@ -57,7 +57,7 @@ describe("createStageMcpClient", () => {
     }));
     const client = await createStageMcpClient(LOCAL_PROFILE, undefined, connector);
 
-    await expect(client.callTool("commit_model_stage_batch", {})).rejects.toMatchObject({
+    await expect(client.callTool("commit_project_stage_batch", {})).rejects.toMatchObject({
       code: "MCP_OUTCOME_UNKNOWN",
       message: "The Stage operation outcome is unknown; verify before retrying.",
     });
@@ -70,7 +70,7 @@ describe("createStageMcpClient", () => {
     const connector = vi.fn<ProtocolConnector>(async () => ({ callTool, close }));
     const client = await createStageMcpClient(LOCAL_PROFILE, undefined, connector);
 
-    await expect(client.callTool("commit_model_stage_batch", {})).rejects.toMatchObject({
+    await expect(client.callTool("commit_project_stage_batch", {})).rejects.toMatchObject({
       code: "MCP_OUTCOME_UNKNOWN",
       message: "The Stage operation outcome is unknown; verify before retrying.",
     });

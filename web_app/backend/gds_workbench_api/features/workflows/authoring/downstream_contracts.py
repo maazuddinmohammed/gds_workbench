@@ -148,7 +148,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             ],
         },
         "authoring_policy": {
-            "description": "Model name, naming instructions and "
+            "description": "Project name, naming instructions and "
             "audit/technical templates, plus independent logical_entity_scd_type and "
             "dimensional_entity_scd_type history policies. Use logical_entity_scd_type for Logical "
             "targets and dimensional_entity_scd_type for Gold Dimensions. type_1 overwrites "
@@ -160,7 +160,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             "value_schema": mapping_input_schemas()["authoring_policy"],
             "example": {
                 "audit_columns_template": None,
-                "model_name": "Customer Model",
+                "project_name": "Customer Project",
                 "logical_entity_scd_type": "type_2",
                 "dimensional_entity_scd_type": "type_1",
                 "naming_instructions": "Use PascalCase names.",
@@ -334,11 +334,12 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
         "mapping_support_records": {
             "description": "Individually pageable saved evidence envelopes with evidence_type "
             "and record. "
-            "Includes target lineage/relationships, Analysis, Profiles and applicable Assertions; "
+            "Includes target lineage/relationships, Analysis, "
+            "Profiles and applicable Context records; "
             "eligible upstream Logical definitions, Attributes/key roles, relationships, applied "
             "Object/Attribute Mapping documents and their available template definitions. Gold "
             "also includes active physical lineage descriptions, Profiles and Analysis restricted "
-            "to this Model and business System. Physical evidence explains Logical inputs; it "
+            "to this Project and business System. Physical evidence explains Logical inputs; it "
             "does not make raw Objects eligible Gold sources. Preserve opaque Mapping documents "
             "and exact schema-qualified identities; a missing template definition does not "
             "authorize guessing custom field semantics. Empty records mean no saved evidence.",
@@ -349,7 +350,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             "description": "Saved evidence scoped to this target and "
             "eligible sources: attribute_lineage links "
             "modeled names to physical source Attributes "
-            "or assertion keys, with rationale and key "
+            "or Context record IDs, with rationale and key "
             "roles; modeled_relationships describe "
             "conceptual join intent, not physical join "
             "proof; source_relationships carry Analysis "
@@ -357,10 +358,10 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             "available; profiles are saved aggregate "
             "counts, percentages and lengths, not live "
             "rows or guaranteed current observations; "
-            "assertions contain active Model/System "
+            "Context records contain active Project/System "
             "context automatically without requiring "
             "Entity links or matching legacy layer flags. "
-            "Evaluate relevance to this Entity; assertions "
+            "Evaluate relevance to this Entity; context records "
             "are not proof of available sources. Keys "
             "identify provenance; free-text type and "
             "statement distinguish intent from facts. "
@@ -378,7 +379,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                     "modeled_relationships": {"type": "array", "items": {"type": "object"}},
                     "source_relationships": {"type": "array", "items": {"type": "object"}},
                     "profiles": {"type": "array", "items": {"type": "object"}},
-                    "assertions": {"type": "array", "items": {"type": "object"}},
+                    "context_records": {"type": "array", "items": {"type": "object"}},
                 },
             },
             "example": {
@@ -386,7 +387,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                 "modeled_relationships": [],
                 "source_relationships": [],
                 "profiles": [],
-                "assertions": [],
+                "context_records": [],
             },
         },
     },
@@ -621,7 +622,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             "description": "Physical input coordinates and "
             "schema-qualified modeled input or "
             "peer lookup coordinates from the "
-            "Model Tenant GDS placement, with "
+            "Project Tenant GDS placement, with "
             "contributing System.",
             "value_schema": {
                 "$defs": {
@@ -918,8 +919,8 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             "order and exact modeled Entity "
             "identity, definition, "
             "classification and grain. "
-            "entity.assertions contains "
-            "active Model/System assertions "
+            "entity.Context records contains "
+            "active Project/System Context records "
             "without requiring Entity "
             "links: assess relevance; keys "
             "identify provenance, text "
@@ -951,43 +952,41 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                                 "title": "Entity Name",
                                 "type": "string",
                             },
-                            "assertions": {
+                            "context_records": {
                                 "type": "array",
                                 "items": {
                                     "type": "object",
                                     "properties": {
-                                        "modeling_assertion_record_key": {
+                                        "context_record_id": {
+                                            "type": "string",
+                                            "pattern": (
+                                                "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f"
+                                                "]{12}$"
+                                            ),
+                                        },
+                                        "context_group_name": {
                                             "type": "string",
                                             "minLength": 1,
+                                            "maxLength": 255,
                                         },
-                                        "modeling_assertion_document_name": {
+                                        "context_type_name": {
                                             "type": "string",
                                             "minLength": 1,
+                                            "maxLength": 200,
                                         },
-                                        "modeling_assertion_record_type": {
+                                        "context_text": {
                                             "type": "string",
                                             "minLength": 1,
+                                            "maxLength": 262144,
                                         },
-                                        "modeling_assertion_text": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                        },
-                                        "modeling_assertion_details": {"type": "object"},
-                                        "modeling_assertion_source_location": {
-                                            "type": ["object", "null"]
-                                        },
-                                        "modeling_assertion_confidence": {
-                                            "enum": ["low", "medium", "high", None]
-                                        },
+                                        "source_reference": {"type": ["string", "null"]},
                                     },
                                     "required": [
-                                        "modeling_assertion_record_key",
-                                        "modeling_assertion_document_name",
-                                        "modeling_assertion_record_type",
-                                        "modeling_assertion_text",
-                                        "modeling_assertion_details",
-                                        "modeling_assertion_source_location",
-                                        "modeling_assertion_confidence",
+                                        "context_record_id",
+                                        "context_group_name",
+                                        "context_type_name",
+                                        "context_text",
+                                        "source_reference",
                                     ],
                                     "additionalProperties": False,
                                 },
@@ -1719,43 +1718,41 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                                 "title": "Entity Name",
                                 "type": "string",
                             },
-                            "assertions": {
+                            "context_records": {
                                 "type": "array",
                                 "items": {
                                     "type": "object",
                                     "properties": {
-                                        "modeling_assertion_record_key": {
+                                        "context_record_id": {
+                                            "type": "string",
+                                            "pattern": (
+                                                "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f"
+                                                "]{12}$"
+                                            ),
+                                        },
+                                        "context_group_name": {
                                             "type": "string",
                                             "minLength": 1,
+                                            "maxLength": 255,
                                         },
-                                        "modeling_assertion_document_name": {
+                                        "context_type_name": {
                                             "type": "string",
                                             "minLength": 1,
+                                            "maxLength": 200,
                                         },
-                                        "modeling_assertion_record_type": {
+                                        "context_text": {
                                             "type": "string",
                                             "minLength": 1,
+                                            "maxLength": 262144,
                                         },
-                                        "modeling_assertion_text": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                        },
-                                        "modeling_assertion_details": {"type": "object"},
-                                        "modeling_assertion_source_location": {
-                                            "type": ["object", "null"]
-                                        },
-                                        "modeling_assertion_confidence": {
-                                            "enum": ["low", "medium", "high", None]
-                                        },
+                                        "source_reference": {"type": ["string", "null"]},
                                     },
                                     "required": [
-                                        "modeling_assertion_record_key",
-                                        "modeling_assertion_document_name",
-                                        "modeling_assertion_record_type",
-                                        "modeling_assertion_text",
-                                        "modeling_assertion_details",
-                                        "modeling_assertion_source_location",
-                                        "modeling_assertion_confidence",
+                                        "context_record_id",
+                                        "context_group_name",
+                                        "context_type_name",
+                                        "context_text",
+                                        "source_reference",
                                     ],
                                     "additionalProperties": False,
                                 },

@@ -32,7 +32,7 @@ def test_web_start_uses_governed_fixed_target_and_supports_retry(changed: bool) 
         workflow_run_id=71,
         workflow_run_state="running",
         started_at=datetime(2026, 9, 5, tzinfo=UTC),
-        model_revision=4,
+        project_revision=4,
     )
     executor = DatabaseMetadataEnrichmentExecutor(
         repository=AsyncMock(),
@@ -47,31 +47,35 @@ def test_web_start_uses_governed_fixed_target_and_supports_retry(changed: bool) 
         ),
         metadata_enrichment_workflow_service=executor,
     )
-    route = "/api/v1/tenants/2/models/3/metadata-enrichment/runs/71/execute"
+    route = "/api/v1/tenants/2/projects/3/metadata-enrichment/runs/71/execute"
     with TestClient(app) as client:
         response = client.post(
             route,
             json={
                 "execution_mode": "one_shot",
-                "expected_model_revision": 4,
+                "expected_project_revision": 4,
             },
         )
         assert response.status_code == (202 if changed else 200)
         assert response.json()["workflow_run_id"] == 71
         for invalid in (
-            {"execution_mode": "tool_assisted", "expected_model_revision": 4},
-            {"execution_mode": "one_shot", "expected_model_revision": 0},
-            {"execution_mode": "one_shot", "expected_model_revision": 4, "actor_id": 9},
+            {"execution_mode": "tool_assisted", "expected_project_revision": 4},
+            {"execution_mode": "one_shot", "expected_project_revision": 0},
+            {
+                "execution_mode": "one_shot",
+                "expected_project_revision": 4,
+                "actor_id": 9,
+            },
         ):
             assert client.post(route, json=invalid).status_code == 422
     lifecycle.start.assert_awaited_once_with(
         principal,
         tenant_id=2,
-        model_id=3,
+        project_id=3,
         workflow_run_id=71,
         expected_workflow="metadata_enrichment",
         expected_execution_mode="one_shot",
-        expected_model_revision=4,
+        expected_project_revision=4,
     )
 
 
@@ -80,7 +84,7 @@ def test_web_start_uses_governed_fixed_target_and_supports_retry(changed: bool) 
     [
         {"selected_object_ids": [1, 2]},
         {"selected_object_ids": [2]},
-        {"model_workflow": "logical"},
+        {"project_workflow": "logical"},
         {"workflow_execution_mode": "tool_assisted"},
         {"description_targets": []},
         {
@@ -125,8 +129,8 @@ def test_regeneration_requires_exact_scope_and_current_metadata_revision(
     from pydantic import ValidationError
 
     document: dict[str, object] = {
-        "expected_model_revision": 4,
-        "model_workflow": "metadata_enrichment",
+        "expected_project_revision": 4,
+        "project_workflow": "metadata_enrichment",
         "workflow_execution_mode": "one_shot",
         "selected_object_ids": [1],
         "description_targets": [
@@ -159,7 +163,7 @@ def test_bulk_attribute_creation_keeps_exact_targets_across_objects() -> None:
         workflow_run_state="queued",
         correlation_id=correlation_id,
         prompt_snapshot_count=1,
-        model_revision=4,
+        project_revision=4,
         selected_scope_digest="d" * 64,
         selected_scope_count=2,
         code_generation_coverage_mode=None,
@@ -175,11 +179,11 @@ def test_bulk_attribute_creation_keeps_exact_targets_across_objects() -> None:
     )
     with TestClient(app) as client:
         response = client.post(
-            "/api/v1/tenants/2/models/3/runs",
+            "/api/v1/tenants/2/projects/3/runs",
             headers={"Idempotency-Key": str(correlation_id)},
             json={
-                "expected_model_revision": 4,
-                "model_workflow": "metadata_enrichment",
+                "expected_project_revision": 4,
+                "project_workflow": "metadata_enrichment",
                 "workflow_execution_mode": "one_shot",
                 "selected_object_ids": [1, 2],
                 "description_targets": targets,
