@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 import re
 import shutil
 import struct
-import subprocess
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
@@ -15,7 +13,7 @@ from urllib.parse import unquote, urlsplit
 import pytest
 from jsonschema import Draft202012Validator
 
-from atlas import build_connector, build_plugin
+from atlas import build_plugin
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_ROOT = ROOT / "atlas" / "atlas-plugin"
@@ -96,11 +94,9 @@ def test_archive_round_trip_and_reproducibility(tmp_path: Path) -> None:
             f"atlas/{path.relative_to(PLUGIN_ROOT).as_posix()}": path.read_bytes() for path in files
         }
         assert archive.namelist() == list(expected)
-        assert "atlas/.agents/plugins/marketplace.json" not in archive.namelist()
         for name, content in expected.items():
             assert archive.read(name) == content
         assert {name for name in expected if name.startswith("atlas/docs/")} == {
-            "atlas/docs/codex-installation-and-setup.md",
             "atlas/docs/copilot-vs-code-installation-and-setup.md",
             "atlas/docs/usage-guide.md",
             "atlas/docs/install-and-update.md",
@@ -114,7 +110,6 @@ def test_archive_round_trip_and_reproducibility(tmp_path: Path) -> None:
         assert "atlas/mcp.json" in expected
         assert "atlas/scripts/atlas-local.js" in expected
         assert "atlas/workbench/validation/run.js" in expected
-        assert "atlas/.codex-plugin/plugin.json" not in expected
         assert all((info.external_attr >> 16) & 0o170000 == 0o100000 for info in archive.infolist())
         archive.extractall(tmp_path / "extracted")
 
@@ -173,102 +168,25 @@ def test_archive_round_trip_and_reproducibility(tmp_path: Path) -> None:
                 assert unquote(link.fragment) in anchors, (document, destination)
 
 
-def test_codex_installs_export_without_source_checkout(tmp_path: Path) -> None:
-    codex = shutil.which("codex")
-    if codex is None:
-        pytest.skip("Codex CLI unavailable; Windows packaging CI installs the pinned CLI")
-    manifest = json.loads((PLUGIN_ROOT / "plugin.json").read_text(encoding="utf-8"))
-    delivered = ROOT / "atlas/dist" / f"atlas-agent-plugin-{manifest['version']}.zip"
-    destination = tmp_path / "Windows VM export with spaces"
-    with zipfile.ZipFile(delivered) as archive:
-        archive.extractall(destination)
-    exported = destination / "atlas"
-    node = shutil.which("node")
-    if node is None:
-        pytest.skip("Node unavailable")
-    with zipfile.ZipFile(ROOT / "atlas/dist/atlas-connector-0.2.0.zip") as archive:
-        archive.extractall(destination)
-    companion = destination / "atlas-connector"
-    result = subprocess.run(
-        [node, str(companion / "atlas-connector.cjs"), "setup"],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    assert result.returncode == 0, "Connector setup failed; output withheld"
-    exported = destination / "codex-atlas"
-    connection = json.loads((exported / "mcp.json").read_text())["mcpServers"]["gds-workbench"]
-    assert connection["type"] == "stdio"
-    assert Path(connection["command"]).is_absolute()
-    assert Path(connection["args"][0]).is_file()
-    assert connection["args"][1:] == ["serve"]
-    assert not (exported / "connector.json").exists()
-    assert "cwd" not in connection
-    smoke_codex_home = tmp_path / "codex-home"
-    smoke_codex_home.mkdir()
-    environment = dict(os.environ, CODEX_HOME=str(smoke_codex_home))
-    installed_path: Path | None = None
-    for arguments in (
-        ["plugin", "marketplace", "add", str(exported), "--json"],
-        ["plugin", "add", "atlas@gds-workbench", "--json"],
-        ["plugin", "list", "--marketplace", "gds-workbench", "--json"],
-    ):
-        result = subprocess.run(
-            [codex, *arguments],
-            cwd=tmp_path,
-            env=environment,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        # Keep CLI output and connection configuration out of test diagnostics.
-        assert result.returncode == 0, f"Codex {arguments[:2]} failed; output withheld"
-        response = json.loads(result.stdout)
-        if arguments[1] == "add":
-            assert response["name"] == manifest["name"]
-            assert response["version"] == manifest["version"]
-            installed_path = Path(response["installedPath"]).resolve()
-            assert installed_path.is_relative_to(smoke_codex_home.resolve())
-    assert installed_path is not None
-    assert len(list((installed_path / "skills").glob("*/SKILL.md"))) == 12
-    for source in exported.rglob("*"):
-        if source.is_file():
-            installed = installed_path / source.relative_to(exported)
-            assert installed.is_file(), f"Installed file missing: {source.relative_to(exported)}"
-            assert installed.read_bytes() == source.read_bytes(), (
-                "Installed file differs from export"
-            )
-
-    # Replace source content without changing its version: setup and registration
-    # must refresh Codex's cache, including removing files absent in the new ZIP.
-    (destination / "atlas/docs/usage-guide.md").unlink()
-    (destination / "atlas/docs/update-proof.md").write_text("updated fixture")
-    result = subprocess.run(
-        [node, str(companion / "atlas-connector.cjs"), "setup"],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    assert result.returncode == 0, "Connector update failed; output withheld"
-    for arguments in (
-        ["plugin", "marketplace", "add", str(exported), "--json"],
-        ["plugin", "add", "atlas@gds-workbench", "--json"],
-    ):
-        result = subprocess.run(
-            [codex, *arguments],
-            cwd=tmp_path,
-            env=environment,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert result.returncode == 0, "Codex refresh failed; output withheld"
-        if arguments[1] == "add":
-            installed_path = Path(json.loads(result.stdout)["installedPath"])
-    assert (installed_path / "docs/update-proof.md").read_text() == "updated fixture"
-    assert not (installed_path / "docs/usage-guide.md").exists()
+def test_stage_runner_vsix_matches_source() -> None:
+    extension = ROOT / "atlas/atlas-vs-code"
+    manifest = json.loads((extension / "package.json").read_text(encoding="utf-8"))
+    with zipfile.ZipFile(
+        ROOT / "atlas/dist" / f"atlas-stage-runner-{manifest['version']}.vsix"
+    ) as archive:
+        for packaged, source in (
+            ("package.json", "package.json"),
+            ("dist/extension.cjs", "dist/extension.cjs"),
+            ("readme.md", "README.md"),
+        ):
+            assert archive.read(f"extension/{packaged}") == (extension / source).read_bytes()
+        packaged_manifest = json.loads(archive.read("extension/package.json"))
+        assert packaged_manifest["contributes"]["commands"] == [
+            {"command": "atlasStageRunner.check", "title": "ATLAS: Check Stage Runner"}
+        ]
+        assert {
+            tool["name"] for tool in packaged_manifest["contributes"]["languageModelTools"]
+        } == {"atlas_checkStageRunner", "atlas_stageApprovedManifest"}
 
 
 def test_existing_output_and_source_directory_are_preserved(tmp_path: Path) -> None:
@@ -280,29 +198,6 @@ def test_existing_output_and_source_directory_are_preserved(tmp_path: Path) -> N
     with pytest.raises(ValueError, match="outside the plugin source"):
         build_plugin.build(PLUGIN_ROOT / "unexpected.zip")
     assert not (PLUGIN_ROOT / "unexpected.zip").exists()
-
-
-def test_connector_archive_is_reproducible_and_excludes_user_state(tmp_path: Path) -> None:
-    first = build_connector.build(tmp_path / "connector-one.zip")
-    second = build_connector.build(tmp_path / "connector-two.zip")
-    assert first.read_bytes() == second.read_bytes()
-    assert first.read_bytes() == (ROOT / "atlas/dist/atlas-connector-0.2.0.zip").read_bytes()
-    with zipfile.ZipFile(first) as archive:
-        assert archive.namelist() == [f"atlas-connector/{name}" for name in build_connector.FILES]
-        assert not any(
-            "node_modules" in name or "codex-atlas" in name for name in archive.namelist()
-        )
-        package = json.loads(archive.read("atlas-connector/package.json"))
-        assert not package.get("dependencies")
-        assert not package.get("optionalDependencies")
-        assert "atlas-connector/organization.json" not in archive.namelist()
-        for name in build_connector.FILES:
-            assert (
-                archive.read(f"atlas-connector/{name}")
-                == (build_connector.SOURCE / name).read_bytes()
-            )
-    with pytest.raises(FileExistsError):
-        build_connector.build(first)
 
 
 @pytest.mark.parametrize(

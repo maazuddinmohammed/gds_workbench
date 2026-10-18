@@ -5,6 +5,8 @@ description: Start or resume Atlas and route a data-modeling request to the need
 
 # Atlas modeling playbook
 
+Use Atlas in VS Code Copilot.
+
 Identify the requested outcome, inspect relevant state and load only the needed workflow. Do not make the user explain the SDLC or complete a setup questionnaire before a simple answer.
 
 ## Resolve the next useful step

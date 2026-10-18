@@ -12,7 +12,7 @@ This is a source contract guide, not proof of what a particular deployment expos
 | Code and Validation definitions | Read relevant Project Snapshot datasets; `read_project_section` does not currently serve these datasets. |
 | New transformation language | SQL generation is supported; preserve existing Python records. New Python generation needs an established consumer contract. |
 | Data execution | Backend profiling tools or the governed `execute_databricks_sql` route under user authorization and SQL policy. Its SQL restrictions do not themselves enforce Project Input Scope or metadata masking. Use [query-scope checks](../query-scope.md); unresolved scope/protection blocks the affected query. |
-| Submission | Host Stage Runner/connector, server validation and separately approved Apply. Unknown Stage outcomes require read-only reconciliation before another write. |
+| Submission | VS Code Stage Runner, server validation and separately approved Apply. Unknown Stage outcomes require read-only reconciliation before another write. |
 | Operational handoff | Target/Process registration and local creation DDL. No upload, persistent DDL execution, deployment or pipeline execution is implied. |
 
 Use compatible deployed backend contracts for Project-owned enrichment. Stronger server-enforced analysis scope/masking remains separate backend work; instruction changes cannot supply it. Local dependency review is advisory and may be incomplete. No automated helper proves business meaning or recovers undocumented decisions.

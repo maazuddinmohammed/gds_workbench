@@ -1,13 +1,13 @@
 # Atlas Stage Runner
 
-VS Code companion and local Codex bridge for the Atlas plugin. It checks the backend connection and stages reviewed Metadata or Project changes. **Stage never Applies changes.**
+Stage Runner extension for the Atlas plugin in VS Code Copilot. It checks the backend connection and stages reviewed Metadata or Project changes. **Stage never Applies changes.**
 
 ## User guides
 
 The supplied Atlas plugin contains:
 
 - `docs/copilot-vs-code-installation-and-setup.md`: installation and sign-in.
-- `docs/usage-guide.md`: the shared Copilot and Codex procedure.
+- `docs/usage-guide.md`: the Copilot workflow.
 
 Before authorized delegation, the plugin resolves and saves the sub-agent model
 policy in the working folder. Independent work needs no policy selection.
@@ -41,14 +41,6 @@ Atlas validates locally, asks you to review in Atlas Local Workbench, then recor
 
 If Stage has an uncertain outcome, use the same manifest with `recoverOnly: true`. Recovery only reads the server: it restores a receipt when the active draft and fingerprint match the saved intent. Partial or conflicting results need review; never retry blindly.
 
-Copilot calls these tools through VS Code's language-model API. Codex uses the
-[Atlas Connector](../atlas-connector/README.md) as a private local relay. Install
-this extension for either client. In the trusted local working folder, run
-**Atlas: Start Codex Bridge** and keep VS Code open. Open Codex in the same folder.
-**Atlas: Stop Codex Bridge** disconnects it. No new Microsoft app registration or
-client ID is needed. Microsoft tokens stay in the extension.
-
-The bridge uses private local sockets/named pipes, short-lived pairing, a pinned
-Microsoft account, and the reviewed governed tool allowlist. Stage payloads are
-read by this extension and never relayed through project context. Workspace,
-backend or account changes stop the bridge; unfinished writes are not replayed.
+Copilot calls these tools through VS Code's language-model API in a trusted
+workspace. Microsoft tokens stay in VS Code and go only to the authenticated
+backend. Stage Runner reads payload files directly and returns bounded receipts.

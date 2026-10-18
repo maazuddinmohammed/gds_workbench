@@ -3,7 +3,6 @@ import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import { StreamableHTTPClientTransport, StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
-import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 
 import type { McpToolClient } from "./stage-runner.js";
 import type { ResolvedStageProfile } from "./profile.js";
@@ -17,7 +16,6 @@ interface ProtocolToolResult {
 
 export interface ProtocolConnection {
   callTool(name: string, input: Record<string, unknown>): Promise<ProtocolToolResult>;
-  listTools?(): Promise<Tool[]>;
   close(): Promise<void>;
 }
 
@@ -54,12 +52,6 @@ function safeToolErrorCode(content: unknown): string {
     if (match?.[1]) return match[1];
   }
   return "MCP_OPERATION_REJECTED";
-}
-
-function couldHaveWritten(toolName: string): boolean {
-  return /^(stage|begin|put|commit)_(metadata|project)_/.test(toolName) ||
-    /^(create|validate|apply|archive)_(metadata|project)_change_set$/.test(toolName) ||
-    /^(acquire|renew|release|override)_tenant_lock$/.test(toolName);
 }
 
 class ManagedStageMcpClient implements McpToolClient {
@@ -127,12 +119,10 @@ class ManagedStageMcpClient implements McpToolClient {
             "Microsoft authentication was rejected by GDS MCP.",
           );
         }
-        if (couldHaveWritten(name)) {
+        if (/^(stage|begin|put|commit)_(metadata|project)_/.test(name)) {
           throw new StageMcpError(
             "MCP_OUTCOME_UNKNOWN",
-            /^(stage|begin|put|commit)_/.test(name)
-              ? "The Stage operation outcome is unknown; verify before retrying."
-              : "The Atlas operation outcome is unknown; inspect server status before retrying.",
+            "The Stage operation outcome is unknown; verify before retrying.",
           );
         }
         // Report only known categories/statuses; SDK messages can contain response bodies and URLs.
@@ -178,24 +168,6 @@ class ManagedStageMcpClient implements McpToolClient {
   async close(): Promise<void> {
     await this.discardConnection();
   }
-
-  async listTools(): Promise<Tool[]> {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const connection = await this.connect(attempt === 1);
-        if (!connection.listTools) throw new StageMcpError("MCP_RESPONSE_INVALID", "Atlas tool discovery is unavailable.");
-        return await connection.listTools();
-      } catch (error) {
-        if (error instanceof ProtocolUnauthorizedError) {
-          await this.discardConnection();
-          if (attempt === 0 && this.profile.authentication === "microsoft") continue;
-        }
-        if (error instanceof StageAuthenticationError || error instanceof StageMcpError) throw error;
-        throw new StageMcpError("MCP_UNAVAILABLE", "Atlas tool discovery failed. Run Atlas: Start Codex Bridge in VS Code.");
-      }
-    }
-    throw new StageMcpError("AUTHENTICATION_REQUIRED", "Run Atlas: Start Codex Bridge in VS Code.");
-  }
 }
 
 export async function connectSdkProtocol(
@@ -217,27 +189,6 @@ export async function connectSdkProtocol(
     throw error;
   }
   return {
-    async listTools() {
-      const tools: Tool[] = [];
-      let cursor: string | undefined;
-      try {
-        do {
-          const page = await client.listTools(cursor ? { cursor } : {});
-          tools.push(...page.tools);
-          if (tools.length > 128 || Buffer.byteLength(JSON.stringify(tools)) > 1024 * 1024) {
-            throw new StageMcpError("MCP_RESPONSE_INVALID", "Atlas tool catalog exceeds its limit.");
-          }
-          if (page.nextCursor && (page.nextCursor === cursor || page.tools.length === 0)) {
-            throw new StageMcpError("MCP_RESPONSE_INVALID", "Atlas tool catalog pagination is invalid.");
-          }
-          cursor = page.nextCursor;
-        } while (cursor);
-        return tools;
-      } catch (error) {
-        if (error instanceof UnauthorizedError) throw new ProtocolUnauthorizedError();
-        throw error;
-      }
-    },
     async callTool(name, input) {
       try {
         const result = await client.callTool({ name, arguments: input });

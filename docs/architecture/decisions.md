@@ -185,30 +185,17 @@ separate operational validation beyond local contract and synthetic output tests
 
 ## Atlas host compatibility
 
-Atlas has one portable plugin and one deterministic Stage engine. Copilot uses
-VS Code language-model tools. Codex uses a bundled stdio relay to the running
-VS Code extension. Authentication, the reviewed remote-tool proxy and Stage all
-execute in the extension; Microsoft tokens never cross the local bridge.
-The connector has no separate login, app registration, MSAL cache or native npm
-dependencies. Validation and Apply remain distinct governed steps.
+Atlas runs in VS Code Copilot using one plugin and one deterministic Stage engine.
+Copilot connects to governed MCP tools through the plugin's MCP configuration;
+the extension exposes Check and Stage through VS Code language-model tools.
+Both connections use VS Code-managed Microsoft authentication and must target
+the same backend and authorized account. Validation and Apply remain distinct
+governed steps.
 
-The user opens the same local trusted folder in both clients and runs
-**Atlas: Start Codex Bridge**. Each workspace gets a private Unix socket or
-Windows named pipe, protected by a random session capability and a private
-per-user descriptor. The server binds file access to that real workspace root;
-the connector cannot widen it. One persistent local connection and remote MCP
-session per Codex session avoid per-call startup and authentication overhead.
-Only Atlas tool calls take this route. Workspace, profile and account changes
-invalidate it. Disconnects never replay uncertain operations. VS Code must remain
-open; remote VS Code windows and Codex cloud execution are unsupported.
-
-The stable layout is `Tools/Atlas/atlas`, `atlas-connector`, and generated sibling
-`codex-atlas`. Setup adapts transport without changing the portable source and
-registers/refreshes Codex's installed copy. Generated copies contain no credentials.
-Updates validate input, serialize local replacement, and retain rollback backups.
-The ZIP updater replaces entire package folders, leaving working files separate.
-The matching VSIX must also be installed. Local builds change no cloud identity,
-backend authorization or deployment.
+The installed plugin lives at `Tools/Atlas/atlas`, separate from working folders.
+Updates replace the whole plugin folder with a matching release, retaining a
+backup until verification. The matching Stage Runner VSIX is installed separately.
+Local builds change no cloud identity, backend authorization or deployment.
 
 ## Deterministic plugin profiling
 

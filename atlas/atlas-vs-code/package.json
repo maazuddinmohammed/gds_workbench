@@ -2,7 +2,7 @@
   "name": "atlas-stage-runner",
   "displayName": "ATLAS Stage Runner",
   "icon": "assets/atlas.png",
-  "description": "ATLAS Stage Runner and local Codex bridge using VS Code Microsoft sign-in.",
+  "description": "ATLAS Stage Runner for VS Code Copilot using VS Code Microsoft sign-in.",
   "version": "0.2.0",
   "publisher": "gds-workbench",
   "license": "UNLICENSED",
@@ -31,9 +31,7 @@
   "activationEvents": [
     "onLanguageModelTool:atlas_checkStageRunner",
     "onLanguageModelTool:atlas_stageApprovedManifest",
-    "onCommand:atlasStageRunner.check",
-    "onCommand:atlasBridge.start",
-    "onCommand:atlasBridge.stop"
+    "onCommand:atlasStageRunner.check"
   ],
   "main": "./dist/extension.cjs",
   "contributes": {
@@ -41,14 +39,6 @@
       {
         "command": "atlasStageRunner.check",
         "title": "ATLAS: Check Stage Runner"
-      },
-      {
-        "command": "atlasBridge.start",
-        "title": "ATLAS: Start Codex Bridge"
-      },
-      {
-        "command": "atlasBridge.stop",
-        "title": "ATLAS: Stop Codex Bridge"
       }
     ],
     "languageModelTools": [

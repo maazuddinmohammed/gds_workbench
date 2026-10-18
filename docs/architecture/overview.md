@@ -4,7 +4,7 @@ Code and SQL define behavior. These paths are the navigation map, not a second
 contract registry.
 
 ```text
-Atlas plugin (Copilot / Codex + local relay) -> VS Code Stage Runner + bridge
+Atlas plugin (VS Code Copilot) -> VS Code Stage Runner
                            -> Azure App Service MCP + profiling worker -> PostgreSQL
 Databricks App: React -> FastAPI + durable worker ----> PostgreSQL
                                      -> Foundry / governed Databricks SQL
@@ -28,9 +28,8 @@ There is no separate notebook workflow runtime.
 | Shared UI and formatting | Frontend `shared/ui.tsx`, `shared/presentation.ts` |
 | Atlas local workspace and review | `atlas/atlas-plugin/`; serialization in `workbench/core.js` |
 | Stage transport and approval checks | `atlas/atlas-vs-code/src/stage-runner.ts` |
-| Local Codex bridge transport, governed MCP proxy and install wiring | `atlas/atlas-vs-code/src/connector/` |
 | Database contract | Ordered `database/01_*.sql` through `19_*.sql`, then `20_verify_install.sql` |
-| Release entrypoints | `mcp_server/build_zip.py`, `deployment/databricks_ui/build_uploads.py`, `atlas/build_plugin.py`, `atlas/build_connector.py`; VSIX uses `atlas/atlas-vs-code/package.json` |
+| Release entrypoints | `mcp_server/build_zip.py`, `deployment/databricks_ui/build_uploads.py`, `atlas/build_plugin.py`; VSIX uses `atlas/atlas-vs-code/package.json` |
 
 ## Data and execution boundaries
 

@@ -1,7 +1,7 @@
 # Copilot - VS Code installation and setup guide
 
 Set up Atlas once in your VS Code user profile. Then follow the
-[shared usage guide](usage-guide.md) for all working folders.
+[usage guide](usage-guide.md) for all working folders.
 
 ## 1. Check the required software and access
 
@@ -20,12 +20,11 @@ Get these files from your Atlas administrator:
 | File | Purpose |
 |---|---|
 | `atlas-agent-plugin-0.3.0.zip` | Skills, local tools, and Atlas Local Workbench. |
-| `atlas-connector-0.2.0.zip` | Shared ZIP updater; also supplies the Codex relay. |
 | `atlas-stage-runner-0.2.0.vsix` | The Stage Runner extension for VS Code. |
 
-Follow the [shared installation steps](install-and-update.md#first-installation).
+Follow the [installation steps](install-and-update.md#first-installation).
 Use `%USERPROFILE%\Tools\Atlas\atlas` on Windows or `~/Tools/Atlas/atlas` on
-macOS/Linux. Codex uses the same release from this location.
+macOS/Linux.
 Keep working files elsewhere. You do not copy the plugin into each project.
 
 ## 3. Register the plugin in VS Code
@@ -103,10 +102,9 @@ to enable a missing tool. Keep VS Code connected while the extension tools run.
 
 ## Updates
 
-Follow the [shared update commands](install-and-update.md#updates), then install
+Follow the [update steps](install-and-update.md#updates), then install
 the updated VSIX using **Extensions: Install from VSIX** and reload VS Code.
 Keep the same plugin location. No new settings or client ID are required.
-Copilot-only users skip `npm run setup`; Codex users run it after replacement.
 
 ## When Atlas asks you to sign in again
 
@@ -115,8 +113,8 @@ plugin's MCP connection also asks, sign in there with the same dev account.
 No terminal login or new plugin installation is needed.
 
 VS Code manages its Microsoft session. Atlas does not save your password in the
-plugin or working folder. Codex bridge requests use this extension session. The
-Copilot plugin MCP connection still uses its separate VS Code-managed connection.
+plugin or working folder. The Copilot plugin MCP connection uses its separate
+VS Code-managed connection.
 
 ## Setup help
 

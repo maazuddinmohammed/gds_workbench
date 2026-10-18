@@ -1,10 +1,10 @@
 # First-release scope
 
-Implemented release boundary. The package supplies local runtime, Atlas Local Workbench, VS Code extension and Codex connector; installed backend compatibility is checked separately.
+Implemented release boundary. The package supplies local runtime, Atlas Local Workbench, VS Code extension; installed backend compatibility is checked separately.
 
 | Area | First release |
 |---|---|
-| Agent hosts | Copilot uses the VS Code extension. Codex CLI uses Atlas Connector as a local relay to the running VS Code extension. Both use the same Stage engine and separate governed Apply. Open the same trusted working folder in both clients, start the bridge in VS Code, and keep VS Code open. Microsoft sign-in stays in VS Code. |
+| Agent host | VS Code Copilot uses the Stage Runner extension in a trusted working folder. Stage and governed Apply remain separate. Microsoft sign-in stays in VS Code. |
 | Backend | Include database/MCP changes required by the agreed Atlas behavior, implemented and tested locally. Deployment and changes to populated installations remain separate operator actions. |
 | Code Generation | Generate SQL. New Python generation is deferred until its entrypoint, output, parameter, packaging and consumer contracts are established. |
 | Member support | Member is editable through Metadata Change Sets, keyed by Member Group + Member Code. Member filtering is opt-in. |
@@ -16,7 +16,7 @@ Implemented release boundary. The package supplies local runtime, Atlas Local Wo
 - A Python generation request gets a clear capability explanation. Preserve its existing files and assignments; do not silently regenerate them as SQL. Continue independently requested SQL work where possible.
 - Process metadata may describe an existing supported Python executable using its actual registered contract. Registering it does not generate or execute Python.
 - Member filters are configured only on explicit request; pipeline execution belongs to the external framework. Preserve the new-Copy-Group default `is_member_group_required=false`.
-- Missing host capability preserves local work. Follow [extension readiness](change-set-lifecycle.md#extension-readiness); a portable skill package does not supply the VS Code tool in another host.
+- Missing extension capability preserves local work. Follow [extension readiness](change-set-lifecycle.md#extension-readiness); the plugin package does not install the Stage Runner extension.
 - Do not widen permissions while aligning backend contracts. Preserve server-owned authorization, locks, revision fencing, redaction and idempotency.
 
 ## Required compatibility work

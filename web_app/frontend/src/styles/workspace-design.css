@@ -7,6 +7,7 @@
   --workspace-button-height: 2.2rem;
   --workspace-content-gap: 1.25rem;
   --workspace-table-padding: 0.75rem 0.85rem;
+  --workspace-panel-surface: #f3f6fc;
 }
 
 /* Include drawers and dialogs; keep the ATLAS brand and code font families intact. */
@@ -39,9 +40,21 @@
 .app-shell .workspace .project-identity-name { font-size: 1.375rem; }
 .app-shell .workspace .lock-heading h1 { font-size: 1.25rem; }
 
+/* Main navigation pages use the same open, calm heading treatment. */
+.app-shell :is(.metadata-catalog-titlebar, .projects-commandbar, .prompts-commandbar, .tenant-home-page .lock-heading) h1 {
+  color: var(--ink);
+  font-family: "Atlas Open Sans", Arial, sans-serif;
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.4;
+}
+.tenant-home-page > .tenant-lock-focus { background: var(--workspace-panel-surface); }
+
 @media (max-width: 42rem) {
   .tenant-entry-heading h1 { font-size: 1.5rem; }
   .app-shell .workspace .project-identity-name { font-size: 1.25rem; }
+  .app-shell :is(.metadata-catalog-titlebar, .projects-commandbar, .prompts-commandbar, .tenant-home-page .lock-heading) h1 { font-size: 1.375rem; }
 }
 
 .app-shell .button.button-small,

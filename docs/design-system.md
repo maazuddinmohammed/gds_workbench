@@ -43,13 +43,15 @@ uppercase **ATLAS** wordmark. Use KPMG-inspired colors without the official KPMG
 - `--ink: #0C233C`, white working surfaces and `--paper: #F5F6FA` canvas.
   Amber warnings, green success and red failures remain distinct from brand colors.
 - Bundle Open Sans Regular/SemiBold locally for UI, and Open Sans Condensed Bold
-  for blue section titles. Record identities use normal-width Open Sans SemiBold
+  for secondary blue section titles. Metadata, Projects, Prompts and Home use
+  normal-width 24px Open Sans SemiBold headings in ink (22px on mobile).
+  Record identities use normal-width Open Sans SemiBold
   in ink, with readable line height; do not repeat type/ID eyebrows above the name.
   Detail section headings use 16px Open Sans SemiBold in ink so they remain distinct
   from working text. Back links have clear space above and below them.
   Normal-weight working text, navigation, tables and dialogs
   remain centrally controlled. Tenant entry (26px), selected Project identity (22px)
-  and Tenant Lock (20px) use normal-width Open Sans SemiBold in ink; entry and Project
+  and Tenant Lock dialogs (20px) use normal-width Open Sans SemiBold in ink; entry and Project
   identity reduce to 24px and 20px on mobile.
 - Shared lockup: 32px Meridian symbol, 11px gap, 23px Open Sans SemiBold **ATLAS**
   with 1.8px tracking. Use identical proportions on tenant entry, web and Workbench.
@@ -108,8 +110,9 @@ tables, and normal-weight text. The selected sheet tab supplies its heading.
 Catalogs are read-only; users edit through Excel export/import. Attributes live
 inside Object details, while Excel retains all canonical sheets. Import opens the
 governed Change Set drawer for workbook validation and apply.
-Projects use normal-weight typography for values and controls; section page titles
-use the shared condensed heading treatment. Project and record names use the
+Projects use normal-weight typography for values and controls. Main navigation page
+titles use the normal-width heading treatment; secondary section titles retain the
+condensed style. Project and record names use the
 smaller, normal-width identity treatment. Stored descriptions, where needed, follow
 the identity once; Profiling detail omits this repeated description. Enrichment puts
 the Object name first, with schema below. Schema, System and other supporting
@@ -138,7 +141,7 @@ choices cover the Project Input Scope for that System; Dimensional choices retai
 Logical/Silver sources. Filter criteria and sample query belong to Object Mapping;
 transformation logic and default record belong to Attribute Mapping.
 
-Tenant Home uses a compact white Tenant Lock panel, with a thin blue top rule,
+Tenant Home uses a compact pale blue Tenant Lock panel, with a thin blue top rule,
 neutral border and 6px corners. Keep owner/expiry/purpose together, a 40px owner
 avatar and compact action controls. Acquire/Extend use deep brand blue; secondary
 actions are neutral and confirmed destructive actions remain red. Open/locked

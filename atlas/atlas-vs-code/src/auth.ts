@@ -31,7 +31,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-// Both hosts use the same bounded discovery and exact resource/tenant checks.
+// Bound discovery and verify the exact resource and tenant before sign-in.
 export async function discoverMicrosoftResource(
   endpoint: URL,
   fetcher: typeof fetch = fetch,

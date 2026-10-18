@@ -78,7 +78,9 @@ describe("Shared workspace design", () => {
         <div class="scope-page"><label data-check>Zone</label></div>
         <div class="workflow-command-center"><nav class="workflow-tabs"><button class="is-active" data-check>Entities</button></nav></div>
         <div class="ledger-grid"><table><thead><tr><th data-check>Column</th></tr></thead></table></div>
-        <div class="prompts-workspace"><h1 data-check>Prompts</h1></div>
+        <div class="prompts-workspace"><header class="prompts-commandbar"><h1 data-page-heading>Prompts</h1></header></div>
+        <section class="projects-page"><header class="projects-commandbar"><h1 data-page-heading>Projects</h1></header></section>
+        <div class="tenant-home-page"><section class="tenant-lock-focus"><header class="lock-heading"><h1 data-page-heading>Tenant Lock</h1></header></section></div>
         <article class="workflow-detail-page modeled-detail-page">
           <section class="detail-section"><header><h2 data-section-heading>Entity definition</h2></header></section>
           <section class="mapping-transformation-panel"><header><h2 data-section-heading>Entity transformation</h2></header></section>
@@ -86,7 +88,7 @@ describe("Shared workspace design", () => {
           <details class="workspace-detail-disclosure"><summary><h2 data-section-heading>SQL details</h2></summary></details>
         </article>
       </div></main>
-      <main class="metadata-catalog"><header class="metadata-catalog-titlebar"><h1 data-check>Metadata</h1></header>
+      <main class="metadata-catalog"><header class="metadata-catalog-titlebar"><h1 data-page-heading>Metadata</h1></header>
         <button class="button button-small" data-check>Reference</button></main>
     </div><div class="dialog-scrim"><section class="prompt-dialog"><h2 data-check>Edit details</h2></section></div>`;
     document.head.append(style);
@@ -96,6 +98,12 @@ describe("Shared workspace design", () => {
         expect(getComputedStyle(element).fontWeight, element.textContent).toBe(element.tagName === "H1" ? "700" : weight);
       }
       expect(getComputedStyle(surface.querySelector(".brand strong")).fontWeight).not.toBe(weight);
+      for (const heading of surface.querySelectorAll("[data-page-heading]")) {
+        const headingStyle = getComputedStyle(heading);
+        expect(headingStyle.fontWeight, heading.textContent).toBe("600");
+        expect(headingStyle.fontFamily, heading.textContent).toBe('"Atlas Open Sans", Arial, sans-serif');
+        expect(headingStyle.color, heading.textContent).toBe("rgb(12, 35, 60)");
+      }
       for (const heading of surface.querySelectorAll("[data-section-heading]")) {
         const headingStyle = getComputedStyle(heading);
         expect(headingStyle.fontWeight, heading.textContent).toBe("600");

@@ -17,11 +17,11 @@ Load for architecture questions or to resolve responsibility; ordinary workflows
 Agent: intent, evidence interpretation, modeling decisions
     → local helpers: snapshots, complete draft records, deterministic checks
     → Workbench: review and local editing
-    → approved host Stage runner: bounded, digest-verified transport
+    → VS Code Stage Runner: bounded, digest-verified transport
     → MCP/application/PostgreSQL: authorization, locks, revisions, validation, Apply
 ```
 
-The web application and MCP use shared backend/domain rules. The local browser and CLI share validation/serialization; they cannot replace server authorization. Plugin, Stage Runner/connector and deployed backend are separately versioned. Check actual capabilities before claiming support.
+The web application and MCP use shared backend/domain rules. The local browser and CLI share validation/serialization; they cannot replace server authorization. Plugin, Stage Runner and deployed backend are separately versioned. Check actual capabilities before claiming support.
 
 Applied records are authoritative. Snapshots are immutable baselines. The effective local view overlays pending complete records by canonical identity. See [state](state.md), [record protection](../record-state.md) and [governance](governance.md).
 

@@ -29,7 +29,6 @@ vi.mock("vscode", () => ({
   LanguageModelTextPart: class { constructor(public value: string) {} },
   LanguageModelToolResult: class { constructor(public content: unknown[]) {} },
 }));
-vi.mock("../src/vscode-bridge.js", () => ({ registerCodexBridge: () => async () => undefined }));
 vi.mock("../src/mcp-client.js", async (original) => ({
   ...await original<typeof import("../src/mcp-client.js")>(),
   createStageMcpClient: mocks.createClient,
@@ -57,8 +56,10 @@ afterEach(() => vi.unstubAllGlobals());
 function activatedTool() {
   const subscriptions: Vscode.Disposable[] = [];
   activate({ subscriptions } as Vscode.ExtensionContext);
-  expect(mocks.registerTool.mock.calls[0]?.[0]).toBe("atlas_stageApprovedManifest");
-  expect(mocks.registerCommand.mock.calls[0]?.[0]).toBe("atlasStageRunner.check");
+  expect(mocks.registerTool.mock.calls.map(([name]) => name)).toEqual([
+    "atlas_stageApprovedManifest", "atlas_checkStageRunner",
+  ]);
+  expect(mocks.registerCommand.mock.calls.map(([name]) => name)).toEqual(["atlasStageRunner.check"]);
   expect(subscriptions).toHaveLength(3);
   return mocks.registerTool.mock.calls[0]![1] as Vscode.LanguageModelTool<object>;
 }

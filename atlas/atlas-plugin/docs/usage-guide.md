@@ -1,11 +1,9 @@
 # Atlas usage guide
 
-Use this guide after completing either the
-[Codex setup](codex-installation-and-setup.md) or
+Use this guide after completing the
 [Copilot - VS Code setup](copilot-vs-code-installation-and-setup.md).
-You only need the setup guide for the host you use.
 
-The Atlas steps are the same in both hosts:
+The Atlas workflow:
 
 ```text
 Open your working folder
@@ -28,15 +26,11 @@ draft as current Atlas records. They are separate actions.
 
 Use a folder for your work, separate from the Atlas installation folder.
 
-| Host | How to start |
-|---|---|
-| Copilot - VS Code | Open the working folder in VS Code. Open Copilot Chat in a local agent session. |
-| Codex CLI | Open the same local working folder in VS Code. Run **Atlas: Start Codex Bridge** and keep VS Code open. In a terminal, enter that folder with `cd`, then run `codex`. |
+Open the working folder in VS Code, then open Copilot Chat in a local agent session.
 
 To use another folder, open that folder in a new agent session. You do not need
-to install Atlas again. For Codex, start the bridge in VS Code for each new
-working folder. Microsoft sign-in may be reused by VS Code. Keep Atlas files inside the
-opened folder or its child folders so Stage Runner can read them.
+to install Atlas again. Microsoft sign-in may be reused by VS Code. Keep Atlas
+files inside the opened folder or its child folders so Stage Runner can read them.
 
 ## 2. Start Atlas and describe the work
 
@@ -155,7 +149,7 @@ complete.
 
 ## 6. Resume work later
 
-Open the same working folder in your agent host. Send:
+Open the same working folder in VS Code Copilot. Send:
 
 ```text
 Resume atlas. Show the unfinished work in this folder.
@@ -205,7 +199,7 @@ physical Metadata as a substitute. See [capability boundaries](../references/pla
 
 | Problem | What to do |
 |---|---|
-| Sign-in is required | Use the renewal steps in your setup guide: [Codex](codex-installation-and-setup.md#reconnect-or-stop) or [Copilot](copilot-vs-code-installation-and-setup.md#when-atlas-asks-you-to-sign-in-again). Keep the same dev account. |
+| Sign-in is required | Follow the [Copilot sign-in steps](copilot-vs-code-installation-and-setup.md#when-atlas-asks-you-to-sign-in-again). Keep the same dev account. |
 | A tool is missing | Repair your host setup. Keep the local drafts. |
 | Validation fails | Ask Atlas to explain and correct the findings, then review again. |
 | Stage or Apply has an uncertain result | Ask Atlas to check the saved operation and server state before retrying. |

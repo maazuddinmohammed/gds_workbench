@@ -32,8 +32,7 @@ pass the exact saved model using a supported host control.
 
 If the host cannot select or verify the required model, explain the limit and
 continue in the main agent. Do not silently use a fallback or change host-wide
-settings. Switching between Copilot and Codex requires checking the saved choice
-against the new host's available models again.
+settings. Recheck the saved choice when Copilot's available models change.
 
 Pass this policy and the main chat model identity, when required, to each child.
 It also applies to nested sub-agents; `current` always refers to the user's main

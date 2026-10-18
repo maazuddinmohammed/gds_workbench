@@ -3,7 +3,7 @@
 Technical commands for agents and maintainers. For normal use, follow the
 [usage guide](../docs/usage-guide.md).
 
-Run from the installed `atlas` plugin directory. `--session` always means the user's working directory containing `.atlas`, never the plugin source directory. Node.js 20+ is the main runtime; Snapshot ZIP installation also requires Python 3.12+. Windows PowerShell 5.1 provides the native fallback. Local helpers do not connect to databases or execute SQL. For governed submission, install the Stage Runner VSIX in VS Code. Codex also uses Atlas Connector as a local relay: open the same trusted working folder in VS Code, run **Atlas: Start Codex Bridge**, and keep that window open. Microsoft credentials stay in VS Code. See [Codex setup](../docs/codex-installation-and-setup.md) or [Copilot - VS Code setup](../docs/copilot-vs-code-installation-and-setup.md).
+Run from the installed `atlas` plugin directory. `--session` always means the user's working directory containing `.atlas`, never the plugin source directory. Node.js 20+ is the main runtime; Snapshot ZIP installation also requires Python 3.12+. Windows PowerShell 5.1 provides the native fallback. Local helpers do not connect to databases or execute SQL. For governed submission, install the Stage Runner VSIX in VS Code. Microsoft credentials stay in VS Code. See [Copilot - VS Code setup](../docs/copilot-vs-code-installation-and-setup.md).
 
 ```sh
 node scripts/atlas-local.js command-contract
