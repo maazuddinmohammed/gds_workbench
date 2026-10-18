@@ -210,16 +210,30 @@ def test_dry_run_sandboxes_seed_real_workspaces_and_isolate_the_plugin(tmp_path:
         check=True,
     )
     assert json.loads(status.stdout)["task_count"] == 1
-    assert json.loads(harness_log.read_text())["argv"][0] == "status"
+    unknown = subprocess.run(["node", str(shim), "no-such-command"], capture_output=True)
+    assert unknown.returncode == 1
+    logged = [json.loads(line) for line in harness_log.read_text().splitlines()]
+    assert [(call["argv"][0], call["status"]) for call in logged] == [
+        ("status", 0),
+        ("no-such-command", 1),
+    ]
 
 
-def _simulate(sandbox: harness.Sandbox, *, tools: list[str], helpers: list[list[str]]) -> None:
+def _simulate(
+    sandbox: harness.Sandbox,
+    *,
+    tools: list[str],
+    helpers: list[list[str]],
+    failed_helpers: tuple[list[str], ...] = (),
+) -> None:
     with (sandbox.logs / "mcp_calls.jsonl").open("a") as handle:
         for index, tool in enumerate(tools, start=1):
             handle.write(json.dumps({"seq": index, "tool": tool, "arguments": {}}) + "\n")
     with (sandbox.logs / "helper_calls.jsonl").open("a") as handle:
         for argv in helpers:
-            handle.write(json.dumps({"argv": argv}) + "\n")
+            handle.write(json.dumps({"argv": argv, "status": 0}) + "\n")
+        for argv in failed_helpers:
+            handle.write(json.dumps({"argv": argv, "status": 1}) + "\n")
 
 
 def test_scorer_passes_a_compliant_run_and_names_each_violation(tmp_path: Path) -> None:
@@ -254,6 +268,7 @@ def test_scorer_passes_a_compliant_run_and_names_each_violation(tmp_path: Path) 
         bad,
         tools=["stage_project_change_set", "execute_databricks_sql", "apply_project_change_set"],
         helpers=[["select", "--dataset", "conceptual_object"]],
+        failed_helpers=(["validate", "--area", "project"],),  # A failed run is not a pass.
     )
     manifest = bad.workspace / "project/project-snapshot/manifest.json"
     manifest.write_text(manifest.read_text() + " ")
