@@ -88,11 +88,13 @@ from gds_etl_workbench.domain.errors import (
     StageBatchNotActiveError,
     StageBatchNotFoundError,
     StageChunkConflictError,
+    WebManagedDatasetError,
     WorkbenchError,
 )
 from gds_etl_workbench.domain.snapshots.project import (
     CHANGE_SET_DATASETS_BY_NAME,
     DATASETS_BY_NAME,
+    WEB_MANAGED_PROJECT_DATASETS,
     ProjectChangeSetDataset,
     ProjectDataset,
 )
@@ -859,6 +861,9 @@ def register_project_change_set_tools(
     ) -> StageProjectChangeSetResult:
         del schema_version
         try:
+            for change in changes:
+                if change.dataset in WEB_MANAGED_PROJECT_DATASETS:
+                    raise WebManagedDatasetError(change.dataset)
             staged = validate_project_stage_changes(changes)
             request_principal = identity_provider.request_principal(ctx.request_context.request)
             correlation_id = uuid4()
@@ -1021,6 +1026,8 @@ def register_project_change_set_tools(
     ) -> BeginProjectStageBatchResult:
         del schema_version
         try:
+            if dataset in WEB_MANAGED_PROJECT_DATASETS:
+                raise WebManagedDatasetError(dataset)
             _validate_stage_payload_manifest(
                 dataset=dataset,
                 payload_mode=payload_mode,
@@ -1217,6 +1224,8 @@ def register_project_change_set_tools(
     ) -> PutProjectStageChunkResult:
         del schema_version
         try:
+            if dataset in WEB_MANAGED_PROJECT_DATASETS:
+                raise WebManagedDatasetError(dataset)
             normalized: list[dict[str, object]] = []
             payload_fragment: bytes | None = None
             if payload_mode == "records":
@@ -1510,6 +1519,9 @@ def register_project_change_set_tools(
                             or batch["created_by_principal_id"] != principal.principal_id
                         ):
                             raise StageBatchNotFoundError()
+                        # Begin refuses these datasets; this covers batches begun before that.
+                        if batch["dataset_name"] in WEB_MANAGED_PROJECT_DATASETS:
+                            raise WebManagedDatasetError(batch["dataset_name"])
                         if batch["expected_draft_revision"] != expected_draft_revision:
                             raise InvalidRequestError(
                                 "Expected revision does not match the Stage Batch manifest."

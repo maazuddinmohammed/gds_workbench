@@ -9,7 +9,7 @@ import zipfile
 from copy import deepcopy
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast, overload
-from uuid import NAMESPACE_URL, UUID, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import pytest
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
@@ -23,8 +23,15 @@ from gds_etl_workbench.application.change_sets.contracts import (
 )
 from gds_etl_workbench.application.change_sets.project import (
     StageProjectChange,
+    load_project_physical_scope,
     validate_project_stage_changes,
 )
+from gds_etl_workbench.application.change_sets.project_apply import ProjectMaterializer
+from gds_etl_workbench.application.change_sets.project_validation import (
+    validate_future_graph,
+)
+from gds_etl_workbench.application.project_read import ProjectReadContext
+from gds_etl_workbench.application.project_snapshot import build_project_snapshot
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.modeling_records import (
@@ -33,8 +40,10 @@ from gds_etl_workbench.domain.modeling_records import (
 from gds_etl_workbench.domain.snapshots.project import (
     CHANGE_SET_DATASETS_BY_NAME,
     DATASETS,
+    WEB_MANAGED_PROJECT_DATASETS,
     ProjectChangeSetDataset,
 )
+from gds_etl_workbench.infrastructure.postgres import PostgresDatabase
 from gds_etl_workbench.infrastructure.snapshot_archive import SnapshotArchive
 from gds_etl_workbench.tools.change_sets.project import (
     _DATABASE_TIME_SQL,
@@ -1025,6 +1034,9 @@ async def test_project_stage_batch_runs_through_validate_and_apply(
         code_prefix="PROJECT_BATCH",
     )
     staged = _replace_codes(complete_project_graph(), code_prefix="PROJECT_BATCH")
+    web_managed: dict[ProjectChangeSetDataset, list[dict[str, object]]] = {
+        dataset: staged.pop(dataset) for dataset in WEB_MANAGED_PROJECT_DATASETS
+    }
     conceptual_objects = staged.pop("conceptual_object")
     assert len(conceptual_objects) == 2
     chunks = [[conceptual_objects[0]], [conceptual_objects[1]]]
@@ -1051,6 +1063,9 @@ async def test_project_stage_batch_runs_through_validate_and_apply(
 
     await database.open()
     try:
+        await _apply_web_managed_records(
+            database, project_id=project_id, tenant_id=tenant_id, records=web_managed
+        )
         async with Client(server) as client:
             created = await client.call_tool(
                 "create_project_change_set",
@@ -1073,57 +1088,52 @@ async def test_project_stage_batch_runs_through_validate_and_apply(
             assert normally_staged.is_error is False
             assert normally_staged.structured_content["draft_revision"] == 2
 
-            profiling_records = staged["profiling_profile"]
-            profiling_chunk_sha256 = canonical_records_sha256(profiling_records)
-            normalized_profiling = validate_project_stage_changes(
-                [
-                    StageProjectChange(
-                        dataset="profiling_profile", records=profiling_records
-                    )
-                ]
-            )["profiling_profile"]
-            assert profiling_chunk_sha256 != canonical_records_sha256(
-                normalized_profiling
-            )
-            profiling_batch_sha256 = stage_batch_sha256([profiling_chunk_sha256])
-            profiling_begun = await client.call_tool(
+            # Chunk hashes cover the records as sent; Commit stores them normalized.
+            details_records = staged["project_details"]
+            details_chunk_sha256 = canonical_records_sha256(details_records)
+            normalized_details = validate_project_stage_changes(
+                [StageProjectChange(dataset="project_details", records=details_records)]
+            )["project_details"]
+            assert details_chunk_sha256 != canonical_records_sha256(normalized_details)
+            details_batch_sha256 = stage_batch_sha256([details_chunk_sha256])
+            details_begun = await client.call_tool(
                 "begin_project_stage_batch",
                 {
                     "project_id": project_id,
                     "project_change_set_id": change_set_id,
                     "expected_draft_revision": 2,
-                    "dataset": "profiling_profile",
-                    "total_record_count": len(profiling_records),
+                    "dataset": "project_details",
+                    "total_record_count": len(details_records),
                     "total_chunk_count": 1,
-                    "batch_sha256": profiling_batch_sha256,
+                    "batch_sha256": details_batch_sha256,
                 },
             )
-            assert profiling_begun.is_error is False
-            profiling_batch_id = profiling_begun.structured_content["stage_batch_id"]
-            profiling_put = await client.call_tool(
+            assert details_begun.is_error is False
+            details_batch_id = details_begun.structured_content["stage_batch_id"]
+            details_put = await client.call_tool(
                 "put_project_stage_chunk",
                 {
                     "project_id": project_id,
                     "project_change_set_id": change_set_id,
-                    "stage_batch_id": profiling_batch_id,
-                    "dataset": "profiling_profile",
+                    "stage_batch_id": details_batch_id,
+                    "dataset": "project_details",
                     "chunk_index": 1,
-                    "records": profiling_records,
-                    "chunk_sha256": profiling_chunk_sha256,
+                    "records": details_records,
+                    "chunk_sha256": details_chunk_sha256,
                 },
             )
-            assert profiling_put.is_error is False
-            profiling_committed = await client.call_tool(
+            assert details_put.is_error is False
+            details_committed = await client.call_tool(
                 "commit_project_stage_batch",
                 {
                     "project_id": project_id,
                     "project_change_set_id": change_set_id,
-                    "stage_batch_id": profiling_batch_id,
+                    "stage_batch_id": details_batch_id,
                     "expected_draft_revision": 2,
                 },
             )
-            assert profiling_committed.is_error is False
-            assert profiling_committed.structured_content["draft_revision"] == 3
+            assert details_committed.is_error is False
+            assert details_committed.structured_content["draft_revision"] == 3
 
             begun = await client.call_tool(
                 "begin_project_stage_batch",
@@ -1234,9 +1244,9 @@ async def test_project_stage_batch_runs_through_validate_and_apply(
             assert fingerprint.structured_content["dataset_count"] == len(
                 CHANGE_SET_DATASETS_BY_NAME
             )
-            assert fingerprint.structured_content["record_count"] == sum(
-                len(records) for records in complete_project_graph().values()
-            )
+            assert fingerprint.structured_content["record_count"] == len(
+                conceptual_objects
+            ) + sum(len(records) for records in staged.values())
             assert "records" not in fingerprint.structured_content
             assert len(fingerprint.structured_content["fingerprint"]) == 64
             # Stage Runner recomputes this exact document; see tests/atlas/test_stage_contract.py.
@@ -1307,6 +1317,185 @@ async def test_project_stage_batch_runs_through_validate_and_apply(
 
     assert stored == {"stage_batch_status": "committed", "committed_revision": 4}
     assert section_puts == {"count": 3}
+
+
+@pytest.mark.asyncio
+async def test_mcp_stage_refuses_web_managed_datasets_before_writing(
+    postgres_database: DisposablePostgres,
+) -> None:
+    project_id, tenant_id = _seed_project_foundation(
+        postgres_database,
+        code_prefix="WEB_MANAGED",
+    )
+    graph = _replace_codes(complete_project_graph(), code_prefix="WEB_MANAGED")
+    _acquire_tenant_lock(postgres_database, tenant_id)
+
+    database = postgres_database.create_runtime_adapter()
+    identity_provider = StaticIdentityProvider()
+    authorizer = AuthorizationService()
+    audit = ToolCallAuditMiddleware(
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+    )
+    server = MCPServer[None](name="web-managed-stage-test", middleware=[audit])
+    register_project_change_set_tools(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+    )
+
+    await database.open()
+    try:
+        async with Client(server) as client:
+            created = await client.call_tool(
+                "create_project_change_set",
+                {"project_id": project_id},
+            )
+            assert created.is_error is False
+            change_set_id = created.structured_content["project_change_set_id"]
+            draft = {"project_id": project_id, "project_change_set_id": change_set_id}
+            for dataset in sorted(WEB_MANAGED_PROJECT_DATASETS):
+                records = graph[dataset]
+                chunk_sha256 = canonical_records_sha256(records)
+                batch_sha256 = stage_batch_sha256([chunk_sha256])
+                # An open batch begun before MCP Stage refused this dataset.
+                earlier_batch_id = uuid4()
+                with postgres_database.connect_owner() as connection:
+                    connection.execute(
+                        """
+                        INSERT INTO mcp.project_stage_batch (
+                            stage_batch_id, project_change_set_id, project_id,
+                            dataset_name, expected_draft_revision, total_record_count,
+                            total_chunk_count, batch_sha256, created_by_principal_id,
+                            correlation_id
+                        )
+                        SELECT %s, project_change_set_id, project_id, %s, 1, %s, 1, %s,
+                               created_by_principal_id, correlation_id
+                          FROM mcp.project_change_set
+                         WHERE project_change_set_id = %s
+                        """,
+                        (
+                            earlier_batch_id,
+                            dataset,
+                            len(records),
+                            batch_sha256,
+                            change_set_id,
+                        ),
+                    )
+                refused_calls: dict[str, dict[str, object]] = {
+                    "stage_project_change_set": {
+                        **draft,
+                        "expected_draft_revision": 1,
+                        "changes": [
+                            {
+                                "dataset": "conceptual_object",
+                                "records": graph["conceptual_object"],
+                            },
+                            {"dataset": dataset, "records": records},
+                        ],
+                    },
+                    "begin_project_stage_batch": {
+                        **draft,
+                        "expected_draft_revision": 1,
+                        "dataset": dataset,
+                        "total_record_count": len(records),
+                        "total_chunk_count": 1,
+                        "batch_sha256": batch_sha256,
+                    },
+                    "put_project_stage_chunk": {
+                        **draft,
+                        "stage_batch_id": str(earlier_batch_id),
+                        "dataset": dataset,
+                        "chunk_index": 1,
+                        "records": records,
+                        "chunk_sha256": chunk_sha256,
+                    },
+                    "commit_project_stage_batch": {
+                        **draft,
+                        "stage_batch_id": str(earlier_batch_id),
+                        "expected_draft_revision": 1,
+                    },
+                }
+                for tool_name, arguments in refused_calls.items():
+                    refused = await client.call_tool(tool_name, arguments)
+                    assert refused.is_error is True, tool_name
+                    assert isinstance(refused.content[0], TextContent)
+                    assert f"web_managed_dataset: {dataset} " in refused.content[0].text
+
+            unchanged = await client.call_tool("get_project_change_set", draft)
+            assert unchanged.is_error is False
+            assert unchanged.structured_content["draft_revision"] == 1
+            assert all(
+                item["record_count"] == 0
+                for item in unchanged.structured_content["dataset_counts"]
+            )
+            # Refusals spend no revision, so ordinary Stage still fences on revision 1.
+            conceptual_staged = await client.call_tool(
+                "stage_project_change_set",
+                {
+                    **draft,
+                    "expected_draft_revision": 1,
+                    "changes": [
+                        {
+                            "dataset": "conceptual_object",
+                            "records": graph["conceptual_object"],
+                        }
+                    ],
+                },
+            )
+            assert conceptual_staged.is_error is False
+            assert conceptual_staged.structured_content["draft_revision"] == 2
+    finally:
+        await database.close()
+
+    with postgres_database.connect_owner() as connection:
+        batches = connection.execute(
+            """
+            SELECT dataset_name, stage_batch_status
+              FROM mcp.project_stage_batch
+             WHERE project_change_set_id = %s
+             ORDER BY dataset_name
+            """,
+            (change_set_id,),
+        ).fetchall()
+        events = connection.execute(
+            """
+            SELECT event_type
+              FROM mcp.project_change_set_event
+             WHERE project_change_set_id = %s
+             ORDER BY event_sequence
+            """,
+            (change_set_id,),
+        ).fetchall()
+        refusal_audits = connection.execute(
+            """
+            SELECT tool_name, failure_code
+              FROM mcp.tool_call_log
+             WHERE input_metadata ->> 'project_change_set_id' = %s
+               AND tool_call_status = 'failed'
+             ORDER BY tool_name
+            """,
+            (change_set_id,),
+        ).fetchall()
+
+    assert batches == [
+        {"dataset_name": dataset, "stage_batch_status": "active"}
+        for dataset in sorted(WEB_MANAGED_PROJECT_DATASETS)
+    ]
+    assert events == [{"event_type": "created"}, {"event_type": "section_put"}]
+    assert refusal_audits == [
+        {"tool_name": tool_name, "failure_code": "tool_error"}
+        for tool_name in (
+            "begin_project_stage_batch",
+            "commit_project_stage_batch",
+            "put_project_stage_chunk",
+            "stage_project_change_set",
+        )
+        for _dataset in WEB_MANAGED_PROJECT_DATASETS
+    ]
 
 
 @pytest.mark.asyncio
@@ -1606,6 +1795,9 @@ async def test_all_project_datasets_materialize_and_round_trip_as_one_snapshot(
     )
     for field in ANALYSIS_VALIDATION_FIELDS:
         staged["analysis_result"][0].pop(field)
+    web_managed: dict[ProjectChangeSetDataset, list[dict[str, object]]] = {
+        dataset: staged.pop(dataset) for dataset in WEB_MANAGED_PROJECT_DATASETS
+    }
     _acquire_tenant_lock(postgres_database, tenant_id)
 
     database = postgres_database.create_runtime_adapter()
@@ -1670,6 +1862,9 @@ async def test_all_project_datasets_materialize_and_round_trip_as_one_snapshot(
     )
     await database.open()
     try:
+        await _apply_web_managed_records(
+            database, project_id=project_id, tenant_id=tenant_id, records=web_managed
+        )
         async with Client(server) as client:
             project_details = await client.call_tool(
                 "list_projects",
@@ -1682,13 +1877,13 @@ async def test_all_project_datasets_materialize_and_round_trip_as_one_snapshot(
                 if project["project_id"] == project_id
             )
             assert returned_project["project_name"] == "Project Tool Round Trip"
-            assert returned_project["project_input_scope_object_count"] == 0
+            assert returned_project["project_input_scope_object_count"] == 3
             initial_scope = await client.call_tool(
                 "get_project_input_scope",
                 {"project_id": project_id},
             )
             assert initial_scope.is_error is False
-            assert initial_scope.structured_content["object_count"] == 0
+            assert initial_scope.structured_content["object_count"] == 3
             created = await client.call_tool(
                 "create_project_change_set",
                 {"project_id": project_id},
@@ -1853,15 +2048,15 @@ async def test_all_project_datasets_materialize_and_round_trip_as_one_snapshot(
             invalid_eligibility_id = invalid_eligibility.structured_content[
                 "project_change_set_id"
             ]
-            non_bronze_profile = deepcopy(staged["profiling_profile"][0])
-            non_bronze_profile.update(
+            non_bronze_analysis = deepcopy(staged["analysis_result"][0])
+            non_bronze_analysis.update(
                 {
-                    "tenant_code": "PROJECT_TOOL_GDS",
-                    "system_code": "PROJECT_TOOL_GDS",
-                    "connection_code": "PROJECT_TOOL_LAKEHOUSE",
-                    "object_schema": "silver",
-                    "object_name": "Order",
-                    "attribute_name": "CustomerID",
+                    "from_tenant_code": "PROJECT_TOOL_GDS",
+                    "from_system_code": "PROJECT_TOOL_GDS",
+                    "from_connection_code": "PROJECT_TOOL_LAKEHOUSE",
+                    "from_object_schema": "silver",
+                    "from_object_name": "Order",
+                    "from_attribute_name": "CustomerID",
                 }
             )
             invalid_stage = await client.call_tool(
@@ -1872,8 +2067,8 @@ async def test_all_project_datasets_materialize_and_round_trip_as_one_snapshot(
                     "expected_draft_revision": 1,
                     "changes": [
                         {
-                            "dataset": "profiling_profile",
-                            "records": [non_bronze_profile],
+                            "dataset": "analysis_result",
+                            "records": [non_bronze_analysis],
                         }
                     ],
                 },
@@ -1892,6 +2087,10 @@ async def test_all_project_datasets_materialize_and_round_trip_as_one_snapshot(
             assert (
                 invalid_validation.structured_content["phase"] == "project_input_scope"
             )
+            assert {
+                error["dataset"]
+                for error in invalid_validation.structured_content["errors"]
+            } == {"analysis_result"}
     finally:
         await database.close()
 
@@ -2414,6 +2613,36 @@ def _acquire_tenant_lock(
             (ENTRA_TENANT_ID, ENTRA_OBJECT_ID, tenant_id),
         ).fetchone()
     assert result == {"acquired": True}
+
+
+async def _apply_web_managed_records(
+    database: PostgresDatabase,
+    *,
+    project_id: int,
+    tenant_id: int,
+    records: dict[ProjectChangeSetDataset, list[dict[str, object]]],
+) -> None:
+    """Apply Input Scope or Profiling as the web app's governed commands would.
+
+    MCP Stage refuses these datasets, so MCP tests set them up here instead.
+    """
+    assert set(records) <= WEB_MANAGED_PROJECT_DATASETS
+    project = ProjectReadContext(
+        project_id=project_id,
+        tenant_id=tenant_id,
+        project_name="Project Tool Round Trip",
+        project_revision=1,
+    )
+    async with database.write_transaction() as transaction:
+        validation = validate_future_graph(
+            snapshot=await build_project_snapshot(transaction, project),
+            staged_documents=records,
+            physical_scope=await load_project_physical_scope(transaction, project),
+        )
+        assert validation.valid
+        await ProjectMaterializer(transaction, project_id, "a" * 64).apply(
+            validation.records
+        )
 
 
 @overload

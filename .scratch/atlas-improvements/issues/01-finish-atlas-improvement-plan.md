@@ -13,9 +13,9 @@ on the PR, including Windows PowerShell 5.1 parity. See
 
 Open items:
 
-1. Decide whether MCP Stage should also reject `project_input_scope` and
-   `profiling_profile`. Today only Atlas refuses them; server E2E tests in
-   `tests/mcp/test_database_project_change_set_round_trip.py` stage both through MCP.
+1. Done: MCP Stage, Begin, Put and Commit refuse `project_input_scope` and
+   `profiling_profile` with `web_managed_dataset`; recorded in
+   `docs/architecture/decisions.md`.
 2. Decide whether to bump the MCP server version label (`mcp_server/pyproject.toml`,
    both `gds-etl-workbench-mcp==0.2.0` pins and lockfiles). Apply gained a required
    argument, so release the server with plugin 0.4.0 and Stage Runner 0.3.0

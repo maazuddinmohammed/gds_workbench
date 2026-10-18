@@ -35,6 +35,7 @@ from tests.mcp.project_test_fixtures import (
 from tests.mcp.test_database_project_change_set_round_trip import (
     StaticIdentityProvider,
     _acquire_tenant_lock,  # pyright: ignore[reportPrivateUsage]
+    _apply_web_managed_records,  # pyright: ignore[reportPrivateUsage]
     _replace_codes,  # pyright: ignore[reportPrivateUsage]
     _seed_project_foundation,  # pyright: ignore[reportPrivateUsage]
 )
@@ -142,6 +143,7 @@ async def test_public_project_apply_orders_entities_and_preserves_partial_mappin
     )
     _acquire_tenant_lock(postgres_database, tenant_id)
     graph = entity_layer_graph(prefix)
+    scope_records = graph.pop("project_input_scope")
     if missing_contribution == "mapping_object":
         graph["mapping_object"] = []
         graph["mapping_attribute"] = []
@@ -180,6 +182,12 @@ async def test_public_project_apply_orders_entities_and_preserves_partial_mappin
     )
     await database.open()
     try:
+        await _apply_web_managed_records(
+            database,
+            project_id=project_id,
+            tenant_id=tenant_id,
+            records={"project_input_scope": scope_records},
+        )
         async with database.read_transaction() as transaction:
             baseline = await build_project_snapshot(transaction, project)
             physical = await load_project_physical_scope(transaction, project)
