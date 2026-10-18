@@ -1116,7 +1116,7 @@ def test_context_uuid_is_created_once_and_published_schema_rejects_legacy_fields
     record_id = created["context_record_id"]
     assert str(UUID(record_id)) == record_id
     pending = root / "project-change-set/context_record.json"
-    saved = json.loads(pending.read_text())
+    saved = json.loads(pending.read_text(encoding="utf-8"))
     assert len(saved) == 1 and saved[0] == {**record, "context_record_id": record_id}
     before = pending.read_bytes()
     run(
@@ -1146,7 +1146,7 @@ def test_context_uuid_is_created_once_and_published_schema_rejects_legacy_fields
         created["digest"],
     )
     assert edited["context_record_id"] == record_id
-    assert json.loads(pending.read_text()) == [record]
+    assert json.loads(pending.read_text(encoding="utf-8")) == [record]
     for invalid in (
         {**record, "context_record_id": "human-entered-key"},
         {**record, "record_key": "identity"},
@@ -1164,7 +1164,7 @@ def test_context_uuid_is_created_once_and_published_schema_rejects_legacy_fields
             edited["digest"],
             success=False,
         )
-        assert json.loads(pending.read_text()) == [record]
+        assert json.loads(pending.read_text(encoding="utf-8")) == [record]
     rejected = run(
         "upsert",
         *args,

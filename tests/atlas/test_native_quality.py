@@ -42,7 +42,7 @@ api.evaluateQuality = (project, decisions, options = {}) => {
 };
 process.on('exit', () => fs.writeFileSync(process.argv[4], JSON.stringify(cases)));
 import(pathToFileURL(process.argv[3]).href);
-""")
+""", encoding="utf-8")
     result = subprocess.run(
         ["node", str(capture), str(module), str(suite), str(captured)],
         cwd=REPOSITORY_ROOT,
@@ -51,14 +51,14 @@ import(pathToFileURL(process.argv[3]).href);
         timeout=30,
     )
     assert result.returncode == 0, result.stderr
-    cases = json.loads(captured.read_text())
+    cases = json.loads(captured.read_text(encoding="utf-8"))
     assert len(cases) >= 30
     # Load the production functions without running its public CLI dispatcher.
-    source = HELPER.with_suffix(".ps1").read_text()
+    source = HELPER.with_suffix(".ps1").read_text(encoding="utf-8")
     prefix = source[: source.rindex("\ntry {\n    $options = Parse-Options $RemainingArguments")]
     library = tmp_path / "helper-library.ps1"
     helper_root = str(HELPER.parent).replace("'", "''")
-    library.write_text(prefix.replace("$PSScriptRoot", f"'{helper_root}'"))
+    library.write_text(prefix.replace("$PSScriptRoot", f"'{helper_root}'"), encoding="utf-8")
     runner = tmp_path / "run.ps1"
     runner.write_text("""
 param([string]$Library, [string]$CasesPath, [string]$Output)
@@ -88,7 +88,7 @@ foreach ($case in $cases) {
     [void]$results.Add((Get-ModelingQuality $states $case.decisions $notes $metadata))
 }
 [IO.File]::WriteAllText($Output, (ConvertTo-GdsJson @($results)), $script:Utf8NoBom)
-""")
+""", encoding="utf-8")
     output = tmp_path / "results.json"
     result = subprocess.run(
         [
@@ -102,10 +102,10 @@ foreach ($case in $cases) {
         ],
         capture_output=True,
         text=True,
-        timeout=120,
+        timeout=600,  # Windows PowerShell 5.1 on CI runners is several times slower.
     )
     assert result.returncode == 0, result.stderr
-    actual = json.loads(output.read_text())
+    actual = json.loads(output.read_text(encoding="utf-8"))
     assert len(actual) == len(cases)
     for index, (case, value) in enumerate(zip(cases, actual, strict=True)):
         assert value == case["expected"], f"Quality parity case {index}"

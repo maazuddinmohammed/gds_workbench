@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterator
 from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING, LiteralString, cast
@@ -10,6 +11,7 @@ from uuid import UUID
 import psycopg
 import pytest
 
+from tests.mcp.conftest import disposable_postgres
 from tests.mcp.database_test_support import require_row
 
 if TYPE_CHECKING:
@@ -83,15 +85,17 @@ def _apply_sql(postgres_database: DisposablePostgres, content: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "filename",
-    ["05_global_prompt_defaults.template.sql", "05_global_prompt_defaults.template.v2.sql"],
+    ("filename", "payload_tag"),
+    [
+        ("05_global_prompt_defaults.template.sql", "$workflow_defaults$"),
+        ("05_global_prompt_defaults.template.v2.sql", "$alternate_defaults$"),
+    ],
 )
 def test_default_prompt_versions_keep_conceptual_out_of_downstream_inputs(
     filename: str,
+    payload_tag: str,
 ) -> None:
-    defaults = json.loads(
-        (SEED_ROOT / filename).read_text().split("$workflow_defaults$")[1]
-    )
+    defaults = json.loads((SEED_ROOT / filename).read_text().split(payload_tag)[1])
     for default in defaults:
         workflow = default["project_workflow"]
         if workflow not in {"logical", "dimensional"}:
@@ -526,3 +530,73 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
     assert published_versions[:2] == versions[:2]
     _apply_sql(postgres_database, matching)
     assert _snapshot(postgres_database) == third
+
+
+@pytest.fixture
+def alternate_seed_database() -> Iterator[DisposablePostgres]:
+    yield from disposable_postgres()
+
+
+def test_alternate_prompt_seed_publishes_unassigned_templates_and_replays_safely(
+    alternate_seed_database: DisposablePostgres,
+) -> None:
+    postgres_database = alternate_seed_database
+    _apply_sql(postgres_database, REFERENCE_SEED.read_text(encoding="utf-8"))
+    _seed_super_admin(postgres_database)
+    _apply_sql(postgres_database, _render_seed())
+    defaults = _snapshot(postgres_database)
+    template = (SEED_ROOT / "05_global_prompt_defaults.template.v2.sql").read_text(
+        encoding="utf-8"
+    )
+    payload = json.loads(template.split("$alternate_defaults$")[1])
+
+    def alternates() -> list[TestRow]:
+        with postgres_database.connect_owner() as connection:
+            return connection.execute(
+                """
+                SELECT template.prompt_template_code,
+                       version.prompt_template_version_id,
+                       version.prompt_template_version_status,
+                       version.system_prompt_template,
+                       version.instruction_prompt_template,
+                       version.agent_tool_names,
+                       (SELECT count(*)
+                          FROM application.prompt_assignment AS assignment
+                         WHERE assignment.prompt_template_version_id =
+                               version.prompt_template_version_id) AS assignment_count
+                  FROM application.prompt_template AS template
+                  JOIN application.prompt_template_version AS version
+                    ON version.prompt_template_id = template.prompt_template_id
+                 WHERE template.prompt_template_code LIKE 'global_alternate_claude.%'
+                 ORDER BY template.prompt_template_code
+                """
+            ).fetchall()
+
+    _apply_sql(postgres_database, _render_seed(template))
+    first = alternates()
+    expected = {
+        f"global_alternate_claude.{row['project_workflow']}."
+        f"{row['workflow_execution_mode'] or 'common'}.{row['workflow_stage_code']}": row
+        for row in payload
+    }
+    assert {row["prompt_template_code"] for row in first} == set(expected)
+    assert len(first) == len(EXPECTED_AGENTIC_STAGES)
+    for row in first:
+        seeded = expected[row["prompt_template_code"]]
+        assert row["prompt_template_version_status"] == "published"
+        assert row["assignment_count"] == 0
+        # Hash comparisons keep prompt bodies out of assertion failure output.
+        assert (
+            sha256(row["system_prompt_template"].encode()).digest()
+            == sha256(seeded["system_prompt"].encode()).digest()
+        )
+        assert (
+            sha256(row["instruction_prompt_template"].encode()).digest()
+            == sha256(seeded["instruction_prompt"].encode()).digest()
+        )
+        assert row["agent_tool_names"] == seeded["agent_tool_names"]
+    assert _snapshot(postgres_database) == defaults
+
+    _apply_sql(postgres_database, _render_seed(template))
+    assert alternates() == first
+    assert _snapshot(postgres_database) == defaults
