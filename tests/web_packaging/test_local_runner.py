@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import os
 import re
 import stat
 import subprocess
@@ -116,6 +117,10 @@ def test_compose_cleanup_always_disposes_volumes(
 ) -> None:
     runner = _load_runner()
     calls: list[list[str]] = []
+    # CI runners export settings such as AZURE_EXTENSION_DIR, which the runner refuses.
+    for key in list(os.environ):
+        if key in runner._FORBIDDEN_EXACT or key.startswith(runner._FORBIDDEN_PREFIXES):
+            monkeypatch.delenv(key)
 
     def fake_run(
         command: list[str], **kwargs: object

@@ -9,7 +9,7 @@ describe("Entity registration export", () => {
   it.each(["logical", "dimensional"] as const)("exports %s using saved Entity schemas", async (layer) => {
     const fetcher = vi.fn<typeof fetch>(async (input) => String(input).endsWith("/options")
       ? new Response(JSON.stringify({ project_id: 18, project_revision: 3, placement: { tenant_code: "SHARED", source_tenant_code: "SALES", system_code: "GDS", connection_code: "warehouse" } }), { headers: { "content-type": "application/json" } })
-      : new Response(new Blob(["fixture workbook"]), { headers: { "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "content-disposition": 'attachment; filename="registration.xlsx"' } }));
+      : new Response("fixture workbook", { headers: { "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "content-disposition": 'attachment; filename="registration.xlsx"' } }));
     const createUrl = vi.fn(() => "blob:registration"); const revokeUrl = vi.fn();
     vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: createUrl, revokeObjectURL: revokeUrl }));
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});

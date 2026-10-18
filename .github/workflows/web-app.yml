@@ -87,6 +87,7 @@ jobs:
         run: >-
           uv run --frozen --project web_app/backend python -m pytest
           -c web_app/backend/pyproject.toml tests/web_backend
+          tests/mcp/test_database_application_reference_seed.py
       - name: Test deployment packaging
         run: >-
           uv run --frozen --project web_app/backend python -m pytest

@@ -169,6 +169,8 @@ EXPECTED_NAMES = {
 
 
 def _expected_variables() -> set[VariableIdentity]:
+    # The MCP-only CI job has no web backend; the backend job runs this check.
+    pytest.importorskip("gds_workbench_api")
     from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
         list_prompt_input_contracts,
     )
