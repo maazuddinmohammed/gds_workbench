@@ -2,13 +2,13 @@
 
 Status: needs-triage
 
-The Atlas improvement plan is implemented on `claude/atlas-improvement-plan` (not merged): Stage
+The Atlas improvement plan is merged to `main` (PR #1, merge commit `6e6ea937`): Stage
 contract fixes and server-contract fixture; doc cleanup and instruction lint; eval
 harness (`tests/atlas/eval/`); helper commands `next`, `policy-apply`, `coverage`;
 boundaries in code (Stage upload gate, Apply `expected_candidate_digest`, read-only
 `project_input_scope`/`profiling_profile`, `next --error`); one skill template;
-shared web/Atlas rule test. Plugin 0.4.0, Stage Runner 0.3.0. Both CI workflows pass
-there, including Windows PowerShell 5.1 parity. See
+shared web/Atlas rule test. Plugin 0.4.0, Stage Runner 0.3.0. Both CI workflows passed
+on the PR, including Windows PowerShell 5.1 parity. See
 `docs/architecture/decisions.md` "Atlas boundaries enforced in code".
 
 Open items:
