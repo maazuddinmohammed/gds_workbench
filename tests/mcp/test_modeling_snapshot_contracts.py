@@ -11,6 +11,7 @@ from uuid import uuid4
 import pytest
 from gds_etl_workbench.domain.modeling_records import (
     AnalysisResultRecord,
+    DimensionalAttributeRecord,
     GeneratedCodeRecord,
     LogicalAttributeRecord,
     ProfilingProfileRecord,
@@ -90,15 +91,13 @@ def test_project_snapshot_has_exact_25_dataset_registry() -> None:
 def test_every_dataset_is_id_free_and_uses_real_canonical_key_fields() -> None:
     for definition in DATASETS:
         fields = set(definition.row_model.model_fields)
-        assert {
-            field for field in fields if field == "id" or field.endswith("_id")
-        } == ({"context_record_id"} if definition.name == "context_record" else set())
+        assert {field for field in fields if field == "id" or field.endswith("_id")} == (
+            {"context_record_id"} if definition.name == "context_record" else set()
+        )
         assert set(definition.canonical_key) <= fields
         assert definition.change_set_eligible is (definition.name != "context_type")
         assert definition.rows_path.startswith(f"data/{definition.section}/")
-        assert (
-            definition.schema_path == f"schemas/project/{definition.name}.schema.json"
-        )
+        assert definition.schema_path == f"schemas/project/{definition.name}.schema.json"
 
 
 def test_project_schemas_forbid_removed_authoring_metadata() -> None:
@@ -123,9 +122,7 @@ def test_project_schemas_forbid_removed_authoring_metadata() -> None:
         assert schema["x-gds-portable-identity-fields"] == (
             ["context_record_id"] if definition.name == "context_record" else []
         )
-        assert schema["x-gds-change-set-eligible"] is (
-            definition.name != "context_type"
-        )
+        assert schema["x-gds-change-set-eligible"] is (definition.name != "context_type")
         assert forbidden.isdisjoint(schema["properties"])
 
 
@@ -151,6 +148,64 @@ def test_logical_attribute_contract_uses_key_origins_without_primary_key() -> No
         )
 
 
+@pytest.mark.parametrize("flag", ["natural", "surrogate"])
+def test_dimensional_key_flags_enforce_identity_and_nullability(flag: str) -> None:
+    record = {
+        **complete_project_graph()["dimensional_attribute"][0],
+        "dimensional_attribute_is_natural_key": flag == "natural",
+        "dimensional_attribute_is_surrogate_key": flag == "surrogate",
+    }
+    DimensionalAttributeRecord.model_validate_json(json.dumps(record))
+    with pytest.raises(ValidationError, match="cannot be nullable"):
+        DimensionalAttributeRecord.model_validate_json(
+            json.dumps({**record, "dimensional_attribute_is_nullable": True})
+        )
+    with pytest.raises(ValidationError, match="both natural and surrogate"):
+        DimensionalAttributeRecord.model_validate_json(
+            json.dumps(
+                {
+                    **record,
+                    "dimensional_attribute_is_natural_key": True,
+                    "dimensional_attribute_is_surrogate_key": True,
+                }
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("dimensional_attribute_role", "measure"),
+        ("dimensional_attribute_key_role", "business"),
+        ("dimensional_attribute_is_grain_component", True),
+        ("dimensional_attribute_additivity", "additive"),
+        ("dimensional_attribute_default_aggregation", "SUM"),
+        ("dimensional_attribute_aggregation_basis", "Across products"),
+        ("dimensional_attribute_change_behavior", "historize"),
+        ("dimensional_attribute_confidence", "high"),
+    ],
+)
+def test_dimensional_records_reject_removed_fields(field: str, value: object) -> None:
+    record = complete_project_graph()["dimensional_attribute"][0]
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        DimensionalAttributeRecord.model_validate_json(json.dumps({**record, field: value}))
+
+
+def test_published_project_schemas_have_no_confidence_fields() -> None:
+    def inspect(value: object) -> None:
+        if isinstance(value, dict):
+            properties = value.get("properties", {})
+            assert not any(name.endswith("confidence") for name in properties)
+            for child in value.values():
+                inspect(child)
+        elif isinstance(value, list):
+            for child in value:
+                inspect(child)
+
+    for definition in DATASETS:
+        inspect(build_project_dataset_schema(definition))
+
+
 def test_every_custom_project_record_validator_is_exported_for_local_parity() -> None:
     custom = {
         definition.name
@@ -169,9 +224,7 @@ def test_every_custom_project_record_validator_is_exported_for_local_parity() ->
         }
 
 
-def test_project_schema_accepts_every_decimal_representation_accepted_at_stage() -> (
-    None
-):
+def test_project_schema_accepts_every_decimal_representation_accepted_at_stage() -> None:
     schema = build_project_dataset_schema(DATASETS_BY_NAME["profiling_profile"])
 
     assert schema["properties"]["avg_data_length"]["anyOf"][0] == {
@@ -195,9 +248,7 @@ def test_status_contract_has_only_applied_lifecycle_values() -> None:
     ):
         schema = build_project_dataset_schema(DATASETS_BY_NAME[dataset])
         status_property = next(
-            value
-            for name, value in schema["properties"].items()
-            if name.endswith("_status")
+            value for name, value in schema["properties"].items() if name.endswith("_status")
         )
         assert status_property["enum"] == ["active", "inactive", "deprecated"]
 
@@ -219,9 +270,7 @@ def test_logical_entity_schema_exports_server_type_detail_rule() -> None:
 
 def test_generated_code_and_validation_public_shapes_are_minimal() -> None:
     generated = build_project_dataset_schema(DATASETS_BY_NAME["generated_code"])
-    source_system = build_project_dataset_schema(
-        DATASETS_BY_NAME["generated_code_source_system"]
-    )
+    source_system = build_project_dataset_schema(DATASETS_BY_NAME["generated_code_source_system"])
     group = build_project_dataset_schema(DATASETS_BY_NAME["validation_group"])
 
     assert set(generated["properties"]) == {
@@ -280,9 +329,7 @@ def test_code_validation_locks_are_required_in_portable_records(
         definition.row_model.model_validate(record, strict=False)
 
 
-@pytest.mark.parametrize(
-    "parameters", [None, {}, {"batch": 42}, ["--full", 2], "custom", False, 0]
-)
+@pytest.mark.parametrize("parameters", [None, {}, {"batch": 42}, ["--full", 2], "custom", False, 0])
 def test_git_code_accepts_flexible_nullable_metadata(parameters: object) -> None:
     raw = {
         **complete_project_graph()["generated_code"][0],
@@ -303,9 +350,7 @@ def test_code_storage_defaults_and_content_requirements() -> None:
     assert GeneratedCodeRecord.model_validate(raw).code_storage_type == "table"
     for content in (None, "", "   "):
         with pytest.raises(ValidationError):
-            GeneratedCodeRecord.model_validate(
-                {**raw, "generated_code_content": content}
-            )
+            GeneratedCodeRecord.model_validate({**raw, "generated_code_content": content})
     with pytest.raises(ValidationError):
         GeneratedCodeRecord.model_validate({**raw, "code_storage_type": "other"})
     git = {key: value for key, value in raw.items() if key != "generated_code_content"}
@@ -315,13 +360,9 @@ def test_code_storage_defaults_and_content_requirements() -> None:
 def test_records_reject_database_or_removed_fields() -> None:
     graph = complete_project_graph()
 
-    assert ProfilingProfileRecord.model_validate(
-        graph["profiling_profile"][0], strict=False
-    )
+    assert ProfilingProfileRecord.model_validate(graph["profiling_profile"][0], strict=False)
     assert GeneratedCodeRecord.model_validate(graph["generated_code"][0], strict=False)
-    assert ValidationCheckRecord.model_validate(
-        graph["validation_check"][0], strict=False
-    )
+    assert ValidationCheckRecord.model_validate(graph["validation_check"][0], strict=False)
 
     for project, record, extra in (
         (ProfilingProfileRecord, graph["profiling_profile"][0], {"attribute_id": 1}),
@@ -357,14 +398,11 @@ def test_analysis_cardinality_defaults_unknown_and_rejects_invalid_values() -> N
     record = complete_project_graph()["analysis_result"][0]
     record.pop("inferred_cardinality")
     assert (
-        AnalysisResultRecord.model_validate(record, strict=True).inferred_cardinality
-        == "unknown"
+        AnalysisResultRecord.model_validate(record, strict=True).inferred_cardinality == "unknown"
     )
     for invalid in (None, "one", 1):
         with pytest.raises(ValidationError):
-            AnalysisResultRecord.model_validate(
-                {**record, "inferred_cardinality": invalid}
-            )
+            AnalysisResultRecord.model_validate({**record, "inferred_cardinality": invalid})
 
 
 def test_snapshot_flattens_entity_mapping_code_and_validation_sections() -> None:
@@ -383,8 +421,7 @@ def test_snapshot_encoding_sorts_rows_and_rejects_duplicate_keys() -> None:
     graph = complete_project_graph()
     graph["conceptual_object"].reverse()
     encoded = {
-        item.definition.name: item
-        for item in encode_project_snapshot(snapshot_from_graph(graph))
+        item.definition.name: item for item in encode_project_snapshot(snapshot_from_graph(graph))
     }
     rows = encoded["conceptual_object"].rows_jsonl.decode().splitlines()
     assert [json.loads(row)["conceptual_object_name"] for row in rows] == [
@@ -393,9 +430,7 @@ def test_snapshot_encoding_sorts_rows_and_rejects_duplicate_keys() -> None:
     ]
 
     duplicate = deepcopy(graph["conceptual_object"][0])
-    duplicate["conceptual_object_name"] = (
-        f" {duplicate['conceptual_object_name'].upper()} "
-    )
+    duplicate["conceptual_object_name"] = f" {duplicate['conceptual_object_name'].upper()} "
     graph["conceptual_object"].append(duplicate)
     with pytest.raises(SnapshotContractError, match="duplicate canonical key"):
         encode_project_snapshot(snapshot_from_graph(graph))
@@ -449,9 +484,7 @@ def test_snapshot_archive_catalogs_all_sections_and_datasets(tmp_path: Path) -> 
     assert not any("qa" in name.casefold() or "project_scope" in name for name in names)
 
 
-def test_removed_mapping_dependency_is_absent_and_legacy_snapshot_section_is_rejected() -> (
-    None
-):
+def test_removed_mapping_dependency_is_absent_and_legacy_snapshot_section_is_rejected() -> None:
     snapshot = snapshot_from_graph(complete_project_graph())
     assert "mapping_dependency" not in DATASETS_BY_NAME
     assert set(snapshot.mapping.model_dump()) == {"objects", "attributes"}
@@ -459,6 +492,4 @@ def test_removed_mapping_dependency_is_absent_and_legacy_snapshot_section_is_rej
     legacy["mapping"]["dependencies"] = []
     with pytest.raises(ValidationError) as error:
         ProjectSnapshot.model_validate(legacy)
-    assert any(
-        item["loc"] == ("mapping", "dependencies") for item in error.value.errors()
-    )
+    assert any(item["loc"] == ("mapping", "dependencies") for item in error.value.errors())

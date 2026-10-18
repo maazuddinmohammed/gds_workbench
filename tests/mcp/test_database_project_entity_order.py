@@ -68,7 +68,6 @@ def entity_layer_graph(
                 "logical_entity_schema_name": "silver",
                 "logical_entity_name": "Order",
             },
-            "source_role": "transaction",
             "source_order": 1,
             "rationale": "Logical source.",
             "status": "active",

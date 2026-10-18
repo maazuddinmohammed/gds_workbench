@@ -70,7 +70,6 @@ def _relationship(
     return AnalysisValidationRelationship(
         analysis_result_id=401,
         relationship_kind="reference",
-        relationship_confidence="high",
         relationship_basis="Registered metadata and aggregate value evidence.",
         analysis_result_status="active",
         analysis_result_is_locked=True,
@@ -181,7 +180,6 @@ def test_query_accepts_maximum_registered_identifier_sizes() -> None:
     relationship = AnalysisValidationRelationship(
         analysis_result_id=401,
         relationship_kind="reference",
-        relationship_confidence="high",
         relationship_basis="Registered metadata and aggregate value evidence.",
         analysis_result_status="active",
         analysis_result_is_locked=True,

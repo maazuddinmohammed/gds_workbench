@@ -76,21 +76,6 @@
   overflow-wrap: anywhere;
 }
 
-.status-badge.confidence-high {
-  color: var(--green);
-  background: var(--green-soft);
-}
-
-.status-badge.confidence-medium {
-  color: var(--amber);
-  background: var(--amber-soft);
-}
-
-.status-badge.confidence-low {
-  color: var(--red);
-  background: #fff0ef;
-}
-
 .run-kind-note {
   margin: 0 0 1rem;
   padding: 0.75rem;

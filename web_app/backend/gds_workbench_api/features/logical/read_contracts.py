@@ -11,7 +11,6 @@ from gds_workbench_api.features.context.contracts import ContextRecordReference
 MAX_DETAIL_ROWS = 2000
 
 type ModeledStatus = Literal["active", "inactive", "deprecated"]
-type Confidence = Literal["low", "medium", "high"]
 type Cardinality = Literal["one_to_one", "one_to_many", "many_to_one", "many_to_many"]
 
 
@@ -68,7 +67,6 @@ class LogicalEntitySummary(ContractModel):
         "other",
     ]
     logical_entity_dependency_order: int = Field(ge=0)
-    logical_entity_confidence: Confidence
     logical_entity_status: ModeledStatus
     logical_entity_is_locked: bool
     updated_at: datetime
@@ -224,7 +222,6 @@ class LogicalRelationshipSummary(ContractModel):
     to_logical_attribute_name: str = Field(min_length=1, max_length=255)
     logical_relationship_name: str = Field(min_length=1, max_length=255)
     logical_relationship_cardinality: Cardinality
-    logical_relationship_confidence: Confidence
     logical_relationship_status: ModeledStatus
     logical_relationship_is_locked: bool
     updated_at: datetime

@@ -46,7 +46,6 @@ def _support(
         "support_role": "source",
         "support_reason": "The physical Object supports this concept.",
         "support_reason_detail": None,
-        "support_confidence": "high",
         "support_status": "active",
         "support_is_locked": locked,
     }
@@ -67,7 +66,6 @@ def _object(
             "conceptual_object_type": "party",
             "conceptual_object_grain": "One customer.",
             "conceptual_object_aliases": [],
-            "conceptual_object_confidence": "high",
             "conceptual_object_status": "active",
             "conceptual_object_is_locked": locked,
             "supports": supports or [],
@@ -85,7 +83,6 @@ def _relationship() -> dict[str, JsonValue]:
         "conceptual_relationship_cardinality": "many_to_one",
         "conceptual_relationship_basis": "Business rule.",
         "conceptual_relationship_cardinality_basis": "Many orders per customer.",
-        "conceptual_relationship_confidence": "high",
         "conceptual_relationship_status": "active",
         "conceptual_relationship_is_locked": False,
         "supports": [],

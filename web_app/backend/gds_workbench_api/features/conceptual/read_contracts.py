@@ -16,7 +16,6 @@ from pydantic import (
 from gds_workbench_api.features.context.contracts import ContextRecordReference
 
 type ConceptualStatus = Literal["active", "inactive", "deprecated"]
-type Confidence = Literal["low", "medium", "high"]
 type ConceptualCardinality = Literal[
     "one_to_one",
     "one_to_many",
@@ -59,7 +58,6 @@ class ConceptualObjectSummary(ContractModel):
     workflow_run_id: int | None = Field(default=None, gt=0)
     conceptual_object_name: str = Field(min_length=1, max_length=255)
     conceptual_object_type: str = Field(min_length=1, max_length=100)
-    conceptual_object_confidence: Confidence
     conceptual_object_status: ConceptualStatus
     conceptual_object_is_locked: bool
     updated_at: datetime
@@ -82,7 +80,6 @@ class ConceptualRelationshipSummary(ContractModel):
     conceptual_relationship_name: str = Field(min_length=1, max_length=255)
     conceptual_relationship_type: str = Field(min_length=1, max_length=100)
     conceptual_relationship_cardinality: ConceptualCardinality
-    conceptual_relationship_confidence: Confidence
     conceptual_relationship_status: ConceptualStatus
     conceptual_relationship_is_locked: bool
     updated_at: datetime
@@ -110,7 +107,6 @@ class ConceptualSupportBase(ContractModel):
     support_role: str | None = Field(default=None, min_length=1, max_length=255)
     support_reason: str = Field(min_length=1)
     support_reason_detail: str | None = Field(default=None, min_length=1)
-    support_confidence: Confidence
     support_status: ConceptualStatus
     support_is_locked: bool
     created_at: datetime

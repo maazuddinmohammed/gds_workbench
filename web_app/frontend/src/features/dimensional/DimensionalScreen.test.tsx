@@ -82,10 +82,9 @@ describe("Project Dimensional", () => {
     expect(await screen.findByRole("table", { name: "Entity Attributes" })).toBeVisible();
     await user.click(screen.getByRole("link", { name: "Open Dimensional Attribute 401" }));
     expect(await screen.findByRole("heading", { name: "sales_amount" })).toHaveFocus();
-    expect(screen.getByRole("heading", { name: "Aggregation" })).toBeVisible();
-    expect(screen.getByText("sum")).toBeVisible();
-    expect(screen.getByText("Grain component").nextElementSibling).toHaveTextContent("No");
-    expect(screen.getByText("No change behavior is recorded.")).toBeVisible();
+    expect(screen.getByText("Natural key").nextElementSibling).toHaveTextContent("No");
+    expect(screen.getByText("Surrogate key").nextElementSibling).toHaveTextContent("No");
+    expect(screen.getByText("Audit column").nextElementSibling).toHaveTextContent("No");
     await user.click(screen.getByRole("heading", { name: "Source mappings" }));
     await user.click(within(screen.getByRole("table", { name: "Source mappings" })).getAllByText("Show details")[0]!);
     expect(screen.queryByText("Entity mapping id")).not.toBeInTheDocument();
@@ -108,16 +107,16 @@ describe("Project Dimensional", () => {
     expect(screen.getByText("Each sale has one customer; a customer has many sales.")).toBeVisible();
   });
 
-  it("shows recorded change behavior without empty aggregation fields", async () => {
+  it.each(["natural", "surrogate"] as const)("shows %s key flags on Dimensional Attributes", async (keyAttribute) => {
     render(<WorkbenchApp router={createWorkbenchRouter({
-      api: createApiClient(dimensionalFetchStub({ descriptiveAttribute: true })),
+      api: createApiClient(dimensionalFetchStub({ keyAttribute })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/dimensional/attributes/401"] }),
     })} />);
     await screen.findByRole("heading", { name: "sales_amount" });
     expect(screen.queryByRole("heading", { name: "Aggregation" })).not.toBeInTheDocument();
-    expect(screen.getByText("No aggregation behavior is recorded.")).toBeVisible();
-    expect(screen.getByText("Type 2")).toBeVisible();
-    expect(screen.queryByText("Not applicable")).not.toBeInTheDocument();
+    expect(screen.queryByText("Change behavior")).not.toBeInTheDocument();
+    expect(screen.getByText("Natural key").nextElementSibling).toHaveTextContent(keyAttribute === "natural" ? "Yes" : "No");
+    expect(screen.getByText("Surrogate key").nextElementSibling).toHaveTextContent(keyAttribute === "surrogate" ? "Yes" : "No");
   });
 
   it("sends only supported bounded filters and follows opaque pagination cursors", async () => {
@@ -234,7 +233,7 @@ function dimensionalFetchStub(options: {
   denied?: boolean;
   projectRevision?: number;
   hasNextPage?: boolean;
-  descriptiveAttribute?: boolean;
+  keyAttribute?: "natural" | "surrogate";
   hasLock?: boolean;
 } = {}) {
   return vi.fn<typeof fetch>(async (input) => {
@@ -278,12 +277,11 @@ function dimensionalFetchStub(options: {
       });
     }
     if (url === "/api/v1/tenants/7/projects/18/dimensional/attributes/401") {
-      return jsonResponse(options.descriptiveAttribute ? {
+      return jsonResponse({
         ...dimensionalAttributeDetailPayload,
-        dimensional_attribute_role: "descriptive", dimensional_attribute_additivity: null,
-        dimensional_attribute_default_aggregation: null, dimensional_attribute_aggregation_basis: null,
-        dimensional_attribute_change_behavior: "type_2",
-      } : dimensionalAttributeDetailPayload);
+        dimensional_attribute_is_natural_key: options.keyAttribute === "natural",
+        dimensional_attribute_is_surrogate_key: options.keyAttribute === "surrogate",
+      });
     }
     if (url.startsWith("/api/v1/tenants/7/projects/18/dimensional/relationships?")) {
       return jsonResponse({
@@ -390,7 +388,6 @@ const dimensionalObjectPayload = {
   dimensional_entity_type: "fact",
   dimensional_fact_type: "transaction",
   dimensional_entity_dependency_order: 1,
-  dimensional_entity_confidence: "high",
   dimensional_entity_status: "active",
   dimensional_entity_is_locked: false,
   updated_at: "2026-08-24T15:00:00Z",
@@ -416,7 +413,6 @@ const dimensionalObjectDetailPayload = {
       dimensional_entity_source_mapping_id: 901,
       workflow_run_id: 1200,
       support_source_type: "logical_entity",
-      source_role: "primary",
       source_order: 1,
       rationale: "The Silver order table establishes the transaction grain.",
       status: "active",
@@ -429,7 +425,6 @@ const dimensionalObjectDetailPayload = {
       dimensional_entity_source_mapping_id: 902,
       workflow_run_id: null,
       support_source_type: "context_record",
-      source_role: "supporting",
       source_order: 2,
       rationale: "The approved context confirms analytical grain.",
       status: "active",
@@ -457,14 +452,9 @@ const dimensionalAttributePayload = {
   dimensional_attribute_data_type: "decimal(18,2)",
   dimensional_attribute_is_nullable: false,
   dimensional_attribute_ordinal_position: 5,
-  dimensional_attribute_role: "measure",
-  dimensional_attribute_key_role: "none",
-  dimensional_attribute_is_grain_component: false,
-  dimensional_attribute_additivity: "additive",
-  dimensional_attribute_default_aggregation: "sum",
-  dimensional_attribute_change_behavior: null,
+  dimensional_attribute_is_natural_key: false,
+  dimensional_attribute_is_surrogate_key: false,
   dimensional_attribute_is_audit_column: false,
-  dimensional_attribute_confidence: "high",
   dimensional_attribute_status: "active",
   dimensional_attribute_is_locked: false,
   updated_at: "2026-08-24T15:00:00Z",
@@ -473,7 +463,6 @@ const dimensionalAttributePayload = {
 const dimensionalAttributeDetailPayload = {
   ...dimensionalAttributePayload,
   dimensional_attribute_definition: "Extended monetary value of the completed order line.",
-  dimensional_attribute_aggregation_basis: "Additive across all dimensional axes.",
   created_at: "2026-08-24T14:40:00Z",
   sources: [
     {
@@ -527,7 +516,6 @@ const dimensionalRelationshipPayload = {
   dimensional_relationship_cardinality: "one_to_many",
   dimensional_relationship_is_optional: false,
   dimensional_relationship_role_name: "customer",
-  dimensional_relationship_confidence: "high",
   dimensional_relationship_status: "active",
   dimensional_relationship_is_locked: false,
   updated_at: "2026-08-24T15:00:00Z",

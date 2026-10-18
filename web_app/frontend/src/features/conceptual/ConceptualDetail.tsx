@@ -101,7 +101,6 @@ function ConceptualObjectView({
               </div></dd>
             </div>
           ) : null}
-          <Fact label="Confidence" value={humanize(object.conceptual_object_confidence)} />
           <Fact label="Updated" value={formatDateTime(object.updated_at)} />
         </dl>
       </section>
@@ -138,7 +137,6 @@ function ConceptualRelationshipView({
           <Fact label="To Object" value={relationship.to_conceptual_object_name} />
           <Fact label="Type" value={humanize(relationship.conceptual_relationship_type)} />
           <Fact label="Cardinality" value={humanize(relationship.conceptual_relationship_cardinality)} />
-          <Fact label="Confidence" value={humanize(relationship.conceptual_relationship_confidence)} />
           <Fact label="Updated" value={formatDateTime(relationship.updated_at)} />
         </dl>
       </section>
@@ -214,7 +212,7 @@ function SupportEvidence({ supports }: { supports: ConceptualSupport[] }) {
         <div className="workflow-table-scroll table-scroll" role="region" aria-label="Scrollable Support evidence" tabIndex={0}>
           <table aria-label="Support evidence">
             <thead>
-              <tr><th>Schema</th><th>Object / context</th><th>Rationale</th><th>Role</th><th>Confidence</th><th>Status</th><th>Details</th></tr>
+              <tr><th>Schema</th><th>Object / context</th><th>Rationale</th><th>Role</th><th>Status</th><th>Details</th></tr>
             </thead>
             <tbody>
               {supports.map((support) => {
@@ -236,11 +234,6 @@ function SupportEvidence({ supports }: { supports: ConceptualSupport[] }) {
                       <td className="modeled-source-rationale">{support.support_reason}</td>
                       <td>{support.support_role ? humanize(support.support_role) : "Not assigned"}</td>
                       <td>
-                        <span className={`status-badge confidence-${support.support_confidence}`}>
-                          {humanize(support.support_confidence)}
-                        </span>
-                      </td>
-                      <td>
                         {humanize(support.support_status)}
                         <small className="modeled-source-role">{support.support_is_locked ? "Locked" : "Open"}</small>
                       </td>
@@ -258,7 +251,7 @@ function SupportEvidence({ supports }: { supports: ConceptualSupport[] }) {
                       </td>
                     </tr>
                     <tr id={detailId} aria-label={`Details for ${name}`} hidden={!expanded} className="conceptual-support-detail">
-                      <td colSpan={7}>
+                      <td colSpan={6}>
                         <dl className="modeled-detail-fields">
                           {support.support_reason_detail ? <Fact label="Reason detail" value={support.support_reason_detail} /> : null}
                           {support.support_source_type === "object" ? (

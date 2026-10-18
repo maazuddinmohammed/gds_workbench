@@ -48,7 +48,6 @@ CREATE TABLE workflow.dimensional_entity (
     dimensional_fact_type VARCHAR(30),
     dimensional_entity_grain_definition TEXT,
     dimensional_entity_dependency_order INTEGER NOT NULL DEFAULT 0,
-    dimensional_entity_confidence VARCHAR(10) NOT NULL DEFAULT 'medium',
     dimensional_entity_status VARCHAR(20) NOT NULL DEFAULT 'active',
     dimensional_entity_is_locked BOOLEAN NOT NULL DEFAULT FALSE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -74,6 +73,7 @@ CREATE TABLE workflow.dimensional_entity (
     CONSTRAINT ck_dimensional_fact_type CHECK (
         (
             dimensional_entity_type = 'fact'
+            AND dimensional_fact_type IS NOT NULL
             AND dimensional_fact_type IN (
                 'transaction', 'periodic_snapshot',
                 'accumulating_snapshot', 'factless'
@@ -97,9 +97,6 @@ CREATE TABLE workflow.dimensional_entity (
     ),
     CONSTRAINT ck_dimensional_entity_dependency_order CHECK (
         dimensional_entity_dependency_order >= 0
-    ),
-    CONSTRAINT ck_dimensional_entity_confidence CHECK (
-        dimensional_entity_confidence IN ('low', 'medium', 'high')
     ),
     CONSTRAINT ck_dimensional_entity_status CHECK (
         dimensional_entity_status IN (
@@ -165,15 +162,9 @@ CREATE TABLE workflow.dimensional_attribute (
     dimensional_attribute_data_type VARCHAR(100) NOT NULL,
     dimensional_attribute_is_nullable BOOLEAN NOT NULL DEFAULT TRUE,
     dimensional_attribute_ordinal_position INTEGER NOT NULL,
-    dimensional_attribute_role VARCHAR(30) NOT NULL,
-    dimensional_attribute_key_role VARCHAR(20) NOT NULL DEFAULT 'none',
-    dimensional_attribute_is_grain_component BOOLEAN NOT NULL DEFAULT FALSE,
-    dimensional_attribute_additivity VARCHAR(30),
-    dimensional_attribute_default_aggregation VARCHAR(100),
-    dimensional_attribute_aggregation_basis TEXT,
-    dimensional_attribute_change_behavior VARCHAR(20),
+    dimensional_attribute_is_natural_key BOOLEAN NOT NULL DEFAULT FALSE,
+    dimensional_attribute_is_surrogate_key BOOLEAN NOT NULL DEFAULT FALSE,
     dimensional_attribute_is_audit_column BOOLEAN NOT NULL DEFAULT FALSE,
-    dimensional_attribute_confidence VARCHAR(10) NOT NULL DEFAULT 'medium',
     dimensional_attribute_status VARCHAR(20) NOT NULL DEFAULT 'active',
     dimensional_attribute_is_locked BOOLEAN NOT NULL DEFAULT FALSE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -203,49 +194,17 @@ CREATE TABLE workflow.dimensional_attribute (
     CONSTRAINT ck_dimensional_attribute_ordinal CHECK (
         dimensional_attribute_ordinal_position > 0
     ),
-    CONSTRAINT ck_dimensional_attribute_role CHECK (
-        dimensional_attribute_role IN (
-            'key', 'descriptor', 'measure', 'degenerate_dimension',
-            'bridge_weight', 'technical', 'audit'
+    CONSTRAINT ck_dimensional_attribute_key_origin CHECK (
+        NOT (
+            dimensional_attribute_is_natural_key
+            AND dimensional_attribute_is_surrogate_key
         )
     ),
-    CONSTRAINT ck_dimensional_attribute_key_role CHECK (
-        dimensional_attribute_key_role IN ('none', 'surrogate', 'business', 'foreign')
-        AND (
-            dimensional_attribute_key_role = 'none'
-            OR dimensional_attribute_role IN ('key', 'technical')
-        )
-    ),
-    CONSTRAINT ck_dimensional_measure_policy CHECK (
-        (
-            dimensional_attribute_role = 'measure'
-            AND dimensional_attribute_additivity IN (
-                'additive', 'semi_additive', 'non_additive'
-            )
-            AND reference.is_nonblank(dimensional_attribute_default_aggregation)
-            AND (
-                dimensional_attribute_additivity = 'additive'
-                OR reference.is_nonblank(dimensional_attribute_aggregation_basis)
-            )
-        ) OR (
-            dimensional_attribute_role <> 'measure'
-            AND dimensional_attribute_additivity IS NULL
-            AND dimensional_attribute_default_aggregation IS NULL
-            AND dimensional_attribute_aggregation_basis IS NULL
-        )
-    ),
-    CONSTRAINT ck_dimensional_change_behavior CHECK (
-        dimensional_attribute_change_behavior IS NULL
-        OR dimensional_attribute_change_behavior IN (
-            'fixed', 'overwrite', 'historize'
-        )
-    ),
-    CONSTRAINT ck_dimensional_audit_role CHECK (
-        dimensional_attribute_is_audit_column
-        = (dimensional_attribute_role = 'audit')
-    ),
-    CONSTRAINT ck_dimensional_attribute_confidence CHECK (
-        dimensional_attribute_confidence IN ('low', 'medium', 'high')
+    CONSTRAINT ck_dimensional_attribute_key_nullable CHECK (
+        NOT (
+            dimensional_attribute_is_natural_key
+            OR dimensional_attribute_is_surrogate_key
+        ) OR NOT dimensional_attribute_is_nullable
     ),
     CONSTRAINT ck_dimensional_attribute_status CHECK (
         dimensional_attribute_status IN (
@@ -270,7 +229,6 @@ CREATE TABLE workflow.dimensional_entity_source_mapping (
     support_source_type VARCHAR(20) NOT NULL,
     source_logical_entity_id BIGINT,
     context_record_id UUID,
-    dimensional_entity_source_role VARCHAR(255) NOT NULL,
     dimensional_entity_source_mapping_order INTEGER,
     dimensional_entity_source_mapping_rationale TEXT NOT NULL,
     dimensional_entity_source_mapping_status VARCHAR(20) NOT NULL DEFAULT 'active',
@@ -312,9 +270,6 @@ CREATE TABLE workflow.dimensional_entity_source_mapping (
             AND context_record_id IS NOT NULL
             AND source_logical_entity_id IS NULL
         )
-    ),
-    CONSTRAINT ck_dimensional_entity_source_role CHECK (
-        reference.is_nonblank(dimensional_entity_source_role)
     ),
     CONSTRAINT ck_dimensional_entity_source_order CHECK (
         dimensional_entity_source_mapping_order IS NULL
@@ -459,7 +414,6 @@ CREATE TABLE workflow.dimensional_relationship (
     dimensional_relationship_cardinality VARCHAR(50) NOT NULL,
     dimensional_relationship_is_optional BOOLEAN NOT NULL,
     dimensional_relationship_role_name VARCHAR(255),
-    dimensional_relationship_confidence VARCHAR(10) NOT NULL DEFAULT 'medium',
     dimensional_relationship_basis TEXT NOT NULL,
     dimensional_relationship_cardinality_basis TEXT NOT NULL,
     dimensional_relationship_status VARCHAR(20) NOT NULL DEFAULT 'active',
@@ -524,9 +478,6 @@ CREATE TABLE workflow.dimensional_relationship (
     CONSTRAINT ck_dimensional_relationship_role CHECK (
         dimensional_relationship_role_name IS NULL
         OR reference.is_nonblank(dimensional_relationship_role_name)
-    ),
-    CONSTRAINT ck_dimensional_relationship_confidence CHECK (
-        dimensional_relationship_confidence IN ('low', 'medium', 'high')
     ),
     CONSTRAINT ck_dimensional_relationship_bases CHECK (
         reference.is_nonblank(dimensional_relationship_basis)
@@ -691,7 +642,7 @@ UNION ALL
 SELECT project_id, 'dimensional_entity'::VARCHAR(30), dimensional_entity_id,
        dimensional_attribute_id, dimensional_attribute_name, dimensional_attribute_name, dimensional_attribute_definition,
        dimensional_attribute_data_type, dimensional_attribute_is_nullable,
-       dimensional_attribute_ordinal_position, dimensional_attribute_key_role = 'business',
-       dimensional_attribute_key_role = 'surrogate', dimensional_attribute_is_audit_column,
+       dimensional_attribute_ordinal_position, dimensional_attribute_is_natural_key,
+       dimensional_attribute_is_surrogate_key, dimensional_attribute_is_audit_column,
        dimensional_attribute_status, dimensional_attribute_is_locked
   FROM workflow.dimensional_attribute;

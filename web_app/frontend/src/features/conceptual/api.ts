@@ -2,7 +2,6 @@ import type { ProjectTargetsTransport } from "../project_targets/api";
 import type { HttpRequest } from "../../core/http";
 import type {
   ModelingCardinality,
-  ModelingConfidence,
   ReviewStatus,
 } from "../../shared/contracts";
 import type { ProjectInputScopeApi } from "../project_input_scope/api";
@@ -10,7 +9,6 @@ import type { WorkflowsApi } from "../workflows/api";
 import type { ProjectRecordReviewApi } from "../project_record_review/api";
 
 export type ConceptualStatus = ReviewStatus;
-export type ConceptualConfidence = ModelingConfidence;
 export type ConceptualCardinality = ModelingCardinality;
 
 export interface ConceptualFilters {
@@ -25,7 +23,6 @@ export interface ConceptualObject {
   workflow_run_id: number | null;
   conceptual_object_name: string;
   conceptual_object_type: string;
-  conceptual_object_confidence: ConceptualConfidence;
   conceptual_object_status: ConceptualStatus;
   conceptual_object_is_locked: boolean;
   updated_at: string;
@@ -48,7 +45,6 @@ export interface ConceptualRelationship {
   conceptual_relationship_name: string;
   conceptual_relationship_type: string;
   conceptual_relationship_cardinality: ConceptualCardinality;
-  conceptual_relationship_confidence: ConceptualConfidence;
   conceptual_relationship_status: ConceptualStatus;
   conceptual_relationship_is_locked: boolean;
   updated_at: string;
@@ -85,7 +81,6 @@ interface ConceptualSupportBase {
   support_role: string | null;
   support_reason: string;
   support_reason_detail: string | null;
-  support_confidence: ConceptualConfidence;
   support_status: ConceptualStatus;
   support_is_locked: boolean;
   created_at: string;

@@ -914,8 +914,8 @@ async def test_local_fake_returns_deterministic_valid_dimensional_business_candi
         "logical_attribute_name": "customer_id",
     }
     assert all(
-        item["dimensional_attribute_role"] not in ("technical", "audit")
-        and item["dimensional_attribute_key_role"] not in ("surrogate", "foreign")
+        not item["dimensional_attribute_is_audit_column"]
+        and not item["dimensional_attribute_is_surrogate_key"]
         and item["dimensional_attribute_is_audit_column"] is False
         for item in attributes
     )
@@ -1056,7 +1056,6 @@ async def test_local_fake_returns_bounded_analysis_inference_candidate(
                 "to_attribute_name": "customer_id",
                 "relationship_kind": "reference",
                 "inferred_cardinality": "unknown",
-                "relationship_confidence": "medium",
                 "relationship_basis": (
                     "Selected Attribute metadata supports this candidate."
                 ),
@@ -1104,7 +1103,6 @@ async def test_local_fake_pages_tool_assisted_analysis_context(
                 "to_attribute_name": "customer_id",
                 "relationship_kind": "reference",
                 "inferred_cardinality": "unknown",
-                "relationship_confidence": "medium",
                 "relationship_basis": (
                     "Selected Attribute metadata supports this candidate."
                 ),

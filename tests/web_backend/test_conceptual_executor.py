@@ -237,7 +237,6 @@ def _candidate_object(*, source_name: str = "customer_raw") -> dict[str, JsonVal
         "conceptual_object_type": "party",
         "conceptual_object_grain": "One customer.",
         "conceptual_object_aliases": [],
-        "conceptual_object_confidence": "high",
         "conceptual_object_status": "active",
         "conceptual_object_is_locked": False,
         "supports": [
@@ -253,7 +252,6 @@ def _candidate_object(*, source_name: str = "customer_raw") -> dict[str, JsonVal
                 "support_role": "source",
                 "support_reason": "The source supports Customer.",
                 "support_reason_detail": None,
-                "support_confidence": "high",
                 "support_status": "active",
                 "support_is_locked": False,
             }

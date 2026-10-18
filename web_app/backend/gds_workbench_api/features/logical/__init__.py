@@ -3,7 +3,6 @@
 from .candidate import LogicalCandidateValidator
 from .read_contracts import (
     Cardinality,
-    Confidence,
     ContextRecordReference,
     ContractModel,
     LogicalAttributeContextSource,
@@ -60,7 +59,6 @@ from .service import LogicalExecutionFailedError, LogicalWorkflow
 __all__ = [
     "ContextRecordReference",
     "Cardinality",
-    "Confidence",
     "ContractModel",
     "LogicalWorkflow",
     "DatabaseLogicalService",

@@ -51,7 +51,6 @@ NamingInstructions = Annotated[
 ]
 Percentage = Annotated[Decimal, Field(ge=0, le=100, max_digits=7, decimal_places=4)]
 Status = Literal["active", "inactive", "deprecated"]
-Confidence = Literal["low", "medium", "high"]
 Cardinality = Literal[
     "one_to_one",
     "one_to_many",
@@ -348,7 +347,6 @@ class AnalysisResultRecord(ModelingRecord):
     to_attribute_name: Name400
     relationship_kind: Annotated[str, StringConstraints(min_length=1, max_length=100)]
     inferred_cardinality: InferredCardinality = "unknown"
-    relationship_confidence: Literal["low", "medium", "high"]
     relationship_basis: NonblankText
     validation_policy_version: DigestVersion | None = None
     validation_result: Literal["supported", "inconclusive", "unsupported"] | None = None
@@ -450,7 +448,6 @@ class ObjectSupportRecord(ModelingRecord):
     )
     support_reason: NonblankText
     support_reason_detail: NonblankText | None
-    support_confidence: Confidence
     support_status: Status
     support_is_locked: bool
 
@@ -467,7 +464,6 @@ class ContextSupportRecord(ModelingRecord):
     )
     support_reason: NonblankText
     support_reason_detail: NonblankText | None
-    support_confidence: Confidence
     support_status: Status
     support_is_locked: bool
 
@@ -487,7 +483,6 @@ class ConceptualObjectRecord(ModelingRecord):
     conceptual_object_type: Code100
     conceptual_object_grain: NonblankText
     conceptual_object_aliases: tuple[str, ...]
-    conceptual_object_confidence: Confidence
     conceptual_object_status: Status
     conceptual_object_is_locked: bool
     supports: tuple[SupportRecord, ...]
@@ -517,7 +512,6 @@ class ConceptualRelationshipRecord(ModelingRecord):
     conceptual_relationship_cardinality: Cardinality | Literal["unknown"]
     conceptual_relationship_basis: NonblankText
     conceptual_relationship_cardinality_basis: NonblankText
-    conceptual_relationship_confidence: Confidence
     conceptual_relationship_status: Status
     conceptual_relationship_is_locked: bool
     supports: tuple[SupportRecord, ...]
@@ -585,21 +579,10 @@ class DimensionalLogicalEntitySourceRecord(ModelingRecord):
     rationale: NonblankText
     status: Status
     is_locked: bool
-    source_role: Annotated[
-        str,
-        StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
-    ]
-
-
-class DimensionalContextSourceRecord(LogicalContextSourceRecord):
-    source_role: Annotated[
-        str,
-        StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
-    ]
 
 
 type DimensionalEntitySourceRecord = Annotated[
-    DimensionalLogicalEntitySourceRecord | DimensionalContextSourceRecord,
+    DimensionalLogicalEntitySourceRecord | LogicalContextSourceRecord,
     Field(discriminator="support_source_type"),
 ]
 
@@ -675,7 +658,6 @@ class LogicalEntityRecord(ModelingRecord):
     logical_entity_type_detail: NonblankText | None
     logical_entity_grain: NonblankText
     logical_entity_dependency_order: int = Field(ge=0)
-    logical_entity_confidence: Confidence
     logical_entity_status: Status
     logical_entity_is_locked: bool
     submodels: tuple[SubmodelMembershipRecord, ...]
@@ -751,7 +733,6 @@ class LogicalRelationshipRecord(ModelingRecord):
         StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
     ]
     logical_relationship_cardinality: Cardinality
-    logical_relationship_confidence: Confidence
     logical_relationship_basis: NonblankText
     logical_relationship_cardinality_basis: NonblankText
     logical_relationship_status: Status
@@ -801,7 +782,6 @@ class DimensionalEntityRecord(ModelingRecord):
     )
     dimensional_entity_grain_definition: NonblankText | None
     dimensional_entity_dependency_order: int = Field(ge=0)
-    dimensional_entity_confidence: Confidence
     dimensional_entity_status: Status
     dimensional_entity_is_locked: bool
     submodels: tuple[SubmodelMembershipRecord, ...]
@@ -838,63 +818,24 @@ class DimensionalAttributeRecord(ModelingRecord):
     dimensional_attribute_data_type: Code100
     dimensional_attribute_is_nullable: bool
     dimensional_attribute_ordinal_position: int = Field(gt=0)
-    dimensional_attribute_role: Literal[
-        "key",
-        "descriptor",
-        "measure",
-        "degenerate_dimension",
-        "bridge_weight",
-        "technical",
-        "audit",
-    ]
-    dimensional_attribute_key_role: Literal["none", "surrogate", "business", "foreign"]
-    dimensional_attribute_is_grain_component: bool
-    dimensional_attribute_additivity: (
-        Literal[
-            "additive",
-            "semi_additive",
-            "non_additive",
-        ]
-        | None
-    )
-    dimensional_attribute_default_aggregation: Code100 | None
-    dimensional_attribute_aggregation_basis: NonblankText | None
-    dimensional_attribute_change_behavior: (
-        Literal[
-            "fixed",
-            "overwrite",
-            "historize",
-        ]
-        | None
-    )
+    dimensional_attribute_is_natural_key: bool
+    dimensional_attribute_is_surrogate_key: bool
     dimensional_attribute_is_audit_column: bool
-    dimensional_attribute_confidence: Confidence
     dimensional_attribute_status: Status
     dimensional_attribute_is_locked: bool
     sources: tuple[DimensionalAttributeSourceRecord, ...]
 
     @model_validator(mode="after")
     def validate_attribute_policy(self) -> DimensionalAttributeRecord:
-        if self.dimensional_attribute_key_role != "none" and (
-            self.dimensional_attribute_role not in ("key", "technical")
+        if (
+            self.dimensional_attribute_is_natural_key
+            and self.dimensional_attribute_is_surrogate_key
         ):
-            raise ValueError("A Dimensional key role requires a key or technical Attribute.")
-        measure_fields = (
-            self.dimensional_attribute_additivity,
-            self.dimensional_attribute_default_aggregation,
-            self.dimensional_attribute_aggregation_basis,
-        )
-        if self.dimensional_attribute_role == "measure":
-            if measure_fields[0] is None or measure_fields[1] is None:
-                raise ValueError("A measure requires additivity and default aggregation.")
-            if measure_fields[0] != "additive" and measure_fields[2] is None:
-                raise ValueError("A non-additive measure requires an aggregation basis.")
-        elif any(value is not None for value in measure_fields):
-            raise ValueError("Measure policy fields are valid only for measures.")
-        if self.dimensional_attribute_is_audit_column != (
-            self.dimensional_attribute_role == "audit"
-        ):
-            raise ValueError("Dimensional audit flag and role must agree.")
+            raise ValueError("A Dimensional Attribute cannot be both natural and surrogate key.")
+        if (
+            self.dimensional_attribute_is_natural_key or self.dimensional_attribute_is_surrogate_key
+        ) and self.dimensional_attribute_is_nullable:
+            raise ValueError("A Dimensional key Attribute cannot be nullable.")
         _require_unique_sources(self.sources, "Dimensional Attribute sources")
         return self
 
@@ -936,7 +877,6 @@ class DimensionalRelationshipRecord(ModelingRecord):
         ]
         | None
     )
-    dimensional_relationship_confidence: Confidence
     dimensional_relationship_basis: NonblankText
     dimensional_relationship_cardinality_basis: NonblankText
     dimensional_relationship_status: Status

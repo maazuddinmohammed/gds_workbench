@@ -4,7 +4,6 @@ import type { ProjectRecordHistoryApi } from "../project_record_review/api";
 import type { HttpRequest } from "../../core/http";
 import type {
   ModelingCardinality,
-  ModelingConfidence,
   ReviewStatus,
 } from "../../shared/contracts";
 import type { ProjectInputScopeApi } from "../project_input_scope/api";
@@ -30,7 +29,6 @@ export interface DimensionalObject {
     | "factless"
     | null;
   dimensional_entity_dependency_order: number;
-  dimensional_entity_confidence: ModelingConfidence;
   dimensional_entity_status: ReviewStatus;
   dimensional_entity_is_locked: boolean;
   updated_at: string;
@@ -72,7 +70,6 @@ export interface DimensionalContextReference {
 interface DimensionalObjectSourceBase {
   dimensional_entity_source_mapping_id: number;
   workflow_run_id: number | null;
-  source_role: string;
   source_order: number | null;
   rationale: string;
   status: ReviewStatus;
@@ -115,21 +112,9 @@ export interface DimensionalAttribute {
   dimensional_attribute_data_type: string;
   dimensional_attribute_is_nullable: boolean;
   dimensional_attribute_ordinal_position: number;
-  dimensional_attribute_role:
-    | "key"
-    | "descriptor"
-    | "measure"
-    | "degenerate_dimension"
-    | "bridge_weight"
-    | "technical"
-    | "audit";
-  dimensional_attribute_key_role: "none" | "surrogate" | "business" | "foreign";
-  dimensional_attribute_is_grain_component: boolean;
-  dimensional_attribute_additivity: "additive" | "semi_additive" | "non_additive" | null;
-  dimensional_attribute_default_aggregation: string | null;
-  dimensional_attribute_change_behavior: "fixed" | "overwrite" | "historize" | null;
+  dimensional_attribute_is_natural_key: boolean;
+  dimensional_attribute_is_surrogate_key: boolean;
   dimensional_attribute_is_audit_column: boolean;
-  dimensional_attribute_confidence: ModelingConfidence;
   dimensional_attribute_status: ReviewStatus;
   dimensional_attribute_is_locked: boolean;
   updated_at: string;
@@ -175,7 +160,6 @@ export type DimensionalAttributeSource =
 
 export interface DimensionalAttributeDetail extends DimensionalAttribute {
   dimensional_attribute_definition: string;
-  dimensional_attribute_aggregation_basis: string | null;
   created_at: string;
   sources: DimensionalAttributeSource[];
 }
@@ -202,7 +186,6 @@ export interface DimensionalRelationship {
   dimensional_relationship_cardinality: ModelingCardinality;
   dimensional_relationship_is_optional: boolean;
   dimensional_relationship_role_name: string | null;
-  dimensional_relationship_confidence: ModelingConfidence;
   dimensional_relationship_status: ReviewStatus;
   dimensional_relationship_is_locked: boolean;
   updated_at: string;

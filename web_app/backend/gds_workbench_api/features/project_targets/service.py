@@ -87,20 +87,11 @@ SELECT attribute.logical_entity_id AS entity_id,
           attribute.logical_attribute_id
  LIMIT 5001
 """
-# Only these two static schemas can be queried. Dimensional key roles have their own semantics.
+# Only these static schemas can be queried; both layers share the same key flags.
 _ATTRIBUTE_QUERIES: dict[TargetLayer, LiteralString] = {
     "logical": _LOGICAL_ATTRIBUTES_SQL,
     "dimensional": (
-        _LOGICAL_ATTRIBUTES_SQL.replace("logical", "dimensional")
-        .replace(
-            "attribute.dimensional_attribute_is_natural_key",
-            "(attribute.dimensional_attribute_key_role = 'business')",
-        )
-        .replace(
-            "attribute.dimensional_attribute_is_surrogate_key",
-            "(attribute.dimensional_attribute_key_role = 'surrogate')",
-        )
-        .replace(
+        _LOGICAL_ATTRIBUTES_SQL.replace("logical", "dimensional").replace(
             "JOIN core.attribute AS physical ON physical.attribute_id = source.source_attribute_id",
             "JOIN workflow.logical_attribute_source_mapping AS logical_source "
             "ON logical_source.project_id = source.project_id "

@@ -226,7 +226,6 @@ INSERT INTO workflow.analysis_result AS current_result (
     to_attribute_id,
     relationship_kind,
     inferred_cardinality,
-    relationship_confidence,
     relationship_basis,
     validation_policy_version,
     validation_policy_digest,
@@ -243,7 +242,7 @@ INSERT INTO workflow.analysis_result AS current_result (
 )
 VALUES (
     %s, NULL, %s, NULL, NULL, %s, %s, %s, %s, %s, %s, %s,
-    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
 )
 ON CONFLICT ON CONSTRAINT uq_analysis_result_identity DO UPDATE
    SET agent_run_id = NULL,
@@ -260,7 +259,6 @@ ON CONFLICT ON CONSTRAINT uq_analysis_result_identity DO UPDATE
        from_object_id = EXCLUDED.from_object_id,
        to_object_id = EXCLUDED.to_object_id,
        inferred_cardinality = EXCLUDED.inferred_cardinality,
-       relationship_confidence = EXCLUDED.relationship_confidence,
        relationship_basis = EXCLUDED.relationship_basis,
        validation_policy_version = CASE
            WHEN EXCLUDED.inference_workflow_run_id IS NULL
@@ -380,11 +378,10 @@ INSERT INTO workflow.conceptual_object (
     conceptual_object_type,
     conceptual_object_grain,
     conceptual_object_aliases,
-    conceptual_object_confidence,
     conceptual_object_status,
     conceptual_object_is_locked
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
 RETURNING conceptual_object_id
 """
 
@@ -396,7 +393,6 @@ UPDATE workflow.conceptual_object
        conceptual_object_type = %s,
        conceptual_object_grain = %s,
        conceptual_object_aliases = %s,
-       conceptual_object_confidence = %s,
        conceptual_object_status = %s,
        conceptual_object_is_locked = %s,
        updated_time = CURRENT_TIMESTAMP,
@@ -427,11 +423,10 @@ INSERT INTO workflow.conceptual_relationship (
     conceptual_relationship_cardinality,
     conceptual_relationship_basis,
     conceptual_relationship_cardinality_basis,
-    conceptual_relationship_confidence,
     conceptual_relationship_status,
     conceptual_relationship_is_locked
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 RETURNING conceptual_relationship_id
 """
 
@@ -444,7 +439,6 @@ UPDATE workflow.conceptual_relationship
        conceptual_relationship_cardinality = %s,
        conceptual_relationship_basis = %s,
        conceptual_relationship_cardinality_basis = %s,
-       conceptual_relationship_confidence = %s,
        conceptual_relationship_status = %s,
        conceptual_relationship_is_locked = %s,
        updated_time = CURRENT_TIMESTAMP,
@@ -483,11 +477,10 @@ INSERT INTO workflow.conceptual_support (
     conceptual_support_role,
     conceptual_support_reason,
     conceptual_support_reason_detail,
-    conceptual_support_confidence,
     conceptual_support_status,
     conceptual_support_is_locked
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 RETURNING conceptual_support_id
 """
 
@@ -497,7 +490,6 @@ UPDATE workflow.conceptual_support
        conceptual_support_role = %s,
        conceptual_support_reason = %s,
        conceptual_support_reason_detail = %s,
-       conceptual_support_confidence = %s,
        conceptual_support_status = %s,
        conceptual_support_is_locked = %s,
        updated_time = CURRENT_TIMESTAMP,
@@ -1146,7 +1138,6 @@ class ProjectMaterializer:
                     to_attribute_id,
                     record.relationship_kind,
                     record.inferred_cardinality,
-                    record.relationship_confidence,
                     record.relationship_basis,
                     record.validation_policy_version,
                     policy_digest,
@@ -1342,7 +1333,6 @@ SELECT context_record_id::TEXT
                 record.conceptual_object_type,
                 record.conceptual_object_grain,
                 list(record.conceptual_object_aliases),
-                record.conceptual_object_confidence,
                 record.conceptual_object_status,
                 record.conceptual_object_is_locked,
             )
@@ -1393,7 +1383,6 @@ SELECT context_record_id::TEXT
                 record.conceptual_relationship_cardinality,
                 record.conceptual_relationship_basis,
                 record.conceptual_relationship_cardinality_basis,
-                record.conceptual_relationship_confidence,
                 record.conceptual_relationship_status,
                 record.conceptual_relationship_is_locked,
             )
@@ -1460,7 +1449,6 @@ SELECT context_record_id::TEXT
             support.support_role,
             support.support_reason,
             support.support_reason_detail,
-            support.support_confidence,
             support.support_status,
             support.support_is_locked,
         )
@@ -1822,10 +1810,6 @@ SELECT {id_field}
             context_record_id,
         ]
         update_fields: list[tuple[str, object]] = [("workflow_run_id", self.workflow_run_id)]
-        if config.entity_source_role_column is not None:
-            columns.append(config.entity_source_role_column)
-            values.append(source.source_role)
-            update_fields.append((config.entity_source_role_column, source.source_role))
         for suffix, value in (
             ("order", source.source_order),
             ("rationale", source.rationale),

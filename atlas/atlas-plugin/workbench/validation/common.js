@@ -271,13 +271,8 @@
       if (!uniqueNormalized(value.submodels.map((item) => item.submodel_name))) add("Dimensional Entity Submodel memberships must be unique");
       if (!uniqueSources(value.sources)) add("Dimensional Entity sources must be unique");
     } else if (rule === "dimensional_attribute") {
-      if (value.dimensional_attribute_key_role !== "none" && !["key", "technical"].includes(value.dimensional_attribute_role)) add("A Dimensional key role requires a key or technical Attribute");
-      const measure = [value.dimensional_attribute_additivity, value.dimensional_attribute_default_aggregation, value.dimensional_attribute_aggregation_basis];
-      if (value.dimensional_attribute_role === "measure") {
-        if (measure[0] === null || measure[1] === null) add("A measure requires additivity and default aggregation");
-        if (measure[0] !== null && measure[0] !== "additive" && measure[2] === null) add("A non-additive measure requires an aggregation basis");
-      } else if (measure.some((item) => item !== null)) add("Measure policy fields are valid only for measures");
-      if (value.dimensional_attribute_is_audit_column !== (value.dimensional_attribute_role === "audit")) add("Dimensional audit flag and role must agree");
+      if (value.dimensional_attribute_is_natural_key && value.dimensional_attribute_is_surrogate_key) add("A Dimensional Attribute cannot be both natural and surrogate key");
+      if ((value.dimensional_attribute_is_natural_key || value.dimensional_attribute_is_surrogate_key) && value.dimensional_attribute_is_nullable) add("A Dimensional key Attribute cannot be nullable");
       if (!uniqueSources(value.sources)) add("Dimensional Attribute sources must be unique");
     } else if (rule === "dimensional_relationship") {
       validateRelationship("dimensional");

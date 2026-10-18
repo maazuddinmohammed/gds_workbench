@@ -24,7 +24,6 @@ ANALYSIS_WORKBOOK_COLUMNS = (
     "Relationship",
     "InferredCardinality",
     "ObservedCardinality",
-    "Confidence",
     "FromRowCount",
     "ToRowCount",
     "SourceMissingTargetCount",
@@ -59,7 +58,7 @@ def build_analysis_workbook(*, findings: tuple[AnalysisFindingSummary, ...]) -> 
     workbook.properties.creator = "Atlas"
     worksheet.append(ANALYSIS_WORKBOOK_COLUMNS)
     text_characters = sum(len(label) for label in ANALYSIS_WORKBOOK_COLUMNS)
-    widths = (24, 28, 28, 24, 28, 28, 24, 24, 30, 14, 20, 20, 26, 24, 28, 24, 16, 12)
+    widths = (24, 28, 28, 24, 28, 28, 24, 24, 30, 20, 20, 26, 24, 28, 24, 16, 12)
     border_side = Side(style="thin", color="808080")
     cell_border = Border(left=border_side, right=border_side, top=border_side, bottom=border_side)
     body_font = Font(name="Arial", size=10)
@@ -112,13 +111,13 @@ def build_analysis_workbook(*, findings: tuple[AnalysisFindingSummary, ...]) -> 
                 elif isinstance(cell.value, bool):
                     cell.alignment = Alignment(horizontal="center", vertical="top")
                 elif isinstance(cell.value, (int, float)):
-                    cell.number_format = "0.00%" if column_number in (15, 16) else "#,##0"
+                    cell.number_format = "0.00%" if column_number in (14, 15) else "#,##0"
             worksheet.row_dimensions[row_number].height = min(409, max(18, line_count * 15))
 
         for column_number, width in enumerate(widths, start=1):
             worksheet.column_dimensions[chr(64 + column_number)].width = width
         worksheet.freeze_panes = "A2"
-        worksheet.auto_filter.ref = f"A1:R{len(findings) + 1}"
+        worksheet.auto_filter.ref = f"A1:Q{len(findings) + 1}"
         worksheet.sheet_view.showGridLines = False
         if worksheet.sheet_properties.pageSetUpPr is not None:
             worksheet.sheet_properties.pageSetUpPr.fitToPage = True
@@ -178,7 +177,6 @@ def _analysis_row(finding: AnalysisFindingSummary) -> tuple[str | int | float | 
         finding.to_endpoint.object_name,
         finding.to_endpoint.attribute_name,
         *labels,
-        finding.relationship_confidence,
         finding.from_row_count if finding.from_row_count is not None else "Not profiled",
         finding.to_row_count if finding.to_row_count is not None else "Not profiled",
         *(count if count is not None else unavailable for count in counts),

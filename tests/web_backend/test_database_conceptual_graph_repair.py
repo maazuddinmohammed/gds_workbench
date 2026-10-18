@@ -59,9 +59,8 @@ async def test_conceptual_graph_failure_repairs_or_retains_complete_rejected_dra
                 """
                 INSERT INTO workflow.conceptual_object (
                     project_id, conceptual_object_name, conceptual_object_definition,
-                    conceptual_object_type, conceptual_object_grain,
-                    conceptual_object_confidence
-                ) VALUES (%s, %s, %s, %s, %s, %s)
+                    conceptual_object_type, conceptual_object_grain
+                ) VALUES (%s, %s, %s, %s, %s)
                 RETURNING conceptual_object_id
                 """,
                 (
@@ -70,7 +69,6 @@ async def test_conceptual_graph_failure_repairs_or_retains_complete_rejected_dra
                     record["conceptual_object_definition"],
                     record["conceptual_object_type"],
                     record["conceptual_object_grain"],
-                    record["conceptual_object_confidence"],
                 ),
             ).fetchone()
             assert row is not None

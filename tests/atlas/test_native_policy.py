@@ -209,7 +209,7 @@ import(pathToFileURL(process.argv[3]).href);
     )
     assert result.returncode == 0, result.stderr
     cases = json.loads(captured.read_text())
-    assert len(cases) == 11
+    assert len(cases) == 23
     source = HELPER.with_suffix(".ps1").read_text()
     prefix = source[
         : source.rindex("\ntry {\n    $options = Parse-Options $RemainingArguments")

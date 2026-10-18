@@ -111,20 +111,14 @@ test("natural-key tuples remain composite and repeat across declared history", (
       [`${layer}_attribute_ordinal_position`]: ordinal,
       [`${layer}_attribute_is_nullable`]: false,
       [`${layer}_attribute_status`]: "active",
-      ...(layer === "logical" ? {
-        logical_attribute_is_surrogate_key: surrogate,
-        logical_attribute_is_natural_key: !surrogate,
-      } : {
-        dimensional_attribute_role: "key",
-        dimensional_attribute_key_role: surrogate ? "surrogate" : "business",
-        dimensional_attribute_change_behavior: "fixed",
-      }),
+      [`${layer}_attribute_is_surrogate_key`]: surrogate,
+      [`${layer}_attribute_is_natural_key`]: !surrogate,
     });
     const columns = [attribute("CustomerID", 1, true), attribute("SystemID", 2, false), attribute("CustomerCode", 3, false)];
-    const details = { logical_entity_scd_type: "type_1" };
+    const details = { [`${layer}_entity_scd_type`]: "type_1" };
     const loaded = new Map([
       ["project_details", state([details])],
-      [`${layer}_entity`, state([{ ...entity, [`${layer}_entity_status`]: "active", submodels: [] }])],
+      [`${layer}_entity`, state([{ ...entity, [`${layer}_entity_status`]: "active", [`${layer}_entity_type`]: "dimension", submodels: [] }])],
       [`${layer}_attribute`, state(columns)],
     ]);
     const project = { project_id: 41, project_name: "Customer Operations", project_revision: 1 };
@@ -132,12 +126,18 @@ test("natural-key tuples remain composite and repeat across declared history", (
     assert.match(current, /\("SystemID", "CustomerCode"\) \[unique\]/);
     assert.match(current, /"CustomerID" bigint \[unique, not null/);
     assert.doesNotMatch(current, /\[pk[,\]]/);
-    if (layer === "logical") details.logical_entity_scd_type = "type_2";
-    else columns[1].dimensional_attribute_change_behavior = "historize";
+    details[`${layer}_entity_scd_type`] = "type_2";
     const history = dbml.render(loaded, project, { modelType: layer })[0].content;
     assert.match(history, /"CustomerID" bigint \[unique, not null/);
     assert.doesNotMatch(history, /\("SystemID", "CustomerCode"\) \[unique\]/);
     assert.doesNotMatch(history, /\[pk[,\]]/);
-    assert.match(history, layer === "logical" ? /Natural key\./ : /Key role: business\./);
+    assert.match(history, /Natural key\./);
+    if (layer === "dimensional") {
+      for (const kind of ["fact", "bridge"]) {
+        loaded.get("dimensional_entity").effective[0].dimensional_entity_type = kind;
+        const unversioned = dbml.render(loaded, project, { modelType: layer })[0].content;
+        assert.match(unversioned, /\("SystemID", "CustomerCode"\) \[unique\]/);
+      }
+    }
   }
 });

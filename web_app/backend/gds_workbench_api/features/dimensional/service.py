@@ -555,11 +555,17 @@ def _candidate_validator(context: AgentContextBundle) -> DimensionalCandidateVal
     context_record_ids = tuple(
         record.context_record_id for record in context.context.context.records
     )
+    technical, audit = effective_gold_templates(
+        context.context.project_details.gold_model_technical_columns_template,
+        context.context.project_details.gold_model_audit_columns_template,
+    )
     return DimensionalCandidateValidator(
         selected_entity_keys=selected_entities,
         selected_attribute_keys=selected_attributes,
         context_record_ids=context_record_ids,
         applied=context.context.applied.dimensional,
+        raw_technical_template=technical,
+        raw_audit_template=audit,
         coverage_threshold_percent=context.context.project_details.dimensional_coverage_threshold_percent,
     )
 

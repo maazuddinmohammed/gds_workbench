@@ -118,7 +118,6 @@ def complete_project_graph(
                 "to_attribute_name": "customer_id",
                 "relationship_kind": "foreign_key_candidate",
                 "inferred_cardinality": "many_to_one",
-                "relationship_confidence": "high",
                 "relationship_basis": "Values overlap.",
                 "validation_policy_version": "1.0.0",
                 "validation_result": "supported",
@@ -300,7 +299,6 @@ def conceptual_object(
         "conceptual_object_type": object_type,
         "conceptual_object_grain": f"One {name}.",
         "conceptual_object_aliases": [],
-        "conceptual_object_confidence": "high",
         "conceptual_object_status": "active",
         "conceptual_object_is_locked": False,
         "supports": [
@@ -310,7 +308,6 @@ def conceptual_object(
                 "support_role": "evidence",
                 "support_reason": "The source represents the concept.",
                 "support_reason_detail": None,
-                "support_confidence": "high",
                 "support_status": "active",
                 "support_is_locked": False,
             }
@@ -328,7 +325,6 @@ def conceptual_relationship() -> dict[str, object]:
         "conceptual_relationship_cardinality": "many_to_one",
         "conceptual_relationship_basis": "Approved business rule.",
         "conceptual_relationship_cardinality_basis": "Many Orders per Customer.",
-        "conceptual_relationship_confidence": "high",
         "conceptual_relationship_status": "active",
         "conceptual_relationship_is_locked": False,
         "supports": [context_support()],
@@ -342,7 +338,6 @@ def context_support() -> dict[str, object]:
         "support_role": "cardinality",
         "support_reason": "The rule defines the relationship.",
         "support_reason_detail": None,
-        "support_confidence": "high",
         "support_status": "active",
         "support_is_locked": False,
     }
@@ -361,7 +356,6 @@ def logical_entity(
         "logical_entity_type_detail": None,
         "logical_entity_grain": f"One {name}.",
         "logical_entity_dependency_order": 0,
-        "logical_entity_confidence": "high",
         "logical_entity_status": "active",
         "logical_entity_is_locked": False,
         "submodels": [
@@ -429,7 +423,6 @@ def logical_relationship() -> dict[str, object]:
         "to_logical_entity_name": "Customer",
         "to_logical_attribute_name": "CustomerID",
         "logical_relationship_cardinality": "many_to_one",
-        "logical_relationship_confidence": "high",
         "logical_relationship_basis": "Source relationship.",
         "logical_relationship_cardinality_basis": "Many Orders per Customer.",
         "logical_relationship_status": "active",
@@ -447,7 +440,6 @@ def dimensional_entity(name: str, entity_type: str) -> dict[str, object]:
         "dimensional_fact_type": "transaction" if is_fact else None,
         "dimensional_entity_grain_definition": "One Order." if is_fact else None,
         "dimensional_entity_dependency_order": 0,
-        "dimensional_entity_confidence": "high",
         "dimensional_entity_status": "active",
         "dimensional_entity_is_locked": False,
         "submodels": [
@@ -463,7 +455,6 @@ def dimensional_entity(name: str, entity_type: str) -> dict[str, object]:
                 "context_record": {
                     "context_record_id": "00000000-0000-4000-8000-000000000001"
                 },
-                "source_role": "business_rule",
                 "source_order": 1,
                 "rationale": "Approved dimensional requirement.",
                 "status": "active",
@@ -489,15 +480,9 @@ def dimensional_attribute(
         "dimensional_attribute_ordinal_position": (
             1 if name in {"SalesKey", "CustomerKey"} else 2
         ),
-        "dimensional_attribute_role": "key",
-        "dimensional_attribute_key_role": key_role,
-        "dimensional_attribute_is_grain_component": True,
-        "dimensional_attribute_additivity": None,
-        "dimensional_attribute_default_aggregation": None,
-        "dimensional_attribute_aggregation_basis": None,
-        "dimensional_attribute_change_behavior": None,
+        "dimensional_attribute_is_natural_key": key_role == "business",
+        "dimensional_attribute_is_surrogate_key": key_role == "surrogate",
         "dimensional_attribute_is_audit_column": False,
-        "dimensional_attribute_confidence": "high",
         "dimensional_attribute_status": "active",
         "dimensional_attribute_is_locked": False,
         "sources": [
@@ -529,7 +514,6 @@ def dimensional_relationship() -> dict[str, object]:
         "dimensional_relationship_cardinality": "many_to_one",
         "dimensional_relationship_is_optional": False,
         "dimensional_relationship_role_name": None,
-        "dimensional_relationship_confidence": "high",
         "dimensional_relationship_basis": "Star schema.",
         "dimensional_relationship_cardinality_basis": "Many Facts per Customer.",
         "dimensional_relationship_status": "active",

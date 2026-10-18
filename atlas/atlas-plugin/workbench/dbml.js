@@ -141,7 +141,6 @@
           ["Grain", record.conceptual_object_grain],
           ["Definition", record.conceptual_object_definition],
           ["Aliases", record.conceptual_object_aliases],
-          ["Confidence", record.conceptual_object_confidence],
         ]),
         "}",
         "",
@@ -171,7 +170,7 @@
       return {
         submodelDataset: "logical_submodel", submodelName: "logical_submodel_name", submodelDefinition: "logical_submodel_definition", submodelStatus: "logical_submodel_status",
         entityDataset: "logical_entity", entityName: "logical_entity_name", entityStatus: "logical_entity_status", entityOrder: "logical_entity_dependency_order", entityColor: "logical_entity_dependency_order",
-        entityNotes: [["Type", "logical_entity_type"], ["Type detail", "logical_entity_type_detail"], ["Grain", "logical_entity_grain"], ["Dependency order", "logical_entity_dependency_order"], ["Definition", "logical_entity_definition"], ["Confidence", "logical_entity_confidence"]],
+        entityNotes: [["Type", "logical_entity_type"], ["Type detail", "logical_entity_type_detail"], ["Grain", "logical_entity_grain"], ["Dependency order", "logical_entity_dependency_order"], ["Definition", "logical_entity_definition"]],
         attributeDataset: "logical_attribute", attributeEntity: "logical_entity_name", attributeName: "logical_attribute_name", attributeStatus: "logical_attribute_status", attributeType: "logical_attribute_data_type", attributeOrdinal: "logical_attribute_ordinal_position", attributeNullable: "logical_attribute_is_nullable",
         relationshipDataset: "logical_relationship", relationshipStatus: "logical_relationship_status", relationshipName: "logical_relationship_name", relationshipDefinition: "logical_relationship_definition", fromEntity: "from_logical_entity_name", fromAttribute: "from_logical_attribute_name", toEntity: "to_logical_entity_name", toAttribute: "to_logical_attribute_name", relationshipCardinality: "logical_relationship_cardinality",
       };
@@ -179,7 +178,7 @@
     return {
       submodelDataset: "dimensional_submodel", submodelName: "dimensional_submodel_name", submodelDefinition: "dimensional_submodel_definition", submodelStatus: "dimensional_submodel_status",
       entityDataset: "dimensional_entity", entityName: "dimensional_entity_name", entityStatus: "dimensional_entity_status", entityOrder: "dimensional_entity_dependency_order", entityColor: "dimensional_entity_type",
-      entityNotes: [["Type", "dimensional_entity_type"], ["Fact type", "dimensional_fact_type"], ["Grain", "dimensional_entity_grain_definition"], ["Dependency order", "dimensional_entity_dependency_order"], ["Definition", "dimensional_entity_definition"], ["Confidence", "dimensional_entity_confidence"]],
+      entityNotes: [["Type", "dimensional_entity_type"], ["Fact type", "dimensional_fact_type"], ["Grain", "dimensional_entity_grain_definition"], ["Dependency order", "dimensional_entity_dependency_order"], ["Definition", "dimensional_entity_definition"]],
       attributeDataset: "dimensional_attribute", attributeEntity: "dimensional_entity_name", attributeName: "dimensional_attribute_name", attributeStatus: "dimensional_attribute_status", attributeType: "dimensional_attribute_data_type", attributeOrdinal: "dimensional_attribute_ordinal_position", attributeNullable: "dimensional_attribute_is_nullable",
       relationshipDataset: "dimensional_relationship", relationshipStatus: "dimensional_relationship_status", relationshipName: "dimensional_relationship_name", relationshipDefinition: "dimensional_relationship_definition", fromEntity: "from_dimensional_entity_name", fromAttribute: "from_dimensional_attribute_name", toEntity: "to_dimensional_entity_name", toAttribute: "to_dimensional_attribute_name", relationshipCardinality: "dimensional_relationship_cardinality",
     };
@@ -187,8 +186,8 @@
 
   function prepareLayer(loaded, layer) {
     const spec = layerSpecification(layer);
-    const logicalHistory = layer === "logical" && rows(loaded, "project_details")
-      .some((record) => record.logical_entity_scd_type === "type_2");
+    const history = rows(loaded, "project_details")
+      .some((record) => record[`${layer}_entity_scd_type`] === "type_2");
     const submodels = rows(loaded, spec.submodelDataset)
       .filter((record) => record[spec.submodelStatus] === "active")
       .map((record) => ({ name: record[spec.submodelName], definition: record[spec.submodelDefinition] }))
@@ -210,6 +209,7 @@
           key: JSON.stringify([normalize(record[`${layer}_entity_schema_name`]), normalize(record[spec.entityName])]),
           name: record[spec.entityName],
           order: record[spec.entityOrder],
+          historized: history && (layer === "logical" || record.dimensional_entity_type === "dimension"),
           colorGroup: String(record[spec.entityColor] ?? "unspecified"),
           notes: spec.entityNotes.map(([label, field]) => [label, record[field]]),
           submodels: memberships,
@@ -230,22 +230,15 @@
       const key = `${entityKey}\0${normalize(record[spec.attributeName])}`;
       if (attributeKeys.has(key)) throw new Error(`Effective ${layer} Attribute names are not unique.`);
       attributeKeys.add(key);
-      const logical = layer === "logical";
-      const keyRole = record.dimensional_attribute_key_role;
       const notes = [record[`${layer}_attribute_definition`]];
-      if (logical && record.logical_attribute_is_surrogate_key) notes.push("Surrogate key.");
-      else if (logical && record.logical_attribute_is_natural_key) notes.push("Natural key.");
-      if (!logical) {
-        notes.push(`Role: ${record.dimensional_attribute_role}.`);
-        if (keyRole && keyRole !== "none") notes.push(`Key role: ${keyRole}.`);
-        if (record.dimensional_attribute_is_grain_component) notes.push("Grain component.");
-      }
+      if (record[`${layer}_attribute_is_surrogate_key`]) notes.push("Surrogate key.");
+      else if (record[`${layer}_attribute_is_natural_key`]) notes.push("Natural key.");
       if (record[`${layer}_attribute_is_audit_column`]) notes.push("Audit Attribute.");
       const attribute = {
         name: record[spec.attributeName], type: record[spec.attributeType], ordinal: record[spec.attributeOrdinal], nullable: record[spec.attributeNullable],
-        natural: logical ? record.logical_attribute_is_natural_key : keyRole === "business",
-        surrogate: logical ? record.logical_attribute_is_surrogate_key : keyRole === "surrogate",
-        historized: logicalHistory || (!logical && record.dimensional_attribute_change_behavior === "historize"),
+        natural: record[`${layer}_attribute_is_natural_key`],
+        surrogate: record[`${layer}_attribute_is_surrogate_key`],
+        historized: entityByKey.get(entityKey).historized,
         notes: notes.filter((value) => value !== null && value !== undefined && oneLine(value)),
       };
       if (!attributesByEntity.has(entityKey)) attributesByEntity.set(entityKey, []);
@@ -260,8 +253,8 @@
         toEntity: JSON.stringify([normalize(record[`to_${layer}_entity_schema_name`]), normalize(record[spec.toEntity])]), toAttribute: normalize(record[spec.toAttribute]),
         cardinality: record[spec.relationshipCardinality],
         notes: layer === "logical"
-          ? [["Basis", record.logical_relationship_basis], ["Confidence", record.logical_relationship_confidence]]
-          : [["Kind", record.dimensional_relationship_kind], ["Role", record.dimensional_relationship_role_name], ["Optional", record.dimensional_relationship_is_optional ? "yes" : "no"], ["Basis", record.dimensional_relationship_basis], ["Confidence", record.dimensional_relationship_confidence]],
+          ? [["Basis", record.logical_relationship_basis]]
+          : [["Kind", record.dimensional_relationship_kind], ["Role", record.dimensional_relationship_role_name], ["Optional", record.dimensional_relationship_is_optional ? "yes" : "no"], ["Basis", record.dimensional_relationship_basis]],
       }))
       .sort((left, right) => `${left.fromEntity}\0${left.toEntity}\0${normalize(left.name)}`.localeCompare(`${right.fromEntity}\0${right.toEntity}\0${normalize(right.name)}`));
     for (const relationship of relationships) {

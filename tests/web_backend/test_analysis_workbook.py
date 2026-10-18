@@ -40,7 +40,6 @@ def finding() -> AnalysisFindingSummary:
             update={"object_id": 8, "attribute_id": 9, "object_name": "Customer"}
         ),
         relationship_kind="reference",
-        relationship_confidence="high",
         validation_state="validated",
         validation_result="supported",
         inferred_cardinality="many_to_one",
@@ -76,7 +75,6 @@ def test_analysis_export_is_one_flat_sheet_with_the_visible_table_columns(
                 "Relationship",
                 "InferredCardinality",
                 "ObservedCardinality",
-                "Confidence",
                 "FromRowCount",
                 "ToRowCount",
                 "SourceMissingTargetCount",
@@ -96,7 +94,6 @@ def test_analysis_export_is_one_flat_sheet_with_the_visible_table_columns(
                 "Reference",
                 "Many to one",
                 "One to one\nDiffers from inference",
-                "high",
                 1000,
                 2000,
                 3,
@@ -107,10 +104,10 @@ def test_analysis_export_is_one_flat_sheet_with_the_visible_table_columns(
                 False,
             ),
         ]
+        assert sheet["N2"].number_format == "0.00%"
         assert sheet["O2"].number_format == "0.00%"
-        assert sheet["P2"].number_format == "0.00%"
-        assert sheet["P2"].data_type == "n"
-        assert sheet["R2"].data_type == "b"
+        assert sheet["O2"].data_type == "n"
+        assert sheet["Q2"].data_type == "b"
     finally:
         workbook.close()
 
@@ -143,7 +140,7 @@ def test_missing_validation_is_distinct_from_measured_zero_and_empty_population(
     try:
         sheet = workbook["Analysis"]
         assert sheet["I2"].value == "Unavailable"
-        assert tuple(cell.value for cell in sheet[2][10:16]) == (
+        assert tuple(cell.value for cell in sheet[2][9:15]) == (
             "Not profiled",
             0,
             0,
@@ -152,7 +149,7 @@ def test_missing_validation_is_distinct_from_measured_zero_and_empty_population(
             "Unavailable",
         )
         assert sheet["I3"].value == "Not validated"
-        assert tuple(cell.value for cell in sheet[3][12:16]) == ("Not validated",) * 4
+        assert tuple(cell.value for cell in sheet[3][11:15]) == ("Not validated",) * 4
     finally:
         workbook.close()
 
@@ -164,7 +161,7 @@ def test_large_saved_counts_survive_excel_without_numeric_rounding(
     finding = finding.model_copy(update={"from_row_count": count})
     workbook = load_workbook(BytesIO(build_analysis_workbook(findings=(finding,))))
     try:
-        cell = workbook["Analysis"]["K2"]
+        cell = workbook["Analysis"]["J2"]
         assert cell.value == str(count)
         assert cell.data_type == "s"
     finally:
@@ -223,7 +220,7 @@ def test_no_findings_produces_the_header_only_without_a_fake_record() -> None:
     try:
         assert workbook.sheetnames == ["Analysis"]
         assert workbook["Analysis"].max_row == 1
-        assert workbook["Analysis"].max_column == 18
+        assert workbook["Analysis"].max_column == 17
     finally:
         workbook.close()
 

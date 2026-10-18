@@ -130,7 +130,6 @@ def _complete_project_candidate() -> dict[str, JsonValue]:
             "dimensional_attribute_definition": "Sale-side customer identifier.",
             "dimensional_attribute_is_nullable": False,
             "dimensional_attribute_ordinal_position": 2,
-            "dimensional_attribute_change_behavior": "fixed",
         }
     )
     customer_segment = deepcopy(customer_id)
@@ -140,10 +139,8 @@ def _complete_project_candidate() -> dict[str, JsonValue]:
             "dimensional_attribute_definition": "Governed customer segment.",
             "dimensional_attribute_is_nullable": True,
             "dimensional_attribute_ordinal_position": 3,
-            "dimensional_attribute_role": "descriptor",
-            "dimensional_attribute_key_role": "none",
-            "dimensional_attribute_is_grain_component": False,
-            "dimensional_attribute_change_behavior": "overwrite",
+            "dimensional_attribute_is_natural_key": False,
+            "dimensional_attribute_is_surrogate_key": False,
             "sources": [
                 {
                     "support_source_type": "context_record",
@@ -304,9 +301,20 @@ async def test_local_status_passes_but_complete_graph_rejects_active_children(
 
 
 @pytest.mark.asyncio
-async def test_historize_projection_preserves_valid_partial_mapping_coverage() -> None:
+async def test_type_2_projection_preserves_valid_partial_mapping_coverage() -> None:
     bundle, candidate = _bundle(mapped=True)
-    candidate["attributes"][2]["dimensional_attribute_change_behavior"] = "historize"
+    bundle = replace(
+        bundle,
+        context=bundle.context.model_copy(
+            update={
+                "project_details": bundle.context.project_details.model_copy(
+                    update={
+                        "dimensional_entity_scd_type": "type_2",
+                    }
+                ),
+            }
+        ),
+    )
     validator = _candidate_validator(bundle)
     assert not (await validator.validate(cast(JsonValue, candidate))).issues
     assert bundle.snapshot is not None and bundle.physical_scope is not None

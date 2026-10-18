@@ -163,7 +163,6 @@ CREATE TABLE workflow.analysis_result (
     to_attribute_id BIGINT NOT NULL,
     relationship_kind VARCHAR(100) NOT NULL,
     inferred_cardinality VARCHAR(20) NOT NULL DEFAULT 'unknown',
-    relationship_confidence VARCHAR(10) NOT NULL DEFAULT 'medium',
     relationship_basis TEXT NOT NULL,
     validation_policy_version VARCHAR(50),
     validation_policy_digest CHAR(64),
@@ -206,9 +205,6 @@ CREATE TABLE workflow.analysis_result (
     ),
     CONSTRAINT ck_analysis_relationship_kind CHECK (
         reference.is_nonblank(relationship_kind)
-    ),
-    CONSTRAINT ck_analysis_confidence CHECK (
-        relationship_confidence IN ('low', 'medium', 'high')
     ),
     CONSTRAINT ck_analysis_inferred_cardinality CHECK (
         inferred_cardinality IN (

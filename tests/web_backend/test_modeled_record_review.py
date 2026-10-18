@@ -317,7 +317,6 @@ def test_removing_logical_output_traces_persisted_dimensional_entity_lineage() -
                 "logical_entity_schema_name": logical["logical_entity_schema_name"],
                 "logical_entity_name": logical["logical_entity_name"],
             },
-            "source_role": "fact input",
             "rationale": "Applied Logical Entity input.",
             "status": "active",
             "is_locked": False,

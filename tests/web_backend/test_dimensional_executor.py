@@ -270,7 +270,6 @@ def _selected_logical_entity() -> dict[str, object]:
         "logical_entity_type_detail": None,
         "logical_entity_grain": "One customer",
         "logical_entity_dependency_order": 0,
-        "logical_entity_confidence": "high",
         "logical_entity_status": "active",
         "logical_entity_is_locked": False,
         "submodels": [],
@@ -473,7 +472,6 @@ def _candidate(
             "rationale": "Eligible Silver contribution.",
             "status": "active",
             "is_locked": False,
-            "source_role": "primary",
         }
     ]
     return cast(
@@ -496,7 +494,6 @@ def _candidate(
                     "dimensional_fact_type": None,
                     "dimensional_entity_grain_definition": None,
                     "dimensional_entity_dependency_order": 0,
-                    "dimensional_entity_confidence": "high",
                     "dimensional_entity_status": "active",
                     "dimensional_entity_is_locked": False,
                     "submodels": [
@@ -516,7 +513,6 @@ def _candidate(
                     "dimensional_fact_type": "transaction",
                     "dimensional_entity_grain_definition": "One sale per customer.",
                     "dimensional_entity_dependency_order": 1,
-                    "dimensional_entity_confidence": "high",
                     "dimensional_entity_status": "active",
                     "dimensional_entity_is_locked": False,
                     "submodels": [
@@ -538,15 +534,9 @@ def _candidate(
                     "dimensional_attribute_data_type": "bigint",
                     "dimensional_attribute_is_nullable": False,
                     "dimensional_attribute_ordinal_position": 1,
-                    "dimensional_attribute_role": "key",
-                    "dimensional_attribute_key_role": "business",
-                    "dimensional_attribute_is_grain_component": True,
-                    "dimensional_attribute_additivity": None,
-                    "dimensional_attribute_default_aggregation": None,
-                    "dimensional_attribute_aggregation_basis": None,
-                    "dimensional_attribute_change_behavior": "fixed",
+                    "dimensional_attribute_is_natural_key": True,
+                    "dimensional_attribute_is_surrogate_key": False,
                     "dimensional_attribute_is_audit_column": False,
-                    "dimensional_attribute_confidence": "high",
                     "dimensional_attribute_status": "active",
                     "dimensional_attribute_is_locked": False,
                     "sources": _source("customer_id"),
@@ -557,17 +547,11 @@ def _candidate(
                     "dimensional_attribute_name": "Source Customer ID",
                     "dimensional_attribute_definition": "Sale customer identifier.",
                     "dimensional_attribute_data_type": "bigint",
-                    "dimensional_attribute_is_nullable": relationship_optional,
+                    "dimensional_attribute_is_nullable": False,
                     "dimensional_attribute_ordinal_position": 1,
-                    "dimensional_attribute_role": "key",
-                    "dimensional_attribute_key_role": "business",
-                    "dimensional_attribute_is_grain_component": True,
-                    "dimensional_attribute_additivity": None,
-                    "dimensional_attribute_default_aggregation": None,
-                    "dimensional_attribute_aggregation_basis": None,
-                    "dimensional_attribute_change_behavior": None,
+                    "dimensional_attribute_is_natural_key": True,
+                    "dimensional_attribute_is_surrogate_key": False,
                     "dimensional_attribute_is_audit_column": False,
-                    "dimensional_attribute_confidence": "high",
                     "dimensional_attribute_status": "active",
                     "dimensional_attribute_is_locked": False,
                     "sources": _source("sale_customer_id"),
@@ -587,7 +571,6 @@ def _candidate(
                     "dimensional_relationship_cardinality": "many_to_one",
                     "dimensional_relationship_is_optional": relationship_optional,
                     "dimensional_relationship_role_name": "Bill To Customer",
-                    "dimensional_relationship_confidence": "high",
                     "dimensional_relationship_basis": "Sales customer evidence.",
                     "dimensional_relationship_cardinality_basis": (
                         "Many sales reference one customer."
@@ -1224,7 +1207,7 @@ async def test_one_shot_projects_gold_policy_then_foreign_key_once(
     foreign_key = next(
         record
         for record in attribute_change.records
-        if record["dimensional_attribute_key_role"] == "foreign"
+        if record["dimensional_attribute_name"] == "Bill To Customer key"
     )
     assert foreign_key["dimensional_attribute_name"] == "Bill To Customer key"
     assert foreign_key["dimensional_attribute_is_nullable"] is relationship_optional

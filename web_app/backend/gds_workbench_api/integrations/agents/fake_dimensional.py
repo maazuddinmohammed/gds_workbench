@@ -96,7 +96,6 @@ def _fake_dimensional_object_source(
         "rationale": "Selected Logical Entity metadata supports this candidate.",
         "status": "active",
         "is_locked": False,
-        "source_role": "primary",
     }
 
 
@@ -136,7 +135,6 @@ def _fake_dimensional_entity_record(
         "dimensional_fact_type": fact_type,
         "dimensional_entity_grain_definition": grain_definition,
         "dimensional_entity_dependency_order": dependency_order,
-        "dimensional_entity_confidence": "medium",
         "dimensional_entity_status": "active",
         "dimensional_entity_is_locked": False,
         "submodels": list(memberships),
@@ -162,15 +160,9 @@ def _fake_dimensional_attribute_record(
         "dimensional_attribute_data_type": "string",
         "dimensional_attribute_is_nullable": True,
         "dimensional_attribute_ordinal_position": ordinal,
-        "dimensional_attribute_role": "descriptor",
-        "dimensional_attribute_key_role": "none",
-        "dimensional_attribute_is_grain_component": False,
-        "dimensional_attribute_additivity": None,
-        "dimensional_attribute_default_aggregation": None,
-        "dimensional_attribute_aggregation_basis": None,
-        "dimensional_attribute_change_behavior": "overwrite",
+        "dimensional_attribute_is_natural_key": False,
+        "dimensional_attribute_is_surrogate_key": False,
         "dimensional_attribute_is_audit_column": False,
-        "dimensional_attribute_confidence": "medium",
         "dimensional_attribute_status": "active",
         "dimensional_attribute_is_locked": False,
         "sources": list(sources),

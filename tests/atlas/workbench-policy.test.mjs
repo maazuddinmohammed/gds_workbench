@@ -9,7 +9,7 @@ const phys={tenant_code:'T',system_code:'CRM',connection_code:'C',object_schema:
 function graph(layer='logical'){
  const entity={[`${layer}_entity_schema_name`]:'silver',[`${layer}_entity_name`]:'Customer',[`${layer}_entity_status`]:'active',sources:[],submodels:[]};
  const column=(name,ordinal,audit=false)=>({[`${layer}_entity_schema_name`]:'silver',[`${layer}_entity_name`]:'Customer',[`${layer}_attribute_name`]:name,[`${layer}_attribute_status`]:'active',[`${layer}_attribute_data_type`]:'BIGINT',[`${layer}_attribute_ordinal_position`]:ordinal,[`${layer}_attribute_is_nullable`]:false,[`${layer}_attribute_is_audit_column`]:audit,sources:[]});
- const surrogate={...column(layer==='logical'?'CustomerID':'CustomerKey',1),...(layer==='logical'?{logical_attribute_is_surrogate_key:true,logical_attribute_is_natural_key:false}:{dimensional_attribute_key_role:'surrogate'})};
+ const surrogate={...column(layer==='logical'?'CustomerID':'CustomerKey',1),[`${layer}_attribute_is_surrogate_key`]:true,[`${layer}_attribute_is_natural_key`]:false};
  const attributes=[surrogate,...AUDIT.map((name,index)=>({...column(name,index+2,true),[`${layer}_attribute_data_type`]:["BIGINT","BOOLEAN","STRING","BOOLEAN","BIGINT","STRING","TIMESTAMP","TIMESTAMP","STRING","STRING"][index],[`${layer}_attribute_is_nullable`]:true}))];
  return new Map([loaded(`${layer}_entity`,[`${layer}_entity_schema_name`,`${layer}_entity_name`],[entity]),loaded(`${layer}_attribute`,[`${layer}_entity_schema_name`,`${layer}_entity_name`,`${layer}_attribute_name`],attributes)]);
 }
@@ -29,6 +29,15 @@ test('Project Change Sets allow Logical SCD settings in the governed draft', () 
 });
 test('new Logical and Dimensional entities share first generated surrogate and audit policy',()=>{
  for(const layer of ['logical','dimensional']){const value=graph(layer);assert.deepEqual(codes(validate(value)),[]);value.get(`${layer}_attribute`).pending[0][`${layer}_attribute_ordinal_position`]=3;assert.ok(codes(validate(value)).includes('project.own-surrogate'));}
+});
+test('own surrogate cannot also be a natural key or an audit column in either layer', () => {
+ for (const layer of ['logical', 'dimensional']) {
+  for (const flag of ['is_natural_key', 'is_audit_column']) {
+   const value = graph(layer);
+   value.get(`${layer}_attribute`).pending[0][`${layer}_attribute_${flag}`] = true;
+   assert.ok(codes(validate(value)).includes('project.own-surrogate'));
+  }
+ }
 });
 test('audit completeness and framework-owned lineage have separate explicit findings',()=>{
  const value=graph();value.get('logical_attribute').effective.pop();value.get('logical_attribute').pending[2].sources=[{support_source_type:'attribute',source_attribute:{...phys,attribute_name:'Flag'},status:'active'}];

@@ -50,7 +50,6 @@ def _candidate() -> dict[str, object]:
                 "logical_entity_type_detail": None,
                 "logical_entity_grain": "One row per customer.",
                 "logical_entity_dependency_order": 0,
-                "logical_entity_confidence": "high",
                 "logical_entity_status": "active",
                 "logical_entity_is_locked": False,
                 "submodels": [

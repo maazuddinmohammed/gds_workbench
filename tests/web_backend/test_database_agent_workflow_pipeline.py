@@ -156,9 +156,6 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
                 "entity.project_id, entity.modeled_entity_id, 'fixture_' || position, "
             )
             values += "'Synthetic test Attribute.', 'bigint', position"
-            if dimensional:
-                columns.append("dimensional_attribute_role")
-                values += ", 'descriptor'"
             connection.execute(
                 sql.SQL(
                     "INSERT INTO workflow.{} ({}) SELECT {} "
@@ -832,16 +829,16 @@ def _add_mapping_target(
                 "INSERT INTO workflow.dimensional_attribute "
                 "(project_id, dimensional_entity_id, dimensional_attribute_name, "
                 "dimensional_attribute_definition, dimensional_attribute_data_type, "
-                "dimensional_attribute_ordinal_position, dimensional_attribute_role) "
-                "VALUES (%s,%s,'customer_id','Customer key.','bigint',1,'key')",
+                "dimensional_attribute_ordinal_position) "
+                "VALUES (%s,%s,'customer_id','Customer key.','bigint',1)",
                 (project_id, entity),
             )
             connection.execute(
                 "INSERT INTO workflow.dimensional_entity_source_mapping "
                 "(project_id, dimensional_entity_id, support_source_type, source_logical_entity_id, "
-                "dimensional_entity_source_role, dimensional_entity_source_mapping_rationale) "
+                "dimensional_entity_source_mapping_rationale) "
                 "SELECT %s,%s,'logical_entity',source_logical_entity_id, "
-                "'support','Synthetic source.' "
+                "'Synthetic source.' "
                 "FROM workflow.dimensional_entity_source_mapping "
                 "WHERE project_id=%s AND dimensional_entity_id=%s "
                 "AND support_source_type='logical_entity'",

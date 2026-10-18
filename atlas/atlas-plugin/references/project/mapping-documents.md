@@ -48,7 +48,7 @@ For each active modeled Attribute and contributing System, state its actual sour
 
 The approved [audit policy](keys-and-audit.md#population-boundary-and-implementation-alignment) identifies the nine framework fields and optional Source audit fields. Resolve the actual policy while authoring and capture the applicable population in the Mapping; downstream readers should not rederive it from project flags. No inference that every surrogate-looking name is generated.
 
-For Dimensional history, use the shared [history and lookup rules](../dimensional-build/history.md): preserve the chosen change behavior, complete natural keys and temporal FK lookup. Mark the configured Type 2 fields as framework-populated and omitted from transformation SQL. Technical role alone does not establish that rule for other columns.
+For Dimensional history, use the shared [history and lookup rules](../dimensional-build/history.md): preserve the Project history policy, complete natural keys and temporal FK lookup. Mark the configured Type 2 fields as framework-populated and omitted from transformation SQL. A technical-looking name alone does not establish that rule for other columns.
 
 Keep the target's physical name, type, nullability and ordinal in the resolved Mapping context below. If a source's SQL column differs from registered `attribute_name` (for example `fc_attribute_name`), retain the registered lineage and specify the resolved executable name in the transformation. A coding reader must not guess the translation.
 

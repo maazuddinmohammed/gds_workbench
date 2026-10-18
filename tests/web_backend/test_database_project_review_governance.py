@@ -71,8 +71,8 @@ def _setup(database: DisposablePostgres):
             connection.execute(
                 """INSERT INTO workflow.analysis_result (
                     project_id,from_object_id,from_attribute_id,to_object_id,to_attribute_id,
-                    relationship_kind,relationship_confidence,relationship_basis
-                ) VALUES (%s,%s,%s,%s,%s,'reference','high','Fixture relationship')
+                    relationship_kind,relationship_basis
+                ) VALUES (%s,%s,%s,%s,%s,'reference','Fixture relationship')
                 RETURNING analysis_result_id""",
                 (
                     context.project_id,
@@ -286,10 +286,10 @@ async def test_review_serializes_with_other_governed_review(
             connection.execute(
                 """INSERT INTO workflow.analysis_result(
                        project_id, from_object_id, from_attribute_id, to_object_id,
-                       to_attribute_id, relationship_kind, relationship_confidence,
+                       to_attribute_id, relationship_kind,
                        relationship_basis)
                    SELECT %s, from_object_id, from_attribute_id, to_object_id,
-                          to_attribute_id, relationship_kind, relationship_confidence,
+                          to_attribute_id, relationship_kind,
                           relationship_basis
                      FROM workflow.analysis_result
                     WHERE analysis_result_id=%s RETURNING analysis_result_id""",

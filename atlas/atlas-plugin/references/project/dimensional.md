@@ -13,7 +13,7 @@ Write complete changed records as JSON arrays under `project-change-set/<dataset
 | `dimensional_attribute` | `dimensional_entity_schema_name` + `dimensional_entity_name` + `dimensional_attribute_name` |
 | `dimensional_relationship` | Both schema-qualified Entity/Attribute endpoints + `dimensional_relationship_kind` + nullable `dimensional_relationship_role_name` |
 
-Relationship **name is not its key**. Role and kind are key components; changing them changes identity. Use shared normalization and preserve existing spelling. Below, **name** is a nonblank string ≤255 characters, **text** is a nonblank string, **status** is `active`, `inactive` or `deprecated`, and **confidence** is `low`, `medium` or `high`. All dataset fields are required, including nullable fields.
+Relationship **name is not its key**. Role and kind are key components; changing them changes identity. Use shared normalization and preserve existing spelling. Below, **name** is a nonblank string ≤255 characters, **text** is a nonblank string, **status** is `active`, `inactive` or `deprecated`. All dataset fields are required, including nullable fields.
 
 ## Dimensional Submodel fields
 
@@ -35,7 +35,6 @@ Relationship **name is not its key**. Role and kind are key components; changing
 | `dimensional_fact_type` | Facts: `transaction`, `periodic_snapshot`, `accumulating_snapshot` or `factless`. Other Entity types: null. |
 | `dimensional_entity_grain_definition` | Text defining one row; required non-null for facts/bridges. Dimensions permit null in the schema; provide explicit grain for a complete design. |
 | `dimensional_entity_dependency_order` | Integer ≥0; modeled dependency order, not Process Group scheduling. |
-| `dimensional_entity_confidence` | Confidence. |
 | `dimensional_entity_status` | Status. |
 | `dimensional_entity_is_locked` | Boolean. |
 | `submodels` | Array of membership records below; `[]` is valid. |
@@ -51,21 +50,15 @@ Relationship **name is not its key**. Role and kind are key components; changing
 | `dimensional_attribute_definition` | Text defining meaning, units and relevant behavior. |
 | `dimensional_attribute_data_type` | Nonblank string ≤100 characters; approved modeled type, not a fixed schema enum. |
 | `dimensional_attribute_is_nullable` | Boolean; whether null is allowed. |
+| `dimensional_attribute_is_natural_key` | Boolean; participates in the complete business-key tuple. |
+| `dimensional_attribute_is_surrogate_key` | Boolean; generated own-row identifier. |
 | `dimensional_attribute_ordinal_position` | Integer >0; column position. |
-| `dimensional_attribute_role` | `key`, `descriptor`, `measure`, `degenerate_dimension`, `bridge_weight`, `technical` or `audit`. |
-| `dimensional_attribute_key_role` | `none`, `surrogate`, `business` or `foreign`. Any non-`none` value requires Attribute role `key` or `technical`. |
-| `dimensional_attribute_is_grain_component` | Boolean; participates in the declared row grain. |
-| `dimensional_attribute_additivity` | Measures: `additive`, `semi_additive` or `non_additive`. Other roles: null. |
-| `dimensional_attribute_default_aggregation` | Measures: nonblank string ≤100 characters describing the approved default aggregation. Other roles: null. |
-| `dimensional_attribute_aggregation_basis` | Text explaining valid aggregation dimensions/conditions; required for semi-/non-additive measures, optional for additive measures. Other roles: null. |
-| `dimensional_attribute_change_behavior` | `fixed`, `overwrite`, `historize` or null; intended change behavior, not an executable history implementation. |
-| `dimensional_attribute_is_audit_column` | Boolean; must equal whether Attribute role is `audit`. |
-| `dimensional_attribute_confidence` | Confidence. |
+| `dimensional_attribute_is_audit_column` | Boolean; identifies approved audit columns. |
 | `dimensional_attribute_status` | Status. |
 | `dimensional_attribute_is_locked` | Boolean. |
 | `sources` | Array of Logical Attribute or Context sources below; `[]` is valid. |
 
-The key role is one value, not several flags. Explain additional identity/grain meaning in the definition; do not invent `is_primary_key`, `is_natural_key` or `is_surrogate_key` fields. Multiple business-key Attributes describe a complete tuple. A generated surrogate does not by itself establish business grain. A `bridge_weight` is not a `measure` for these schema rules: its three measure-policy fields must be null; explain allocation semantics in its definition.
+Natural and surrogate flags are mutually exclusive; either requires non-nullability. Multiple natural-key Attributes describe a complete business-key tuple. A generated surrogate does not by itself establish business grain. Foreign-key participation comes from effective relationships; technical and audit fields follow the configured Project templates. Explain measure meaning, units, aggregation rules, grain participation and allocation semantics in the Attribute definition. History follows the Project's `dimensional_entity_scd_type`; no per-Attribute history choice exists.
 
 ## Dimensional Relationship fields
 
@@ -83,7 +76,6 @@ The key role is one value, not several flags. Explain additional identity/grain 
 | `dimensional_relationship_cardinality` | `one_to_one`, `one_to_many`, `many_to_one` or `many_to_many`, interpreted from → to. |
 | `dimensional_relationship_is_optional` | Boolean; explicit association optionality, distinct from cardinality. |
 | `dimensional_relationship_role_name` | Name or null; distinguishes meaningful roles such as OrderDate versus ShipDate. |
-| `dimensional_relationship_confidence` | Confidence. |
 | `dimensional_relationship_basis` | Text explaining meaning and evidence. |
 | `dimensional_relationship_cardinality_basis` | Text explaining multiplicity and any conditions needed to preserve it. |
 | `dimensional_relationship_status` | Status. |
@@ -101,7 +93,7 @@ Membership has exactly three required fields. An Entity may belong to multiple S
 | `membership_status` | Status. |
 | `membership_is_locked` | Boolean; independent nested lock. |
 
-Each source variant contains its one matching source field plus all applicable common fields. Only `source_order` may be omitted, defaulting to null; include it explicitly in complete authored records. Entity sources have seven fields; Attribute sources have six.
+Each source variant contains its one matching source field plus all applicable common fields. Only `source_order` may be omitted, defaulting to null; include it explicitly in complete authored records. Both Entity and Attribute sources have six fields.
 
 | Field | Accepted value / meaning |
 |---|---|
@@ -109,7 +101,6 @@ Each source variant contains its one matching source field plus all applicable c
 | `source_logical_entity` | Only Logical Entity variant: schema-qualified Logical Entity key below. |
 | `source_logical_attribute` | Only Logical Attribute variant: schema-qualified Logical Attribute key below. |
 | `context_record` | Only Context variant: object containing `context_record_id`. |
-| `source_role` | Required only on Entity sources, including Context records: name describing the contribution. Not a fixed enum. |
 | `source_order` | Positive integer or null; source ordering, not a unique identifier. |
 | `rationale` | Text explaining the contribution. |
 | `status` | Status. |
@@ -119,7 +110,7 @@ Logical Entity key: `logical_entity_schema_name` (nonblank string ≤400) and `l
 
 Sources refer directly to the current Project's applied Logical design. Target registration and Logical Mapping are separate downstream readiness concerns.
 
-Within one parent, each source type + normalized Logical/Context key is unique **regardless role or order**. Do not duplicate a source merely to assign a second role; describe its complete contribution once. Source arrays record provenance, not transformation SQL or join aliases.
+Within one parent, each source type + normalized Logical/Context key is unique **regardless order**. Describe each source's complete contribution once in its rationale. Source arrays record provenance, not transformation SQL or join aliases.
 
 ## Scope and current enforcement
 
@@ -137,15 +128,15 @@ These are design/local-validation requirements; current record-schema validation
 
 | Check | Why it matters |
 |---|---|
-| One own generated BIGINT surrogate first; approved key naming, nullability and audit policy | Dimensional key-role flags do not enforce these requirements. |
+| One own generated BIGINT surrogate first; approved key naming, nullability and audit policy | Key flags alone do not enforce the complete layout. |
 | Unique active ordinals and complete target columns | Positive ordinals alone permit duplicate positions and missing columns. |
 | Complete business key, row grain and compatible key types | Flags/edge existence cannot prove identity or correct joins. |
-| Measure meaning, additivity and aggregation at the stated grain | Valid enum values do not prevent double-counting or invalid totals. |
+| Measure meaning, additivity and aggregation at the stated grain | Definitions must explain valid totals and prevent double-counting. |
 | Active memberships and applicable sources resolve to usable records | Reference existence is weaker than active evidence. |
 | Relationships preserve grain, including complete composite/history predicates | Each record has only one Attribute per endpoint. |
-| History behavior has an executable consumer contract before Mapping/code | `historize` does not prove that the framework implements Type 2. |
+| History behavior has an executable consumer contract before Mapping/code | A Project Type 2 setting does not prove that the framework implements loading. |
 
-No dedicated SCD type, effective-date, current-row, unknown-member, late-arrival, allocation or bridge-policy fields exist. Use approved modeled technical Attributes/templates plus concise definitions/bases; do not invent payload fields or assume generic `IsActive` implements history. The user confirms Type 1/Type 2 support and framework population of the configured Type 2 fields using natural keys; [history rules](../dimensional-build/history.md) own this population contract.
+Entity/Attribute records have no dedicated SCD type, effective-date, current-row, unknown-member, late-arrival, allocation or bridge-policy fields. The Project supplies `dimensional_entity_scd_type` for dimensions; facts and bridges do not inherit dimension history. Use approved modeled technical Attributes/templates plus concise definitions/bases; do not invent payload fields or assume generic `IsActive` implements history. The user confirms Type 1/Type 2 support and framework population of the configured Type 2 fields using natural keys; [history rules](../dimensional-build/history.md) own this population contract.
 
 ## Complete synthetic records
 
@@ -168,11 +159,10 @@ These examples illustrate record shapes, not a complete new table build. Assume 
     "dimensional_fact_type": "transaction",
     "dimensional_entity_grain_definition": "One completed order line within its originating System.",
     "dimensional_entity_dependency_order": 1,
-    "dimensional_entity_confidence": "high",
     "dimensional_entity_status": "active",
     "dimensional_entity_is_locked": false,
     "submodels": [{"submodel_name":"Sales","membership_status":"active","membership_is_locked":false}],
-    "sources": [{"support_source_type":"logical_entity","source_logical_entity":{"logical_entity_schema_name":"silver","logical_entity_name":"OrderLine"},"source_role":"SalesEvents","source_order":1,"rationale":"Synthetic completed order lines supply the fact grain and line measures.","status":"active","is_locked":false}]
+    "sources": [{"support_source_type":"logical_entity","source_logical_entity":{"logical_entity_schema_name":"silver","logical_entity_name":"OrderLine"},"source_order":1,"rationale":"Synthetic completed order lines supply the fact grain and line measures.","status":"active","is_locked":false}]
   }
 ]
 ```
@@ -184,19 +174,13 @@ These examples illustrate record shapes, not a complete new table build. Assume 
   {
     "dimensional_entity_schema_name": "gold", "dimensional_entity_name": "SalesLine",
     "dimensional_attribute_name": "Quantity",
-    "dimensional_attribute_definition": "Number of units sold on this completed order line, in the governed common unit.",
+    "dimensional_attribute_definition": "Number of units sold on this completed order line, in the governed common unit. SUM is valid across associated dimensions because sale lines are disjoint.",
     "dimensional_attribute_data_type": "DECIMAL(18,4)",
     "dimensional_attribute_is_nullable": false,
+    "dimensional_attribute_is_natural_key": false,
+    "dimensional_attribute_is_surrogate_key": false,
     "dimensional_attribute_ordinal_position": 5,
-    "dimensional_attribute_role": "measure",
-    "dimensional_attribute_key_role": "none",
-    "dimensional_attribute_is_grain_component": false,
-    "dimensional_attribute_additivity": "additive",
-    "dimensional_attribute_default_aggregation": "SUM",
-    "dimensional_attribute_aggregation_basis": "Synthetic policy defines one common unit and disjoint sale lines, allowing summation across the associated dimensions.",
-    "dimensional_attribute_change_behavior": null,
     "dimensional_attribute_is_audit_column": false,
-    "dimensional_attribute_confidence": "high",
     "dimensional_attribute_status": "active",
     "dimensional_attribute_is_locked": false,
     "sources": [{"support_source_type":"logical_attribute","source_logical_attribute":{"logical_entity_schema_name":"silver","logical_entity_name":"OrderLine","logical_attribute_name":"Quantity"},"source_order":1,"rationale":"Preserves the governed line quantity.","status":"active","is_locked":false}]
@@ -219,7 +203,6 @@ These examples illustrate record shapes, not a complete new table build. Assume 
     "dimensional_relationship_cardinality": "many_to_one",
     "dimensional_relationship_is_optional": false,
     "dimensional_relationship_role_name": "Purchaser",
-    "dimensional_relationship_confidence": "high",
     "dimensional_relationship_basis": "Synthetic policy requires every completed line to resolve its purchasing Customer surrogate.",
     "dimensional_relationship_cardinality_basis": "Many completed lines can reference one unique Customer row; inferred from the declared business roles, without SQL execution.",
     "dimensional_relationship_status": "active",

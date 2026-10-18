@@ -1386,7 +1386,6 @@ async def test_web_change_set_requires_lock_and_applies_with_null_provenance(
                 "conceptual_object_type": object_type,
                 "conceptual_object_grain": f"One {name.lower()}.",
                 "conceptual_object_aliases": [],
-                "conceptual_object_confidence": "high",
                 "conceptual_object_status": "active",
                 "conceptual_object_is_locked": False,
                 "supports": [],
@@ -1684,7 +1683,6 @@ async def test_workflow_handoff_rolls_back_invalid_output_then_replays_one_bound
                 "conceptual_relationship_cardinality": "many_to_one",
                 "conceptual_relationship_basis": "Business rule.",
                 "conceptual_relationship_cardinality_basis": "Many orders per customer.",
-                "conceptual_relationship_confidence": "high",
                 "conceptual_relationship_status": "active",
                 "conceptual_relationship_is_locked": False,
                 "supports": [],
@@ -1700,7 +1698,6 @@ async def test_workflow_handoff_rolls_back_invalid_output_then_replays_one_bound
                 "conceptual_object_type": "party",
                 "conceptual_object_grain": "One customer.",
                 "conceptual_object_aliases": [],
-                "conceptual_object_confidence": "high",
                 "conceptual_object_status": "active",
                 "conceptual_object_is_locked": False,
                 "supports": [],
@@ -1901,7 +1898,6 @@ async def test_workflow_finalization_is_atomic_and_rejects_completed_claim_reuse
                 "conceptual_object_type": "party",
                 "conceptual_object_grain": "One customer.",
                 "conceptual_object_aliases": [],
-                "conceptual_object_confidence": "high",
                 "conceptual_object_status": "active",
                 "conceptual_object_is_locked": False,
                 "supports": [],
@@ -3060,7 +3056,6 @@ async def test_completed_analysis_draft_applies_once_and_preserves_validation(
                 to_object_id,
                 to_attribute_id,
                 relationship_kind,
-                relationship_confidence,
                 relationship_basis,
                 validation_policy_version,
                 validation_policy_digest,
@@ -3076,7 +3071,7 @@ async def test_completed_analysis_draft_applies_once_and_preserves_validation(
                 analysis_result_is_locked
             ) VALUES (
                 %s, 'legacy-agent-run', NULL, %s, %s, %s, %s, %s, %s,
-                'reference', 'high', 'Prior inference basis.',
+                'reference', 'Prior inference basis.',
                 %s, %s, 'supported', 9, 5, 10, 10, 0, 5, 0,
                 'active', FALSE
             )
@@ -3181,7 +3176,6 @@ async def test_completed_analysis_draft_applies_once_and_preserves_validation(
                        target_project.project_revision,
                        result.agent_run_id,
                        result.inference_workflow_run_id,
-                       result.relationship_confidence,
                        result.relationship_basis
                   FROM mcp.project_change_set AS change_set
                   JOIN project.project AS target_project
@@ -3197,7 +3191,6 @@ async def test_completed_analysis_draft_applies_once_and_preserves_validation(
             "project_revision": 1,
             "agent_run_id": "legacy-agent-run",
             "inference_workflow_run_id": None,
-            "relationship_confidence": "high",
             "relationship_basis": "Prior inference basis.",
         }
 
@@ -3234,7 +3227,6 @@ async def test_completed_analysis_draft_applies_once_and_preserves_validation(
                    result.inference_workflow_run_id,
                    result.validation_workflow_run_id,
                    result.validation_source_context_digest,
-                   result.relationship_confidence,
                    result.relationship_basis,
                    result.validation_policy_version,
                    result.validation_policy_digest,
@@ -3285,7 +3277,6 @@ async def test_completed_analysis_draft_applies_once_and_preserves_validation(
         "inference_workflow_run_id": workflow_run_id,
         "validation_workflow_run_id": validation_workflow_run_id,
         "validation_source_context_digest": validation_source_context_digest,
-        "relationship_confidence": "medium",
         "relationship_basis": ("Selected Attribute metadata supports this candidate."),
         "validation_policy_version": validation_policy_version,
         "validation_policy_digest": validation_policy_digest,

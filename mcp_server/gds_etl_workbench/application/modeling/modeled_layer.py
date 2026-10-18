@@ -13,7 +13,6 @@ class LayerConfig:
     entity_fields: tuple[str, ...]
     attribute_fields: tuple[str, ...]
     relationship_fields: tuple[str, ...]
-    entity_source_role_column: str | None
 
     @property
     def submodel_table(self) -> str:
@@ -76,7 +75,6 @@ LOGICAL = LayerConfig(
         "logical_entity_type_detail",
         "logical_entity_grain",
         "logical_entity_dependency_order",
-        "logical_entity_confidence",
         "logical_entity_status",
         "logical_entity_is_locked",
     ),
@@ -96,13 +94,11 @@ LOGICAL = LayerConfig(
         "logical_relationship_name",
         "logical_relationship_definition",
         "logical_relationship_cardinality",
-        "logical_relationship_confidence",
         "logical_relationship_basis",
         "logical_relationship_cardinality_basis",
         "logical_relationship_status",
         "logical_relationship_is_locked",
     ),
-    entity_source_role_column=None,
 )
 
 DIMENSIONAL = LayerConfig(
@@ -121,7 +117,6 @@ DIMENSIONAL = LayerConfig(
         "dimensional_fact_type",
         "dimensional_entity_grain_definition",
         "dimensional_entity_dependency_order",
-        "dimensional_entity_confidence",
         "dimensional_entity_status",
         "dimensional_entity_is_locked",
     ),
@@ -131,15 +126,9 @@ DIMENSIONAL = LayerConfig(
         "dimensional_attribute_data_type",
         "dimensional_attribute_is_nullable",
         "dimensional_attribute_ordinal_position",
-        "dimensional_attribute_role",
-        "dimensional_attribute_key_role",
-        "dimensional_attribute_is_grain_component",
-        "dimensional_attribute_additivity",
-        "dimensional_attribute_default_aggregation",
-        "dimensional_attribute_aggregation_basis",
-        "dimensional_attribute_change_behavior",
+        "dimensional_attribute_is_natural_key",
+        "dimensional_attribute_is_surrogate_key",
         "dimensional_attribute_is_audit_column",
-        "dimensional_attribute_confidence",
         "dimensional_attribute_status",
         "dimensional_attribute_is_locked",
     ),
@@ -150,13 +139,11 @@ DIMENSIONAL = LayerConfig(
         "dimensional_relationship_cardinality",
         "dimensional_relationship_is_optional",
         "dimensional_relationship_role_name",
-        "dimensional_relationship_confidence",
         "dimensional_relationship_basis",
         "dimensional_relationship_cardinality_basis",
         "dimensional_relationship_status",
         "dimensional_relationship_is_locked",
     ),
-    entity_source_role_column="dimensional_entity_source_role",
 )
 
 
@@ -188,11 +175,6 @@ def entities_sql(config: LayerConfig, *, historical: bool = False) -> LiteralStr
         return _dimensional_records_sql(attributes=False, historical=historical)
     selected = _select_fields("entity", config.entity_fields)
     eligibility_field = "is_project_input_eligible"
-    role_field = (
-        f"'source_role', source.{config.entity_source_role_column},"
-        if config.entity_source_role_column is not None
-        else ""
-    )
     # Snapshot evidence requires ownership and existence, independent of authoring eligibility.
     object_scope = (
         """
@@ -258,7 +240,6 @@ SELECT entity.{config.entity_id},
                                   'object_schema', source_object.object_schema,
                                   'object_name', source_object.object_name
                               ),
-                              {role_field}
                               'source_order',
                                   source.{config.layer}_entity_source_mapping_order,
                               'rationale',
@@ -276,7 +257,6 @@ SELECT entity.{config.entity_id},
                                   'context_record_id',
                                       context_record.context_record_id
                               ),
-                              {role_field}
                               'source_order',
                                   source.{config.layer}_entity_source_mapping_order,
                               'rationale',
@@ -581,7 +561,6 @@ def _dimensional_records_sql(*, attributes: bool, historical: bool) -> LiteralSt
        ), '[]'::JSONB) AS submodels,
 """
     )
-    role = "" if attributes else "'source_role', source.dimensional_entity_source_role,"
     key_attribute = (
         ",'logical_attribute_id', logical_attribute.logical_attribute_id, "
         "'logical_attribute_name', logical_attribute.logical_attribute_name"
@@ -643,7 +622,6 @@ SELECT {identity}
                jsonb_build_object(
                    '{kind}_source_mapping_id', source.dimensional_{kind}_source_mapping_id,
                    'support_source_type', source.support_source_type,
-                   {role}
                    'source_order', source.dimensional_{kind}_source_mapping_order,
                    'rationale', source.dimensional_{kind}_source_mapping_rationale,
                    'status', source.dimensional_{kind}_source_mapping_status,

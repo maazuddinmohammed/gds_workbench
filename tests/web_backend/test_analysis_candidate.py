@@ -45,7 +45,6 @@ def _candidate(
         "to_attribute_name": "customer_id",
         "relationship_kind": "reference",
         "inferred_cardinality": "unknown",
-        "relationship_confidence": "high",
         "relationship_basis": basis,
     }
     record.update(extra or {})
@@ -252,12 +251,12 @@ async def test_duplicate_unchanged_locked_relationship_is_a_noop() -> None:
 
 
 @pytest.mark.asyncio
-async def test_duplicate_with_conflicting_confidence_requires_correction() -> None:
+async def test_duplicate_with_conflicting_basis_requires_correction() -> None:
     validator = _validator()
     candidate: JsonValue = {
         "relationships": [
             _candidate(),
-            _candidate(extra={"relationship_confidence": "medium"}),
+            _candidate(basis="Different evidence."),
         ]
     }
 

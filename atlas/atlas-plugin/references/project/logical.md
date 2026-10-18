@@ -13,7 +13,7 @@ Write complete changed records as JSON arrays under `project-change-set/<dataset
 | `logical_attribute` | `logical_entity_schema_name` + `logical_entity_name` + `logical_attribute_name` |
 | `logical_relationship` | Both schema-qualified Entity/Attribute endpoints + `logical_relationship_name` |
 
-Use shared key normalization; preserve existing spelling. Below, **name** means nonblank string ≤255 characters, **text** means nonblank string, **status** means `active`, `inactive` or `deprecated`, and **confidence** means `low`, `medium` or `high`. All dataset fields are required, even when nullable.
+Use shared key normalization; preserve existing spelling. Below, **name** means nonblank string ≤255 characters, **text** means nonblank string, **status** means `active`, `inactive` or `deprecated`. All dataset fields are required, even when nullable.
 
 ## Logical Submodel fields
 
@@ -43,7 +43,6 @@ does not rewrite existing Entities or migrate data.
 | `logical_entity_type_detail` | Text only when type is `other`; otherwise null. |
 | `logical_entity_grain` | Text explaining one row's business occurrence. |
 | `logical_entity_dependency_order` | Integer ≥0; modeled Entity dependency order, not Process Group scheduling. |
-| `logical_entity_confidence` | Confidence. |
 | `logical_entity_status` | Status. |
 | `logical_entity_is_locked` | Boolean. |
 | `submodels` | Array of membership records below; `[]` is schema-valid. |
@@ -82,7 +81,6 @@ An Attribute cannot be both natural and surrogate key. Any natural/surrogate fla
 | `to_logical_entity_name` | Name of the to Entity. |
 | `to_logical_attribute_name` | Name of the to Attribute in that Entity. |
 | `logical_relationship_cardinality` | `one_to_one`, `one_to_many`, `many_to_one` or `many_to_many`, interpreted from → to. |
-| `logical_relationship_confidence` | Confidence. |
 | `logical_relationship_basis` | Text explaining evidence and meaning; distinguish inference from measurements. |
 | `logical_relationship_cardinality_basis` | Text explaining the specified multiplicity. |
 | `logical_relationship_status` | Status. |
@@ -151,7 +149,6 @@ These small examples illustrate record shape, not a complete table build. Assume
     "logical_entity_type_detail": null,
     "logical_entity_grain": "One purchasing person or organization in the governed business identity domain.",
     "logical_entity_dependency_order": 0,
-    "logical_entity_confidence": "high",
     "logical_entity_status": "active",
     "logical_entity_is_locked": false,
     "submodels": [{"submodel_name":"Sales","membership_status":"active","membership_is_locked":false}],
@@ -193,7 +190,6 @@ These small examples illustrate record shape, not a complete table build. Assume
     "to_logical_entity_schema_name": "silver", "to_logical_entity_name": "Customer",
     "to_logical_attribute_name": "CustomerID",
     "logical_relationship_cardinality": "many_to_one",
-    "logical_relationship_confidence": "high",
     "logical_relationship_basis": "Synthetic metadata identifies one purchasing Customer reference on each Order; the logical foreign key resolves that Customer's surrogate.",
     "logical_relationship_cardinality_basis": "Infer many Orders to one Customer from these business roles. SQL was not run.",
     "logical_relationship_status": "active",

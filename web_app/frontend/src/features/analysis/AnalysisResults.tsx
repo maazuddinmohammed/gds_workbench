@@ -119,15 +119,6 @@ export function AnalysisResults({
       {row.original.cardinality_mismatch ? <span className="status-badge is-warning" title="Recorded counts differ from the inference. Review the evidence; measured data does not establish a business constraint.">Differs from inference</span> : null}
     </> },
     {
-      accessorKey: "relationship_confidence",
-      header: "Confidence",
-      cell: ({ getValue }) => (
-        <span className={`status-badge confidence-${getValue<string>()}`}>
-          {getValue<string>()}
-        </span>
-      ),
-    },
-    {
       accessorKey: "from_row_count", header: "A count",
       cell: ({ row }) => row.original.from_row_count?.toLocaleString() ?? "Not profiled",
     },

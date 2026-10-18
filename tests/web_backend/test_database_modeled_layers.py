@@ -189,10 +189,9 @@ async def test_logical_and_dimensional_reads_round_trip_through_web_role(
                     logical_entity_definition,
                     logical_entity_type,
                     logical_entity_grain,
-                    logical_entity_confidence,
                     logical_entity_status
                 ) VALUES (%s, 'silver', 'Customer', 'A governed Customer.', 'core',
-                          'One Customer', 'high', 'active')
+                          'One Customer', 'active')
                 RETURNING logical_entity_id
                 """,
                 (project_id,),
@@ -350,10 +349,9 @@ async def test_logical_and_dimensional_reads_round_trip_through_web_role(
                     dimensional_entity_type,
                     dimensional_fact_type,
                     dimensional_entity_grain_definition,
-                    dimensional_entity_confidence,
                     dimensional_entity_status
                 ) VALUES (%s, 'gold', 'Fact Order', 'Submitted Orders.', 'fact',
-                          'transaction', 'One submitted Order', 'high',
+                          'transaction', 'One submitted Order',
                           'active')
                 RETURNING dimensional_entity_id
                 """,
@@ -394,10 +392,9 @@ async def test_logical_and_dimensional_reads_round_trip_through_web_role(
                 dimensional_entity_id,
                 support_source_type,
                 context_record_id,
-                dimensional_entity_source_role,
                 dimensional_entity_source_mapping_rationale,
                 dimensional_entity_source_mapping_status
-            ) VALUES (%s, %s, 'context_record', %s, 'grain_rule',
+            ) VALUES (%s, %s, 'context_record', %s,
                       'Defines Fact Order grain.', 'inactive')
             """,
             (project_id, fact_id, context_record_id),
@@ -412,12 +409,9 @@ async def test_logical_and_dimensional_reads_round_trip_through_web_role(
                     dimensional_attribute_definition,
                     dimensional_attribute_data_type,
                     dimensional_attribute_is_nullable,
-                    dimensional_attribute_ordinal_position,
-                    dimensional_attribute_role,
-                    dimensional_attribute_key_role,
-                    dimensional_attribute_is_grain_component
+                    dimensional_attribute_ordinal_position
                 ) VALUES (%s, %s, 'Customer Key', 'Customer foreign key.',
-                          'BIGINT', FALSE, 1, 'key', 'foreign', TRUE)
+                          'BIGINT', FALSE, 1)
                 RETURNING dimensional_attribute_id
                 """,
                 (project_id, fact_id),
@@ -435,10 +429,9 @@ async def test_logical_and_dimensional_reads_round_trip_through_web_role(
                     dimensional_attribute_data_type,
                     dimensional_attribute_is_nullable,
                     dimensional_attribute_ordinal_position,
-                    dimensional_attribute_role,
-                    dimensional_attribute_key_role
+                    dimensional_attribute_is_surrogate_key
                 ) VALUES (%s, %s, 'Customer Key', 'Customer surrogate key.',
-                          'BIGINT', FALSE, 1, 'key', 'surrogate')
+                          'BIGINT', FALSE, 1, TRUE)
                 RETURNING dimensional_attribute_id
                 """,
                 (project_id, dimension_id),

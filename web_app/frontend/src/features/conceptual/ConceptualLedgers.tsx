@@ -74,11 +74,6 @@ export function ConceptualObjectsLedger({
       ),
     },
     {
-      accessorKey: "conceptual_object_confidence",
-      header: "Confidence",
-      cell: ({ getValue }) => <ConfidenceBadge confidence={getValue<string>()} />,
-    },
-    {
       accessorKey: "conceptual_object_status",
       header: "Status",
       cell: ({ getValue }) => humanize(getValue<string>()),
@@ -189,11 +184,6 @@ export function ConceptualRelationshipsLedger({
       accessorKey: "conceptual_relationship_cardinality",
       header: "Cardinality",
       cell: ({ getValue }) => humanize(getValue<string>()),
-    },
-    {
-      accessorKey: "conceptual_relationship_confidence",
-      header: "Confidence",
-      cell: ({ getValue }) => <ConfidenceBadge confidence={getValue<string>()} />,
     },
     {
       accessorKey: "conceptual_relationship_status",
@@ -426,13 +416,6 @@ function ConceptualLedgerSurface<T>({
   );
 }
 
-function ConfidenceBadge({ confidence }: { confidence: string }) {
-  return (
-    <span className={`status-badge confidence-${confidence}`}>
-      {humanize(confidence)}
-    </span>
-  );
-}
 
 function humanize(value: string): string {
   return value.replaceAll("_", " ").replace(/^./, (character) => character.toLocaleUpperCase());

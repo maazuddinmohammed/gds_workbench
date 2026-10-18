@@ -918,7 +918,6 @@ def test_analysis_inferred_cardinality_uses_published_schema_and_preserves_measu
                 )
             },
             "relationship_kind": "reference",
-            "relationship_confidence": "high",
             "relationship_basis": "Orders reference customers; cardinality is inferred separately.",
             "analysis_result_status": "active",
             "analysis_result_is_locked": False,

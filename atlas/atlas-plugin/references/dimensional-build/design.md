@@ -32,9 +32,9 @@ This sequence follows [Kimball's four design decisions](https://www.kimballgroup
 
 Choose the pattern from behavior, not its table name. The first three have different time/row semantics; see [Kimball fact-table patterns](https://www.kimballgroup.com/2008/11/fact-tables/). Factless is an additional supported Atlas fact-type value; it does not by itself specify whether rows mean events or coverage.
 
-For each measure, record its meaning, units/currency, supported type/precision, additivity and default aggregation. Name valid axes for a semi-additive measure: an account balance may sum across accounts but not across dates. Ratios need a valid calculation basis, often summed numerator/denominator rather than averaging row ratios. Do not sum identifiers, mix currencies/units or manufacture a default aggregation. See [additivity guidance](https://www.kimballgroup.com/data-warehouse-business-intelligence-resources/kimball-techniques/dimensional-modeling-techniques/additive-semi-additive-non-additive-fact/).
+For each measure, describe its meaning, units/currency, supported type/precision, additivity and default aggregation in its Attribute definition. Name valid axes for a semi-additive measure: an account balance may sum across accounts but not across dates. Ratios need a valid calculation basis, often summed numerator/denominator rather than averaging row ratios. Do not sum identifiers, mix currencies/units or manufacture a default aggregation. See [additivity guidance](https://www.kimballgroup.com/data-warehouse-business-intelligence-resources/kimball-techniques/dimensional-modeling-techniques/additive-semi-additive-non-additive-fact/).
 
-The schema requires aggregation fields for measures and a basis for semi/non-additive measures. Preserve that exact shape. Non-measure Attributes cannot carry measure-policy fields. Bridge weights have their own role; keep their allocation meaning in supported definitions/basis rather than incompatible measure fields.
+The Attribute definition holds aggregation conditions and the basis for semi/non-additive measures. Bridge weights likewise explain allocation meaning in their definitions. These are business rules in prose; there are no separate role or measure-policy fields.
 
 ## Relationships, history and bridges
 
@@ -47,7 +47,7 @@ The schema requires aggregation fields for measures and a basis for semi/non-add
 ## Lineage, standalone structures and Submodels
 
 - Trace derived Entity/Attribute sources to applied Logical Entities/Attributes using schema-qualified keys. Every Attribute's Logical source needs its corresponding Logical Entity source on the Dimensional Entity; source ordering is not executable transformation logic.
-- Use multiple real contributors where needed, with concise contribution roles/rationale. Do not duplicate the same source key merely to label a second role. Keep reconciliation or generation decisions available for later Mapping.
+- Use multiple real contributors where needed, with concise contribution rationale. Do not duplicate the same source key merely to label a second role. Keep reconciliation or generation decisions available for later Mapping.
 - Calendar, constant/reference sets and other justified generated structures can have empty sources. Define calendar grain/range/fiscal rules or the constant values/meanings and change ownership. Use an applicable [Context](../project/context.md) when useful, never just to satisfy an imagined support requirement. Do not fabricate an Object or System.
 - A source-less design still needs a supported population/provenance path before executable Mapping/Code. Current Mapping requires a real source-System context; do not hide this gap with a fake `SourceSystemID` or promise unsupported execution.
 - Group Submodels around useful business processes. One small cohesive project may need no split; avoid one group per table/System or speculative empty groups. Share each dimension through memberships, preserving cross-process relationships and active/locked state.

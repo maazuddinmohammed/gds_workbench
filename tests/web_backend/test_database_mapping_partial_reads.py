@@ -82,9 +82,9 @@ async def test_partial_mapping_reads_preserve_missing_attributes_and_empty_pair_
         )
         connection.execute(
             sql.SQL("""
-            INSERT INTO workflow.{} (project_id, {}, {}, {}, {}, {}, {}, {}{})
-            VALUES (%s,%s,'postal_code','Postal code','string',2,'active',TRUE{}),
-                   (%s,%s,'retired','Retired field','string',3,'inactive',FALSE{})
+            INSERT INTO workflow.{} (project_id, {}, {}, {}, {}, {}, {}, {})
+            VALUES (%s,%s,'postal_code','Postal code','string',2,'active',TRUE),
+                   (%s,%s,'retired','Retired field','string',3,'inactive',FALSE)
         """).format(
                 *(
                     sql.Identifier(value)
@@ -99,11 +99,6 @@ async def test_partial_mapping_reads_preserve_missing_attributes_and_empty_pair_
                         f"{layer}_attribute_is_locked",
                     )
                 ),
-                sql.SQL(
-                    ", dimensional_attribute_role" if layer == "dimensional" else ""
-                ),
-                sql.SQL(", 'descriptor'" if layer == "dimensional" else ""),
-                sql.SQL(", 'descriptor'" if layer == "dimensional" else ""),
             ),
             (project_id, entity_id, project_id, entity_id),
         )

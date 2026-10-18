@@ -21,10 +21,10 @@ logical_attribute_is_audit_column = false
 logical_attribute_ordinal_position = 1
 ```
 
-A Dimensional own surrogate uses `dimensional_attribute_key_role="surrogate"`, a permitted key/technical role, non-nullability and ordinal 1. Use its published dataset schema for the remaining fields; Logical boolean key flags are not Dimensional fields.
+A Dimensional own surrogate uses the same flags with the `dimensional_attribute_` prefix: surrogate true, natural false, nullable false, audit false and ordinal 1. Foreign-key participation comes from effective relationships, not another attribute flag.
 
 - A surrogate does not prove uniqueness of the business grain, deduplicate repeated loads or reconcile customers across Systems. Retain the complete business-key definition and supporting evidence.
-- Mark each component of an evidenced Logical natural-key tuple as natural; the tuple is the identifier, not necessarily each component alone. Do not mark the generated surrogate as natural. Logical natural/surrogate flags require non-nullability under the current schema.
+- Mark each component of an evidenced natural-key tuple as natural; the tuple is the identifier, not necessarily each component alone. Do not mark the generated surrogate as natural. Both layers' natural/surrogate flags require non-nullability under the current schema.
 - Do not relabel a source business identifier as the target's generated key. Preserve actual physical source names and keys in lineage. If a source identifier collides with the generated name, choose a meaningful distinct modeled name under the naming guide; never silently merge the two meanings.
 
 ## Audit policy

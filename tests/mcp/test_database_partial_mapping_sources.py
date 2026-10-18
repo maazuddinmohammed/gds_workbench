@@ -90,9 +90,6 @@ def test_partial_mapping_is_not_an_executable_modeled_source(
                 f"{source_layer}_attribute_ordinal_position",
             ]
             values = [entity_ids[0], name, "Synthetic source field", "STRING", ordinal]
-            if source_layer == "dimensional":
-                columns.append("dimensional_attribute_role")
-                values.append("descriptor")
             attribute = _required_row(
                 connection.execute(
                     sql.SQL(

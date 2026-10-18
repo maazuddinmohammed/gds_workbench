@@ -79,7 +79,6 @@ SAFE_CONTEXT_COLUMNS = {
     "analysis_result_id",
     "relationship_kind",
     "inferred_cardinality",
-    "relationship_confidence",
     "relationship_basis",
     "analysis_result_status",
     "analysis_result_is_locked",
@@ -214,11 +213,10 @@ def _seed_analysis_validation(
                         to_attribute_id,
                         relationship_kind,
                         inferred_cardinality,
-                        relationship_confidence,
                         relationship_basis,
                         analysis_result_status,
                         analysis_result_is_locked
-                    ) VALUES (%s, %s, %s, %s, %s, %s, 'many_to_one', 'medium', %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, 'many_to_one', %s, %s, %s)
                     RETURNING analysis_result_id
                     """,
                     (
@@ -426,7 +424,6 @@ def test_running_analysis_validation_context_is_safe_exact_and_lock_agnostic(
             "analysis_result_id": result_id,
             "relationship_kind": kind,
             "inferred_cardinality": "many_to_one",
-            "relationship_confidence": "medium",
             "relationship_basis": (
                 "Analysis validation relationship "
                 f"{1 if result_id == seed.active_result_id else 2}."
@@ -859,7 +856,6 @@ def test_analysis_validation_results_replace_only_validation_fields_and_replay(
                    validation_source_context_digest,
                    relationship_kind,
                    inferred_cardinality,
-                   relationship_confidence,
                    relationship_basis,
                    validation_policy_version,
                    validation_policy_digest,
@@ -979,7 +975,6 @@ def test_analysis_validation_results_replace_only_validation_fields_and_replay(
     active = stored_by_id[seed.active_result_id]
     assert active["relationship_kind"] == "reference"
     assert active["inferred_cardinality"] == "many_to_one"
-    assert active["relationship_confidence"] == "medium"
     assert active["relationship_basis"] == "Analysis validation relationship 1."
     assert active["analysis_result_status"] == "active"
     assert active["analysis_result_is_locked"] is False

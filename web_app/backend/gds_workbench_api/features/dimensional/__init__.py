@@ -2,7 +2,6 @@
 
 from gds_workbench_api.features.logical import (
     Cardinality,
-    Confidence,
     ContextRecordReference,
     ContractModel,
     ModeledFilters,
@@ -56,7 +55,6 @@ from .service import DimensionalExecutionFailedError, DimensionalWorkflow
 __all__ = [
     "ContextRecordReference",
     "Cardinality",
-    "Confidence",
     "ContractModel",
     "DimensionalWorkflow",
     "DatabaseDimensionalService",

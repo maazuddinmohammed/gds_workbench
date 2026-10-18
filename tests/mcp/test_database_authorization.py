@@ -662,10 +662,9 @@ def test_dimensional_entity_source_accepts_a_context_record(
                 dimensional_entity_id,
                 support_source_type,
                 context_record_id,
-                dimensional_entity_source_role,
                 dimensional_entity_source_mapping_rationale
             )
-            VALUES (%s, %s, 'context_record', %s, 'business_basis',
+            VALUES (%s, %s, 'context_record', %s,
                     'The Context Record establishes the reusable Dimension.')
             RETURNING support_source_type,
                       source_logical_entity_id,
@@ -719,11 +718,10 @@ def test_dimensional_attribute_source_accepts_a_context_record(
                 dimensional_attribute_name,
                 dimensional_attribute_definition,
                 dimensional_attribute_data_type,
-                dimensional_attribute_ordinal_position,
-                dimensional_attribute_role
+                dimensional_attribute_ordinal_position
             )
             VALUES (%s, %s, 'Customer Segment', 'Reporting segment.',
-                    'varchar(100)', 1, 'descriptor')
+                    'varchar(100)', 1)
             RETURNING dimensional_attribute_id
             """,
             (project_id, dimensional_entity["dimensional_entity_id"]),

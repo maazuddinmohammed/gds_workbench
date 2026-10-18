@@ -15,7 +15,6 @@ from gds_etl_workbench.domain.modeling_records import (
     ANALYSIS_VALIDATION_FIELDS,
     AnalysisResultRecord,
     Code100,
-    Confidence,
     InferredCardinality,
     Name400,
     NonblankText,
@@ -57,7 +56,6 @@ class AnalysisInferenceRelationship(BaseModel):
         str,
         StringConstraints(min_length=1, max_length=100, pattern=r"\S"),
     ]
-    relationship_confidence: Confidence
     relationship_basis: NonblankText
     inferred_cardinality: InferredCardinality
 
@@ -132,12 +130,11 @@ class AnalysisInferenceCandidateValidator:
             )
 
         issues: list[AgentValidationIssue] = []
-        seen: dict[tuple[str, ...], tuple[int, tuple[str, str, str]]] = {}
+        seen: dict[tuple[str, ...], tuple[int, tuple[str, str]]] = {}
         raw_records: list[dict[str, object]] = []
         for index, candidate_record in enumerate(parsed.relationships):
             key = _relationship_key(candidate_record)
             content = (
-                candidate_record.relationship_confidence,
                 candidate_record.relationship_basis,
                 candidate_record.inferred_cardinality,
             )

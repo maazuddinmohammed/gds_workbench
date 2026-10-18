@@ -85,6 +85,27 @@ There is no second record key or classification, stored layer restriction,
 confidence field or JSON import/detail metadata. Consumers assess relevance and
 active evidence without treating a Context Record as proof of physical lineage.
 
+## Logical-style Dimensional fields and evidence
+
+Workflow records omit AI-assigned confidence fields. Analysis retains inference
+reasoning and independently measured validation; Conceptual support retains its
+source, role and reason.
+
+Dimensional Attributes share Logical's natural-key, surrogate-key and audit flags.
+Natural and surrogate flags are mutually exclusive; either requires non-nullable
+data. Entity type, fact subtype, entity grain and relationship details remain.
+Definitions carry measure meaning, units and valid aggregation conditions instead
+of separate attribute-role, grain-component and aggregation fields. Entity source
+mappings retain typed Logical/Context references and contribution rationale, without
+a separate source-role label.
+
+The Project Dimensional SCD setting is authoritative for history. Backend policy
+projects configured history columns for Type 2 Dimensions; per-Attribute history
+exceptions are not represented. Framework keys and audit columns remain protected
+through configured templates and the effective relationship graph. Removing schema
+fields does not relax Project ownership, Tenant Locks, revisions or idempotency.
+These are fresh-install contract changes, not a populated-database migration.
+
 ## Plugin settings and enrichment
 
 Project identity is immutable through Change Sets. Project description and allowed

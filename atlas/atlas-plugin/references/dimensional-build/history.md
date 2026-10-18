@@ -4,16 +4,9 @@ Use when Dimensional Build, Mapping or Code needs changing-value or temporal beh
 
 ## Select behavior from analytical needs
 
-Ask only when the existing project, requirements and user decisions do not resolve the answer. A useful question is: "After CustomerSegment changes, should earlier sales report the segment at sale time, the current segment, or support both?" That requirement determines the design; there is no global Type 2 default.
+Read the effective Project's `dimensional_entity_scd_type`. `type_1` overwrites eligible business values; `type_2` preserves dimension row versions. Null is unspecified, not a default. Natural and surrogate identity remain fixed; configured foreign keys, audit fields and history fields follow their own governed population rules. Facts and bridges do not inherit dimension history.
 
-| Attribute change behavior | Meaning / required decision |
-|---|---|
-| `fixed` | Preserve the original value under the agreed business rule; determine how exceptional corrections are handled. |
-| `overwrite` | Replace the stored value; that Attribute no longer preserves its former value in the same row. Clarify whether corrections affect prior version rows as well. |
-| `historize` | Preserve changing values through a defined history design. The flag alone does not specify effective dates, version matching or the load implementation. |
-| `null` | No applicable declared change behavior; not an implicit overwrite or proof that historical needs were considered. |
-
-Decide at meaningful Attribute granularity. One dimension may overwrite corrected spelling and retain segment history. Reuse confirmed policy; do not make every Attribute historical or ask the same question for technical/audit fields whose population is already defined.
+There are no per-Attribute history flags. Ask only when the existing Project, requirements and user decisions do not resolve the applicable policy or temporal lookup. A useful question is: "After CustomerSegment changes, should earlier sales report the segment at sale time, the current segment, or support both?" Keep the answer in existing definitions and Mapping rules. If a requirement needs different behavior for individual columns, record the policy limitation instead of inventing an unsupported field.
 
 ## If row versions are required
 
@@ -21,7 +14,7 @@ Type 2 commonly assigns a distinct surrogate to each version and adds validity b
 
 Before completing the affected design, resolve:
 
-- Which Attributes create a version versus overwrite a correction; how duplicates, unchanged inputs and repeated loads are recognized.
+- Which eligible business-value changes create a version under the Project policy; how duplicates, unchanged inputs and repeated loads are recognized.
 - Effective-time source, timezone, boundary convention and open-ended representation; avoid overlapping intervals for one business member.
 - Whether a fact resolves the current version or the version valid at its business event time. The complete business-key/time predicate must select exactly one eligible version, or follow the confirmed missing-member policy; handle validity gaps as well as overlaps. Late facts cannot automatically use today's version.
 - How late/missing members, unknown versus not-applicable values, corrections and backdated changes are handled. Do not invent a sentinel key, discard a fact or substitute an arbitrary current row.
@@ -33,7 +26,7 @@ These are decision criteria, not a mandatory interview checklist or new payload 
 
 History columns are additional modeled Attributes, separate from the confirmed audit block. Do not repurpose `IsActive`, `CreatedDate` or `UpdatedDate` as version markers without an explicit consumer contract. A technical Attribute is not automatically a framework-generated or SQL-omitted field.
 
-Current backend `features/dimensional/policy.py` can project configured effective-from, effective-to and current-marker columns when a dimension has an active nontechnical `historize` Attribute. That creates project columns; the external framework populates them at load time using natural keys. Surrogate placement and fact/bridge coverage still need the alignment recorded in [keys/audit](../project/keys-and-audit.md#population-boundary-and-implementation-alignment).
+Current backend `features/dimensional/policy.py` projects configured effective-from, effective-to and current-marker columns for dimensions governed by Project Type 2 policy. That creates Project columns; the external framework populates them at load time using natural keys. Surrogate placement and fact/bridge coverage follow [keys/audit](../project/keys-and-audit.md#population-boundary-and-implementation-alignment).
 
 The existing GDS seed template defines the following. Resolve the actual Project configuration before use; seed values do not prove deployment or override a supplied framework convention.
 

@@ -15,7 +15,7 @@ Conceptual is an independent deliverable. Its output is never an input or prereq
 
 ## Conceptual Object fields
 
-All nine fields are required; none is nullable.
+All eight fields are required; none is nullable.
 
 | Field | Accepted value / meaning |
 |---|---|
@@ -24,7 +24,6 @@ All nine fields are required; none is nullable.
 | `conceptual_object_type` | Nonblank string, 1–100 characters; consistent business category. Open text, not a lookup or fixed enum. |
 | `conceptual_object_grain` | Nonblank text describing one business occurrence, not a physical key. |
 | `conceptual_object_aliases` | Array of strings, unique after key normalization; `[]` is valid. Include supported synonyms only. |
-| `conceptual_object_confidence` | `low`, `medium` or `high`; confidence in the explained meaning. |
 | `conceptual_object_status` | `active`, `inactive` or `deprecated`. |
 | `conceptual_object_is_locked` | Boolean; obey shared record-state rules. |
 | `supports` | Array of Object or Context supports in the format below; `[]` is schema-valid. |
@@ -33,7 +32,7 @@ Alias strings have no individual nonblank/length constraint in the current schem
 
 ## Conceptual Relationship fields
 
-All 12 fields are required; none is nullable.
+All 11 fields are required; none is nullable.
 
 | Field | Accepted value / meaning |
 |---|---|
@@ -45,7 +44,6 @@ All 12 fields are required; none is nullable.
 | `conceptual_relationship_cardinality` | `one_to_one`, `one_to_many`, `many_to_one`, `many_to_many` or `unknown`; interpreted from → to. |
 | `conceptual_relationship_basis` | Nonblank explanation of the supporting meaning/evidence and material limits. |
 | `conceptual_relationship_cardinality_basis` | Nonblank explanation of multiplicity, or why it is unknown. |
-| `conceptual_relationship_confidence` | `low`, `medium` or `high`; uncertainty about cardinality need not invalidate the association. |
 | `conceptual_relationship_status` | `active`, `inactive` or `deprecated`. |
 | `conceptual_relationship_is_locked` | Boolean; obey shared record-state rules. |
 | `supports` | Array of Object or Context supports; the relationship's own evidence, not automatically its endpoints' supports. |
@@ -56,7 +54,7 @@ Both endpoints must exist in the effective Project, and an active relationship r
 
 ## Nested support fields
 
-Each support has exactly one source variant plus the six common fields. All listed fields for the selected variant are required; only `support_role` and `support_reason_detail` allow null.
+Each support has exactly one source variant plus the five common fields. All listed fields for the selected variant are required; only `support_role` and `support_reason_detail` allow null.
 
 | Field | Accepted value / meaning |
 |---|---|
@@ -66,7 +64,6 @@ Each support has exactly one source variant plus the six common fields. All list
 | `support_role` | Nonblank string, 1–255 characters, or null; the source's role in supporting this parent. |
 | `support_reason` | Nonblank explanation of how this source supports the concept or association. |
 | `support_reason_detail` | Nonblank additional evidence/qualification, or null. |
-| `support_confidence` | `low`, `medium` or `high`. |
 | `support_status` | `active`, `inactive` or `deprecated`. |
 | `support_is_locked` | Boolean; a support has its own lock as well as its parent's protection. |
 
@@ -104,7 +101,6 @@ Illustrates `project-change-set/conceptual_object.json`. Assume both customer Ob
     "conceptual_object_type": "party",
     "conceptual_object_grain": "One purchasing person or organization.",
     "conceptual_object_aliases": ["Buyer"],
-    "conceptual_object_confidence": "high",
     "conceptual_object_status": "active",
     "conceptual_object_is_locked": false,
     "supports": [
@@ -114,7 +110,6 @@ Illustrates `project-change-set/conceptual_object.json`. Assume both customer Ob
         "support_role": "Customer identity",
         "support_reason": "The synthetic CRM definition identifies the purchasing person or organization.",
         "support_reason_detail": null,
-        "support_confidence": "high",
         "support_status": "active",
         "support_is_locked": false
       },
@@ -124,7 +119,6 @@ Illustrates `project-change-set/conceptual_object.json`. Assume both customer Ob
         "support_role": "Sales customer representation",
         "support_reason": "The synthetic sales definition describes the same purchasing party rather than a separate account.",
         "support_reason_detail": "Shared business meaning supports one concept; no row-level identity matching is claimed.",
-        "support_confidence": "high",
         "support_status": "active",
         "support_is_locked": false
       }
@@ -136,7 +130,6 @@ Illustrates `project-change-set/conceptual_object.json`. Assume both customer Ob
     "conceptual_object_type": "business_transaction",
     "conceptual_object_grain": "One customer purchase request, which may contain multiple order lines.",
     "conceptual_object_aliases": [],
-    "conceptual_object_confidence": "high",
     "conceptual_object_status": "active",
     "conceptual_object_is_locked": false,
     "supports": [
@@ -146,7 +139,6 @@ Illustrates `project-change-set/conceptual_object.json`. Assume both customer Ob
         "support_role": "Purchase requests",
         "support_reason": "The synthetic Object description identifies individual customer purchase requests.",
         "support_reason_detail": null,
-        "support_confidence": "high",
         "support_status": "active",
         "support_is_locked": false
       }
@@ -170,7 +162,6 @@ Illustrates `project-change-set/conceptual_relationship.json`. The interpretatio
     "conceptual_relationship_cardinality": "one_to_many",
     "conceptual_relationship_basis": "Synthetic metadata describes Orders as customer purchase requests and customer_id as the purchasing Customer reference.",
     "conceptual_relationship_cardinality_basis": "Infer one Customer to many Orders from the purchase-request role and single purchasing Customer reference. Minimum participation is unspecified; SQL was not run.",
-    "conceptual_relationship_confidence": "high",
     "conceptual_relationship_status": "active",
     "conceptual_relationship_is_locked": false,
     "supports": [
@@ -180,7 +171,6 @@ Illustrates `project-change-set/conceptual_relationship.json`. The interpretatio
         "support_role": "Purchasing Customer reference",
         "support_reason": "The synthetic customer_id definition identifies the Customer placing this Order.",
         "support_reason_detail": null,
-        "support_confidence": "high",
         "support_status": "active",
         "support_is_locked": false
       }
@@ -200,7 +190,6 @@ This object may be a member of either parent's `supports` array only when the re
   "support_role": "Business definition",
   "support_reason": "The synthetic confirmed business definition identifies a Customer as the purchasing person or organization.",
   "support_reason_detail": null,
-  "support_confidence": "high",
   "support_status": "active",
   "support_is_locked": false
 }

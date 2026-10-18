@@ -1313,6 +1313,13 @@ function Get-SchemaIssues {
             }
         }
         foreach ($layer in @('logical', 'dimensional')) {
+            if ($recordRules -ccontains ($layer + '_attribute')) {
+                $label = if ($layer -ceq 'logical') { 'Logical' } else { 'Dimensional' }
+                $natural = Get-Property $Value ($layer + '_attribute_is_natural_key')
+                $surrogate = Get-Property $Value ($layer + '_attribute_is_surrogate_key')
+                if ($natural -and $surrogate) { [void]$issues.Add("$Location`: A $label Attribute cannot be both natural and surrogate key") }
+                if (($natural -or $surrogate) -and (Get-Property $Value ($layer + '_attribute_is_nullable'))) { [void]$issues.Add("$Location`: A $label key Attribute cannot be nullable") }
+            }
             if ($recordRules -ccontains ($layer + '_relationship')) {
                 $from = Get-PolicyTuple @((Get-Property $Value ('from_' + $layer + '_entity_schema_name')), (Get-Property $Value ('from_' + $layer + '_entity_name')), (Get-Property $Value ('from_' + $layer + '_attribute_name')))
                 $to = Get-PolicyTuple @((Get-Property $Value ('to_' + $layer + '_entity_schema_name')), (Get-Property $Value ('to_' + $layer + '_entity_name')), (Get-Property $Value ('to_' + $layer + '_attribute_name')))

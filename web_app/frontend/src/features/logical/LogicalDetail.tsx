@@ -151,7 +151,6 @@ function LogicalEntityView({
           <Fact label="Type" value={humanize(entity.logical_entity_type)} />
           <Fact label="Type detail" value={entity.logical_entity_type_detail ?? "Not specified"} />
           <Fact label="Dependency order" value={String(entity.logical_entity_dependency_order)} />
-          <Fact label="Confidence" value={humanize(entity.logical_entity_confidence)} />
           <Fact label="Updated" value={formatDateTime(entity.updated_at)} />
         </dl>
       </section>
@@ -265,7 +264,6 @@ function LogicalRelationshipView({
           <Fact label="From Attribute" value={`${relationship.from_logical_entity_schema_name}.${relationship.from_logical_entity_name}.${relationship.from_logical_attribute_name}`} />
           <Fact label="To Attribute" value={`${relationship.to_logical_entity_schema_name}.${relationship.to_logical_entity_name}.${relationship.to_logical_attribute_name}`} />
           <Fact label="Cardinality" value={humanize(relationship.logical_relationship_cardinality)} />
-          <Fact label="Confidence" value={humanize(relationship.logical_relationship_confidence)} />
           <Fact label="Updated" value={formatDateTime(relationship.updated_at)} />
         </dl>
       </section>

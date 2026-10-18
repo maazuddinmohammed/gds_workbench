@@ -10,7 +10,6 @@ CREATE TABLE workflow.conceptual_object (
     conceptual_object_type VARCHAR(100) NOT NULL,
     conceptual_object_grain TEXT NOT NULL,
     conceptual_object_aliases TEXT[] NOT NULL DEFAULT '{}',
-    conceptual_object_confidence VARCHAR(10) NOT NULL DEFAULT 'medium',
     conceptual_object_status VARCHAR(20) NOT NULL DEFAULT 'active',
     conceptual_object_is_locked BOOLEAN NOT NULL DEFAULT FALSE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -32,9 +31,6 @@ CREATE TABLE workflow.conceptual_object (
     ),
     CONSTRAINT ck_conceptual_object_grain CHECK (
         reference.is_nonblank(conceptual_object_grain)
-    ),
-    CONSTRAINT ck_conceptual_object_confidence CHECK (
-        conceptual_object_confidence IN ('low', 'medium', 'high')
     ),
     CONSTRAINT ck_conceptual_object_status CHECK (
         conceptual_object_status IN (
@@ -62,7 +58,6 @@ CREATE TABLE workflow.conceptual_relationship (
     conceptual_relationship_cardinality VARCHAR(30) NOT NULL,
     conceptual_relationship_basis TEXT NOT NULL,
     conceptual_relationship_cardinality_basis TEXT NOT NULL,
-    conceptual_relationship_confidence VARCHAR(10) NOT NULL DEFAULT 'medium',
     conceptual_relationship_status VARCHAR(20) NOT NULL DEFAULT 'active',
     conceptual_relationship_is_locked BOOLEAN NOT NULL DEFAULT FALSE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -109,9 +104,6 @@ CREATE TABLE workflow.conceptual_relationship (
         reference.is_nonblank(conceptual_relationship_basis)
         AND reference.is_nonblank(conceptual_relationship_cardinality_basis)
     ),
-    CONSTRAINT ck_conceptual_relationship_confidence CHECK (
-        conceptual_relationship_confidence IN ('low', 'medium', 'high')
-    ),
     CONSTRAINT ck_conceptual_relationship_status CHECK (
         conceptual_relationship_status IN (
             'active', 'inactive', 'deprecated'
@@ -141,7 +133,6 @@ CREATE TABLE workflow.conceptual_support (
     conceptual_support_role VARCHAR(255),
     conceptual_support_reason TEXT NOT NULL,
     conceptual_support_reason_detail TEXT,
-    conceptual_support_confidence VARCHAR(10) NOT NULL DEFAULT 'medium',
     conceptual_support_status VARCHAR(20) NOT NULL DEFAULT 'active',
     conceptual_support_is_locked BOOLEAN NOT NULL DEFAULT FALSE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -207,9 +198,6 @@ CREATE TABLE workflow.conceptual_support (
     CONSTRAINT ck_conceptual_support_reason_detail CHECK (
         conceptual_support_reason_detail IS NULL
         OR reference.is_nonblank(conceptual_support_reason_detail)
-    ),
-    CONSTRAINT ck_conceptual_support_confidence CHECK (
-        conceptual_support_confidence IN ('low', 'medium', 'high')
     ),
     CONSTRAINT ck_conceptual_support_status CHECK (
         conceptual_support_status IN (

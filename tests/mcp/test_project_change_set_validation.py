@@ -588,7 +588,7 @@ def test_dimensional_design_uses_active_logical_sources_without_registration(
         "is_locked": False,
     }
     if source_type == "logical_entity":
-        source.update(source_logical_entity=logical_key, source_role="transaction")
+        source.update(source_logical_entity=logical_key)
     else:
         source["source_logical_attribute"] = {
             **logical_key,
@@ -598,7 +598,6 @@ def test_dimensional_design_uses_active_logical_sources_without_registration(
             {
                 "support_source_type": "logical_entity",
                 "source_logical_entity": logical_key,
-                "source_role": "transaction",
                 "source_order": 1,
                 "rationale": "Parent source.",
                 "status": "active",
@@ -1225,7 +1224,6 @@ def test_dimensional_attribute_requires_matching_active_parent_support(
             {
                 "support_source_type": "logical_entity",
                 "source_logical_entity": logical_key,
-                "source_role": "transaction",
                 "source_order": 1,
                 "rationale": "Parent source.",
                 "status": "inactive",

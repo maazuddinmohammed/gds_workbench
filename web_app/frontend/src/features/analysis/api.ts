@@ -51,7 +51,6 @@ export interface AnalysisFinding {
   from_endpoint: AnalysisEndpoint;
   to_endpoint: AnalysisEndpoint;
   relationship_kind: string;
-  relationship_confidence: "low" | "medium" | "high";
   validation_state: AnalysisValidationState;
   validation_result: AnalysisValidationResult | null;
   inferred_cardinality: "one_to_one" | "one_to_many" | "many_to_one" | "many_to_many" | "unknown";

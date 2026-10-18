@@ -41,7 +41,7 @@ Systems are independent. Internal numeric IDs are not business identifiers.
 | Attribute Profile | Current saved measurements with time/row-scope provenance; refresh replaces current measurements. |
 | Metadata Enrichment | Runs after Profiling. Project-owned Object descriptions and Attribute descriptions, inferred types, natural/primary key, nullability and PII findings; human edits and locks stay Project-specific. Data Dictionary and Technical Data Dictionary export current saved results. |
 | Ingestion Mapping | Registered Source-to-Bronze Object/Attribute lineage; source provenance cannot be guessed from names. |
-| Analysis Result | Inferred relationship between real physical Attributes, including reasoning and confidence. Inferred cardinality and measured validation remain separate. |
+| Analysis Result | Inferred relationship between real physical Attributes, including supporting reasoning. Inferred cardinality and measured validation remain separate. |
 | Context Type | Global read-only classification shared across Projects; defined by name and description. |
 | Context Group | Project-owned collection of related knowledge with one Context Type, optional description and source System. |
 | Context Record | Reusable requirement, source information, convention, decision or other knowledge. Contains a stable UUID, text, optional plain-text source reference, status and lock. Requirements are not proof that data exists. |
@@ -55,6 +55,14 @@ Logical and Dimensional SCD policies are independent Project settings (`type_1`,
 `type_2`, or unspecified). Dimensional Type 1 overwrites mutable descriptors;
 Type 2 preserves Dimension versions. Stable identity stays fixed; Fact/Bridge
 behavior is unchanged. Runs freeze both policies and Mapping receives both.
+Dimensional Attributes use the same natural-key, surrogate-key and audit flags as
+Logical Attributes. Foreign-key meaning comes from relationships and configured
+templates. Entity type, fact subtype and entity grain remain explicit. Attribute
+definitions carry measure meaning, units and aggregation restrictions; there are
+no separate attribute-role, aggregation, grain-component or change-behavior fields.
+Project SCD policy owns history; per-column history exceptions are not represented.
+Source mapping rationale describes each contribution without a separate source role.
+Workflow records do not store AI-assigned confidence scores.
 The combined Gold audit template includes standard surrogate/foreign key rules and
 IsCurrentRecord/RecordStartTime/RecordEndTime columns for Type 2 Dimensions.
 Blank audit settings use the shared PascalCase template: SourceSystemID BIGINT,
@@ -84,8 +92,8 @@ Analytical Attribute selection and aggregation remain valid.
 
 Missing information, measured zero, failed validation and contradictory evidence
 are different states. Preserve each. A Context Record can explain required behavior;
-it cannot invent physical columns or executable lineage. Saved Analysis confidence
-must not replace observed validation results. Assess relevance at the current grain.
+it cannot invent physical columns or executable lineage. Inferred reasoning must
+not replace observed validation results. Assess relevance at the current grain.
 Prompt Attribute context preserves registered natural-key metadata separately from
 Project enrichment. Unknown enrichment never erases registered evidence; disagreement
 remains visible, and neither flag alone proves measured uniqueness.

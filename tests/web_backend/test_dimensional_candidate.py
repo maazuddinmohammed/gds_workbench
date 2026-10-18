@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 from __future__ import annotations
 
 import json
@@ -47,7 +48,6 @@ def _candidate() -> dict[str, object]:
                 "dimensional_fact_type": None,
                 "dimensional_entity_grain_definition": None,
                 "dimensional_entity_dependency_order": 0,
-                "dimensional_entity_confidence": "high",
                 "dimensional_entity_status": "active",
                 "dimensional_entity_is_locked": False,
                 "submodels": [
@@ -65,7 +65,6 @@ def _candidate() -> dict[str, object]:
                         "rationale": "Logical customer source.",
                         "status": "active",
                         "is_locked": False,
-                        "source_role": "primary",
                     }
                 ],
             }
@@ -79,15 +78,9 @@ def _candidate() -> dict[str, object]:
                 "dimensional_attribute_data_type": "bigint",
                 "dimensional_attribute_is_nullable": False,
                 "dimensional_attribute_ordinal_position": 1,
-                "dimensional_attribute_role": "key",
-                "dimensional_attribute_key_role": "business",
-                "dimensional_attribute_is_grain_component": True,
-                "dimensional_attribute_additivity": None,
-                "dimensional_attribute_default_aggregation": None,
-                "dimensional_attribute_aggregation_basis": None,
-                "dimensional_attribute_change_behavior": "fixed",
+                "dimensional_attribute_is_natural_key": True,
+                "dimensional_attribute_is_surrogate_key": False,
                 "dimensional_attribute_is_audit_column": False,
-                "dimensional_attribute_confidence": "high",
                 "dimensional_attribute_status": "active",
                 "dimensional_attribute_is_locked": False,
                 "sources": [
@@ -207,7 +200,6 @@ async def test_candidate_rejects_context_evidence_outside_frozen_context() -> No
             "rationale": "Business Context record.",
             "status": "active",
             "is_locked": False,
-            "source_role": "business_context",
         }
     ]
     attribute = _first_record(candidate, "attributes")
@@ -250,7 +242,6 @@ async def test_candidate_requires_complete_future_references() -> None:
             "dimensional_relationship_cardinality": "many_to_one",
             "dimensional_relationship_is_optional": True,
             "dimensional_relationship_role_name": None,
-            "dimensional_relationship_confidence": "high",
             "dimensional_relationship_basis": "Expected dimensional join.",
             "dimensional_relationship_cardinality_basis": "Many facts to one dimension.",
             "dimensional_relationship_status": "active",
@@ -324,27 +315,145 @@ async def test_candidate_rejects_changes_to_applied_main_and_nested_locks() -> N
     assert [issue.code for issue in issues].count("candidate.record_locked") == 2
 
 
-async def test_candidate_forbids_all_agent_authored_gold_policy_columns() -> None:
+async def test_candidate_forbids_flagged_and_configured_policy_columns() -> None:
+    from tests.web_backend.test_dimensional_policy import (
+        _audit_template,
+        _technical_template,
+    )
+
     candidate = _candidate()
-    technical = _first_record(candidate, "attributes")
-    technical["dimensional_attribute_role"] = "technical"
-    audit = deepcopy(technical)
-    audit["dimensional_attribute_name"] = "Loaded At"
-    audit["dimensional_attribute_role"] = "audit"
-    audit["dimensional_attribute_key_role"] = "none"
-    audit["dimensional_attribute_is_grain_component"] = False
-    audit["dimensional_attribute_is_audit_column"] = True
-    audit["sources"] = []
-    surrogate = deepcopy(_first_record(candidate, "attributes"))
-    surrogate["dimensional_attribute_name"] = "Customer Dimension Key"
-    surrogate["dimensional_attribute_key_role"] = "surrogate"
-    foreign = deepcopy(_first_record(candidate, "attributes"))
-    foreign["dimensional_attribute_name"] = "Account Dimension Key"
-    foreign["dimensional_attribute_key_role"] = "foreign"
-    cast(list[object], candidate["attributes"]).extend((audit, surrogate, foreign))
-
-    issues = (await _validator().validate(cast(JsonValue, candidate))).issues
-
+    business = _first_record(candidate, "attributes")
+    audit = deepcopy(business)
+    audit.update(
+        {
+            "dimensional_attribute_name": "Custom audit",
+            "dimensional_attribute_is_audit_column": True,
+        }
+    )
+    surrogate = deepcopy(business)
+    surrogate.update(
+        {
+            "dimensional_attribute_name": "Custom identity",
+            "dimensional_attribute_is_natural_key": False,
+            "dimensional_attribute_is_surrogate_key": True,
+        }
+    )
+    configured = deepcopy(business)
+    configured.update(
+        {
+            "dimensional_attribute_name": "Loaded At",
+            "dimensional_attribute_is_natural_key": False,
+        }
+    )
+    history = deepcopy(configured)
+    history["dimensional_attribute_name"] = "Effective From"
+    cast(list[object], candidate["attributes"]).extend(
+        (audit, surrogate, configured, history)
+    )
+    validator = DimensionalCandidateValidator(
+        selected_entity_keys=(_object(),),
+        selected_attribute_keys=(_attribute(),),
+        context_record_ids=(),
+        applied=None,
+        raw_technical_template=_technical_template(),
+        raw_audit_template=_audit_template(),
+    )
+    issues = (await validator.validate(cast(JsonValue, candidate))).issues
     assert [issue.code for issue in issues].count(
         "candidate.policy_column_forbidden"
     ) == 4
+
+
+async def test_candidate_forbids_foreign_key_derived_from_effective_relationship() -> (
+    None
+):
+    from tests.web_backend.test_dimensional_policy import (
+        _audit_template,
+        _technical_template,
+    )
+    from tests.web_backend.test_dimensional_executor import (
+        _candidate as complete_candidate,
+    )
+
+    candidate = cast(dict[str, object], complete_candidate())
+    attributes = cast(list[dict[str, object]], candidate["attributes"])
+    foreign = deepcopy(attributes[1])
+    foreign.update(
+        {
+            "dimensional_attribute_name": "Bill To Customer key",
+            "dimensional_attribute_is_natural_key": False,
+        }
+    )
+    attributes.append(foreign)
+    validator = DimensionalCandidateValidator(
+        selected_entity_keys=(_object(),),
+        selected_attribute_keys=(_attribute(),),
+        context_record_ids=(),
+        applied=None,
+        raw_technical_template=_technical_template(),
+        raw_audit_template=_audit_template(),
+    )
+    issues = (await validator.validate(cast(JsonValue, candidate))).issues
+    assert any(
+        issue.code == "candidate.policy_column_forbidden"
+        and issue.path[:2] == ("attributes", 2)
+        for issue in issues
+    )
+
+
+async def test_candidate_preserves_existing_foreign_key_after_template_name_changes() -> (
+    None
+):
+    from tests.web_backend.test_dimensional_policy import (
+        _audit_template,
+        _projected_baseline,
+        _technical_template,
+    )
+
+    baseline = _projected_baseline()
+    renamed_attributes = tuple(
+        row.model_copy(update={"dimensional_attribute_name": "Legacy Customer FK"})
+        if row.dimensional_attribute_name == "Bill To Customer key"
+        else row
+        for row in baseline.attributes
+    )
+    baseline = baseline.model_copy(
+        update={
+            "attributes": renamed_attributes,
+            "relationships": tuple(
+                row.model_copy(
+                    update={
+                        "from_dimensional_attribute_name": "Legacy Customer FK",
+                    }
+                )
+                for row in baseline.relationships
+            ),
+        }
+    )
+    proposed = next(
+        row
+        for row in renamed_attributes
+        if row.dimensional_attribute_name == "Legacy Customer FK"
+    )
+    proposed = proposed.model_copy(
+        update={"dimensional_attribute_definition": "Proposed business edit."}
+    )
+    validator = DimensionalCandidateValidator(
+        selected_entity_keys=(_object(),),
+        selected_attribute_keys=(),
+        context_record_ids=(),
+        applied=baseline,
+        raw_technical_template=_technical_template(),
+        raw_audit_template=_audit_template(),
+    )
+    issues = (
+        await validator.validate(
+            {
+                "submodels": [],
+                "entities": [],
+                "attributes": [proposed.model_dump(mode="json")],
+                "relationships": [],
+            }
+        )
+    ).issues
+    assert any(issue.code == "candidate.policy_column_forbidden" for issue in issues)

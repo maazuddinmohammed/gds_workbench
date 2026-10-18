@@ -3,7 +3,6 @@ import type { ProjectRecordReviewApi } from "../project_record_review/api";
 import type { HttpRequest } from "../../core/http";
 import type {
   ModelingCardinality,
-  ModelingConfidence,
   ReviewStatus,
 } from "../../shared/contracts";
 import type { ProjectInputScopeApi } from "../project_input_scope/api";
@@ -27,7 +26,6 @@ export interface LogicalEntity {
   logical_entity_name: string;
   logical_entity_type: string;
   logical_entity_dependency_order: number;
-  logical_entity_confidence: ModelingConfidence;
   logical_entity_status: ReviewStatus;
   logical_entity_is_locked: boolean;
   updated_at: string;
@@ -186,7 +184,6 @@ export interface LogicalRelationship {
   to_logical_attribute_name: string;
   logical_relationship_name: string;
   logical_relationship_cardinality: ModelingCardinality;
-  logical_relationship_confidence: ModelingConfidence;
   logical_relationship_status: ReviewStatus;
   logical_relationship_is_locked: boolean;
   updated_at: string;

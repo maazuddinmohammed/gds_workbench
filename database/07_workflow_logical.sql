@@ -40,7 +40,6 @@ CREATE TABLE workflow.logical_entity (
     logical_entity_type_detail TEXT,
     logical_entity_grain TEXT NOT NULL,
     logical_entity_dependency_order INTEGER NOT NULL DEFAULT 0,
-    logical_entity_confidence VARCHAR(10) NOT NULL DEFAULT 'medium',
     logical_entity_status VARCHAR(20) NOT NULL DEFAULT 'active',
     logical_entity_is_locked BOOLEAN NOT NULL DEFAULT FALSE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -70,9 +69,6 @@ CREATE TABLE workflow.logical_entity (
     CONSTRAINT ck_logical_entity_grain CHECK (reference.is_nonblank(logical_entity_grain)),
     CONSTRAINT ck_logical_entity_dependency_order CHECK (
         logical_entity_dependency_order >= 0
-    ),
-    CONSTRAINT ck_logical_entity_confidence CHECK (
-        logical_entity_confidence IN ('low', 'medium', 'high')
     ),
     CONSTRAINT ck_logical_entity_status CHECK (
         logical_entity_status IN ('active', 'inactive', 'deprecated')
@@ -371,7 +367,6 @@ CREATE TABLE workflow.logical_relationship (
     logical_relationship_to_entity_id BIGINT NOT NULL,
     logical_relationship_to_attribute_id BIGINT NOT NULL,
     logical_relationship_cardinality VARCHAR(50) NOT NULL,
-    logical_relationship_confidence VARCHAR(10) NOT NULL DEFAULT 'medium',
     logical_relationship_basis TEXT NOT NULL,
     logical_relationship_cardinality_basis TEXT NOT NULL,
     logical_relationship_status VARCHAR(20) NOT NULL DEFAULT 'active',
@@ -424,9 +419,6 @@ CREATE TABLE workflow.logical_relationship (
         logical_relationship_cardinality IN (
             'one_to_one', 'one_to_many', 'many_to_one', 'many_to_many'
         )
-    ),
-    CONSTRAINT ck_logical_relationship_confidence CHECK (
-        logical_relationship_confidence IN ('low', 'medium', 'high')
     ),
     CONSTRAINT ck_logical_relationship_bases CHECK (
         reference.is_nonblank(logical_relationship_basis)

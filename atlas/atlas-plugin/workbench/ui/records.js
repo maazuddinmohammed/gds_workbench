@@ -42,7 +42,7 @@
       logical_relationship: [filter("logical_relationship_name", "Relationship"), filter("from_logical_entity_name", "From entity"), filter("to_logical_entity_name", "To entity")],
       dimensional_submodel: [filter("dimensional_submodel_name", "Submodel"), filter("dimensional_submodel_status", "Status")],
       dimensional_entity: [filter("dimensional_entity_schema_name", "Schema"), filter("dimensional_entity_name", "Entity"), filter("dimensional_entity_type", "Entity type"), filter("dimensional_entity_status", "Status")],
-      dimensional_attribute: [filter("dimensional_entity_schema_name", "Schema"), filter("dimensional_entity_name", "Dimensional entity"), filter("dimensional_attribute_role", "Attribute role"), filter("dimensional_attribute_status", "Status")],
+      dimensional_attribute: [filter("dimensional_entity_schema_name", "Schema"), filter("dimensional_entity_name", "Dimensional entity"), filter("dimensional_attribute_data_type", "Data type"), filter("dimensional_attribute_status", "Status")],
       dimensional_relationship: [filter("dimensional_relationship_name", "Relationship"), filter("from_dimensional_entity_name", "From entity"), filter("to_dimensional_entity_name", "To entity")],
       mapping_object: [filter("source_system_code", "Source system"), filter("modeled_entity_schema_name", "Schema"), filter("modeled_entity_name", "Modeled entity"), filter("object_mapping_status", "Status")],
       mapping_attribute: [filter("source_system_code", "Source system"), filter("modeled_entity_schema_name", "Schema"), filter("modeled_entity_name", "Modeled entity"), filter("modeled_attribute_name", "Modeled attribute")],

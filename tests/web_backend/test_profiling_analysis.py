@@ -206,7 +206,6 @@ class StaticProfilingReviewService:
                         attribute_data_type="varchar",
                     ),
                     relationship_kind="reference",
-                    relationship_confidence="high",
                     validation_state="validated",
                     validation_result="supported",
                     status="active",
@@ -498,7 +497,6 @@ class ReviewTransaction:
                 "to_attribute_name": "country_code",
                 "to_attribute_data_type": "varchar",
                 "relationship_kind": "reference",
-                "relationship_confidence": "high",
                 "inferred_cardinality": "many_to_one",
                 "relationship_basis": (
                     "Country code inclusion and target uniqueness were verified."
@@ -629,7 +627,6 @@ class ReviewTransaction:
                     "analysis_result_id": 701,
                     **endpoint,
                     "relationship_kind": "reference",
-                    "relationship_confidence": "high",
                     "inferred_cardinality": "many_to_one",
                     "validation_state": "validated",
                     "validation_result": "supported",
@@ -641,7 +638,6 @@ class ReviewTransaction:
                     "analysis_result_id": 702,
                     **endpoint,
                     "relationship_kind": "lookup",
-                    "relationship_confidence": "medium",
                     "inferred_cardinality": "unknown",
                     "validation_state": "validated",
                     "validation_result": "supported",

@@ -24,7 +24,6 @@ Agents explicitly supply all non-validation fields below. The backend defaults o
 | `to_attribute_name` | Registered to Attribute name; nonblank string, 1–400 characters. |
 | `relationship_kind` | Nonblank text, 1–100 characters, identifying the kind of finding; not an enum or a cardinality field. Reuse an applicable established term. Default ordinary foreign-key/category lookups to `reference`; explain categorical/string semantics in the basis. This vocabulary is guidance, not a new enum. |
 | `inferred_cardinality` | `one_to_one`, `one_to_many`, `many_to_one`, `many_to_many` or `unknown`, read from the from endpoint to the to endpoint. Infer from metadata, grain and business rules; use `unknown` when those do not establish multiplicity. Independent of measured validation. |
-| `relationship_confidence` | `low`, `medium` or `high`; judgment confidence, not an execution result. |
 | `relationship_basis` | Nonblank explanation of business meaning, direction, evidence, material limits and conclusion. Distinguish declarations, agent inference and actual measurements. |
 | `validation_policy_version` | Null or version string matching `digits.digits.digits`, at most 50 characters. Current deterministic lookup policy is `1.0.0`; do not invent a measured-policy claim. |
 | `validation_result` | Null, `supported`, `inconclusive` or `unsupported`, derived from the complete group below. |
@@ -40,7 +39,7 @@ Agents explicitly supply all non-validation fields below. The backend defaults o
 
 ## Evidence integrity
 
-Leave **all nine `validation_*` fields null** for inference or declarations without a complete applicable deterministic result. Set `inferred_cardinality` explicitly and explain the relationship and cardinality in `relationship_basis`; a clear metadata-based conclusion may be supported and high-confidence without SQL. Do not set **validation_result** to supported without executed evidence. Preserve valid existing evidence only if it still applies to the unchanged endpoints, interpretation and measurement scope. The record shape is identical for inferred and measured findings.
+Leave **all nine `validation_*` fields null** for inference or declarations without a complete applicable deterministic result. Set `inferred_cardinality` explicitly and explain the relationship and cardinality in `relationship_basis`; a clear metadata-based conclusion may be supported without SQL. Do not set **validation_result** to supported without executed evidence. Preserve valid existing evidence only if it still applies to the unchanged endpoints, interpretation and measurement scope. The record shape is identical for inferred and measured findings.
 
 Observed cardinality is derived separately from nonempty measured endpoint counts. It describes uniqueness in that population, not the intended business rule. A known inference that differs from observed uniqueness produces a review warning; preserve both values and investigate scope, grain or sparse data. Validation never replaces `inferred_cardinality`.
 
@@ -70,7 +69,7 @@ Null-key rows are excluded from these counts. The probe returns their separate c
 
 ## Complete synthetic inferred example
 
-Illustrates `project-change-set/analysis_result.json` without SQL. Replace the synthetic endpoints with eligible registered keys and the explanation with actual context. All 27 fields are present; measurement fields are null.
+Illustrates `project-change-set/analysis_result.json` without SQL. Replace the synthetic endpoints with eligible registered keys and the explanation with actual context. All 26 fields are present; measurement fields are null.
 
 ```json
 [
@@ -89,7 +88,6 @@ Illustrates `project-change-set/analysis_result.json` without SQL. Replace the s
     "to_attribute_name": "customer_id",
     "relationship_kind": "reference",
     "inferred_cardinality": "many_to_one",
-    "relationship_confidence": "high",
     "relationship_basis": "Synthetic metadata inference: Orders represents customer orders and its customer_id identifies the Customer in the same CRM domain. Infer Orders to Customer as many-to-one from these roles. SQL was not run; mandatory participation is unspecified.",
     "validation_policy_version": null,
     "validation_result": null,

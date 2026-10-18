@@ -91,7 +91,6 @@ class StaticDimensionalService:
                         logical_entity_schema_name="silver_sales",
                         logical_entity_name="order",
                     ),
-                    source_role="fact_source",
                     source_order=1,
                     rationale="Supplies the fact grain.",
                     status="active",
@@ -112,7 +111,6 @@ class StaticDimensionalService:
             dimensional_entity_type="fact",
             dimensional_fact_type="transaction",
             dimensional_entity_dependency_order=0,
-            dimensional_entity_confidence="high",
             dimensional_entity_status="active",
             dimensional_entity_is_locked=False,
             updated_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
@@ -155,7 +153,6 @@ class StaticDimensionalService:
         return DimensionalAttributeDetail(
             **item.model_dump(),
             dimensional_attribute_definition="Submitted order amount.",
-            dimensional_attribute_aggregation_basis=None,
             created_at=datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
             sources=(
                 DimensionalAttributeLogicalSource(
@@ -192,14 +189,9 @@ class StaticDimensionalService:
             dimensional_attribute_data_type="DECIMAL(18,2)",
             dimensional_attribute_is_nullable=False,
             dimensional_attribute_ordinal_position=2,
-            dimensional_attribute_role="measure",
-            dimensional_attribute_key_role="none",
-            dimensional_attribute_is_grain_component=False,
-            dimensional_attribute_additivity="additive",
-            dimensional_attribute_default_aggregation="sum",
-            dimensional_attribute_change_behavior=None,
+            dimensional_attribute_is_natural_key=False,
+            dimensional_attribute_is_surrogate_key=False,
             dimensional_attribute_is_audit_column=False,
-            dimensional_attribute_confidence="high",
             dimensional_attribute_status="active",
             dimensional_attribute_is_locked=False,
             updated_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
@@ -267,7 +259,6 @@ class StaticDimensionalService:
             dimensional_relationship_cardinality="many_to_one",
             dimensional_relationship_is_optional=False,
             dimensional_relationship_role_name="ordering_customer",
-            dimensional_relationship_confidence="high",
             dimensional_relationship_status="active",
             dimensional_relationship_is_locked=True,
             updated_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
@@ -314,7 +305,7 @@ def test_dimensional_object_collection_and_detail_are_normalized() -> None:
     payload = detail.json()
     assert payload["workflow_run_id"] is None
     assert payload["submodels"][0]["dimensional_submodel_name"] == "Sales Mart"
-    assert payload["sources"][0]["source_role"] == "fact_source"
+    assert "source_role" not in payload["sources"][0]
     assert "agent_run_id" not in detail.text
     assert "prompt" not in detail.text
 
@@ -342,7 +333,9 @@ def test_dimensional_attribute_collection_and_detail_return_normalized_sources()
         detail = client.get("/api/v1/tenants/7/projects/18/dimensional/attributes/701")
 
     assert collection.status_code == 200
-    assert collection.json()["items"][0]["dimensional_attribute_role"] == "measure"
+    assert (
+        collection.json()["items"][0]["dimensional_attribute_is_natural_key"] is False
+    )
     assert detail.status_code == 200
     assert detail.json()["sources"][0]["source_logical_attribute"][
         "logical_attribute_name"

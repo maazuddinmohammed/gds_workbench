@@ -47,7 +47,6 @@ def fake_logical_candidate(
                 "logical_entity_type_detail": None,
                 "logical_entity_grain": "One governed Logical entity record.",
                 "logical_entity_dependency_order": position - 1,
-                "logical_entity_confidence": "medium",
                 "logical_entity_status": "active",
                 "logical_entity_is_locked": False,
                 "submodels": [],

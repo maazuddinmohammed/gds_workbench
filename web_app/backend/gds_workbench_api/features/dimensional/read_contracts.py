@@ -8,7 +8,6 @@ from pydantic import Field
 
 from gds_workbench_api.features.logical import (
     Cardinality,
-    Confidence,
     ContextRecordReference,
     ContractModel,
     ModeledFilters,
@@ -38,7 +37,6 @@ class DimensionalObjectSummary(ContractModel):
         | None
     ) = None
     dimensional_entity_dependency_order: int = Field(ge=0)
-    dimensional_entity_confidence: Confidence
     dimensional_entity_status: ModeledStatus
     dimensional_entity_is_locked: bool
     updated_at: datetime
@@ -65,7 +63,6 @@ class DimensionalSubmodelMembership(ContractModel):
 class DimensionalObjectSourceBase(ContractModel):
     dimensional_entity_source_mapping_id: int = Field(gt=0)
     workflow_run_id: int | None = Field(default=None, gt=0)
-    source_role: str = Field(min_length=1, max_length=255)
     source_order: int | None = Field(default=None, gt=0)
     rationale: str = Field(min_length=1)
     status: ModeledStatus
@@ -123,45 +120,9 @@ class DimensionalAttributeSummary(ContractModel):
     dimensional_attribute_data_type: str = Field(min_length=1, max_length=100)
     dimensional_attribute_is_nullable: bool
     dimensional_attribute_ordinal_position: int = Field(gt=0)
-    dimensional_attribute_role: Literal[
-        "key",
-        "descriptor",
-        "measure",
-        "degenerate_dimension",
-        "bridge_weight",
-        "technical",
-        "audit",
-    ]
-    dimensional_attribute_key_role: Literal[
-        "none",
-        "surrogate",
-        "business",
-        "foreign",
-    ]
-    dimensional_attribute_is_grain_component: bool
-    dimensional_attribute_additivity: (
-        Literal[
-            "additive",
-            "semi_additive",
-            "non_additive",
-        ]
-        | None
-    ) = None
-    dimensional_attribute_default_aggregation: str | None = Field(
-        default=None,
-        min_length=1,
-        max_length=100,
-    )
-    dimensional_attribute_change_behavior: (
-        Literal[
-            "fixed",
-            "overwrite",
-            "historize",
-        ]
-        | None
-    ) = None
+    dimensional_attribute_is_natural_key: bool
+    dimensional_attribute_is_surrogate_key: bool
     dimensional_attribute_is_audit_column: bool
-    dimensional_attribute_confidence: Confidence
     dimensional_attribute_status: ModeledStatus
     dimensional_attribute_is_locked: bool
     updated_at: datetime
@@ -204,10 +165,6 @@ type DimensionalAttributeSource = Annotated[
 
 class DimensionalAttributeDetail(DimensionalAttributeSummary):
     dimensional_attribute_definition: str = Field(min_length=1)
-    dimensional_attribute_aggregation_basis: str | None = Field(
-        default=None,
-        min_length=1,
-    )
     created_at: datetime
     sources: tuple[DimensionalAttributeSource, ...] = Field(max_length=MAX_DETAIL_ROWS)
 
@@ -238,7 +195,6 @@ class DimensionalRelationshipSummary(ContractModel):
         min_length=1,
         max_length=255,
     )
-    dimensional_relationship_confidence: Confidence
     dimensional_relationship_status: ModeledStatus
     dimensional_relationship_is_locked: bool
     updated_at: datetime

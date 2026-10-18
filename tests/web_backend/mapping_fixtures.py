@@ -429,7 +429,6 @@ def mapping_validation_preparation(
         support.pop("source_object")
         support["support_source_type"] = "logical_entity"
         support["source_logical_entity"] = logical_key
-        support["source_role"] = "support"
     entity_record["sources"] = [support]
     attributes: list[dict[str, object]] = []
     for index, attribute in enumerate(entity.attributes, start=1):

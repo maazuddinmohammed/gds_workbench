@@ -277,10 +277,10 @@ async def test_dimensional_peer_lookup_uses_gold_schema_and_tracks_changes(
             INSERT INTO workflow.dimensional_attribute (
                 project_id,dimensional_entity_id,dimensional_attribute_name,
                 dimensional_attribute_definition,dimensional_attribute_data_type,
-                dimensional_attribute_ordinal_position,dimensional_attribute_role,
-                dimensional_attribute_key_role,dimensional_attribute_is_nullable
+                dimensional_attribute_ordinal_position,dimensional_attribute_is_surrogate_key,
+                dimensional_attribute_is_nullable
             ) VALUES (%s,%s,'CustomerKey','Customer surrogate key.','bigint',
-                      1,'key','surrogate',FALSE)
+                      1,TRUE,FALSE)
             """,
             (scope.plan.project_id, lookup_id),
         )

@@ -154,7 +154,6 @@ function DimensionalObjectView({
           {object.dimensional_fact_type !== null ? <Fact label="Fact type" value={humanize(object.dimensional_fact_type)} /> : null}
           <Fact label="Grain" value={object.dimensional_entity_grain_definition ?? "Not specified"} />
           <Fact label="Dependency order" value={String(object.dimensional_entity_dependency_order)} />
-          <Fact label="Confidence" value={humanize(object.dimensional_entity_confidence)} />
           <Fact label="Updated" value={formatDateTime(object.updated_at)} />
         </dl>
       </section>
@@ -214,42 +213,19 @@ function DimensionalAttributeView({
         <dl className="modeled-detail-fields">
           <div className="is-definition"><dt>Definition</dt><dd>{attribute.dimensional_attribute_definition}</dd></div>
           <Fact label="Entity" value={`${attribute.dimensional_entity_schema_name}.${attribute.dimensional_entity_name}`} />
-          <Fact label="Confidence" value={humanize(attribute.dimensional_attribute_confidence)} />
         </dl>
-        <h3>Type and role</h3>
+        <h3>Type and nullability</h3>
         <dl className="modeled-detail-fields">
           <Fact label="Data type" value={attribute.dimensional_attribute_data_type} />
           <Fact label="Ordinal" value={String(attribute.dimensional_attribute_ordinal_position)} />
-          <Fact label="Role" value={humanize(attribute.dimensional_attribute_role)} />
           <Fact label="Nullable" value={attribute.dimensional_attribute_is_nullable ? "Yes" : "No"} />
           <Fact label="Audit column" value={attribute.dimensional_attribute_is_audit_column ? "Yes" : "No"} />
         </dl>
-        <h3>Keys and grain</h3>
+        <h3>Keys</h3>
         <dl className="modeled-detail-fields">
-          <Fact label="Surrogate key" value={attribute.dimensional_attribute_key_role === "surrogate" ? "Yes" : "No"} />
-          <Fact label="Natural key" value={attribute.dimensional_attribute_key_role === "business" ? "Yes" : "No"} />
-          {attribute.dimensional_attribute_key_role === "foreign" ? <Fact label="Foreign key" value="Yes" /> : null}
-          <Fact label="Grain component" value={attribute.dimensional_attribute_is_grain_component ? "Yes" : "No"} />
+          <Fact label="Natural key" value={attribute.dimensional_attribute_is_natural_key ? "Yes" : "No"} />
+          <Fact label="Surrogate key" value={attribute.dimensional_attribute_is_surrogate_key ? "Yes" : "No"} />
         </dl>
-        {attribute.dimensional_attribute_role === "measure"
-          || attribute.dimensional_attribute_additivity !== null
-          || attribute.dimensional_attribute_default_aggregation !== null
-          || attribute.dimensional_attribute_aggregation_basis !== null ? (
-          <>
-            <h3>Aggregation</h3>
-            <dl className="modeled-detail-fields">
-              <Fact label="Additivity" value={attribute.dimensional_attribute_additivity === null ? "Not recorded" : humanize(attribute.dimensional_attribute_additivity)} />
-              <Fact label="Default aggregation" value={attribute.dimensional_attribute_default_aggregation ?? "Not recorded"} />
-              <Fact label="Aggregation basis" value={attribute.dimensional_attribute_aggregation_basis ?? "Not recorded"} />
-            </dl>
-          </>
-        ) : <p className="detail-empty-note">No aggregation behavior is recorded.</p>}
-        {attribute.dimensional_attribute_change_behavior !== null ? (
-          <>
-            <h3>Change behavior</h3>
-            <p className="detail-prose">{humanize(attribute.dimensional_attribute_change_behavior)}</p>
-          </>
-        ) : <p className="detail-empty-note">No change behavior is recorded.</p>}
       </section>
       <SourceMappings sources={attribute.sources} />
     </article>
@@ -287,7 +263,6 @@ function DimensionalRelationshipView({
           <Fact label="Cardinality" value={humanize(relationship.dimensional_relationship_cardinality)} />
           <Fact label="Optional" value={relationship.dimensional_relationship_is_optional ? "Yes" : "No"} />
           <Fact label="Role" value={relationship.dimensional_relationship_role_name ?? "Not specified"} />
-          <Fact label="Confidence" value={humanize(relationship.dimensional_relationship_confidence)} />
           <Fact label="Updated" value={formatDateTime(relationship.updated_at)} />
         </dl>
       </section>

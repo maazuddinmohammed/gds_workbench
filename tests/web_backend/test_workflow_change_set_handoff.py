@@ -50,7 +50,6 @@ def _change() -> StageProjectChange:
                 "conceptual_object_type": "business_object",
                 "conceptual_object_grain": "One customer.",
                 "conceptual_object_aliases": [],
-                "conceptual_object_confidence": "high",
                 "conceptual_object_status": "active",
                 "conceptual_object_is_locked": False,
                 "supports": [],

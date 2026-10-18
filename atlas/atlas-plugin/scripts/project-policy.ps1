@@ -99,12 +99,12 @@ function Get-AtlasProjectPolicy($States, $MetadataStates, $Project) {
             $ordinals = @{}
             foreach ($column in $columns) { $ordinal = [string](Get-Property $column $ordinalField); if ($ordinals.ContainsKey($ordinal)) { Add-PolicyIssue $issues 'project.attribute-order' $attributeDataset $ordinalField 'Active Attributes within an Entity need distinct ordinal positions.'; break }; $ordinals[$ordinal] = $true }
             if (-not $newEntities.ContainsKey($name)) { continue }
-            $surrogates = @($columns | Where-Object { if ($layer -ceq 'logical') { Get-Property $_ 'logical_attribute_is_surrogate_key' } else { (Get-Property $_ 'dimensional_attribute_key_role') -ceq 'surrogate' } })
+            $surrogates = @($columns | Where-Object { Get-Property $_ ($attributeDataset + '_is_surrogate_key') })
             $surrogate = if ($surrogates.Count -gt 0) { $surrogates[0] } else { $null }
             if ($surrogates.Count -ne 1 -or (Get-Property $surrogate $ordinalField) -ne 1 -or (Get-Property $surrogate ($attributeDataset + '_is_nullable')) -ne $false -or
                 (Normalize-Value 'project' 'value' (Get-Property $surrogate ($attributeDataset + '_data_type'))) -cne 'bigint' -or
                 @((Get-Property $surrogate 'sources') | Where-Object { $null -ne $_ }).Count -gt 0 -or
-                ($layer -ceq 'logical' -and ((Get-Property $surrogate 'logical_attribute_is_natural_key') -or (Get-Property $surrogate 'logical_attribute_is_audit_column')))) {
+                ((Get-Property $surrogate ($attributeDataset + '_is_natural_key')) -or (Get-Property $surrogate ($attributeDataset + '_is_audit_column')))) {
                 Add-PolicyIssue $issues 'project.own-surrogate' $attributeDataset $attributeField 'Every new Entity, including facts and bridges, needs one generated non-null BIGINT own surrogate at ordinal 1 without physical sources.'
             }
             $prefix = if ($layer -ceq 'logical') {'silver'} else {'gold'}

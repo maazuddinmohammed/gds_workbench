@@ -52,7 +52,6 @@ COALESCE((
                        'support_role', support.conceptual_support_role,
                        'support_reason', support.conceptual_support_reason,
                        'support_reason_detail', support.conceptual_support_reason_detail,
-                       'support_confidence', support.conceptual_support_confidence,
                        'support_status', support.conceptual_support_status,
                        'support_is_locked', support.conceptual_support_is_locked
                    )
@@ -66,7 +65,6 @@ COALESCE((
                        'support_role', support.conceptual_support_role,
                        'support_reason', support.conceptual_support_reason,
                        'support_reason_detail', support.conceptual_support_reason_detail,
-                       'support_confidence', support.conceptual_support_confidence,
                        'support_status', support.conceptual_support_status,
                        'support_is_locked', support.conceptual_support_is_locked
                    )
@@ -112,7 +110,6 @@ SELECT parent.conceptual_object_id,
        parent.conceptual_object_type,
        parent.conceptual_object_grain,
        parent.conceptual_object_aliases,
-       parent.conceptual_object_confidence,
        parent.conceptual_object_status,
        parent.conceptual_object_is_locked,
        {
@@ -157,7 +154,6 @@ SELECT parent.conceptual_relationship_id,
        parent.conceptual_relationship_cardinality,
        parent.conceptual_relationship_basis,
        parent.conceptual_relationship_cardinality_basis,
-       parent.conceptual_relationship_confidence,
        parent.conceptual_relationship_status,
        parent.conceptual_relationship_is_locked,
        {

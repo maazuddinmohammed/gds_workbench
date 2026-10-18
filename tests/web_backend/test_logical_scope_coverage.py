@@ -138,7 +138,11 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
     ]
     relationship = {
         **evidence["analysis_result"][0],
-        **{f"{side}_{key}": value for side in ("from", "to") for key, value in source_key.items()},
+        **{
+            f"{side}_{key}": value
+            for side in ("from", "to")
+            for key, value in source_key.items()
+        },
         "to_object_name": "source_1",
         "validation_result": "unsupported",
         "validation_target_non_null_count": 6,
@@ -182,7 +186,8 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
     default = next(
         row
         for row in DEFAULTS
-        if row["project_workflow"] == "logical" and row["workflow_execution_mode"] == mode
+        if row["project_workflow"] == "logical"
+        and row["workflow_execution_mode"] == mode
     )
     contracts = list_prompt_input_contracts(
         project_workflow="logical",
@@ -216,7 +221,9 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
         agent=agent,
         plan=plan,
         context_bundle=bundle,
-        context_policy=AgentContextPolicy(max_candidate_bytes=2_000_000, max_validation_issues=20),
+        context_policy=AgentContextPolicy(
+            max_candidate_bytes=2_000_000, max_validation_issues=20
+        ),
     )
     execution = service.execute_started(
         _principal(),
@@ -250,7 +257,6 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
             '"percent_duplicates":44.4444',
             '"row_scope":"batch"',
             '"profiled_at":"2026-10-06T00:00:00Z"',
-            '"relationship_confidence":"high"',
             '"validation_result":"unsupported"',
             '"validation_duplicate_target_key_count":1',
         ):
@@ -281,9 +287,15 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
                 break
         assert (object_count, attribute_count) == (27, 883)
         objects = cast(dict[str, Any], catalog.invoke("get_objects", {}))
-        assert objects["items"][0]["object_description"] == "Enriched customer business meaning."
+        assert (
+            objects["items"][0]["object_description"]
+            == "Enriched customer business meaning."
+        )
         attribute = supplied_details[0]["attributes"][0]
-        assert attribute["attribute_description"] == "Enriched customer business identifier."
+        assert (
+            attribute["attribute_description"]
+            == "Enriched customer business identifier."
+        )
         assert attribute["attribute_inferred_data_type"] == "STRING"
         assert attribute["is_primary_key"] is True and attribute["is_pii"] is None
         assert attribute["profile"]["row_count"] == 10
@@ -292,11 +304,15 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
         assert attribute["profile"]["percent_duplicates"] == 44.4444
         assert attribute["profile"]["row_scope"] == "batch"
         assert attribute["profile"]["profiled_at"] == "2026-10-06T00:00:00Z"
-        relationships = cast(dict[str, Any], catalog.invoke("get_object_relationships", {}))
+        relationships = cast(
+            dict[str, Any], catalog.invoke("get_object_relationships", {})
+        )
         assert relationships["items"][0]["outgoing_relationships"] == [relationship]
     assert handoff.retained == []
     assert len(handoff.calls) == 1 and lifecycle.failed is None
-    entities = next(change for change in handoff.calls[0] if change.dataset == "logical_entity")
+    entities = next(
+        change for change in handoff.calls[0] if change.dataset == "logical_entity"
+    )
     attributes = next(
         change for change in handoff.calls[0] if change.dataset == "logical_attribute"
     )
@@ -311,7 +327,9 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
         assert "final attempt" in handoff.final_events[0].message
 
 
-async def test_empty_final_candidate_reports_zero_coverage_without_creating_a_draft() -> None:
+async def test_empty_final_candidate_reports_zero_coverage_without_creating_a_draft() -> (
+    None
+):
     agent = _AgentExecutor(responses=[_empty_candidate(), _empty_candidate()])
     service, _, _, handoff, lifecycle = _service(agent=agent)
     result = await service.execute_started(

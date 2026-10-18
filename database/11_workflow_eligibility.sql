@@ -238,7 +238,8 @@ AS $list_mapping_source_objects$
     UNION ALL
     SELECT support.dimensional_entity_source_mapping_id, target.modeled_entity_id,
            CASE WHEN target.modeled_entity_type = 'logical_entity' THEN 'lookup'
-                ELSE coalesce(support.dimensional_entity_source_role, 'candidate') END,
+                WHEN support.dimensional_entity_source_mapping_id IS NOT NULL THEN 'support'
+                ELSE 'candidate' END,
            CASE WHEN target.modeled_entity_type = 'logical_entity'
                 THEN 'Available peer Logical lookup with applied Mapping for the selected source System.'
                 ELSE coalesce(support.dimensional_entity_source_mapping_rationale,

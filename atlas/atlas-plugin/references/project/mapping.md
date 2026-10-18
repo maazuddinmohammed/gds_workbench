@@ -67,11 +67,13 @@ The backend's workflow-specific `{schema_version, object_mapping, attribute_mapp
 
 ## Update and downstream behavior
 
-For Logical Mapping, read the frozen Project's `logical_entity_scd_type`:
+For Mapping, read the frozen Project's matching `logical_entity_scd_type` or
+`dimensional_entity_scd_type`:
 `type_1` guides overwrite semantics and `type_2` guides versioned history. Null
 does not imply a default. Use existing modeled Attributes and evidenced matching,
 change-detection and history rules; report missing rules instead of fabricating
-them. This setting does not override Dimensional change behavior or migrate data.
+them. Dimensional history applies to dimensions only; facts and bridges retain
+their declared row behavior. Settings do not migrate data.
 
 Local effective-state checks overlay complete changed records on the immutable Snapshot. Apply upserts Object Mapping by modeled Entity/System and Attribute Mapping by parent Mapping/modeled Attribute. The transformation JSON is replaced whole; there is no inner-document merge. Preserve unaffected content when changing a record.
 

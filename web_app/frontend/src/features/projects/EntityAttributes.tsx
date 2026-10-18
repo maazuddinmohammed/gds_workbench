@@ -33,7 +33,7 @@ export function EntityAttributes(props: Props) {
       return { revision: page.project_revision, next: page.next_cursor, items: page.items.map((item) => ({
         id: item.dimensional_attribute_id, name: item.dimensional_attribute_name, type: item.dimensional_attribute_data_type,
         nullable: item.dimensional_attribute_is_nullable, status: item.dimensional_attribute_status, locked: item.dimensional_attribute_is_locked,
-        role: [item.dimensional_attribute_key_role === "business" ? "Natural key" : item.dimensional_attribute_key_role !== "none" ? `${item.dimensional_attribute_key_role} key` : item.dimensional_attribute_role, item.dimensional_attribute_is_audit_column && "Audit", item.dimensional_attribute_is_grain_component && "Grain"].filter(Boolean).join(" · ").replaceAll("_", " "),
+        role: [item.dimensional_attribute_is_natural_key && "Natural key", item.dimensional_attribute_is_surrogate_key && "Surrogate key", item.dimensional_attribute_is_audit_column && "Audit"].filter(Boolean).join(" · ") || "—",
       })) };
     },
     getNextPageParam: (page) => page.next ?? undefined,

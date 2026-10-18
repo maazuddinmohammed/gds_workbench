@@ -70,15 +70,6 @@ export function DimensionalEntitiesLedger({
     },
     { accessorKey: "dimensional_entity_dependency_order", header: "Order" },
     {
-      accessorKey: "dimensional_entity_confidence",
-      header: "Confidence",
-      cell: ({ getValue }) => (
-        <span className={`status-badge confidence-${getValue<string>()}`}>
-          {humanize(getValue<string>())}
-        </span>
-      ),
-    },
-    {
       accessorKey: "dimensional_entity_status",
       header: "Status",
       cell: ({ getValue }) => humanize(getValue<string>()),

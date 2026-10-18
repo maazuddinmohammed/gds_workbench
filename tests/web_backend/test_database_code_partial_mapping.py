@@ -60,9 +60,6 @@ def test_code_keeps_partial_system_pairs_and_all_active_target_attributes(
             f"{layer}_attribute_ordinal_position",
         ]
         values = "%s, %s, 'field_' || position, 'Synthetic field.', 'bigint', position"
-        if dimensional:
-            columns.append("dimensional_attribute_role")
-            values += ", 'descriptor'"
         connection.execute(
             sql.SQL(
                 "INSERT INTO workflow.{} ({}) SELECT {} FROM generate_series(2,10) position"

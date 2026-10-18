@@ -23,7 +23,7 @@ describe("Project Analysis", () => {
     expect(within(ledger).getAllByText("Not validated")).toHaveLength(5);
     expect(within(ledger).getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
       "", "From Object schema (A)", "From Object (A)", "From Attribute (A)", "To Object schema (B)", "To Object (B)", "To Attribute (B)",
-      "Relationship", "Inferred cardinality", "Observed cardinality", "Confidence",
+      "Relationship", "Inferred cardinality", "Observed cardinality",
       "A count", "B count", "A → B mismatches", "B → A mismatches",
       "A → B mismatch %", "B → A mismatch %", "Status", "Lock",
     ]);
@@ -73,7 +73,7 @@ describe("Project Analysis", () => {
     render(<WorkbenchApp router={analysisRouter(fetcher)} />);
     const ledger = await screen.findByRole("table", { name: "Analysis findings" });
     const cells = within(within(ledger).getAllByRole("row")[1]!).getAllByRole("cell");
-    expect(cells.slice(11, 17).map((cell) => cell.textContent)).toEqual(["1,000", "2,000", "4", "24", "5.00%", "24.00%"]);
+    expect(cells.slice(10, 16).map((cell) => cell.textContent)).toEqual(["1,000", "2,000", "4", "24", "5.00%", "24.00%"]);
     expect(within(ledger).getByText("Differs from inference")).toBeVisible();
     expect(fetcher.mock.calls.some(([input]) => String(input).endsWith("/analysis/81"))).toBe(false);
   });
@@ -87,7 +87,7 @@ describe("Project Analysis", () => {
     } }))} />);
     const ledger = await screen.findByRole("table", { name: "Analysis findings" });
     const cells = within(within(ledger).getAllByRole("row")[1]!).getAllByRole("cell");
-    expect(cells.slice(11, 17).map((cell) => cell.textContent)).toEqual(["Not profiled", "0", "3", "0", "100.00%", "N/A"]);
+    expect(cells.slice(10, 16).map((cell) => cell.textContent)).toEqual(["Not profiled", "0", "3", "0", "100.00%", "N/A"]);
   });
 
   it("redirects old finding links to the table and preserves the Project layer", async () => {
@@ -591,7 +591,6 @@ const analysisFindingPayload: AnalysisFinding = {
   from_endpoint: fromEndpoint,
   to_endpoint: toEndpoint,
   relationship_kind: "reference",
-  relationship_confidence: "high",
   inferred_cardinality: "many_to_one",
   observed_cardinality: null,
   cardinality_mismatch: false,

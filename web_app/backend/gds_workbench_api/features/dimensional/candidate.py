@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Sequence
 from copy import deepcopy
 from typing import cast
@@ -11,16 +12,17 @@ from gds_etl_workbench.application.change_sets.project_validation import (
     validate_staged_records,
 )
 from gds_etl_workbench.domain.errors import InvalidRequestError
+from gds_etl_workbench.domain.modeling_policy import GoldAuditPolicy, GoldTechnicalPolicy
 from gds_etl_workbench.domain.modeling_records import (
     AttributeContextSourceRecord,
     AttributeLogicalSourceRecord,
     DimensionalAttributeRecord,
-    DimensionalContextSourceRecord,
     DimensionalEntityRecord,
     DimensionalLogicalEntitySourceRecord,
     DimensionalRelationshipRecord,
     DimensionalSubmodelRecord,
     LogicalAttributeKey,
+    LogicalContextSourceRecord,
     LogicalEntityKey,
     SubmodelMembershipRecord,
     normalize_project_key_value,
@@ -28,6 +30,12 @@ from gds_etl_workbench.domain.modeling_records import (
 from gds_etl_workbench.domain.snapshots.project import DimensionalSection
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
+from gds_workbench_api.features.dimensional.policy import (
+    dimensional_policy_attribute_keys,
+)
+from gds_workbench_api.features.dimensional.policy import (
+    dimensional_relationship_key as _relationship_key,
+)
 from gds_workbench_api.features.workflows.authoring.repair import (
     MAX_COVERAGE_SOURCE_REFS,
     AgentCandidateValidation,
@@ -37,7 +45,7 @@ from gds_workbench_api.features.workflows.authoring.repair import (
     project_validation_issues,
 )
 
-type _EntitySource = DimensionalLogicalEntitySourceRecord | DimensionalContextSourceRecord
+type _EntitySource = DimensionalLogicalEntitySourceRecord | LogicalContextSourceRecord
 type _AttributeSource = AttributeLogicalSourceRecord | AttributeContextSourceRecord
 
 
@@ -83,12 +91,24 @@ class DimensionalCandidateValidator:
         context_record_ids: tuple[str, ...],
         applied: DimensionalSection | None,
         coverage_threshold_percent: int = 60,
+        raw_technical_template: dict[str, object] | None = None,
+        raw_audit_template: dict[str, object] | None = None,
     ) -> None:
         if (
             type(coverage_threshold_percent) is not int
             or not 1 <= coverage_threshold_percent <= 100
         ):
             raise ValueError("Coverage threshold must be a whole number from 1 to 100")
+        self._technical = (
+            GoldTechnicalPolicy.model_validate_json(json.dumps(raw_technical_template))
+            if raw_technical_template is not None
+            else None
+        )
+        self._audit = (
+            GoldAuditPolicy.model_validate_json(json.dumps(raw_audit_template))
+            if raw_audit_template is not None
+            else None
+        )
         self._coverage_threshold_percent = coverage_threshold_percent
         if not selected_entity_keys or len(selected_entity_keys) > 50_000:
             raise ValueError("Dimensional Object selection must be bounded and nonempty")
@@ -324,6 +344,25 @@ class DimensionalCandidateValidator:
                             message=message,
                         )
                     )
+        effective_entities = {
+            **self._applied_entities,
+            **{_entity_key(record): record for record in parsed.entities},
+        }
+        effective_relationships = {
+            **self._applied_relationships,
+            **{_relationship_key(record): record for record in parsed.relationships},
+        }
+        reserved_keys: set[tuple[str, str, str]] = (
+            dimensional_policy_attribute_keys(
+                entities=tuple(effective_entities.values()),
+                relationships=tuple(effective_relationships.values()),
+                applied=self._applied,
+                technical=self._technical,
+                audit=self._audit,
+            )
+            if self._technical is not None
+            else set()
+        )
         raw_attributes: list[dict[str, object]] = []
         for index, attribute in enumerate(parsed.attributes):
             existing = self._applied_attributes.get(_attribute_key(attribute))
@@ -331,14 +370,14 @@ class DimensionalCandidateValidator:
             unchanged_applied = existing is not None and merged == existing.model_dump(mode="json")
             raw_attributes.append(merged)
             if (
-                attribute.dimensional_attribute_role in ("technical", "audit")
-                or attribute.dimensional_attribute_key_role in ("surrogate", "foreign")
+                _attribute_key(attribute) in reserved_keys
+                or attribute.dimensional_attribute_is_surrogate_key
                 or attribute.dimensional_attribute_is_audit_column
             ):
                 issues.append(
                     AgentValidationIssue(
                         code="candidate.policy_column_forbidden",
-                        path=("attributes", index, "dimensional_attribute_role"),
+                        path=("attributes", index, "dimensional_attribute_name"),
                         message=(
                             "Dimensional surrogate, foreign-key, technical, and audit "
                             "Attributes are projected deterministically."
@@ -701,21 +740,6 @@ def _attribute_key(record: DimensionalAttributeRecord) -> tuple[str, str, str]:
     )
 
 
-def _relationship_key(
-    record: DimensionalRelationshipRecord,
-) -> tuple[str, ...]:
-    return (
-        normalize_project_key_value(record.from_dimensional_entity_schema_name),
-        normalize_project_key_value(record.from_dimensional_entity_name),
-        normalize_project_key_value(record.from_dimensional_attribute_name),
-        normalize_project_key_value(record.to_dimensional_entity_schema_name),
-        normalize_project_key_value(record.to_dimensional_entity_name),
-        normalize_project_key_value(record.to_dimensional_attribute_name),
-        normalize_project_key_value(record.dimensional_relationship_kind),
-        normalize_project_key_value(record.dimensional_relationship_role_name or ""),
-    )
-
-
 def _membership_key(record: SubmodelMembershipRecord) -> tuple[str, ...]:
     return (normalize_project_key_value(record.submodel_name),)
 
@@ -739,7 +763,7 @@ def _attribute_source_key(record: _AttributeSource) -> tuple[str, ...]:
 
 
 def _nested_source_key(record: object) -> tuple[str, ...]:
-    if isinstance(record, (DimensionalLogicalEntitySourceRecord, DimensionalContextSourceRecord)):
+    if isinstance(record, (DimensionalLogicalEntitySourceRecord, LogicalContextSourceRecord)):
         return _entity_source_key(record)
     if isinstance(record, (AttributeLogicalSourceRecord, AttributeContextSourceRecord)):
         return _attribute_source_key(record)

@@ -146,8 +146,8 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
         connection.execute(
             """INSERT INTO workflow.analysis_result (
                 project_id,from_object_id,from_attribute_id,to_object_id,to_attribute_id,
-                relationship_kind,relationship_confidence,relationship_basis,analysis_result_is_locked
-            ) VALUES (%s,%s,%s,%s,%s,'reference','high','Synthetic stored relationship.',TRUE)""",
+                relationship_kind,relationship_basis,analysis_result_is_locked
+            ) VALUES (%s,%s,%s,%s,%s,'reference','Synthetic stored relationship.',TRUE)""",
             (
                 project_id,
                 object_id,

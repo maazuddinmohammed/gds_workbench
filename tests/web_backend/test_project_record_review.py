@@ -198,13 +198,13 @@ async def test_analysis_review_round_trip_preserves_evidence_and_fences_writes(
             """INSERT INTO workflow.analysis_result (
                 project_id, agent_run_id, from_object_id, from_attribute_id,
                 to_object_id, to_attribute_id, relationship_kind,
-                relationship_confidence, relationship_basis, validation_policy_version,
+                relationship_basis, validation_policy_version,
                 validation_policy_digest, validation_result,
                 validation_source_non_null_count, validation_source_distinct_count,
                 validation_target_non_null_count, validation_target_distinct_count,
                 validation_source_missing_target_count, validation_unused_target_count,
                 validation_duplicate_target_key_count
-            ) VALUES (%s, 'review-fixture-agent', %s, %s, %s, %s, 'reference', 'high',
+            ) VALUES (%s, 'review-fixture-agent', %s, %s, %s, %s, 'reference',
                 'Fixture relationship.', '1.0.0', %s, 'supported', 2, 2, 2, 2, 0, 0, 0)
             RETURNING *""",
             (

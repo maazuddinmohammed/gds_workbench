@@ -67,15 +67,6 @@ export function LogicalEntitiesLedger({
     },
     { accessorKey: "logical_entity_dependency_order", header: "Order" },
     {
-      accessorKey: "logical_entity_confidence",
-      header: "Confidence",
-      cell: ({ getValue }) => (
-        <span className={`status-badge confidence-${getValue<string>()}`}>
-          {humanize(getValue<string>())}
-        </span>
-      ),
-    },
-    {
       accessorKey: "logical_entity_status",
       header: "Status",
       cell: ({ getValue }) => humanize(getValue<string>()),
@@ -357,15 +348,6 @@ export function LogicalRelationshipsLedger({
       accessorKey: "logical_relationship_cardinality",
       header: "Cardinality",
       cell: ({ getValue }) => humanize(getValue<string>()),
-    },
-    {
-      accessorKey: "logical_relationship_confidence",
-      header: "Confidence",
-      cell: ({ getValue }) => (
-        <span className={`status-badge confidence-${getValue<string>()}`}>
-          {humanize(getValue<string>())}
-        </span>
-      ),
     },
     {
       accessorKey: "logical_relationship_status",

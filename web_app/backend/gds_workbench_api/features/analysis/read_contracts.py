@@ -56,7 +56,6 @@ class AnalysisFindingSummary(ReviewContract):
     from_endpoint: AnalysisEndpoint
     to_endpoint: AnalysisEndpoint
     relationship_kind: str = Field(min_length=1, max_length=100)
-    relationship_confidence: Literal["low", "medium", "high"]
     validation_state: AnalysisValidationState
     validation_result: AnalysisValidationResult | None = None
     inferred_cardinality: InferredCardinality = "unknown"

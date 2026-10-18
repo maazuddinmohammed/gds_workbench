@@ -213,8 +213,8 @@ def _seed_mapping_scope(
                     INSERT INTO workflow.dimensional_attribute (
                         project_id, dimensional_entity_id, dimensional_attribute_name,
                         dimensional_attribute_definition, dimensional_attribute_data_type,
-                        dimensional_attribute_ordinal_position, dimensional_attribute_role
-                    ) VALUES (%s, %s, 'customer_id', 'Customer identifier.', 'bigint', 1, 'key')
+                        dimensional_attribute_ordinal_position
+                    ) VALUES (%s, %s, 'customer_id', 'Customer identifier.', 'bigint', 1)
                     RETURNING dimensional_attribute_id
                     """,
                     (project_id, entity_id),
@@ -225,9 +225,9 @@ def _seed_mapping_scope(
                 """
                 INSERT INTO workflow.dimensional_entity_source_mapping (
                     project_id, dimensional_entity_id, support_source_type, source_logical_entity_id,
-                    dimensional_entity_source_role, dimensional_entity_source_mapping_order,
+                    dimensional_entity_source_mapping_order,
                     dimensional_entity_source_mapping_rationale
-                ) VALUES (%s, %s, 'logical_entity', %s, 'support', 1, 'Applied Logical source.')
+                ) VALUES (%s, %s, 'logical_entity', %s, 1, 'Applied Logical source.')
                 """,
                 (project_id, entity_id, logical_entity_id),
             )
@@ -417,30 +417,20 @@ def _seed_context_mapping_target(
                 sql.Identifier(f"{layer}_attribute_definition"),
                 sql.Identifier(f"{layer}_attribute_data_type"),
                 sql.Identifier(f"{layer}_attribute_ordinal_position"),
-                sql.Identifier(
-                    "dimensional_attribute_role"
-                    if dimensional
-                    else "logical_attribute_is_surrogate_key"
-                ),
+                sql.Identifier(f"{layer}_attribute_is_surrogate_key"),
                 sql.Identifier(f"{layer}_attribute_is_nullable"),
             ),
-            (scope.plan.project_id, entity_id, "key" if dimensional else True),
+            (scope.plan.project_id, entity_id, True),
         )
-        extra_columns = (
-            sql.SQL(", dimensional_entity_source_role") if dimensional else sql.SQL("")
-        )
-        extra_values = sql.SQL(", 'support'") if dimensional else sql.SQL("")
         connection.execute(
             sql.SQL(
                 "INSERT INTO workflow.{} (project_id, {}, support_source_type, "
-                "context_record_id, {}{}) "
-                "VALUES (%s,%s,'context_record',%s,'Explicit generated reference rule.'{})"
+                "context_record_id, {}) "
+                "VALUES (%s,%s,'context_record',%s,'Explicit generated reference rule.')"
             ).format(
                 sql.Identifier(f"{layer}_entity_source_mapping"),
                 sql.Identifier(f"{layer}_entity_id"),
                 sql.Identifier(f"{layer}_entity_source_mapping_rationale"),
-                extra_columns,
-                extra_values,
             ),
             (scope.plan.project_id, entity_id, context_record_id),
         )

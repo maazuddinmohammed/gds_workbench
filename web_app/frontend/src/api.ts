@@ -99,7 +99,6 @@ export type {
   ConceptualContextReference,
   ConceptualContextSupport,
   ConceptualCardinality,
-  ConceptualConfidence,
   ConceptualFilters,
   ConceptualObject,
   ConceptualObjectDetail,

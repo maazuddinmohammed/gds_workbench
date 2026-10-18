@@ -237,10 +237,9 @@ test("portable Snapshot rules cover every backend record validator", () => {
       dimensional_entity_grain_definition: "Transaction", submodels: [], sources: [],
     }],
     ["dimensional_attribute", {
-      dimensional_attribute_key_role: "primary", dimensional_attribute_role: "descriptive",
-      dimensional_attribute_additivity: null,
-      dimensional_attribute_default_aggregation: null,
-      dimensional_attribute_aggregation_basis: null,
+      dimensional_attribute_is_natural_key: true,
+      dimensional_attribute_is_surrogate_key: true,
+      dimensional_attribute_is_nullable: false,
       dimensional_attribute_is_audit_column: false,
       sources: [],
     }],

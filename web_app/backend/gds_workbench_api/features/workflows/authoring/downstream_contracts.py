@@ -354,7 +354,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             "roles; modeled_relationships describe "
             "conceptual join intent, not physical join "
             "proof; source_relationships carry Analysis "
-            "confidence and measured validation when "
+            "rationale and measured validation when "
             "available; profiles are saved aggregate "
             "counts, percentages and lengths, not live "
             "rows or guaranteed current observations; "

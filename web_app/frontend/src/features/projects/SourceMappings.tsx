@@ -7,10 +7,9 @@ type ModeledSource = LogicalAttributeSource | LogicalEntitySource | DimensionalA
 /** Keep source identifiers comparable, with provenance available on demand. */
 export function SourceMappings({ sources }: { sources: ModeledSource[] }) {
   const hasAttributes = sources.some((source) => source.support_source_type === "attribute" || source.support_source_type === "logical_attribute");
-  const hasRoles = sources.some((source) => "source_role" in source);
   return <section className="detail-section modeled-source-mappings" aria-label="Source mappings">
     <header><h2>Source mappings</h2><span>{sources.length}</span></header>
-    {!sources.length ? <p className="detail-empty">No source mappings are recorded.</p> : <div className="workflow-table-scroll table-scroll"><table aria-label="Source mappings"><thead><tr><th className="modeled-source-order">Order</th><th>Schema</th><th>Object / entity</th>{hasAttributes ? <th>Attribute</th> : null}<th>Rationale</th>{hasRoles ? <th>Role</th> : null}<th>Status</th><th>Details</th></tr></thead><tbody>
+    {!sources.length ? <p className="detail-empty">No source mappings are recorded.</p> : <div className="workflow-table-scroll table-scroll"><table aria-label="Source mappings"><thead><tr><th className="modeled-source-order">Order</th><th>Schema</th><th>Object / entity</th>{hasAttributes ? <th>Attribute</th> : null}<th>Rationale</th><th>Status</th><th>Details</th></tr></thead><tbody>
       {sources.map((source, index) => {
         const physical = source.support_source_type === "object" ? source.source_object : source.support_source_type === "attribute" ? source.source_attribute : null;
         const logical = source.support_source_type === "logical_entity" ? source.source_logical_entity : source.support_source_type === "logical_attribute" ? source.source_logical_attribute : null;
@@ -25,7 +24,6 @@ export function SourceMappings({ sources }: { sources: ModeledSource[] }) {
           <td><strong>{name}</strong>{context ? <small className="modeled-source-role">Context record</small> : null}</td>
           {hasAttributes ? <td>{attribute ?? "—"}</td> : null}
           <td className="modeled-source-rationale">{source.rationale}</td>
-          {hasRoles ? <td>{"source_role" in source ? humanize(source.source_role) : "—"}</td> : null}
           <td>{humanize(source.status)}{source.is_locked ? <small className="modeled-source-role">Locked</small> : null}</td>
           <td><details className="modeled-source-detail"><summary>Show details</summary>
           <MappingDocumentView title="Source detail" document={{

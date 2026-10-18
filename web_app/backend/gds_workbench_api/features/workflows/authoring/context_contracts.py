@@ -387,7 +387,6 @@ INPUT_SHAPES: dict[str, Any] = {
                         "to_object_name": {"type": "string", "minLength": 1},
                         "to_attribute_name": {"type": "string", "minLength": 1},
                         "relationship_kind": {"type": "string", "minLength": 1},
-                        "relationship_confidence": {"enum": ["low", "medium", "high"]},
                         "relationship_basis": {"type": "string", "minLength": 1},
                         "inferred_cardinality": {
                             "enum": [
@@ -452,7 +451,6 @@ INPUT_SHAPES: dict[str, Any] = {
                         "to_object_name",
                         "to_attribute_name",
                         "relationship_kind",
-                        "relationship_confidence",
                         "relationship_basis",
                         "inferred_cardinality",
                         "validation_policy_version",
@@ -484,8 +482,7 @@ INPUT_SHAPES: dict[str, Any] = {
         "may contain formula, grain, dimensions, date_basis, "
         "exclusions, history or acceptance_criteria; missing "
         "details are unspecified. document_name and "
-        "source_location identify provenance. confidence is "
-        "evidence confidence, not priority. Keys link project "
+        "source_location identify provenance. Keys link project "
         "support to context records; they are not physical lineage "
         "or proof of source data.",
         "schema": {
@@ -552,7 +549,7 @@ INPUT_SHAPES: dict[str, Any] = {
     "conceptual_objects": {
         "description": "Existing Conceptual objects, retaining all existing "
         "record fields and nested Object/Context supports, "
-        "confidence, lifecycle status, and locks. Known empty "
+        "lifecycle status and locks. Known empty "
         "is []; null means the applied section is unavailable.",
         "schema": {
             "$defs": {
@@ -605,11 +602,6 @@ INPUT_SHAPES: dict[str, Any] = {
                             ],
                             "title": "Support Reason Detail",
                         },
-                        "support_confidence": {
-                            "enum": ["low", "medium", "high"],
-                            "title": "Support Confidence",
-                            "type": "string",
-                        },
                         "support_status": {
                             "enum": ["active", "inactive", "deprecated"],
                             "title": "Support Status",
@@ -623,7 +615,6 @@ INPUT_SHAPES: dict[str, Any] = {
                         "support_role",
                         "support_reason",
                         "support_reason_detail",
-                        "support_confidence",
                         "support_status",
                         "support_is_locked",
                     ],
@@ -664,11 +655,6 @@ INPUT_SHAPES: dict[str, Any] = {
                             "title": "Conceptual Object Aliases",
                             "type": "array",
                         },
-                        "conceptual_object_confidence": {
-                            "enum": ["low", "medium", "high"],
-                            "title": "Conceptual Object Confidence",
-                            "type": "string",
-                        },
                         "conceptual_object_status": {
                             "enum": ["active", "inactive", "deprecated"],
                             "title": "Conceptual Object Status",
@@ -690,7 +676,6 @@ INPUT_SHAPES: dict[str, Any] = {
                         "conceptual_object_type",
                         "conceptual_object_grain",
                         "conceptual_object_aliases",
-                        "conceptual_object_confidence",
                         "conceptual_object_status",
                         "conceptual_object_is_locked",
                         "supports",
@@ -732,11 +717,6 @@ INPUT_SHAPES: dict[str, Any] = {
                             ],
                             "title": "Support Reason Detail",
                         },
-                        "support_confidence": {
-                            "enum": ["low", "medium", "high"],
-                            "title": "Support Confidence",
-                            "type": "string",
-                        },
                         "support_status": {
                             "enum": ["active", "inactive", "deprecated"],
                             "title": "Support Status",
@@ -750,7 +730,6 @@ INPUT_SHAPES: dict[str, Any] = {
                         "support_role",
                         "support_reason",
                         "support_reason_detail",
-                        "support_confidence",
                         "support_status",
                         "support_is_locked",
                     ],
@@ -879,7 +858,7 @@ INPUT_SHAPES: dict[str, Any] = {
     "conceptual_relationships": {
         "description": "Existing Conceptual relationships, retaining all "
         "existing record fields and nested "
-        "Object/Context supports, confidence, lifecycle "
+        "Object/Context supports, lifecycle "
         "status, and locks. Known empty is []; null means "
         "the applied section is unavailable.",
         "schema": {
@@ -933,11 +912,6 @@ INPUT_SHAPES: dict[str, Any] = {
                             ],
                             "title": "Support Reason Detail",
                         },
-                        "support_confidence": {
-                            "enum": ["low", "medium", "high"],
-                            "title": "Support Confidence",
-                            "type": "string",
-                        },
                         "support_status": {
                             "enum": ["active", "inactive", "deprecated"],
                             "title": "Support Status",
@@ -951,7 +925,6 @@ INPUT_SHAPES: dict[str, Any] = {
                         "support_role",
                         "support_reason",
                         "support_reason_detail",
-                        "support_confidence",
                         "support_status",
                         "support_is_locked",
                     ],
@@ -1022,11 +995,6 @@ INPUT_SHAPES: dict[str, Any] = {
                             "title": "Conceptual Relationship Cardinality Basis",
                             "type": "string",
                         },
-                        "conceptual_relationship_confidence": {
-                            "enum": ["low", "medium", "high"],
-                            "title": "Conceptual Relationship Confidence",
-                            "type": "string",
-                        },
                         "conceptual_relationship_status": {
                             "enum": ["active", "inactive", "deprecated"],
                             "title": "Conceptual Relationship Status",
@@ -1051,7 +1019,6 @@ INPUT_SHAPES: dict[str, Any] = {
                         "conceptual_relationship_cardinality",
                         "conceptual_relationship_basis",
                         "conceptual_relationship_cardinality_basis",
-                        "conceptual_relationship_confidence",
                         "conceptual_relationship_status",
                         "conceptual_relationship_is_locked",
                         "supports",
@@ -1093,11 +1060,6 @@ INPUT_SHAPES: dict[str, Any] = {
                             ],
                             "title": "Support Reason Detail",
                         },
-                        "support_confidence": {
-                            "enum": ["low", "medium", "high"],
-                            "title": "Support Confidence",
-                            "type": "string",
-                        },
                         "support_status": {
                             "enum": ["active", "inactive", "deprecated"],
                             "title": "Support Status",
@@ -1111,7 +1073,6 @@ INPUT_SHAPES: dict[str, Any] = {
                         "support_role",
                         "support_reason",
                         "support_reason_detail",
-                        "support_confidence",
                         "support_status",
                         "support_is_locked",
                     ],
@@ -1412,11 +1373,6 @@ INPUT_SHAPES: dict[str, Any] = {
                             "title": "Logical Entity Dependency Order",
                             "type": "integer",
                         },
-                        "logical_entity_confidence": {
-                            "enum": ["low", "medium", "high"],
-                            "title": "Logical Entity Confidence",
-                            "type": "string",
-                        },
                         "logical_entity_status": {
                             "enum": ["active", "inactive", "deprecated"],
                             "title": "Logical Entity Status",
@@ -1445,7 +1401,6 @@ INPUT_SHAPES: dict[str, Any] = {
                         "logical_entity_type_detail",
                         "logical_entity_grain",
                         "logical_entity_dependency_order",
-                        "logical_entity_confidence",
                         "logical_entity_status",
                         "logical_entity_is_locked",
                         "submodels",
@@ -2038,11 +1993,6 @@ INPUT_SHAPES: dict[str, Any] = {
                             "title": "Logical Relationship Cardinality",
                             "type": "string",
                         },
-                        "logical_relationship_confidence": {
-                            "enum": ["low", "medium", "high"],
-                            "title": "Logical Relationship Confidence",
-                            "type": "string",
-                        },
                         "logical_relationship_basis": {
                             "minLength": 1,
                             "pattern": "\\S",
@@ -2075,7 +2025,6 @@ INPUT_SHAPES: dict[str, Any] = {
                         "to_logical_entity_name",
                         "to_logical_attribute_name",
                         "logical_relationship_cardinality",
-                        "logical_relationship_confidence",
                         "logical_relationship_basis",
                         "logical_relationship_cardinality_basis",
                         "logical_relationship_status",
@@ -2303,7 +2252,7 @@ INPUT_SHAPES: dict[str, Any] = {
                     "title": "ContextRecordReference",
                     "type": "object",
                 },
-                "DimensionalContextSourceRecord": {
+                "LogicalContextSourceRecord": {
                     "additionalProperties": False,
                     "properties": {
                         "support_source_type": {
@@ -2329,13 +2278,6 @@ INPUT_SHAPES: dict[str, Any] = {
                             "type": "string",
                         },
                         "is_locked": {"title": "Is Locked", "type": "boolean"},
-                        "source_role": {
-                            "maxLength": 255,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Source Role",
-                            "type": "string",
-                        },
                     },
                     "required": [
                         "support_source_type",
@@ -2343,9 +2285,8 @@ INPUT_SHAPES: dict[str, Any] = {
                         "rationale",
                         "status",
                         "is_locked",
-                        "source_role",
                     ],
-                    "title": "DimensionalContextSourceRecord",
+                    "title": "LogicalContextSourceRecord",
                     "type": "object",
                 },
                 "DimensionalEntityRecord": {
@@ -2403,11 +2344,6 @@ INPUT_SHAPES: dict[str, Any] = {
                             "title": "Dimensional Entity Dependency Order",
                             "type": "integer",
                         },
-                        "dimensional_entity_confidence": {
-                            "enum": ["low", "medium", "high"],
-                            "title": "Dimensional Entity Confidence",
-                            "type": "string",
-                        },
                         "dimensional_entity_status": {
                             "enum": ["active", "inactive", "deprecated"],
                             "title": "Dimensional Entity Status",
@@ -2436,7 +2372,6 @@ INPUT_SHAPES: dict[str, Any] = {
                         "dimensional_fact_type",
                         "dimensional_entity_grain_definition",
                         "dimensional_entity_dependency_order",
-                        "dimensional_entity_confidence",
                         "dimensional_entity_status",
                         "dimensional_entity_is_locked",
                         "submodels",
@@ -2448,14 +2383,14 @@ INPUT_SHAPES: dict[str, Any] = {
                 "DimensionalEntitySourceRecord": {
                     "discriminator": {
                         "mapping": {
-                            "context_record": "#/$defs/DimensionalContextSourceRecord",
+                            "context_record": "#/$defs/LogicalContextSourceRecord",
                             "logical_entity": "#/$defs/DimensionalLogicalEntitySourceRecord",
                         },
                         "propertyName": "support_source_type",
                     },
                     "oneOf": [
                         {"$ref": "#/$defs/DimensionalLogicalEntitySourceRecord"},
-                        {"$ref": "#/$defs/DimensionalContextSourceRecord"},
+                        {"$ref": "#/$defs/LogicalContextSourceRecord"},
                     ],
                 },
                 "DimensionalLogicalEntitySourceRecord": {
@@ -2484,13 +2419,6 @@ INPUT_SHAPES: dict[str, Any] = {
                             "type": "string",
                         },
                         "is_locked": {"title": "Is Locked", "type": "boolean"},
-                        "source_role": {
-                            "maxLength": 255,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Source Role",
-                            "type": "string",
-                        },
                     },
                     "required": [
                         "support_source_type",
@@ -2498,7 +2426,6 @@ INPUT_SHAPES: dict[str, Any] = {
                         "rationale",
                         "status",
                         "is_locked",
-                        "source_role",
                     ],
                     "title": "DimensionalLogicalEntitySourceRecord",
                     "type": "object",
@@ -2743,72 +2670,11 @@ INPUT_SHAPES: dict[str, Any] = {
                             "title": "Dimensional Attribute Ordinal Position",
                             "type": "integer",
                         },
-                        "dimensional_attribute_role": {
-                            "enum": [
-                                "key",
-                                "descriptor",
-                                "measure",
-                                "degenerate_dimension",
-                                "bridge_weight",
-                                "technical",
-                                "audit",
-                            ],
-                            "title": "Dimensional Attribute Role",
-                            "type": "string",
-                        },
-                        "dimensional_attribute_key_role": {
-                            "enum": ["none", "surrogate", "business", "foreign"],
-                            "title": "Dimensional Attribute Key Role",
-                            "type": "string",
-                        },
-                        "dimensional_attribute_is_grain_component": {
-                            "title": "Dimensional Attribute Is Grain Component",
-                            "type": "boolean",
-                        },
-                        "dimensional_attribute_additivity": {
-                            "anyOf": [
-                                {
-                                    "enum": ["additive", "semi_additive", "non_additive"],
-                                    "type": "string",
-                                },
-                                {"type": "null"},
-                            ],
-                            "title": "Dimensional Attribute Additivity",
-                        },
-                        "dimensional_attribute_default_aggregation": {
-                            "anyOf": [
-                                {
-                                    "maxLength": 100,
-                                    "minLength": 1,
-                                    "pattern": "\\S",
-                                    "type": "string",
-                                },
-                                {"type": "null"},
-                            ],
-                            "title": "Dimensional Attribute Default Aggregation",
-                        },
-                        "dimensional_attribute_aggregation_basis": {
-                            "anyOf": [
-                                {"minLength": 1, "pattern": "\\S", "type": "string"},
-                                {"type": "null"},
-                            ],
-                            "title": "Dimensional Attribute Aggregation Basis",
-                        },
-                        "dimensional_attribute_change_behavior": {
-                            "anyOf": [
-                                {"enum": ["fixed", "overwrite", "historize"], "type": "string"},
-                                {"type": "null"},
-                            ],
-                            "title": "Dimensional Attribute Change Behavior",
-                        },
+                        "dimensional_attribute_is_natural_key": {"type": "boolean"},
+                        "dimensional_attribute_is_surrogate_key": {"type": "boolean"},
                         "dimensional_attribute_is_audit_column": {
                             "title": "Dimensional Attribute Is Audit Column",
                             "type": "boolean",
-                        },
-                        "dimensional_attribute_confidence": {
-                            "enum": ["low", "medium", "high"],
-                            "title": "Dimensional Attribute Confidence",
-                            "type": "string",
                         },
                         "dimensional_attribute_status": {
                             "enum": ["active", "inactive", "deprecated"],
@@ -2833,15 +2699,9 @@ INPUT_SHAPES: dict[str, Any] = {
                         "dimensional_attribute_data_type",
                         "dimensional_attribute_is_nullable",
                         "dimensional_attribute_ordinal_position",
-                        "dimensional_attribute_role",
-                        "dimensional_attribute_key_role",
-                        "dimensional_attribute_is_grain_component",
-                        "dimensional_attribute_additivity",
-                        "dimensional_attribute_default_aggregation",
-                        "dimensional_attribute_aggregation_basis",
-                        "dimensional_attribute_change_behavior",
+                        "dimensional_attribute_is_natural_key",
+                        "dimensional_attribute_is_surrogate_key",
                         "dimensional_attribute_is_audit_column",
-                        "dimensional_attribute_confidence",
                         "dimensional_attribute_status",
                         "dimensional_attribute_is_locked",
                         "sources",
@@ -3084,11 +2944,6 @@ INPUT_SHAPES: dict[str, Any] = {
                             ],
                             "title": "Dimensional Relationship Role Name",
                         },
-                        "dimensional_relationship_confidence": {
-                            "enum": ["low", "medium", "high"],
-                            "title": "Dimensional Relationship Confidence",
-                            "type": "string",
-                        },
                         "dimensional_relationship_basis": {
                             "minLength": 1,
                             "pattern": "\\S",
@@ -3124,7 +2979,6 @@ INPUT_SHAPES: dict[str, Any] = {
                         "dimensional_relationship_cardinality",
                         "dimensional_relationship_is_optional",
                         "dimensional_relationship_role_name",
-                        "dimensional_relationship_confidence",
                         "dimensional_relationship_basis",
                         "dimensional_relationship_cardinality_basis",
                         "dimensional_relationship_status",
@@ -3318,8 +3172,8 @@ INPUT_SHAPES: dict[str, Any] = {
     },
     "dimensional.dimensional_entity_scd_type": {
         "description": "Frozen Project policy for Dimension history, independent of Logical SCD. "
-        "type_1 overwrites mutable descriptors (change_behavior=overwrite); type_2 preserves "
-        "Dimension versions (change_behavior=historize). Stable identity Attributes remain fixed. "
+        "type_1 overwrites mutable descriptors ; type_2 preserves "
+        "Dimension versions . Stable identity Attributes remain fixed. "
         "Null is unspecified: use evidenced per-Attribute behavior. Applies to Dimensions, not "
         "Fact or Bridge history. Backend projects surrogate/foreign keys and configured Type 2 "
         "effective/current columns. Do not invent business keys or source history; changing this "
@@ -3710,11 +3564,6 @@ INPUT_SHAPES: dict[str, Any] = {
                             "title": "Logical Entity Dependency Order",
                             "type": "integer",
                         },
-                        "logical_entity_confidence": {
-                            "enum": ["low", "medium", "high"],
-                            "title": "Logical Entity Confidence",
-                            "type": "string",
-                        },
                         "logical_entity_status": {
                             "enum": ["active", "inactive", "deprecated"],
                             "title": "Logical Entity Status",
@@ -3743,7 +3592,6 @@ INPUT_SHAPES: dict[str, Any] = {
                         "logical_entity_type_detail",
                         "logical_entity_grain",
                         "logical_entity_dependency_order",
-                        "logical_entity_confidence",
                         "logical_entity_status",
                         "logical_entity_is_locked",
                         "submodels",
@@ -4656,7 +4504,6 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "logical_entity_type_detail": None,
                 "logical_entity_grain": "One row per customer.",
                 "logical_entity_dependency_order": 0,
-                "logical_entity_confidence": "high",
                 "logical_entity_status": "active",
                 "logical_entity_is_locked": True,
                 "submodels": [
@@ -4691,7 +4538,6 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "logical_entity_type_detail": None,
                 "logical_entity_grain": "One row per order.",
                 "logical_entity_dependency_order": 1,
-                "logical_entity_confidence": "high",
                 "logical_entity_status": "active",
                 "logical_entity_is_locked": False,
                 "submodels": [
@@ -4878,7 +4724,6 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "to_logical_entity_name": "Customer",
                 "to_logical_attribute_name": "CustomerId",
                 "logical_relationship_cardinality": "many_to_one",
-                "logical_relationship_confidence": "high",
                 "logical_relationship_basis": "The saved business rule "
                 "identifies the Order "
                 "customer reference.",
@@ -4951,7 +4796,6 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "logical_entity_type_detail": None,
                 "logical_entity_grain": "One row per customer.",
                 "logical_entity_dependency_order": 0,
-                "logical_entity_confidence": "high",
                 "logical_entity_status": "active",
                 "logical_entity_is_locked": True,
                 "submodels": [
@@ -4986,7 +4830,6 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "logical_entity_type_detail": None,
                 "logical_entity_grain": "One row per order.",
                 "logical_entity_dependency_order": 1,
-                "logical_entity_confidence": "high",
                 "logical_entity_status": "active",
                 "logical_entity_is_locked": False,
                 "submodels": [
@@ -5181,7 +5024,6 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "to_logical_entity_name": "Customer",
                 "to_logical_attribute_name": "CustomerId",
                 "logical_relationship_cardinality": "many_to_one",
-                "logical_relationship_confidence": "high",
                 "logical_relationship_basis": "The saved business "
                 "rule identifies the "
                 "Order customer "
@@ -5238,7 +5080,6 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "identity "
                 "scope.",
                 "dimensional_entity_dependency_order": 0,
-                "dimensional_entity_confidence": "high",
                 "dimensional_entity_status": "active",
                 "dimensional_entity_is_locked": False,
                 "submodels": [
@@ -5254,7 +5095,6 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "context_record": {
                             "context_record_id": "0be08a40-db09-52da-b889-c1615c8533c1"
                         },
-                        "source_role": "business_rule",
                         "source_order": 1,
                         "rationale": "Approved dimensional requirement.",
                         "status": "active",
@@ -5272,7 +5112,6 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "one for that row.",
                         "status": "active",
                         "is_locked": False,
-                        "source_role": "grain_rule",
                     },
                 ],
                 "dimensional_entity_schema_name": "gold",
@@ -5284,7 +5123,6 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "dimensional_fact_type": None,
                 "dimensional_entity_grain_definition": None,
                 "dimensional_entity_dependency_order": 0,
-                "dimensional_entity_confidence": "high",
                 "dimensional_entity_status": "active",
                 "dimensional_entity_is_locked": True,
                 "submodels": [
@@ -5300,7 +5138,6 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "context_record": {
                             "context_record_id": "0be08a40-db09-52da-b889-c1615c8533c1"
                         },
-                        "source_role": "business_rule",
                         "source_order": 1,
                         "rationale": "Approved dimensional requirement.",
                         "status": "active",
@@ -5340,15 +5177,9 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "dimensional_attribute_data_type": "bigint",
                 "dimensional_attribute_is_nullable": False,
                 "dimensional_attribute_ordinal_position": 1,
-                "dimensional_attribute_role": "key",
-                "dimensional_attribute_key_role": "surrogate",
-                "dimensional_attribute_is_grain_component": True,
-                "dimensional_attribute_additivity": None,
-                "dimensional_attribute_default_aggregation": None,
-                "dimensional_attribute_aggregation_basis": None,
-                "dimensional_attribute_change_behavior": None,
+                "dimensional_attribute_is_natural_key": False,
+                "dimensional_attribute_is_surrogate_key": True,
                 "dimensional_attribute_is_audit_column": False,
-                "dimensional_attribute_confidence": "high",
                 "dimensional_attribute_status": "active",
                 "dimensional_attribute_is_locked": False,
                 "sources": [
@@ -5372,15 +5203,9 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "dimensional_attribute_data_type": "bigint",
                 "dimensional_attribute_is_nullable": False,
                 "dimensional_attribute_ordinal_position": 1,
-                "dimensional_attribute_role": "key",
-                "dimensional_attribute_key_role": "foreign",
-                "dimensional_attribute_is_grain_component": True,
-                "dimensional_attribute_additivity": None,
-                "dimensional_attribute_default_aggregation": None,
-                "dimensional_attribute_aggregation_basis": None,
-                "dimensional_attribute_change_behavior": None,
+                "dimensional_attribute_is_natural_key": False,
+                "dimensional_attribute_is_surrogate_key": False,
                 "dimensional_attribute_is_audit_column": False,
-                "dimensional_attribute_confidence": "high",
                 "dimensional_attribute_status": "active",
                 "dimensional_attribute_is_locked": False,
                 "sources": [
@@ -5412,27 +5237,9 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "dimensional_attribute_data_type": "bigint",
                 "dimensional_attribute_is_nullable": False,
                 "dimensional_attribute_ordinal_position": 3,
-                "dimensional_attribute_role": "measure",
-                "dimensional_attribute_key_role": "none",
-                "dimensional_attribute_is_grain_component": False,
-                "dimensional_attribute_additivity": "additive",
-                "dimensional_attribute_default_aggregation": "SUM",
-                "dimensional_attribute_aggregation_basis": "Each "
-                "fact "
-                "row "
-                "contributes "
-                "exactly "
-                "one "
-                "distinct "
-                "order "
-                "under "
-                "the "
-                "confirmed "
-                "grain "
-                "rule.",
-                "dimensional_attribute_change_behavior": None,
+                "dimensional_attribute_is_natural_key": False,
+                "dimensional_attribute_is_surrogate_key": False,
                 "dimensional_attribute_is_audit_column": False,
-                "dimensional_attribute_confidence": "high",
                 "dimensional_attribute_status": "active",
                 "dimensional_attribute_is_locked": False,
                 "sources": [
@@ -5459,15 +5266,9 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "dimensional_attribute_data_type": "bigint",
                 "dimensional_attribute_is_nullable": False,
                 "dimensional_attribute_ordinal_position": 1,
-                "dimensional_attribute_role": "key",
-                "dimensional_attribute_key_role": "surrogate",
-                "dimensional_attribute_is_grain_component": True,
-                "dimensional_attribute_additivity": None,
-                "dimensional_attribute_default_aggregation": None,
-                "dimensional_attribute_aggregation_basis": None,
-                "dimensional_attribute_change_behavior": None,
+                "dimensional_attribute_is_natural_key": False,
+                "dimensional_attribute_is_surrogate_key": True,
                 "dimensional_attribute_is_audit_column": False,
-                "dimensional_attribute_confidence": "high",
                 "dimensional_attribute_status": "active",
                 "dimensional_attribute_is_locked": True,
                 "sources": [
@@ -5509,7 +5310,6 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "dimensional_relationship_cardinality": "many_to_one",
                 "dimensional_relationship_is_optional": False,
                 "dimensional_relationship_role_name": None,
-                "dimensional_relationship_confidence": "high",
                 "dimensional_relationship_basis": "The saved "
                 "sales "
                 "policy "
@@ -5610,7 +5410,6 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                     "logical_entity_type_detail": None,
                     "logical_entity_grain": "One row per order.",
                     "logical_entity_dependency_order": 1,
-                    "logical_entity_confidence": "high",
                     "logical_entity_status": "active",
                     "logical_entity_is_locked": False,
                     "submodels": [
@@ -5761,7 +5560,6 @@ for _relationship_workflow in ("analysis", "conceptual", "logical"):
         "from_attribute_name": _relationship_attribute,
         "to_attribute_name": _relationship_attribute,
         "relationship_kind": "reference",
-        "relationship_confidence": "high",
         "relationship_basis": "The source definition identifies the order's customer account.",
         "inferred_cardinality": "many_to_one",
         "analysis_result_status": "active",

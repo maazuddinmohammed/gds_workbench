@@ -610,7 +610,6 @@ def _relationship_from_row(
     document = {
         "analysis_result_id": row.get("analysis_result_id"),
         "relationship_kind": row.get("relationship_kind"),
-        "relationship_confidence": row.get("relationship_confidence"),
         "relationship_basis": row.get("relationship_basis"),
         "inferred_cardinality": row.get("inferred_cardinality"),
         "analysis_result_status": row.get("analysis_result_status"),

@@ -268,7 +268,6 @@ class LocalFakeAgentAdapter:
                         **{f"to_{name}": value for name, value in target.items()},
                         "relationship_kind": "reference",
                         "inferred_cardinality": "unknown",
-                        "relationship_confidence": "medium",
                         "relationship_basis": (
                             "Selected Attribute metadata supports this candidate."
                         ),
@@ -333,7 +332,6 @@ class LocalFakeAgentAdapter:
                                 "A stable business subject represented across the selected scope."
                             ),
                             "conceptual_object_aliases": [],
-                            "conceptual_object_confidence": "medium",
                             "conceptual_object_status": "active",
                             "conceptual_object_is_locked": False,
                             "supports": [
@@ -343,7 +341,6 @@ class LocalFakeAgentAdapter:
                                     "support_role": "source",
                                     "support_reason": ("Selected Object supports this candidate."),
                                     "support_reason_detail": None,
-                                    "support_confidence": "medium",
                                     "support_status": "active",
                                     "support_is_locked": False,
                                 }

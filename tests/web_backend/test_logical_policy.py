@@ -20,7 +20,6 @@ def _entity(name: str) -> LogicalEntityRecord:
         logical_entity_type_detail=None,
         logical_entity_grain=f"One row per {name}.",
         logical_entity_dependency_order=0,
-        logical_entity_confidence="high",
         logical_entity_status="active",
         logical_entity_is_locked=False,
         submodels=(),

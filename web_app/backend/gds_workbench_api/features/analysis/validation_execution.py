@@ -131,7 +131,6 @@ class AnalysisValidationRelationship(BaseModel):
 
     analysis_result_id: int = Field(gt=0)
     relationship_kind: str = Field(min_length=1, max_length=100)
-    relationship_confidence: Literal["low", "medium", "high"]
     relationship_basis: str = Field(min_length=1, max_length=8_000)
     inferred_cardinality: InferredCardinality = "unknown"
     analysis_result_status: Literal["active"]
