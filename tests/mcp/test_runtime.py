@@ -649,7 +649,7 @@ def test_health_routes_are_anonymous() -> None:
     assert ready.status_code == 200
     ready_body = ready.json()
     assert ready_body["status"] == "ready"
-    assert ready_body["mcp_server_version"] == "0.2.0"
+    assert ready_body["mcp_server_version"] == "0.3.0"
     assert ready_body["tool_count"] == 40
     assert "tool_contract_sha256" not in ready_body
 
