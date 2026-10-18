@@ -15,21 +15,30 @@ from pydantic import JsonValue
 
 from tests.web_backend.test_logical_candidate import _candidate, _validator
 
-DEFAULTS = json.loads(
-    (
-        Path(__file__).resolve().parents[2]
-        / "database/seed/05_global_prompt_defaults.template.sql"
-    )
-    .read_text()
-    .split("$workflow_defaults$")[1]
-)
+SEED_ROOT = Path(__file__).resolve().parents[2] / "database/seed"
+# Seed 05 v2 publishes an alternate global set that must keep the same boundaries.
+PROMPT_SETS = {
+    "default": json.loads(
+        (SEED_ROOT / "05_global_prompt_defaults.template.sql")
+        .read_text()
+        .split("$workflow_defaults$")[1]
+    ),
+    "alternate": json.loads(
+        (SEED_ROOT / "05_global_prompt_defaults.template.v2.sql")
+        .read_text()
+        .split("$alternate_defaults$")[1]
+    ),
+}
 
 
+@pytest.mark.parametrize("prompt_set", sorted(PROMPT_SETS))
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
-def test_logical_defaults_are_compact_and_keep_modeling_boundaries(mode: str) -> None:
+def test_logical_defaults_are_compact_and_keep_modeling_boundaries(
+    prompt_set: str, mode: str
+) -> None:
     row = next(
         item
-        for item in DEFAULTS
+        for item in PROMPT_SETS[prompt_set]
         if item["project_workflow"] == "logical"
         and item["workflow_execution_mode"] == mode
     )
