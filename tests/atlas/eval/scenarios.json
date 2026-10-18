@@ -230,9 +230,10 @@
           "validate"
         ],
         "required_files_any": [
-          "metadata-change-set/*.json"
+          "metadata-change-set/bronze_attribute.json"
         ],
         "forbidden_files": [
+          "metadata-change-set/bronze_object.json",
           "project-change-set/*_enrichment.json"
         ]
       }
