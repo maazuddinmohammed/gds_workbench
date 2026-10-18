@@ -59,21 +59,15 @@ Evidence queries use supported registered coordinates and SQL policy, with maski
 
 ## Enrichment checks
 
-These are modular workflow checks for later implementation/review, separate from the [existing table checks](validation.md). No new validators are implemented by this document.
+These workflow checks add to the [table checks](validation.md). Enforcement values are explained in [common checks](validation.md#interpreting-table-checklists).
 
-| Rule | Check / purpose | Enforcement status |
+| Rule | Check / purpose | Enforced by |
 |---|---|---|
-| enrichment.scope | Exact selected Object/Attribute keys, Zone and owner; Project scope revision when used. Prevent accidental expansion or wrong-Tenant writes. | Existing ownership/reference checks plus proposed workflow scope comparison. |
-| enrichment.fields | Compare with incoming effective records; enrichment changes only the three allowed fields. Preserve earlier pending authoring edits. | Proposed local/backend operation-boundary check; not a restriction on general Metadata authoring. |
-| enrichment.descriptions | Meaningful Object/Attribute definitions, consistent terminology and supported claims; no Zone boilerplate or tautology. | Agent review rubric; a text/schema validator cannot prove business truth. |
-| enrichment.types | Evidence supports interpretation; physical type unchanged; identify loss, ambiguity and limited coverage. | Existing null/nonblank/100-character field shape; semantic checks proposed. No current inferred-type grammar validator. |
-| enrichment.protection | Preserve locks and masking protections; no inferred-meaning changes to activity/key flags. | Existing lock checks; evidence helper lineage/masking parity needs review when ported. |
-| enrichment.coverage | Account for selected records as updated, unchanged, protected or unresolved; complete local batch and retain evidence for downstream use. | Proposed workflow result summary; coverage does not require inventing a value. |
+| enrichment.scope | Exact selected Object/Attribute keys, Zone and owner; Project scope revision when used. Prevent accidental expansion or wrong-Tenant writes. Ownership and references are validated; comparing against the requested scope is yours. | Local validator + server, plus your review |
+| enrichment.fields | Compare with incoming effective records; enrichment changes only the three allowed fields. Preserve earlier pending authoring edits. | Your review (no automated check) |
+| enrichment.descriptions | Meaningful Object/Attribute definitions, consistent terminology and supported claims; no Zone boilerplate or tautology. | Your review |
+| enrichment.types | Evidence supports interpretation; physical type unchanged; identify loss, ambiguity and limited coverage. Only the null/nonblank/100-character shape is validated. | Your review |
+| enrichment.protection | Preserve locks and masking protections; no inferred-meaning changes to activity/key flags. | Local validator + server (locks); your review (masking) |
+| enrichment.coverage | Account for selected records as updated, unchanged, protected or unresolved; complete the local batch and retain evidence for downstream use. Coverage never requires inventing a value. | Your review |
 
-Shared description fields are nullable text with no 2,000-byte limit found in their record schemas. The inferred-type field is nullable or a nonblank string of at most 100 characters. Do not carry legacy workflow caps or fill-only policies into Atlas as database requirements.
-
-## Skill and helper design
-
-The skill contains the sequence; this reference holds reusable quality rules and examples. Existing Snapshot readers and validators should be reused. Add deterministic helpers for repeated evidence/type checks only when their contracts are agreed. This follows [Agent Skills guidance](https://agentskills.io/skill-creation/best-practices) on concrete procedures, examples, progressive disclosure and validation loops. Outcome quality still needs evaluation with representative cases and the projects the plugin will support; structural validation is not an evaluation of writing quality.
-
-Local provenance: metadata_records.py; current GDS metadata-enrichment.md; profiling.js; metadata-enrichment-type-evidence.sql. Legacy Attribute-Mapping-only Bronze inference, Project-required selection, scope caps and inferred-type fill-only policy are not adopted by this draft.
+Physical description fields are nullable text without the 2,000-byte limit that applies to Project enrichment. The inferred-type field is null or a nonblank string of at most 100 characters.

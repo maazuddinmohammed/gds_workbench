@@ -19,6 +19,7 @@ from gds_etl_workbench.application.change_sets.contracts import (
     MAX_PROJECT_STAGE_CHUNK_BYTES,
     canonical_records_sha256,
     stage_batch_sha256,
+    stage_fingerprint_sha256,
 )
 from gds_etl_workbench.application.change_sets.project import (
     StageProjectChange,
@@ -855,13 +856,15 @@ async def test_all_project_change_set_mutation_paths_persist_due_expiry_once(
                         },
                     )
                 else:
+                    arguments: dict[str, object] = {
+                        "project_id": project_id,
+                        "project_change_set_id": change_set_id,
+                        "expected_draft_revision": 1,
+                    }
+                    if operation == "apply":
+                        arguments["expected_candidate_digest"] = "0" * 64
                     result = await client.call_tool(
-                        f"{operation}_project_change_set",
-                        {
-                            "project_id": project_id,
-                            "project_change_set_id": change_set_id,
-                            "expected_draft_revision": 1,
-                        },
+                        f"{operation}_project_change_set", arguments
                     )
 
                 assert result.is_error is True, operation
@@ -1236,6 +1239,14 @@ async def test_project_stage_batch_runs_through_validate_and_apply(
             )
             assert "records" not in fingerprint.structured_content
             assert len(fingerprint.structured_content["fingerprint"]) == 64
+            # Stage Runner recomputes this exact document; see tests/atlas/test_stage_contract.py.
+            assert fingerprint.structured_content["fingerprint_version"] == "1.0"
+            assert [
+                item["dataset"] for item in fingerprint.structured_content["datasets"]
+            ] == sorted(CHANGE_SET_DATASETS_BY_NAME)
+            assert fingerprint.structured_content["fingerprint"] == stage_fingerprint_sha256(
+                "project", fingerprint.structured_content["datasets"]
+            )
             validated = await client.call_tool(
                 "validate_project_change_set",
                 {
@@ -1255,6 +1266,7 @@ async def test_project_stage_batch_runs_through_validate_and_apply(
                     "project_id": project_id,
                     "project_change_set_id": change_set_id,
                     "expected_draft_revision": 4,
+                    "expected_candidate_digest": validated.structured_content["candidate_digest"],
                 },
             )
             assert applied.is_error is False
@@ -1725,6 +1737,7 @@ async def test_all_project_datasets_materialize_and_round_trip_as_one_snapshot(
                     "project_id": project_id,
                     "project_change_set_id": change_set_id,
                     "expected_draft_revision": draft_revision,
+                    "expected_candidate_digest": validated.structured_content["candidate_digest"],
                 },
             )
             assert applied.is_error is False
@@ -1799,6 +1812,9 @@ async def test_all_project_datasets_materialize_and_round_trip_as_one_snapshot(
                     "project_id": project_id,
                     "project_change_set_id": rename_change_set_id,
                     "expected_draft_revision": 2,
+                    "expected_candidate_digest": rename_validation.structured_content[
+                        "candidate_digest"
+                    ],
                 },
             )
             assert rename_apply.is_error is False

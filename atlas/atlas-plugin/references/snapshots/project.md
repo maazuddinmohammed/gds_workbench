@@ -39,7 +39,7 @@ Logical and Dimensional datasets are distinct. Shared Mapping/Code datasets use 
 
 The full Snapshot preserves Conceptual for browsing and standalone Conceptual work. Exclude Conceptual datasets and decisions from Logical, Dimensional, Mapping, Code and SQL Validation task context. Local `select` requires an explicit dataset; choose only the current workflow's inputs and project only needed fields. Sharing a Snapshot or Project revision does not make Conceptual a prerequisite.
 
-Use the bounded read/write [helper contracts](../project/change-sets.md#atlas-helpers). `select --view effective` includes pending records; `--view snapshot` reads baseline only. Narrow truncated selections by known keys; neither view adds an offset/cursor.
+Use the bounded read/write [helper contracts](../project/change-sets.md#atlas-helpers). `select --view effective` includes pending records; `--view snapshot` reads baseline only. Both views page with `next_cursor`; follow it with unchanged arguments until it is null.
 
 ## Saved code and local files
 
@@ -69,14 +69,6 @@ Before reusing or regenerating Code, compare saved Snapshot content with existin
 
 Use `create_project_snapshot` and Atlas `snapshot-install` to acquire context. The installer checks archive integrity, identity and nondecreasing Project revision; it refuses unsafe replacement over unapplied work. After confirmed Apply it retires only matching local proposals. See the [runtime reference](../local-runtime.md).
 
-## Source pointers
-
-Current implementation evidence, not runtime imports for this reference:
-
-- mcp_server/gds_etl_workbench/tools/snapshots/project/archive.py
-- mcp_server/gds_etl_workbench/application/project_snapshot.py
-- mcp_server/gds_etl_workbench/domain/snapshots/project.py
-- mcp_server/gds_etl_workbench/domain/modeling_records.py
-- mcp_server/gds_etl_workbench/application/change_sets/project.py
+## Related guides
 
 Project-owned [enrichment](../project/enrichment.md) and [settings](../project/settings.md) use local proposals and the existing Change Set lifecycle.

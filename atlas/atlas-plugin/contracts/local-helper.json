@@ -28,6 +28,12 @@
       "mutates": false,
       "notes": "Default returns a bounded summary of the active task, plus task_count. --task reads one task without changing selection. --history true pages task summaries in UUID order; keep detail/limit unchanged. Cursors reject session or task-list changes. Task content remains current per read; digests fence edits. --detail full returns selected task contents explicitly."
     },
+    "next": {
+      "usage": "next --session <working-directory> [--area metadata|project] [--owner <tenant-id>] [--error <server-error-code>] [--output-file <new-.atlas/temp-result.json>]",
+      "session_required": true,
+      "mutates": false,
+      "notes": "Read-only submission driver. Returns state, one action (helper argv, MCP tool and arguments with save_response_to, extension tool input, ask_user or author) and facts. Without --area it reports the most urgent area and lists other_work. Run it after every step; it never approves, stages, validates on the server or applies. After a failed MCP call, pass --area and --error with the code after the tool name in the error text; it returns one recovery action (error_recovery) and says stop for codes it does not know."
+    },
     "owner-add": {
       "usage": "owner-add --session <working-directory> --tenant-id <verified-id> --tenant <verified-code> [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
@@ -96,6 +102,18 @@
       "session_required": true,
       "mutates": true,
       "notes": "Each Context Record must already carry its stable UUID. Types are read-only Snapshot datasets."
+    },
+    "policy-apply": {
+      "usage": "policy-apply --session <working-directory> --layer logical|dimensional --expected-digest <sha256|empty> [--dry-run true] [--output-file <new-.atlas/temp-result.json>]",
+      "session_required": true,
+      "mutates": true,
+      "notes": "Adds the web workflow's deterministic technical columns to pending Logical or Dimensional Attributes: one non-null BIGINT own surrogate at ordinal 1 for new Entities, the Project's ordered audit block and, for Type 2 Dimensions, the configured history fields after SourceSystemID. Relationship-derived Fact/Bridge foreign keys are not added. Rejects locked records and conflicting columns; --dry-run reports the changes without writing. Run validate afterwards."
+    },
+    "coverage": {
+      "usage": "coverage --session <working-directory> --layer logical|dimensional [--select <JSON-array-of-input-identities>] [--output-file <new-.atlas/temp-result.json>]",
+      "session_required": true,
+      "mutates": false,
+      "notes": "Read-only. Uses the web workflow's coverage rule on the effective Project: Logical counts distinct active applied Input Scope Objects supported by active Logical Entity Object sources; Dimensional counts active applied Logical Entities supported by active Dimensional Entity sources. required = ceil(total x Project threshold / 100). --select narrows to the requested inputs (complete identity objects). Reports enforced, meets_target and up to 50 missing inputs."
     },
     "discard": {
       "usage": "discard --session <working-directory> --area metadata|project --dataset <name> --key <canonical-key-JSON> --expected-digest <sha256|empty> [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",

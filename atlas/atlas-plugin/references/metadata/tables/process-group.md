@@ -65,25 +65,15 @@ The Copy Group link therefore affects which processing follows ingestion. Do not
 
 ## Validation checklist
 
-Source-review coverage only; see [status meanings and common checks](../validation.md).
+Enforcement is explained in [common checks](../validation.md#interpreting-table-checklists); run the local validator, then review anything marked for you.
 
-| Rule | Check / why | Database | MCP backend | Local | Status |
-|---|---|---|---|---|---|
-| `process_group.shape` | Tenant/System/Zone/name and Copy Group required; name nonblank <=200; nullable description; active boolean. Reject malformed complete records before staging. | Column types, nullability and selected CHECKs; not exact JSON shape. | Strict Pydantic record; unknown fields forbidden. | Published JSON Schema and portable record rules. | Existing; not parity-tested |
-| `process_group.unique` | Tenant + System + Zone + normalized Process Group name unique. Prevent duplicate identity; inactive rows still reserve their keys. | Unique constraint/index. | Staged and effective uniqueness. | Pending/effective and cross-dataset uniqueness. | Existing; not parity-tested |
-| `process_group.references` | Tenant/System/Zone exist; Copy Group matches the same Tenant/System. Resolve dependencies using snapshot plus pending rows. | FK/composite FK and Apply joins. | Effective reference validation. | Effective natural-key reference validation. | Existing; not parity-tested |
-| `process_group.scope` | Record tenant_code must match selected change-set Tenant. Keep edits in the authorized Tenant. | Apply joins owner and permitted Object connections. | Tenant-scope validation. | Snapshot-based Tenant-scope validation. | Existing; not parity-tested |
-| `process_group.live-dependencies` | Re-resolve dependencies at Apply; reject unexpected affected-row count. Snapshot checks cannot guarantee current server state. | Atomic Apply dependency/row-count check. | Server Apply result; do not infer success locally. | Cannot prove offline; retain server result. | Server-only |
-| `process_group.dependency-order` | Required positive int32; default 1 for new groups; outside natural key; repeated levels allowed. | Non-null INTEGER, positive CHECK, new-row default. | Strict required field, Apply/read/Snapshot projection and compatibility readiness. | Published schema enforces range/presence; preserve existing orders. | Implemented; disposable database round trip tested |
-
-## Source pointers
-
-Development provenance; these source files are not runtime dependencies of the packaged skill.
-
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:29,333`.
-- `database/02_core.sql:432,435,445,530`.
-- `database/16_mcp_metadata_apply.sql:944,961,981`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:162,528`.
-- `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:354,474,533`.
+| Rule | Check / why | Enforced by |
+|---|---|---|
+| `process_group.shape` | Tenant/System/Zone/name and Copy Group required; name nonblank <=200; nullable description; active boolean. Reject malformed complete records before staging. | Local validator + server |
+| `process_group.unique` | Tenant + System + Zone + normalized Process Group name unique. Prevent duplicate identity; inactive rows still reserve their keys. | Local validator + server |
+| `process_group.references` | Tenant/System/Zone exist; Copy Group matches the same Tenant/System. Resolve dependencies using snapshot plus pending rows. | Local validator + server |
+| `process_group.scope` | Record tenant_code must match selected change-set Tenant. Keep edits in the authorized Tenant. | Local validator + server |
+| `process_group.live-dependencies` | Re-resolve dependencies at Apply; reject unexpected affected-row count. Snapshot checks cannot guarantee current server state. | Server only, at Apply |
+| `process_group.dependency-order` | Required positive int32; default 1 for new groups; outside natural key; repeated levels allowed. | Local validator + server |
 
 [All metadata tables](../index.md) · [Common validation](../validation.md)

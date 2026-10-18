@@ -42,16 +42,8 @@ Copy.source_data_operation_name and Copy.target_data_operation_name each require
 
 Apply the [shared read-only checks](../index.md#using-read-only-tables) to the exact Keys, Fields, and dependencies above. Resolve table-specific conditions under “How authoring uses these values.”
 
-## Source pointers
+## Confirmed behavior
 
-Development provenance; these source files are not runtime dependencies of the packaged skill.
-
-User-confirmed runtime decisions above supersede older descriptions implying that the source operation controls extraction. Both fields retain their existing required reference contracts.
-
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:133,320`.
-- `database/01_reference.sql:169`.
-- `database/seed/01_metadata_snapshot_demo.sql:50`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:352,514`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:292`.
+The source operation does not control extraction (see the runtime rules above). Both operation fields remain required registered references.
 
 [All metadata tables](../index.md) · [Common validation](../validation.md)

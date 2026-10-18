@@ -11,11 +11,14 @@ The public surface provides Tenant/Project/metadata reads, governed Tenant Lock
 operations, Metadata/Project Snapshot creation, Change Set lifecycles and bounded
 Databricks SQL preflight. It exposes no MCP prompts/resources, foundational CRUD,
 individual graph mutation, arbitrary PostgreSQL, credential reads, uploads or code
-execution. Atlas owns interaction and local review.
+execution. Atlas owns interaction and local review. Stage upload tools are listed and
+callable only on requests carrying `x-gds-mcp-client: atlas-stage-runner`; others get
+an audited `stage_runner_required` refusal. That header is not authentication.
 
 Metadata Change Sets own physical registration. Project Change Sets own scope and
 authored Project sections, including Entity-owned Mapping, Code and Validation.
-Apply stores definitions; it does not execute/deploy generated artifacts. Target
+Apply requires the approved validation's `expected_candidate_digest` and stores
+definitions; it does not execute/deploy generated artifacts. Target
 registration remains an optional Metadata handoff. A changed Project revision requires
 a fresh Snapshot and reassessment. Dataset descriptions and snapshot contracts are
 available through the registered describe tools.

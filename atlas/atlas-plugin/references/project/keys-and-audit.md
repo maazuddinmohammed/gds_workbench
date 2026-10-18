@@ -73,4 +73,4 @@ Implemented backend projection:
 - Reapplying the same approved candidate yields no redundant attribute edits. These projection rules do not prove business grain or normalization quality; run the shared technical and modeling review.
 - The nine framework populations and Type 2 history fields remain the external orchestration consumer contract. Inspect that consumer when its configured behavior is unclear; the local build does not deploy it.
 
-Sources: [Logical records](logical.md), [Dimensional records](dimensional.md) and [Dimension history](../dimensional-build/history.md); backend `features/logical/policy.py` and `features/dimensional/policy.py`; shared `domain/modeling_records.py`. Backend policy/executor and disposable integration tests cover this alignment.
+Related: [Logical records](logical.md), [Dimensional records](dimensional.md) and [Dimension history](../dimensional-build/history.md).

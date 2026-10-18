@@ -2,8 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, readFile, readdir, realpath, writeFile, rename, unlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
-import { stableStringify, isEntityOwnedProjectCatalog, SHA256, UUID, MAX_MANIFEST_BYTES, MAX_PATH_CHARACTERS,
- MAX_LOCAL_PAYLOAD_BYTES, ALLOWED_DATASETS, fail, isObject, hasExactKeys,
+import { stableStringify, isEntityOwnedProjectCatalog, compareOrdinal, SHA256, UUID, MAX_MANIFEST_BYTES, MAX_PATH_CHARACTERS,
+ MAX_LOCAL_PAYLOAD_BYTES, ALLOWED_DATASETS, WEB_MANAGED_PROJECT_DATASETS, fail, isObject, hasExactKeys,
  recordKey, normalizedTenantCode, type StageRequest, type StageApprovedManifestInput,
  type JsonRecord, type StageRequestDataset, type BackendIdentity } from "./stage-contract.js";
 export async function workspaceDigest(
@@ -12,7 +12,7 @@ export async function workspaceDigest(
 ): Promise<string> {
   const entries = await readdir(directory, { withFileTypes: true });
   const hash = createHash("sha256");
-  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+  for (const entry of entries.sort((left, right) => compareOrdinal(left.name, right.name))) {
     if (!entry.isFile() || entry.isSymbolicLink() || !entry.name.endsWith(".json")) {
       fail("LOCAL_CHANGE_SET_INVALID", "Local Change Set contains an unsupported entry.");
     }
@@ -476,6 +476,9 @@ async function verifySnapshotBinding(request: StageRequest, session: string): Pr
     ) {
       fail("SNAPSHOT_MISMATCH", "A Stage dataset differs from the bound Snapshot contract.");
     }
+    if (request.area === "project" && WEB_MANAGED_PROJECT_DATASETS.includes(dataset.dataset)) {
+      fail("DATASET_NOT_STAGEABLE", `${dataset.dataset} is managed outside Atlas and is never staged.`);
+    }
   }
   if (request.area === "metadata") {
     if (
@@ -536,7 +539,7 @@ export async function readLocalDatasets(
       typeof definition.sha256 !== "string" ||
       !SHA256.test(definition.sha256) ||
       result.has(definition.dataset) ||
-      definition.dataset.localeCompare(previousDataset) <= 0
+      compareOrdinal(definition.dataset, previousDataset) <= 0
     ) {
       fail("MANIFEST_INVALID", "Stage request contains an invalid dataset descriptor.");
     }

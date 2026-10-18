@@ -85,4 +85,4 @@ Keep exact Object/Attribute keys, endpoint batch sets or unbatched state, actual
 
 Planning is not execution. A SQL failure, unavailable evidence or mismatch remains explicit. Different row counts across supposedly identical scopes require reconciliation; equal counts alone do not prove stable data. Reuse evidence only with its scope and limitations intact.
 
-Source contracts: `tools/databricks/execute_sql.py`, `domain/databricks_sql.py`, `infrastructure/databricks_sql.py`, `database/14_application_workflow_execution.sql` (Object owner catalog), current `scripts/profiling.js` and `scripts/analysis.js`. Atlas profiling accepts explicit batch-ID lists; Analysis reuses their exact endpoint filters. See the [runtime reference](local-runtime.md) for planning inputs and output files.
+Atlas profiling accepts explicit batch-ID lists; Analysis reuses their exact endpoint filters. See the [runtime reference](local-runtime.md) for planning inputs and output files.

@@ -91,34 +91,25 @@ A fixed domain column can use `'retail' AS business_domain`; it needs a Bronze A
 
 ## Validation checklist
 
-Source-review coverage only; see [status meanings and common checks](../validation.md).
+Enforcement is explained in [common checks](../validation.md#interpreting-table-checklists); run the local validator, then review anything marked for you.
 
-| Rule | Check / why | Database | MCP backend | Local | Status |
-|---|---|---|---|---|---|
-| `attribute.shape` | Exact Attribute fields; required type 1..100 chars; inferred type null/nonblank; ordinal 1..2147483647; explicit booleans. Reject malformed complete records before staging. | Column types, nullability and selected CHECKs; not exact JSON shape. | Strict Pydantic record; unknown fields forbidden. | Published JSON Schema and portable record rules. | Existing; not parity-tested |
-| `attribute.unique` | Object + normalized Attribute name unique across zone datasets. Prevent duplicate identity; inactive rows still reserve their keys. | Unique constraint/index. | Staged and effective uniqueness. | Pending/effective and cross-dataset uniqueness. | Existing; not parity-tested |
-| `attribute.ordinal` | Ordinal must be positive and unique within its Object. Preserve unambiguous column order. | Positive CHECK; deferred unique constraint permits atomic reorder. | Positive bounded integer and effective uniqueness. | Schema integer limits and effective uniqueness. | Existing; not parity-tested |
-| `attribute.references` | Parent Object natural key must resolve. Resolve dependencies using snapshot plus pending rows. | FK/composite FK and Apply joins. | Effective reference validation. | Effective natural-key reference validation. | Existing; not parity-tested |
-| `attribute.scope` | Parent Object must belong to selected Tenant and permitted placement; Apply also requires active Connection Tenant. Keep edits in the authorized Tenant. | Apply joins owner and permitted Object connections. | Tenant-scope validation. | Snapshot-based Tenant-scope validation. | Existing; not parity-tested |
-| `attribute.lock` | Do not change a locked Attribute or an Attribute under a locked Object. Respect independent and parent protection. | Apply checks touched Object/Attribute locks. | Object and Attribute lock phase. | Baseline lock validation. | Existing; not parity-tested |
-| `attribute.physical-type` | Use platform-valid physical type spelling/precision/scale; preserve physical type when setting inferred type. Length alone does not validate a data type. | VARCHAR storage; no platform grammar check. | String shape; no platform grammar validation located. | String shape; platform-specific validation requires separate implementation. | Review |
-| `attribute.custom-code` | For SQL Source/Bronze, check actual inputs, dialect, SELECT item, alias and required cast; constants need no source field. Source file copy ignores custom code; API use requires connector evidence. | Text storage only. | String/null shape; no expression-semantic check located. | Proposed applicability/expression/type check; runtime results require permitted evidence. | Proposed; user-confirmed consumer rule |
-| `attribute.mapped-state` | Mapping-flag consistency intentionally deferred: is_mapped is currently unused. Do not reconcile it from mappings or block authoring over its value. | Boolean shape still applies. | No semantic reconciliation required. | No semantic reconciliation required. | Deferred by user; not a pending check |
-| `attribute.live-dependencies` | Re-resolve dependencies at Apply; reject unexpected affected-row count. Snapshot checks cannot guarantee current server state. | Atomic Apply dependency/row-count check. | Server Apply result; do not infer success locally. | Cannot prove offline; retain server result. | Server-only |
+| Rule | Check / why | Enforced by |
+|---|---|---|
+| `attribute.shape` | Exact Attribute fields; required type 1..100 chars; inferred type null/nonblank; ordinal 1..2147483647; explicit booleans. Reject malformed complete records before staging. | Local validator + server |
+| `attribute.unique` | Object + normalized Attribute name unique across zone datasets. Prevent duplicate identity; inactive rows still reserve their keys. | Local validator + server |
+| `attribute.ordinal` | Ordinal must be positive and unique within its Object. Preserve unambiguous column order. | Local validator + server |
+| `attribute.references` | Parent Object natural key must resolve. Resolve dependencies using snapshot plus pending rows. | Local validator + server |
+| `attribute.scope` | Parent Object must belong to selected Tenant and permitted placement; Apply also requires active Connection Tenant. Keep edits in the authorized Tenant. | Local validator + server |
+| `attribute.lock` | Do not change a locked Attribute or an Attribute under a locked Object. Respect independent and parent protection. | Local validator + server |
+| `attribute.physical-type` | Use platform-valid physical type spelling/precision/scale; preserve physical type when setting inferred type. Length alone does not validate a data type. Validator note: String shape; platform-specific validation requires separate implementation. | Your review |
+| `attribute.custom-code` | For SQL Source/Bronze, check actual inputs, dialect, SELECT item, alias and required cast; constants need no source field. Source file copy ignores custom code; API use requires connector evidence. | Your review (no automated check) |
+| `attribute.mapped-state` | Mapping-flag consistency intentionally deferred: is_mapped is currently unused. Do not reconcile it from mappings or block authoring over its value. | Not checked, by decision |
+| `attribute.live-dependencies` | Re-resolve dependencies at Apply; reject unexpected affected-row count. Snapshot checks cannot guarantee current server state. | Server only, at Apply |
 
-## Source pointers
+## Confirmed behavior
 
-Development provenance; these source files are not runtime dependencies of the packaged skill.
+`is_mapped` and `is_purge` have no current downstream use: keep their boolean values, default new records to false, and do not reconcile them from mappings.
 
-User-confirmed Atlas decision: is_mapped and is_purge have no current downstream use. This supersedes older field guidance suggesting mapping reconciliation or purge behavior; it does not change their published boolean contracts.
-
-The user-confirmed SELECT rules above supersede older GDS guidance claiming automatic Bronze STRING casting. Blank custom code uses the column unchanged. Source pointers below remain evidence for field contracts and the other stated conventions.
-
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:29,163,171,173`.
-- `database/02_core.sql:199,206,215,223,225,230,516,517`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:159,415,416`.
-- `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:103,270,354,474,533`.
-- `database/16_mcp_metadata_apply.sql:140,226,270,445,469`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:45,194`.
+Bronze loading does not cast automatically; follow the SELECT rules above. Blank custom code selects the column unchanged.
 
 [All metadata tables](../index.md) · [Common validation](../validation.md)

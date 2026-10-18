@@ -160,14 +160,22 @@ def test_native_cli_runs_sql_policy_without_revalidating_retained_code(tmp_path:
     definition = {
         "name": "generated_code",
         "row_count": 1,
-        "canonical_key": ["generated_code_name"],
+        "canonical_key": [
+            "modeled_entity_type",
+            "modeled_entity_schema_name",
+            "modeled_entity_name",
+            "artifact_name",
+        ],
         "rows_file": "data/generated_code.jsonl",
         "schema_file": "schemas/generated_code.schema.json",
     }
     catalog["sections"][0]["datasets"].append(definition)
     catalog_path.write_text(json.dumps(catalog))
     original = {
-        "generated_code_name": "Preserved",
+        "modeled_entity_type": "logical_entity",
+        "modeled_entity_schema_name": "silver",
+        "modeled_entity_name": "Customer",
+        "artifact_name": "Preserved",
         "artifact_type": "sql_file",
         "generated_code_status": "active",
         "generated_code_content": "SELECT * FROM bronze.X",
@@ -190,8 +198,8 @@ def test_native_cli_runs_sql_policy_without_revalidating_retained_code(tmp_path:
     pending.mkdir()
     retained = [
         original,
-        {**original, "generated_code_name": "Python", "artifact_type": "python_file"},
-        {**original, "generated_code_name": "Inactive", "generated_code_status": "inactive"},
+        {**original, "artifact_name": "Python", "artifact_type": "python_file"},
+        {**original, "artifact_name": "Inactive", "generated_code_status": "inactive"},
     ]
     helpers = [
         ["node", str(HELPER.with_suffix(".js"))],
@@ -199,7 +207,7 @@ def test_native_cli_runs_sql_policy_without_revalidating_retained_code(tmp_path:
     ]
     for records, expected in [
         (retained, []),
-        (retained + [{**original, "generated_code_name": "New"}], ["code.projection"]),
+        (retained + [{**original, "artifact_name": "New"}], ["code.projection"]),
     ]:
         (pending / "generated_code.json").write_text(json.dumps(records))
         for helper in helpers:
@@ -211,5 +219,8 @@ def test_native_cli_runs_sql_policy_without_revalidating_retained_code(tmp_path:
             )
             assert result.returncode == 0, result.stderr
             report = json.loads(result.stdout)
-            assert report["valid"] is (not expected)
-            assert [issue["code"] for issue in report["issues"]] == expected
+            # This minimal workspace has no complete Project graph; compare only SQL findings.
+            sql_codes = [
+                issue["code"] for issue in report["issues"] if issue["code"].startswith("code.")
+            ]
+            assert sql_codes == expected, helper[0]

@@ -4,25 +4,48 @@ Use this procedure for Metadata or Project changes. Finish related work locally,
 
 Run `node scripts/atlas-local.js <command>` from the installed plugin directory. `--session` is the working directory containing `.atlas`; add `--owner <verified-Tenant-id>` for another registered Metadata owner. The [runtime reference](local-runtime.md) covers the PowerShell fallback; [command-contract](../contracts/local-helper.json) owns exact flags.
 
-## Complete submission sequence
+## Submit with `next`
 
-Keep these steps together. The normal path needs no hand-curated evidence file or copied digest.
+Run `next --session <workspace> --area metadata|project`, do exactly its `action`, then run `next` again. Stop when it reports `no_pending_changes`. `next` only reads; every write is an action you perform.
 
-1. **Finish and validate locally.** Accumulate complete proposed records without editing Snapshots. Run `review`, then `validate` against Snapshot plus all pending changes. Follow [local validation](local-validation.md); repair errors and rerun affected checks. Save `review` with `--output-file <workspace>/.atlas/temp/review.json`; read `review.json.digest` programmatically into `accept --digest`. Never transcribe it from conversation memory.
-2. **Check Stage Runner.** Call `atlas_checkStageRunner({outputFile: "<workspace>/.atlas/temp/check.json"})`. Require `status="ready"`; its `backend` contains the safe profile and endpoint fingerprint. Reuse a verified matching result while the connection is unchanged. Check does not prove Stage success.
-3. **Review in Atlas Local Workbench and obtain acknowledgement.** Show the complete proposed batch and actual findings. The user acknowledges the reviewed content in the conversation. An edit invalidates that acknowledgement; revalidate and review before accepting changed content.
-4. **Resolve the server draft.** Check task-bound operation evidence first. Under the required Tenant Lock, create or get the correct Change Set using governed MCP. Save that operation's exact JSON response temporarily as `draft.json`; do not rename fields or reconstruct it. Existing matching staged/validated work can resume at its next checkpoint.
-5. **Accept and prepare together.** Run `accept` with the reviewed digest, Check result and draft response, using `--prepare-stage true` as below. This verifies bindings, records acknowledgement and returns `stage_manifest_path`. It neither stages nor applies. The split commands below remain available when acknowledgement occurred before the server draft was known.
-6. **Stage through the runner.** Invoke `atlas_stageApprovedManifest({manifestPath: preparation.stage_manifest_path})`. The runner reads the approved digest from the bound operation, rechecks local evidence and current server state, and transports the files. Require `status="staged"` and `fingerprint_verified=true`. The runner records the receipt/revision in the original bound operation. Do not paste record payloads into tools or reconstruct hashes.
-7. **Validate the exact server draft.** Call the area's governed validation tool with the resulting `expected_draft_revision`. Save its exact JSON response and record it with the validation command below. Server validation remains authoritative; a local pass is not a server pass.
-8. **Present the server review and ask separately to Apply.** Show the complete action review, including retained server-only changes. Ask “Apply these validated changes to [Tenant/Project]?” After approval, record `apply-approval --digest-from-operation true`. The helper reads the saved review binding and rejects changed files/evidence; no input file is required.
-9. **Apply, record and refresh.** Apply the approved revision through governed MCP, then pass its exact response to the `apply` checkpoint. Confirm the actual outcome; release a lock acquired for this work when appropriate. Refresh affected Snapshots before dependent work consumes applied values. Retire only proposals confirmed as applied; retain unrelated/new edits.
+| `action.kind` | Do |
+|---|---|
+| `helper` | Run `argv` exactly, as a structured argument array. |
+| `mcp` | Call `tool` with `arguments` and save the exact JSON response to `save_response_to`. `requires_tenant_lock` names the Tenant whose lock you must hold: check it with `check_tenant_lock` and acquire it if free. |
+| `extension` | Call the Stage Runner tool with `input`. |
+| `ask_user` | Show `show` when present, ask `question` and wait for an explicit yes; then run each `after_approval` step in order. |
+| `author` | Follow `instructions`, usually repairing local records. |
+| `stop` | Tell the user; do not retry or work around it. |
+
+Then follow `then`. After a failed MCP call, run `next --area <area> --error <code>` ([recovery](#resume-failure-and-recovery)). `other_work` lists other areas or owners with pending work.
+
+| State | Meaning |
+|---|---|
+| `no_session`, `snapshot_missing`, `not_started`, `no_pending_changes` | Set up the workspace, install the Snapshot, or nothing to submit. |
+| `needs_task`, `needs_validation`, `validation_failed`, `local_files_invalid` | Add a task, run `validate`, or repair the findings or unreadable draft files. |
+| `ready_for_review` | Local changes pass validation. The user reviews them in Atlas Local Workbench and approves Stage; then check the Stage Runner, hold the Tenant Lock, create the server draft, run `accept` with `--prepare-stage true` and stage with `atlas_stageApprovedManifest`. |
+| `accepted`, `draft_bound`, `stage_prepared` | An interrupted acceptance continues: create the draft, prepare the request, or stage. |
+| `stage_uncertain` | The last Stage outcome is unknown; recover with `recoverOnly: true` before anything else. |
+| `staged` | Validate the exact server draft and record it with the `validation` checkpoint. |
+| `server_validation_failed` | Repair locally; the repaired batch restages into the same draft. |
+| `server_validated` | Show the complete server action review and ask separately: “Apply these validated changes to [Tenant/Project]?” After a yes, record `apply-approval`. |
+| `apply_approved` | Apply with the approved `expected_draft_revision` and `expected_candidate_digest`, then record the `apply` checkpoint. |
+| `refresh_required`, `refresh_blocked` | Install a fresh Snapshot; reconcile unapplied drafts first when they exist. |
+| `error_recovery` | The recovery action for the `--error` code of a failed call. |
+
+Rules these steps enforce:
+
+- Review and validation bind exact bytes. An edit after Stage approval invalidates it: validate and review again. Never transcribe digests from memory; helpers read them from saved results.
+- Stage requires `status="staged"` and `fingerprint_verified=true`. Never paste record payloads into tools or reconstruct hashes.
+- A local pass is not a server pass. Show the complete server action review, including retained server-only changes.
+- An Apply approval binds one server review; a new validation needs a new approval.
+- After Apply, confirm the actual outcome, release a lock acquired for this work when appropriate and refresh affected Snapshots before dependent work. Refresh retires only proposals confirmed as applied.
 
 Several transport chunks are one logical Change Set. Stage transfers proposals to a server draft; Apply persists them. Neither is a Git commit, deployment or pipeline run.
 
 ## Exact local commands
 
-Use structured argument arrays where available. Paths and UUIDs below are placeholders; use actual helper/tool results.
+`next` supplies these with real values; they are listed for reading its actions. Use structured argument arrays where available. Paths and UUIDs below are placeholders; use actual helper/tool results.
 
 ```text
 accept --session <workspace> --area metadata|project
@@ -87,7 +110,8 @@ Preserve any host Stage confirmation. It does not replace content acknowledgemen
 - Resume a matching task-bound checkpoint; a new turn/task does not require restaging. Content, scope or revision differences require reconciliation and the review appropriate to the changes. Never clear a conflicting draft silently.
 - If Stage is uncertain, invoke the same tool with `recoverOnly:true`. It performs reads, compares the saved intended dataset counts/hashes and verifies the current fingerprint. Exact proof restores the receipt; partial/different content or missing prior intent stays uncertain. Do not retry writes or use another transport blindly.
 - On server `valid=false`, recording validation preserves the failed revision/digest. Repair, validate, review and accept again; the new operation inherits the failed draft for supported restaging. Repeat server validation and obtain new Apply approval afterward.
+- When a governed MCP call fails, run `next --area <area> --error <code>` with the code that follows the tool name in the error text, and follow its one recovery action. It says stop for codes it does not know; never retry blindly.
 - Unknown Apply outcomes require authoritative status inspection before retrying. A confirmed Apply can still be recorded after subsequent local edits; refresh removes only proposals matching confirmed applied records.
 - Missing helpers, review surface or host capability leave local work intact. Report the missing capability without inventing a successful receipt or alternate submission path.
 
-Governed operations use the `metadata` or `project` family: `create_*_change_set`, `get_*_change_set`, `get_*_change_set_fingerprint`, `validate_*_change_set`, and `apply_*_change_set`. Validate and Apply require `expected_draft_revision`. Stage-batch commit finalizes transport only.
+Governed operations use the `metadata` or `project` family: `create_*_change_set`, `get_*_change_set`, `get_*_change_set_fingerprint`, `validate_*_change_set`, and `apply_*_change_set`. Validate and Apply require `expected_draft_revision`; Apply also requires the approved `expected_candidate_digest`. Stage upload tools (`stage_*`, `begin_*`, `put_*`, `commit_*`) are hidden from agent connections and refused with `stage_runner_required`; only the Stage Runner uses them.

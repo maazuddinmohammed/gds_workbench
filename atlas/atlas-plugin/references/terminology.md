@@ -15,10 +15,11 @@ Use these terms consistently. Load the affected [metadata table reference](metad
 | Attribute | A field/column of an Object. |
 | Row grain | What one record represents, including any entity, event, line or time boundary supported by evidence. |
 | Inferred data type | Evidence-supported logical interpretation of an Attribute's values, stored separately from its physical data type. Sample-based conclusions retain their scope and limitations. |
-| Metadata enrichment | Improving Object descriptions, Attribute descriptions and Attribute inferred data types. Scope may come from Tenant/System selection or Project Input Scope; writes remain Metadata changes. |
+| Physical description correction | Improving physical Object descriptions, Attribute descriptions and Attribute inferred data types in shared Metadata. Scope may come from Tenant/System selection or Project Input Scope; writes are Metadata Change Sets. |
+| Project enrichment | Project-owned Object/Attribute descriptions, inferred types and natural-key, primary-key, nullability and PII findings (`object_enrichment`, `attribute_enrichment`). Written through Project Change Sets; never changes physical Metadata. The web app calls this workflow Metadata Enrichment. |
 | Custom SELECT expression | Attribute custom code replacing one complete SELECT item during SQL Source extraction or Bronze loading. Includes any required cast and output alias; blank code selects the column unchanged. See [Attribute rules](metadata/tables/attribute.md#custom-select-expressions). |
 | Output alias | Name produced by a SELECT expression; distinct from the registered Attribute name and its metadata identity. |
-| Zone | Registered layer classification. Object authoring uses source, bronze, silver, gold. |
+| Zone | Registered layer classification. GDS means Global Data Store, the shared data lake/lakehouse. `source`: data in its originating system, before lake ingestion. `bronze`: raw ingested data retaining source-level meaning. `silver`: conformed data organized into modeled entities. `gold`: curated data for analytical or presentation use. |
 | Natural key | Complete business identifier used to match an ID-free record. Use the published normalization. |
 | Metadata Change Set | Tenant-owned pending physical metadata and Copy/Process configuration. It contains no Project records. |
 | Project | Tenant-owned governed aggregate containing scope, modeling sections, and revision. |
@@ -36,9 +37,9 @@ Use these terms consistently. Load the affected [metadata table reference](metad
 | Surrogate key | Generated target identity, separate from business identity. Atlas defaults to a first-column BIGINT own surrogate; FKs are mapped values. See [keys/audit](project/keys-and-audit.md). |
 | Business-key tuple | Complete set of facts identifying an occurrence, including source namespace or time when required; components need not be individually unique. |
 | Generated / standalone structure | Intentionally produced without a physical source, such as a calendar or fixed reference set. Its meaning and population are explained; no fictitious source is required. |
-| Guided build workflow | Dedicated skill following defined phases. Logical Guided follows Profiling → Enrichment → Analysis → Logical as needed, checking existing results and reuse/redo choices. Conceptual is a standalone deliverable and never feeds Logical or Dimensional. Dimensional uses applied Logical records. |
-| Grill Me build workflow | Dedicated collaborative modeling skill: inspect scope and evidence, recommend answers, challenge relevant scenarios and develop agreed parts. Shares domain rules with Guided, with its own interaction and sequence. Previously called custom build mode; distinct from the top-level Custom workflow. |
-| Custom workflow | Outcome-driven investigation or work outside named workflows, such as debugging, reverse engineering or explaining existing data/models. It selects only needed inputs/methods; no new permissions or compulsory phase sequence. |
+| Guided mode | Default interaction inside a modeling skill: explain and work through coherent parts. A full source-to-Logical request prefers Profiling → Enrichment → Analysis → Logical, reusing valid results. Same skill, records and rules as Grill Me. |
+| Grill Me mode | Requested interview inside the same modeling skill: inspect scope and evidence, ask one consequential decision at a time with a recommended answer, test it with scenarios and develop agreed parts. Older workspaces may call it custom build mode. |
+| Investigation | Read-only explanation, debugging or reverse engineering of existing data, models or code; handled by the investigate skill. Older workspaces may label it the Custom workflow. Grants no new permissions. |
 | Foundational metadata | Lane, Tenant, System, and Connection context; read-only through this change-set surface. |
 | Reference metadata | Registered classification/operation values used by editable records; read-only through this surface. |
 | Ingestion Object Mapping | Source-to-Bronze link used by Copy selection and provenance. Multiple Source Objects may share a Bronze target. |
@@ -49,7 +50,7 @@ Use these terms consistently. Load the affected [metadata table reference](metad
 | Framework contract | Confirmed behavior of the code consuming metadata for a given connector/version, including defaults and substitution rules. Field names alone do not establish it. |
 | Copy Group | Named collection of Copy operations within a Tenant/System. Inactive groups skip all their Copies. |
 | Member Group | Optional filter applied to a Copy Group through Copy Group Control. Members provide codes and Attribute names. Use only on explicit request; default is_member_group_required=false. |
-| Member | Table identified for future Atlas coverage; its schema, keys and Member Group relationship remain to be defined. |
+| Member | One filter value in a Member Group: a code plus the Attribute it filters. Natural key is Member Group + Member Code. Editable through Metadata Change Sets; configure only on explicit request. |
 | Copy Group Control | Optional initial-load filter date and framework-maintained run state for a Copy Group and optional Member Group. New run values start null. |
 | Copy | Registered Source-to-target copy configuration within a Copy Group. |
 | Copy order | Sorting value currently used like ORDER BY, with agreed new-record default 1. It does not currently define execution stages or success barriers. |

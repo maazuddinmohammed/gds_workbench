@@ -280,7 +280,7 @@ _EXACT_GUIDANCE = {
     ),
     "source_tenant_code": ColumnGuidance(
         "Tenant whose data the Object contains.",
-        "Use the actual source Tenant. For Bronze, Silver, and Gold this differs from "
+        "Use the actual source Tenant. For Bronze, Silver, and Gold this may differ from "
         "tenant_code, system_code, and connection_code, which identify the GDS placement.",
         ("ACME",),
     ),

@@ -135,6 +135,9 @@ async def test_project_enrichment_settings_round_trip_and_lock_fences(
                         "project_id": project_id,
                         "project_change_set_id": change_set_id,
                         "expected_draft_revision": 2,
+                        "expected_candidate_digest": validated.structured_content[
+                            "candidate_digest"
+                        ],
                     },
                 )
                 assert not applied.is_error
@@ -239,6 +242,9 @@ async def test_project_enrichment_settings_round_trip_and_lock_fences(
                         "project_id": project_id,
                         "project_change_set_id": protected_id,
                         "expected_draft_revision": 2,
+                        "expected_candidate_digest": rejected.structured_content[
+                            "candidate_digest"
+                        ],
                     },
                 )
                 assert conflict.is_error

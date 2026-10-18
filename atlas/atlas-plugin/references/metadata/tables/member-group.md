@@ -43,29 +43,17 @@ Every field is listed explicitly. Exact current MCP/Snapshot schemas remain auth
 
 ## Validation checklist
 
-Source-review coverage only; see [status meanings and common checks](../validation.md).
+Enforcement is explained in [common checks](../validation.md#interpreting-table-checklists); run the local validator, then review anything marked for you.
 
 These describe the existing dataset contract. They do not require creating Member Group records or enabling Member filtering automatically.
 
-| Rule | Check / why | Database | MCP backend | Local | Status |
-|---|---|---|---|---|---|
-| `member_group.shape` | Tenant/System/name required; name nonblank <=200; optional date/description; explicit active boolean. Reject malformed complete records before staging. | Column types, nullability and selected CHECKs; not exact JSON shape. | Strict Pydantic record; unknown fields forbidden. | Published JSON Schema and portable record rules. | Existing; not parity-tested |
-| `member_group.unique` | Tenant + System + normalized Member Group name unique. Prevent duplicate identity; inactive rows still reserve their keys. | Unique constraint/index. | Staged and effective uniqueness. | Pending/effective and cross-dataset uniqueness. | Existing; not parity-tested |
-| `member_group.references` | Tenant and System must exist. Resolve dependencies using snapshot plus pending rows. | FK/composite FK and Apply joins. | Effective reference validation. | Effective natural-key reference validation. | Existing; not parity-tested |
-| `member_group.scope` | Record tenant_code must match selected change-set Tenant. Keep edits in the authorized Tenant. | Apply joins owner and permitted Object connections. | Tenant-scope validation. | Snapshot-based Tenant-scope validation. | Existing; not parity-tested |
-| `member_group.date` | Initial load date is a valid calendar date or null. Avoid ambiguous or impossible dates. | DATE column. | Pydantic date. | Published date schema and calendar check. | Existing; not parity-tested |
-| `member_group.live-dependencies` | Re-resolve dependencies at Apply; reject unexpected affected-row count. Snapshot checks cannot guarantee current server state. | Atomic Apply dependency/row-count check. | Server Apply result; do not infer success locally. | Cannot prove offline; retain server result. | Server-only |
-
-## Source pointers
-
-Development provenance; these source files are not runtime dependencies of the packaged skill.
-
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:29,275,280`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:229`.
-- `database/02_core.sql:326,332,338,371,524`.
-- `mcp_server/gds_etl_workbench/tools/ingestion/copy_groups.py:188`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:161,479`.
-- `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:354,474,533`.
-- `database/16_mcp_metadata_apply.sql:709,722`.
+| Rule | Check / why | Enforced by |
+|---|---|---|
+| `member_group.shape` | Tenant/System/name required; name nonblank <=200; optional date/description; explicit active boolean. Reject malformed complete records before staging. | Local validator + server |
+| `member_group.unique` | Tenant + System + normalized Member Group name unique. Prevent duplicate identity; inactive rows still reserve their keys. | Local validator + server |
+| `member_group.references` | Tenant and System must exist. Resolve dependencies using snapshot plus pending rows. | Local validator + server |
+| `member_group.scope` | Record tenant_code must match selected change-set Tenant. Keep edits in the authorized Tenant. | Local validator + server |
+| `member_group.date` | Initial load date is a valid calendar date or null. Avoid ambiguous or impossible dates. | Local validator + server |
+| `member_group.live-dependencies` | Re-resolve dependencies at Apply; reject unexpected affected-row count. Snapshot checks cannot guarantee current server state. | Server only, at Apply |
 
 [All metadata tables](../index.md) · [Common validation](../validation.md)

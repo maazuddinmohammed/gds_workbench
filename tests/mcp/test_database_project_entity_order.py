@@ -219,14 +219,20 @@ async def test_public_project_apply_orders_entities_and_preserves_partial_mappin
             validated = await client.call_tool("validate_project_change_set", command)
             assert not validated.is_error
             assert validated.structured_content["valid"] is expected_valid
-            applied = await client.call_tool("apply_project_change_set", command)
+            # An invalid draft has no candidate; Apply must refuse any digest.
+            apply_command = {
+                **command,
+                "expected_candidate_digest": validated.structured_content["candidate_digest"]
+                or "0" * 64,
+            }
+            applied = await client.call_tool("apply_project_change_set", apply_command)
             if expected_valid:
                 assert not applied.is_error, (
                     "A canonically valid graph must Apply successfully."
                 )
                 assert applied.structured_content["project_revision"] == 2
                 assert applied.structured_content["action_count"] > 0
-                repeated = await client.call_tool("apply_project_change_set", command)
+                repeated = await client.call_tool("apply_project_change_set", apply_command)
                 assert repeated.is_error, (
                     "Ordinary MCP Apply requires a validated draft."
                 )
@@ -312,7 +318,15 @@ async def test_public_project_apply_orders_entities_and_preserves_partial_mappin
                     "validate_project_change_set", command
                 )
                 assert not validated.is_error and validated.structured_content["valid"]
-                applied = await client.call_tool("apply_project_change_set", command)
+                applied = await client.call_tool(
+                    "apply_project_change_set",
+                    {
+                        **command,
+                        "expected_candidate_digest": validated.structured_content[
+                            "candidate_digest"
+                        ],
+                    },
+                )
                 assert not applied.is_error
                 assert applied.structured_content["project_revision"] == 3
             async with database.read_transaction() as transaction:

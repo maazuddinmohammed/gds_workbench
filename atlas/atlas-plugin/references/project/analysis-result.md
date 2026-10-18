@@ -104,8 +104,6 @@ Illustrates `project-change-set/analysis_result.json` without SQL. Replace the s
 ]
 ```
 
-## Source pointers
+## Confirmed behavior
 
-Current contract: `mcp_server/gds_etl_workbench/domain/modeling_records.py` (`AnalysisResultRecord`, `AnalysisValidationEvidence`); key in `domain/snapshots/project.py`; scope checks in `application/change_sets/project_validation.py`; database rules in `database/05_workflow_analysis.sql`. Atlas probe planning lives in `atlas/atlas-plugin/scripts/analysis.js`.
-
-Atlas `analysis-plan` applies the shared resolved batch lists to each endpoint before measurements. Broad existing schema guidance about grain/dependency findings does not add fields or composite endpoints to this contract.
+Atlas `analysis-plan` applies the shared resolved batch lists to each endpoint before measurements. Each record relates exactly two physical Attributes; it has no fields for grain, dependency or composite-endpoint findings, so keep those in task evidence.

@@ -8,7 +8,7 @@ import type { Request, Response } from "express";
 import { afterEach, describe, expect, test } from "vitest";
 import * as z from "zod/v4";
 
-import { createStageMcpClient } from "../src/mcp-client.js";
+import { createStageMcpClient, STAGE_RUNNER_HEADER } from "../src/mcp-client.js";
 
 const servers: Array<{ close(callback: (error?: Error) => void): void }> = [];
 
@@ -88,7 +88,9 @@ describe("MCP Streamable HTTP integration", () => {
 
   test("sends the in-memory bearer token and exposes only structured tool output", async () => {
     const app = createMcpExpressApp();
+    const clients: unknown[] = [];
     app.post("/mcp", async (request: Request, response: Response) => {
+      clients.push(request.headers[STAGE_RUNNER_HEADER.name]);
       if (request.headers.authorization !== "Bearer test-only-token") {
         response.status(401).set("WWW-Authenticate", "Bearer").end();
         return;
@@ -132,6 +134,34 @@ describe("MCP Streamable HTTP integration", () => {
 
     expect(result).toEqual({ tenants: [{ tenant_id: 17 }] });
     expect(JSON.stringify(result)).not.toContain("raw response");
+    // Every request, including initialize, identifies the Stage Runner to GDS MCP.
+    expect(clients.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(clients)).toEqual(new Set([STAGE_RUNNER_HEADER.value]));
     await client.close();
+  });
+
+  test("identifies the Stage Runner on no-auth profiles too", async () => {
+    const app = createMcpExpressApp();
+    const clients: unknown[] = [];
+    app.post("/mcp", (request: Request, response: Response) => {
+      clients.push(request.headers[STAGE_RUNNER_HEADER.name]);
+      response.status(403).end();
+    });
+    const httpServer = app.listen(0, "127.0.0.1");
+    servers.push(httpServer);
+    await new Promise<void>((resolve, reject) => {
+      httpServer.once("listening", resolve);
+      httpServer.once("error", reject);
+    });
+    const port = (httpServer.address() as AddressInfo).port;
+    const client = await createStageMcpClient({
+      name: "local", endpoint: new URL(`http://127.0.0.1:${port}/mcp`), authentication: "none",
+    });
+    try {
+      await expect(client.callTool("list_tenants", { page_size: 1 })).rejects.toMatchObject({ code: "MCP_HTTP_ERROR" });
+      expect(clients).toEqual([STAGE_RUNNER_HEADER.value]);
+    } finally {
+      await client.close();
+    }
   });
 });

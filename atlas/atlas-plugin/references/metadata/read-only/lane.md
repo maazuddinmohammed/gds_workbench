@@ -39,13 +39,4 @@ Resolve tenant.lane_code to understand the selected Tenant's lane. Editable oper
 
 Apply the [shared read-only checks](../index.md#using-read-only-tables) to the exact Keys, Fields, and dependencies above. Resolve table-specific conditions under “How authoring uses these values.”
 
-## Source pointers
-
-Development provenance; these source files are not runtime dependencies of the packaged skill.
-
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:35`.
-- `database/02_core.sql:5,34`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:232,251`.
-- `database/seed/01_metadata_snapshot_demo.sql:66`.
-
 [All metadata tables](../index.md) · [Common validation](../validation.md)

@@ -599,6 +599,17 @@ function Validate-Changes([hashtable]$Options) {
     foreach ($repair in @($repairs)) {
         [void]$reportIssues.Add([ordered]@{ severity = 'error'; dataset = $repair.dataset; record = $repair.record; code = $repair.code; fields = @($repair.fields); message = $repair.message })
     }
+    # Drafts here can only come from older workspaces or manual edits; Atlas never stages them.
+    if ($context.Area -ceq 'project') {
+        foreach ($name in $script:WebManagedProjectDatasets) {
+            if ($pending.ContainsKey($name) -and @($pending[$name]).Count -gt 0) {
+                [void]$reportIssues.Add([ordered]@{
+                    severity = 'error'; dataset = $name; record = $null; code = 'web_managed_dataset'; fields = @()
+                    message = "$name is managed outside Atlas; discard these local drafts and read it from the Project Snapshot."
+                })
+            }
+        }
+    }
     $substantiveProjectEdits = @($states | Where-Object {
         $_.Dataset.name -cne 'project_details' -and @($_.Pending).Count -gt 0
     }).Count -gt 0
@@ -848,6 +859,8 @@ function Record-Operation([hashtable]$Options) {
             $expected = if (Test-Path -LiteralPath $file) { (Read-WorkspaceJson $root $relative).digest } else { 'absent' }
             $hash = Write-WorkspaceJson $root $relative $saved $expected
             Set-Property $operation 'server_validation' ([ordered]@{path = $relative; sha256 = $hash; valid = $response.valid; candidate_digest = Get-Property $response 'candidate_digest'; revision = $response.draft_revision})
+            # An Apply approval binds one server review; a new review needs a new approval.
+            Remove-Property $operation 'apply_approval'
             Set-Property $draft 'status' $response.status; Set-Property $draft 'validation_failed' (-not $response.valid)
         }
         'apply-approval' {

@@ -35,7 +35,7 @@ Shared rules for every workflow. Apply them when reading inputs, authoring compl
 
 Local checks use the bound applied baseline as well as pending work. The server rechecks authoritative protection during governed submission/Apply; a stale Snapshot cannot override a current lock. Follow the [Change Set lifecycle](change-set-lifecycle.md) for that sequence.
 
-Current contracts: `application/change_sets/metadata_validation.py`, `application/change_sets/project_validation.py` and `domain/modeling_records.py` under `mcp_server/gds_etl_workbench/`; Atlas local mirrors under `workbench/validation/`; helpers and Atlas Local Workbench share those rules.
+Atlas helpers and Atlas Local Workbench run the same local checks; the server rechecks them during submission and Apply.
 
 ## Project lock
 

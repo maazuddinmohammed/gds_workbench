@@ -51,13 +51,4 @@ Use the selected Tenant for metadata ownership. Object.source_tenant_code identi
 
 Apply the [shared read-only checks](../index.md#using-read-only-tables) to the exact Keys, Fields, and dependencies above. Resolve table-specific conditions under “How authoring uses these values.”
 
-## Source pointers
-
-Development provenance; these source files are not runtime dependencies of the packaged skill.
-
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:42`.
-- `CONTEXT.md:7,11,20,45`.
-- `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:394`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:243`.
-
 [All metadata tables](../index.md) · [Common validation](../validation.md)

@@ -66,4 +66,3 @@ A complete Logical source for that record:
 }
 ```
 
-Source contracts: `domain/modeling_records.py` (`ContextTypeRecord`, `ContextGroupRecord`, `ContextRecord`, `ContextRecordReference`), `domain/context_safety.py`, `domain/snapshots/project.py`, `application/change_sets/project_validation.py` in the shared MCP package.

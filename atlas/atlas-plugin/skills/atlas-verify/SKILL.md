@@ -1,29 +1,51 @@
 ---
 name: atlas-verify
-description: Verify Atlas projects, mappings, generated artifacts or changes, and author SQL Validation definitions when requested. Distinguishes structural checks, business review, saved check definitions and measured execution evidence.
+description: Verify an Atlas artifact or project, or author persisted SQL Validation groups and checks, choosing only the checks the requested result needs. Use for "validate/check/review this model, mapping or code" requests and SQL Validation authoring.
 ---
 
 # Verify the requested result
 
-Select the kind of verification from the user's outcome. “Validate this logical model” does not require Mapping or SQL check authoring.
+Goal: the requested kind of verification, reporting exactly which checks ran, what they found and what remains unverified.
 
-Review Conceptual only as its own requested deliverable. Exclude Conceptual output when verifying Logical, Dimensional, Mapping, Code or SQL Validation; do not require cross-layer counterparts or use Conceptual definitions as expected results.
+## When to use
 
-| Requested result | Inputs and action |
+| Requested result | Check |
 |---|---|
-| Record validity | Selected effective records, schemas and dependencies; run shared local validators. Server authorization/validation is separately authoritative. |
-| Modeling quality | Relevant evidence, definitions, grain, identity, relationships and coverage; use the matching logical/dimensional/conceptual quality guide. Structural acceptance does not prove meaning. |
-| Mapping or Code correctness | Applied prerequisites, complete Mapping consumer context and actual selected Code when implementation is tested. Check coverage, translation, population and dependency rules. |
-| Persisted SQL Validation Groups/Checks | Applied complete Mapping; load actual Code when testing its implementation. Follow [SQL-check authoring](../../references/methods/sql-validation.md). Loaded-target checks may derive from Mapping without Code. |
-| Measured data result | Explicit execution authorization, SQL policy and an available governed route. Follow [query scope](../../references/query-scope.md); distinguish prepared SQL from observed results and unsupported consumer behavior. |
+| Record validity | Shared local validators; server validation stays separately authoritative. |
+| Modeling quality | The matching quality guide for evidence, grain, identity, relationships and coverage. |
+| Mapping or Code correctness | Applied prerequisites, the complete Mapping view and the actual Code being tested. |
+| Persisted SQL Validation groups and checks | Applied complete Mapping, plus actual Code when testing its implementation, with [SQL-check authoring](../../references/methods/sql-validation.md). |
+| Measured data result | Explicit execution authorization, SQL policy and a governed route under [query scope](../../references/query-scope.md). |
 
-## Inspect, check, report
+"Validate this logical model" does not need Mapping or SQL check authoring. Review Conceptual only as its own deliverable; never use it to verify other layers.
 
-1. Follow [working context](../../references/working-method.md) and [focused reads](../../references/tools/reads.md). Bind the selected scope, snapshot/revision and pending content. Reuse applicable check results only when their input bindings still match. A general explanation of a check needs no workspace setup.
-2. Use [local validation](../../references/local-validation.md) for authoring invariants. Inspect actual findings and check statuses; do not treat `review_required`, `not_run` or `server_only` as passes. Run only relevant checks for ordinary local artifacts.
-3. Review business correctness against attributable requirements and evidence. Use [logical design](../../references/logical-build/logical-design.md), [dimensional quality](../../references/dimensional-build/design.md#quality-checks), [conceptual methods](../../references/conceptual-build/business-concepts.md), [Mapping documents](../../references/project/mapping-documents.md) or [SQL checks](../../references/code-generation/sql.md#local-content-checks) as applicable, not all at once.
-4. Keep completeness boundaries intact. Partial Mapping may support explicitly incomplete draft Code with typed placeholders. It cannot satisfy the complete-Mapping prerequisite for authoring SQL Validation definitions, and its output cannot be presented as executable business correctness.
-5. Repair local defects through the owning skill when repair is requested or part of the ongoing authoring task. Preserve [record state](../../references/record-state.md), manual work and update scope. Missing business intent returns to the relevant modeling/Mapping decision; do not invent an expectation merely to pass a check.
-6. Return the requested result using the optional [verification format](../../templates/validation-summary.md): scope/bindings, checks actually run, evidence, unresolved findings and required next action. Report authored, structurally checked, semantically reviewed, executed and applied states separately. SQL Never leaves execution not run.
+## What you need
 
-Authored changes use the [Change Set lifecycle](../../references/change-set-lifecycle.md). Saving checks does not run the external comparator, schedule a pipeline or execute generated transformations. No unsupported execution fallback is implied. Route defects to [project change](../atlas-project-change/SKILL.md), [mapping](../atlas-mapping/SKILL.md), [code](../atlas-code-generation/SKILL.md) or [metadata](../atlas-metadata/SKILL.md) according to their cause.
+- [Working context](../../references/working-method.md) and its golden rules. Explaining a check needs no workspace.
+- The selected scope bound to its Snapshot, revision and pending content. Reuse earlier check results only while their bindings still match.
+
+## Steps
+
+1. Read the selected records with `select --session <dir> --area <area> --dataset <name> --view effective`.
+2. Run `validate --session <dir> --area <area>` and read the actual findings. `review_required`, `not_run` and `server_only` are not passes.
+3. Review business correctness against requirements and evidence with the one quality guide that fits, listed in [local validation](../../references/local-validation.md).
+4. Keep completeness boundaries: partial Mapping can support explicitly incomplete draft Code with typed placeholders, but never SQL Validation authoring or claims of executable correctness.
+5. Repair defects through the owning skill only when repair is requested or part of the current task; never invent an expectation to make a check pass.
+6. Report scope and bindings, checks run, evidence, unresolved findings and the next action, using the optional format in `templates/validation-summary.md`. Authored SQL Validation records follow the [Change Set lifecycle](../../references/change-set-lifecycle.md) via `next --session <dir> --area project`.
+
+## Done when
+
+- The requested verification ran and its result separates authored, structurally checked, semantically reviewed, executed and applied states.
+- Under SQL policy `never`, execution is reported as not run.
+
+## Ask the user when
+
+- Business intent behind an expected result is missing.
+- Measuring data needs authorization, a policy change or an unresolved protection decision.
+- Approving Stage and, separately, Apply for authored checks.
+
+Saving checks does not run the external comparator, schedule a pipeline or execute generated transformations.
+
+## Next
+
+Route defects by cause to [project change](../atlas-project-change/SKILL.md), [mapping](../atlas-mapping/SKILL.md), [code generation](../atlas-code-generation/SKILL.md) or [metadata](../atlas-metadata/SKILL.md).

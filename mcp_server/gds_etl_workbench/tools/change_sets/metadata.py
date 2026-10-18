@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from collections.abc import Mapping
 from typing import Annotated, Any, Literal, LiteralString, cast
@@ -27,6 +26,7 @@ from gds_etl_workbench.application.change_sets.contracts import (
     SHA256_PATTERN,
     bounded_validation_outcome,
     canonical_records_sha256,
+    stage_fingerprint_sha256,
 )
 from gds_etl_workbench.application.change_sets.metadata import (
     APPLY_SQL,
@@ -64,6 +64,7 @@ from gds_etl_workbench.application.change_sets.metadata import (
 )
 from gds_etl_workbench.domain.authorization import ToolPolicy
 from gds_etl_workbench.domain.errors import (
+    CandidateDigestConflictError,
     InvalidRequestError,
     WorkbenchError,
 )
@@ -658,19 +659,9 @@ def register_metadata_change_set_tools(
                 for name in CHANGE_SET_DATASETS
                 for records in [read_document(row, name)]
             ]
-            fingerprint_document = {
-                "area": "metadata",
-                "datasets": [item.model_dump(mode="json") for item in datasets],
-                "fingerprint_version": "1.0",
-            }
-            fingerprint = hashlib.sha256(
-                json.dumps(
-                    fingerprint_document,
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                    sort_keys=True,
-                ).encode("utf-8")
-            ).hexdigest()
+            fingerprint = stage_fingerprint_sha256(
+                "metadata", [item.model_dump(mode="json") for item in datasets]
+            )
             return GetMetadataChangeSetFingerprintResult(
                 tenant_id=tenant_id,
                 metadata_change_set_id=metadata_change_set_id,
@@ -786,6 +777,13 @@ def register_metadata_change_set_tools(
         tenant_id: Annotated[int, Field(gt=0, le=9_223_372_036_854_775_807)],
         metadata_change_set_id: UUID,
         expected_draft_revision: Annotated[int, Field(gt=0)],
+        expected_candidate_digest: Annotated[
+            str,
+            Field(
+                pattern=r"^[0-9a-f]{64}$",
+                description="candidate_digest of the validation the user approved for Apply.",
+            ),
+        ],
         schema_version: Literal["1.0"] = "1.0",
     ) -> ApplyMetadataChangeSetResult:
         del schema_version
@@ -804,6 +802,9 @@ def register_metadata_change_set_tools(
                 applied_row: Mapping[str, Any] | None = None
                 if validation.valid:
                     assert validation.candidate_digest is not None
+                    # Revalidation reflects current metadata; apply only the approved candidate.
+                    if validation.candidate_digest != expected_candidate_digest:
+                        raise CandidateDigestConflictError()
                     applied_row = await transaction.fetch_one(
                         APPLY_SQL,
                         (
@@ -853,6 +854,7 @@ def register_metadata_change_set_tools(
             "tenant_id",
             "metadata_change_set_id",
             "expected_draft_revision",
+            "expected_candidate_digest",
             "schema_version",
         },
         tenant_argument="tenant_id",

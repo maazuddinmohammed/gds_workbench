@@ -88,7 +88,3 @@ Run the shared [local validation sequence](../../local-validation.md). Its Metad
 | `registration.compatibility` | Registered runtime targets match the modeled schema, columns, types, nullability, keys and audit roles; unresolved differences are reported before operational handoff. |
 
 Recheck required freshness before handoff/Apply through the shared lifecycle. If a new baseline is needed, reconcile pending edits first. After confirmed Metadata Apply, install fresh Metadata and verify registered targets; do not treat a pre-Apply refresh as proof that proposed changes were applied.
-
-## Source pointers
-
-Atlas target registration follows the complete-column and optional-output rules above. Field contracts: `mcp_server/gds_etl_workbench/domain/metadata_records.py`; owner placement: `application/change_sets/metadata_validation.py`; Connection discovery: `tools/tenants/get_tenant_details.py`; Modeled ownership: `domain/modeling_records.py`; registration remains a separate Metadata workflow.

@@ -1,9 +1,10 @@
 (function (root, factory) {
   "use strict";
-  const api = factory();
-  if (typeof module === "object" && module.exports) module.exports = api;
+  const node = typeof module === "object" && module.exports;
+  const api = factory(node ? require("./core.js") : root.GDSCore);
+  if (node) module.exports = api;
   root.GDSUIState = api;
-})(typeof globalThis === "object" ? globalThis : this, function () {
+})(typeof globalThis === "object" ? globalThis : this, function (core) {
   "use strict";
 
 
@@ -11,6 +12,7 @@
     return Boolean(
       loaded &&
         !stale &&
+        !(area === "project" && core.WEB_MANAGED_PROJECT_DATASETS.includes(dataset)) &&
         task?.schema_version === "2.0" && typeof task.outcome === "string",
     );
   }

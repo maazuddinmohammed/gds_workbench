@@ -1,0 +1,324 @@
+{
+  "fingerprint_version": "1.0",
+  "generated_by": "tests/atlas/test_stage_contract.py",
+  "metadata": {
+    "datasets": [
+      "source_object",
+      "source_attribute",
+      "bronze_object",
+      "bronze_attribute",
+      "silver_object",
+      "silver_attribute",
+      "gold_object",
+      "gold_attribute",
+      "ingestion_object_mapping",
+      "ingestion_attribute_mapping",
+      "copy_group",
+      "member_group",
+      "member",
+      "copy_group_control",
+      "copy",
+      "process_group",
+      "process"
+    ],
+    "fingerprint_example": {
+      "area": "metadata",
+      "dataset_count": 17,
+      "datasets": [
+        {
+          "dataset": "source_object",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "source_attribute",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "bronze_object",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "bronze_attribute",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "silver_object",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "silver_attribute",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "gold_object",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "gold_attribute",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "ingestion_object_mapping",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "ingestion_attribute_mapping",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "copy_group",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "member_group",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "member",
+          "record_count": 1,
+          "sha256": "63ef4461214c9674d98554d66c3c1b59013a8d5596beaeaaf8017f8f460fcea4"
+        },
+        {
+          "dataset": "copy_group_control",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "copy",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "process_group",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "process",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      ],
+      "draft_revision": 3,
+      "expires_at": "2099-01-01T00:00:00Z",
+      "fingerprint": "0933fff80ccd91dc4fe5cfa498b2e0ba16524c7d6f99a39cad7cdaba31f1695a",
+      "fingerprint_version": "1.0",
+      "metadata_change_set_id": "30000000-0000-4000-8000-000000000050",
+      "record_count": 1,
+      "schema_version": "1.0",
+      "status": "active",
+      "tenant_id": 17
+    },
+    "fingerprint_order": "declared",
+    "result_schema_version": "1.0"
+  },
+  "project": {
+    "datasets": [
+      "analysis_result",
+      "attribute_enrichment",
+      "conceptual_object",
+      "conceptual_relationship",
+      "context_group",
+      "context_record",
+      "dimensional_attribute",
+      "dimensional_entity",
+      "dimensional_relationship",
+      "dimensional_submodel",
+      "generated_code",
+      "generated_code_source_system",
+      "logical_attribute",
+      "logical_entity",
+      "logical_relationship",
+      "logical_submodel",
+      "mapping_attribute",
+      "mapping_object",
+      "object_enrichment",
+      "profiling_profile",
+      "project_details",
+      "project_input_scope",
+      "validation_check",
+      "validation_group"
+    ],
+    "fingerprint_example": {
+      "area": "project",
+      "dataset_count": 24,
+      "datasets": [
+        {
+          "dataset": "analysis_result",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "attribute_enrichment",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "conceptual_object",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "conceptual_relationship",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "context_group",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "context_record",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "dimensional_attribute",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "dimensional_entity",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "dimensional_relationship",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "dimensional_submodel",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "generated_code",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "generated_code_source_system",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "logical_attribute",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "logical_entity",
+          "record_count": 1,
+          "sha256": "e71a4d9655cde61293253e8195c36523b960305df13502bb50bdef9615e2d1de"
+        },
+        {
+          "dataset": "logical_relationship",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "logical_submodel",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "mapping_attribute",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "mapping_object",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "object_enrichment",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "profiling_profile",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "project_details",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "project_input_scope",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "validation_check",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "validation_group",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      ],
+      "draft_revision": 5,
+      "expires_at": "2099-01-01T00:00:00Z",
+      "fingerprint": "1a138363cd4368ff01294697b50f4fc412bfab70df866d95352632f4ba138ad2",
+      "fingerprint_version": "1.0",
+      "project_change_set_id": "20000000-0000-4000-8000-000000000001",
+      "project_id": 42,
+      "record_count": 1,
+      "schema_version": "2.0",
+      "status": "active"
+    },
+    "fingerprint_order": "sorted",
+    "result_schema_version": "2.0"
+  },
+  "schema_version": "1.0",
+  "stage_runner": {
+    "client": "atlas-stage-runner",
+    "header": "x-gds-mcp-client",
+    "upload_tools": [
+      "begin_metadata_stage_batch",
+      "begin_project_stage_batch",
+      "commit_metadata_stage_batch",
+      "commit_project_stage_batch",
+      "put_metadata_stage_chunk",
+      "put_project_stage_chunk",
+      "stage_metadata_change_set",
+      "stage_project_change_set"
+    ]
+  },
+  "tool_error_examples": [
+    {
+      "code": "draft_revision_conflict",
+      "text": "Error executing tool stage_project_change_set: draft_revision_conflict: Draft revision changed; current revision is 4.",
+      "tool": "stage_project_change_set"
+    },
+    {
+      "code": "tenant_lock_required",
+      "text": "Error executing tool begin_metadata_stage_batch: tenant_lock_required: An active Tenant Lock owned by the current Principal is required.",
+      "tool": "begin_metadata_stage_batch"
+    },
+    {
+      "code": "stage_runner_required",
+      "text": "Error executing tool put_project_stage_chunk: stage_runner_required: Stage uploads run only through the Atlas Stage Runner after the user approves the local review.",
+      "tool": "put_project_stage_chunk"
+    }
+  ]
+}

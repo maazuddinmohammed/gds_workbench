@@ -13,6 +13,14 @@ from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.application.change_sets.contracts import (
     canonical_records_sha256,
     stage_batch_sha256,
+    stage_fingerprint_sha256,
+)
+from gds_etl_workbench.application.change_sets.metadata import (
+    CHANGE_SET_DATASETS,
+    all_documents,
+)
+from gds_etl_workbench.application.change_sets.metadata_validation import (
+    validate_metadata_documents,
 )
 from gds_etl_workbench.application.metadata_snapshot.archive import encode_dataset
 from gds_etl_workbench.application.metadata_snapshot.selection import (
@@ -818,6 +826,10 @@ async def test_get_metadata_change_set_fingerprint_verifies_the_draft_without_re
     assert output["record_count"] == 1
     assert len(output["fingerprint"]) == 64
     assert len(output["datasets"]) == 17
+    # Stage Runner recomputes this exact document; see tests/atlas/test_stage_contract.py.
+    assert output["fingerprint_version"] == "1.0"
+    assert [item["dataset"] for item in output["datasets"]] == list(CHANGE_SET_DATASETS)
+    assert output["fingerprint"] == stage_fingerprint_sha256("metadata", output["datasets"])
     copy_group = next(
         item for item in output["datasets"] if item["dataset"] == "copy_group"
     )
@@ -1001,8 +1013,10 @@ async def test_validate_metadata_change_set_persists_bounded_result(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("approved", [True, False], ids=["approved", "changed-candidate"])
 async def test_apply_metadata_change_set_revalidates_then_applies(
     monkeypatch: pytest.MonkeyPatch,
+    approved: bool,
 ) -> None:
     now = datetime(2026, 8, 13, 16, 30, tzinfo=UTC)
     documents: dict[str, list[dict[str, object]]] = {
@@ -1064,6 +1078,14 @@ async def test_apply_metadata_change_set_revalidates_then_applies(
         select_empty_snapshot,
     )
 
+    assert database.get_row is not None
+    approved_digest = validate_metadata_documents(
+        tenant_code="DEMO",
+        current_rows_by_dataset={},
+        staged_rows_by_dataset=all_documents(database.get_row),
+    ).candidate_digest
+    assert approved_digest is not None
+
     async with Client(_server(database)) as client:
         result = await client.call_tool(
             "apply_metadata_change_set",
@@ -1071,16 +1093,23 @@ async def test_apply_metadata_change_set_revalidates_then_applies(
                 "tenant_id": 123,
                 "metadata_change_set_id": str(CHANGE_SET_ID),
                 "expected_draft_revision": 1,
+                "expected_candidate_digest": approved_digest if approved else "b" * 64,
             },
         )
 
-    assert result.is_error is False
-    assert result.structured_content is not None
-    assert result.structured_content["valid"] is True
-    assert result.structured_content["applied"] is True
-    assert result.structured_content["status"] == "applied"
-    assert result.structured_content["action_count"] == 0
     assert database.write_transaction_count == 1
+    if approved:
+        assert result.is_error is False
+        assert result.structured_content is not None
+        assert result.structured_content["valid"] is True
+        assert result.structured_content["applied"] is True
+        assert result.structured_content["status"] == "applied"
+        assert result.structured_content["action_count"] == 0
+    else:
+        # Refused before mcp.apply_metadata_change_set; the transaction rolls back.
+        assert result.is_error is True
+        assert isinstance(result.content[0], TextContent)
+        assert "candidate_digest_conflict:" in result.content[0].text
 
 
 @pytest.mark.asyncio
@@ -1147,6 +1176,13 @@ async def test_apply_metadata_change_set_returns_safe_locked_object_error(
         select_empty_snapshot,
     )
 
+    assert database.get_row is not None
+    approved_digest = validate_metadata_documents(
+        tenant_code="DEMO",
+        current_rows_by_dataset={},
+        staged_rows_by_dataset=all_documents(database.get_row),
+    ).candidate_digest
+
     async with Client(_server(database)) as client:
         result = await client.call_tool(
             "apply_metadata_change_set",
@@ -1154,6 +1190,7 @@ async def test_apply_metadata_change_set_returns_safe_locked_object_error(
                 "tenant_id": 123,
                 "metadata_change_set_id": str(CHANGE_SET_ID),
                 "expected_draft_revision": 1,
+                "expected_candidate_digest": approved_digest,
             },
         )
 

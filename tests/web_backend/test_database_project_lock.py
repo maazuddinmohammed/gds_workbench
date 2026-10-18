@@ -321,9 +321,10 @@ async def test_locked_project_mcp_reads_work_but_change_set_mutations_fail(
                 "apply_project_change_set",
                 "archive_project_change_set",
             ):
-                result = await client.call_tool(
-                    name, {**request, "expected_draft_revision": 1}
-                )
+                arguments = {**request, "expected_draft_revision": 1}
+                if name == "apply_project_change_set":
+                    arguments["expected_candidate_digest"] = "0" * 64
+                result = await client.call_tool(name, arguments)
                 assert result.is_error
                 assert any(
                     isinstance(block, TextContent) and "project_locked:" in block.text

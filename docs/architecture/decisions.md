@@ -218,6 +218,32 @@ Updates replace the whole plugin folder with a matching release, retaining a
 backup until verification. The matching Stage Runner VSIX is installed separately.
 Local builds change no cloud identity, backend authorization or deployment.
 
+## Atlas boundaries enforced in code
+
+Stage upload tools (`stage_*`, `begin_*`, `put_*`, `commit_*`) are listed and callable
+only on requests with `x-gds-mcp-client: atlas-stage-runner`, which the Stage Runner
+sends. Other connections, including Copilot's, receive an audited
+`stage_runner_required` refusal. The header is self-declared, so it is not
+authentication: every tool still authorizes the Principal. It stops an agent from
+uploading drafts without the runner's local-approval digest check. In-memory
+sessions act as the runner only under development identity. Release the Stage Runner
+before the server; older servers ignore the header.
+
+Apply requires `expected_candidate_digest`, the `candidate_digest` of the validation
+the user approved. Project Apply compares it with the stored validation before
+revalidating; Metadata Apply compares it with its fresh revalidation because current
+metadata can change. A mismatch is `candidate_digest_conflict` and writes nothing.
+Recording a new validation clears the local Apply approval. Server and plugin release
+together because the argument is required.
+
+`project_input_scope` and `profiling_profile` remain server Change Set datasets used
+by the web app and server tests. Atlas treats them as read-only: helper writes,
+Workbench editing and Stage Runner manifests refuse them, and local validation
+reports stale drafts as `web_managed_dataset`. Whether MCP Stage should also reject
+them is an open decision. After a failed governed MCP call,
+`atlas-local next --area <area> --error <code>` returns one recovery action from a
+fixed table and says stop for unknown codes.
+
 ## Deterministic plugin profiling
 
 Atlas starts, polls, or cancels a Profiling run through three governed MCP tools.
@@ -229,7 +255,7 @@ Batch ID lists are required on batched Objects and shared across a run. Separate
 runs represent different selections. Request UUIDs provide idempotency, frozen
 context digests reject metadata changes, and claim tokens fence stale/cancelled
 workers. Existing Project/Tenant locks and one-running-workflow-per-Tenant remain.
-The Connector attempts cancellation; Workbench cancellation guarantees no later
+The Databricks connector attempts statement cancellation; Workbench cancellation guarantees no later
 save even if Databricks has not yet stopped its statement. Internal credential
 and worker functions are never exposed as tools. SQL changes are fresh-install
 contracts, not populated-database migrations.
@@ -240,6 +266,8 @@ conceptual/logical/dimensional design, mapping, code, verification, project chan
 physical metadata and registration. The entry skill routes these tasks; Guided and
 Grill Me share the same modeling skill and records. Shared context is minimal;
 platform knowledge, domain methods, tool procedures and evidence formats load on demand.
+Since 0.4 each skill is a short step template whose commands come from the helper
+contract; rules live once in references, with the golden rules in the working method.
 
 Readiness is derived for selected artifacts from applied state, pending changes and
 bound evidence, not a new global Project stage or a second progress ledger. Existing

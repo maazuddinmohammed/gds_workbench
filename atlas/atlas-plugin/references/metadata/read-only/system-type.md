@@ -40,13 +40,4 @@ System.system_type_code selects the type. Workflows resolve its description to u
 
 Apply the [shared read-only checks](../index.md#using-read-only-tables) to the exact Keys, Fields, and dependencies above. Resolve table-specific conditions under “How authoring uses these values.”
 
-## Source pointers
-
-Development provenance; these source files are not runtime dependencies of the packaged skill.
-
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:90`.
-- `database/01_reference.sql:26`.
-- `database/seed/01_metadata_snapshot_demo.sql:4`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:274,291`.
-
 [All metadata tables](../index.md) · [Common validation](../validation.md)

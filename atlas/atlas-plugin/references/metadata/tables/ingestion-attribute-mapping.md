@@ -50,29 +50,21 @@ Every field is listed explicitly. Exact current MCP/Snapshot schemas remain auth
 
 ## Validation checklist
 
-Source-review coverage only; see [status meanings and common checks](../validation.md).
+Enforcement is explained in [common checks](../validation.md#interpreting-table-checklists); run the local validator, then review anything marked for you.
 
 Apply these checks only to records that are present. No minimum record count or ingestion-coverage check is required.
 
-| Rule | Check / why | Database | MCP backend | Local | Status |
-|---|---|---|---|---|---|
-| `ingestion_attribute_mapping.shape` | Complete source/target Object and Attribute keys; required is_active boolean. Reject malformed complete records before staging. | Column types, nullability and selected CHECKs; not exact JSON shape. | Strict Pydantic record; unknown fields forbidden. | Published JSON Schema and portable record rules. | Existing; not parity-tested |
-| `ingestion_attribute_mapping.unique` | Parent Object Mapping + source Attribute + target Attribute unique. Prevent duplicate identity; inactive rows still reserve their keys. | Unique constraint/index. | Staged and effective uniqueness. | Pending/effective and cross-dataset uniqueness. | Existing; not parity-tested |
-| `ingestion_attribute_mapping.references` | Parent Object Mapping exists; each Attribute belongs to its stated endpoint Object. Resolve dependencies using snapshot plus pending rows. | FK/composite FK and Apply joins. | Effective reference validation. | Effective natural-key reference validation. | Existing; not parity-tested |
-| `ingestion_attribute_mapping.distinct` | Source and target Attribute must differ after key normalization. Prevent a self-Attribute mapping. | source_attribute_id <> target_attribute_id CHECK. | Pydantic model validator. | Portable ingestion_attribute_endpoints rule. | Existing; not parity-tested |
-| `ingestion_attribute_mapping.scope` | Both endpoint Objects belong to selected Tenant; Connections owned or configured GDS. Keep edits in the authorized Tenant. | Apply joins owner and permitted Object connections. | Tenant-scope validation. | Snapshot-based Tenant-scope validation. | Existing; not parity-tested |
-| `ingestion_attribute_mapping.live-dependencies` | Re-resolve dependencies at Apply; reject unexpected affected-row count. Snapshot checks cannot guarantee current server state. | Atomic Apply dependency/row-count check. | Server Apply result; do not infer success locally. | Cannot prove offline; retain server result. | Server-only |
+| Rule | Check / why | Enforced by |
+|---|---|---|
+| `ingestion_attribute_mapping.shape` | Complete source/target Object and Attribute keys; required is_active boolean. Reject malformed complete records before staging. | Local validator + server |
+| `ingestion_attribute_mapping.unique` | Parent Object Mapping + source Attribute + target Attribute unique. Prevent duplicate identity; inactive rows still reserve their keys. | Local validator + server |
+| `ingestion_attribute_mapping.references` | Parent Object Mapping exists; each Attribute belongs to its stated endpoint Object. Resolve dependencies using snapshot plus pending rows. | Local validator + server |
+| `ingestion_attribute_mapping.distinct` | Source and target Attribute must differ after key normalization. Prevent a self-Attribute mapping. | Local validator + server |
+| `ingestion_attribute_mapping.scope` | Both endpoint Objects belong to selected Tenant; Connections owned or configured GDS. Keep edits in the authorized Tenant. | Local validator + server |
+| `ingestion_attribute_mapping.live-dependencies` | Re-resolve dependencies at Apply; reject unexpected affected-row count. Snapshot checks cannot guarantee current server state. | Server only, at Apply |
 
-## Source pointers
+## Confirmed behavior
 
-Development provenance; these source files are not runtime dependencies of the packaged skill.
-
-User-confirmed intended behavior: these optional records are not required by ingestion or downstream workflows. Profiling must still propagate masking from active mappings; an empty mapping dataset does not prove a column is unmasked. Preserve existing masking safeguards.
-
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:29,226,241`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:179,441,450`.
-- `database/02_core.sql:263,274,275,292,298`.
-- `database/16_mcp_metadata_apply.sql:593,639,649`.
-- `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:354,474,533`.
+These optional records are not required by ingestion or downstream workflows. Profiling still propagates masking from active mappings; an empty mapping dataset does not prove a column is unmasked. Preserve existing masking safeguards.
 
 [All metadata tables](../index.md) · [Common validation](../validation.md)

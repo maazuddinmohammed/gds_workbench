@@ -1,6 +1,6 @@
 # Workspace state and evidence
 
-Saved 0.1.x workflow labels are historical task context, not installed skill paths. Route their outcome to the current skill: Guided/Grill Me labels share the logical or dimensional skill, Custom investigations use investigate, physical enrichment uses metadata, and target/Process registration uses registration. Do not rewrite a saved task or reset drafts merely to rename a workflow.
+Saved 0.1.x workflow labels are historical task context, not installed skill paths. Route their outcome to the current skill: Guided/Grill Me labels share the logical or dimensional skill, Custom investigations use investigate, physical description correction uses metadata, and target/Process registration uses registration. Do not rewrite a saved task or reset drafts merely to rename a workflow.
 
 ## Workspace records
 

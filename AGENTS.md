@@ -71,6 +71,8 @@ accessibility, and visual rules.
   operations and Metadata Snapshot selection must import without MCP transport.
   Snapshot selection/encoding lives in `application/metadata_snapshot/`;
   the bounded ZIP writer lives in `infrastructure/snapshot_archive.py`.
+  `adapters/mcp/stage_runner_gate.py` keeps Stage upload tools on the Stage Runner
+  connection; Apply requires the approved `expected_candidate_digest`.
 - Backend: `web_app/backend/gds_workbench_api/main.py` mounts feature routers.
   `runtime.py` wires services; `dependencies.py` provides shared FastAPI authentication.
   Profiling keeps HTTP, PostgreSQL, and execution in its feature package.
@@ -80,9 +82,20 @@ accessibility, and visual rules.
   `execution/contracts.py` owns the shared write-transaction interface.
 - Plugin: `atlas/atlas-plugin/` contains local helpers and Workbench.
   `workbench/core.js` owns shared JavaScript normalization and stable serialization.
+  `scripts/atlas-local.js` `next` drives submission and error recovery; `policy-apply`
+  and `coverage` mirror backend policy (`workbench/policy-projection.js`). Each Node
+  command has a native PowerShell twin in `scripts/*.ps1`. In those twins, `Get-Property`
+  returns an array as one object: iterate `(Get-Property ...)`, never `@(Get-Property ...)`;
+  records are dictionaries, so sort with script blocks, not `Sort-Object -Property`.
+  Skills share one template
+  linted by `tests/atlas/test_instructions.py`; `tests/atlas/eval/` replays agent runs
+  against the real MCP tool surface, and `tests/atlas/test_shared_modeling_rules.py`
+  keeps web prompt and Atlas rules aligned.
 - VS Code extension: `atlas/atlas-vs-code/src/extension.ts` exposes the
   local Stage tool; `stage-runner.ts` verifies approval digests and stages chunks.
   Reuse Workbench serialization: chunk hashes must match Python's JSON encoding.
+  `test/fixtures/server-contract.json` is generated from the server by
+  `tests/atlas/test_stage_contract.py --write`; never edit it by hand.
 - Frontend: `web_app/frontend/src/features/` owns screens; reuse matching
   components from `shared/ui.tsx` and formatters from `shared/presentation.ts`.
 - SQL: `database/00_preflight.sql`, ordered install files `01`–`19`, then
@@ -112,7 +125,9 @@ PYTHONPATH=mcp_server:web_app/backend:. web_app/backend/.venv/bin/python -m pyte
 # Frontend tests, types, and production build.
 npm --prefix web_app/frontend run check
 
-# Atlas plugin tests and extension.
+# Atlas plugin tests and extension. With PowerShell 7 installed, prefix the pytest
+# command with ATLAS_POWERSHELL="$(command -v pwsh)" to run the native parity tests
+# (Windows PowerShell 5.1 stays the CI job's check).
 PYTHONPATH=mcp_server:web_app/backend:. web_app/backend/.venv/bin/python -m pytest -c web_app/backend/pyproject.toml tests/atlas --tb=no --show-capture=no -q
 node --test tests/atlas/*.test.mjs
 npm --prefix atlas/atlas-vs-code test

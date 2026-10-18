@@ -86,8 +86,6 @@ Current generic record validation checks field shape, references, locks and assi
 
 Review with Mapping as the source of expected behavior. Formal Validation definitions belong to the later Validation workflow; local checking here does not create them automatically.
 
-## Source pointers
-
-Atlas contracts: [Generated Code records](../project/generated-code.md) and [Mapping documents](../project/mapping-documents.md). Backend contracts: `mcp_server/gds_etl_workbench/domain/modeling_records.py`, `application/change_sets/project_validation.py`; workflow authoring: `web_app/backend/gds_workbench_api/features/workflows/authoring/`.
+## Confirmed behavior
 
 Preserve confirmed Atlas runtime coordinates over incompatible catalog-qualified seed examples. Python record storage is distinct from actual authoring, download and runtime support; no Python execution contract is invented in this guide.

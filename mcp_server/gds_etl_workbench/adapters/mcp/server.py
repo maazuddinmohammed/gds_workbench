@@ -16,7 +16,7 @@ from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.application.profiling.execution import ConnectorProfilingExecutor
 from gds_etl_workbench.application.profiling.service import ProfilingService, ProfilingWorker
-from gds_etl_workbench.configuration import RuntimeSettings
+from gds_etl_workbench.configuration import AuthMode, RuntimeSettings
 from gds_etl_workbench.domain.errors import DependencyUnavailableError
 from gds_etl_workbench.infrastructure.databricks_sql import (
     ConnectorDatabricksSqlExecutor,
@@ -65,6 +65,7 @@ from gds_etl_workbench.tools.tenants.get_tenant_details import (
 from gds_etl_workbench.tools.tenants.list_tenants import register_list_tenants_tool
 from gds_etl_workbench.tools.tenants.tenant_locks import register_tenant_lock_tools
 
+from .stage_runner_gate import StageRunnerGate
 from .tool_audit import ToolCallAuditMiddleware
 
 MCP_SERVER_VERSION = __version__
@@ -133,7 +134,11 @@ def create_mcp_server(
             "reads or unqualified temporary objects."
         ),
         lifespan=lifespan,
-        middleware=[audit],
+        # Audit wraps the gate so refused Stage upload attempts are recorded too.
+        middleware=[
+            audit,
+            StageRunnerGate(allow_in_memory=settings.auth_mode is AuthMode.DEV),
+        ],
     )
 
     register_list_tenants_tool(

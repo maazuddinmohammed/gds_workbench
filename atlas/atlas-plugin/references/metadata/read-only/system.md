@@ -43,12 +43,4 @@ Resolve system_code for Object placement and Copy/Process group ownership keys. 
 
 Apply the [shared read-only checks](../index.md#using-read-only-tables) to the exact Keys, Fields, and dependencies above. Resolve table-specific conditions under “How authoring uses these values.”
 
-## Source pointers
-
-Development provenance; these source files are not runtime dependencies of the packaged skill.
-
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:69`.
-- `database/02_core.sql:43`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:265,393,465`.
-
 [All metadata tables](../index.md) · [Common validation](../validation.md)

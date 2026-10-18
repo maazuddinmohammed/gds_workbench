@@ -58,26 +58,15 @@ Selected Copies load Source → landing → Bronze, followed by [Process Group s
 
 ## Validation checklist
 
-Source-review coverage only; see [status meanings and common checks](../validation.md).
+Enforcement is explained in [common checks](../validation.md#interpreting-table-checklists); run the local validator, then review anything marked for you.
 
-| Rule | Check / why | Database | MCP backend | Local | Status |
-|---|---|---|---|---|---|
-| `copy_group.shape` | Tenant/System/name required; name nonblank <=200; description nullable; two explicit booleans. Reject malformed complete records before staging. | Column types, nullability and selected CHECKs; not exact JSON shape. | Strict Pydantic record; unknown fields forbidden. | Published JSON Schema and portable record rules. | Existing; not parity-tested |
-| `copy_group.unique` | Tenant + System + normalized Copy Group name unique. Prevent duplicate identity; inactive rows still reserve their keys. | Unique constraint/index. | Staged and effective uniqueness. | Pending/effective and cross-dataset uniqueness. | Existing; not parity-tested |
-| `copy_group.references` | Tenant and System must exist. Resolve dependencies using snapshot plus pending rows. | FK/composite FK and Apply joins. | Effective reference validation. | Effective natural-key reference validation. | Existing; not parity-tested |
-| `copy_group.scope` | Record tenant_code must match selected change-set Tenant. Keep edits in the authorized Tenant. | Apply joins owner and permitted Object connections. | Tenant-scope validation. | Snapshot-based Tenant-scope validation. | Existing; not parity-tested |
-| `copy_group.member-required` | Default false; enable only for an explicitly requested Member filter. Preserve existing true values. | Boolean default false. | Boolean shape applies. | Verify intended Member Group and same Tenant/System control link. | Consumer handles runtime filtering. |
-| `copy_group.live-dependencies` | Re-resolve dependencies at Apply; reject unexpected affected-row count. Snapshot checks cannot guarantee current server state. | Atomic Apply dependency/row-count check. | Server Apply result; do not infer success locally. | Cannot prove offline; retain server result. | Server-only |
-
-## Source pointers
-
-Development provenance; these source files are not runtime dependencies of the packaged skill.
-
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:29,266`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:204`.
-- `database/02_core.sql:303,309,315,352,518`.
-- `database/16_mcp_metadata_apply.sql:656,673,686`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:160,465`.
-- `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:103,354,474,533`.
+| Rule | Check / why | Enforced by |
+|---|---|---|
+| `copy_group.shape` | Tenant/System/name required; name nonblank <=200; description nullable; two explicit booleans. Reject malformed complete records before staging. | Local validator + server |
+| `copy_group.unique` | Tenant + System + normalized Copy Group name unique. Prevent duplicate identity; inactive rows still reserve their keys. | Local validator + server |
+| `copy_group.references` | Tenant and System must exist. Resolve dependencies using snapshot plus pending rows. | Local validator + server |
+| `copy_group.scope` | Record tenant_code must match selected change-set Tenant. Keep edits in the authorized Tenant. | Local validator + server |
+| `copy_group.member-required` | Default false; enable only for an explicitly requested Member filter. Preserve existing true values. | Runtime framework (context only) |
+| `copy_group.live-dependencies` | Re-resolve dependencies at Apply; reject unexpected affected-row count. Snapshot checks cannot guarantee current server state. | Server only, at Apply |
 
 [All metadata tables](../index.md) · [Common validation](../validation.md)

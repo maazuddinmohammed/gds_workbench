@@ -75,7 +75,3 @@ Illustrates a `profiling_profile` Snapshot record. Keys are fictitious. New meas
   }
 ]
 ```
-
-## Source pointers
-
-Current contract: `mcp_server/gds_etl_workbench/domain/modeling_records.py` (`ProfilingProfileRecord`), `domain/snapshots/project.py` dataset key and `application/change_sets/project_validation.py` scope checks. Current SQL generation is in `mcp_server/gds_etl_workbench/application/profiling/execution.py`; MCP owns run execution and persistence.

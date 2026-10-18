@@ -46,14 +46,4 @@ Process.process_type_name references process_type.process_type_name. The confirm
 
 Apply the [shared read-only checks](../index.md#using-read-only-tables) to the exact Keys, Fields, and dependencies above. Resolve table-specific conditions under “How authoring uses these values.”
 
-## Source pointers
-
-Development provenance; these source files are not runtime dependencies of the packaged skill.
-
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:139,343`.
-- `database/01_reference.sql:212`.
-- `database/seed/01_metadata_snapshot_demo.sql:59`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:362,557`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:244`.
-
 [All metadata tables](../index.md) · [Common validation](../validation.md)

@@ -8,6 +8,16 @@
 })(typeof globalThis === "object" ? globalThis : this, function (unicode) {
   "use strict";
 
+  // Python str ordering: compare Unicode code points, not UTF-16 code units.
+  function compareCodePoints(left, right) {
+    const a = [...left], b = [...right];
+    for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
+      const difference = a[index].codePointAt(0) - b[index].codePointAt(0);
+      if (difference) return difference;
+    }
+    return a.length - b.length;
+  }
+
   function stableStringify(value) {
     // Match Python json.dumps after the MCP request's JSON decoding.
     if (typeof value === "number" && value !== 0 && Math.abs(value) < 0.0001) {
@@ -16,16 +26,19 @@
     if (value === null || typeof value !== "object") return JSON.stringify(value);
     if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
     return `{${Object.keys(value)
-      .sort((left, right) => {
-        const a = [...left], b = [...right];
-        for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
-          const difference = a[index].codePointAt(0) - b[index].codePointAt(0);
-          if (difference) return difference;
-        }
-        return a.length - b.length;
-      })
+      .sort(compareCodePoints)
       .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
       .join(",")}}`;
+  }
+
+  // Project Input Scope is managed in the GDS web app and Profiling runs on the backend.
+  // Atlas reads both from Snapshots but never drafts or stages them.
+  const WEB_MANAGED_PROJECT_DATASETS = Object.freeze(["profiling_profile", "project_input_scope"]);
+
+  // UTF-16 code-unit order, matching .NET StringComparer.Ordinal. Use it for anything that is
+  // hashed or bound; localeCompare depends on the host locale and differs from PowerShell.
+  function compareOrdinal(left, right) {
+    return left < right ? -1 : left > right ? 1 : 0;
   }
 
   function validateSubagentPolicy(value) {
@@ -135,5 +148,5 @@
     });
   }
 
-  return { active, isEntityOwnedProjectCatalog, key, normalize, overlay, reviewActions, stableStringify, validateSubagentPolicy };
+  return { WEB_MANAGED_PROJECT_DATASETS, active, compareCodePoints, compareOrdinal, isEntityOwnedProjectCatalog, key, normalize, overlay, reviewActions, stableStringify, validateSubagentPolicy };
 });

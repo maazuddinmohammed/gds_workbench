@@ -984,6 +984,15 @@ function Get-DatasetSchema($Context, $Dataset) {
     return Read-Json (Resolve-Member $Context.Root ([string]$Dataset.schema_file) $Context.Members) "$($Dataset.name) schema"
 }
 
+# Atlas reads these from Snapshots only; mirrors WEB_MANAGED_PROJECT_DATASETS in workbench/core.js.
+$script:WebManagedProjectDatasets = @('profiling_profile', 'project_input_scope')
+
+function Assert-Draftable($Context, $Dataset) {
+    if ($Context.Area -ceq 'project' -and $script:WebManagedProjectDatasets -ccontains [string]$Dataset.name) {
+        Fail "$($Dataset.name) is managed outside Atlas: read it from the Project Snapshot and never draft or stage it."
+    }
+}
+
 function Get-EditableSchema($Context, $Dataset) {
     $schema = Get-DatasetSchema $Context $Dataset
     if (-not (Test-Property $schema 'x-gds-change-set-eligible') -or -not [bool]$schema.'x-gds-change-set-eligible') {
@@ -1898,7 +1907,8 @@ function Add-ProjectValidationIssues([object[]]$States, $Issues, [object[]]$Refe
                 Add-LocalValidationIssue $Issues $dataset $null 'reference_not_found' 'Referenced Context group is not present in the future Project graph.' 'context_group_name'
             }
             foreach ($collection in @('supports', 'sources')) {
-                foreach ($source in @(Get-Property $record $collection)) {
+                # Get-Property returns arrays as one object; @(...) would wrap them.
+                foreach ($source in (Get-Property $record $collection)) {
                     if ((Get-Property $source 'support_source_type') -cne 'context_record') { continue }
                     $sourceKey = Normalize-Value 'project' 'value' (Get-Property (Get-Property $source 'context_record') 'context_record_id')
                     if (-not $contextRecords.ContainsKey($sourceKey)) {
@@ -1975,8 +1985,8 @@ function Add-ProjectValidationIssues([object[]]$States, $Issues, [object[]]$Refe
                 }
             }
         }
-        $canonicalKey = @(Get-Property $state.Dataset 'canonical_key')
-        if ($canonicalKey.Count -eq 0) { continue }
+        $canonicalKey = Get-Property $state.Dataset 'canonical_key'
+        if ($null -eq $canonicalKey -or $canonicalKey.Count -eq 0) { continue }
         $baseline = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::Ordinal)
         foreach ($record in @($state.Baseline)) {
             $baseline[(Get-NormalizedValidationKey 'project' $canonicalKey $record)] = $record
@@ -2132,6 +2142,7 @@ function Copy-Records([hashtable]$Options) {
     $selection = Select-Records $selectionOptions $context
     if ($selection.Truncated) { Fail 'Selection exceeds 200 records; narrow --where.' }
     $dataset = $selection.Dataset
+    Assert-Draftable $context $dataset
     $schema = Get-EditableSchema $context $dataset
     $pending = Read-Pending $context
     $records = New-Object System.Collections.ArrayList
@@ -2157,6 +2168,7 @@ function Upsert-Record([hashtable]$Options) {
     $name = Require-Option $Options 'dataset'
     if (-not $context.ByName.ContainsKey($name)) { Fail "Unknown Snapshot dataset: $name." }
     $dataset = $context.ByName[$name]
+    Assert-Draftable $context $dataset
     $schema = Get-EditableSchema $context $dataset
     $record = Parse-Object $Options 'record'
     if ($context.Area -ceq 'project' -and $name -ceq 'context_record' -and -not (Test-Property $record 'context_record_id')) {
@@ -2198,6 +2210,7 @@ function Upsert-RecordsBatch([hashtable]$Options) {
     foreach ($name in $names) {
         if (-not $context.ByName.ContainsKey($name)) { Fail "Unknown Snapshot dataset: $name." }
         $dataset = $context.ByName[$name]
+        Assert-Draftable $context $dataset
         $schema = Get-EditableSchema $context $dataset
         $incoming = Get-Property $changes $name
         if ($incoming -isnot [Array] -or @($incoming).Count -eq 0) {
@@ -2443,6 +2456,8 @@ function Get-ByteDigest([byte[]]$Bytes) {
 . (Join-Path $PSScriptRoot 'sql-validation.ps1')
 . (Join-Path $PSScriptRoot 'workspace-native.ps1')
 . (Join-Path $PSScriptRoot 'operation-evidence.ps1')
+. (Join-Path $PSScriptRoot 'next-step.ps1')
+. (Join-Path $PSScriptRoot 'policy-projection.ps1')
 
 try {
     $options = Parse-Options $RemainingArguments
@@ -2470,6 +2485,7 @@ try {
         'task-select' { $output = Select-AtlasTask $options }
         'project-select' { $output = Select-AtlasProject $options }
         'status' { $output = Get-SessionStatus $options }
+        'next' { $output = Get-NextStep $options }
         'owner-add' { $output = Register-Owner $options }
         'sql-policy' { $output = Set-SqlPolicy $options }
         'subagent-policy' { $output = Set-SubagentPolicy $options }
@@ -2481,6 +2497,8 @@ try {
         'copy' { $output = Copy-Records $options }
         'upsert' { $output = Upsert-Record $options }
         'upsert-batch' { $output = Upsert-RecordsBatch $options }
+        'policy-apply' { $output = Invoke-PolicyApply $options }
+        'coverage' { $output = Get-AtlasCoverage $options }
         'discard' { $output = Discard-Record $options }
         'review' { $output = Review-Changes $options }
         'validate' { $output = Validate-Changes $options }

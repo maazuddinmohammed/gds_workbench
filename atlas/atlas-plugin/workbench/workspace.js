@@ -582,7 +582,7 @@
         await requireChangeSetEligible(this.area(area), this.area(area).byName.get(datasetName));
         files.push(entry);
       }
-      files.sort((left, right) => left.name.localeCompare(right.name));
+      files.sort((left, right) => core.compareOrdinal(left.name, right.name));
       return files;
     }
 

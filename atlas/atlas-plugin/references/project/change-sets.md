@@ -38,17 +38,13 @@ Run these Atlas commands through `node scripts/atlas-local.js`; `--session` is t
 |---|---|
 | `inspect --session <path> --area project` | Local dataset inventory. |
 | `describe --session <path> --area project --dataset <name> --detail compact` | Local contract; request `full` only when needed. |
-| `select --session <path> --area project --dataset <name> --where <JSON-object> --limit <1..200>` | Bounded records; add `--view effective` to include pending proposals. No paging; narrow truncated selections. |
+| `select --session <path> --area project --dataset <name> --where <JSON-object> --limit <1..200>` | Bounded records; add `--view effective` to include pending proposals. Follow `next_cursor` with unchanged arguments until it is null. |
 | `upsert --session <path> --area project --dataset <name> --record <JSON-object> --expected-digest <digest-or-empty>` | Merge one complete pending record using the actual expected local digest. |
 | `upsert-batch --session <path> --area project --changes <dataset-to-record-array-JSON> --expected-digest <digest-or-empty>` | Merge complete pending records; use the helper's current limits and returned digest. Multiple calls can build one draft. |
 | `validate --session <path> --area project` | Validate the local effective Project; server checks still follow the shared lifecycle. |
 
 Use safe argument passing for JSON. Do not hand-roll key normalization, guess digests, copy baseline records over pending edits or invent an unavailable Atlas helper.
 
-## Source and contract corrections
-
-Current sources: `domain/modeling_records.py`, `domain/snapshots/project.py`, `application/change_sets/project.py`, `application/change_sets/project_validation.py` and `tools/snapshots/project/describe_project_dataset.py` under `mcp_server/gds_etl_workbench/`; `atlas/atlas-plugin/contracts/local-helper.json`.
-
-Known guidance corrections for later implementation: `domain/snapshots/project_guidance.py` still describes single-source-Tenant scope, while governed selection supports additionally authorized Source/Bronze source Tenants. It also describes Analysis findings too broadly for the exact endpoint record shape. Use authorized scope and the dataset contract; do not reproduce those stale descriptions as new restrictions or payload fields.
+## Related guides
 
 Project settings use [settings](settings.md); Project-owned source findings use [enrichment](enrichment.md). Both share this authoring lifecycle.

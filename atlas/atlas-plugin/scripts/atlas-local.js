@@ -16,6 +16,7 @@ const workbenchAreas = {
 };
 const qualityFiles = require("./project-quality-files.js");
 const evidence = require("./operation-evidence.js");
+const policyProjection = require("../workbench/policy-projection.js");
 
 const stateFiles = require("./workspace-state.js");
 const HELPER_CONTRACT_PATH = path.resolve(__dirname, "..", "contracts", "local-helper.json");
@@ -309,7 +310,7 @@ function optionsArea(context) {
 function workspaceDigest(context) {
   const hash = crypto.createHash("sha256");
   const entries = fs.readdirSync(context.directory, { withFileTypes: true });
-  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+  for (const entry of entries.sort((left, right) => workbenchCore.compareOrdinal(left.name, right.name))) {
     if (!entry.isFile() || entry.isSymbolicLink() || !entry.name.endsWith(".json")) {
       fail("Local Change Set contains an unsupported entry.");
     }
@@ -353,6 +354,13 @@ function editableDatasetSchema(context, dataset) {
     fail(`${dataset.name} is not Change Set eligible.`);
   }
   return schema;
+}
+
+// Atlas reads these from Snapshots only; see WEB_MANAGED_PROJECT_DATASETS in workbench/core.js.
+function assertDraftable(context, dataset) {
+  if (optionsArea(context) === "project" && workbenchCore.WEB_MANAGED_PROJECT_DATASETS.includes(dataset.name)) {
+    fail(`${dataset.name} is managed outside Atlas: read it from the Project Snapshot and never draft or stage it.`);
+  }
 }
 
 function schemaIssues(value, schema) {
@@ -417,6 +425,7 @@ async function copyRecords(options) {
   const selection = await selectRecords({ ...options, limit: options.limit ?? "200" });
   if (selection.truncated) fail("Selection exceeds 200 records; narrow --where.");
   const dataset = context.byName.get(options.dataset);
+  assertDraftable(context, dataset);
   const schema = editableDatasetSchema(context, dataset);
   const records = pending[dataset.name] ?? [];
   const byKey = new Map(
@@ -446,6 +455,7 @@ function upsertRecord(options) {
   assertExpectedDigest(options, context);
   const dataset = context.byName.get(options.dataset ?? "");
   if (!dataset) fail(`Unknown Snapshot dataset: ${options.dataset}.`);
+  assertDraftable(context, dataset);
   const record = parseObjectOption(options.record, "--record");
   if (options.area === "project" && dataset.name === "context_record" && !Object.hasOwn(record, "context_record_id")) {
     record.context_record_id = crypto.randomUUID();
@@ -489,6 +499,7 @@ function upsertBatch(options) {
   for (const name of names) {
     const dataset = context.byName.get(name);
     if (!dataset) fail(`Unknown Snapshot dataset: ${name}.`);
+    assertDraftable(context, dataset);
     const schema = editableDatasetSchema(context, dataset);
     const incoming = changes[name];
     if (!Array.isArray(incoming) || incoming.length === 0) {
@@ -531,6 +542,94 @@ function upsertBatch(options) {
     records: total,
     digest: workspaceDigest(context),
   };
+}
+
+// Apply the web workflow's deterministic technical-column projection to local drafts:
+// own surrogate, ordered audit block and (Gold Type 2 dimensions) history fields.
+function policyApply(options) {
+  if (!["logical", "dimensional"].includes(options.layer)) fail("--layer must be logical or dimensional.");
+  if (options["dry-run"] !== undefined && options["dry-run"] !== "true") fail("--dry-run accepts true only.");
+  const context = changeSetContext({...options, area: "project"});
+  const pending = readPending(context);
+  assertExpectedDigest(options, context);
+  const layer = options.layer, dataset = context.byName.get(`${layer}_attribute`);
+  if (!dataset || !context.byName.has(`${layer}_entity`)) fail(`Project Snapshot has no ${layer} datasets.`);
+  const baselineRows = (name) => readSnapshotRecords(context, context.byName.get(name));
+  const details = pending.project_details?.[0] ?? (context.byName.has("project_details") ? baselineRows("project_details")[0] : undefined) ?? {};
+  const candidate = {entities: pending[`${layer}_entity`] ?? [], attributes: pending[`${layer}_attribute`] ?? []};
+  const baseline = {entities: baselineRows(`${layer}_entity`), attributes: baselineRows(`${layer}_attribute`)};
+  let records;
+  try {
+    if (layer === "logical") {
+      records = policyProjection.projectLogical(candidate, baseline, details.silver_model_audit_columns_template ?? null);
+    } else {
+      const [technical, audit] = policyProjection.effectiveGoldTemplates(details.gold_model_technical_columns_template ?? null,
+        details.gold_model_audit_columns_template ?? null);
+      records = policyProjection.projectDimensional(candidate, baseline, technical, audit, details.dimensional_entity_scd_type ?? null);
+    }
+  } catch (error) { fail(`Policy projection rejected the ${layer} draft: ${error.message}`); }
+  const keyOf = (record) => stableStringify(canonicalKey("project", dataset, record));
+  const before = new Map(candidate.attributes.map((record) => [keyOf(record), record]));
+  const nameOf = (record) => `${record[`${layer}_entity_schema_name`]}.${record[`${layer}_entity_name`]}.${record[`${layer}_attribute_name`]}`;
+  const added = records.filter((record) => !before.has(keyOf(record))).map(nameOf);
+  const changed = records.filter((record) => before.has(keyOf(record)) && stableStringify(before.get(keyOf(record))) !== stableStringify(record)).map(nameOf);
+  const dropped = candidate.attributes.filter((record) => !records.some((item) => keyOf(item) === keyOf(record))).map(nameOf);
+  const summary = {layer, dataset: dataset.name, record_count: records.length, added, changed, dropped_unchanged: dropped};
+  if (options["dry-run"] === "true") return {...summary, dry_run: true, digest: workspaceDigest(context)};
+  const schema = editableDatasetSchema(context, dataset);
+  for (const record of records) {
+    const issues = schemaIssues(record, schema);
+    if (issues.length) fail(`${dataset.name} projected record is invalid: ${issues[0]}`);
+  }
+  assertEditableRecords(context, {[dataset.name]: records});
+  assertExpectedDigest(options, context);
+  if (records.length) writePendingDataset(context, dataset, records);
+  else if (fs.existsSync(path.join(context.directory, `${dataset.name}.json`))) writeJsonAtomic(path.join(context.directory, `${dataset.name}.json`), []);
+  return {...summary, dry_run: false, digest: workspaceDigest(context)};
+}
+
+// Selected-input coverage with the web workflow's rule: Logical counts distinct applied Input
+// Scope Objects supported by active Entity sources; Dimensional counts applied Logical Entities.
+function coverageReport(options) {
+  if (!["logical", "dimensional"].includes(options.layer)) fail("--layer must be logical or dimensional.");
+  const snapshot = locateSnapshot({session: options.session, area: "project"});
+  const directory = path.join(snapshot.session, "project-change-set");
+  const pending = fs.existsSync(directory) ? readPending({...snapshot, directory}) : {};
+  const applied = (name) => snapshot.byName.has(name) ? readSnapshotRecords(snapshot, snapshot.byName.get(name)) : [];
+  const effective = (name) => snapshot.byName.has(name)
+    ? workbenchCore.overlay("project", snapshot.byName.get(name), applied(name), pending[name] ?? []) : [];
+  const layer = options.layer, details = effective("project_details")[0] ?? {};
+  const percent = details[`${layer}_coverage_threshold_percent`] ?? (layer === "logical" ? 70 : 60);
+  const physical = ["tenant_code", "system_code", "connection_code", "object_schema", "object_name"];
+  const logical = ["logical_entity_schema_name", "logical_entity_name"];
+  const label = (record, fields) => fields.map((field) => record[field]).join(".");
+  const key = (record, fields) => stableStringify(fields.map((field) => normalizedValue("project", field, record?.[field])));
+  const isActive = (record, field) => record[field] === "active" || record.is_active === true;
+  const [fields, inputs, entityDataset, sourceType, sourceField] = layer === "logical"
+    ? [physical, applied("project_input_scope").filter((row) => row.is_active === true), "logical_entity", "object", "source_object"]
+    : [logical, applied("logical_entity").filter((row) => isActive(row, "logical_entity_status")), "dimensional_entity", "logical_entity", "source_logical_entity"];
+  let selected = inputs;
+  if (options.select !== undefined) {
+    let requested;
+    try { requested = JSON.parse(options.select); } catch { fail("--select must be a JSON array of input identities."); }
+    if (!Array.isArray(requested) || !requested.length || requested.some((item) => !item || typeof item !== "object" || Array.isArray(item))) {
+      fail("--select must be a non-empty JSON array of input identity objects.");
+    }
+    const wanted = new Set(requested.map((item) => key(item, fields)));
+    selected = inputs.filter((row) => wanted.has(key(row, fields)));
+    if (selected.length !== wanted.size) fail("--select names an input outside the applied eligible inputs.");
+  }
+  const covered = new Set();
+  for (const entity of effective(entityDataset).filter((row) => isActive(row, `${entityDataset}_status`))) {
+    for (const source of entity.sources ?? []) {
+      if (source.support_source_type === sourceType && source.status === "active") covered.add(key(source[sourceField], fields));
+    }
+  }
+  const missing = selected.filter((row) => !covered.has(key(row, fields))).map((row) => label(row, fields));
+  const total = selected.length, coveredCount = total - missing.length, required = Math.floor((total * percent + 99) / 100);
+  return {layer, threshold_percent: percent, enforced: details[`${layer}_enforce_coverage_threshold`] === true,
+    total, covered: coveredCount, required, meets_target: coveredCount >= required,
+    missing_count: missing.length, missing: missing.slice(0, 50)};
 }
 
 function discardRecord(options) {
@@ -1197,13 +1296,231 @@ function aggregatePlan(options, kind) {
   return {directory, manifest: path.join(directory, "plan.json"), query_count: entries.length};
 }
 
+// Read-only driver for governed submission: report the workspace state and the one next action.
+// The agent performs the action; this never approves, stages, validates on the server or applies.
+const NEXT_PRIORITY = ["stage_uncertain", "refresh_blocked", "apply_approved", "server_validated", "staged",
+  "stage_prepared", "draft_bound", "accepted", "server_validation_failed", "refresh_required", "local_files_invalid",
+  "validation_failed", "needs_task", "needs_validation", "ready_for_review", "snapshot_missing", "no_pending_changes", "not_started"];
+
+function nextStep(options) {
+  if (!options.session) fail("--session must be the working directory containing .atlas.");
+  const root = path.resolve(options.session);
+  if (!fs.existsSync(path.join(root, ".atlas", "session.json"))) {
+    return {schema_version: "1.0", state: "no_session", area: null, owner_tenant_id: null,
+      summary: "This folder has no Atlas workspace yet.",
+      action: {kind: "helper", command: "session-init",
+        argv: ["session-init", "--root", root, "--tenant", "<tenant_code>", "--tenant-id", "<tenant_id>"],
+        instructions: "Resolve the Tenant with list_tenants (and the Project with list_projects when the work needs one), then run session-init with those verified values. Add --project-id and --project-name for Project work."},
+      then: ["Install the Snapshot the work needs; run next again."], facts: {}, other_work: []};
+  }
+  const state = readSessionState(root);
+  if (options.owner !== undefined && options.area !== "metadata") fail("--owner requires --area metadata.");
+  if (options.error !== undefined && !options.area) fail("--error requires --area of the failed call.");
+  if (options.error !== undefined && !/^[a-z][a-z0-9_]{1,63}$/.test(options.error)) fail("--error must be the server error code, such as tenant_lock_required.");
+  const owners = [state.tenant, ...Object.values(state.metadata_owners ?? {}).filter((owner) => owner.id !== state.tenant.id)];
+  const pairs = options.area ? [[options.area, stateFiles.owner(state, options.area, options.owner)]]
+    : [...(state.project ? [["project", stateFiles.owner(state, "project")]] : []),
+      ...owners.map((owner) => ["metadata", stateFiles.owner(state, "metadata", owner.id)])];
+  const results = pairs.map(([area, owner]) => nextForArea(root, state, area, owner, Boolean(options.area), options.error))
+    .sort((left, right) => NEXT_PRIORITY.indexOf(left.state) - NEXT_PRIORITY.indexOf(right.state));
+  const [selected, ...others] = results;
+  return {...selected, other_work: others.filter((item) => !["no_pending_changes", "not_started"].includes(item.state))
+    .map((item) => ({area: item.area, owner_tenant_id: item.owner_tenant_id, state: item.state, summary: item.summary}))};
+}
+
+function nextForArea(root, state, area, owner, explicit, errorCode) {
+  const label = area === "metadata" ? `metadata-${owner.id}` : "project";
+  const scope = area === "metadata" ? {tenant_id: owner.id} : {project_id: state.project?.id};
+  const lockTenant = area === "metadata" ? owner.id : state.tenant.id;
+  const target = area === "metadata" ? `Metadata for Tenant ${owner.code}` : `Project ${state.project?.name}`;
+  const ownerArgs = area === "metadata" && owner.id !== state.tenant.id ? ["--owner", String(owner.id)] : [];
+  const helper = (command, ...rest) => ({kind: "helper", command, argv: [command, "--session", root, "--area", area, ...ownerArgs, ...rest]});
+  const newTemp = (name) => {
+    for (let index = 1; ; index += 1) {
+      const file = path.join(root, ".atlas", "temp", `${label}-${name}-${index}.json`);
+      if (!fs.existsSync(file)) return file;
+    }
+  };
+  const result = (stateName, summary, action, then = [], facts = {}) =>
+    ({schema_version: "1.0", state: stateName, area, owner_tenant_id: owner.id, summary, action, then, facts});
+  const refresh = state.refresh_required?.some((entry) => entry.area === area && entry.owner_tenant_id === owner.id) === true;
+  const snapshotAction = () => ({kind: "mcp", tool: `create_${area}_snapshot`, arguments: scope, save_response_to: newTemp("snapshot")});
+  const snapshotThen = ["Download download_url to a new .atlas/temp/*.zip file; never store the URL.",
+    "Run snapshot-install with that archive and the response's snapshot_id, size_bytes and sha256.", "Run next again."];
+  let operation = null;
+  try { operation = stateFiles.operation(root, state, area, owner).value; }
+  catch (error) { if (error.message !== "A digest-bound acknowledgement is required first.") throw error; }
+  if (errorCode !== undefined) {
+    // One recovery per server error code from a failed MCP call; never a blind retry.
+    const changeSet = operation?.draft ? {...scope, [`${area}_change_set_id`]: operation.draft.id, expected_draft_revision: operation.draft.revision} : null;
+    const facts = {error_code: errorCode, ...(operation ? {operation_id: operation.id, change_set_id: operation.draft?.id ?? null, draft_revision: operation.draft?.revision ?? null} : {})};
+    const recover = (summary, action, then = []) => result("error_recovery", summary, action, then, facts);
+    const stop = (summary) => recover(summary, {kind: "stop", instructions: `${summary} Tell the user; do not retry or work around it.`});
+    switch (errorCode) {
+      case "tenant_lock_required":
+        return recover(`Writes need your active Tenant Lock for tenant ${lockTenant}.`,
+          {kind: "mcp", tool: "check_tenant_lock", arguments: {tenant_id: lockTenant}, save_response_to: newTemp("lock")},
+          [`If no one else holds it, call acquire_tenant_lock({tenant_id: ${lockTenant}}) and retry the failed call.`,
+            "If another user holds it, tell the user and stop. Never call override_tenant_lock unless the user explicitly asks."]);
+      case "tenant_locked":
+        return recover(`Another user holds the Tenant Lock for tenant ${lockTenant}.`,
+          {kind: "ask_user", question: "The Tenant is locked by another user. Wait until they release it?"},
+          ["Retry only after the lock is free. Never call override_tenant_lock unless the user explicitly asks."]);
+      case "project_locked":
+        return stop("The Project is locked; a human must unlock it in the GDS web app.");
+      case "authorization_denied":
+        return stop("The signed-in user's role does not allow this operation.");
+      case "stage_runner_required":
+        return recover("Stage uploads run only through the Stage Runner.", helper("next"),
+          ["Follow next's atlas_stageApprovedManifest action. Never call stage_*, begin_*, put_* or commit_* tools."]);
+      case "candidate_digest_conflict":
+      case `${area}_change_set_not_validated`:
+        if (!changeSet) return stop("No Change Set is bound to this operation.");
+        return recover("The approved server review no longer matches the draft; validate it again.",
+          {kind: "mcp", tool: `validate_${area}_change_set`, arguments: changeSet, save_response_to: newTemp("validation"), requires_tenant_lock: lockTenant},
+          ["Run operation-record --checkpoint validation --file <saved response>; it clears the old Apply approval.",
+            "Show the new server review and ask for Apply approval again.", "Run next again."]);
+      case "object_locked":
+      case "attribute_locked":
+        return recover("A changed record is locked on the server.", {kind: "author",
+          instructions: "Discard local changes to the locked Objects or Attributes, then validate, review and accept again."}, ["Run next again."]);
+      case "draft_revision_conflict":
+      case `${area}_change_set_not_active`:
+      case `${area}_change_set_not_found`:
+        if (!changeSet) return stop("The server draft changed or ended outside this operation.");
+        return recover("The server draft changed or ended outside this operation.",
+          {kind: "mcp", tool: `get_${area}_change_set`, arguments: {...scope, [`${area}_change_set_id`]: operation.draft.id}, save_response_to: newTemp("draft")},
+          ["Show the user its status and draft_revision. Do not retry the failed call, restage or create a new draft without their decision."]);
+      case "invalid_request":
+        return recover("The server rejected the call's arguments.", helper("next"),
+          ["Run next and use its action's exact arguments; never edit or invent them."]);
+      case "dependency_unavailable":
+      case "internal_error":
+        return stop("The server could not complete the call. Retry once later; if it fails again, report the code.");
+      default:
+        return stop(`Unrecognized server error ${errorCode}.`);
+    }
+  }
+  let snapshot;
+  try { snapshot = locateSnapshot({session: root, area, owner: area === "metadata" ? owner.id : undefined}); }
+  catch (error) {
+    if (!/Snapshot directory is missing|parent directory is missing/.test(error.message)) throw error;
+    return explicit || area === "project"
+      ? result("snapshot_missing", `No ${area} Snapshot is installed.`, snapshotAction(), snapshotThen)
+      : result("not_started", `No ${area} work in this folder.`, {kind: "done"});
+  }
+  const directory = path.join(root, `${ownerPrefix(owner)}${area}-change-set`);
+  let pending = {}, digest;
+  try {
+    if (fs.existsSync(directory)) pending = readPending({...snapshot, directory});
+    digest = fs.existsSync(directory) ? workspaceDigest({directory}) : sha256Bytes(Buffer.alloc(0));
+  } catch (error) {
+    return result("local_files_invalid", "Local Change Set files are invalid.", {kind: "author",
+      instructions: `Repair the local ${area} Change Set files before continuing: ${error.message}`});
+  }
+  const counts = Object.fromEntries(Object.entries(pending).filter(([, rows]) => rows.length).map(([name, rows]) => [name, rows.length]));
+  const facts = {pending_datasets: counts, local_digest: digest,
+    ...(operation ? {operation_id: operation.id, change_set_id: operation.draft?.id ?? null, draft_revision: operation.draft?.revision ?? null} : {})};
+  if (operation?.stage_attempt?.status === "unknown") {
+    return result("stage_uncertain", "The last Stage outcome is unknown. Recover it before any other write.",
+      {kind: "extension", tool: "atlas_stageApprovedManifest",
+        input: {manifestPath: stateFiles.safePath(root, operation.stage_request.path), recoverOnly: true}},
+      ["recoverOnly only reads: never restage, re-accept or create a new draft until it reports the outcome.", "Run next again."], facts);
+  }
+  if (refresh && !operation?.apply && Object.keys(counts).length) {
+    return result("refresh_blocked", "A refresh is required but unapplied local drafts exist.", {kind: "author",
+      instructions: "Show the user the base/current/proposed differences, reconcile the draft against the new server state, then refresh. Never discard the draft or edit Snapshot files to force installation."}, [], facts);
+  }
+  if (operation?.apply) {
+    if (refresh) {
+      return result("refresh_required", `Applied changes need a fresh ${area} Snapshot.`, snapshotAction(),
+        [...snapshotThen.slice(0, 2), `Release the Tenant Lock with release_tenant_lock({tenant_id: ${lockTenant}}) when no further writes are planned.`, "Run next again."], facts);
+    }
+    operation = null;
+  }
+  if (operation) {
+    const matches = digest === operation.local_digest;
+    const changeSet = {...scope, [`${area}_change_set_id`]: operation.draft?.id, expected_draft_revision: operation.draft?.revision};
+    const stage = evidence.stageReceipt(operation.stage);
+    if (operation.apply_approval) {
+      // The server applies only the candidate the user approved.
+      return result("apply_approved", `The user approved Apply for ${target}.`,
+        {kind: "mcp", tool: `apply_${area}_change_set`, arguments: {...changeSet, expected_candidate_digest: operation.apply_approval.candidate_digest},
+          save_response_to: newTemp("apply"), requires_tenant_lock: lockTenant},
+        ["Run operation-record --checkpoint apply --file <saved response>.", "Run next again to refresh."], facts);
+    }
+    if (operation.server_validation?.valid === true) {
+      return result("server_validated", "The server validated the staged draft.",
+        {kind: "ask_user", question: `Apply these validated changes to ${target}?`,
+          show: stateFiles.safePath(root, operation.server_validation.path),
+          after_approval: [helper("operation-record", "--checkpoint", "apply-approval", "--digest-from-operation", "true")]},
+        ["Ask separately from the Stage approval; show the complete server action review first.", "Run next again after recording approval."], facts);
+    }
+    if (operation.server_validation?.valid === false && matches) {
+      return result("server_validation_failed", "Server validation rejected the staged draft.", {kind: "author",
+        instructions: `Read ${stateFiles.safePath(root, operation.server_validation.path)}, repair the local records, then run next. The repaired batch restages into the same draft.`}, [], facts);
+    }
+    if (stage?.status === "staged" && stage.fingerprint_verified === true && !operation.server_validation) {
+      return result("staged", matches ? "Stage completed and was verified." : "Stage completed; local files changed afterwards and stay for a later batch.",
+        {kind: "mcp", tool: `validate_${area}_change_set`, arguments: changeSet, save_response_to: newTemp("validation"), requires_tenant_lock: lockTenant},
+        ["Run operation-record --checkpoint validation --file <saved response>.", "Run next again."], facts);
+    }
+    if (!stage && !operation.server_validation && matches) {
+      if (operation.stage_request) {
+        return result("stage_prepared", "The approved batch is ready for Stage Runner.",
+          {kind: "extension", tool: "atlas_stageApprovedManifest", input: {manifestPath: stateFiles.safePath(root, operation.stage_request.path)}},
+          ["Require status=staged and fingerprint_verified=true; on an uncertain result run next (it switches to recovery).", "Run next again."], facts);
+      }
+      if (operation.draft) {
+        return result("draft_bound", "The acknowledged batch has a server draft.", helper("prepare-stage-request"), ["Run next again."], facts);
+      }
+      const draftFile = newTemp("draft");
+      return result("accepted", "The batch is acknowledged; it needs a server draft.",
+        {kind: "mcp", tool: `create_${area}_change_set`, arguments: scope, save_response_to: draftFile, requires_tenant_lock: lockTenant},
+        [`Run prepare-stage-request --draft-file ${draftFile}.`, "Run next again."], facts);
+    }
+  }
+  if (!Object.keys(counts).length) {
+    return result("no_pending_changes", `No local ${area} changes to submit.`, {kind: "done"}, [], facts);
+  }
+  if (!state.active_task) {
+    return result("needs_task", "Local changes exist but no task is active.",
+      {kind: "helper", command: "task-add", argv: ["task-add", "--session", root, "--outcome", "<short outcome>"]}, ["Run next again."], facts);
+  }
+  const reportFile = path.join(root, ".atlas", "tasks", `${state.active_task}.evidence`, `${area}-${owner.id}-validation.json`);
+  const report = fs.existsSync(reportFile) ? readJsonFile(reportFile, "Validation report") : null;
+  const current = report && report.digest === digest && report.owner_tenant_id === owner.id && Array.isArray(report.inputs) &&
+    report.inputs.every((input) => { try { return fileDigest(stateFiles.safePath(root, input.manifest_path)) === input.manifest_sha256; } catch { return false; } });
+  if (!current) {
+    return result("needs_validation", operation ? "Local files changed after acknowledgement; validate before review." : "Local changes have not been validated.",
+      helper("validate"), ["Run next again."], facts);
+  }
+  facts.validation_report = stateFiles.safePath(root, path.relative(root, reportFile).split(path.sep).join("/"));
+  facts.issue_count = report.issue_count;
+  if (!report.valid) {
+    const issues = (report.issues ?? []).slice(0, 5).map((issue) => `${issue.code ?? issue.rule ?? "issue"}: ${issue.message ?? ""}`.trim());
+    return result("validation_failed", "Local validation found errors.", {kind: "author",
+      instructions: `Repair the records, then run next. First findings: ${issues.join(" | ") || "see the validation report"}`}, [], facts);
+  }
+  const checkFile = newTemp("check"), draftFile = newTemp("draft");
+  return result("ready_for_review", "Local changes are valid and ready for the user's review.",
+    {kind: "ask_user", question: `Review the pending ${area} changes in Atlas Local Workbench. Approve them for Stage?`,
+      after_approval: [
+        {kind: "extension", tool: "atlas_checkStageRunner", input: {outputFile: checkFile}},
+        {kind: "mcp", tool: "check_tenant_lock", arguments: {tenant_id: lockTenant}, note: "Call acquire_tenant_lock first if the current Principal does not hold it."},
+        {kind: "mcp", tool: `create_${area}_change_set`, arguments: scope, save_response_to: draftFile},
+        helper("accept", "--digest", digest, "--backend-file", checkFile, "--draft-file", draftFile, "--prepare-stage", "true"),
+        {kind: "extension", tool: "atlas_stageApprovedManifest", input: {manifestPath: "<stage_manifest_path from accept>"}}]},
+    ["Any edit after approval invalidates it: validate and review again.", "Run next after Stage."], facts);
+}
+
 async function main() {
   const {command, options} = parseArguments(process.argv.slice(2));
   const commands = {
-    "command-contract": commandContract, "session-init": initializeSession, "status": sessionStatus,
+    "command-contract": commandContract, "session-init": initializeSession, "status": sessionStatus, "next": nextStep,
     "owner-add": registerOwner, "project-select": selectProject, "sql-policy": setSqlPolicy, "subagent-policy": setSubagentPolicy, "task-add": addTask, "task-update": updateTask, "task-select": selectTask,
     "inspect": inspectSnapshot, "describe": describeDataset, "select": selectRecords, "copy": copyRecords,
-    "upsert": upsertRecord, "upsert-batch": upsertBatch, "discard": discardRecord,
+    "upsert": upsertRecord, "upsert-batch": upsertBatch, "discard": discardRecord, "policy-apply": policyApply, "coverage": coverageReport,
     "review": reviewChangeSet, "validate": validateChangeSet, "accept": acceptChangeSet,
     "draft-cache": cacheServerDraft, "prepare-stage-request": prepareStageRequest,
     "snapshot-install": installSnapshot, "operation-record": recordOperation,
@@ -1363,6 +1680,8 @@ function recordOperation(options) {
     stateFiles.write(session, relative, saved, existing ? stateFiles.read(session, relative).digest : "absent");
     operation.server_validation = {path: relative, sha256: stateFiles.read(session, relative).digest, valid: response.valid,
       candidate_digest: response.candidate_digest, revision: response.draft_revision};
+    // An Apply approval binds one server review; a new review needs a new approval.
+    delete operation.apply_approval;
     operation.draft.status = response.status;
     operation.draft.validation_failed = !response.valid;
   } else if (options.checkpoint === "apply-approval") {

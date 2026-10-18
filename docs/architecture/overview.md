@@ -76,6 +76,8 @@ Stage transport never applies partial datasets. Byte-fragment mode is transport
 for complete generated Code records. Python, JavaScript and Windows PowerShell
 serialization must produce matching digests. Stage Runner verifies the approved
 manifest and content before sending bounded chunks; Apply remains a separate step.
+The server lists and runs Stage upload tools only for the Stage Runner's
+connection, and Apply must name the approved validation's candidate digest.
 
 ## Build and verify
 

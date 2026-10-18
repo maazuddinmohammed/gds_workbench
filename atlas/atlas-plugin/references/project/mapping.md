@@ -194,7 +194,3 @@ cannot treat an incomplete peer as an executable source or invent a join.
 Missing row-producing evidence requires a typed zero-row projection; unresolved
 or contradictory authored references still require correction. Validation
 requires `complete=true` before authoring.
-
-## Source pointers
-
-Fields/JSON limits: `mcp_server/gds_etl_workbench/domain/modeling_records.py` (`MappingObjectRecord`, `MappingAttributeRecord`, `_json_size`); canonical keys/section: `domain/snapshots/project.py`; prerequisites: `tools/snapshots/project/archive.py`; active parents/coverage/locks/eligibility: `application/change_sets/project_validation.py`; active System catalog: `application/change_sets/project.py`; replacement/template resolution: `application/change_sets/project_apply.py`; database uniqueness/size: `database/09_workflow_mapping.sql`. Existing inner-template authority: `database/seed/07_global_mapping_output_templates.template.sql`.

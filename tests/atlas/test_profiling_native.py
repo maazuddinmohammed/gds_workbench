@@ -234,7 +234,13 @@ def test_native_aggregate_manifest_matches_node_in_never_policy(tmp_path: Path) 
                 "selections": {
                     "batches": selections,
                     "probes": [
-                        {"kind": "key", "object": obj, "columns": ["CustomerID"]}
+                        # A selected Object is named by its five key fields only.
+                        {
+                            "id": "customer_key",
+                            "kind": "key",
+                            "object": {field: obj[field] for field in keys},
+                            "columns": ["CustomerID"],
+                        }
                     ],
                 },
                 "execution_connections": [
