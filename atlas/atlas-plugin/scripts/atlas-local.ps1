@@ -630,9 +630,9 @@ function Resolve-RegularDirectory([string]$Path, [string]$Label) {
 
 function Test-SafeJsonInteger($Value, [bool]$AllowZero = $true) {
     if ($Value -is [bool] -or -not (
-        $Value -is [byte] -or $Value -is [sbyte] -or $Value -is [short] -or
-        $Value -is [ushort] -or $Value -is [int] -or $Value -is [uint] -or
-        $Value -is [long] -or $Value -is [ulong] -or $Value -is [single] -or
+        $Value -is [byte] -or $Value -is [sbyte] -or $Value -is [int16] -or
+        $Value -is [uint16] -or $Value -is [int] -or $Value -is [uint32] -or
+        $Value -is [long] -or $Value -is [uint64] -or $Value -is [single] -or
         $Value -is [double] -or $Value -is [decimal]
     )) { return $false }
     $number = [double]$Value
@@ -1006,9 +1006,9 @@ function Get-JsonSchemaType($Value) {
     if ($Value -is [Array]) { return 'array' }
     if ($Value -is [string]) { return 'string' }
     if ($Value -is [bool]) { return 'boolean' }
-    if ($Value -is [byte] -or $Value -is [sbyte] -or $Value -is [short] -or
-        $Value -is [ushort] -or $Value -is [int] -or $Value -is [uint] -or
-        $Value -is [long] -or $Value -is [ulong]) { return 'integer' }
+    if ($Value -is [byte] -or $Value -is [sbyte] -or $Value -is [int16] -or
+        $Value -is [uint16] -or $Value -is [int] -or $Value -is [uint32] -or
+        $Value -is [long] -or $Value -is [uint64]) { return 'integer' }
     if ($Value -is [decimal]) {
         if ([decimal]::Truncate([decimal]$Value) -eq [decimal]$Value) { return 'integer' }
         return 'number'
@@ -1024,9 +1024,9 @@ function Get-JsonSchemaType($Value) {
 
 function Test-JsonNumber($Value) {
     return (
-        $Value -is [byte] -or $Value -is [sbyte] -or $Value -is [short] -or
-        $Value -is [ushort] -or $Value -is [int] -or $Value -is [uint] -or
-        $Value -is [long] -or $Value -is [ulong] -or $Value -is [single] -or
+        $Value -is [byte] -or $Value -is [sbyte] -or $Value -is [int16] -or
+        $Value -is [uint16] -or $Value -is [int] -or $Value -is [uint32] -or
+        $Value -is [long] -or $Value -is [uint64] -or $Value -is [single] -or
         $Value -is [double] -or $Value -is [decimal]
     )
 }
