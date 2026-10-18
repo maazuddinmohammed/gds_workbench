@@ -94,12 +94,16 @@ def test_archive_round_trip_and_reproducibility(tmp_path: Path) -> None:
 
     with zipfile.ZipFile(first) as archive:
         files = sorted(
-            path
-            for path in PLUGIN_ROOT.rglob("*")
-            if path.is_file()
-            and not any(
-                part in {".DS_Store", "__pycache__"} for part in path.relative_to(PLUGIN_ROOT).parts
-            )
+            (
+                path
+                for path in PLUGIN_ROOT.rglob("*")
+                if path.is_file()
+                and not any(
+                    part in {".DS_Store", "__pycache__"}
+                    for part in path.relative_to(PLUGIN_ROOT).parts
+                )
+            ),
+            key=lambda path: path.relative_to(PLUGIN_ROOT).parts,
         )
         expected = {
             f"atlas/{path.relative_to(PLUGIN_ROOT).as_posix()}": path.read_bytes() for path in files

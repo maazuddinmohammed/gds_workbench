@@ -20,7 +20,9 @@ def build(output: Path | None = None) -> Path:
     if PLUGIN_ROOT.is_symlink():
         raise ValueError("plugin root must not be a symbolic link")
     files: list[Path] = []
-    for source in sorted(PLUGIN_ROOT.rglob("*")):
+    # Order by case-sensitive path parts: Windows Path comparison ignores case.
+    sources = sorted(PLUGIN_ROOT.rglob("*"), key=lambda path: path.relative_to(PLUGIN_ROOT).parts)
+    for source in sources:
         relative = source.relative_to(PLUGIN_ROOT)
         if source.is_symlink():
             raise ValueError(f"symbolic links are not packaged: {relative}")
