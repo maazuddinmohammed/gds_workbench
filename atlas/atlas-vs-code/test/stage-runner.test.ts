@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rename, symlink, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
-import { describe, expect, test } from "vitest";
+import { dirname, join, relative, sep } from "node:path";
+import { describe, expect, test, vi } from "vitest";
 
 import {
   canonicalRecordsSha256,
@@ -23,6 +24,8 @@ function stageApprovedManifest(input: StageApprovedManifestInput, dependencies: 
   return runStageApprovedManifest(input, { backend: BACKEND, ...dependencies });
 }
 async function sealManifest(session: string, file: string) {
+  // Workspace paths are stored with "/" on every OS, like the Atlas helpers write them.
+  const portable = (target: string) => relative(session, target).split(sep).join("/");
   const request = JSON.parse(await readFile(file, "utf8"));
   request.schema_version = "2.0";
   request.kind = "atlas-stage-request";
@@ -31,12 +34,12 @@ async function sealManifest(session: string, file: string) {
   request.owner = { id: 17, code: "DEMO", root: "." };
   request.backend = BACKEND;
   request.snapshot.manifest_path = `${request.area}/${request.area}-snapshot/manifest.json`;
-  for (const d of request.datasets) if (d.payload_file.startsWith(session)) d.payload_file = relative(session, d.payload_file);
+  for (const d of request.datasets) if (d.payload_file.startsWith(session)) d.payload_file = portable(d.payload_file);
   const bytes = JSON.stringify(request)+"\n";
   await writeFile(file, bytes);
   const opFile = join(session, OP_PATH);
   const operation = JSON.parse(await readFile(opFile, "utf8"));
-  operation.stage_request = {path: relative(session, file), sha256: createHash("sha256").update(bytes).digest("hex")};
+  operation.stage_request = {path: portable(file), sha256: createHash("sha256").update(bytes).digest("hex")};
   operation.inputs[0] = {area:request.area, owner_tenant_id:17, ...request.snapshot,
     ...(request.area === "project" ? {project_revision:8}: {})};
   const reportPath=join(session,operation.validation.report_path);
@@ -69,50 +72,12 @@ const SNAPSHOT_IDS = {
   metadata: "10000000-0000-4000-8000-000000000001",
   project: "20000000-0000-4000-8000-000000000001",
 } as const;
-const METADATA_DATASETS = [
-  "source_object",
-  "source_attribute",
-  "bronze_object",
-  "bronze_attribute",
-  "silver_object",
-  "silver_attribute",
-  "gold_object",
-  "gold_attribute",
-  "ingestion_object_mapping",
-  "ingestion_attribute_mapping",
-  "copy_group",
-  "member_group",
-  "copy_group_control",
-  "copy",
-  "process_group",
-  "process",
-] as const;
-const PROJECT_DATASETS = [
-  "analysis_result",
-  "attribute_enrichment",
-  "conceptual_object",
-  "conceptual_relationship",
-  "dimensional_attribute",
-  "dimensional_entity",
-  "dimensional_relationship",
-  "dimensional_submodel",
-  "generated_code",
-  "generated_code_source_system",
-  "logical_attribute",
-  "logical_entity",
-  "logical_relationship",
-  "logical_submodel",
-  "mapping_attribute",
-  "mapping_object",
-  "project_details",
-  "project_input_scope",
-  "context_group",
-  "context_record",
-  "object_enrichment",
-  "profiling_profile",
-  "validation_check",
-  "validation_group",
-] as const;
+// Dataset order comes from the MCP server contract fixture (tests/atlas/test_stage_contract.py).
+const SERVER_CONTRACT = JSON.parse(
+  readFileSync(new URL("./fixtures/server-contract.json", import.meta.url), "utf8"),
+) as { metadata: { datasets: string[] }; project: { datasets: string[] } };
+const METADATA_DATASETS: readonly string[] = SERVER_CONTRACT.metadata.datasets;
+const PROJECT_DATASETS: readonly string[] = SERVER_CONTRACT.project.datasets;
 
 function fingerprintResponse(
   area: "metadata" | "project",
@@ -1638,6 +1603,21 @@ describe("stageApprovedManifest", () => {
     expect(receipt.datasets).toEqual([{ dataset: "project_details", record_count: 1 }]);
   });
 
+  test.each([
+    ["project_input_scope", ["tenant_code", "system_code", "connection_code", "object_schema", "object_name"]],
+    ["profiling_profile", ["tenant_code", "system_code", "connection_code", "object_schema", "object_name", "attribute_name"]],
+  ])("never stages web-managed %s, even from a sealed manifest", async (dataset, canonicalKey) => {
+    const records = [{ tenant_code: "DEMO", system_code: "CRM", connection_code: "LAKE", object_schema: "bronze",
+      object_name: "customer", attribute_name: "customer_id", is_active: true }];
+    const { workspace, manifestPath, acceptedDigest } = await projectRequest(dataset, canonicalKey, records);
+    const mcp: McpToolClient = { callTool: vi.fn(async () => { throw new Error("MCP must not be called"); }) };
+
+    await expect(
+      stageApprovedManifest({ manifestPath, expectedDigest: acceptedDigest }, { mcp, workspaceRoots: [workspace] }),
+    ).rejects.toMatchObject({ code: "DATASET_NOT_STAGEABLE" });
+    expect(mcp.callTool).not.toHaveBeenCalled();
+  });
+
   test("binds the local digest to the authoritative fingerprint after server normalization", async () => {
     const records = [{ logical_entity_schema_name: "silver", logical_entity_name: "Customer" }];
     const { workspace, manifestPath, acceptedDigest } = await projectRequest(
@@ -2028,5 +2008,21 @@ describe("operation-derived Stage digest", () => {
     await expect(stageApprovedManifest({ manifestPath: fixture.manifestPath, ...(reason === "explicit mismatch" ? { expectedDigest: "0".repeat(64) } : {}) },
       { workspaceRoots: [fixture.workspace], mcp: { async callTool() { calls++; return {}; } } })).rejects.toMatchObject({ code: reason === "changed acknowledgement" ? "LOCAL_STATE_MISMATCH" : "DIGEST_MISMATCH" });
     expect(calls).toBe(0);
+  });
+});
+
+describe("local Change Set digest", () => {
+  test("orders files ordinally, matching the Node and PowerShell helpers", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "atlas-digest-"));
+    const copy = JSON.stringify([{ tenant_code: "T", name: "a" }]);
+    const group = JSON.stringify([{ tenant_code: "T", name: "b" }]);
+    await writeFile(join(directory, "copy_group.json"), group);
+    await writeFile(join(directory, "copy.json"), copy);
+    // Ordinal: '.' (U+002E) sorts before '_' (U+005F); ICU localeCompare reverses these names.
+    const expected = createHash("sha256");
+    for (const [name, text] of [["copy.json", copy], ["copy_group.json", group]] as const) {
+      expected.update(`${name}\0${Buffer.byteLength(text)}\0`).update(text);
+    }
+    expect(await workspaceDigest(directory)).toBe(expected.digest("hex"));
   });
 });

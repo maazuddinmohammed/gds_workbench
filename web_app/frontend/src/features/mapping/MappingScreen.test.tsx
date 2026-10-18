@@ -1331,7 +1331,7 @@ it("selects unlocked Attributes across every page and permits excluded missing m
 it.each(["logical", "dimensional"] as const)("exports %s Mapping from More without a Tenant Lock", async (layer) => {
   const base = mappingFetchStub({ hasLock: false });
   const fetcher = vi.fn<typeof fetch>(async (input, init) => String(input).endsWith("/mapping/export")
-    ? new Response(new Blob(["xlsx"], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), {
+    ? new Response("xlsx", {
       headers: { "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "content-disposition": 'attachment; filename="Mapping.xlsx"' },
     }) : base(input, init));
   const createObjectURL = vi.fn(() => "blob:mapping-export");

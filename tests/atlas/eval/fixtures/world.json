@@ -1,0 +1,4287 @@
+{
+  "generated_by": "tests/atlas/eval/build_fixtures.py",
+  "project": {
+    "project_id": 1,
+    "project_name": "Customer Orders 360",
+    "project_revision": 1
+  },
+  "responses": [
+    {
+      "arguments": {},
+      "result": {
+        "next_cursor": null,
+        "schema_version": "1.0",
+        "tenants": [
+          {
+            "effective_role": "super_admin",
+            "tenant_code": "DEMO_GDS_TENANT",
+            "tenant_description": "Global-data-store Tenant used for Metadata Snapshot testing",
+            "tenant_id": 2,
+            "tenant_name": "Metadata Snapshot Demo Global Store",
+            "tenant_visibility": "private"
+          },
+          {
+            "effective_role": "super_admin",
+            "tenant_code": "DEMO_TENANT",
+            "tenant_description": "Private Tenant used for Metadata Snapshot testing",
+            "tenant_id": 1,
+            "tenant_name": "Metadata Snapshot Demo Tenant",
+            "tenant_visibility": "private"
+          }
+        ]
+      },
+      "tool": "list_tenants"
+    },
+    {
+      "arguments": {
+        "tenant_id": 1
+      },
+      "result": {
+        "connection_count": 2,
+        "connections": [
+          {
+            "active_object_counts": {
+              "bronze": 0,
+              "gold": 0,
+              "silver": 0,
+              "source": 2
+            },
+            "connection_code": "DEMO_SOURCE",
+            "connection_id": 1,
+            "connection_name": "Demo Customer Source",
+            "connection_type_code": "DEMO_POSTGRESQL",
+            "connection_type_name": "Demo PostgreSQL",
+            "contains_tenant_objects": true,
+            "is_active": true,
+            "is_global_data_store": false,
+            "is_tenant_gds_connection": false,
+            "system_code": "DEMO_CUSTOMER_SYSTEM",
+            "system_id": 1,
+            "system_name": "Demo Customer System",
+            "system_type_code": "DEMO_DATABASE",
+            "system_type_name": "Demo Database"
+          },
+          {
+            "active_object_counts": {
+              "bronze": 2,
+              "gold": 2,
+              "silver": 2,
+              "source": 0
+            },
+            "connection_code": "DEMO_GDS",
+            "connection_id": 2,
+            "connection_name": "Demo Global Data Store",
+            "connection_type_code": "DEMO_POSTGRESQL",
+            "connection_type_name": "Demo PostgreSQL",
+            "contains_tenant_objects": true,
+            "is_active": true,
+            "is_global_data_store": true,
+            "is_tenant_gds_connection": true,
+            "system_code": "DEMO_CUSTOMER_SYSTEM",
+            "system_id": 1,
+            "system_name": "Demo Customer System",
+            "system_type_code": "DEMO_DATABASE",
+            "system_type_name": "Demo Database"
+          }
+        ],
+        "connections_truncated": false,
+        "schema_version": "1.0",
+        "tenant": {
+          "effective_role": "super_admin",
+          "tenant_code": "DEMO_TENANT",
+          "tenant_description": "Private Tenant used for Metadata Snapshot testing",
+          "tenant_id": 1,
+          "tenant_name": "Metadata Snapshot Demo Tenant",
+          "tenant_visibility": "private"
+        }
+      },
+      "tool": "get_tenant_details"
+    },
+    {
+      "arguments": {
+        "tenant_id": 1
+      },
+      "result": {
+        "next_cursor": null,
+        "project_count": 1,
+        "projects": [
+          {
+            "default_mapping_source_system_code": null,
+            "dimensional_coverage_threshold_percent": 60,
+            "dimensional_enforce_coverage_threshold": false,
+            "dimensional_entity_scd_type": null,
+            "dimensional_schemas": [
+              {
+                "description": "Sales mart",
+                "schema_name": "gold_demo"
+              }
+            ],
+            "gold_model_audit_columns_template": null,
+            "gold_model_naming_instructions": "Use dim_ and fact_ prefixes with explicit grain.",
+            "gold_model_technical_columns_template": null,
+            "is_locked": false,
+            "logical_coverage_threshold_percent": 70,
+            "logical_enforce_coverage_threshold": false,
+            "logical_entity_scd_type": null,
+            "logical_schemas": [
+              {
+                "description": "Conformed entities",
+                "schema_name": "silver_demo"
+              }
+            ],
+            "project_description": "Review project connecting customer identities, orders, conformed Silver outputs, and a Gold sales mart.",
+            "project_id": 1,
+            "project_input_scope_object_count": 2,
+            "project_name": "Customer Orders 360",
+            "project_revision": 1,
+            "silver_model_audit_columns_template": null,
+            "silver_model_naming_instructions": "Use snake_case names and preserve stable business identifiers."
+          }
+        ],
+        "projects_truncated": false,
+        "schema_version": "1.0",
+        "tenant_id": 1
+      },
+      "tool": "list_projects"
+    },
+    {
+      "arguments": {
+        "project_id": 1
+      },
+      "result": {
+        "next_cursor": null,
+        "object_count": 2,
+        "objects": [
+          {
+            "connection_code": "DEMO_GDS",
+            "connection_id": 2,
+            "connection_name": "Demo Global Data Store",
+            "fc_object_name": null,
+            "fc_object_schema": null,
+            "foreign_catalog": null,
+            "is_active": true,
+            "object_id": 2,
+            "object_name": "customer",
+            "object_schema": "bronze_demo",
+            "object_type_code": "TABLE",
+            "object_type_id": 1,
+            "object_type_name": "Table",
+            "placement_tenant_code": "DEMO_GDS_TENANT",
+            "placement_tenant_id": 2,
+            "placement_tenant_name": "Metadata Snapshot Demo Global Store",
+            "project_input_scope_id": 1,
+            "project_input_scope_is_locked": false,
+            "source_tenant_code": "DEMO_TENANT",
+            "source_tenant_id": 1,
+            "source_tenant_name": "Metadata Snapshot Demo Tenant",
+            "system_code": "DEMO_CUSTOMER_SYSTEM",
+            "system_id": 1,
+            "system_name": "Demo Customer System",
+            "zone_code": "bronze"
+          },
+          {
+            "connection_code": "DEMO_GDS",
+            "connection_id": 2,
+            "connection_name": "Demo Global Data Store",
+            "fc_object_name": null,
+            "fc_object_schema": null,
+            "foreign_catalog": null,
+            "is_active": true,
+            "object_id": 6,
+            "object_name": "orders",
+            "object_schema": "bronze_demo",
+            "object_type_code": "TABLE",
+            "object_type_id": 1,
+            "object_type_name": "Table",
+            "placement_tenant_code": "DEMO_GDS_TENANT",
+            "placement_tenant_id": 2,
+            "placement_tenant_name": "Metadata Snapshot Demo Global Store",
+            "project_input_scope_id": 2,
+            "project_input_scope_is_locked": false,
+            "source_tenant_code": "DEMO_TENANT",
+            "source_tenant_id": 1,
+            "source_tenant_name": "Metadata Snapshot Demo Tenant",
+            "system_code": "DEMO_CUSTOMER_SYSTEM",
+            "system_id": 1,
+            "system_name": "Demo Customer System",
+            "zone_code": "bronze"
+          }
+        ],
+        "objects_truncated": false,
+        "project_id": 1,
+        "project_revision": 1,
+        "schema_version": "1.0"
+      },
+      "tool": "get_project_input_scope"
+    },
+    {
+      "arguments": {
+        "tenant_id": 1
+      },
+      "result": {
+        "is_locked": false,
+        "lock": null,
+        "schema_version": "1.0",
+        "tenant_id": 1
+      },
+      "tool": "check_tenant_lock"
+    },
+    {
+      "arguments": {
+        "tenant_id": 1,
+        "view": "objects",
+        "zone": "source"
+      },
+      "result": {
+        "next_cursor": null,
+        "payload": {
+          "objects": [
+            {
+              "attribute_count": 2,
+              "connection_code": "DEMO_SOURCE",
+              "connection_id": 1,
+              "connection_name": "Demo Customer Source",
+              "connection_tenant_code": "DEMO_TENANT",
+              "connection_tenant_id": 1,
+              "connection_tenant_name": "Metadata Snapshot Demo Tenant",
+              "foreign_catalog": "demo_source_catalog",
+              "has_ingestion_mapping": true,
+              "is_active": true,
+              "is_copy_referenced": true,
+              "is_on_global_connection": false,
+              "is_owned_by_tenant": true,
+              "is_process_referenced": false,
+              "is_project_input_scope_referenced": false,
+              "object_description": "Source customer records",
+              "object_id": 1,
+              "object_name": "customer",
+              "object_schema": "source_demo",
+              "object_type_code": "TABLE",
+              "object_type_name": "Table",
+              "source_tenant_code": "DEMO_TENANT",
+              "source_tenant_id": 1,
+              "source_tenant_name": "Metadata Snapshot Demo Tenant",
+              "system_code": "DEMO_CUSTOMER_SYSTEM",
+              "system_id": 1,
+              "system_name": "Demo Customer System",
+              "zone": "source"
+            },
+            {
+              "attribute_count": 4,
+              "connection_code": "DEMO_SOURCE",
+              "connection_id": 1,
+              "connection_name": "Demo Customer Source",
+              "connection_tenant_code": "DEMO_TENANT",
+              "connection_tenant_id": 1,
+              "connection_tenant_name": "Metadata Snapshot Demo Tenant",
+              "foreign_catalog": "demo_source_catalog",
+              "has_ingestion_mapping": true,
+              "is_active": true,
+              "is_copy_referenced": false,
+              "is_on_global_connection": false,
+              "is_owned_by_tenant": true,
+              "is_process_referenced": false,
+              "is_project_input_scope_referenced": false,
+              "object_description": "Source order headers captured by the commerce platform.",
+              "object_id": 5,
+              "object_name": "orders",
+              "object_schema": "source_demo",
+              "object_type_code": "TABLE",
+              "object_type_name": "Table",
+              "source_tenant_code": "DEMO_TENANT",
+              "source_tenant_id": 1,
+              "source_tenant_name": "Metadata Snapshot Demo Tenant",
+              "system_code": "DEMO_CUSTOMER_SYSTEM",
+              "system_id": 1,
+              "system_name": "Demo Customer System",
+              "zone": "source"
+            }
+          ]
+        },
+        "schema_version": "1.0",
+        "tenant_id": 1,
+        "view": "objects"
+      },
+      "tool": "inspect_metadata"
+    },
+    {
+      "arguments": {
+        "tenant_id": 1,
+        "view": "objects",
+        "zone": "bronze"
+      },
+      "result": {
+        "next_cursor": null,
+        "payload": {
+          "objects": [
+            {
+              "attribute_count": 2,
+              "connection_code": "DEMO_GDS",
+              "connection_id": 2,
+              "connection_name": "Demo Global Data Store",
+              "connection_tenant_code": "DEMO_GDS_TENANT",
+              "connection_tenant_id": 2,
+              "connection_tenant_name": "Metadata Snapshot Demo Global Store",
+              "foreign_catalog": null,
+              "has_ingestion_mapping": true,
+              "is_active": true,
+              "is_copy_referenced": true,
+              "is_on_global_connection": true,
+              "is_owned_by_tenant": true,
+              "is_process_referenced": false,
+              "is_project_input_scope_referenced": true,
+              "object_description": "Raw customer records received from the customer platform.",
+              "object_id": 2,
+              "object_name": "customer",
+              "object_schema": "bronze_demo",
+              "object_type_code": "TABLE",
+              "object_type_name": "Table",
+              "source_tenant_code": "DEMO_TENANT",
+              "source_tenant_id": 1,
+              "source_tenant_name": "Metadata Snapshot Demo Tenant",
+              "system_code": "DEMO_CUSTOMER_SYSTEM",
+              "system_id": 1,
+              "system_name": "Demo Customer System",
+              "zone": "bronze"
+            },
+            {
+              "attribute_count": 4,
+              "connection_code": "DEMO_GDS",
+              "connection_id": 2,
+              "connection_name": "Demo Global Data Store",
+              "connection_tenant_code": "DEMO_GDS_TENANT",
+              "connection_tenant_id": 2,
+              "connection_tenant_name": "Metadata Snapshot Demo Global Store",
+              "foreign_catalog": null,
+              "has_ingestion_mapping": true,
+              "is_active": true,
+              "is_copy_referenced": false,
+              "is_on_global_connection": true,
+              "is_owned_by_tenant": true,
+              "is_process_referenced": false,
+              "is_project_input_scope_referenced": true,
+              "object_description": "Raw order records received from the commerce platform.",
+              "object_id": 6,
+              "object_name": "orders",
+              "object_schema": "bronze_demo",
+              "object_type_code": "TABLE",
+              "object_type_name": "Table",
+              "source_tenant_code": "DEMO_TENANT",
+              "source_tenant_id": 1,
+              "source_tenant_name": "Metadata Snapshot Demo Tenant",
+              "system_code": "DEMO_CUSTOMER_SYSTEM",
+              "system_id": 1,
+              "system_name": "Demo Customer System",
+              "zone": "bronze"
+            }
+          ]
+        },
+        "schema_version": "1.0",
+        "tenant_id": 1,
+        "view": "objects"
+      },
+      "tool": "inspect_metadata"
+    },
+    {
+      "arguments": {
+        "tenant_id": 1,
+        "view": "objects",
+        "zone": "silver"
+      },
+      "result": {
+        "next_cursor": null,
+        "payload": {
+          "objects": [
+            {
+              "attribute_count": 2,
+              "connection_code": "DEMO_GDS",
+              "connection_id": 2,
+              "connection_name": "Demo Global Data Store",
+              "connection_tenant_code": "DEMO_GDS_TENANT",
+              "connection_tenant_id": 2,
+              "connection_tenant_name": "Metadata Snapshot Demo Global Store",
+              "foreign_catalog": null,
+              "has_ingestion_mapping": true,
+              "is_active": true,
+              "is_copy_referenced": false,
+              "is_on_global_connection": true,
+              "is_owned_by_tenant": true,
+              "is_process_referenced": true,
+              "is_project_input_scope_referenced": false,
+              "object_description": "Conformed customer identities used across analytical products.",
+              "object_id": 3,
+              "object_name": "customer",
+              "object_schema": "silver_demo",
+              "object_type_code": "TABLE",
+              "object_type_name": "Table",
+              "source_tenant_code": "DEMO_TENANT",
+              "source_tenant_id": 1,
+              "source_tenant_name": "Metadata Snapshot Demo Tenant",
+              "system_code": "DEMO_CUSTOMER_SYSTEM",
+              "system_id": 1,
+              "system_name": "Demo Customer System",
+              "zone": "silver"
+            },
+            {
+              "attribute_count": 4,
+              "connection_code": "DEMO_GDS",
+              "connection_id": 2,
+              "connection_name": "Demo Global Data Store",
+              "connection_tenant_code": "DEMO_GDS_TENANT",
+              "connection_tenant_id": 2,
+              "connection_tenant_name": "Metadata Snapshot Demo Global Store",
+              "foreign_catalog": null,
+              "has_ingestion_mapping": true,
+              "is_active": true,
+              "is_copy_referenced": false,
+              "is_on_global_connection": true,
+              "is_owned_by_tenant": true,
+              "is_process_referenced": false,
+              "is_project_input_scope_referenced": false,
+              "object_description": "Conformed order transactions with governed customer references.",
+              "object_id": 7,
+              "object_name": "orders",
+              "object_schema": "silver_demo",
+              "object_type_code": "TABLE",
+              "object_type_name": "Table",
+              "source_tenant_code": "DEMO_TENANT",
+              "source_tenant_id": 1,
+              "source_tenant_name": "Metadata Snapshot Demo Tenant",
+              "system_code": "DEMO_CUSTOMER_SYSTEM",
+              "system_id": 1,
+              "system_name": "Demo Customer System",
+              "zone": "silver"
+            }
+          ]
+        },
+        "schema_version": "1.0",
+        "tenant_id": 1,
+        "view": "objects"
+      },
+      "tool": "inspect_metadata"
+    },
+    {
+      "arguments": {
+        "tenant_id": 1,
+        "view": "objects",
+        "zone": "gold"
+      },
+      "result": {
+        "next_cursor": null,
+        "payload": {
+          "objects": [
+            {
+              "attribute_count": 2,
+              "connection_code": "DEMO_GDS",
+              "connection_id": 2,
+              "connection_name": "Demo Global Data Store",
+              "connection_tenant_code": "DEMO_GDS_TENANT",
+              "connection_tenant_id": 2,
+              "connection_tenant_name": "Metadata Snapshot Demo Global Store",
+              "foreign_catalog": null,
+              "has_ingestion_mapping": true,
+              "is_active": true,
+              "is_copy_referenced": false,
+              "is_on_global_connection": true,
+              "is_owned_by_tenant": true,
+              "is_process_referenced": false,
+              "is_project_input_scope_referenced": false,
+              "object_description": "Customer dimension with durable keys and descriptive attributes.",
+              "object_id": 4,
+              "object_name": "dim_customer",
+              "object_schema": "gold_demo",
+              "object_type_code": "TABLE",
+              "object_type_name": "Table",
+              "source_tenant_code": "DEMO_TENANT",
+              "source_tenant_id": 1,
+              "source_tenant_name": "Metadata Snapshot Demo Tenant",
+              "system_code": "DEMO_CUSTOMER_SYSTEM",
+              "system_id": 1,
+              "system_name": "Demo Customer System",
+              "zone": "gold"
+            },
+            {
+              "attribute_count": 4,
+              "connection_code": "DEMO_GDS",
+              "connection_id": 2,
+              "connection_name": "Demo Global Data Store",
+              "connection_tenant_code": "DEMO_GDS_TENANT",
+              "connection_tenant_id": 2,
+              "connection_tenant_name": "Metadata Snapshot Demo Global Store",
+              "foreign_catalog": null,
+              "has_ingestion_mapping": true,
+              "is_active": true,
+              "is_copy_referenced": false,
+              "is_on_global_connection": true,
+              "is_owned_by_tenant": true,
+              "is_process_referenced": false,
+              "is_project_input_scope_referenced": false,
+              "object_description": "Order fact table at one row per submitted order.",
+              "object_id": 8,
+              "object_name": "fact_order",
+              "object_schema": "gold_demo",
+              "object_type_code": "TABLE",
+              "object_type_name": "Table",
+              "source_tenant_code": "DEMO_TENANT",
+              "source_tenant_id": 1,
+              "source_tenant_name": "Metadata Snapshot Demo Tenant",
+              "system_code": "DEMO_CUSTOMER_SYSTEM",
+              "system_id": 1,
+              "system_name": "Demo Customer System",
+              "zone": "gold"
+            }
+          ]
+        },
+        "schema_version": "1.0",
+        "tenant_id": 1,
+        "view": "objects"
+      },
+      "tool": "inspect_metadata"
+    },
+    {
+      "arguments": {
+        "dataset": "profiling_profile",
+        "project_id": 1
+      },
+      "result": {
+        "dataset": "profiling_profile",
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "attribute_name": "customer_id",
+            "avg_data_length": "8.400000",
+            "blank_count": 0,
+            "connection_code": "DEMO_GDS",
+            "distinct_count": 125000,
+            "max_data_length": 12,
+            "min_data_length": 1,
+            "non_null_count": 125000,
+            "null_count": 0,
+            "object_name": "customer",
+            "object_schema": "bronze_demo",
+            "percent_blank": "0.0000",
+            "percent_distinct": "100.0000",
+            "percent_duplicates": "0.0000",
+            "percent_null": "0.0000",
+            "percent_populated": "100.0000",
+            "row_count": 125000,
+            "system_code": "DEMO_CUSTOMER_SYSTEM",
+            "tenant_code": "DEMO_GDS_TENANT"
+          },
+          {
+            "attribute_name": "customer_name",
+            "avg_data_length": "24.700000",
+            "blank_count": 24,
+            "connection_code": "DEMO_GDS",
+            "distinct_count": 93210,
+            "max_data_length": 98,
+            "min_data_length": 1,
+            "non_null_count": 124820,
+            "null_count": 180,
+            "object_name": "customer",
+            "object_schema": "bronze_demo",
+            "percent_blank": "0.0192",
+            "percent_distinct": "74.6770",
+            "percent_duplicates": "25.3260",
+            "percent_null": "0.1440",
+            "percent_populated": "99.8560",
+            "row_count": 125000,
+            "system_code": "DEMO_CUSTOMER_SYSTEM",
+            "tenant_code": "DEMO_GDS_TENANT"
+          },
+          {
+            "attribute_name": "customer_id",
+            "avg_data_length": "8.300000",
+            "blank_count": 0,
+            "connection_code": "DEMO_GDS",
+            "distinct_count": 124996,
+            "max_data_length": 12,
+            "min_data_length": 1,
+            "non_null_count": 842310,
+            "null_count": 0,
+            "object_name": "orders",
+            "object_schema": "bronze_demo",
+            "percent_blank": "0.0000",
+            "percent_distinct": "14.8400",
+            "percent_duplicates": "85.1600",
+            "percent_null": "0.0000",
+            "percent_populated": "100.0000",
+            "row_count": 842310,
+            "system_code": "DEMO_CUSTOMER_SYSTEM",
+            "tenant_code": "DEMO_GDS_TENANT"
+          },
+          {
+            "attribute_name": "order_amount",
+            "avg_data_length": "6.800000",
+            "blank_count": 0,
+            "connection_code": "DEMO_GDS",
+            "distinct_count": 415892,
+            "max_data_length": 12,
+            "min_data_length": 1,
+            "non_null_count": 842104,
+            "null_count": 206,
+            "object_name": "orders",
+            "object_schema": "bronze_demo",
+            "percent_blank": "0.0000",
+            "percent_distinct": "49.3860",
+            "percent_duplicates": "50.6140",
+            "percent_null": "0.0240",
+            "percent_populated": "99.9760",
+            "row_count": 842310,
+            "system_code": "DEMO_CUSTOMER_SYSTEM",
+            "tenant_code": "DEMO_GDS_TENANT"
+          },
+          {
+            "attribute_name": "order_date",
+            "avg_data_length": "10.000000",
+            "blank_count": 0,
+            "connection_code": "DEMO_GDS",
+            "distinct_count": 730,
+            "max_data_length": 10,
+            "min_data_length": 10,
+            "non_null_count": 842310,
+            "null_count": 0,
+            "object_name": "orders",
+            "object_schema": "bronze_demo",
+            "percent_blank": "0.0000",
+            "percent_distinct": "0.0870",
+            "percent_duplicates": "99.9130",
+            "percent_null": "0.0000",
+            "percent_populated": "100.0000",
+            "row_count": 842310,
+            "system_code": "DEMO_CUSTOMER_SYSTEM",
+            "tenant_code": "DEMO_GDS_TENANT"
+          },
+          {
+            "attribute_name": "order_id",
+            "avg_data_length": "10.200000",
+            "blank_count": 0,
+            "connection_code": "DEMO_GDS",
+            "distinct_count": 842310,
+            "max_data_length": 14,
+            "min_data_length": 1,
+            "non_null_count": 842310,
+            "null_count": 0,
+            "object_name": "orders",
+            "object_schema": "bronze_demo",
+            "percent_blank": "0.0000",
+            "percent_distinct": "100.0000",
+            "percent_duplicates": "0.0000",
+            "percent_null": "0.0000",
+            "percent_populated": "100.0000",
+            "row_count": 842310,
+            "system_code": "DEMO_CUSTOMER_SYSTEM",
+            "tenant_code": "DEMO_GDS_TENANT"
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_project_section"
+    },
+    {
+      "arguments": {
+        "dataset": "object_enrichment",
+        "project_id": 1
+      },
+      "result": {
+        "dataset": "object_enrichment",
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [],
+        "schema_version": "1.0"
+      },
+      "tool": "read_project_section"
+    },
+    {
+      "arguments": {
+        "dataset": "attribute_enrichment",
+        "project_id": 1
+      },
+      "result": {
+        "dataset": "attribute_enrichment",
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [],
+        "schema_version": "1.0"
+      },
+      "tool": "read_project_section"
+    },
+    {
+      "arguments": {
+        "dataset": "analysis_result",
+        "project_id": 1
+      },
+      "result": {
+        "dataset": "analysis_result",
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "analysis_result_is_locked": false,
+            "analysis_result_status": "active",
+            "from_attribute_name": "customer_id",
+            "from_connection_code": "DEMO_GDS",
+            "from_object_name": "orders",
+            "from_object_schema": "bronze_demo",
+            "from_system_code": "DEMO_CUSTOMER_SYSTEM",
+            "from_tenant_code": "DEMO_GDS_TENANT",
+            "inferred_cardinality": "unknown",
+            "relationship_basis": "Order customer identifiers are contained in the unique Customer identifier set.",
+            "relationship_kind": "foreign_key",
+            "to_attribute_name": "customer_id",
+            "to_connection_code": "DEMO_GDS",
+            "to_object_name": "customer",
+            "to_object_schema": "bronze_demo",
+            "to_system_code": "DEMO_CUSTOMER_SYSTEM",
+            "to_tenant_code": "DEMO_GDS_TENANT",
+            "validation_duplicate_target_key_count": 0,
+            "validation_policy_version": "1.0.0",
+            "validation_result": "supported",
+            "validation_source_distinct_count": 124996,
+            "validation_source_missing_target_count": 0,
+            "validation_source_non_null_count": 842310,
+            "validation_target_distinct_count": 125000,
+            "validation_target_non_null_count": 125000,
+            "validation_unused_target_count": 4
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_project_section"
+    },
+    {
+      "arguments": {
+        "dataset": "context_group",
+        "project_id": 1
+      },
+      "result": {
+        "dataset": "context_group",
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "context_group_description": "Review-ready customer and order modeling decisions.",
+            "context_group_name": "Customer Orders business rules",
+            "context_type_name": "Business Requirement",
+            "is_active": true,
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_project_section"
+    },
+    {
+      "arguments": {
+        "dataset": "context_record",
+        "project_id": 1
+      },
+      "result": {
+        "dataset": "context_record",
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "context_group_name": "Customer Orders business rules",
+            "context_record_id": "53c2a86c-6771-498c-9885-7024c2b3ed8e",
+            "context_text": "One Customer record represents one durable customer identity.",
+            "is_locked": false,
+            "source_reference": null,
+            "status": "active"
+          },
+          {
+            "context_group_name": "Customer Orders business rules",
+            "context_record_id": "ed17dddf-1257-44a9-a71b-16cb160b67a4",
+            "context_text": "Every submitted Order belongs to exactly one Customer.",
+            "is_locked": false,
+            "source_reference": null,
+            "status": "active"
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_project_section"
+    },
+    {
+      "arguments": {
+        "dataset": "conceptual_object",
+        "project_id": 1
+      },
+      "result": {
+        "dataset": "conceptual_object",
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "conceptual_object_aliases": [
+              "Client"
+            ],
+            "conceptual_object_definition": "A person or organization that places Orders.",
+            "conceptual_object_grain": "One durable customer identity",
+            "conceptual_object_is_locked": false,
+            "conceptual_object_name": "Customer",
+            "conceptual_object_status": "active",
+            "conceptual_object_type": "business_entity",
+            "supports": [
+              {
+                "source_object": {
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "customer",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                },
+                "support_is_locked": false,
+                "support_reason": "Customer records demonstrate the governed identity.",
+                "support_reason_detail": null,
+                "support_role": "primary evidence",
+                "support_source_type": "object",
+                "support_status": "active"
+              }
+            ]
+          },
+          {
+            "conceptual_object_aliases": [
+              "Purchase"
+            ],
+            "conceptual_object_definition": "A commercial request submitted by a Customer.",
+            "conceptual_object_grain": "One submitted order",
+            "conceptual_object_is_locked": false,
+            "conceptual_object_name": "Order",
+            "conceptual_object_status": "active",
+            "conceptual_object_type": "business_event",
+            "supports": [
+              {
+                "source_object": {
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "orders",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                },
+                "support_is_locked": false,
+                "support_reason": "Order records demonstrate the transaction grain.",
+                "support_reason_detail": null,
+                "support_role": "primary evidence",
+                "support_source_type": "object",
+                "support_status": "active"
+              }
+            ]
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_project_section"
+    },
+    {
+      "arguments": {
+        "dataset": "conceptual_relationship",
+        "project_id": 1
+      },
+      "result": {
+        "dataset": "conceptual_relationship",
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "conceptual_relationship_basis": "Supported by the Customer identifier relationship and business rule.",
+            "conceptual_relationship_cardinality": "many_to_one",
+            "conceptual_relationship_cardinality_basis": "Many Orders may share one Customer identifier.",
+            "conceptual_relationship_definition": "Each Order is placed by one Customer.",
+            "conceptual_relationship_is_locked": false,
+            "conceptual_relationship_name": "Order belongs to Customer",
+            "conceptual_relationship_status": "active",
+            "conceptual_relationship_type": "ownership",
+            "from_conceptual_object_name": "Order",
+            "supports": [
+              {
+                "context_record": {
+                  "context_record_id": "ed17dddf-1257-44a9-a71b-16cb160b67a4"
+                },
+                "support_is_locked": false,
+                "support_reason": "The approved rule defines the Customer ownership relationship.",
+                "support_reason_detail": null,
+                "support_role": "business rule",
+                "support_source_type": "context_record",
+                "support_status": "active"
+              }
+            ],
+            "to_conceptual_object_name": "Customer"
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_project_section"
+    },
+    {
+      "arguments": {
+        "dataset": "logical_submodel",
+        "project_id": 1
+      },
+      "result": {
+        "dataset": "logical_submodel",
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "logical_submodel_definition": "Customer and Order entities for commerce analytics.",
+            "logical_submodel_is_locked": false,
+            "logical_submodel_name": "Customer Commerce",
+            "logical_submodel_status": "active"
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_project_section"
+    },
+    {
+      "arguments": {
+        "dataset": "logical_entity",
+        "project_id": 1
+      },
+      "result": {
+        "dataset": "logical_entity",
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "logical_entity_definition": "A conformed durable customer identity.",
+            "logical_entity_dependency_order": 0,
+            "logical_entity_grain": "One Customer",
+            "logical_entity_is_locked": false,
+            "logical_entity_name": "Customer",
+            "logical_entity_schema_name": "silver_demo",
+            "logical_entity_status": "active",
+            "logical_entity_type": "core",
+            "logical_entity_type_detail": null,
+            "sources": [
+              {
+                "is_locked": false,
+                "rationale": "The Bronze Customer object supplies the conformed identity.",
+                "source_object": {
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "customer",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                },
+                "source_order": 1,
+                "status": "active",
+                "support_source_type": "object"
+              }
+            ],
+            "submodels": [
+              {
+                "membership_is_locked": false,
+                "membership_status": "active",
+                "submodel_name": "Customer Commerce"
+              }
+            ]
+          },
+          {
+            "logical_entity_definition": "A conformed commercial order.",
+            "logical_entity_dependency_order": 1,
+            "logical_entity_grain": "One submitted Order",
+            "logical_entity_is_locked": false,
+            "logical_entity_name": "Order",
+            "logical_entity_schema_name": "silver_demo",
+            "logical_entity_status": "active",
+            "logical_entity_type": "transaction",
+            "logical_entity_type_detail": null,
+            "sources": [
+              {
+                "is_locked": false,
+                "rationale": "The Bronze Order object supplies the transaction grain.",
+                "source_object": {
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "orders",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                },
+                "source_order": 1,
+                "status": "active",
+                "support_source_type": "object"
+              }
+            ],
+            "submodels": [
+              {
+                "membership_is_locked": false,
+                "membership_status": "active",
+                "submodel_name": "Customer Commerce"
+              }
+            ]
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_project_section"
+    },
+    {
+      "arguments": {
+        "dataset": "logical_attribute",
+        "project_id": 1
+      },
+      "result": {
+        "dataset": "logical_attribute",
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "logical_attribute_data_type": "BIGINT",
+            "logical_attribute_definition": "Stable Customer business identifier.",
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_locked": false,
+            "logical_attribute_is_natural_key": true,
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_name": "Customer ID",
+            "logical_attribute_ordinal_position": 1,
+            "logical_attribute_status": "active",
+            "logical_entity_name": "Customer",
+            "logical_entity_schema_name": "silver_demo",
+            "sources": [
+              {
+                "is_locked": false,
+                "rationale": "Direct governed identifier mapping.",
+                "source_attribute": {
+                  "attribute_name": "customer_id",
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "customer",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                },
+                "source_order": 1,
+                "status": "active",
+                "support_source_type": "attribute"
+              }
+            ]
+          },
+          {
+            "logical_attribute_data_type": "VARCHAR(200)",
+            "logical_attribute_definition": "Current Customer display name.",
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_locked": false,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_nullable": true,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_name": "Customer Name",
+            "logical_attribute_ordinal_position": 2,
+            "logical_attribute_status": "active",
+            "logical_entity_name": "Customer",
+            "logical_entity_schema_name": "silver_demo",
+            "sources": [
+              {
+                "is_locked": false,
+                "rationale": "Direct descriptive mapping.",
+                "source_attribute": {
+                  "attribute_name": "customer_name",
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "customer",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                },
+                "source_order": 2,
+                "status": "active",
+                "support_source_type": "attribute"
+              }
+            ]
+          },
+          {
+            "logical_attribute_data_type": "BIGINT",
+            "logical_attribute_definition": "Customer that placed the Order.",
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_locked": false,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_name": "Customer ID",
+            "logical_attribute_ordinal_position": 2,
+            "logical_attribute_status": "active",
+            "logical_entity_name": "Order",
+            "logical_entity_schema_name": "silver_demo",
+            "sources": [
+              {
+                "is_locked": false,
+                "rationale": "Direct Customer reference mapping.",
+                "source_attribute": {
+                  "attribute_name": "customer_id",
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "orders",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                },
+                "source_order": 2,
+                "status": "active",
+                "support_source_type": "attribute"
+              }
+            ]
+          },
+          {
+            "logical_attribute_data_type": "DECIMAL(18,2)",
+            "logical_attribute_definition": "Gross Order amount in USD.",
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_locked": false,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_name": "Order Amount",
+            "logical_attribute_ordinal_position": 4,
+            "logical_attribute_status": "active",
+            "logical_entity_name": "Order",
+            "logical_entity_schema_name": "silver_demo",
+            "sources": [
+              {
+                "is_locked": false,
+                "rationale": "Direct monetary amount mapping.",
+                "source_attribute": {
+                  "attribute_name": "order_amount",
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "orders",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                },
+                "source_order": 4,
+                "status": "active",
+                "support_source_type": "attribute"
+              }
+            ]
+          },
+          {
+            "logical_attribute_data_type": "DATE",
+            "logical_attribute_definition": "Date the Order was submitted.",
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_locked": false,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_name": "Order Date",
+            "logical_attribute_ordinal_position": 3,
+            "logical_attribute_status": "active",
+            "logical_entity_name": "Order",
+            "logical_entity_schema_name": "silver_demo",
+            "sources": [
+              {
+                "is_locked": false,
+                "rationale": "Direct activity date mapping.",
+                "source_attribute": {
+                  "attribute_name": "order_date",
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "orders",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                },
+                "source_order": 3,
+                "status": "active",
+                "support_source_type": "attribute"
+              }
+            ]
+          },
+          {
+            "logical_attribute_data_type": "BIGINT",
+            "logical_attribute_definition": "Stable Order business identifier.",
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_locked": false,
+            "logical_attribute_is_natural_key": true,
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_name": "Order ID",
+            "logical_attribute_ordinal_position": 1,
+            "logical_attribute_status": "active",
+            "logical_entity_name": "Order",
+            "logical_entity_schema_name": "silver_demo",
+            "sources": [
+              {
+                "is_locked": false,
+                "rationale": "Direct governed identifier mapping.",
+                "source_attribute": {
+                  "attribute_name": "order_id",
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "orders",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                },
+                "source_order": 1,
+                "status": "active",
+                "support_source_type": "attribute"
+              }
+            ]
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_project_section"
+    },
+    {
+      "arguments": {
+        "dataset": "logical_relationship",
+        "project_id": 1
+      },
+      "result": {
+        "dataset": "logical_relationship",
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "from_logical_attribute_name": "Customer ID",
+            "from_logical_entity_name": "Order",
+            "from_logical_entity_schema_name": "silver_demo",
+            "logical_relationship_basis": "Validated physical relationship.",
+            "logical_relationship_cardinality": "many_to_one",
+            "logical_relationship_cardinality_basis": "Many Orders may reference one Customer.",
+            "logical_relationship_definition": "Every Order references the Customer that placed it.",
+            "logical_relationship_is_locked": false,
+            "logical_relationship_name": "Order references Customer",
+            "logical_relationship_status": "active",
+            "to_logical_attribute_name": "Customer ID",
+            "to_logical_entity_name": "Customer",
+            "to_logical_entity_schema_name": "silver_demo"
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_project_section"
+    },
+    {
+      "arguments": {
+        "dataset": "dimensional_submodel",
+        "project_id": 1
+      },
+      "result": {
+        "dataset": "dimensional_submodel",
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "dimensional_submodel_definition": "Customer and Order structures for governed sales reporting.",
+            "dimensional_submodel_is_locked": false,
+            "dimensional_submodel_name": "Sales Mart",
+            "dimensional_submodel_status": "active"
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_project_section"
+    },
+    {
+      "arguments": {
+        "dataset": "dimensional_entity",
+        "project_id": 1
+      },
+      "result": {
+        "dataset": "dimensional_entity",
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "dimensional_entity_definition": "Conformed Customer descriptors.",
+            "dimensional_entity_dependency_order": 0,
+            "dimensional_entity_grain_definition": null,
+            "dimensional_entity_is_locked": false,
+            "dimensional_entity_name": "Dim Customer",
+            "dimensional_entity_schema_name": "gold_demo",
+            "dimensional_entity_status": "active",
+            "dimensional_entity_type": "dimension",
+            "dimensional_fact_type": null,
+            "sources": [
+              {
+                "is_locked": false,
+                "rationale": "Silver Customer supplies conformed descriptors.",
+                "source_logical_entity": {
+                  "logical_entity_name": "Customer",
+                  "logical_entity_schema_name": "silver_demo"
+                },
+                "source_order": 1,
+                "status": "active",
+                "support_source_type": "logical_entity"
+              }
+            ],
+            "submodels": [
+              {
+                "membership_is_locked": false,
+                "membership_status": "active",
+                "submodel_name": "Sales Mart"
+              }
+            ]
+          },
+          {
+            "dimensional_entity_definition": "Submitted Order activity and amount.",
+            "dimensional_entity_dependency_order": 1,
+            "dimensional_entity_grain_definition": "One row per submitted Order",
+            "dimensional_entity_is_locked": false,
+            "dimensional_entity_name": "Fact Order",
+            "dimensional_entity_schema_name": "gold_demo",
+            "dimensional_entity_status": "active",
+            "dimensional_entity_type": "fact",
+            "dimensional_fact_type": "transaction",
+            "sources": [
+              {
+                "is_locked": false,
+                "rationale": "Silver Order supplies the transaction grain and measure.",
+                "source_logical_entity": {
+                  "logical_entity_name": "Order",
+                  "logical_entity_schema_name": "silver_demo"
+                },
+                "source_order": 1,
+                "status": "active",
+                "support_source_type": "logical_entity"
+              }
+            ],
+            "submodels": [
+              {
+                "membership_is_locked": false,
+                "membership_status": "active",
+                "submodel_name": "Sales Mart"
+              }
+            ]
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_project_section"
+    },
+    {
+      "arguments": {
+        "dataset": "dimensional_attribute",
+        "project_id": 1
+      },
+      "result": {
+        "dataset": "dimensional_attribute",
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "dimensional_attribute_data_type": "BIGINT",
+            "dimensional_attribute_definition": "Durable Customer dimension key.",
+            "dimensional_attribute_is_audit_column": false,
+            "dimensional_attribute_is_locked": false,
+            "dimensional_attribute_is_natural_key": false,
+            "dimensional_attribute_is_nullable": false,
+            "dimensional_attribute_is_surrogate_key": true,
+            "dimensional_attribute_name": "Customer Key",
+            "dimensional_attribute_ordinal_position": 1,
+            "dimensional_attribute_status": "active",
+            "dimensional_entity_name": "Dim Customer",
+            "dimensional_entity_schema_name": "gold_demo",
+            "sources": [
+              {
+                "is_locked": false,
+                "rationale": "Promote the governed Customer identifier.",
+                "source_logical_attribute": {
+                  "logical_attribute_name": "Customer ID",
+                  "logical_entity_name": "Customer",
+                  "logical_entity_schema_name": "silver_demo"
+                },
+                "source_order": 1,
+                "status": "active",
+                "support_source_type": "logical_attribute"
+              }
+            ]
+          },
+          {
+            "dimensional_attribute_data_type": "VARCHAR(200)",
+            "dimensional_attribute_definition": "Current Customer display name.",
+            "dimensional_attribute_is_audit_column": false,
+            "dimensional_attribute_is_locked": false,
+            "dimensional_attribute_is_natural_key": false,
+            "dimensional_attribute_is_nullable": true,
+            "dimensional_attribute_is_surrogate_key": false,
+            "dimensional_attribute_name": "Customer Name",
+            "dimensional_attribute_ordinal_position": 2,
+            "dimensional_attribute_status": "active",
+            "dimensional_entity_name": "Dim Customer",
+            "dimensional_entity_schema_name": "gold_demo",
+            "sources": [
+              {
+                "is_locked": false,
+                "rationale": "Carry the current Customer name.",
+                "source_logical_attribute": {
+                  "logical_attribute_name": "Customer Name",
+                  "logical_entity_name": "Customer",
+                  "logical_entity_schema_name": "silver_demo"
+                },
+                "source_order": 2,
+                "status": "active",
+                "support_source_type": "logical_attribute"
+              }
+            ]
+          },
+          {
+            "dimensional_attribute_data_type": "BIGINT",
+            "dimensional_attribute_definition": "Foreign key to Dim Customer.",
+            "dimensional_attribute_is_audit_column": false,
+            "dimensional_attribute_is_locked": false,
+            "dimensional_attribute_is_natural_key": false,
+            "dimensional_attribute_is_nullable": false,
+            "dimensional_attribute_is_surrogate_key": false,
+            "dimensional_attribute_name": "Customer Key",
+            "dimensional_attribute_ordinal_position": 2,
+            "dimensional_attribute_status": "active",
+            "dimensional_entity_name": "Fact Order",
+            "dimensional_entity_schema_name": "gold_demo",
+            "sources": [
+              {
+                "is_locked": false,
+                "rationale": "Resolve the Customer dimension key.",
+                "source_logical_attribute": {
+                  "logical_attribute_name": "Customer ID",
+                  "logical_entity_name": "Order",
+                  "logical_entity_schema_name": "silver_demo"
+                },
+                "source_order": 2,
+                "status": "active",
+                "support_source_type": "logical_attribute"
+              }
+            ]
+          },
+          {
+            "dimensional_attribute_data_type": "DECIMAL(18,2)",
+            "dimensional_attribute_definition": "Additive gross Order amount.",
+            "dimensional_attribute_is_audit_column": false,
+            "dimensional_attribute_is_locked": false,
+            "dimensional_attribute_is_natural_key": false,
+            "dimensional_attribute_is_nullable": false,
+            "dimensional_attribute_is_surrogate_key": false,
+            "dimensional_attribute_name": "Order Amount",
+            "dimensional_attribute_ordinal_position": 4,
+            "dimensional_attribute_status": "active",
+            "dimensional_entity_name": "Fact Order",
+            "dimensional_entity_schema_name": "gold_demo",
+            "sources": [
+              {
+                "is_locked": false,
+                "rationale": "Carry the additive Order amount.",
+                "source_logical_attribute": {
+                  "logical_attribute_name": "Order Amount",
+                  "logical_entity_name": "Order",
+                  "logical_entity_schema_name": "silver_demo"
+                },
+                "source_order": 4,
+                "status": "active",
+                "support_source_type": "logical_attribute"
+              }
+            ]
+          },
+          {
+            "dimensional_attribute_data_type": "DATE",
+            "dimensional_attribute_definition": "Order activity date.",
+            "dimensional_attribute_is_audit_column": false,
+            "dimensional_attribute_is_locked": false,
+            "dimensional_attribute_is_natural_key": false,
+            "dimensional_attribute_is_nullable": false,
+            "dimensional_attribute_is_surrogate_key": false,
+            "dimensional_attribute_name": "Order Date",
+            "dimensional_attribute_ordinal_position": 3,
+            "dimensional_attribute_status": "active",
+            "dimensional_entity_name": "Fact Order",
+            "dimensional_entity_schema_name": "gold_demo",
+            "sources": [
+              {
+                "is_locked": false,
+                "rationale": "Carry the activity date.",
+                "source_logical_attribute": {
+                  "logical_attribute_name": "Order Date",
+                  "logical_entity_name": "Order",
+                  "logical_entity_schema_name": "silver_demo"
+                },
+                "source_order": 3,
+                "status": "active",
+                "support_source_type": "logical_attribute"
+              }
+            ]
+          },
+          {
+            "dimensional_attribute_data_type": "BIGINT",
+            "dimensional_attribute_definition": "Degenerate Order business identifier.",
+            "dimensional_attribute_is_audit_column": false,
+            "dimensional_attribute_is_locked": false,
+            "dimensional_attribute_is_natural_key": false,
+            "dimensional_attribute_is_nullable": false,
+            "dimensional_attribute_is_surrogate_key": false,
+            "dimensional_attribute_name": "Order ID",
+            "dimensional_attribute_ordinal_position": 1,
+            "dimensional_attribute_status": "active",
+            "dimensional_entity_name": "Fact Order",
+            "dimensional_entity_schema_name": "gold_demo",
+            "sources": [
+              {
+                "is_locked": false,
+                "rationale": "Carry the degenerate Order identifier.",
+                "source_logical_attribute": {
+                  "logical_attribute_name": "Order ID",
+                  "logical_entity_name": "Order",
+                  "logical_entity_schema_name": "silver_demo"
+                },
+                "source_order": 1,
+                "status": "active",
+                "support_source_type": "logical_attribute"
+              }
+            ]
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_project_section"
+    },
+    {
+      "arguments": {
+        "dataset": "dimensional_relationship",
+        "project_id": 1
+      },
+      "result": {
+        "dataset": "dimensional_relationship",
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "dimensional_relationship_basis": "Conformed Customer key mapping.",
+            "dimensional_relationship_cardinality": "many_to_one",
+            "dimensional_relationship_cardinality_basis": "Many Order facts per Customer member.",
+            "dimensional_relationship_definition": "Each Fact Order row resolves to its Customer dimension member.",
+            "dimensional_relationship_is_locked": false,
+            "dimensional_relationship_is_optional": false,
+            "dimensional_relationship_kind": "fact_dimension",
+            "dimensional_relationship_name": "Fact Order to Dim Customer",
+            "dimensional_relationship_role_name": "ordering_customer",
+            "dimensional_relationship_status": "active",
+            "from_dimensional_attribute_name": "Customer Key",
+            "from_dimensional_entity_name": "Fact Order",
+            "from_dimensional_entity_schema_name": "gold_demo",
+            "to_dimensional_attribute_name": "Customer Key",
+            "to_dimensional_entity_name": "Dim Customer",
+            "to_dimensional_entity_schema_name": "gold_demo"
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_project_section"
+    },
+    {
+      "arguments": {
+        "dataset": "mapping_object",
+        "project_id": 1
+      },
+      "result": {
+        "dataset": "mapping_object",
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "mapping_transformation_document": {
+              "filter_criteria": null,
+              "sample_query": "SELECT customer_id AS customer_key, customer_name FROM silver_demo.customer",
+              "source_tables": [
+                {
+                  "entity_name": "Customer",
+                  "entity_schema_name": "silver_demo",
+                  "entity_type": "logical_entity"
+                }
+              ]
+            },
+            "modeled_entity_name": "Dim Customer",
+            "modeled_entity_schema_name": "gold_demo",
+            "modeled_entity_type": "dimensional_entity",
+            "object_dependency_order": 0,
+            "object_mapping_is_locked": false,
+            "object_mapping_status": "active",
+            "output_template_code": "mapping_dimensional_object_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          },
+          {
+            "mapping_transformation_document": {
+              "filter_criteria": null,
+              "sample_query": "SELECT order_id, customer_id AS customer_key, order_date, order_amount FROM silver_demo.orders",
+              "source_tables": [
+                {
+                  "entity_name": "Order",
+                  "entity_schema_name": "silver_demo",
+                  "entity_type": "logical_entity"
+                }
+              ]
+            },
+            "modeled_entity_name": "Fact Order",
+            "modeled_entity_schema_name": "gold_demo",
+            "modeled_entity_type": "dimensional_entity",
+            "object_dependency_order": 1,
+            "object_mapping_is_locked": false,
+            "object_mapping_status": "active",
+            "output_template_code": "mapping_dimensional_object_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          },
+          {
+            "mapping_transformation_document": {
+              "filter_criteria": null,
+              "sample_query": "SELECT customer_id, customer_name FROM bronze_demo.customer",
+              "source_tables": [
+                {
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "customer",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                }
+              ]
+            },
+            "modeled_entity_name": "Customer",
+            "modeled_entity_schema_name": "silver_demo",
+            "modeled_entity_type": "logical_entity",
+            "object_dependency_order": 0,
+            "object_mapping_is_locked": false,
+            "object_mapping_status": "active",
+            "output_template_code": "mapping_logical_object_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          },
+          {
+            "mapping_transformation_document": {
+              "filter_criteria": null,
+              "sample_query": "SELECT order_id, customer_id, order_date, order_amount FROM bronze_demo.orders",
+              "source_tables": [
+                {
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "orders",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                }
+              ]
+            },
+            "modeled_entity_name": "Order",
+            "modeled_entity_schema_name": "silver_demo",
+            "modeled_entity_type": "logical_entity",
+            "object_dependency_order": 1,
+            "object_mapping_is_locked": false,
+            "object_mapping_status": "active",
+            "output_template_code": "mapping_logical_object_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_project_section"
+    },
+    {
+      "arguments": {
+        "dataset": "mapping_attribute",
+        "project_id": 1
+      },
+      "result": {
+        "dataset": "mapping_attribute",
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "attribute_mapping_is_locked": false,
+            "attribute_mapping_status": "active",
+            "attribute_mapping_transformation_document": {
+              "default_record": null,
+              "source_columns": [
+                {
+                  "attribute_name": "Customer ID",
+                  "entity_name": "Customer",
+                  "entity_schema_name": "silver_demo",
+                  "entity_type": "logical_entity"
+                }
+              ],
+              "transformation_logic": "Copy the source value into Customer Key."
+            },
+            "modeled_attribute_name": "Customer Key",
+            "modeled_entity_name": "Dim Customer",
+            "modeled_entity_schema_name": "gold_demo",
+            "modeled_entity_type": "dimensional_entity",
+            "output_template_code": "mapping_dimensional_attribute_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          },
+          {
+            "attribute_mapping_is_locked": false,
+            "attribute_mapping_status": "active",
+            "attribute_mapping_transformation_document": {
+              "default_record": null,
+              "source_columns": [
+                {
+                  "attribute_name": "Customer Name",
+                  "entity_name": "Customer",
+                  "entity_schema_name": "silver_demo",
+                  "entity_type": "logical_entity"
+                }
+              ],
+              "transformation_logic": "Copy the source value into Customer Name."
+            },
+            "modeled_attribute_name": "Customer Name",
+            "modeled_entity_name": "Dim Customer",
+            "modeled_entity_schema_name": "gold_demo",
+            "modeled_entity_type": "dimensional_entity",
+            "output_template_code": "mapping_dimensional_attribute_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          },
+          {
+            "attribute_mapping_is_locked": false,
+            "attribute_mapping_status": "active",
+            "attribute_mapping_transformation_document": {
+              "default_record": null,
+              "source_columns": [
+                {
+                  "attribute_name": "Customer ID",
+                  "entity_name": "Order",
+                  "entity_schema_name": "silver_demo",
+                  "entity_type": "logical_entity"
+                }
+              ],
+              "transformation_logic": "Copy the source value into Customer Key."
+            },
+            "modeled_attribute_name": "Customer Key",
+            "modeled_entity_name": "Fact Order",
+            "modeled_entity_schema_name": "gold_demo",
+            "modeled_entity_type": "dimensional_entity",
+            "output_template_code": "mapping_dimensional_attribute_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          },
+          {
+            "attribute_mapping_is_locked": false,
+            "attribute_mapping_status": "active",
+            "attribute_mapping_transformation_document": {
+              "default_record": null,
+              "source_columns": [
+                {
+                  "attribute_name": "Order Amount",
+                  "entity_name": "Order",
+                  "entity_schema_name": "silver_demo",
+                  "entity_type": "logical_entity"
+                }
+              ],
+              "transformation_logic": "Copy the source value into Order Amount."
+            },
+            "modeled_attribute_name": "Order Amount",
+            "modeled_entity_name": "Fact Order",
+            "modeled_entity_schema_name": "gold_demo",
+            "modeled_entity_type": "dimensional_entity",
+            "output_template_code": "mapping_dimensional_attribute_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          },
+          {
+            "attribute_mapping_is_locked": false,
+            "attribute_mapping_status": "active",
+            "attribute_mapping_transformation_document": {
+              "default_record": null,
+              "source_columns": [
+                {
+                  "attribute_name": "Order Date",
+                  "entity_name": "Order",
+                  "entity_schema_name": "silver_demo",
+                  "entity_type": "logical_entity"
+                }
+              ],
+              "transformation_logic": "Copy the source value into Order Date."
+            },
+            "modeled_attribute_name": "Order Date",
+            "modeled_entity_name": "Fact Order",
+            "modeled_entity_schema_name": "gold_demo",
+            "modeled_entity_type": "dimensional_entity",
+            "output_template_code": "mapping_dimensional_attribute_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          },
+          {
+            "attribute_mapping_is_locked": false,
+            "attribute_mapping_status": "active",
+            "attribute_mapping_transformation_document": {
+              "default_record": null,
+              "source_columns": [
+                {
+                  "attribute_name": "Order ID",
+                  "entity_name": "Order",
+                  "entity_schema_name": "silver_demo",
+                  "entity_type": "logical_entity"
+                }
+              ],
+              "transformation_logic": "Copy the source value into Order ID."
+            },
+            "modeled_attribute_name": "Order ID",
+            "modeled_entity_name": "Fact Order",
+            "modeled_entity_schema_name": "gold_demo",
+            "modeled_entity_type": "dimensional_entity",
+            "output_template_code": "mapping_dimensional_attribute_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          },
+          {
+            "attribute_mapping_is_locked": false,
+            "attribute_mapping_status": "active",
+            "attribute_mapping_transformation_document": {
+              "default_record": null,
+              "source_columns": [
+                {
+                  "attribute_name": "customer_id",
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "customer",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                }
+              ],
+              "transformation_logic": "Copy the source value into Customer ID."
+            },
+            "modeled_attribute_name": "Customer ID",
+            "modeled_entity_name": "Customer",
+            "modeled_entity_schema_name": "silver_demo",
+            "modeled_entity_type": "logical_entity",
+            "output_template_code": "mapping_logical_attribute_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          },
+          {
+            "attribute_mapping_is_locked": false,
+            "attribute_mapping_status": "active",
+            "attribute_mapping_transformation_document": {
+              "default_record": null,
+              "source_columns": [
+                {
+                  "attribute_name": "customer_name",
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "customer",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                }
+              ],
+              "transformation_logic": "Copy the source value into Customer Name."
+            },
+            "modeled_attribute_name": "Customer Name",
+            "modeled_entity_name": "Customer",
+            "modeled_entity_schema_name": "silver_demo",
+            "modeled_entity_type": "logical_entity",
+            "output_template_code": "mapping_logical_attribute_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          },
+          {
+            "attribute_mapping_is_locked": false,
+            "attribute_mapping_status": "active",
+            "attribute_mapping_transformation_document": {
+              "default_record": null,
+              "source_columns": [
+                {
+                  "attribute_name": "customer_id",
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "orders",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                }
+              ],
+              "transformation_logic": "Copy the source value into Customer ID."
+            },
+            "modeled_attribute_name": "Customer ID",
+            "modeled_entity_name": "Order",
+            "modeled_entity_schema_name": "silver_demo",
+            "modeled_entity_type": "logical_entity",
+            "output_template_code": "mapping_logical_attribute_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          },
+          {
+            "attribute_mapping_is_locked": false,
+            "attribute_mapping_status": "active",
+            "attribute_mapping_transformation_document": {
+              "default_record": null,
+              "source_columns": [
+                {
+                  "attribute_name": "order_amount",
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "orders",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                }
+              ],
+              "transformation_logic": "Copy the source value into Order Amount."
+            },
+            "modeled_attribute_name": "Order Amount",
+            "modeled_entity_name": "Order",
+            "modeled_entity_schema_name": "silver_demo",
+            "modeled_entity_type": "logical_entity",
+            "output_template_code": "mapping_logical_attribute_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          },
+          {
+            "attribute_mapping_is_locked": false,
+            "attribute_mapping_status": "active",
+            "attribute_mapping_transformation_document": {
+              "default_record": null,
+              "source_columns": [
+                {
+                  "attribute_name": "order_date",
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "orders",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                }
+              ],
+              "transformation_logic": "Copy the source value into Order Date."
+            },
+            "modeled_attribute_name": "Order Date",
+            "modeled_entity_name": "Order",
+            "modeled_entity_schema_name": "silver_demo",
+            "modeled_entity_type": "logical_entity",
+            "output_template_code": "mapping_logical_attribute_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          },
+          {
+            "attribute_mapping_is_locked": false,
+            "attribute_mapping_status": "active",
+            "attribute_mapping_transformation_document": {
+              "default_record": null,
+              "source_columns": [
+                {
+                  "attribute_name": "order_id",
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "orders",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                }
+              ],
+              "transformation_logic": "Copy the source value into Order ID."
+            },
+            "modeled_attribute_name": "Order ID",
+            "modeled_entity_name": "Order",
+            "modeled_entity_schema_name": "silver_demo",
+            "modeled_entity_type": "logical_entity",
+            "output_template_code": "mapping_logical_attribute_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_project_section"
+    },
+    {
+      "arguments": {
+        "component": "target_metadata",
+        "expected_project_revision": 1,
+        "modeled_entity_name": "Dim Customer",
+        "modeled_entity_schema_name": "gold_demo",
+        "modeled_entity_type": "dimensional_entity",
+        "page_size": 100,
+        "project_id": 1
+      },
+      "result": {
+        "complete": true,
+        "component": "target_metadata",
+        "context_digest": "309e4e88e61583f24e4b2b601b068382442361039781d3255cfb8f5cba6bbf8f",
+        "issues": [],
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "attributes": [
+              {
+                "attribute_custom_code": null,
+                "attribute_data_type": "BIGINT",
+                "attribute_description": "Durable Customer dimension key.",
+                "attribute_inferred_data_type": "BIGINT",
+                "attribute_name": "Customer Key",
+                "attribute_nullability": false,
+                "attribute_ordinal_position": 1,
+                "fc_attribute_name": null,
+                "is_active": true,
+                "is_locked": false,
+                "is_masking_required": false,
+                "is_meta_data": false,
+                "is_natural_key": false,
+                "is_surrogate_key": true,
+                "population": "database"
+              },
+              {
+                "attribute_custom_code": null,
+                "attribute_data_type": "VARCHAR(200)",
+                "attribute_description": "Current Customer display name.",
+                "attribute_inferred_data_type": "VARCHAR(200)",
+                "attribute_name": "Customer Name",
+                "attribute_nullability": true,
+                "attribute_ordinal_position": 2,
+                "fc_attribute_name": null,
+                "is_active": true,
+                "is_locked": false,
+                "is_masking_required": false,
+                "is_meta_data": false,
+                "is_natural_key": false,
+                "is_surrogate_key": false,
+                "population": "mapping"
+              }
+            ],
+            "audit_columns_template": null,
+            "batch_attribute_name": null,
+            "connection_code": "DEMO_GDS",
+            "is_locked": false,
+            "modeled_entity_name": "Dim Customer",
+            "modeled_entity_schema_name": "gold_demo",
+            "modeled_entity_type": "dimensional_entity",
+            "object_description": "Conformed Customer descriptors.",
+            "object_name": "Dim Customer",
+            "object_schema": "gold_demo",
+            "source_tenant_code": "DEMO_TENANT",
+            "source_tenant_name": "Metadata Snapshot Demo Tenant",
+            "system_code": "DEMO_CUSTOMER_SYSTEM",
+            "system_name": "Demo Customer System",
+            "technical_columns_template": null,
+            "tenant_catalog": "demo_gds_catalog",
+            "tenant_code": "DEMO_GDS_TENANT",
+            "tenant_name": "Metadata Snapshot Demo Global Store",
+            "zone_code": "gold"
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_mapping_context"
+    },
+    {
+      "arguments": {
+        "component": "source_metadata",
+        "expected_context_digest": "309e4e88e61583f24e4b2b601b068382442361039781d3255cfb8f5cba6bbf8f",
+        "expected_project_revision": 1,
+        "modeled_entity_name": "Dim Customer",
+        "modeled_entity_schema_name": "gold_demo",
+        "modeled_entity_type": "dimensional_entity",
+        "page_size": 100,
+        "project_id": 1
+      },
+      "result": {
+        "complete": true,
+        "component": "source_metadata",
+        "context_digest": "309e4e88e61583f24e4b2b601b068382442361039781d3255cfb8f5cba6bbf8f",
+        "issues": [],
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "is_locked": false,
+            "mapping_order": 1,
+            "object": {
+              "attributes": [
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "BIGINT",
+                  "attribute_description": "Stable Customer business identifier.",
+                  "attribute_inferred_data_type": "BIGINT",
+                  "attribute_name": "Customer ID",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 1,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": true,
+                  "is_surrogate_key": false,
+                  "logical_attribute_name": "Customer ID"
+                },
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "VARCHAR(200)",
+                  "attribute_description": "Current Customer display name.",
+                  "attribute_inferred_data_type": "VARCHAR(200)",
+                  "attribute_name": "Customer Name",
+                  "attribute_nullability": true,
+                  "attribute_ordinal_position": 2,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": false,
+                  "is_surrogate_key": false,
+                  "logical_attribute_name": "Customer Name"
+                }
+              ],
+              "batch_attribute_name": null,
+              "connection_code": "DEMO_GDS",
+              "fc_object_name": null,
+              "fc_object_schema": null,
+              "foreign_catalog": null,
+              "is_active": true,
+              "is_locked": false,
+              "logical_entity_name": "Customer",
+              "logical_entity_schema_name": "silver_demo",
+              "modeled_entity_name": "Customer",
+              "modeled_entity_schema_name": "silver_demo",
+              "modeled_entity_type": "logical_entity",
+              "object_description": "A conformed durable customer identity.",
+              "object_name": "Customer",
+              "object_schema": "silver_demo",
+              "scope_is_active": true,
+              "scope_is_locked": false,
+              "system_code": "DEMO_CUSTOMER_SYSTEM",
+              "tenant_catalog": "demo_gds_catalog",
+              "tenant_code": "DEMO_GDS_TENANT",
+              "zone_code": "silver"
+            },
+            "rationale": "Silver Customer supplies conformed descriptors.",
+            "role": "support",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          },
+          {
+            "is_locked": false,
+            "mapping_order": null,
+            "object": {
+              "attributes": [
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "BIGINT",
+                  "attribute_description": "Stable Order business identifier.",
+                  "attribute_inferred_data_type": "BIGINT",
+                  "attribute_name": "Order ID",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 1,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": true,
+                  "is_surrogate_key": false,
+                  "logical_attribute_name": "Order ID"
+                },
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "BIGINT",
+                  "attribute_description": "Customer that placed the Order.",
+                  "attribute_inferred_data_type": "BIGINT",
+                  "attribute_name": "Customer ID",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 2,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": false,
+                  "is_surrogate_key": false,
+                  "logical_attribute_name": "Customer ID"
+                },
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "DATE",
+                  "attribute_description": "Date the Order was submitted.",
+                  "attribute_inferred_data_type": "DATE",
+                  "attribute_name": "Order Date",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 3,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": false,
+                  "is_surrogate_key": false,
+                  "logical_attribute_name": "Order Date"
+                },
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "DECIMAL(18,2)",
+                  "attribute_description": "Gross Order amount in USD.",
+                  "attribute_inferred_data_type": "DECIMAL(18,2)",
+                  "attribute_name": "Order Amount",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 4,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": false,
+                  "is_surrogate_key": false,
+                  "logical_attribute_name": "Order Amount"
+                }
+              ],
+              "batch_attribute_name": null,
+              "connection_code": "DEMO_GDS",
+              "fc_object_name": null,
+              "fc_object_schema": null,
+              "foreign_catalog": null,
+              "is_active": true,
+              "is_locked": false,
+              "logical_entity_name": "Order",
+              "logical_entity_schema_name": "silver_demo",
+              "modeled_entity_name": "Order",
+              "modeled_entity_schema_name": "silver_demo",
+              "modeled_entity_type": "logical_entity",
+              "object_description": "A conformed commercial order.",
+              "object_name": "Order",
+              "object_schema": "silver_demo",
+              "scope_is_active": true,
+              "scope_is_locked": false,
+              "system_code": "DEMO_CUSTOMER_SYSTEM",
+              "tenant_catalog": "demo_gds_catalog",
+              "tenant_code": "DEMO_GDS_TENANT",
+              "zone_code": "silver"
+            },
+            "rationale": "Available Logical source candidate; relevance must be established from evidence.",
+            "role": "candidate",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          },
+          {
+            "is_locked": false,
+            "mapping_order": null,
+            "object": {
+              "attributes": [
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "BIGINT",
+                  "attribute_description": "Degenerate Order business identifier.",
+                  "attribute_inferred_data_type": "BIGINT",
+                  "attribute_name": "Order ID",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 1,
+                  "dimensional_attribute_name": "Order ID",
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": false,
+                  "is_surrogate_key": false
+                },
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "BIGINT",
+                  "attribute_description": "Foreign key to Dim Customer.",
+                  "attribute_inferred_data_type": "BIGINT",
+                  "attribute_name": "Customer Key",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 2,
+                  "dimensional_attribute_name": "Customer Key",
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": false,
+                  "is_surrogate_key": false
+                },
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "DATE",
+                  "attribute_description": "Order activity date.",
+                  "attribute_inferred_data_type": "DATE",
+                  "attribute_name": "Order Date",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 3,
+                  "dimensional_attribute_name": "Order Date",
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": false,
+                  "is_surrogate_key": false
+                },
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "DECIMAL(18,2)",
+                  "attribute_description": "Additive gross Order amount.",
+                  "attribute_inferred_data_type": "DECIMAL(18,2)",
+                  "attribute_name": "Order Amount",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 4,
+                  "dimensional_attribute_name": "Order Amount",
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": false,
+                  "is_surrogate_key": false
+                }
+              ],
+              "batch_attribute_name": null,
+              "connection_code": "DEMO_GDS",
+              "dimensional_entity_name": "Fact Order",
+              "dimensional_entity_schema_name": "gold_demo",
+              "fc_object_name": null,
+              "fc_object_schema": null,
+              "foreign_catalog": null,
+              "is_active": true,
+              "is_locked": false,
+              "modeled_entity_name": "Fact Order",
+              "modeled_entity_schema_name": "gold_demo",
+              "modeled_entity_type": "dimensional_entity",
+              "object_description": "Submitted Order activity and amount.",
+              "object_name": "Fact Order",
+              "object_schema": "gold_demo",
+              "scope_is_active": true,
+              "scope_is_locked": false,
+              "system_code": "DEMO_CUSTOMER_SYSTEM",
+              "tenant_catalog": "demo_gds_catalog",
+              "tenant_code": "DEMO_GDS_TENANT",
+              "zone_code": "gold"
+            },
+            "rationale": "Available peer Dimensional lookup with applied Mapping for the selected source System.",
+            "role": "lookup",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_mapping_context"
+    },
+    {
+      "arguments": {
+        "component": "source_systems",
+        "expected_context_digest": "309e4e88e61583f24e4b2b601b068382442361039781d3255cfb8f5cba6bbf8f",
+        "expected_project_revision": 1,
+        "modeled_entity_name": "Dim Customer",
+        "modeled_entity_schema_name": "gold_demo",
+        "modeled_entity_type": "dimensional_entity",
+        "page_size": 100,
+        "project_id": 1
+      },
+      "result": {
+        "complete": true,
+        "component": "source_systems",
+        "context_digest": "309e4e88e61583f24e4b2b601b068382442361039781d3255cfb8f5cba6bbf8f",
+        "issues": [],
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "source_system_value": 1,
+            "system_code": "DEMO_CUSTOMER_SYSTEM",
+            "system_name": "Demo Customer System"
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_mapping_context"
+    },
+    {
+      "arguments": {
+        "component": "object_transformations",
+        "expected_context_digest": "309e4e88e61583f24e4b2b601b068382442361039781d3255cfb8f5cba6bbf8f",
+        "expected_project_revision": 1,
+        "modeled_entity_name": "Dim Customer",
+        "modeled_entity_schema_name": "gold_demo",
+        "modeled_entity_type": "dimensional_entity",
+        "page_size": 100,
+        "project_id": 1
+      },
+      "result": {
+        "complete": true,
+        "component": "object_transformations",
+        "context_digest": "309e4e88e61583f24e4b2b601b068382442361039781d3255cfb8f5cba6bbf8f",
+        "issues": [],
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "entity": {
+              "classification": "dimension",
+              "context_records": [
+                {
+                  "context_group_name": "Customer Orders business rules",
+                  "context_record_id": "53c2a86c-6771-498c-9885-7024c2b3ed8e",
+                  "context_text": "One Customer record represents one durable customer identity.",
+                  "context_type_name": "Business Requirement",
+                  "source_reference": null
+                },
+                {
+                  "context_group_name": "Customer Orders business rules",
+                  "context_record_id": "ed17dddf-1257-44a9-a71b-16cb160b67a4",
+                  "context_text": "Every submitted Order belongs to exactly one Customer.",
+                  "context_type_name": "Business Requirement",
+                  "source_reference": null
+                }
+              ],
+              "definition": "Conformed Customer descriptors.",
+              "entity_name": "Dim Customer",
+              "entity_schema_name": "gold_demo",
+              "entity_type": "dimensional_entity",
+              "grain": null
+            },
+            "object_dependency_order": 0,
+            "output_template_code": "mapping_dimensional_object_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM",
+            "transformation": {
+              "filter_criteria": null,
+              "sample_query": "SELECT customer_id AS customer_key, customer_name FROM silver_demo.customer",
+              "source_tables": [
+                {
+                  "entity_name": "Customer",
+                  "entity_schema_name": "silver_demo",
+                  "entity_type": "logical_entity"
+                }
+              ]
+            }
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_mapping_context"
+    },
+    {
+      "arguments": {
+        "component": "attribute_transformations",
+        "expected_context_digest": "309e4e88e61583f24e4b2b601b068382442361039781d3255cfb8f5cba6bbf8f",
+        "expected_project_revision": 1,
+        "modeled_entity_name": "Dim Customer",
+        "modeled_entity_schema_name": "gold_demo",
+        "modeled_entity_type": "dimensional_entity",
+        "page_size": 100,
+        "project_id": 1
+      },
+      "result": {
+        "complete": true,
+        "component": "attribute_transformations",
+        "context_digest": "309e4e88e61583f24e4b2b601b068382442361039781d3255cfb8f5cba6bbf8f",
+        "issues": [],
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "modeled_attribute_name": "Customer Key",
+            "modeled_entity_name": "Dim Customer",
+            "modeled_entity_schema_name": "gold_demo",
+            "modeled_entity_type": "dimensional_entity",
+            "output_template_code": "mapping_dimensional_attribute_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM",
+            "target_attribute_name": "Customer Key",
+            "target_attribute_ordinal_position": 1,
+            "transformation": {
+              "default_record": null,
+              "source_columns": [
+                {
+                  "attribute_name": "Customer ID",
+                  "entity_name": "Customer",
+                  "entity_schema_name": "silver_demo",
+                  "entity_type": "logical_entity"
+                }
+              ],
+              "transformation_logic": "Copy the source value into Customer Key."
+            }
+          },
+          {
+            "modeled_attribute_name": "Customer Name",
+            "modeled_entity_name": "Dim Customer",
+            "modeled_entity_schema_name": "gold_demo",
+            "modeled_entity_type": "dimensional_entity",
+            "output_template_code": "mapping_dimensional_attribute_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM",
+            "target_attribute_name": "Customer Name",
+            "target_attribute_ordinal_position": 2,
+            "transformation": {
+              "default_record": null,
+              "source_columns": [
+                {
+                  "attribute_name": "Customer Name",
+                  "entity_name": "Customer",
+                  "entity_schema_name": "silver_demo",
+                  "entity_type": "logical_entity"
+                }
+              ],
+              "transformation_logic": "Copy the source value into Customer Name."
+            }
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_mapping_context"
+    },
+    {
+      "arguments": {
+        "component": "target_metadata",
+        "expected_project_revision": 1,
+        "modeled_entity_name": "Fact Order",
+        "modeled_entity_schema_name": "gold_demo",
+        "modeled_entity_type": "dimensional_entity",
+        "page_size": 100,
+        "project_id": 1
+      },
+      "result": {
+        "complete": true,
+        "component": "target_metadata",
+        "context_digest": "7b0ff1f945abf8b4986c4bf27f64542f6818d5258ee001a86fe5d48226e3c292",
+        "issues": [],
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "attributes": [
+              {
+                "attribute_custom_code": null,
+                "attribute_data_type": "BIGINT",
+                "attribute_description": "Degenerate Order business identifier.",
+                "attribute_inferred_data_type": "BIGINT",
+                "attribute_name": "Order ID",
+                "attribute_nullability": false,
+                "attribute_ordinal_position": 1,
+                "fc_attribute_name": null,
+                "is_active": true,
+                "is_locked": false,
+                "is_masking_required": false,
+                "is_meta_data": false,
+                "is_natural_key": false,
+                "is_surrogate_key": false,
+                "population": "mapping"
+              },
+              {
+                "attribute_custom_code": null,
+                "attribute_data_type": "BIGINT",
+                "attribute_description": "Foreign key to Dim Customer.",
+                "attribute_inferred_data_type": "BIGINT",
+                "attribute_name": "Customer Key",
+                "attribute_nullability": false,
+                "attribute_ordinal_position": 2,
+                "fc_attribute_name": null,
+                "is_active": true,
+                "is_locked": false,
+                "is_masking_required": false,
+                "is_meta_data": false,
+                "is_natural_key": false,
+                "is_surrogate_key": false,
+                "population": "mapping"
+              },
+              {
+                "attribute_custom_code": null,
+                "attribute_data_type": "DATE",
+                "attribute_description": "Order activity date.",
+                "attribute_inferred_data_type": "DATE",
+                "attribute_name": "Order Date",
+                "attribute_nullability": false,
+                "attribute_ordinal_position": 3,
+                "fc_attribute_name": null,
+                "is_active": true,
+                "is_locked": false,
+                "is_masking_required": false,
+                "is_meta_data": false,
+                "is_natural_key": false,
+                "is_surrogate_key": false,
+                "population": "mapping"
+              },
+              {
+                "attribute_custom_code": null,
+                "attribute_data_type": "DECIMAL(18,2)",
+                "attribute_description": "Additive gross Order amount.",
+                "attribute_inferred_data_type": "DECIMAL(18,2)",
+                "attribute_name": "Order Amount",
+                "attribute_nullability": false,
+                "attribute_ordinal_position": 4,
+                "fc_attribute_name": null,
+                "is_active": true,
+                "is_locked": false,
+                "is_masking_required": false,
+                "is_meta_data": false,
+                "is_natural_key": false,
+                "is_surrogate_key": false,
+                "population": "mapping"
+              }
+            ],
+            "audit_columns_template": null,
+            "batch_attribute_name": null,
+            "connection_code": "DEMO_GDS",
+            "is_locked": false,
+            "modeled_entity_name": "Fact Order",
+            "modeled_entity_schema_name": "gold_demo",
+            "modeled_entity_type": "dimensional_entity",
+            "object_description": "Submitted Order activity and amount.",
+            "object_name": "Fact Order",
+            "object_schema": "gold_demo",
+            "source_tenant_code": "DEMO_TENANT",
+            "source_tenant_name": "Metadata Snapshot Demo Tenant",
+            "system_code": "DEMO_CUSTOMER_SYSTEM",
+            "system_name": "Demo Customer System",
+            "technical_columns_template": null,
+            "tenant_catalog": "demo_gds_catalog",
+            "tenant_code": "DEMO_GDS_TENANT",
+            "tenant_name": "Metadata Snapshot Demo Global Store",
+            "zone_code": "gold"
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_mapping_context"
+    },
+    {
+      "arguments": {
+        "component": "source_metadata",
+        "expected_context_digest": "7b0ff1f945abf8b4986c4bf27f64542f6818d5258ee001a86fe5d48226e3c292",
+        "expected_project_revision": 1,
+        "modeled_entity_name": "Fact Order",
+        "modeled_entity_schema_name": "gold_demo",
+        "modeled_entity_type": "dimensional_entity",
+        "page_size": 100,
+        "project_id": 1
+      },
+      "result": {
+        "complete": true,
+        "component": "source_metadata",
+        "context_digest": "7b0ff1f945abf8b4986c4bf27f64542f6818d5258ee001a86fe5d48226e3c292",
+        "issues": [],
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "is_locked": false,
+            "mapping_order": 1,
+            "object": {
+              "attributes": [
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "BIGINT",
+                  "attribute_description": "Stable Order business identifier.",
+                  "attribute_inferred_data_type": "BIGINT",
+                  "attribute_name": "Order ID",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 1,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": true,
+                  "is_surrogate_key": false,
+                  "logical_attribute_name": "Order ID"
+                },
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "BIGINT",
+                  "attribute_description": "Customer that placed the Order.",
+                  "attribute_inferred_data_type": "BIGINT",
+                  "attribute_name": "Customer ID",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 2,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": false,
+                  "is_surrogate_key": false,
+                  "logical_attribute_name": "Customer ID"
+                },
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "DATE",
+                  "attribute_description": "Date the Order was submitted.",
+                  "attribute_inferred_data_type": "DATE",
+                  "attribute_name": "Order Date",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 3,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": false,
+                  "is_surrogate_key": false,
+                  "logical_attribute_name": "Order Date"
+                },
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "DECIMAL(18,2)",
+                  "attribute_description": "Gross Order amount in USD.",
+                  "attribute_inferred_data_type": "DECIMAL(18,2)",
+                  "attribute_name": "Order Amount",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 4,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": false,
+                  "is_surrogate_key": false,
+                  "logical_attribute_name": "Order Amount"
+                }
+              ],
+              "batch_attribute_name": null,
+              "connection_code": "DEMO_GDS",
+              "fc_object_name": null,
+              "fc_object_schema": null,
+              "foreign_catalog": null,
+              "is_active": true,
+              "is_locked": false,
+              "logical_entity_name": "Order",
+              "logical_entity_schema_name": "silver_demo",
+              "modeled_entity_name": "Order",
+              "modeled_entity_schema_name": "silver_demo",
+              "modeled_entity_type": "logical_entity",
+              "object_description": "A conformed commercial order.",
+              "object_name": "Order",
+              "object_schema": "silver_demo",
+              "scope_is_active": true,
+              "scope_is_locked": false,
+              "system_code": "DEMO_CUSTOMER_SYSTEM",
+              "tenant_catalog": "demo_gds_catalog",
+              "tenant_code": "DEMO_GDS_TENANT",
+              "zone_code": "silver"
+            },
+            "rationale": "Silver Order supplies the transaction grain and measure.",
+            "role": "support",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          },
+          {
+            "is_locked": false,
+            "mapping_order": null,
+            "object": {
+              "attributes": [
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "BIGINT",
+                  "attribute_description": "Stable Customer business identifier.",
+                  "attribute_inferred_data_type": "BIGINT",
+                  "attribute_name": "Customer ID",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 1,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": true,
+                  "is_surrogate_key": false,
+                  "logical_attribute_name": "Customer ID"
+                },
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "VARCHAR(200)",
+                  "attribute_description": "Current Customer display name.",
+                  "attribute_inferred_data_type": "VARCHAR(200)",
+                  "attribute_name": "Customer Name",
+                  "attribute_nullability": true,
+                  "attribute_ordinal_position": 2,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": false,
+                  "is_surrogate_key": false,
+                  "logical_attribute_name": "Customer Name"
+                }
+              ],
+              "batch_attribute_name": null,
+              "connection_code": "DEMO_GDS",
+              "fc_object_name": null,
+              "fc_object_schema": null,
+              "foreign_catalog": null,
+              "is_active": true,
+              "is_locked": false,
+              "logical_entity_name": "Customer",
+              "logical_entity_schema_name": "silver_demo",
+              "modeled_entity_name": "Customer",
+              "modeled_entity_schema_name": "silver_demo",
+              "modeled_entity_type": "logical_entity",
+              "object_description": "A conformed durable customer identity.",
+              "object_name": "Customer",
+              "object_schema": "silver_demo",
+              "scope_is_active": true,
+              "scope_is_locked": false,
+              "system_code": "DEMO_CUSTOMER_SYSTEM",
+              "tenant_catalog": "demo_gds_catalog",
+              "tenant_code": "DEMO_GDS_TENANT",
+              "zone_code": "silver"
+            },
+            "rationale": "Available Logical source candidate; relevance must be established from evidence.",
+            "role": "candidate",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          },
+          {
+            "is_locked": false,
+            "mapping_order": null,
+            "object": {
+              "attributes": [
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "BIGINT",
+                  "attribute_description": "Durable Customer dimension key.",
+                  "attribute_inferred_data_type": "BIGINT",
+                  "attribute_name": "Customer Key",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 1,
+                  "dimensional_attribute_name": "Customer Key",
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": false,
+                  "is_surrogate_key": true
+                },
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "VARCHAR(200)",
+                  "attribute_description": "Current Customer display name.",
+                  "attribute_inferred_data_type": "VARCHAR(200)",
+                  "attribute_name": "Customer Name",
+                  "attribute_nullability": true,
+                  "attribute_ordinal_position": 2,
+                  "dimensional_attribute_name": "Customer Name",
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": false,
+                  "is_surrogate_key": false
+                }
+              ],
+              "batch_attribute_name": null,
+              "connection_code": "DEMO_GDS",
+              "dimensional_entity_name": "Dim Customer",
+              "dimensional_entity_schema_name": "gold_demo",
+              "fc_object_name": null,
+              "fc_object_schema": null,
+              "foreign_catalog": null,
+              "is_active": true,
+              "is_locked": false,
+              "modeled_entity_name": "Dim Customer",
+              "modeled_entity_schema_name": "gold_demo",
+              "modeled_entity_type": "dimensional_entity",
+              "object_description": "Conformed Customer descriptors.",
+              "object_name": "Dim Customer",
+              "object_schema": "gold_demo",
+              "scope_is_active": true,
+              "scope_is_locked": false,
+              "system_code": "DEMO_CUSTOMER_SYSTEM",
+              "tenant_catalog": "demo_gds_catalog",
+              "tenant_code": "DEMO_GDS_TENANT",
+              "zone_code": "gold"
+            },
+            "rationale": "Available peer Dimensional lookup with applied Mapping for the selected source System.",
+            "role": "lookup",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_mapping_context"
+    },
+    {
+      "arguments": {
+        "component": "source_systems",
+        "expected_context_digest": "7b0ff1f945abf8b4986c4bf27f64542f6818d5258ee001a86fe5d48226e3c292",
+        "expected_project_revision": 1,
+        "modeled_entity_name": "Fact Order",
+        "modeled_entity_schema_name": "gold_demo",
+        "modeled_entity_type": "dimensional_entity",
+        "page_size": 100,
+        "project_id": 1
+      },
+      "result": {
+        "complete": true,
+        "component": "source_systems",
+        "context_digest": "7b0ff1f945abf8b4986c4bf27f64542f6818d5258ee001a86fe5d48226e3c292",
+        "issues": [],
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "source_system_value": 1,
+            "system_code": "DEMO_CUSTOMER_SYSTEM",
+            "system_name": "Demo Customer System"
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_mapping_context"
+    },
+    {
+      "arguments": {
+        "component": "object_transformations",
+        "expected_context_digest": "7b0ff1f945abf8b4986c4bf27f64542f6818d5258ee001a86fe5d48226e3c292",
+        "expected_project_revision": 1,
+        "modeled_entity_name": "Fact Order",
+        "modeled_entity_schema_name": "gold_demo",
+        "modeled_entity_type": "dimensional_entity",
+        "page_size": 100,
+        "project_id": 1
+      },
+      "result": {
+        "complete": true,
+        "component": "object_transformations",
+        "context_digest": "7b0ff1f945abf8b4986c4bf27f64542f6818d5258ee001a86fe5d48226e3c292",
+        "issues": [],
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "entity": {
+              "classification": "fact",
+              "context_records": [
+                {
+                  "context_group_name": "Customer Orders business rules",
+                  "context_record_id": "53c2a86c-6771-498c-9885-7024c2b3ed8e",
+                  "context_text": "One Customer record represents one durable customer identity.",
+                  "context_type_name": "Business Requirement",
+                  "source_reference": null
+                },
+                {
+                  "context_group_name": "Customer Orders business rules",
+                  "context_record_id": "ed17dddf-1257-44a9-a71b-16cb160b67a4",
+                  "context_text": "Every submitted Order belongs to exactly one Customer.",
+                  "context_type_name": "Business Requirement",
+                  "source_reference": null
+                }
+              ],
+              "definition": "Submitted Order activity and amount.",
+              "entity_name": "Fact Order",
+              "entity_schema_name": "gold_demo",
+              "entity_type": "dimensional_entity",
+              "grain": "One row per submitted Order"
+            },
+            "object_dependency_order": 1,
+            "output_template_code": "mapping_dimensional_object_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM",
+            "transformation": {
+              "filter_criteria": null,
+              "sample_query": "SELECT order_id, customer_id AS customer_key, order_date, order_amount FROM silver_demo.orders",
+              "source_tables": [
+                {
+                  "entity_name": "Order",
+                  "entity_schema_name": "silver_demo",
+                  "entity_type": "logical_entity"
+                }
+              ]
+            }
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_mapping_context"
+    },
+    {
+      "arguments": {
+        "component": "attribute_transformations",
+        "expected_context_digest": "7b0ff1f945abf8b4986c4bf27f64542f6818d5258ee001a86fe5d48226e3c292",
+        "expected_project_revision": 1,
+        "modeled_entity_name": "Fact Order",
+        "modeled_entity_schema_name": "gold_demo",
+        "modeled_entity_type": "dimensional_entity",
+        "page_size": 100,
+        "project_id": 1
+      },
+      "result": {
+        "complete": true,
+        "component": "attribute_transformations",
+        "context_digest": "7b0ff1f945abf8b4986c4bf27f64542f6818d5258ee001a86fe5d48226e3c292",
+        "issues": [],
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "modeled_attribute_name": "Order ID",
+            "modeled_entity_name": "Fact Order",
+            "modeled_entity_schema_name": "gold_demo",
+            "modeled_entity_type": "dimensional_entity",
+            "output_template_code": "mapping_dimensional_attribute_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM",
+            "target_attribute_name": "Order ID",
+            "target_attribute_ordinal_position": 1,
+            "transformation": {
+              "default_record": null,
+              "source_columns": [
+                {
+                  "attribute_name": "Order ID",
+                  "entity_name": "Order",
+                  "entity_schema_name": "silver_demo",
+                  "entity_type": "logical_entity"
+                }
+              ],
+              "transformation_logic": "Copy the source value into Order ID."
+            }
+          },
+          {
+            "modeled_attribute_name": "Customer Key",
+            "modeled_entity_name": "Fact Order",
+            "modeled_entity_schema_name": "gold_demo",
+            "modeled_entity_type": "dimensional_entity",
+            "output_template_code": "mapping_dimensional_attribute_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM",
+            "target_attribute_name": "Customer Key",
+            "target_attribute_ordinal_position": 2,
+            "transformation": {
+              "default_record": null,
+              "source_columns": [
+                {
+                  "attribute_name": "Customer ID",
+                  "entity_name": "Order",
+                  "entity_schema_name": "silver_demo",
+                  "entity_type": "logical_entity"
+                }
+              ],
+              "transformation_logic": "Copy the source value into Customer Key."
+            }
+          },
+          {
+            "modeled_attribute_name": "Order Date",
+            "modeled_entity_name": "Fact Order",
+            "modeled_entity_schema_name": "gold_demo",
+            "modeled_entity_type": "dimensional_entity",
+            "output_template_code": "mapping_dimensional_attribute_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM",
+            "target_attribute_name": "Order Date",
+            "target_attribute_ordinal_position": 3,
+            "transformation": {
+              "default_record": null,
+              "source_columns": [
+                {
+                  "attribute_name": "Order Date",
+                  "entity_name": "Order",
+                  "entity_schema_name": "silver_demo",
+                  "entity_type": "logical_entity"
+                }
+              ],
+              "transformation_logic": "Copy the source value into Order Date."
+            }
+          },
+          {
+            "modeled_attribute_name": "Order Amount",
+            "modeled_entity_name": "Fact Order",
+            "modeled_entity_schema_name": "gold_demo",
+            "modeled_entity_type": "dimensional_entity",
+            "output_template_code": "mapping_dimensional_attribute_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM",
+            "target_attribute_name": "Order Amount",
+            "target_attribute_ordinal_position": 4,
+            "transformation": {
+              "default_record": null,
+              "source_columns": [
+                {
+                  "attribute_name": "Order Amount",
+                  "entity_name": "Order",
+                  "entity_schema_name": "silver_demo",
+                  "entity_type": "logical_entity"
+                }
+              ],
+              "transformation_logic": "Copy the source value into Order Amount."
+            }
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_mapping_context"
+    },
+    {
+      "arguments": {
+        "component": "target_metadata",
+        "expected_project_revision": 1,
+        "modeled_entity_name": "Customer",
+        "modeled_entity_schema_name": "silver_demo",
+        "modeled_entity_type": "logical_entity",
+        "page_size": 100,
+        "project_id": 1
+      },
+      "result": {
+        "complete": true,
+        "component": "target_metadata",
+        "context_digest": "03edcad68aa59569d6a0ce9f8e30e16b5a599506024f903ab25484acbd670e58",
+        "issues": [],
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "attributes": [
+              {
+                "attribute_custom_code": null,
+                "attribute_data_type": "BIGINT",
+                "attribute_description": "Stable Customer business identifier.",
+                "attribute_inferred_data_type": "BIGINT",
+                "attribute_name": "Customer ID",
+                "attribute_nullability": false,
+                "attribute_ordinal_position": 1,
+                "fc_attribute_name": null,
+                "is_active": true,
+                "is_locked": false,
+                "is_masking_required": false,
+                "is_meta_data": false,
+                "is_natural_key": true,
+                "is_surrogate_key": false,
+                "population": "mapping"
+              },
+              {
+                "attribute_custom_code": null,
+                "attribute_data_type": "VARCHAR(200)",
+                "attribute_description": "Current Customer display name.",
+                "attribute_inferred_data_type": "VARCHAR(200)",
+                "attribute_name": "Customer Name",
+                "attribute_nullability": true,
+                "attribute_ordinal_position": 2,
+                "fc_attribute_name": null,
+                "is_active": true,
+                "is_locked": false,
+                "is_masking_required": false,
+                "is_meta_data": false,
+                "is_natural_key": false,
+                "is_surrogate_key": false,
+                "population": "mapping"
+              }
+            ],
+            "audit_columns_template": null,
+            "batch_attribute_name": null,
+            "connection_code": "DEMO_GDS",
+            "is_locked": false,
+            "modeled_entity_name": "Customer",
+            "modeled_entity_schema_name": "silver_demo",
+            "modeled_entity_type": "logical_entity",
+            "object_description": "A conformed durable customer identity.",
+            "object_name": "Customer",
+            "object_schema": "silver_demo",
+            "source_tenant_code": "DEMO_TENANT",
+            "source_tenant_name": "Metadata Snapshot Demo Tenant",
+            "system_code": "DEMO_CUSTOMER_SYSTEM",
+            "system_name": "Demo Customer System",
+            "technical_columns_template": null,
+            "tenant_catalog": "demo_gds_catalog",
+            "tenant_code": "DEMO_GDS_TENANT",
+            "tenant_name": "Metadata Snapshot Demo Global Store",
+            "zone_code": "silver"
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_mapping_context"
+    },
+    {
+      "arguments": {
+        "component": "source_metadata",
+        "expected_context_digest": "03edcad68aa59569d6a0ce9f8e30e16b5a599506024f903ab25484acbd670e58",
+        "expected_project_revision": 1,
+        "modeled_entity_name": "Customer",
+        "modeled_entity_schema_name": "silver_demo",
+        "modeled_entity_type": "logical_entity",
+        "page_size": 100,
+        "project_id": 1
+      },
+      "result": {
+        "complete": true,
+        "component": "source_metadata",
+        "context_digest": "03edcad68aa59569d6a0ce9f8e30e16b5a599506024f903ab25484acbd670e58",
+        "issues": [],
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "is_locked": false,
+            "mapping_order": 1,
+            "object": {
+              "attributes": [
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "BIGINT",
+                  "attribute_description": null,
+                  "attribute_inferred_data_type": null,
+                  "attribute_name": "customer_id",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 1,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": null,
+                  "is_nullable": null,
+                  "is_pii": null,
+                  "is_primary_key": null,
+                  "is_surrogate_key": false
+                },
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "VARCHAR(200)",
+                  "attribute_description": null,
+                  "attribute_inferred_data_type": null,
+                  "attribute_name": "customer_name",
+                  "attribute_nullability": true,
+                  "attribute_ordinal_position": 2,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": null,
+                  "is_nullable": null,
+                  "is_pii": null,
+                  "is_primary_key": null,
+                  "is_surrogate_key": false
+                }
+              ],
+              "batch_attribute_name": "customer_id",
+              "connection_code": "DEMO_GDS",
+              "fc_object_name": null,
+              "fc_object_schema": null,
+              "foreign_catalog": null,
+              "is_active": true,
+              "is_locked": false,
+              "object_description": null,
+              "object_name": "customer",
+              "object_schema": "bronze_demo",
+              "scope_is_active": true,
+              "scope_is_locked": false,
+              "system_code": "DEMO_CUSTOMER_SYSTEM",
+              "tenant_catalog": "demo_gds_catalog",
+              "tenant_code": "DEMO_GDS_TENANT",
+              "zone_code": "bronze"
+            },
+            "rationale": "The Bronze Customer object supplies the conformed identity.",
+            "role": "support",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          },
+          {
+            "is_locked": false,
+            "mapping_order": null,
+            "object": {
+              "attributes": [
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "BIGINT",
+                  "attribute_description": null,
+                  "attribute_inferred_data_type": null,
+                  "attribute_name": "order_id",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 1,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": null,
+                  "is_nullable": null,
+                  "is_pii": null,
+                  "is_primary_key": null,
+                  "is_surrogate_key": false
+                },
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "BIGINT",
+                  "attribute_description": null,
+                  "attribute_inferred_data_type": null,
+                  "attribute_name": "customer_id",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 2,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": null,
+                  "is_nullable": null,
+                  "is_pii": null,
+                  "is_primary_key": null,
+                  "is_surrogate_key": false
+                },
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "DATE",
+                  "attribute_description": null,
+                  "attribute_inferred_data_type": null,
+                  "attribute_name": "order_date",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 3,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": null,
+                  "is_nullable": null,
+                  "is_pii": null,
+                  "is_primary_key": null,
+                  "is_surrogate_key": false
+                },
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "DECIMAL(18,2)",
+                  "attribute_description": null,
+                  "attribute_inferred_data_type": null,
+                  "attribute_name": "order_amount",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 4,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": null,
+                  "is_nullable": null,
+                  "is_pii": null,
+                  "is_primary_key": null,
+                  "is_surrogate_key": false
+                }
+              ],
+              "batch_attribute_name": "order_date",
+              "connection_code": "DEMO_GDS",
+              "fc_object_name": null,
+              "fc_object_schema": null,
+              "foreign_catalog": null,
+              "is_active": true,
+              "is_locked": false,
+              "object_description": null,
+              "object_name": "orders",
+              "object_schema": "bronze_demo",
+              "scope_is_active": true,
+              "scope_is_locked": false,
+              "system_code": "DEMO_CUSTOMER_SYSTEM",
+              "tenant_catalog": "demo_gds_catalog",
+              "tenant_code": "DEMO_GDS_TENANT",
+              "zone_code": "bronze"
+            },
+            "rationale": "Available source candidate; relevance must be established from evidence.",
+            "role": "candidate",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          },
+          {
+            "is_locked": false,
+            "mapping_order": null,
+            "object": {
+              "attributes": [
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "BIGINT",
+                  "attribute_description": "Stable Order business identifier.",
+                  "attribute_inferred_data_type": "BIGINT",
+                  "attribute_name": "Order ID",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 1,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": true,
+                  "is_surrogate_key": false,
+                  "logical_attribute_name": "Order ID"
+                },
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "BIGINT",
+                  "attribute_description": "Customer that placed the Order.",
+                  "attribute_inferred_data_type": "BIGINT",
+                  "attribute_name": "Customer ID",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 2,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": false,
+                  "is_surrogate_key": false,
+                  "logical_attribute_name": "Customer ID"
+                },
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "DATE",
+                  "attribute_description": "Date the Order was submitted.",
+                  "attribute_inferred_data_type": "DATE",
+                  "attribute_name": "Order Date",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 3,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": false,
+                  "is_surrogate_key": false,
+                  "logical_attribute_name": "Order Date"
+                },
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "DECIMAL(18,2)",
+                  "attribute_description": "Gross Order amount in USD.",
+                  "attribute_inferred_data_type": "DECIMAL(18,2)",
+                  "attribute_name": "Order Amount",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 4,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": false,
+                  "is_surrogate_key": false,
+                  "logical_attribute_name": "Order Amount"
+                }
+              ],
+              "batch_attribute_name": null,
+              "connection_code": "DEMO_GDS",
+              "fc_object_name": null,
+              "fc_object_schema": null,
+              "foreign_catalog": null,
+              "is_active": true,
+              "is_locked": false,
+              "logical_entity_name": "Order",
+              "logical_entity_schema_name": "silver_demo",
+              "modeled_entity_name": "Order",
+              "modeled_entity_schema_name": "silver_demo",
+              "modeled_entity_type": "logical_entity",
+              "object_description": "A conformed commercial order.",
+              "object_name": "Order",
+              "object_schema": "silver_demo",
+              "scope_is_active": true,
+              "scope_is_locked": false,
+              "system_code": "DEMO_CUSTOMER_SYSTEM",
+              "tenant_catalog": "demo_gds_catalog",
+              "tenant_code": "DEMO_GDS_TENANT",
+              "zone_code": "silver"
+            },
+            "rationale": "Available peer Logical lookup with applied Mapping for the selected source System.",
+            "role": "lookup",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_mapping_context"
+    },
+    {
+      "arguments": {
+        "component": "source_systems",
+        "expected_context_digest": "03edcad68aa59569d6a0ce9f8e30e16b5a599506024f903ab25484acbd670e58",
+        "expected_project_revision": 1,
+        "modeled_entity_name": "Customer",
+        "modeled_entity_schema_name": "silver_demo",
+        "modeled_entity_type": "logical_entity",
+        "page_size": 100,
+        "project_id": 1
+      },
+      "result": {
+        "complete": true,
+        "component": "source_systems",
+        "context_digest": "03edcad68aa59569d6a0ce9f8e30e16b5a599506024f903ab25484acbd670e58",
+        "issues": [],
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "source_system_value": 1,
+            "system_code": "DEMO_CUSTOMER_SYSTEM",
+            "system_name": "Demo Customer System"
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_mapping_context"
+    },
+    {
+      "arguments": {
+        "component": "object_transformations",
+        "expected_context_digest": "03edcad68aa59569d6a0ce9f8e30e16b5a599506024f903ab25484acbd670e58",
+        "expected_project_revision": 1,
+        "modeled_entity_name": "Customer",
+        "modeled_entity_schema_name": "silver_demo",
+        "modeled_entity_type": "logical_entity",
+        "page_size": 100,
+        "project_id": 1
+      },
+      "result": {
+        "complete": true,
+        "component": "object_transformations",
+        "context_digest": "03edcad68aa59569d6a0ce9f8e30e16b5a599506024f903ab25484acbd670e58",
+        "issues": [],
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "entity": {
+              "classification": "core",
+              "context_records": [
+                {
+                  "context_group_name": "Customer Orders business rules",
+                  "context_record_id": "53c2a86c-6771-498c-9885-7024c2b3ed8e",
+                  "context_text": "One Customer record represents one durable customer identity.",
+                  "context_type_name": "Business Requirement",
+                  "source_reference": null
+                },
+                {
+                  "context_group_name": "Customer Orders business rules",
+                  "context_record_id": "ed17dddf-1257-44a9-a71b-16cb160b67a4",
+                  "context_text": "Every submitted Order belongs to exactly one Customer.",
+                  "context_type_name": "Business Requirement",
+                  "source_reference": null
+                }
+              ],
+              "definition": "A conformed durable customer identity.",
+              "entity_name": "Customer",
+              "entity_schema_name": "silver_demo",
+              "entity_type": "logical_entity",
+              "grain": "One Customer"
+            },
+            "object_dependency_order": 0,
+            "output_template_code": "mapping_logical_object_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM",
+            "transformation": {
+              "filter_criteria": null,
+              "sample_query": "SELECT customer_id, customer_name FROM bronze_demo.customer",
+              "source_tables": [
+                {
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "customer",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                }
+              ]
+            }
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_mapping_context"
+    },
+    {
+      "arguments": {
+        "component": "attribute_transformations",
+        "expected_context_digest": "03edcad68aa59569d6a0ce9f8e30e16b5a599506024f903ab25484acbd670e58",
+        "expected_project_revision": 1,
+        "modeled_entity_name": "Customer",
+        "modeled_entity_schema_name": "silver_demo",
+        "modeled_entity_type": "logical_entity",
+        "page_size": 100,
+        "project_id": 1
+      },
+      "result": {
+        "complete": true,
+        "component": "attribute_transformations",
+        "context_digest": "03edcad68aa59569d6a0ce9f8e30e16b5a599506024f903ab25484acbd670e58",
+        "issues": [],
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "modeled_attribute_name": "Customer ID",
+            "modeled_entity_name": "Customer",
+            "modeled_entity_schema_name": "silver_demo",
+            "modeled_entity_type": "logical_entity",
+            "output_template_code": "mapping_logical_attribute_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM",
+            "target_attribute_name": "Customer ID",
+            "target_attribute_ordinal_position": 1,
+            "transformation": {
+              "default_record": null,
+              "source_columns": [
+                {
+                  "attribute_name": "customer_id",
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "customer",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                }
+              ],
+              "transformation_logic": "Copy the source value into Customer ID."
+            }
+          },
+          {
+            "modeled_attribute_name": "Customer Name",
+            "modeled_entity_name": "Customer",
+            "modeled_entity_schema_name": "silver_demo",
+            "modeled_entity_type": "logical_entity",
+            "output_template_code": "mapping_logical_attribute_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM",
+            "target_attribute_name": "Customer Name",
+            "target_attribute_ordinal_position": 2,
+            "transformation": {
+              "default_record": null,
+              "source_columns": [
+                {
+                  "attribute_name": "customer_name",
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "customer",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                }
+              ],
+              "transformation_logic": "Copy the source value into Customer Name."
+            }
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_mapping_context"
+    },
+    {
+      "arguments": {
+        "component": "target_metadata",
+        "expected_project_revision": 1,
+        "modeled_entity_name": "Order",
+        "modeled_entity_schema_name": "silver_demo",
+        "modeled_entity_type": "logical_entity",
+        "page_size": 100,
+        "project_id": 1
+      },
+      "result": {
+        "complete": true,
+        "component": "target_metadata",
+        "context_digest": "ac5bc411c05098a18c6be0ea319308db84d52b97e7e0af30c11605d703bc900c",
+        "issues": [],
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "attributes": [
+              {
+                "attribute_custom_code": null,
+                "attribute_data_type": "BIGINT",
+                "attribute_description": "Stable Order business identifier.",
+                "attribute_inferred_data_type": "BIGINT",
+                "attribute_name": "Order ID",
+                "attribute_nullability": false,
+                "attribute_ordinal_position": 1,
+                "fc_attribute_name": null,
+                "is_active": true,
+                "is_locked": false,
+                "is_masking_required": false,
+                "is_meta_data": false,
+                "is_natural_key": true,
+                "is_surrogate_key": false,
+                "population": "mapping"
+              },
+              {
+                "attribute_custom_code": null,
+                "attribute_data_type": "BIGINT",
+                "attribute_description": "Customer that placed the Order.",
+                "attribute_inferred_data_type": "BIGINT",
+                "attribute_name": "Customer ID",
+                "attribute_nullability": false,
+                "attribute_ordinal_position": 2,
+                "fc_attribute_name": null,
+                "is_active": true,
+                "is_locked": false,
+                "is_masking_required": false,
+                "is_meta_data": false,
+                "is_natural_key": false,
+                "is_surrogate_key": false,
+                "population": "mapping"
+              },
+              {
+                "attribute_custom_code": null,
+                "attribute_data_type": "DATE",
+                "attribute_description": "Date the Order was submitted.",
+                "attribute_inferred_data_type": "DATE",
+                "attribute_name": "Order Date",
+                "attribute_nullability": false,
+                "attribute_ordinal_position": 3,
+                "fc_attribute_name": null,
+                "is_active": true,
+                "is_locked": false,
+                "is_masking_required": false,
+                "is_meta_data": false,
+                "is_natural_key": false,
+                "is_surrogate_key": false,
+                "population": "mapping"
+              },
+              {
+                "attribute_custom_code": null,
+                "attribute_data_type": "DECIMAL(18,2)",
+                "attribute_description": "Gross Order amount in USD.",
+                "attribute_inferred_data_type": "DECIMAL(18,2)",
+                "attribute_name": "Order Amount",
+                "attribute_nullability": false,
+                "attribute_ordinal_position": 4,
+                "fc_attribute_name": null,
+                "is_active": true,
+                "is_locked": false,
+                "is_masking_required": false,
+                "is_meta_data": false,
+                "is_natural_key": false,
+                "is_surrogate_key": false,
+                "population": "mapping"
+              }
+            ],
+            "audit_columns_template": null,
+            "batch_attribute_name": null,
+            "connection_code": "DEMO_GDS",
+            "is_locked": false,
+            "modeled_entity_name": "Order",
+            "modeled_entity_schema_name": "silver_demo",
+            "modeled_entity_type": "logical_entity",
+            "object_description": "A conformed commercial order.",
+            "object_name": "Order",
+            "object_schema": "silver_demo",
+            "source_tenant_code": "DEMO_TENANT",
+            "source_tenant_name": "Metadata Snapshot Demo Tenant",
+            "system_code": "DEMO_CUSTOMER_SYSTEM",
+            "system_name": "Demo Customer System",
+            "technical_columns_template": null,
+            "tenant_catalog": "demo_gds_catalog",
+            "tenant_code": "DEMO_GDS_TENANT",
+            "tenant_name": "Metadata Snapshot Demo Global Store",
+            "zone_code": "silver"
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_mapping_context"
+    },
+    {
+      "arguments": {
+        "component": "source_metadata",
+        "expected_context_digest": "ac5bc411c05098a18c6be0ea319308db84d52b97e7e0af30c11605d703bc900c",
+        "expected_project_revision": 1,
+        "modeled_entity_name": "Order",
+        "modeled_entity_schema_name": "silver_demo",
+        "modeled_entity_type": "logical_entity",
+        "page_size": 100,
+        "project_id": 1
+      },
+      "result": {
+        "complete": true,
+        "component": "source_metadata",
+        "context_digest": "ac5bc411c05098a18c6be0ea319308db84d52b97e7e0af30c11605d703bc900c",
+        "issues": [],
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "is_locked": false,
+            "mapping_order": 1,
+            "object": {
+              "attributes": [
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "BIGINT",
+                  "attribute_description": null,
+                  "attribute_inferred_data_type": null,
+                  "attribute_name": "order_id",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 1,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": null,
+                  "is_nullable": null,
+                  "is_pii": null,
+                  "is_primary_key": null,
+                  "is_surrogate_key": false
+                },
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "BIGINT",
+                  "attribute_description": null,
+                  "attribute_inferred_data_type": null,
+                  "attribute_name": "customer_id",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 2,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": null,
+                  "is_nullable": null,
+                  "is_pii": null,
+                  "is_primary_key": null,
+                  "is_surrogate_key": false
+                },
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "DATE",
+                  "attribute_description": null,
+                  "attribute_inferred_data_type": null,
+                  "attribute_name": "order_date",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 3,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": null,
+                  "is_nullable": null,
+                  "is_pii": null,
+                  "is_primary_key": null,
+                  "is_surrogate_key": false
+                },
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "DECIMAL(18,2)",
+                  "attribute_description": null,
+                  "attribute_inferred_data_type": null,
+                  "attribute_name": "order_amount",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 4,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": null,
+                  "is_nullable": null,
+                  "is_pii": null,
+                  "is_primary_key": null,
+                  "is_surrogate_key": false
+                }
+              ],
+              "batch_attribute_name": "order_date",
+              "connection_code": "DEMO_GDS",
+              "fc_object_name": null,
+              "fc_object_schema": null,
+              "foreign_catalog": null,
+              "is_active": true,
+              "is_locked": false,
+              "object_description": null,
+              "object_name": "orders",
+              "object_schema": "bronze_demo",
+              "scope_is_active": true,
+              "scope_is_locked": false,
+              "system_code": "DEMO_CUSTOMER_SYSTEM",
+              "tenant_catalog": "demo_gds_catalog",
+              "tenant_code": "DEMO_GDS_TENANT",
+              "zone_code": "bronze"
+            },
+            "rationale": "The Bronze Order object supplies the transaction grain.",
+            "role": "support",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          },
+          {
+            "is_locked": false,
+            "mapping_order": null,
+            "object": {
+              "attributes": [
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "BIGINT",
+                  "attribute_description": null,
+                  "attribute_inferred_data_type": null,
+                  "attribute_name": "customer_id",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 1,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": null,
+                  "is_nullable": null,
+                  "is_pii": null,
+                  "is_primary_key": null,
+                  "is_surrogate_key": false
+                },
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "VARCHAR(200)",
+                  "attribute_description": null,
+                  "attribute_inferred_data_type": null,
+                  "attribute_name": "customer_name",
+                  "attribute_nullability": true,
+                  "attribute_ordinal_position": 2,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": null,
+                  "is_nullable": null,
+                  "is_pii": null,
+                  "is_primary_key": null,
+                  "is_surrogate_key": false
+                }
+              ],
+              "batch_attribute_name": "customer_id",
+              "connection_code": "DEMO_GDS",
+              "fc_object_name": null,
+              "fc_object_schema": null,
+              "foreign_catalog": null,
+              "is_active": true,
+              "is_locked": false,
+              "object_description": null,
+              "object_name": "customer",
+              "object_schema": "bronze_demo",
+              "scope_is_active": true,
+              "scope_is_locked": false,
+              "system_code": "DEMO_CUSTOMER_SYSTEM",
+              "tenant_catalog": "demo_gds_catalog",
+              "tenant_code": "DEMO_GDS_TENANT",
+              "zone_code": "bronze"
+            },
+            "rationale": "Available source candidate; relevance must be established from evidence.",
+            "role": "candidate",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          },
+          {
+            "is_locked": false,
+            "mapping_order": null,
+            "object": {
+              "attributes": [
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "BIGINT",
+                  "attribute_description": "Stable Customer business identifier.",
+                  "attribute_inferred_data_type": "BIGINT",
+                  "attribute_name": "Customer ID",
+                  "attribute_nullability": false,
+                  "attribute_ordinal_position": 1,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": true,
+                  "is_surrogate_key": false,
+                  "logical_attribute_name": "Customer ID"
+                },
+                {
+                  "attribute_custom_code": null,
+                  "attribute_data_type": "VARCHAR(200)",
+                  "attribute_description": "Current Customer display name.",
+                  "attribute_inferred_data_type": "VARCHAR(200)",
+                  "attribute_name": "Customer Name",
+                  "attribute_nullability": true,
+                  "attribute_ordinal_position": 2,
+                  "fc_attribute_name": null,
+                  "is_active": true,
+                  "is_locked": false,
+                  "is_masking_required": false,
+                  "is_meta_data": false,
+                  "is_natural_key": false,
+                  "is_surrogate_key": false,
+                  "logical_attribute_name": "Customer Name"
+                }
+              ],
+              "batch_attribute_name": null,
+              "connection_code": "DEMO_GDS",
+              "fc_object_name": null,
+              "fc_object_schema": null,
+              "foreign_catalog": null,
+              "is_active": true,
+              "is_locked": false,
+              "logical_entity_name": "Customer",
+              "logical_entity_schema_name": "silver_demo",
+              "modeled_entity_name": "Customer",
+              "modeled_entity_schema_name": "silver_demo",
+              "modeled_entity_type": "logical_entity",
+              "object_description": "A conformed durable customer identity.",
+              "object_name": "Customer",
+              "object_schema": "silver_demo",
+              "scope_is_active": true,
+              "scope_is_locked": false,
+              "system_code": "DEMO_CUSTOMER_SYSTEM",
+              "tenant_catalog": "demo_gds_catalog",
+              "tenant_code": "DEMO_GDS_TENANT",
+              "zone_code": "silver"
+            },
+            "rationale": "Available peer Logical lookup with applied Mapping for the selected source System.",
+            "role": "lookup",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM"
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_mapping_context"
+    },
+    {
+      "arguments": {
+        "component": "source_systems",
+        "expected_context_digest": "ac5bc411c05098a18c6be0ea319308db84d52b97e7e0af30c11605d703bc900c",
+        "expected_project_revision": 1,
+        "modeled_entity_name": "Order",
+        "modeled_entity_schema_name": "silver_demo",
+        "modeled_entity_type": "logical_entity",
+        "page_size": 100,
+        "project_id": 1
+      },
+      "result": {
+        "complete": true,
+        "component": "source_systems",
+        "context_digest": "ac5bc411c05098a18c6be0ea319308db84d52b97e7e0af30c11605d703bc900c",
+        "issues": [],
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "source_system_value": 1,
+            "system_code": "DEMO_CUSTOMER_SYSTEM",
+            "system_name": "Demo Customer System"
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_mapping_context"
+    },
+    {
+      "arguments": {
+        "component": "object_transformations",
+        "expected_context_digest": "ac5bc411c05098a18c6be0ea319308db84d52b97e7e0af30c11605d703bc900c",
+        "expected_project_revision": 1,
+        "modeled_entity_name": "Order",
+        "modeled_entity_schema_name": "silver_demo",
+        "modeled_entity_type": "logical_entity",
+        "page_size": 100,
+        "project_id": 1
+      },
+      "result": {
+        "complete": true,
+        "component": "object_transformations",
+        "context_digest": "ac5bc411c05098a18c6be0ea319308db84d52b97e7e0af30c11605d703bc900c",
+        "issues": [],
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "entity": {
+              "classification": "transaction",
+              "context_records": [
+                {
+                  "context_group_name": "Customer Orders business rules",
+                  "context_record_id": "53c2a86c-6771-498c-9885-7024c2b3ed8e",
+                  "context_text": "One Customer record represents one durable customer identity.",
+                  "context_type_name": "Business Requirement",
+                  "source_reference": null
+                },
+                {
+                  "context_group_name": "Customer Orders business rules",
+                  "context_record_id": "ed17dddf-1257-44a9-a71b-16cb160b67a4",
+                  "context_text": "Every submitted Order belongs to exactly one Customer.",
+                  "context_type_name": "Business Requirement",
+                  "source_reference": null
+                }
+              ],
+              "definition": "A conformed commercial order.",
+              "entity_name": "Order",
+              "entity_schema_name": "silver_demo",
+              "entity_type": "logical_entity",
+              "grain": "One submitted Order"
+            },
+            "object_dependency_order": 1,
+            "output_template_code": "mapping_logical_object_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM",
+            "transformation": {
+              "filter_criteria": null,
+              "sample_query": "SELECT order_id, customer_id, order_date, order_amount FROM bronze_demo.orders",
+              "source_tables": [
+                {
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "orders",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                }
+              ]
+            }
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_mapping_context"
+    },
+    {
+      "arguments": {
+        "component": "attribute_transformations",
+        "expected_context_digest": "ac5bc411c05098a18c6be0ea319308db84d52b97e7e0af30c11605d703bc900c",
+        "expected_project_revision": 1,
+        "modeled_entity_name": "Order",
+        "modeled_entity_schema_name": "silver_demo",
+        "modeled_entity_type": "logical_entity",
+        "page_size": 100,
+        "project_id": 1
+      },
+      "result": {
+        "complete": true,
+        "component": "attribute_transformations",
+        "context_digest": "ac5bc411c05098a18c6be0ea319308db84d52b97e7e0af30c11605d703bc900c",
+        "issues": [],
+        "next_cursor": null,
+        "project_id": 1,
+        "project_revision": 1,
+        "records": [
+          {
+            "modeled_attribute_name": "Order ID",
+            "modeled_entity_name": "Order",
+            "modeled_entity_schema_name": "silver_demo",
+            "modeled_entity_type": "logical_entity",
+            "output_template_code": "mapping_logical_attribute_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM",
+            "target_attribute_name": "Order ID",
+            "target_attribute_ordinal_position": 1,
+            "transformation": {
+              "default_record": null,
+              "source_columns": [
+                {
+                  "attribute_name": "order_id",
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "orders",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                }
+              ],
+              "transformation_logic": "Copy the source value into Order ID."
+            }
+          },
+          {
+            "modeled_attribute_name": "Customer ID",
+            "modeled_entity_name": "Order",
+            "modeled_entity_schema_name": "silver_demo",
+            "modeled_entity_type": "logical_entity",
+            "output_template_code": "mapping_logical_attribute_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM",
+            "target_attribute_name": "Customer ID",
+            "target_attribute_ordinal_position": 2,
+            "transformation": {
+              "default_record": null,
+              "source_columns": [
+                {
+                  "attribute_name": "customer_id",
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "orders",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                }
+              ],
+              "transformation_logic": "Copy the source value into Customer ID."
+            }
+          },
+          {
+            "modeled_attribute_name": "Order Date",
+            "modeled_entity_name": "Order",
+            "modeled_entity_schema_name": "silver_demo",
+            "modeled_entity_type": "logical_entity",
+            "output_template_code": "mapping_logical_attribute_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM",
+            "target_attribute_name": "Order Date",
+            "target_attribute_ordinal_position": 3,
+            "transformation": {
+              "default_record": null,
+              "source_columns": [
+                {
+                  "attribute_name": "order_date",
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "orders",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                }
+              ],
+              "transformation_logic": "Copy the source value into Order Date."
+            }
+          },
+          {
+            "modeled_attribute_name": "Order Amount",
+            "modeled_entity_name": "Order",
+            "modeled_entity_schema_name": "silver_demo",
+            "modeled_entity_type": "logical_entity",
+            "output_template_code": "mapping_logical_attribute_default",
+            "source_system_code": "DEMO_CUSTOMER_SYSTEM",
+            "target_attribute_name": "Order Amount",
+            "target_attribute_ordinal_position": 4,
+            "transformation": {
+              "default_record": null,
+              "source_columns": [
+                {
+                  "attribute_name": "order_amount",
+                  "connection_code": "DEMO_GDS",
+                  "object_name": "orders",
+                  "object_schema": "bronze_demo",
+                  "system_code": "DEMO_CUSTOMER_SYSTEM",
+                  "tenant_code": "DEMO_GDS_TENANT"
+                }
+              ],
+              "transformation_logic": "Copy the source value into Order Amount."
+            }
+          }
+        ],
+        "schema_version": "1.0"
+      },
+      "tool": "read_mapping_context"
+    },
+    {
+      "arguments": {
+        "tenant_id": 1
+      },
+      "result": {
+        "content_type": "application/zip",
+        "download_url": "file:///atlas-eval-snapshot.zip",
+        "download_url_expires_at": "2026-10-18T09:10:41.547769Z",
+        "schema_version": "3.0",
+        "sha256": "177bcc43dae5eb4b78535bd70740799f548ae5916501d5e2ce40ff1fad86b52c",
+        "size_bytes": 100781,
+        "snapshot_id": "9cec4657-ae14-458f-86d9-dceef99fd3c4",
+        "snapshot_kind": "metadata",
+        "status": "ready",
+        "tenant_id": 1
+      },
+      "tool": "create_metadata_snapshot"
+    },
+    {
+      "arguments": {
+        "project_id": 1
+      },
+      "result": {
+        "content_type": "application/zip",
+        "download_url": "file:///atlas-eval-snapshot.zip",
+        "download_url_expires_at": "2026-10-18T09:10:41.615828Z",
+        "project_id": 1,
+        "project_revision": 1,
+        "schema_version": "3.0",
+        "sha256": "08e45f823f978723b30c0b4374f33a0bad5840c1a1dfbb6bb56ecc3920a5db57",
+        "size_bytes": 67183,
+        "snapshot_id": "4a208cd4-ee63-4b4a-b500-fd94cab9123f",
+        "snapshot_kind": "project",
+        "status": "ready"
+      },
+      "tool": "create_project_snapshot"
+    }
+  ],
+  "schema_version": "1.0",
+  "snapshots": {
+    "metadata": {
+      "file": "metadata-snapshot.zip",
+      "sha256": "177bcc43dae5eb4b78535bd70740799f548ae5916501d5e2ce40ff1fad86b52c",
+      "size_bytes": 100781,
+      "snapshot_id": "9cec4657-ae14-458f-86d9-dceef99fd3c4"
+    },
+    "project": {
+      "file": "project-snapshot.zip",
+      "sha256": "08e45f823f978723b30c0b4374f33a0bad5840c1a1dfbb6bb56ecc3920a5db57",
+      "size_bytes": 67183,
+      "snapshot_id": "4a208cd4-ee63-4b4a-b500-fd94cab9123f"
+    }
+  },
+  "tenant": {
+    "tenant_code": "DEMO_TENANT",
+    "tenant_id": 1
+  }
+}

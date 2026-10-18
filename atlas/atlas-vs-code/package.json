@@ -3,7 +3,7 @@
   "displayName": "ATLAS Stage Runner",
   "icon": "assets/atlas.png",
   "description": "ATLAS Stage Runner for VS Code Copilot using VS Code Microsoft sign-in.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "gds-workbench",
   "license": "UNLICENSED",
   "private": true,
@@ -120,7 +120,7 @@
     "test": "vitest run",
     "check": "tsc --noEmit",
     "compile": "npm run check && node esbuild.mjs",
-    "package:vsix": "npm run compile && vsce package --no-dependencies --skip-license --baseContentUrl https://github.com/maazuddinmohammed/gds_workbench/blob/HEAD/atlas/atlas-vs-code --out ../dist/atlas-stage-runner-0.2.0.vsix",
+    "package:vsix": "npm run compile && vsce package --no-dependencies --skip-license --baseContentUrl https://github.com/maazuddinmohammed/gds_workbench/blob/HEAD/atlas/atlas-vs-code --out ../dist/atlas-stage-runner-0.3.0.vsix",
     "test:host": "node test/run-vscode-host.mjs"
   },
   "devDependencies": {

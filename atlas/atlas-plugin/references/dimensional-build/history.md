@@ -26,22 +26,20 @@ These are decision criteria, not a mandatory interview checklist or new payload 
 
 History columns are additional modeled Attributes, separate from the confirmed audit block. Do not repurpose `IsActive`, `CreatedDate` or `UpdatedDate` as version markers without an explicit consumer contract. A technical Attribute is not automatically a framework-generated or SQL-omitted field.
 
-Current backend `features/dimensional/policy.py` projects configured effective-from, effective-to and current-marker columns for dimensions governed by Project Type 2 policy. That creates Project columns; the external framework populates them at load time using natural keys. Surrogate placement and fact/bridge coverage follow [keys/audit](../project/keys-and-audit.md#population-boundary-and-implementation-alignment).
+The backend projects the configured effective-from, effective-to and current-marker columns for dimensions governed by Project Type 2 policy. That creates Project columns; the external framework populates them at load time using natural keys. Surrogate placement and fact/bridge coverage follow [keys/audit](../project/keys-and-audit.md#population-boundary-and-implementation-alignment).
 
-The existing GDS seed template defines the following. Resolve the actual Project configuration before use; seed values do not prove deployment or override a supplied framework convention.
+A Project with no custom Gold template uses these defaults. Read the effective `type_2` entries from the Project [settings](../project/settings.md#existing-dimensional-technical-template), including pending settings; a customized Project may use other names.
 
-| Purpose | Seed name | Type / nullability |
+| Purpose | Default name | Type / nullability |
 |---|---|---|
-| Version start | `EffectiveFrom` | TIMESTAMP, non-null. |
-| Version end | `EffectiveTo` | TIMESTAMP, nullable; seed definition uses null for the current version. |
-| Current-version marker | `IsCurrent` | BOOLEAN, non-null. |
+| Version start | `RecordStartTime` | TIMESTAMP, non-null; inclusive start. |
+| Version end | `RecordEndTime` | TIMESTAMP, nullable; exclusive end, null for the current version. |
+| Current-version marker | `IsCurrentRecord` | BOOLEAN, non-null. |
 
-`IsActive` remains in the shared audit block. Its presence is not sufficient reason to substitute it for `IsCurrent`. The Type 2 field names above come from `database/seed/04_application_reference.sql`; actual clock and boundary behavior must agree with the consumer.
+In a Type 2 dimension these fields sit in the audit block immediately after `SourceSystemID` and before `GDSBatchID`. `IsActive` remains a separate audit field; do not substitute it for the current-version marker. Actual clock and boundary behavior must agree with the consumer.
 
 Retain these history Attributes in the Project, target metadata and DDL. In each applicable Attribute Mapping, state "Framework-populated Type 2 field; omitted from transformation SQL." Do not invent source lineage, timestamp/boolean expressions or SQL that maintains these values. This adds the configured Type 2 fields to the own-surrogate/nine-audit exclusions; other technical fields still follow their explicit population rule.
 
 Preserve the complete natural/business-key tuple, including source namespace where required, through Project, target metadata and Mapping. Transformation SQL supplies the mapped business-key values; the generated surrogate is not a substitute for the framework's natural-key matching. Explain current-member identity separately from version identity: repeating a natural key across historical versions is intentional. Framework-owned version maintenance does not decide a fact's current-versus-event-time dimension lookup; that analytical rule still belongs in Mapping.
 
 If a particular history requirement exceeds the confirmed consumer behavior, keep that requirement and execution gap explicit. Continue independent modeling work; do not silently flatten history, claim load readiness or invent a second executable artifact. Do not re-ask the settled Type 1/Type 2 capability or history-field population questions.
-
-Source for current projection: `web_app/backend/gds_workbench_api/features/dimensional/policy.py`; storage fields: `mcp_server/gds_etl_workbench/domain/modeling_records.py`. Both are development provenance, not packaged runtime dependencies.

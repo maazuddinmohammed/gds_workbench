@@ -4,6 +4,10 @@ import { unicodeCasefold, unicodeLower } from "./unicode.js";
 import workbenchCore from "../../atlas-plugin/workbench/core.js";
 export const stableStringify = workbenchCore.stableStringify as (value: unknown) => string;
 export const isEntityOwnedProjectCatalog = workbenchCore.isEntityOwnedProjectCatalog as (catalog: unknown) => boolean;
+// Ordinal order shared with the Atlas helpers; never localeCompare for hashed or bound data.
+export const compareOrdinal = workbenchCore.compareOrdinal as (left: string, right: string) => number;
+// Read-only in Atlas: Project Input Scope belongs to the web app, Profiling to the backend.
+export const WEB_MANAGED_PROJECT_DATASETS = workbenchCore.WEB_MANAGED_PROJECT_DATASETS as readonly string[];
 export const SHA256 = /^[0-9a-f]{64}$/;
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export const MAX_MANIFEST_BYTES = 128 * 1024;
@@ -31,6 +35,7 @@ export const ALLOWED_DATASETS: Record<Area, ReadonlySet<string>> = {
     "ingestion_attribute_mapping",
     "copy_group",
     "member_group",
+    "member",
     "copy_group_control",
     "copy",
     "process_group",

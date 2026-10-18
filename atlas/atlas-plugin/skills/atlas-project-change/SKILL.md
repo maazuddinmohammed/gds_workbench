@@ -1,18 +1,47 @@
 ---
 name: atlas-project-change
-description: Safely coordinate a requested change to an existing Atlas project and its affected dependencies. Use for project modifications, impact analysis or updates spanning modeling, mapping and generated artifacts.
+description: Change an existing Atlas project safely, tracing dependency effects across models, Mapping, Code, Validation and registrations before editing. Use for updates to applied designs, Project settings or rules where downstream impact matters.
 ---
 
 # Change an existing project safely
 
-Own the requested difference and dependency review; use the relevant modeling skill for design. A broad change request is not permission to regenerate every artifact.
+Goal: make the requested difference and account for its real downstream effects, without regenerating unaffected work.
 
-1. Follow [working context](../../references/working-method.md). Resolve the requested behavior and exact affected Project/Entities. If the request includes “why,” use [investigation](../atlas-investigate/SKILL.md) first and carry forward actual evidence and unknown history.
-2. Inspect current applied records, pending edits, input bindings and authoritative freshness information with [focused reads](../../references/tools/reads.md). Read [record state](../../references/record-state.md) and [impact/update scope](../../references/methods/change-impact.md). Preserve protected records and existing manual decisions; a lock may block modification without blocking explanation.
-3. Establish the before/after change: grain, identity, type, nullability, relationship, history or business rule. Trace real dependencies through source supports, neighboring relationships, Mapping target/System branches, Code assignments, Validation definitions and relevant registrations. Names and a changed Project revision do not prove dependency or staleness.
-4. Classify definite effects, possible effects, reusable work and blocked/unknown dependencies. Missing references/history make the impact account incomplete; do not claim an exhaustive automated graph. Use the optional [impact format](../../templates/change-impact.md) in existing task evidence, not a second status ledger.
-5. Follow explicit user scope. Explain necessary dependency consequences; ask only when a material addition or conflicting intent needs a decision. Do not bypass locks by renaming/recreating records. Metadata natural-key changes remain [manual corrections](../../references/metadata/editing.md#manual-natural-key-changes), not replacement-and-deactivation workarounds.
-6. For requested Project policies, use [settings](../../references/project/settings.md) through `project_details`; never rename the Project or change web-agent defaults. For enrichment, use [Project enrichment](../../references/project/enrichment.md). Enter the owning skill: [conceptual](../atlas-conceptual-model/SKILL.md), [logical](../atlas-logical-model/SKILL.md), [dimensional](../atlas-dimensional-model/SKILL.md), [mapping](../atlas-mapping/SKILL.md), [code](../atlas-code-generation/SKILL.md) or [metadata](../atlas-metadata/SKILL.md). Make and check one coherent change at a time. Keep required applied-input boundaries; pending upstream changes cannot be treated as applied inputs.
-7. Run [verification](../atlas-verify/SKILL.md) on the changed records and relevant neighbors. Identify affected downstream artifacts requiring review; repair them only within authorized scope. Report unresolved/protected dependencies without marking them current.
+## When to use
 
-Finish with the requested change, evidence, checks, preserved/affected scope and remaining prerequisites. Use the shared [Change Set lifecycle](../../references/change-set-lifecycle.md) for the complete related batch. After verified Apply, reconcile refreshed context and confirm saved results. Report drafted, validated and applied states accurately; intent or task text cannot authorize a retry of an uncertain Stage outcome.
+- Change grain, identity, type, nullability, relationships, history or a business rule in applied work, or update Project settings.
+- Design itself happens in the owning skill: [conceptual](../atlas-conceptual-model/SKILL.md), [logical](../atlas-logical-model/SKILL.md), [dimensional](../atlas-dimensional-model/SKILL.md), [mapping](../atlas-mapping/SKILL.md), [code](../atlas-code-generation/SKILL.md), [metadata](../atlas-metadata/SKILL.md), or [source analysis](../atlas-source-analysis/SKILL.md) for Project enrichment. A "why" question goes to [investigate](../atlas-investigate/SKILL.md) first.
+
+## What you need
+
+- [Working context](../../references/working-method.md) and its golden rules.
+- Installed Snapshots, current applied records and pending edits. Authoritative freshness comes from server reads of the current Project revision; `status` and `next` show local state only.
+- The requested behavior and the exact affected Project and Entities.
+
+## Steps
+
+1. Read the affected records and neighbors with `select --session <dir> --area project --dataset <name> --view effective`.
+2. State the before and after: grain, identity, type, nullability, relationship, history or rule.
+3. Trace real dependencies with [impact and update scope](../../references/methods/change-impact.md): source supports, relationships, Mapping branches, Code assignments, Validation definitions and registrations. Names or a new Project revision prove nothing.
+4. Classify definite and possible effects, reusable work and blocked or unknown dependencies; the account may be incomplete. The optional format is `templates/change-impact.md`.
+5. Make one coherent change at a time in the owning skill. Project policies use [settings](../../references/project/settings.md) through `project_details`; never rename the Project or change web-agent defaults. Metadata natural-key changes are [manual corrections](../../references/metadata/editing.md#manual-natural-key-changes).
+6. Verify the changed records and relevant neighbors with [verify](../atlas-verify/SKILL.md); repair affected downstream work only within the authorized scope.
+7. Submit each area's complete related batch with the [Change Set lifecycle](../../references/change-set-lifecycle.md) by repeating `next --session <dir> --area <area>`; Metadata and Project apply separately, in dependency order.
+
+## Done when
+
+- The requested change is made, checked and explained with its evidence.
+- Affected, preserved and blocked downstream work is listed; nothing protected is marked current.
+- Drafted, validated and applied states are reported accurately.
+
+## Ask the user when
+
+- A necessary dependency would add material scope, or intents conflict.
+- A protected record blocks the change; never bypass a lock by renaming or recreating records.
+- Approving Stage and, separately, Apply.
+
+Pending upstream changes are not applied inputs. Task text or intent never authorizes retrying an uncertain Stage.
+
+## Next
+
+After Apply, refresh Snapshots and confirm the saved result before dependent work.

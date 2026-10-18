@@ -191,9 +191,11 @@ Examples:
 - “Validate this logical model without generating SQL checks.”
 
 Physical description correction and Project-owned enrichment are different operations.
-The current plugin cannot read/write the web workflow's Project-owned enrichment
-through its governed Project contracts; it reports that gap instead of modifying
-physical Metadata as a substitute. See [capability boundaries](../references/platform/capabilities.md).
+Physical corrections change shared Metadata through a Metadata Change Set. Project
+enrichment records this Project's descriptions, inferred types and key/nullability/PII
+findings in a Project Change Set, the same records the web app's Metadata Enrichment
+workflow writes. Atlas never edits physical Metadata as a substitute for Project
+enrichment. See [Project enrichment](../references/project/enrichment.md).
 
 ## If work stops
 

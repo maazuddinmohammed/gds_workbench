@@ -1,20 +1,28 @@
 (function (root, factory) {
   "use strict";
   const node = typeof module === "object" && module.exports;
-  const api = factory(node ? require("../metadata.js") : root.GDSMetadata,
+  const api = factory(node ? require("../core.js") : root.GDSCore,
+    node ? require("../metadata.js") : root.GDSMetadata,
     node ? require("../project.js") : root.GDSProject,
     node ? require("../project-quality.js") : root.GDSProjectQuality,
     node ? require("./project-policy.js") : root.AtlasProjectPolicy,
     node ? require("./sql.js") : root.AtlasSql);
   if (node) module.exports = api;
   root.AtlasValidation = api;
-})(globalThis, function (metadata, project, projectQuality, projectPolicy, sql) {
+})(globalThis, function (core, metadata, project, projectQuality, projectPolicy, sql) {
   "use strict";
 
   // The browser and CLI use this same assembly. Validators remain pure and never read files.
   function run(area, loaded, metadataLoaded = null, options = {}) {
     if (!["metadata", "project"].includes(area) || !(loaded instanceof Map)) throw new Error("Validation needs a Metadata or Project dataset map.");
     const raw = (area === "metadata" ? metadata : project).validate(loaded, metadataLoaded, options);
+    // Drafts here can only come from older workspaces or manual edits; Atlas never stages them.
+    if (area === "project") {
+      for (const name of core.WEB_MANAGED_PROJECT_DATASETS) {
+        if (loaded.get(name)?.pending?.length) raw.push({code: "web_managed_dataset", dataset: name, severity: "error",
+          message: `${name} is managed outside Atlas; discard these local drafts and read it from the Project Snapshot.`});
+      }
+    }
     for (const owner of options.missingMetadataOwners || []) raw.push({code: "metadata_owner_snapshot_missing", dataset: "project", severity: [...loaded].some(([name,value]) => name !== "project_details" && value.pending?.length) ? "error" : "warning",
       message: `Applied Metadata for owner ${owner} is unavailable; physical context completeness needs review.`});
     const checks = [

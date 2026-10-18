@@ -40,13 +40,4 @@ Connection.connection_type_code selects the type. Workflows resolve its descript
 
 Apply the [shared read-only checks](../index.md#using-read-only-tables) to the exact Keys, Fields, and dependencies above. Resolve table-specific conditions under “How authoring uses these values.”
 
-## Source pointers
-
-Development provenance; these source files are not runtime dependencies of the packaged skill.
-
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:77,97`.
-- `database/01_reference.sql:54`.
-- `database/seed/01_metadata_snapshot_demo.sql:12`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:288,301`.
-
 [All metadata tables](../index.md) · [Common validation](../validation.md)

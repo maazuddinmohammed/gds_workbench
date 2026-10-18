@@ -1,6 +1,6 @@
 # Mapping transformation documents
 
-Shared by Mapping authoring, Code Generation and Validation. This page owns the existing GDS inner templates and concise transformation instructions. [Mapping records](mapping.md) owns outer fields/keys; [keys/audit](keys-and-audit.md) owns population policy; the [Mapping skill](../../skills/atlas-mapping/SKILL.md) owns sequence and questions.
+Shared by Mapping authoring, Code Generation and Validation. This page owns the existing GDS inner templates and concise transformation instructions. [Mapping records](mapping.md) owns outer fields/keys; [keys/audit](keys-and-audit.md) owns population policy; the [Mapping skill](../../skills/atlas-mapping/SKILL.md) owns sequence; the questions to ask are below.
 
 ## Exact existing template
 
@@ -165,8 +165,17 @@ These extend the structural checks in [Mapping records](mapping.md). Template/re
 
 Review source → Object step → Attribute rule → final column, then derive the expected grain, key, null and reconciliation behavior using only the saved Mapping view. A structural pass does not prove business correctness. Save supported partial transformations and leave missing documents blank; Code may preserve them as explicitly reviewed placeholders, while Validation remains blocked until Mapping is complete. Optional SQL retains the shared query policy.
 
-## Source pointers
+## Ask only about unresolved rules
 
-Exact template: `database/seed/07_global_mapping_output_templates.template.sql`. Record contract: [Mapping records](mapping.md). Runtime/code conventions: [SQL generation](../code-generation/sql.md). Complete-context projection: `web_app/backend/gds_workbench_api/features/workflows/authoring/downstream_inputs.py`; underlying eligibility projections: `database/11_workflow_eligibility.sql`.
+Group related exceptions and recommend an evidence-based option:
+
+- **Cross-System identity:** keep source-qualified records separate, or reconcile the same business entity? If reconciled, what matching/survivorship rule applies?
+- **Competing rows:** which evidenced key and ordering choose a row, and what happens on a tie? Do not assume latest-wins or add DISTINCT.
+- **Lookup/conversion failures:** reject, preserve a null where allowed, or use a specified fallback? Do not invent missing-value policy.
+- **Consumer behavior:** if runtime batching, parameters or loading behavior are unclear, ask for the relevant rule or orchestration code and inspect it.
+
+Reuse confirmed answers. Straightforward direct mappings need no interview. Independent branches may progress while a blocked branch remains explicit; no invented `needs_review` status or activation of incomplete instructions. Saved profiling batch IDs are not runtime transformation parameters.
+
+## Confirmed behavior
 
 Atlas uses the current published template. Confirm runtime coordinates from the saved Entity schemas and governed source context. The governed consumer view and shared local checks implement the corresponding technical boundaries; semantic review remains necessary.

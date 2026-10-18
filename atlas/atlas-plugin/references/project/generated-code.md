@@ -86,6 +86,15 @@ Resolve [existing work and update scope](../methods/change-impact.md) before aut
 
 Use the shared [review/Stage/Validate/Apply lifecycle](../change-set-lifecycle.md), including generated-Code transport handling. Both datasets can accumulate in one local batch. For table storage, store complete artifact text in `generated_code_content`; any reviewable local `.sql` copy must match that exact content. For Git storage, preserve the supplied metadata and report unavailable source review explicitly. Apply stores records; it does not create a deployed file, run SQL, register a Process or execute a pipeline. Refresh the Project Snapshot after verified Apply.
 
+## Exceptions and protected artifacts
+
+- **Existing Code stored in Git:** use the [storage fields](#artifact-fields). Preserve free-form references and JSON parameters; content may be null. Review and stage metadata through the same governed lifecycle. Do not run inline SQL checks against a Git reference, infer its contents, or convert it to table storage without the requested replacement scope. This adds no Python generation, repository publishing or execution.
+- **Locked Code:** a lock on a selected artifact blocks every content change to it; a lock on an unrelated artifact does not block the selected target. Preserve locked work and report the affected work; never add a duplicate filename or alternate artifact to bypass the lock. Attribute/Mapping locks keep their governed field semantics.
+- **Manual edits:** read the Snapshot, pending Code and the existing file before updating. Retain manual changes compatible with the applied Mapping; resolve conflicting manual-versus-Mapping intent with the user before replacement. Never silently choose generated content over a differing local file.
+- **Several files need the same source System:** the assignment contract cannot represent that as independent active artifacts for one target. Resolve a supported self-contained layout; no unassigned helper-file workaround.
+- **Unknown runtime placeholder or cross-catalog access rule:** request the relevant consumer contract or code. Do not invent parameters or grant access.
+- **Mapping and code disagree:** fix accidental translation errors in Code; intentional transformation changes belong in Mapping first.
+
 ## Code record checks
 
 | Rule | Check / reason | Current coverage |
@@ -152,9 +161,3 @@ Assume applied silver.Customer Entity and complete CRM/ERP Mapping. The confirme
 ```
 
 For approved separate files, create complete `CustomerCRM.sql` and `CustomerERP.sql` artifact records, each with its own preparation and final SELECT; point the CRM/ERP assignments to those respective names. Do not stage both layouts together as active coverage. Dimensional Code uses `dimensional_entity` and the actual bound Gold Entity/Mapping, with the same outer fields.
-
-## Source pointers
-
-Fields: `mcp_server/gds_etl_workbench/domain/modeling_records.py` (`GeneratedCodeRecord`, `GeneratedCodeSourceSystemRecord`); keys/sections: `domain/snapshots/project.py`; catalog prerequisites: `tools/snapshots/project/archive.py`; locks/coverage: `application/change_sets/project_validation.py`; Apply/digests: `application/change_sets/project_apply.py`, `database/10_workflow_code_validation.sql`, `database/11_workflow_eligibility.sql`.
-
-Separate backend candidate/SQL checks and conversion: `web_app/backend/gds_workbench_api/features/code_generation/candidate.py`, `service.py`; SQL-only read/download behavior: `read_service.py`. Atlas generation guidance is in `atlas/atlas-plugin/references/code-generation/sql.md`. Do not mistake internal backend candidate fields or helper functions for public MCP tools.

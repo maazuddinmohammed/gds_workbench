@@ -76,9 +76,9 @@ Every field is listed explicitly. Exact current MCP/Snapshot schemas remain auth
 - Default new Copies to 1 in the agreed design and write it explicitly; the current field remains required. Preserve existing values unless the user requests a change.
 - Running equal-order Copies together and then advancing is only a possible future behavior; do not document or implement it as current semantics.
 - Fresh-install SQL and published validation permit repeated order values while retaining Copy identity uniqueness and positive-int32 checks. Apply no longer defers the removed `uq_copy_group_order` constraint.
-- Existing installations need a reviewed upgrade before repeated orders can be applied. Backend readiness rejects the obsolete uniqueness constraint. No migration/backfill script is bundled; preserve existing order values unless a change is requested.
+- If the server rejects a repeated order value, its backend predates this contract: report it instead of renumbering Copies. Preserve existing order values unless a change is requested.
 
-Contract and fixture coverage: `database/02_core.sql`, `database/16_mcp_metadata_apply.sql`, `domain/snapshots/metadata.py`, Metadata Snapshot contracts and disposable Metadata Apply tests. This changes stored metadata constraints; it does not add an orchestration barrier.
+Stored order values do not add an orchestration barrier.
 
 ## Landing names
 
@@ -102,36 +102,26 @@ For a source with a string `status` column, a saved filter can be `WHERE status 
 
 ## Validation checklist
 
-Source-review coverage only; see [status meanings and common checks](../validation.md).
+Enforcement is explained in [common checks](../validation.md#interpreting-table-checklists); run the local validator, then review anything marked for you.
 
-| Rule | Check / why | Database | MCP backend | Local | Status |
-|---|---|---|---|---|---|
-| `copy.shape` | Complete group/endpoint keys; nullable copy settings; explicit operations/order/active; delimiter <=20. Reject malformed complete records before staging. | Column types, nullability and selected CHECKs; not exact JSON shape. | Strict Pydantic record; unknown fields forbidden. | Published JSON Schema and portable record rules. | Existing; not parity-tested |
-| `copy.unique` | Copy Group + Ingestion Object Mapping unique. Prevent duplicate identity; inactive rows still reserve their keys. | Unique constraint/index. | Staged and effective uniqueness. | Pending/effective and cross-dataset uniqueness. | Existing; not parity-tested |
-| `copy.order` | Positive sorting value, default 1 for new rows; repeated values allowed. No runtime sequencing guarantee. | INTEGER, positive CHECK, new-row default; group/order uniqueness removed. | Positive int32; Copy natural-key uniqueness preserved. | Published schema/effective keys; preserve unrelated values. | Implemented; disposable database tests |
-| `copy.references` | Copy Group and Object Mapping exist; optional Chunk/File Types resolve; source/target Operations resolve. Resolve dependencies using snapshot plus pending rows. | FK/composite FK and Apply joins. | Effective reference validation. | Effective natural-key reference validation. | Existing; not parity-tested |
-| `copy.chunking` | New/changed chunking requires the user's large-table request and a registered technique applicable to this table/System. Preserve unrelated existing settings. | Optional reference only. | Registered reference validation; no intent/applicability check located. | Proposed applicability check; request scope belongs to the workflow. | Proposed; user-confirmed authoring rule |
-| `copy.target-operation` | Target function must match requested loading behavior. Copy Into appends; Override/custom scope comes from description. Source reference remains required but unused. | Required references only. | Reference checks; no target-behavior check located. | Proposed behavior review from registered descriptions. | Proposed; user-confirmed consumer rule |
-| `copy.filters` | Nonblank initial/incremental fragments must include WHERE, a valid source condition and any confirmed placeholders. Blank is allowed and adds nothing; the framework adds no WHERE keyword. | Nullable text storage. | String/null shape; no filter-semantic check located. | Proposed dialect/assembly check; confirm dynamic placeholder rules when needed. | Proposed; user-confirmed consumer rule |
-| `copy.scope` | Copy Group belongs to selected Tenant; endpoint Objects owned by it and on permitted Connections. Keep edits in the authorized Tenant. | Apply joins owner and permitted Object connections. | Tenant-scope validation. | Snapshot-based Tenant-scope validation. | Existing; not parity-tested |
-| `copy.record-limit` | Chunk numeric parameter is null or a signed decimal string within BIGINT range. Preserve precision; do not impose a universal positive-only rule or row-cap meaning. | BIGINT conversion. | Pydantic pattern and range validator. | Pattern plus BigInt portable rule. | Existing; not parity-tested |
-| `copy.limit-attribute` | Check parameter usage against selected chunk logic. Require a real source Attribute only if that logic expects one; apply function-specific ranges/defaults to numeric input. | Nullable text; no Attribute FK. | Shape only; selected-function semantics not checked. | Proposed chunk-contract check; no universal membership rule. | Proposed; user-confirmed consumer rule |
-| `copy.landing-naming` | Filename/pattern must agree with the landing writer and Bronze reader. Validate only the confirmed combination/placeholders; do not treat them as source-selection filters. | Nullable text fields only. | Naming semantics not checked. | Proposed writer/reader compatibility check using descriptions/code. | Proposed; user-confirmed consumer rule |
-| `copy.live-dependencies` | Re-resolve dependencies at Apply; reject unexpected affected-row count. Snapshot checks cannot guarantee current server state. | Atomic Apply dependency/row-count check. | Server Apply result; do not infer success locally. | Cannot prove offline; retain server result. | Server-only |
-| `copy.record-limit-contract-alignment` | Align signed authoring/DB limit with nonnegative inspect_metadata CopyDetails response; do not invent a positive-only authoring rule. A valid signed authoring value may not satisfy the current read-response contract. | BIGINT accepts negative values; no nonnegative CHECK located. | Authoring permits signed range; CopyDetails response requires ge=0. | Portable authoring validator accepts signed BIGINT range. | Review |
+| Rule | Check / why | Enforced by |
+|---|---|---|
+| `copy.shape` | Complete group/endpoint keys; nullable copy settings; explicit operations/order/active; delimiter <=20. Reject malformed complete records before staging. | Local validator + server |
+| `copy.unique` | Copy Group + Ingestion Object Mapping unique. Prevent duplicate identity; inactive rows still reserve their keys. | Local validator + server |
+| `copy.order` | Positive sorting value, default 1 for new rows; repeated values allowed. No runtime sequencing guarantee. | Local validator + server |
+| `copy.references` | Copy Group and Object Mapping exist; optional Chunk/File Types resolve; source/target Operations resolve. Resolve dependencies using snapshot plus pending rows. | Local validator + server |
+| `copy.chunking` | New/changed chunking requires the user's large-table request and a registered technique applicable to this table/System. Preserve unrelated existing settings. | Your review (no automated check) |
+| `copy.target-operation` | Target function must match requested loading behavior. Copy Into appends; Override/custom scope comes from description. Source reference remains required but unused. | Your review (no automated check) |
+| `copy.filters` | Nonblank initial/incremental fragments must include WHERE, a valid source condition and any confirmed placeholders. Blank is allowed and adds nothing; the framework adds no WHERE keyword. | Your review (no automated check) |
+| `copy.scope` | Copy Group belongs to selected Tenant; endpoint Objects owned by it and on permitted Connections. Keep edits in the authorized Tenant. | Local validator + server |
+| `copy.record-limit` | Chunk numeric parameter is null or a signed decimal string within BIGINT range. Preserve precision; do not impose a universal positive-only rule or row-cap meaning. | Local validator + server |
+| `copy.limit-attribute` | Check parameter usage against selected chunk logic. Require a real source Attribute only if that logic expects one; apply function-specific ranges/defaults to numeric input. | Your review (no automated check) |
+| `copy.landing-naming` | Filename/pattern must agree with the landing writer and Bronze reader. Validate only the confirmed combination/placeholders; do not treat them as source-selection filters. | Your review (no automated check) |
+| `copy.live-dependencies` | Re-resolve dependencies at Apply; reject unexpected affected-row count. Snapshot checks cannot guarantee current server state. | Server only, at Apply |
+| `copy.record-limit-contract-alignment` | Align signed authoring/DB limit with nonnegative inspect_metadata CopyDetails response; do not invent a positive-only authoring rule. A valid signed authoring value may not satisfy the current read-response contract. Validator note: Portable authoring validator accepts signed BIGINT range. | Your review |
 
-## Source pointers
+## Confirmed behavior
 
-Development provenance; these source files are not runtime dependencies of the packaged skill.
-
-User-confirmed consumer rules above supersede older generic descriptions: SQL values are WHERE fragments, source operation is unused, record-limit fields feed opt-in chunking, and filename/pattern fields name landing artifacts. Current schemas still govern field presence/types and registered references. Recheck behavioral meanings against the applicable framework version when custom usage or conflicting evidence arises.
-
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:26,29,296,311,315,319,324`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:89,94,100,126`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:180,500,508,509`.
-- `database/02_core.sql:388,392,393,401,409,425,427`.
-- `mcp_server/gds_etl_workbench/tools/ingestion/copy_groups.py:176`.
-- `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:103,354,474,533`.
-- `database/16_mcp_metadata_apply.sql:270,816,906,938`.
+Copy fields follow the consumer rules above: SQL values are WHERE fragments, source operation is unused, record-limit fields feed opt-in chunking, and filename/pattern fields name landing artifacts. Schemas govern field presence, types and registered references. Recheck behavioral meanings against the applicable framework version when custom usage or conflicting evidence arises.
 
 [All metadata tables](../index.md) · [Common validation](../validation.md)

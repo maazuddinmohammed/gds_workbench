@@ -17,6 +17,11 @@ import pytest
 from gds_etl_workbench import runtime as runtime_module
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.adapters.mcp.server import create_mcp_server
+from gds_etl_workbench.adapters.mcp.stage_runner_gate import (
+    STAGE_RUNNER_CLIENT,
+    STAGE_RUNNER_HEADER,
+    STAGE_UPLOAD_TOOLS,
+)
 from gds_etl_workbench.application.metadata_snapshot.archive import (
     SnapshotArchive,
     build_dataset_document,
@@ -748,6 +753,107 @@ async def test_easy_auth_principal_reaches_list_tenants_over_stateless_http() ->
     assert len(database.audit_records) == 1
     assert database.audit_records[0].principal_id == 41
     assert database.audit_records[0].principal_display_name == "HTTP Human"
+
+
+@pytest.mark.asyncio
+async def test_only_the_stage_runner_connection_sees_and_calls_stage_upload_tools() -> None:
+    settings = replace(
+        development_settings(),
+        environment=Environment.PRODUCTION,
+        auth_mode=AuthMode.AZURE_EASY_AUTH,
+        local_principal_object_id=None,
+        require_https=True,
+    )
+    database = FakeDatabase()
+    database.resolved_principal = {
+        "principal_id": 41,
+        "principal_display_name": "HTTP Human",
+        "is_super_admin": False,
+    }
+    application = create_application(settings, database)
+    claims = {
+        "auth_typ": "aad",
+        "claims": [
+            {"typ": "tid", "val": "11111111-1111-1111-1111-111111111111"},
+            {"typ": "oid", "val": "22222222-2222-2222-2222-222222222222"},
+            {"typ": "idtyp", "val": "user"},
+            {"typ": "scp", "val": "workbench.access"},
+        ],
+    }
+    principal_header = base64.b64encode(json.dumps(claims).encode()).decode()
+    visible: dict[str, set[str]] = {}
+
+    async with application.router.lifespan_context(application):
+        for client_name, client_headers in (
+            ("agent", {}),
+            ("forged-value", {STAGE_RUNNER_HEADER: "copilot"}),
+            ("stage-runner", {STAGE_RUNNER_HEADER: STAGE_RUNNER_CLIENT}),
+        ):
+            async with httpx2.AsyncClient(
+                transport=httpx2.ASGITransport(app=application),
+                base_url="http://testserver",
+                headers={
+                    "x-forwarded-proto": "https",
+                    "x-ms-client-principal": principal_header,
+                    **client_headers,
+                },
+            ) as http_client:
+                transport = streamable_http_client(
+                    "http://testserver/mcp",
+                    http_client=http_client,
+                    terminate_on_close=False,
+                )
+                async with Client(transport) as client:
+                    visible[client_name] = {tool.name for tool in (await client.list_tools()).tools}
+                    if client_name == "agent":
+                        refused = await client.call_tool(
+                            "stage_project_change_set",
+                            {
+                                "project_id": 1,
+                                "project_change_set_id": str(UUID(int=1)),
+                                "expected_draft_revision": 1,
+                                "changes": [],
+                            },
+                        )
+
+    assert len(STAGE_UPLOAD_TOOLS) == 8
+    assert visible["stage-runner"] >= STAGE_UPLOAD_TOOLS
+    assert visible["agent"] == visible["stage-runner"] - STAGE_UPLOAD_TOOLS
+    assert visible["forged-value"] == visible["agent"]
+    assert refused.is_error is True
+    assert refused.structured_content is None
+    assert "stage_runner_required:" in refused.content[0].text
+    assert [
+        (record.tool_name, record.status, record.failure_code)
+        for record in database.audit_records
+    ] == [("stage_project_change_set", "failed", "tool_error")]
+
+
+@pytest.mark.asyncio
+async def test_in_memory_sessions_act_as_the_stage_runner_only_with_development_identity() -> (
+    None
+):
+    production = replace(
+        development_settings(),
+        environment=Environment.PRODUCTION,
+        auth_mode=AuthMode.AZURE_EASY_AUTH,
+        local_principal_object_id=None,
+    )
+    visible: dict[AuthMode, set[str]] = {}
+    for settings in (development_settings(), production):
+        server = create_mcp_server(
+            settings,
+            FakeDatabase(),
+            IdentityProvider(settings.auth_mode),
+            FakeSnapshotStore(),
+        )
+        async with Client(server) as client:
+            visible[settings.auth_mode] = {
+                tool.name for tool in (await client.list_tools()).tools
+            }
+
+    assert visible[AuthMode.DEV] >= STAGE_UPLOAD_TOOLS
+    assert visible[AuthMode.AZURE_EASY_AUTH] == visible[AuthMode.DEV] - STAGE_UPLOAD_TOOLS
 
 
 @pytest.mark.asyncio

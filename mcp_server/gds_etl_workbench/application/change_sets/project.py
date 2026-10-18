@@ -278,7 +278,9 @@ class ProjectChangeSetDatasetFingerprint(ContractModel):
 
 class GetProjectChangeSetFingerprintResult(ContractModel):
     schema_version: Literal["2.0"] = "2.0"
-    fingerprint_version: Literal["2.0"] = "2.0"
+    # Versions the aggregate fingerprint document, not the result schema; Stage Runner
+    # recomputes that document with this exact value.
+    fingerprint_version: Literal["1.0"] = "1.0"
     area: Literal["project"] = "project"
     project_id: int = Field(gt=0)
     project_change_set_id: UUID

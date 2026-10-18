@@ -19,8 +19,8 @@ Get these files from your Atlas administrator:
 
 | File | Purpose |
 |---|---|
-| `atlas-agent-plugin-0.3.0.zip` | Skills, local tools, and Atlas Local Workbench. |
-| `atlas-stage-runner-0.2.0.vsix` | The Stage Runner extension for VS Code. |
+| `atlas-agent-plugin-0.4.0.zip` | Skills, local tools, and Atlas Local Workbench. |
+| `atlas-stage-runner-0.3.0.vsix` | The Stage Runner extension for VS Code. |
 
 Follow the [installation steps](install-and-update.md#first-installation).
 Use `%USERPROFILE%\Tools\Atlas\atlas` on Windows or `~/Tools/Atlas/atlas` on
@@ -54,7 +54,7 @@ See the [VS Code local plugin instructions](https://code.visualstudio.com/docs/a
 
 1. Open the Command Palette.
 2. Run **Extensions: Install from VSIX**.
-3. Select `atlas-stage-runner-0.2.0.vsix`.
+3. Select `atlas-stage-runner-0.3.0.vsix`.
 4. Reload VS Code when asked.
 
 This is the standard [VSIX installation procedure](https://code.visualstudio.com/docs/configure/extensions/extension-marketplace#install-from-a-vsix).
@@ -93,7 +93,7 @@ can list your available Tenants. Continue with the [usage guide](usage-guide.md)
 
 Before useful, authorized delegation, Atlas asks for a **sub-agent policy**: **Current model only**,
 **Agent selects the model**, or **Specified model only**. For the last choice,
-give an exact available project name or ID. The choice is saved per working folder;
+give the exact AI model name or ID available in your VS Code agent. The choice is saved per working folder;
 see [the shared policy steps](usage-guide.md#choose-the-sub-agent-policy).
 If your VS Code agent cannot enforce the rule, Atlas continues without sub-agents.
 

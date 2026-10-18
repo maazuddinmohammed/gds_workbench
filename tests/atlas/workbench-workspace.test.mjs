@@ -144,3 +144,16 @@ test('operation status accepts canonical and legacy Stage proof but never confli
    assert.equal((await ws.loadOperation('metadata')).status,verified?'Staged receipt recorded':'Local operation');
  }
 });
+test('local Change Set digest orders files ordinally like PowerShell and Stage Runner',async()=>{
+ const root=workspace(),keys=['tenant_code','name'];
+ snapshot(root,'metadata',[dataset('copy',keys,[]),dataset('copy_group',keys,[])]);
+ const changes=root.directory('metadata-change-set');
+ const copy=JSON.stringify([{tenant_code:'T',name:'a'}]),group=JSON.stringify([{tenant_code:'T',name:'b'}]);
+ changes.file('copy_group.json',group);changes.file('copy.json',copy);
+ const ws=await connect(root);
+ const {createHash}=await import('node:crypto');
+ // Ordinal: '.' (U+002E) sorts before '_' (U+005F); ICU localeCompare reverses these names.
+ const expected=createHash('sha256');
+ for(const [name,text] of [['copy.json',copy],['copy_group.json',group]]) expected.update(`${name}\0${Buffer.byteLength(text)}\0`).update(text);
+ assert.equal(await ws.localChangeSetDigest('metadata'),expected.digest('hex'));
+});

@@ -43,16 +43,8 @@ Copy.chunk_type_name optionally selects this logic. Default new records to null;
 
 Apply the [shared read-only checks](../index.md#using-read-only-tables) to the exact Keys, Fields, and dependencies above. Resolve table-specific conditions under “How authoring uses these values.”
 
-## Source pointers
+## Confirmed behavior
 
-Development provenance; these source files are not runtime dependencies of the packaged skill.
-
-User-confirmed behavior: chunking splits a large initial extraction through existing framework logic and is opt-in. Schema examples below do not define the available techniques.
-
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:121,312`.
-- `database/01_reference.sql:183`.
-- `database/seed/01_metadata_snapshot_demo.sql:36`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:332,512`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:290`.
+Chunking splits a large initial extraction through existing framework logic and is opt-in. Schema examples do not define the available techniques.
 
 [All metadata tables](../index.md) · [Common validation](../validation.md)

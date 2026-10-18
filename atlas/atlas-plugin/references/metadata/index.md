@@ -1,6 +1,6 @@
 # Metadata table index
 
-Shared domain documentation: table meanings, fields, keys, and rules live here once so workflows can reuse them. Actual Tenant-specific records and registered values come from the Snapshot. Workflow steps and intake belong in the skill.
+Shared domain documentation: table meanings, fields, keys, and rules live here once so workflows can reuse them. Actual Tenant-specific records and registered values come from the Snapshot. Workflow steps belong in the skill; ask missing decisions with [intake and examples](intake-and-examples.md).
 
 Read the pages for tables being changed. Open other table pages only when a relationship, field meaning, or failed check needs explanation. Checking a referenced record does not require reading every linked document; do not follow links recursively.
 
@@ -10,7 +10,7 @@ For descriptions and inferred types, use [enrichment quality](enrichment-quality
 
 ## Editable tables
 
-All 16 currently accepted Metadata Change Set datasets are listed below, grouped by their 10 physical tables.
+All 17 accepted Metadata Change Set datasets are listed below, grouped by their 11 physical tables.
 
 | Table reference | Accepted datasets | Purpose |
 |---|---|---|
@@ -78,7 +78,9 @@ exposes only Tenant/System/Connection keys, location type, environment and value
 - 5 foundational datasets and 8 reference datasets.
 - Runtime schemas remain authoritative for exact fields and constraints.
 
-## Deferred additions
+## Order fields
 
-- Copy order compatibility: default copy_source_order=1 is agreed. Current DB/backend/local contracts require unique order within a group; the proposed compatibility change is to [remove that separate uniqueness requirement](tables/copy.md#copy-order-and-default). Copy natural keys stay unchanged; this does not introduce runtime dependency stages.
-- `process_group_dependency_order`: Process Group field for ordering groups across selected Systems within each Zone phase, then pooling their Processes by execution order. Current payload schemas accept it; see the [contract and implementation coverage](tables/process-group.md#dependency-order). Execution remains the external orchestration framework's responsibility.
+- `copy_source_order` sorts Copies within a Copy Group like ORDER BY. Repeated values are allowed and new Copies default to 1; see [Copy order](tables/copy.md#copy-order-and-default).
+- `process_group_dependency_order` orders Process Groups across the selected Systems within each Zone phase; equal levels pool their Processes by execution order. See [dependency order](tables/process-group.md#dependency-order).
+
+Both are stored metadata. Execution order and loading remain the external orchestration framework's responsibility.

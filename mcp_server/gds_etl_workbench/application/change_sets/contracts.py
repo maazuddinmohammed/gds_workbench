@@ -187,6 +187,25 @@ def canonical_records_sha256(records: list[dict[str, object]]) -> str:
     return hashlib.sha256(canonical_records_bytes(records)).hexdigest()
 
 
+# Stage Runner recomputes this aggregate client-side; change both sides together.
+STAGE_FINGERPRINT_VERSION = "1.0"
+
+
+def stage_fingerprint_sha256(area: str, datasets: list[dict[str, object]]) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            {
+                "area": area,
+                "datasets": datasets,
+                "fingerprint_version": STAGE_FINGERPRINT_VERSION,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
 def decode_canonical_base64_fragment(value: str) -> bytes:
     if not value or len(value) > MAX_PROJECT_STAGE_FRAGMENT_BASE64_CHARACTERS:
         raise ValueError("Stage payload fragment is invalid.")
@@ -217,6 +236,7 @@ __all__ = [
     "MAX_STAGE_CHUNK_RECORDS",
     "MAX_STAGE_CHUNKS",
     "SHA256_PATTERN",
+    "STAGE_FINGERPRINT_VERSION",
     "ChangeSetContractModel",
     "ChangeSetValidationErrorGroup",
     "bounded_validation_outcome",
@@ -224,4 +244,5 @@ __all__ = [
     "canonical_records_sha256",
     "decode_canonical_base64_fragment",
     "stage_batch_sha256",
+    "stage_fingerprint_sha256",
 ]

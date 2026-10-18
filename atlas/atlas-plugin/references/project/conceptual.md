@@ -194,7 +194,3 @@ This object may be a member of either parent's `supports` array only when the re
   "support_is_locked": false
 }
 ```
-
-## Source pointers
-
-Current field contracts: `mcp_server/gds_etl_workbench/domain/modeling_records.py` (`ConceptualObjectRecord`, `ConceptualRelationshipRecord`, `ObjectSupportRecord`, `ContextSupportRecord`). Keys: `domain/snapshots/project.py`; prerequisites: `tools/snapshots/project/archive.py`; scope/references/locks: `application/change_sets/project_validation.py`; support upserts: `application/change_sets/project_apply.py`; database contracts: `database/06_workflow_conceptual.sql`.

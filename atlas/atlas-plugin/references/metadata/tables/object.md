@@ -86,33 +86,18 @@ Every field is listed explicitly. Exact current MCP/Snapshot schemas remain auth
 
 ## Validation checklist
 
-Source-review coverage only; see [status meanings and common checks](../validation.md).
+Enforcement is explained in [common checks](../validation.md#interpreting-table-checklists); run the local validator, then review anything marked for you.
 
-| Rule | Check / why | Database | MCP backend | Local | Status |
-|---|---|---|---|---|---|
-| `object.shape` | Exact Object fields; required codes/names; schema/name <=400; explicit booleans; nullable optional fields. Reject malformed complete records before staging. | Column types, nullability and selected CHECKs; not exact JSON shape. | Strict Pydantic record; unknown fields forbidden. | Published JSON Schema and portable record rules. | Existing; not parity-tested |
-| `object.unique` | Connection + normalized schema/name unique across all four zone datasets; owner and zone are not key fields. Prevent duplicate identity; inactive rows still reserve their keys. | Unique constraint/index. | Staged and effective uniqueness. | Pending/effective and cross-dataset uniqueness. | Existing; not parity-tested |
-| `object.references` | Connection, owner Tenant, Object Type and Zone must resolve. Resolve dependencies using snapshot plus pending rows. | FK/composite FK and Apply joins. | Effective reference validation. | Effective natural-key reference validation. | Existing; not parity-tested |
-| `object.placement` | Owner is selected Tenant; source uses owned non-GDS Connection; bronze/silver/gold use configured GDS Connection. Separate metadata ownership from physical placement. | Apply checks owner, configured Connection and is_global_data_store. | Owner/configured membership checked; GDS-flag parity review. | Owner/configured membership checked; GDS-flag parity review. | Review |
-| `object.zone` | zone_code is source/bronze/silver/gold and matches dataset. Avoid writing the row into the wrong zone document. | Zone FK; Apply zone placement branches. | Record enum and fixed dataset values. | Published enum/fixed schema values. | Existing; not parity-tested |
-| `object.lock` | Do not stage a locked existing Object or any of its Attributes. Preserve governed record protection. | Apply locks and checks touched Object rows. | Object/Attribute lock phase. | Baseline lock check; live recheck still required. | Existing; not parity-tested |
-| `object.batch-attribute` | Non-null batch_attribute_name should resolve within this Object. Analysis batch filtering additionally requires an active Attribute and supported scalar type. | No storage FK; analysis endpoint resolution checks active same-Object membership. | Metadata-authoring membership check not located; analysis validates the scalar type. | Metadata-authoring membership check not located. | Review: authoring coverage gap |
-| `object.foreign-catalog` | When source profiling is needed, resolve foreign catalog plus exact foreign schema/Object/Attribute names. Do not invent physical source names. | Nullable text columns; no complete-catalog check here. | Workflow prerequisite; not unconditional shape requirement. | Check as prerequisite from snapshot/evidence; not a blanket required field. | Review |
-| `object.live-dependencies` | Re-resolve dependencies at Apply; reject unexpected affected-row count. Snapshot checks cannot guarantee current server state. | Atomic Apply dependency/row-count check. | Server Apply result; do not infer success locally. | Cannot prove offline; retain server result. | Server-only |
-
-## Source pointers
-
-Development provenance; these source files are not runtime dependencies of the packaged skill.
-
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:29,145,152,158`.
-- `database/02_core.sql:166,176,185,510`.
-- `database/16_mcp_metadata_apply.sql:140,305,344,345,377`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:158,390,404`.
-- `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:103,270,451,474,533`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:68,132,397`.
-- `database/14_application_workflow_execution.sql:796,848`.
-- `web_app/backend/gds_workbench_api/features/analysis/validation_execution.py:434`.
-
-Guidance correction for implementation: `domain/snapshots/metadata_guidance.py` currently says downstream ownership "differs" from physical Tenant. It should say "may differ"; equality is permitted under the configured-Connection rules above. No backend change is made by this document.
+| Rule | Check / why | Enforced by |
+|---|---|---|
+| `object.shape` | Exact Object fields; required codes/names; schema/name <=400; explicit booleans; nullable optional fields. Reject malformed complete records before staging. | Local validator + server |
+| `object.unique` | Connection + normalized schema/name unique across all four zone datasets; owner and zone are not key fields. Prevent duplicate identity; inactive rows still reserve their keys. | Local validator + server |
+| `object.references` | Connection, owner Tenant, Object Type and Zone must resolve. Resolve dependencies using snapshot plus pending rows. | Local validator + server |
+| `object.placement` | Owner is selected Tenant; source uses owned non-GDS Connection; bronze/silver/gold use configured GDS Connection. Separate metadata ownership from physical placement. Validator note: owner and configured Connection membership are checked; also confirm the Connection's GDS flag matches the Zone. | Your review |
+| `object.zone` | zone_code is source/bronze/silver/gold and matches dataset. Avoid writing the row into the wrong zone document. | Local validator + server |
+| `object.lock` | Do not stage a locked existing Object or any of its Attributes. Preserve governed record protection. | Local validator + server |
+| `object.batch-attribute` | Non-null batch_attribute_name should resolve within this Object. Analysis batch filtering additionally requires an active Attribute and supported scalar type. Validator note: Metadata-authoring membership check not located. | Your review |
+| `object.foreign-catalog` | When source profiling is needed, resolve foreign catalog plus exact foreign schema/Object/Attribute names. Do not invent physical source names. Validator note: Check as prerequisite from snapshot/evidence; not a blanket required field. | Your review |
+| `object.live-dependencies` | Re-resolve dependencies at Apply; reject unexpected affected-row count. Snapshot checks cannot guarantee current server state. | Server only, at Apply |
 
 [All metadata tables](../index.md) · [Common validation](../validation.md)

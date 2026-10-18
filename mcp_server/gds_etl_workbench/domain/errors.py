@@ -129,7 +129,10 @@ class CandidateDigestConflictError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(
             code="candidate_digest_conflict",
-            message="Validated Metadata Change Set content changed before apply.",
+            message=(
+                "The Change Set candidate is not the validated candidate approved for Apply; "
+                "validate again and get a new Apply approval."
+            ),
         )
 
 

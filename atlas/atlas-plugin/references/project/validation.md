@@ -156,12 +156,3 @@ Assume Project Tenant `demo`, active System `CRM`, complete applied Customer Map
 ```
 
 These are complete records, not a required coverage checklist or evidence that fictional relations exist. Reuse exact existing names/identities in real updates.
-
-## Source contract
-
-- `mcp_server/gds_etl_workbench/domain/modeling_records.py`: `ValidationGroupRecord`, `ValidationCheckRecord`, literal checks and limits; `domain/snapshots/project.py`: canonical keys and section.
-- `application/change_sets/project_validation.py`: ownership, active dependencies, independent locks and active SQL checks; `application/change_sets/project_apply.py`: Group/Check upserts and server-derived currentness.
-- `domain/databricks_sql.py`: statement policy/qualification; `application/project_snapshot.py`: exported saved definitions. All four paths above are under `mcp_server/gds_etl_workbench/`.
-- `database/10_workflow_code_validation.sql`: storage constraints and uniqueness, including scalar-literal shape.
-- `web_app/backend/gds_workbench_api/features/validation/{context,candidate,service}.py`: applied/current authoring inputs, complete-ledger reconciliation and definition generation; not an external comparison executor.
-- `docs/workflows.md` and `docs/architecture/decisions.md`: authoring/execution boundary and scalar consumer contract.

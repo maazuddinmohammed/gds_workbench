@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -1115,7 +1117,7 @@ def test_context_uuid_is_created_once_and_published_schema_rejects_legacy_fields
     record_id = created["context_record_id"]
     assert str(UUID(record_id)) == record_id
     pending = root / "project-change-set/context_record.json"
-    saved = json.loads(pending.read_text())
+    saved = json.loads(pending.read_text(encoding="utf-8"))
     assert len(saved) == 1 and saved[0] == {**record, "context_record_id": record_id}
     before = pending.read_bytes()
     run(
@@ -1145,13 +1147,16 @@ def test_context_uuid_is_created_once_and_published_schema_rejects_legacy_fields
         created["digest"],
     )
     assert edited["context_record_id"] == record_id
-    assert json.loads(pending.read_text()) == [record]
-    for invalid in (
+    assert json.loads(pending.read_text(encoding="utf-8")) == [record]
+    invalid_records = [
         {**record, "context_record_id": "human-entered-key"},
         {**record, "record_key": "identity"},
         {**record, "source_reference": {"section": "2"}},
-        {**record, "source_reference": "é" * 32769},
-    ):
+    ]
+    # Windows caps a whole command line at 32,767 characters, below this field's limit.
+    if os.name != "nt":
+        invalid_records.append({**record, "source_reference": "é" * 32769})
+    for invalid in invalid_records:
         run(
             "upsert",
             *args,
@@ -1163,7 +1168,7 @@ def test_context_uuid_is_created_once_and_published_schema_rejects_legacy_fields
             edited["digest"],
             success=False,
         )
-        assert json.loads(pending.read_text()) == [record]
+        assert json.loads(pending.read_text(encoding="utf-8")) == [record]
     rejected = run(
         "upsert",
         *args,
@@ -1237,3 +1242,596 @@ def test_context_group_locks_and_active_supports_are_checked_locally(
     codes = {issue["code"] for issue in result["issues"]}
     assert "context_group_child_locked" in codes
     assert "active_dependency_invalid" in codes
+
+
+def test_local_digest_orders_change_set_files_ordinally(tmp_path: Path) -> None:
+    """Node, PowerShell and Stage Runner must hash copy.json before copy_group.json."""
+    root = workspace(tmp_path)
+    snapshot = root / "metadata" / "metadata-snapshot"
+    catalog = json.loads((snapshot / "catalog.json").read_text())
+    for name in ("copy", "copy_group"):
+        key = ["tenant_code", "system_code", f"{name}_name"]
+        catalog["sections"][0]["datasets"].append(
+            {
+                "name": name,
+                "record_type": name,
+                "row_count": 0,
+                "canonical_key": key,
+                "rows_file": f"data/{name}.jsonl",
+                "schema_file": f"schemas/{name}.schema.json",
+            }
+        )
+        (snapshot / "data" / f"{name}.jsonl").write_text("")
+        fields = {field: {"type": "string"} for field in key}
+        (snapshot / "schemas" / f"{name}.schema.json").write_text(
+            json.dumps(
+                {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": fields,
+                    "required": key,
+                    "x-gds-change-set-eligible": True,
+                    "x-gds-canonical-key": key,
+                    "x-gds-references": [],
+                }
+            )
+        )
+    (snapshot / "catalog.json").write_text(json.dumps(catalog))
+    fixtures.write_snapshot_manifest(snapshot, kind="metadata", snapshot_id="snapshot-01")
+    changes = root / "metadata-change-set"
+    changes.mkdir(exist_ok=True)
+    for name in ("copy_group", "copy"):
+        record = {"tenant_code": "TENANT_A", "system_code": "CRM", f"{name}_name": "MAIN"}
+        (changes / f"{name}.json").write_text(json.dumps([record]), encoding="utf-8")
+
+    reviewed = run("review", "--session", str(root), "--area", "metadata")
+
+    expected = hashlib.sha256()
+    # Python sorts ASCII names by code point, which equals .NET StringComparer.Ordinal.
+    for name in sorted(path.name for path in changes.iterdir()):
+        content = (changes / name).read_bytes()
+        expected.update(f"{name}\0{len(content)}\0".encode())
+        expected.update(content)
+    assert sorted(path.name for path in changes.iterdir()) == ["copy.json", "copy_group.json"]
+    assert reviewed["digest"] == expected.hexdigest()
+
+
+def _workspace_hashes(root: Path) -> dict[str, str]:
+    return {
+        path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
+def test_next_drives_metadata_submission_one_action_at_a_time(tmp_path: Path) -> None:
+    fresh = tmp_path / "fresh"
+    fresh.mkdir()
+    started = run("next", "--session", str(fresh))
+    assert (started["state"], started["action"]["command"]) == ("no_session", "session-init")
+
+    root = workspace(tmp_path)
+    meta = ["--session", str(root), "--area", "metadata"]
+    assert run("next", *meta)["state"] == "no_pending_changes"
+    copied = run(
+        "copy",
+        *meta,
+        "--dataset",
+        "source_object",
+        "--where",
+        '{"system_code":"CRM"}',
+        "--expected-digest",
+        "empty",
+    )
+    step = run("next", *meta)
+    assert step["state"] == "needs_validation"
+    assert step["action"]["argv"] == ["validate", *meta]
+    assert step["facts"]["pending_datasets"] == {"source_object": 1}
+    before = _workspace_hashes(root)
+    assert run("next", *meta) == step
+    assert _workspace_hashes(root) == before  # next never writes.
+    run(*step["action"]["argv"])
+
+    step = run("next", *meta)
+    assert step["state"] == "ready_for_review"
+    assert step["action"]["kind"] == "ask_user"
+    plan = step["action"]["after_approval"]
+    assert [item.get("tool", item.get("command")) for item in plan] == [
+        "atlas_checkStageRunner",
+        "check_tenant_lock",
+        "create_metadata_change_set",
+        "accept",
+        "atlas_stageApprovedManifest",
+    ]
+    assert plan[2]["arguments"] == {"tenant_id": 1}
+    accept = plan[3]["argv"]
+    assert accept[accept.index("--digest") + 1] == copied["digest"]
+
+    # The agent saves the extension and MCP results exactly where next asked.
+    Path(plan[0]["input"]["outputFile"]).write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "status": "ready",
+                "backend": {"profile": "local", "endpoint_sha256": "a" * 64},
+            }
+        )
+    )
+    change_set_id = str(uuid4())
+    Path(plan[2]["save_response_to"]).write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "tenant_id": 1,
+                "metadata_change_set_id": change_set_id,
+                "created": True,
+                "status": "active",
+                "draft_revision": 1,
+            }
+        )
+    )
+    prepared = run(*accept)
+    step = run("next", *meta)
+    assert step["state"] == "stage_prepared"
+    assert step["action"] == {
+        "kind": "extension",
+        "tool": "atlas_stageApprovedManifest",
+        "input": {"manifestPath": prepared["stage_manifest_path"]},
+    }
+
+    # Simulate the Stage Runner's verified receipt (tested in the extension suite).
+    evidence = root / ".atlas/tasks" / f"{prepared['task_id']}.evidence"
+    operation_path = evidence / f"{prepared['operation_id']}.json"
+    operation = json.loads(operation_path.read_text())
+    operation["stage_attempt"] = {"status": "verified"}
+    operation["stage"] = {
+        "fingerprint_verified": True,
+        "accepted_digest": operation["local_digest"],
+        "status": "staged",
+        "change_set_id": change_set_id,
+        "draft_revision": 2,
+        "stage_fingerprint": "c" * 64,
+    }
+    operation["draft"]["revision"] = 2
+    operation_path.write_text(json.dumps(operation))
+    step = run("next", *meta)
+    assert step["state"] == "staged"
+    assert (step["action"]["tool"], step["action"]["arguments"]) == (
+        "validate_metadata_change_set",
+        {"tenant_id": 1, "metadata_change_set_id": change_set_id, "expected_draft_revision": 2},
+    )
+    server = {
+        "schema_version": "1.0",
+        "tenant_id": 1,
+        "metadata_change_set_id": change_set_id,
+        "draft_revision": 2,
+        "valid": True,
+        "status": "validated",
+        "candidate_digest": "b" * 64,
+        "error_count": 0,
+        "action_review": [],
+    }
+    Path(step["action"]["save_response_to"]).write_text(json.dumps(server))
+    run(
+        "operation-record",
+        *meta,
+        "--checkpoint",
+        "validation",
+        "--file",
+        step["action"]["save_response_to"],
+    )
+
+    step = run("next", *meta)
+    assert step["state"] == "server_validated"
+    assert step["action"]["question"].startswith("Apply these validated changes")
+    run(*step["action"]["after_approval"][0]["argv"])
+
+    step = run("next", *meta)
+    assert step["state"] == "apply_approved"
+    assert step["action"]["tool"] == "apply_metadata_change_set"
+    assert step["action"]["arguments"]["expected_candidate_digest"] == "b" * 64
+
+    # Apply was refused because the candidate changed: validate again and ask again.
+    step = run("next", *meta, "--error", "candidate_digest_conflict")
+    assert (step["state"], step["action"]["tool"]) == (
+        "error_recovery",
+        "validate_metadata_change_set",
+    )
+    assert step["action"]["arguments"]["expected_draft_revision"] == 2
+    server = {**server, "candidate_digest": "c" * 64}
+    Path(step["action"]["save_response_to"]).write_text(json.dumps(server))
+    run(
+        "operation-record",
+        *meta,
+        "--checkpoint",
+        "validation",
+        "--file",
+        step["action"]["save_response_to"],
+    )
+    step = run("next", *meta)
+    assert step["state"] == "server_validated"  # The old approval bound the old review.
+    run(*step["action"]["after_approval"][0]["argv"])
+    step = run("next", *meta)
+    assert step["state"] == "apply_approved"
+    assert step["action"]["arguments"]["expected_candidate_digest"] == "c" * 64
+    Path(step["action"]["save_response_to"]).write_text(
+        json.dumps({**server, "applied": True, "status": "applied", "action_count": 1})
+    )
+    run(
+        "operation-record",
+        *meta,
+        "--checkpoint",
+        "apply",
+        "--file",
+        step["action"]["save_response_to"],
+    )
+
+    step = run("next", *meta)
+    assert step["state"] == "refresh_required"
+    assert (step["action"]["tool"], step["action"]["arguments"]) == (
+        "create_metadata_snapshot",
+        {"tenant_id": 1},
+    )
+
+
+def test_next_recovers_an_uncertain_stage_before_anything_else(tmp_path: Path) -> None:
+    root = workspace(tmp_path)
+    meta = ["--session", str(root), "--area", "metadata"]
+    copied = run(
+        "copy", *meta, "--dataset", "source_object", "--where", "{}", "--expected-digest", "empty"
+    )
+    accepted = run(
+        "accept",
+        *meta,
+        "--digest",
+        copied["digest"],
+        "--backend-profile",
+        "local",
+        "--endpoint-sha256",
+        "a" * 64,
+    )
+    run("draft-cache", *meta, "--id", str(uuid4()), "--revision", "1", "--status", "active")
+    prepared = run("prepare-stage-request", *meta)
+    operation_path = root / accepted["path"]
+    operation = json.loads(operation_path.read_text())
+    operation["stage_attempt"] = {"status": "unknown"}
+    operation_path.write_text(json.dumps(operation))
+    run(
+        "copy",
+        *meta,
+        "--dataset",
+        "source_object",
+        "--where",
+        '{"system_code":"ERP"}',
+        "--expected-digest",
+        run("review", *meta)["digest"],
+    )
+
+    for arguments in (meta, ["--session", str(root)]):
+        step = run("next", *arguments)
+        assert step["state"] == "stage_uncertain"
+        assert step["action"]["input"] == {
+            "manifestPath": prepared["stage_manifest_path"],
+            "recoverOnly": True,
+        }
+
+
+def test_next_reports_local_validation_errors_and_other_work(tmp_path: Path) -> None:
+    root = workspace(tmp_path)
+    meta = ["--session", str(root), "--area", "metadata"]
+    record = run("select", *meta, "--dataset", "source_object", "--where", "{}")["records"][0]
+    broken = {**record, "object_name": "Customer2", "unexpected_field": 1}
+    pending = root / "metadata-change-set/source_object.json"
+    pending.parent.mkdir(exist_ok=True)
+    pending.write_text(json.dumps([broken]))
+    run("validate", *meta)
+    step = run("next", *meta)
+    assert step["state"] == "validation_failed"
+    assert step["action"]["kind"] == "author"
+    assert step["facts"]["issue_count"] >= 1
+    overview = run("next", "--session", str(root))
+    assert overview["area"] == "metadata"
+    assert overview["state"] == "validation_failed"
+    assert run("next", "--session", str(root), "--area", "project")["state"] == "no_pending_changes"
+
+
+def _review_workspace(tmp_path: Path) -> Path:
+    """Workspace with the realistic Snapshots recorded for agent evaluations."""
+    fixtures = ROOT / "tests/atlas/eval/fixtures"
+    world = json.loads((fixtures / "world.json").read_text(encoding="utf-8"))
+    root = tmp_path / "review"
+    run(
+        "session-init",
+        "--root",
+        str(root),
+        "--tenant",
+        world["tenant"]["tenant_code"],
+        "--tenant-id",
+        str(world["tenant"]["tenant_id"]),
+        "--project-id",
+        str(world["project"]["project_id"]),
+        "--project-name",
+        world["project"]["project_name"],
+    )
+    for area, snapshot in world["snapshots"].items():
+        run(
+            "snapshot-install",
+            "--session",
+            str(root),
+            "--area",
+            area,
+            "--archive",
+            str(fixtures / snapshot["file"]),
+            "--snapshot-id",
+            snapshot["snapshot_id"],
+            "--size-bytes",
+            str(snapshot["size_bytes"]),
+            "--sha256",
+            snapshot["sha256"],
+        )
+    run("task-add", "--session", str(root), "--outcome", "Model customer addresses")
+    return root
+
+
+def test_policy_apply_adds_the_web_workflow_technical_columns(tmp_path: Path) -> None:
+    root = _review_workspace(tmp_path)
+    project = ["--session", str(root), "--area", "project"]
+    source = {
+        "support_source_type": "object",
+        "source_object": {
+            "tenant_code": "DEMO_GDS_TENANT",
+            "system_code": "DEMO_CUSTOMER_SYSTEM",
+            "connection_code": "DEMO_GDS",
+            "object_schema": "bronze_demo",
+            "object_name": "customer",
+        },
+        "source_order": 1,
+        "rationale": "Customer rows carry their postal address.",
+        "status": "active",
+        "is_locked": False,
+    }
+    entity = {
+        "logical_entity_schema_name": "silver_demo",
+        "logical_entity_name": "CustomerAddress",
+        "logical_entity_definition": "A postal address used by a Customer.",
+        "logical_entity_type": "core",
+        "logical_entity_type_detail": None,
+        "logical_entity_grain": "One address per Customer",
+        "logical_entity_dependency_order": 1,
+        "logical_entity_status": "active",
+        "logical_entity_is_locked": False,
+        "submodels": [],
+        "sources": [source],
+    }
+
+    def attribute(name: str, ordinal: int) -> dict[str, Any]:
+        return {
+            "logical_entity_schema_name": "silver_demo",
+            "logical_entity_name": "CustomerAddress",
+            "logical_attribute_name": name,
+            "logical_attribute_definition": f"{name} of the address.",
+            "logical_attribute_data_type": "STRING",
+            "logical_attribute_is_nullable": True,
+            "logical_attribute_is_natural_key": False,
+            "logical_attribute_is_surrogate_key": False,
+            "logical_attribute_ordinal_position": ordinal,
+            "logical_attribute_is_audit_column": False,
+            "logical_attribute_status": "active",
+            "logical_attribute_is_locked": False,
+            "sources": [],
+        }
+
+    changes = {
+        "logical_entity": [entity],
+        "logical_attribute": [attribute("PostalCode", 5), attribute("AddressLine", 2)],
+    }
+    digest = run(
+        "upsert-batch", *project, "--changes", json.dumps(changes), "--expected-digest", "empty"
+    )["digest"]
+    apply = ["policy-apply", "--session", str(root), "--layer", "logical"]
+    preview = run(*apply, "--expected-digest", digest, "--dry-run", "true")
+    assert "silver_demo.CustomerAddress.CustomerAddressID" in preview["added"]
+    assert preview["digest"] == digest  # A dry run writes nothing.
+    stale = run(*apply, "--expected-digest", "0" * 64, success=False)
+    assert "digest conflict" in stale["error"]
+
+    applied = run(*apply, "--expected-digest", digest)
+    rows = run(
+        "select",
+        *project,
+        "--dataset",
+        "logical_attribute",
+        "--where",
+        json.dumps({"logical_entity_name": "CustomerAddress"}),
+        "--view",
+        "effective",
+    )["records"]
+    ordered = sorted(rows, key=lambda row: row["logical_attribute_ordinal_position"])
+    names = [row["logical_attribute_name"] for row in ordered]
+    assert names[:4] == ["CustomerAddressID", "AddressLine", "PostalCode", "SourceSystemID"]
+    assert names[-1] == "UpdatedBy" and len(names) == 13
+    surrogate = ordered[0]
+    assert surrogate["logical_attribute_is_surrogate_key"] is True
+    assert (
+        surrogate["logical_attribute_data_type"],
+        surrogate["logical_attribute_is_nullable"],
+    ) == (
+        "BIGINT",
+        False,
+    )
+    assert all(row["logical_attribute_is_audit_column"] for row in ordered[3:])
+    report = run("validate", *project)
+    policy = {
+        "project.own-surrogate",
+        "project.audit-order",
+        "project.audit-role",
+        "project.audit-template",
+    }
+    assert not [issue for issue in report["issues"] if issue["code"] in policy]
+
+    again = run(*apply, "--expected-digest", applied["digest"])
+    assert (again["added"], again["changed"]) == ([], [])
+    assert again["digest"] == applied["digest"]
+
+
+def test_coverage_uses_the_web_workflow_rule_on_the_effective_project(tmp_path: Path) -> None:
+    root = _review_workspace(tmp_path)
+    logical = ["coverage", "--session", str(root), "--layer", "logical"]
+    assert run(*logical)["meets_target"] is True
+    project = ["--session", str(root), "--area", "project"]
+    customer = run(
+        "select",
+        *project,
+        "--dataset",
+        "logical_entity",
+        "--where",
+        json.dumps({"logical_entity_name": "Customer"}),
+    )["records"][0]
+    customer["sources"] = []  # The pending draft drops Customer's only Object source.
+    run(
+        "upsert",
+        *project,
+        "--dataset",
+        "logical_entity",
+        "--record",
+        json.dumps(customer),
+        "--expected-digest",
+        "empty",
+    )
+    report = run(*logical)
+    assert (report["total"], report["covered"], report["required"]) == (2, 1, 2)
+    assert report["meets_target"] is False and report["enforced"] is False
+    assert report["missing"] == [
+        "DEMO_GDS_TENANT.DEMO_CUSTOMER_SYSTEM.DEMO_GDS.bronze_demo.customer"
+    ]
+    order = {
+        "tenant_code": "DEMO_GDS_TENANT",
+        "system_code": "DEMO_CUSTOMER_SYSTEM",
+        "connection_code": "DEMO_GDS",
+        "object_schema": "bronze_demo",
+        "object_name": "orders",
+    }
+    narrowed = run(*logical, "--select", json.dumps([order]))
+    assert (narrowed["total"], narrowed["covered"], narrowed["meets_target"]) == (1, 1, True)
+    outside = run(
+        *logical, "--select", json.dumps([{**order, "object_name": "unknown"}]), success=False
+    )
+    assert "outside" in outside["error"]
+    dimensional = run("coverage", "--session", str(root), "--layer", "dimensional")
+    assert (dimensional["threshold_percent"], dimensional["meets_target"]) == (60, True)
+
+
+def test_web_managed_project_datasets_stay_read_only_in_atlas(tmp_path: Path) -> None:
+    root = _review_workspace(tmp_path)
+    project = ["--session", str(root), "--area", "project"]
+    scope = run("select", *project, "--dataset", "project_input_scope", "--limit", "1")["records"][
+        0
+    ]
+    for dataset in ("project_input_scope", "profiling_profile"):
+        for command, payload in (
+            ("upsert", ["--dataset", dataset, "--record", json.dumps(scope)]),
+            ("upsert-batch", ["--changes", json.dumps({dataset: [scope]})]),
+            ("copy", ["--dataset", dataset, "--where", "{}"]),
+        ):
+            refused = run(command, *project, *payload, "--expected-digest", "empty", success=False)
+            assert "is managed outside Atlas" in refused["error"], (command, dataset)
+    assert not (root / "project-change-set").exists() or not any(
+        (root / "project-change-set").iterdir()
+    )
+
+    # A draft from an older workspace or a manual edit blocks acceptance but can be discarded.
+    pending = root / "project-change-set"
+    pending.mkdir(exist_ok=True)
+    (pending / "project_input_scope.json").write_text(json.dumps([scope]))
+    result = run("validate", *project)
+    assert not result["valid"]
+    assert {
+        (issue["dataset"], issue["severity"])
+        for issue in result["issues"]
+        if issue["code"] == "web_managed_dataset"
+    } == {("project_input_scope", "error")}
+    run(
+        "accept",
+        *project,
+        "--digest",
+        result["digest"],
+        "--backend-profile",
+        "local",
+        "--endpoint-sha256",
+        "a" * 64,
+        success=False,
+    )
+    key = {
+        field: scope[field]
+        for field in (
+            "tenant_code",
+            "system_code",
+            "connection_code",
+            "object_schema",
+            "object_name",
+        )
+    }
+    run(
+        "discard",
+        *project,
+        "--dataset",
+        "project_input_scope",
+        "--key",
+        json.dumps(key),
+        "--expected-digest",
+        result["digest"],
+    )
+    assert not any(
+        issue["code"] == "web_managed_dataset" for issue in run("validate", *project)["issues"]
+    )
+
+
+def test_next_error_returns_one_recovery_action_per_server_code(tmp_path: Path) -> None:
+    root = _review_workspace(tmp_path)
+    tenant_id = json.loads((root / ".atlas/session.json").read_text())["tenant"]["id"]
+    project = ["--session", str(root), "--area", "project"]
+    assert (
+        "--error requires --area"
+        in run("next", "--session", str(root), "--error", "tenant_lock_required", success=False)[
+            "error"
+        ]
+    )
+    assert (
+        "server error code" in run("next", *project, "--error", "Bad Code", success=False)["error"]
+    )
+
+    lock = run("next", *project, "--error", "tenant_lock_required")
+    assert (lock["state"], lock["facts"]) == (
+        "error_recovery",
+        {"error_code": "tenant_lock_required"},
+    )
+    assert (lock["action"]["tool"], lock["action"]["arguments"]) == (
+        "check_tenant_lock",
+        {"tenant_id": tenant_id},
+    )
+    assert "override_tenant_lock" in lock["then"][1]
+
+    stage = run("next", *project, "--error", "stage_runner_required")
+    assert stage["action"]["argv"] == ["next", *project]
+
+    expected_kinds = {
+        "tenant_locked": "ask_user",
+        "project_locked": "stop",
+        "authorization_denied": "stop",
+        "object_locked": "author",
+        "internal_error": "stop",
+        "something_new": "stop",
+        # No bound operation yet, so there is no draft to validate or inspect.
+        "candidate_digest_conflict": "stop",
+        "project_change_set_not_active": "stop",
+    }
+    for code, kind in expected_kinds.items():
+        step = run("next", *project, "--error", code)
+        assert (step["state"], step["action"]["kind"]) == ("error_recovery", kind), code
+    assert (
+        run("next", *project, "--error", "something_new")["summary"]
+        == "Unrecognized server error something_new."
+    )
+    before = _workspace_hashes(root)
+    run("next", *project, "--error", "tenant_lock_required")
+    assert _workspace_hashes(root) == before  # Recovery advice never writes.

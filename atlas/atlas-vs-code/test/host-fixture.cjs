@@ -13,7 +13,7 @@ const SNAPSHOT = '10000000-0000-4000-8000-000000000001';
 const KEY = ['tenant_code', 'system_code', 'connection_code', 'object_schema', 'object_name'];
 const DATASETS = ['source_object', 'source_attribute', 'bronze_object', 'bronze_attribute',
   'silver_object', 'silver_attribute', 'gold_object', 'gold_attribute', 'ingestion_object_mapping',
-  'ingestion_attribute_mapping', 'copy_group', 'member_group', 'copy_group_control', 'copy', 'process_group', 'process'];
+  'ingestion_attribute_mapping', 'copy_group', 'member_group', 'member', 'copy_group_control', 'copy', 'process_group', 'process'];
 const target = { tenant_id: 17, metadata_change_set_id: ID };
 const common = { schema_version: '1.0', ...target, expires_at: '2099-01-01T00:00:00Z' };
 const sha = value => createHash('sha256').update(value).digest('hex');

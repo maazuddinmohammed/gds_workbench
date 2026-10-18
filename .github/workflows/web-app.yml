@@ -87,10 +87,17 @@ jobs:
         run: >-
           uv run --frozen --project web_app/backend python -m pytest
           -c web_app/backend/pyproject.toml tests/web_backend
+          tests/mcp/test_database_application_reference_seed.py
       - name: Test deployment packaging
         run: >-
           uv run --frozen --project web_app/backend python -m pytest
           -c web_app/backend/pyproject.toml tests/web_packaging
+      - name: Test Atlas instruction, Stage Runner and evaluation contracts
+        run: >-
+          uv run --frozen --project web_app/backend python -m pytest
+          -c web_app/backend/pyproject.toml
+          tests/atlas/test_stage_contract.py tests/atlas/test_instructions.py
+          tests/atlas/test_eval_harness.py tests/atlas/test_shared_modeling_rules.py
       - name: Check formatting
         working-directory: web_app/backend
         run: uv run --frozen ruff format --check gds_workbench_api

@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from collections.abc import Mapping
 from datetime import datetime
 from typing import Annotated, Any, Literal, LiteralString, cast
@@ -36,6 +35,7 @@ from gds_etl_workbench.application.change_sets.contracts import (
     canonical_records_sha256,
     decode_canonical_base64_fragment,
     stage_batch_sha256,
+    stage_fingerprint_sha256,
 )
 from gds_etl_workbench.application.change_sets.project import (
     READ_SECTION_COLUMNS,
@@ -1801,19 +1801,9 @@ def register_project_change_set_tools(
                 for name in sorted(CHANGE_SET_DATASETS_BY_NAME)
                 for records in [pending.get(name, [])]
             )
-            fingerprint_document = {
-                "area": "project",
-                "datasets": [item.model_dump(mode="json") for item in datasets],
-                "fingerprint_version": "1.0",
-            }
-            fingerprint = hashlib.sha256(
-                json.dumps(
-                    fingerprint_document,
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                    sort_keys=True,
-                ).encode("utf-8")
-            ).hexdigest()
+            fingerprint = stage_fingerprint_sha256(
+                "project", [item.model_dump(mode="json") for item in datasets]
+            )
             return GetProjectChangeSetFingerprintResult(
                 project_id=project_id,
                 project_change_set_id=project_change_set_id,
@@ -1985,6 +1975,13 @@ def register_project_change_set_tools(
         project_id: Annotated[int, Field(gt=0)],
         project_change_set_id: UUID,
         expected_draft_revision: Annotated[int, Field(gt=0)],
+        expected_candidate_digest: Annotated[
+            str,
+            Field(
+                pattern=r"^[0-9a-f]{64}$",
+                description="candidate_digest of the validation the user approved for Apply.",
+            ),
+        ],
         schema_version: Literal["2.0"] = "2.0",
     ) -> ApplyProjectChangeSetResult:
         del schema_version
@@ -2024,6 +2021,8 @@ def register_project_change_set_tools(
                         raise ProjectChangeSetNotValidatedError()
                     if row["draft_revision"] != expected_draft_revision:
                         raise DraftRevisionConflictError(row["draft_revision"])
+                    if row["candidate_digest"] != expected_candidate_digest:
+                        raise CandidateDigestConflictError()
                     require_mcp_writable_pending(row)
                     validation = await validate_locked_project_change_set(transaction, project, row)
                     if not validation.valid:
@@ -2108,6 +2107,7 @@ def register_project_change_set_tools(
             "project_id",
             "project_change_set_id",
             "expected_draft_revision",
+            "expected_candidate_digest",
             "schema_version",
         },
     )

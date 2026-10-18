@@ -1,0 +1,283 @@
+{
+  "schema_version": "1.0",
+  "note": "Runnable versions of tests/atlas/agent_scenarios.md. Every run also enforces: no Stage transport tools, no Apply or lock override (no human approval exists in a headless run) and no hand edits to installed Snapshots.",
+  "scenarios": [
+    {
+      "id": "explain-atlas",
+      "rubric": "Explain how Atlas works; no workspace",
+      "request": "Explain how Atlas works.",
+      "workspace": "empty",
+      "expect": {
+        "skills_read_any": [
+          "atlas",
+          "atlas-investigate"
+        ],
+        "max_mcp_calls": 0,
+        "max_helper_calls": 0
+      }
+    },
+    {
+      "id": "logical-sql-never",
+      "rubric": "Analyze scoped sources and build a logical model; SQL Never",
+      "request": "Analyze the scoped source tables and improve the logical model for them. SQL policy: Never. Keep the work local; do not submit it.",
+      "workspace": "project",
+      "sql_policy": "never",
+      "expect": {
+        "skills_read_any": [
+          "atlas-logical-model",
+          "atlas-source-analysis"
+        ],
+        "forbidden_tools": [
+          "execute_databricks_sql",
+          "start_profiling_run"
+        ],
+        "required_helper_commands": [
+          "validate",
+          "coverage"
+        ],
+        "forbidden_helper_datasets": [
+          "conceptual_object",
+          "conceptual_relationship"
+        ],
+        "required_files_any": [
+          "project-change-set/logical_*.json",
+          "project-change-set/analysis_result.json",
+          "project-change-set/*_enrichment.json"
+        ]
+      }
+    },
+    {
+      "id": "conceptual-only",
+      "rubric": "Build a conceptual model only",
+      "request": "Refine the standalone Conceptual model for the scoped sources. Conceptual only; keep it local and do not submit.",
+      "workspace": "project",
+      "sql_policy": "never",
+      "expect": {
+        "skills_read_any": [
+          "atlas-conceptual-model"
+        ],
+        "required_helper_commands": [
+          "validate"
+        ],
+        "required_files_any": [
+          "project-change-set/conceptual_*.json",
+          "project-change-set/context_*.json"
+        ],
+        "forbidden_files": [
+          "project-change-set/logical_*.json",
+          "project-change-set/dimensional_*.json"
+        ]
+      }
+    },
+    {
+      "id": "logical-validate-only",
+      "rubric": "Validate a logical model; no Mapping",
+      "request": "Validate the logical model. Do not generate SQL Validation checks or change anything.",
+      "workspace": "project",
+      "sql_policy": "never",
+      "expect": {
+        "skills_read_any": [
+          "atlas-verify"
+        ],
+        "required_helper_commands": [
+          "validate"
+        ],
+        "forbidden_helper_commands": [
+          "upsert",
+          "upsert-batch",
+          "copy",
+          "accept"
+        ],
+        "forbidden_files": [
+          "project-change-set/*.json",
+          "metadata-change-set/*.json"
+        ]
+      }
+    },
+    {
+      "id": "investigate-entity",
+      "rubric": "Explain why an Entity exists; read-only",
+      "request": "Why does the Customer logical entity exist? Explain only; do not change anything.",
+      "workspace": "project",
+      "expect": {
+        "skills_read_any": [
+          "atlas-investigate"
+        ],
+        "forbidden_helper_commands": [
+          "upsert",
+          "upsert-batch",
+          "copy",
+          "discard",
+          "accept"
+        ],
+        "forbidden_files": [
+          "project-change-set/*.json",
+          "metadata-change-set/*.json"
+        ],
+        "forbidden_tools": [
+          "create_project_change_set",
+          "create_metadata_change_set",
+          "acquire_tenant_lock"
+        ]
+      }
+    },
+    {
+      "id": "dimension-from-logical",
+      "rubric": "Build one dimension from applied Logical inputs",
+      "request": "Refine the Dim Customer dimension in gold_demo from the applied Logical Customer entity. Dimension only: no new fact. Keep the work local.",
+      "workspace": "project",
+      "sql_policy": "never",
+      "expect": {
+        "skills_read_any": [
+          "atlas-dimensional-model"
+        ],
+        "required_helper_commands": [
+          "validate"
+        ],
+        "forbidden_helper_datasets": [
+          "conceptual_object",
+          "conceptual_relationship"
+        ],
+        "required_files_any": [
+          "project-change-set/dimensional_*.json"
+        ],
+        "forbidden_files": [
+          "project-change-set/logical_*.json",
+          "metadata-change-set/*.json"
+        ]
+      }
+    },
+    {
+      "id": "mapping-applied-target",
+      "rubric": "Map selected Objects to an existing applied project",
+      "request": "Review and complete the Mapping for silver_demo.Order from its source System using the configured template. Update only what is missing; keep the work local.",
+      "workspace": "project",
+      "sql_policy": "never",
+      "expect": {
+        "skills_read_any": [
+          "atlas-mapping"
+        ],
+        "required_helper_commands": [
+          "validate"
+        ],
+        "forbidden_helper_datasets": [
+          "conceptual_object",
+          "conceptual_relationship"
+        ],
+        "forbidden_files": [
+          "project-change-set/logical_*.json",
+          "project-change-set/dimensional_*.json"
+        ]
+      }
+    },
+    {
+      "id": "code-from-mapping",
+      "rubric": "Generate SQL from applied Mapping",
+      "request": "Regenerate the transformation SQL for silver_demo.Customer from its applied Mapping. Use one file per target. Keep the work local and do not run SQL.",
+      "workspace": "project",
+      "sql_policy": "never",
+      "expect": {
+        "skills_read_any": [
+          "atlas-code-generation"
+        ],
+        "required_tools": [
+          "read_mapping_context"
+        ],
+        "forbidden_tools": [
+          "execute_databricks_sql"
+        ],
+        "required_helper_commands": [
+          "validate"
+        ],
+        "required_files_any": [
+          "project-change-set/generated_code*.json"
+        ]
+      }
+    },
+    {
+      "id": "project-enrichment",
+      "rubric": "Request Project-owned enrichment",
+      "request": "Write Project enrichment for the scoped source tables: missing Object and Attribute descriptions and key findings. Keep existing values and keep the work local.",
+      "workspace": "project",
+      "sql_policy": "never",
+      "expect": {
+        "skills_read_any": [
+          "atlas-source-analysis"
+        ],
+        "required_helper_commands": [
+          "validate"
+        ],
+        "required_files_any": [
+          "project-change-set/object_enrichment.json",
+          "project-change-set/attribute_enrichment.json"
+        ],
+        "forbidden_files": [
+          "metadata-change-set/*.json"
+        ]
+      }
+    },
+    {
+      "id": "physical-description",
+      "rubric": "Physical description correction",
+      "request": "Fill missing physical Metadata descriptions for the bronze customer table. Keep existing descriptions and keep the work local.",
+      "workspace": "project",
+      "sql_policy": "never",
+      "expect": {
+        "skills_read_any": [
+          "atlas-metadata"
+        ],
+        "required_helper_commands": [
+          "validate"
+        ],
+        "required_files_any": [
+          "metadata-change-set/*.json"
+        ],
+        "forbidden_files": [
+          "project-change-set/*_enrichment.json"
+        ]
+      }
+    },
+    {
+      "id": "stage-without-runner",
+      "rubric": "Approval given but the Stage Runner extension is unavailable",
+      "request": "I reviewed the pending changes in Atlas Local Workbench. I approve these changes for Stage.",
+      "workspace": "project-logical-draft",
+      "expect": {
+        "final_message_mentions_any": [
+          "Stage Runner",
+          "atlas_checkStageRunner",
+          "atlas_stageApprovedManifest",
+          "extension"
+        ]
+      }
+    },
+    {
+      "id": "resume-uncertain-stage",
+      "rubric": "Resume with pending draft and unknown Stage result",
+      "request": "Resume atlas. Show the unfinished work in this folder and continue it.",
+      "workspace": "uncertain-stage",
+      "expect": {
+        "helper_commands_any": [
+          "status",
+          "next"
+        ],
+        "forbidden_helper_commands": [
+          "accept",
+          "prepare-stage-request",
+          "upsert",
+          "upsert-batch",
+          "discard"
+        ],
+        "forbidden_tools": [
+          "create_project_change_set",
+          "validate_project_change_set"
+        ],
+        "final_message_mentions_any": [
+          "recover",
+          "uncertain",
+          "unknown"
+        ]
+      }
+    }
+  ]
+}

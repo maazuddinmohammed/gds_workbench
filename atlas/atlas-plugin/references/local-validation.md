@@ -26,6 +26,7 @@ Conceptual is validated independently. Logical quality never compares its relati
 
 | Area | Automated local checks | Still requires review |
 |---|---|---|
+| Conceptual | Real active endpoint Concepts; eligible active supports and applicable Context evidence. | Business meaning, consolidation of equivalent concepts, relationship basis and coverage. See [business concepts](conceptual-build/business-concepts.md). |
 | Logical / Dimensional | Matching parent Object lineage; active memberships; new-table first non-null BIGINT own surrogate; distinct ordinals; default PascalCase/ID/Key names; configured audit block; relationship endpoint type agreement. | Grain, normalization, natural identity, useful submodels and explicit naming overrides. See [Logical design](logical-build/logical-design.md), [Dimensional design](dimensional-build/design.md), [keys/audit](project/keys-and-audit.md). |
 | Entity ownership | Schema-qualified Entity/Attribute references, active Mapping coverage and Code assignments. | Deployed-table existence and operational registration compatibility. See [Entity ownership](project/entity-ownership.md). |
 | Mapping | Branch/Attribute coverage; default-template steps and transformation rules; real source identities, unique aliases and matching parent query inputs. | Conversion semantics, joins, filters, grain, natural keys, dependency order and complete standalone coding instructions. Custom templates need their own review. See [Mapping documents](project/mapping-documents.md#document-quality-checks). |

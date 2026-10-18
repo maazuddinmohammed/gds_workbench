@@ -7338,20 +7338,25 @@ var require_core3 = __commonJS({
       root.GDSCore = api;
     })(typeof globalThis === "object" ? globalThis : exports2, function(unicode2) {
       "use strict";
+      function compareCodePoints(left, right) {
+        const a = [...left], b = [...right];
+        for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
+          const difference = a[index].codePointAt(0) - b[index].codePointAt(0);
+          if (difference) return difference;
+        }
+        return a.length - b.length;
+      }
       function stableStringify2(value) {
         if (typeof value === "number" && value !== 0 && Math.abs(value) < 1e-4) {
           return value.toExponential().replace(/e-(\d)$/, "e-0$1");
         }
         if (value === null || typeof value !== "object") return JSON.stringify(value);
         if (Array.isArray(value)) return `[${value.map(stableStringify2).join(",")}]`;
-        return `{${Object.keys(value).sort((left, right) => {
-          const a = [...left], b = [...right];
-          for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
-            const difference = a[index].codePointAt(0) - b[index].codePointAt(0);
-            if (difference) return difference;
-          }
-          return a.length - b.length;
-        }).map((key2) => `${JSON.stringify(key2)}:${stableStringify2(value[key2])}`).join(",")}}`;
+        return `{${Object.keys(value).sort(compareCodePoints).map((key2) => `${JSON.stringify(key2)}:${stableStringify2(value[key2])}`).join(",")}}`;
+      }
+      const WEB_MANAGED_PROJECT_DATASETS2 = Object.freeze(["profiling_profile", "project_input_scope"]);
+      function compareOrdinal2(left, right) {
+        return left < right ? -1 : left > right ? 1 : 0;
       }
       function validateSubagentPolicy(value) {
         if (!value || typeof value !== "object" || Array.isArray(value) || !["current", "auto", "custom"].includes(value.mode) || Object.keys(value).some((key2) => !["mode", "model"].includes(key2))) {
@@ -7450,7 +7455,7 @@ var require_core3 = __commonJS({
           };
         });
       }
-      return { active, isEntityOwnedProjectCatalog: isEntityOwnedProjectCatalog2, key, normalize, overlay, reviewActions, stableStringify: stableStringify2, validateSubagentPolicy };
+      return { WEB_MANAGED_PROJECT_DATASETS: WEB_MANAGED_PROJECT_DATASETS2, active, compareCodePoints, compareOrdinal: compareOrdinal2, isEntityOwnedProjectCatalog: isEntityOwnedProjectCatalog2, key, normalize, overlay, reviewActions, stableStringify: stableStringify2, validateSubagentPolicy };
     });
   }
 });
@@ -18802,11 +18807,14 @@ var StageMcpError = class extends Error {
 function isObject3(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
+var STAGE_RUNNER_HEADER = { name: "x-gds-mcp-client", value: "atlas-stage-runner" };
+var STAGE_UPLOAD_TOOL = /^(stage|begin|put|commit)_(metadata|project)_/;
+var TOOL_ERROR_CODE = /^(?:Error executing tool [a-z][a-z0-9_]{0,127}: )?([a-z][a-z0-9_]{1,63}):/;
 function safeToolErrorCode(content) {
   if (!Array.isArray(content)) return "MCP_OPERATION_REJECTED";
   for (const part of content) {
     if (!isObject3(part) || typeof part.text !== "string") continue;
-    const match = /^([a-z][a-z0-9_]{1,63}):/.exec(part.text);
+    const match = TOOL_ERROR_CODE.exec(part.text);
     if (match?.[1]) return match[1];
   }
   return "MCP_OPERATION_REJECTED";
@@ -18875,7 +18883,7 @@ var ManagedStageMcpClient = class {
             "Microsoft authentication was rejected by GDS MCP."
           );
         }
-        if (/^(stage|begin|put|commit)_(metadata|project)_/.test(name)) {
+        if (STAGE_UPLOAD_TOOL.test(name)) {
           throw new StageMcpError(
             "MCP_OUTCOME_UNKNOWN",
             "The Stage operation outcome is unknown; verify before retrying."
@@ -18958,11 +18966,14 @@ var ManagedStageMcpClient = class {
   }
 };
 async function connectSdkProtocol(endpoint, accessToken) {
-  const client = new Client({ name: "atlas-stage-runner", version: "0.2.0" });
+  const client = new Client({ name: "atlas-stage-runner", version: "0.3.0" });
   const transport = new StreamableHTTPClientTransport(endpoint, {
     requestInit: {
       redirect: "error",
-      ...accessToken === void 0 ? {} : { headers: { authorization: `Bearer ${accessToken}` } }
+      headers: {
+        [STAGE_RUNNER_HEADER.name]: STAGE_RUNNER_HEADER.value,
+        ...accessToken === void 0 ? {} : { authorization: `Bearer ${accessToken}` }
+      }
     }
   });
   try {
@@ -19044,6 +19055,8 @@ var unicodeLower = unicode.lower;
 var import_core8 = __toESM(require_core3(), 1);
 var stableStringify = import_core8.default.stableStringify;
 var isEntityOwnedProjectCatalog = import_core8.default.isEntityOwnedProjectCatalog;
+var compareOrdinal = import_core8.default.compareOrdinal;
+var WEB_MANAGED_PROJECT_DATASETS = import_core8.default.WEB_MANAGED_PROJECT_DATASETS;
 var SHA256 = /^[0-9a-f]{64}$/;
 var UUID2 = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 var MAX_MANIFEST_BYTES = 128 * 1024;
@@ -19071,6 +19084,7 @@ var ALLOWED_DATASETS = {
     "ingestion_attribute_mapping",
     "copy_group",
     "member_group",
+    "member",
     "copy_group_control",
     "copy",
     "process_group",
@@ -19156,7 +19170,7 @@ var import_node_path = require("node:path");
 async function workspaceDigest(directory, maximumPayloadBytes = MAX_LOCAL_PAYLOAD_BYTES.project) {
   const entries = await (0, import_promises.readdir)(directory, { withFileTypes: true });
   const hash = (0, import_node_crypto2.createHash)("sha256");
-  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+  for (const entry of entries.sort((left, right) => compareOrdinal(left.name, right.name))) {
     if (!entry.isFile() || entry.isSymbolicLink() || !entry.name.endsWith(".json")) {
       fail2("LOCAL_CHANGE_SET_INVALID", "Local Change Set contains an unsupported entry.");
     }
@@ -19485,6 +19499,9 @@ async function verifySnapshotBinding(request, session) {
     if (!ALLOWED_DATASETS[request.area].has(dataset.dataset) || stableStringify(catalogDatasets.get(dataset.dataset)) !== stableStringify(dataset.canonical_key)) {
       fail2("SNAPSHOT_MISMATCH", "A Stage dataset differs from the bound Snapshot contract.");
     }
+    if (request.area === "project" && WEB_MANAGED_PROJECT_DATASETS.includes(dataset.dataset)) {
+      fail2("DATASET_NOT_STAGEABLE", `${dataset.dataset} is managed outside Atlas and is never staged.`);
+    }
   }
   if (request.area === "metadata") {
     if (typeof request.target.tenant_code !== "string" || normalizedTenantCode(manifest.tenant_code) !== normalizedTenantCode(request.target.tenant_code)) {
@@ -19507,7 +19524,7 @@ async function readLocalDatasets(request, changeSetDirectory, workspace2) {
       "sha256"
     ]) || typeof definition.dataset !== "string" || !/^[a-z][a-z0-9_]{0,99}$/.test(definition.dataset) || !ALLOWED_DATASETS[request.area].has(definition.dataset) || !Array.isArray(definition.canonical_key) || definition.canonical_key.length < 1 && !(request.area === "project" && definition.dataset === "project_details") || definition.canonical_key.length > 16 || definition.canonical_key.some(
       (field) => typeof field !== "string" || !/^[a-z][a-z0-9_]{0,99}$/.test(field)
-    ) || new Set(definition.canonical_key).size !== definition.canonical_key.length || !Number.isSafeInteger(definition.record_count) || definition.record_count < 0 || definition.record_count > maximumRecords || typeof definition.payload_file !== "string" || definition.payload_file.length > MAX_PATH_CHARACTERS || (0, import_node_path.isAbsolute)(definition.payload_file) || typeof definition.sha256 !== "string" || !SHA256.test(definition.sha256) || result.has(definition.dataset) || definition.dataset.localeCompare(previousDataset) <= 0) {
+    ) || new Set(definition.canonical_key).size !== definition.canonical_key.length || !Number.isSafeInteger(definition.record_count) || definition.record_count < 0 || definition.record_count > maximumRecords || typeof definition.payload_file !== "string" || definition.payload_file.length > MAX_PATH_CHARACTERS || (0, import_node_path.isAbsolute)(definition.payload_file) || typeof definition.sha256 !== "string" || !SHA256.test(definition.sha256) || result.has(definition.dataset) || compareOrdinal(definition.dataset, previousDataset) <= 0) {
       fail2("MANIFEST_INVALID", "Stage request contains an invalid dataset descriptor.");
     }
     previousDataset = definition.dataset;
@@ -19706,7 +19723,7 @@ async function executeStage(request, mcp, target, changes, isCancellationRequest
   const directChanges = () => changes.filter((change) => directNames.has(change.dataset));
   while (Buffer.byteLength(stableStringify(directChanges()), "utf8") > DIRECT_STAGE_MAX_BYTES) {
     const removable = changes.filter((change) => directNames.has(change.dataset) && change.records.length > 0).sort(
-      (left, right) => Buffer.byteLength(stableStringify(right.records), "utf8") - Buffer.byteLength(stableStringify(left.records), "utf8") || left.dataset.localeCompare(right.dataset)
+      (left, right) => Buffer.byteLength(stableStringify(right.records), "utf8") - Buffer.byteLength(stableStringify(left.records), "utf8") || compareOrdinal(left.dataset, right.dataset)
     );
     const selected = removable[0];
     if (selected === void 0) {
@@ -19892,7 +19909,7 @@ function reconcileDataset(area, definition, local, server, failedRetry) {
     }
     merged.set(key, record2);
   }
-  return [...merged.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([, record2]) => record2);
+  return [...merged.entries()].sort(([left], [right]) => compareOrdinal(left, right)).map(([, record2]) => record2);
 }
 function recoveryHash(area, definition, records) {
   const keyed = records.map((record2) => [recordKey(area, definition, record2), record2]);

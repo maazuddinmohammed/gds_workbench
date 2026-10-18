@@ -72,7 +72,7 @@ Each task has `schema_version:"2.0"` and the five agreed sections. Only `outcome
 | `progress` | Free-form string; concise notes, decisions, optional plan, blockers and next action. No mandatory stage enum. |
 | `evidence` | List of `{path, purpose}` pointing to retained reports and operation records. References do not themselves prove success. |
 
-Each `inputs.snapshots` entry identifies `area`, `owner_tenant_id`, relative `manifest_path`, `snapshot_id`, `manifest_sha256`, and Project `project_revision` where applicable. Capture from verified installed files; never invent a Metadata revision. Include all inputs actually used, including a Project Snapshot that selected a Metadata enrichment scope. Several owner snapshots remain distinct entries.
+Each `inputs.snapshots` entry identifies `area`, `owner_tenant_id`, relative `manifest_path`, `snapshot_id`, `manifest_sha256`, and Project `project_revision` where applicable. Capture from verified installed files; never invent a Metadata revision. Include all inputs actually used, including a Project Snapshot that selected a physical description correction scope. Several owner snapshots remain distinct entries.
 
 Plain Markdown lists can be used inside progress text. A simple explanation needs no task. Helper identity/evidence fields are never hand-edited to manufacture a successful operation.
 

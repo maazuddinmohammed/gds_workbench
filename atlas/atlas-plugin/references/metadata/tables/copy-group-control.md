@@ -45,28 +45,17 @@ Every field is listed explicitly. Exact current MCP/Snapshot schemas remain auth
 
 ## Validation checklist
 
-Source-review coverage only; see [status meanings and common checks](../validation.md).
+Enforcement is explained in [common checks](../validation.md#interpreting-table-checklists); run the local validator, then review anything marked for you.
 
-| Rule | Check / why | Database | MCP backend | Local | Status |
-|---|---|---|---|---|---|
-| `copy_group_control.shape` | Complete Copy Group key; nullable Member Group; date/time nullable; watermark null or nonblank. Reject malformed complete records before staging. | Column types, nullability and selected CHECKs; not exact JSON shape. | Strict Pydantic record; unknown fields forbidden. | Published JSON Schema and portable record rules. | Existing; not parity-tested |
-| `copy_group_control.unique` | Copy Group + Member Group unique; null Member Group counts as one group-level identity. Existing controls retain their keys regardless of parent activity. | Unique constraint/index. | Staged and effective uniqueness. | Pending/effective and cross-dataset uniqueness. | Existing; not parity-tested |
-| `copy_group_control.references` | Copy Group and optional Member Group must share supplied Tenant/System. Resolve dependencies using snapshot plus pending rows. | FK/composite FK and Apply joins. | Effective reference validation. | Effective natural-key reference validation. | Existing; not parity-tested |
-| `copy_group_control.scope` | Record tenant_code must match selected change-set Tenant. Keep edits in the authorized Tenant. | Apply joins owner and permitted Object connections. | Tenant-scope validation. | Snapshot-based Tenant-scope validation. | Existing; not parity-tested |
-| `copy_group_control.member-required` | Default null; set only for an explicitly requested Member filter. | Nullable FK; same Tenant/System as Copy Group. | Shape and reference validation apply. | Preserve existing configuration. | Consumer applies filtering. |
-| `copy_group_control.watermark` | New controls use null; framework maintains subsequent values. For explicit corrections, verify extraction-specific serialization; nonblank alone does not prove validity. | Nonblank CHECK; no extraction-specific semantics. | Nonblank shape only. | Nonblank shape; semantic review only when supplying/correcting a value. | Review |
-| `copy_group_control.timestamp-offset` | Use an explicit offset for last-run timestamps. Avoid timezone-dependent interpretation. | TIMESTAMPTZ accepts offset-free input using session timezone. | datetime accepts naive values; offset requirement not located. | Date-time parser permits missing offset. | Review |
-| `copy_group_control.live-dependencies` | Re-resolve dependencies at Apply; reject unexpected affected-row count. Snapshot checks cannot guarantee current server state. | Atomic Apply dependency/row-count check. | Server Apply result; do not infer success locally. | Cannot prove offline; retain server result. | Server-only |
-
-## Source pointers
-
-Development provenance; these source files are not runtime dependencies of the packaged skill.
-
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:29,284,290,291`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:74,79,84,204`.
-- `database/02_core.sql:348,349,352,356,362,380,382`.
-- `database/16_mcp_metadata_apply.sql:747,767,781`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:181,493,495`.
-- `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:103,354,474,533`.
+| Rule | Check / why | Enforced by |
+|---|---|---|
+| `copy_group_control.shape` | Complete Copy Group key; nullable Member Group; date/time nullable; watermark null or nonblank. Reject malformed complete records before staging. | Local validator + server |
+| `copy_group_control.unique` | Copy Group + Member Group unique; null Member Group counts as one group-level identity. Existing controls retain their keys regardless of parent activity. | Local validator + server |
+| `copy_group_control.references` | Copy Group and optional Member Group must share supplied Tenant/System. Resolve dependencies using snapshot plus pending rows. | Local validator + server |
+| `copy_group_control.scope` | Record tenant_code must match selected change-set Tenant. Keep edits in the authorized Tenant. | Local validator + server |
+| `copy_group_control.member-required` | Default null; set only for an explicitly requested Member filter. | Runtime framework (context only) |
+| `copy_group_control.watermark` | New controls use null; framework maintains subsequent values. For explicit corrections, verify extraction-specific serialization; nonblank alone does not prove validity. Validator note: Nonblank shape; semantic review only when supplying/correcting a value. | Your review |
+| `copy_group_control.timestamp-offset` | Use an explicit offset for last-run timestamps. Avoid timezone-dependent interpretation. Validator note: Date-time parser permits missing offset. | Your review |
+| `copy_group_control.live-dependencies` | Re-resolve dependencies at Apply; reject unexpected affected-row count. Snapshot checks cannot guarantee current server state. | Server only, at Apply |
 
 [All metadata tables](../index.md) · [Common validation](../validation.md)

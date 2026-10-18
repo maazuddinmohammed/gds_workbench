@@ -197,7 +197,3 @@ These small examples illustrate record shape, not a complete table build. Assume
   }
 ]
 ```
-
-## Source pointers
-
-Field/source contracts: `mcp_server/gds_etl_workbench/domain/modeling_records.py`; canonical keys: `domain/snapshots/project.py`; graph checks: `application/change_sets/project_validation.py`; Attribute-parent source requirement: `application/change_sets/project_apply.py` (`_find_entity_object_source`); database rules: `database/07_workflow_logical.sql`. Shared catalog prerequisites are defined in `tools/snapshots/project/archive.py`.

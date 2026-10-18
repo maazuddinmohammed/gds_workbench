@@ -212,7 +212,3 @@ These examples illustrate record shapes, not a complete new table build. Assume 
 ```
 
 `FactToDimension`, `Purchaser` and `SalesEvents` are illustrative vocabulary, not enforced enums or defaults.
-
-## Source pointers
-
-Fields/nested validation: `mcp_server/gds_etl_workbench/domain/modeling_records.py`; canonical keys: `domain/snapshots/project.py`; current graph checks: `application/change_sets/project_validation.py`; Attribute-parent source requirement: `application/change_sets/project_apply.py` (`_find_entity_object_source`); database constraints: `database/08_workflow_dimensional.sql`; physical eligibility: `database/11_workflow_eligibility.sql`; catalog prerequisites: `tools/snapshots/project/archive.py`.

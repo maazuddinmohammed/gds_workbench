@@ -310,7 +310,7 @@ function New-AggregatePlan([hashtable]$Options, [string]$Kind) {
     foreach ($id in @(Get-PropertyNames (Get-Property $context.State 'metadata_owners'))) { $owners[$id] = Get-AtlasOwner $context.State 'metadata' $id }
     $merged = @{}
     foreach ($owner in $owners.Values) {
-        foreach ($marker in @(Get-Property $context.State 'refresh_required')) {
+        foreach ($marker in (Get-Property $context.State 'refresh_required')) {
             if ($null -ne $marker -and $marker.area -ceq 'metadata' -and $marker.owner_tenant_id -eq $owner.id) { Fail 'Project work needs refreshed Metadata inputs.' }
         }
         try { $snapshot = Find-Snapshot @{session=$context.Session;area='metadata';owner=[string]$owner.id} }

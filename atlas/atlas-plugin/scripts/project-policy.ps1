@@ -95,7 +95,11 @@ function Get-AtlasProjectPolicy($States, $MetadataStates, $Project) {
         foreach ($name in $byEntity.Keys) {
             if (-not $touched.ContainsKey($name)) { continue }
             $entity = $byEntity[$name]; $ordinalField = $attributeDataset + '_ordinal_position'
-            $columns = @($attributes | Where-Object { (Get-PolicyTuple @((Get-Property $_ $schemaField), (Get-Property $_ $entityField))) -ceq $name } | Sort-Object -Property $ordinalField)
+            # Records are dictionaries, so Sort-Object -Property cannot see the field; sort stably by ordinal like JavaScript.
+            $position = 0
+            $columns = @($attributes | Where-Object { (Get-PolicyTuple @((Get-Property $_ $schemaField), (Get-Property $_ $entityField))) -ceq $name } |
+                ForEach-Object { [pscustomobject]@{Record = $_; Ordinal = [double](Get-Property $_ $ordinalField); Position = $position++} } |
+                Sort-Object -Property Ordinal, Position | ForEach-Object { $_.Record })
             $ordinals = @{}
             foreach ($column in $columns) { $ordinal = [string](Get-Property $column $ordinalField); if ($ordinals.ContainsKey($ordinal)) { Add-PolicyIssue $issues 'project.attribute-order' $attributeDataset $ordinalField 'Active Attributes within an Entity need distinct ordinal positions.'; break }; $ordinals[$ordinal] = $true }
             if (-not $newEntities.ContainsKey($name)) { continue }
@@ -108,9 +112,9 @@ function Get-AtlasProjectPolicy($States, $MetadataStates, $Project) {
                 Add-PolicyIssue $issues 'project.own-surrogate' $attributeDataset $attributeField 'Every new Entity, including facts and bridges, needs one generated non-null BIGINT own surrogate at ordinal 1 without physical sources.'
             }
             $prefix = if ($layer -ceq 'logical') {'silver'} else {'gold'}
-            $naming = Get-Property $details ($prefix + '_project_naming_instructions'); $suffix = if ($layer -ceq 'logical') {'ID'} else {'Key'}
+            $naming = Get-Property $details ($prefix + '_model_naming_instructions'); $suffix = if ($layer -ceq 'logical') {'ID'} else {'Key'}
             if ($surrogate -and -not $naming -and -not ([string](Get-Property $surrogate $attributeField)).EndsWith($suffix, [StringComparison]::Ordinal)) { Add-PolicyIssue $issues 'project.key-suffix' $attributeDataset $attributeField "The own surrogate uses the $suffix suffix under the default policy." }
-            $template = Get-Property $details ($prefix + '_project_audit_columns_template'); $configured = Get-Property $template 'columns'
+            $template = Get-Property $details ($prefix + '_model_audit_columns_template'); $configured = Get-Property $template 'columns'
             if ($configured -isnot [Array]) {
                 $names = @('SourceSystemID', 'IsDataValid', 'HashKey', 'IsActive', 'GDSBatchID', 'PipelineRunID', 'CreatedDate', 'UpdatedDate', 'CreatedBy', 'UpdatedBy')
                 $types = @('BIGINT', 'BOOLEAN', 'STRING', 'BOOLEAN', 'BIGINT', 'STRING', 'TIMESTAMP', 'TIMESTAMP', 'STRING', 'STRING')

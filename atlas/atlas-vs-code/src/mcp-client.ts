@@ -44,11 +44,19 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function safeToolErrorCode(content: unknown): string {
+// GDS MCP lists and runs Stage upload tools only for this client; agents' own connections never see them.
+export const STAGE_RUNNER_HEADER = { name: "x-gds-mcp-client", value: "atlas-stage-runner" } as const;
+// Upload calls whose outcome is unknown after a transport failure.
+export const STAGE_UPLOAD_TOOL = /^(stage|begin|put|commit)_(metadata|project)_/;
+
+// The MCP Python SDK prefixes tool failures as "Error executing tool <name>: <code>: <message>".
+const TOOL_ERROR_CODE = /^(?:Error executing tool [a-z][a-z0-9_]{0,127}: )?([a-z][a-z0-9_]{1,63}):/;
+
+export function safeToolErrorCode(content: unknown): string {
   if (!Array.isArray(content)) return "MCP_OPERATION_REJECTED";
   for (const part of content) {
     if (!isObject(part) || typeof part.text !== "string") continue;
-    const match = /^([a-z][a-z0-9_]{1,63}):/.exec(part.text);
+    const match = TOOL_ERROR_CODE.exec(part.text);
     if (match?.[1]) return match[1];
   }
   return "MCP_OPERATION_REJECTED";
@@ -119,7 +127,7 @@ class ManagedStageMcpClient implements McpToolClient {
             "Microsoft authentication was rejected by GDS MCP.",
           );
         }
-        if (/^(stage|begin|put|commit)_(metadata|project)_/.test(name)) {
+        if (STAGE_UPLOAD_TOOL.test(name)) {
           throw new StageMcpError(
             "MCP_OUTCOME_UNKNOWN",
             "The Stage operation outcome is unknown; verify before retrying.",
@@ -174,11 +182,14 @@ export async function connectSdkProtocol(
   endpoint: URL,
   accessToken: string | undefined,
 ): Promise<ProtocolConnection> {
-  const client = new Client({ name: "atlas-stage-runner", version: "0.2.0" });
+  const client = new Client({ name: "atlas-stage-runner", version: "0.3.0" });
   const transport = new StreamableHTTPClientTransport(endpoint, {
     requestInit: {
       redirect: "error",
-      ...(accessToken === undefined ? {} : { headers: { authorization: `Bearer ${accessToken}` } }),
+      headers: {
+        [STAGE_RUNNER_HEADER.name]: STAGE_RUNNER_HEADER.value,
+        ...(accessToken === undefined ? {} : { authorization: `Bearer ${accessToken}` }),
+      },
     },
   });
   try {

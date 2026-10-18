@@ -16,7 +16,7 @@ from gds_etl_workbench.domain.snapshots.description import (
 
 _COMMON_RULES = (
     "Use exact natural-key names from the current Snapshot; never database IDs.",
-    "Use only active, authorized records from this Project and its source Tenant.",
+    "Use only active, authorized records from this Project and its readable Source Tenants.",
     "Applied status values are active, inactive, or deprecated; resolve review questions locally.",
 )
 
@@ -34,7 +34,8 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
         "The setting is guidance, not proof of keys, history Attributes or source behavior.",
     ),
     "project_input_scope": (
-        "Select only Source or Bronze Objects whose source Tenant is the Project Tenant.",
+        "Scope lists active Source or Bronze Objects from readable Source Tenants. Membership "
+        "is managed in the web application; agents read it and never stage scope changes.",
         (
             "When equivalent Source and Bronze Objects are selected, use Bronze unless "
             "the user directs otherwise."
@@ -42,14 +43,10 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
     ),
     "profiling_profile": (
         (
-            "Profile every selected Attribute needed to understand shape, quality, keys, "
-            "or relationships."
+            "Profiles are measured by backend profiling runs (start_profiling_run); read "
+            "them as evidence and never author, query for, or stage these records."
         ),
-        (
-            "For Source, query only its foreign-catalog catalog/schema/Object/Attribute "
-            "coordinates; missing coordinates are a blocking error."
-        ),
-        "For Bronze, query the physical Object schema, Object name, and Attribute name.",
+        "Refresh the Project Snapshot after a completed run to read current measurements.",
     ),
     "object_enrichment": (
         "Project-owned Object meaning; use applicable profiling and source context. "
@@ -73,8 +70,8 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
         "relationship_basis. Validation counts are separate observed evidence, "
         "not a replacement for the inference.",
         (
-            "Record inferred or measured grain, identity, dependency, and relationship findings; "
-            "keep unsupported or inconclusive findings explicit."
+            "Each record relates exactly two physical Attributes; keep grain, identity, "
+            "dependency and composite-key findings in task evidence, not invented fields."
         ),
     ),
     "context_type": ("Read-only global vocabulary; select an existing type name for each group.",),
@@ -368,7 +365,8 @@ def _enum_values(schema: dict[str, object]) -> list[str | int | float | bool | N
 
 
 def _constraints(schema: dict[str, object]) -> dict[str, object]:
-    names = {
+    # A tuple keeps published key order stable; set order varies with hash randomization.
+    names = (
         "minLength",
         "maxLength",
         "pattern",
@@ -379,5 +377,5 @@ def _constraints(schema: dict[str, object]) -> dict[str, object]:
         "minItems",
         "maxItems",
         "uniqueItems",
-    }
+    )
     return {name: schema[name] for name in names if name in schema}

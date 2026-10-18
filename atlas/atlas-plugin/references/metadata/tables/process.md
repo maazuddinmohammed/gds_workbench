@@ -77,30 +77,17 @@ These are runtime scheduling rules, not database or offline-validator guarantees
 
 ## Validation checklist
 
-Source-review coverage only; see [status meanings and common checks](../validation.md).
+Enforcement is explained in [common checks](../validation.md#interpreting-table-checklists); run the local validator, then review anything marked for you.
 
-| Rule | Check / why | Database | MCP backend | Local | Status |
-|---|---|---|---|---|---|
-| `process.shape` | Complete Process Group/Object keys; positive int32 order; nonblank location/executable; Process Type; active boolean. Reject malformed complete records before staging. | Column types, nullability and selected CHECKs; not exact JSON shape. | Strict Pydantic record; unknown fields forbidden. | Published JSON Schema and portable record rules. | Existing; not parity-tested |
-| `process.unique` | Process Group + order + exact location + exact executable unique; order alone need not be unique. Same executable at different orders is valid. Existing key changes follow the manual database-change rule. | Unique constraint/index. | Staged and effective uniqueness. | Pending/effective and cross-dataset uniqueness. | Existing; not parity-tested |
-| `process.references` | Process Group and Type exist; Object belongs to specified Connection. Resolve dependencies using snapshot plus pending rows. | FK/composite FK and Apply joins. | Effective reference validation. | Effective natural-key reference validation. | Existing; not parity-tested |
-| `process.scope` | Process belongs to selected Tenant; referenced Object owner matches and placement is permitted. Keep edits in the authorized Tenant. | Apply joins owner and permitted Object connections. | Tenant-scope validation. | Snapshot-based Tenant-scope validation. | Existing; not parity-tested |
-| `process.executable-semantics` | Confirmed convention: SQL/.sql or Python/.python, path plus actual filename. Preserve actual registered type and file spelling; no new global enum or extension rejection rule. | Nonblank CHECKs and Process Type FK. | Text shape and reference checks only. | Show the actual values; runtime artifact existence not proved. | Review; consumer convention, not new enforcement |
-| `process.zone-alignment` | Same Object/Process Group Zone is the normal convention; cross-Zone references remain allowed. Group Zone determines execution phase. | No equality constraint. | Keep group/Object references and ownership checks; no Zone-equality rule. | No Zone-equality warning, error or automatic rewrite. | Deferred by user; equality intentionally unenforced |
-| `process.live-dependencies` | Re-resolve dependencies at Apply; reject unexpected affected-row count. Snapshot checks cannot guarantee current server state. | Atomic Apply dependency/row-count check. | Server Apply result; do not infer success locally. | Cannot prove offline; retain server result. | Server-only |
-| `process.shared-execution` | Reuse applies within one Zone phase, dependency level and Process order in one run. Intentional repetition at later stages is valid; preserve all registrations. | No global executable uniqueness constraint. | Metadata checks must allow distinct keys at different orders; runtime owns reuse. | May preview stages; do not reject repeated executables or claim runtime enforcement. | Runtime-only; not an authoring rejection |
-
-## Source pointers
-
-Development provenance; these source files are not runtime dependencies of the packaged skill.
-
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:29,343,349`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:51,182,544`.
-- `database/02_core.sql:465,479,487,490`.
-- `database/16_mcp_metadata_apply.sql:1008,1043,1052,1059`.
-- `mcp_server/gds_etl_workbench/tools/processing/process_groups.py:110`.
-- `CONTEXT.md:442`.
-- `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:354,474,533`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:249`.
+| Rule | Check / why | Enforced by |
+|---|---|---|
+| `process.shape` | Complete Process Group/Object keys; positive int32 order; nonblank location/executable; Process Type; active boolean. Reject malformed complete records before staging. | Local validator + server |
+| `process.unique` | Process Group + order + exact location + exact executable unique; order alone need not be unique. Same executable at different orders is valid. Existing key changes follow the manual database-change rule. | Local validator + server |
+| `process.references` | Process Group and Type exist; Object belongs to specified Connection. Resolve dependencies using snapshot plus pending rows. | Local validator + server |
+| `process.scope` | Process belongs to selected Tenant; referenced Object owner matches and placement is permitted. Keep edits in the authorized Tenant. | Local validator + server |
+| `process.executable-semantics` | Confirmed convention: SQL/.sql or Python/.python, path plus actual filename. Preserve actual registered type and file spelling; no new global enum or extension rejection rule. Validator note: Show the actual values; runtime artifact existence not proved. | Your review |
+| `process.zone-alignment` | Same Object/Process Group Zone is the normal convention; cross-Zone references remain allowed. Group Zone determines execution phase. | Not checked, by decision |
+| `process.live-dependencies` | Re-resolve dependencies at Apply; reject unexpected affected-row count. Snapshot checks cannot guarantee current server state. | Server only, at Apply |
+| `process.shared-execution` | Reuse applies within one Zone phase, dependency level and Process order in one run. Intentional repetition at later stages is valid; preserve all registrations. | Runtime framework (context only) |
 
 [All metadata tables](../index.md) · [Common validation](../validation.md)

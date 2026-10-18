@@ -1,43 +1,45 @@
 ---
 name: atlas-code-generation
-description: Generate framework transformation files from applied Logical or Dimensional Mapping. Choose target/System file grouping, translate saved transformations into SQL, expose missing rules as reviewed placeholders, preserve source assignments and validate locally before the shared review and Apply process.
+description: Generate Atlas SQL transformation code from applied Mapping for Silver or Gold targets, with explicit file grouping and source-System assignments. Use for code generation or regeneration requests; registration DDL, Process setup and SQL Validation are separate.
 ---
 
-# Code Generation
+# Generate transformation code
 
-Generate the requested transformation artifacts from approved Mapping. Registration DDL, Process configuration and Validation authoring have separate workflows.
+Goal: reviewable SQL artifacts and source-System assignments that faithfully implement applied Mapping.
 
-Conceptual output is not Code input. Use the selected Mapping consumer context and its authorized dependencies; never fill a missing transformation rule from Conceptual records.
+## When to use
 
-## Establish inputs and output
+- Generate or regenerate transformation SQL for selected Silver or Gold targets.
+- Not for: transformation design ([mapping](../atlas-mapping/SKILL.md)), target DDL or Process setup ([registration](../atlas-registration/SKILL.md)) or SQL Validation ([verify](../atlas-verify/SKILL.md)).
 
-1. Follow the [working method](../../references/working-method.md). Reuse Tenant, working directory, Project, Logical/Silver or Dimensional/Gold route and requested targets. Resolve SQL policy/environment only for optional execution-based evidence; writing SQL does not execute it.
-2. Require active applied Mapping and modeled Entities. An Entity/System pair is eligible when at least one Object or Attribute transformation is saved; omit entirely empty pairs. Follow [Project Snapshot](../../references/snapshots/project.md) freshness rules and preserve pending work. Load all five components of each selected target's [Mapping view](../../references/project/mapping-documents.md#complete-context-for-coding-and-validation), current Code and source-System assignments. Partial Mapping may be authored as reviewable SQL; retain `complete=false` and its issues. Do not reconstruct missing transformation decisions from upstream projects.
-3. Check [record state](../../references/record-state.md) and the [Code record contract](../../references/project/generated-code.md). Read saved code from the Snapshot plus pending/local edits, then resolve [existing work and update scope](../../references/methods/change-impact.md). Show new/missing and affected artifacts/Systems; ask the contextual selection question unless already answered. Preserve locked/unchanged artifacts and assignments. Read full existing content before updating it; resolve input changes or stale code rather than treating an old file as current.
-4. **Ask for file grouping; do not assume a default.** "One file per target containing its Systems, or separate files per System and target? Any target-specific exceptions?" Reuse an explicit choice already supplied for this work. Show concrete filenames and contributing Systems. No separate file per source table is implied when several sources form one target branch.
-5. **Generate SQL in the first release.** Follow [release scope](../../references/release-scope.md). Preserve existing Python artifacts/assignments without converting them; new Python generation is deferred until its consumer contract is established. Explain that limitation for an explicit Python request and continue independently requested SQL work. Do not offer unsupported generation or routinely ask for a language selection.
-6. Show the proposed artifact list and a small representative structure. Reuse prior decisions; ask only about unresolved choices or material exceptions. This preview does not replace review of the final content in Atlas Local Workbench before Stage/Apply.
+## What you need
 
-## Generate and check locally
+- [Working context](../../references/working-method.md) and its golden rules. Writing SQL never executes it.
+- Active applied Mapping and modeled Entities. A target/System pair is eligible when at least one Object or Attribute transformation is saved. Conceptual output is never Code input.
+- Python generation is deferred: keep existing Python artifacts and never silently substitute SQL for a Python request.
 
-1. Follow [SQL generation](../../references/code-generation/sql.md). Translate Object steps into coherent preparation/join/projection stages and apply Attribute expressions at the correct stage. Each artifact contains its own prerequisites and ends with one target's explicit runtime projection. A Python request does not authorize a silent SQL substitution.
-2. Preserve Mapping grain, joins, predicates, filter placement, keys, casts, null/invalid behavior, runtime parameters and cross-System policy. For a missing Attribute transformation, emit `CAST(NULL AS <target type>) AS <target column>` in target order unless the explicit population contract omits that column. Keep a per-System review finding naming each placeholder and any missing Object transformation. Use only evidenced row sources and joins; if the row source/join cannot be established, use a typed zero-row projection rather than inventing rows, joins or business rules. Contradictory authored rules and unresolved source identities still require correction. Continue unaffected targets; do not present partial SQL as executable business correctness or relax the later Validation completeness requirement.
-3. Apply the chosen layout without changing semantics. Combined files align all assigned branches and implement the specified reconciliation. Separate files remain self-contained and must be valid under Mapping's collision and dependency rules. If a requested split cannot preserve those rules, explain the concrete conflict and resolve the layout or Mapping before authoring affected files.
-4. Save reviewed source files under the workspace's `code/` output area with collision-safe placement. Store only a filename in `artifact_name`; local folders are not artifact identity fields. Serialize the exact intended file content into complete `generated_code` records and maintain `generated_code_source_system` records. Do not invent role/path/digest fields or assume edits to a file automatically update the Change Set.
-5. Verify that every active System with nonempty Mapping for an authored target has exactly one active artifact assignment. Combined files have several assignments; separate files have disjoint assignments. Preserve valid unaffected files when regenerating a subset. Never discard protected assignments or silently strand a mapped System when regrouping files.
-6. Run [local validation](../../references/local-validation.md), Code record checks and the [SQL content checks](../../references/code-generation/sql.md#local-content-checks). Compare file text with record content. Static parsing and semantic review are required checks; optional Databricks probes follow the SQL workflow instructions and saved policy. Report unsupported checks as unverified.
-7. Review the complete related local batch: artifact names, assigned Systems, Mapping changes addressed, final output columns and check results. Follow the shared [Change Set lifecycle](../../references/change-set-lifecycle.md); do not Stage/Apply per file. After verified Apply, refresh the Project Snapshot and confirm saved content/assignments and authoritative freshness state.
+## Steps
 
-Code Apply stores artifacts; it does not deploy or execute them. Report authored, validated and applied states separately. Continue to Validation or Process metadata only when requested or already part of the agreed journey; Gold modeling is not required before validating Logical code.
+1. Read each target's complete Mapping view with `read_mapping_context` (all five components at the applied revision), then current Code and assignments with `select --session <dir> --area project --dataset <name> --view effective` and any local files you will change.
+2. Resolve [update scope](../../references/methods/change-impact.md): show new, missing and affected artifacts and Systems; preserve locked and unchanged work.
+3. Agree file grouping (below); show filenames, contributing Systems and a representative structure.
+4. Generate each artifact with [SQL generation](../../references/code-generation/sql.md): temporary-view stages, Attribute expressions at their stage, one explicit target projection. A missing Attribute rule becomes a typed `CAST(NULL AS <type>)` placeholder with a review finding; an unproven row source becomes a typed zero-row projection. Never invent rows, joins or rules.
+5. Save files under the workspace `code/` area and write matching `generated_code` and `generated_code_source_system` records per [Code records](../../references/project/generated-code.md) with `upsert-batch --session <dir> --area project --changes <JSON> --expected-digest <digest>`. `artifact_name` is a filename only; record content must equal the file text.
+6. Check every active System with nonempty Mapping has exactly one active assignment, then run `validate --session <dir> --area project` and the SQL content checks. Unsupported checks stay unverified.
+7. Review the complete batch in Atlas Local Workbench and follow the [Change Set lifecycle](../../references/change-set-lifecycle.md) by repeating `next --session <dir> --area project`; never per file.
 
-## Targeted exceptions
+## Done when
 
-- Existing Code is stored in Git: use the [Code record storage fields](../../references/project/generated-code.md#artifact-fields). Preserve free-form references and JSON parameters; content may be null. Review and stage metadata through the same governed lifecycle. Do not run inline SQL checks against a Git reference, infer its contents, or convert it to table storage without the requested replacement scope. This does not add Python generation, repository publishing or execution.
-- Existing code is locked: preserve it and report the affected work; no duplicate filename or alternate artifact to bypass the lock.
-- Multiple files need the same source System: the current assignment contract cannot represent that as independent active artifacts for one target. Resolve a supported self-contained artifact layout; no unassigned helper file workaround.
-- A runtime placeholder or cross-catalog access rule is unknown: request the relevant consumer contract/code. Do not invent parameters or grant access. New Python generation follows the deferred first-release boundary.
-- Mapping and code disagree: fix accidental translation errors here; intentional transformation changes belong in Mapping first.
+- Each target's artifacts cover every mapped System once and pass local checks; placeholders are listed.
+- Authored, validated and applied states are reported separately. Apply stores code; it never deploys or runs it.
 
-## Preserve edited and locked artifacts
+## Ask the user when
 
-A lock on a selected Code artifact blocks every content change to that artifact; a lock on an unrelated artifact does not block the selected target. Attribute/Mapping locks preserve their governed field semantics. Read Snapshot, pending Code and the existing file before updating: retain manual changes compatible with the applied Mapping, and resolve conflicting manual-versus-Mapping intent with the user before replacement. Never silently choose generated content over a differing local file.
+- File grouping is not already decided: "One file per target containing its Systems, or separate files per System and target? Any target-specific exceptions?" Never assume a default or one file per source table.
+- A layout cannot preserve Mapping's collision and dependency rules.
+- Manual edits conflict with the applied Mapping, or a lock blocks the change; Git storage and other exceptions follow the Code record guide.
+- Approving Stage and, separately, Apply.
+
+## Next
+
+Continue to SQL Validation or Process registration only when requested.

@@ -1,4 +1,4 @@
-import { stableStringify, canonicalRecordsSha256, SHA256, fail, isObject, requireObject, normalizedTenantCode, recordKey,
+import { stableStringify, canonicalRecordsSha256, compareOrdinal, SHA256, fail, isObject, requireObject, normalizedTenantCode, recordKey,
  type Area, type StageRequestDataset, type JsonRecord, type McpToolClient,
  type StageApprovedManifestInput, type StageRunnerDependencies, type StageReceipt } from "./stage-contract.js";
 import { readRequest, readLocalDatasets, saveOperation } from "./stage-request.js";
@@ -92,7 +92,7 @@ function reconcileDataset(
     merged.set(key, record);
   }
   return [...merged.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
+    .sort(([left], [right]) => compareOrdinal(left, right))
     .map(([, record]) => record);
 }
 

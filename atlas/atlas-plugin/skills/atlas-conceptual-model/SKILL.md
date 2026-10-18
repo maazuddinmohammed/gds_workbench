@@ -1,20 +1,47 @@
 ---
 name: atlas-conceptual-model
-description: Build or refine Atlas business concepts and conceptual relationships from scoped evidence and requirements. Use when the user requests a standalone Conceptual deliverable.
+description: Define or refine an Atlas Conceptual model of business concepts and relationships as a standalone deliverable. Use for business-concept, subject-area or glossary-style modeling requests; never as input to logical or later work.
 ---
 
-# Project business concepts
+# Model business concepts
 
-Produce a standalone Conceptual model with clear business meanings and supported relationships. Conceptual output is never an input or prerequisite for Logical, Dimensional, Mapping, Code or SQL Validation work.
+Goal: a standalone Conceptual model with clear business meanings and supported relationships.
 
-Use applicable profiling, [Project enrichment](../../references/project/enrichment.md) and analysis from the effective local view, including pending proposals. Reuse earlier local results without applying each phase.
+## When to use
 
-1. Follow [working context](../../references/working-method.md). For persisted work, resolve the Project, selected applied Input Scope, required [Metadata](../../references/snapshots/metadata.md) / [Project](../../references/snapshots/project.md) evidence and effective existing Conceptual records. Preserve bound drafts. Discussion-only work need not create records or a workspace.
-2. Read [business concepts](../../references/conceptual-build/business-concepts.md) and the [Conceptual record contract](../../references/project/conceptual.md). Inspect relevant source meanings, Analysis, profiles and attributable [Context records](../../references/project/context.md). Use [domain rules](../../references/domains/index.md) only with verified applicability. Missing material evidence returns to [source analysis](../atlas-source-analysis/SKILL.md); profiling is not a mandatory ceremony.
-3. Identify the business subject, what one instance represents, lifecycle and meaningful distinctions. Reuse/consolidate equivalent concepts; separate genuinely different roles. Resolve consequential ambiguity with the shared [interview method](../../references/modeling-interview.md), reusing confirmed answers. Unknown facts remain unknown.
-4. Attach actual physical or Context supports and explain justified standalone/generated concepts. A requirement is not proof that a physical source exists. Do not fabricate supports or create a Context merely to make validation pass.
-5. Define business relationships and their basis. Conceptual cardinality can be unknown. Do not invent a multiplicity from column names or copy physical foreign keys without understanding their business meaning.
-6. For changes, follow [record state](../../references/record-state.md) and [impact/update scope](../../references/methods/change-impact.md). Write complete records through [Project authoring](../../references/project/change-sets.md), preserving pending work and unrelated concepts. Capture consequential decisions in existing evidence; the optional [decision format](../../templates/modeling-decision.md) adds no new ledger.
-7. Run [local validation](../../references/local-validation.md) and conceptual quality review. Check real endpoints, eligible supports, coherent definitions and coverage of selected inputs. Report exclusions, uncertainty and affected Conceptual records. Conceptual changes do not create downstream modeling work.
+- Define business concepts, what one instance represents, lifecycles and business relationships.
+- Not a step toward Logical, Dimensional, Mapping, Code or SQL Validation work: those never read Conceptual output. A later Logical request starts from its own evidence in [logical modeling](../atlas-logical-model/SKILL.md).
 
-Done means the requested concepts and relationships are explained, represented where authoring was requested, and checked against their evidence. Follow the [Change Set lifecycle](../../references/change-set-lifecycle.md) when submitting; completion alone does not require Apply. Finish this deliverable independently. A separately requested Logical task starts from its own eligible evidence and does not consume Conceptual output.
+## What you need
+
+- [Working context](../../references/working-method.md) and its golden rules. A discussion-only answer needs no workspace or records.
+- For saved concepts: the Project, applied Input Scope, installed Snapshots and effective existing Conceptual records.
+- Source meaning from profiles, Project enrichment, Analysis and attributable Context records; pending results count. Profiling is not required ceremony; material gaps go to [source analysis](../atlas-source-analysis/SKILL.md).
+
+## Steps
+
+1. Read existing concepts and evidence with `select --session <dir> --area project --dataset <name> --view effective`, following `next_cursor` until it is null.
+2. With [business concepts](../../references/conceptual-build/business-concepts.md), name each concept, what one instance represents, its lifecycle and distinctions. Consolidate equivalent concepts; keep genuinely different roles separate.
+3. Attach real physical or Context supports. A requirement does not prove a physical source exists; explain justified standalone concepts instead of fabricating supports.
+4. Define relationships and their basis. Cardinality may stay unknown; never infer it from column names or copy physical foreign keys without their business meaning.
+5. Write complete `conceptual_object` and `conceptual_relationship` records with `upsert-batch --session <dir> --area project --changes <JSON> --expected-digest <digest>` per the [Conceptual records](../../references/project/conceptual.md) contract.
+6. Run `validate --session <dir> --area project` and the conceptual quality review: real endpoints, eligible supports, coherent definitions, coverage of selected inputs.
+7. To save, follow the [Change Set lifecycle](../../references/change-set-lifecycle.md) by repeating `next --session <dir> --area project`. Finishing the model does not require Apply.
+
+## Done when
+
+- Requested concepts and relationships are explained, recorded where authoring was requested, and checked against evidence.
+- Exclusions, uncertainty and affected Conceptual records are reported.
+- No downstream work was created from these changes.
+
+## Ask the user when
+
+- A concept's meaning, boundary or lifecycle is ambiguous, or two concepts might be the same.
+- Evidence conflicts about a relationship's meaning.
+- Approving Stage and, separately, Apply.
+
+Use the interview method from working context for consequential ambiguity, reusing confirmed answers, and record consequential decisions in task evidence; the optional [decision format](../../templates/modeling-decision.md) adds no new ledger. Use domain rules only when verified as applicable. Unknown facts stay unknown; never create a Context record only to pass validation.
+
+## Next
+
+Stop here unless the user asks for more. Explaining an existing design uses [investigate](../atlas-investigate/SKILL.md).

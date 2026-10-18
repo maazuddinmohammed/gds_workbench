@@ -1,34 +1,47 @@
 ---
 name: atlas-logical-model
-description: Build or refine Atlas logical Entities, Attributes, relationships and Submodels with explicit grain, identity and normalization. Supports Guided explanation and requested Grill Me discussion in the same workflow.
+description: Build or refine Atlas logical (Silver) Entities, Attributes, relationships and Submodels with explicit grain, identity and normalization. Use for logical modeling or normalization requests; supports Guided explanation and requested Grill Me discussion in the same workflow.
 ---
 
 # Build a logical model
 
-Produce the requested normalized design with explicit grain, complete identity and defensible lineage. Work through coherent parts and verify each before dependent work.
+Goal: a normalized Silver design with explicit grain, complete identity and traceable sources.
 
-Use applicable profiling, [Project enrichment](../../references/project/enrichment.md) and analysis from the effective local view, including pending proposals. Reuse earlier local results without applying each phase.
+## When to use
 
-Reserve effective audit-template names for framework fields. Give source/business fields distinct semantic names, such as `SourceCreatedDate`. Keep exactly one correctly marked framework block in complete final plugin records; see [keys and audit](../../references/project/keys-and-audit.md).
+- Design or refine Silver Entities, Attributes, keys, relationships or Submodels from applied Project Input Scope.
+- Not for: evidence gaps ([source analysis](../atlas-source-analysis/SKILL.md)), facts and dimensions ([dimensional](../atlas-dimensional-model/SKILL.md)) or applied designs with downstream work ([project change](../atlas-project-change/SKILL.md)).
 
-## Enter at the needed point
+## What you need
 
-Follow [Logical context](../../references/logical-build/context.md). Inspect selected source evidence and effective existing design. For a larger source-to-data-model request, use [source analysis](../atlas-source-analysis/SKILL.md) for material evidence gaps and return here with those source findings. Conceptual is a separate deliverable; do not read or use its outputs for Logical authoring. Reuse valid outputs instead of repeating a fixed phase chain.
+- [Working context](../../references/working-method.md) and its golden rules.
+- Installed Metadata and Project Snapshots and active applied Input Scope; [Logical context](../../references/logical-build/context.md) lists what to read.
+- Profiles, Project enrichment and Analysis from the effective local view; pending results count without Apply. Never Conceptual records.
 
-Guided explanation is the default. Requested Grill Me uses [modeling interview](../../references/modeling-interview.md) with the same task, snapshots and rules. Clarify consequential missing business decisions in either mode; no separate mode menu or installation. SQL Never permits metadata-based modeling with explicit unmeasured findings.
+## Steps
 
-## Design and author
+1. Read selected sources and existing design with `select --session <dir> --area project --dataset <name> --view effective`, following `next_cursor` until it is null.
+2. For each business area, state what one row means and its complete natural key, including source namespace when needed. Normalize by real dependencies and lifecycle with [logical design](../../references/logical-build/logical-design.md); matching names never prove a relationship. Under SQL policy `never`, model from metadata and label findings unmeasured.
+3. Write complete Entity, Attribute, Relationship and Submodel records with `upsert-batch --session <dir> --area project --changes <JSON> --expected-digest <digest>` per [Logical records](../../references/project/logical.md). Use configured schemas and naming, give business fields distinct names such as `SourceCreatedDate`, and pair each physical Attribute source with its Object source on the Entity.
+4. Add framework columns: run `policy-apply --session <dir> --layer logical --expected-digest <digest> --dry-run true`, show the result, then run it without `--dry-run`.
+5. Run `validate --session <dir> --area project`, `coverage --session <dir> --layer logical` and the logical design quality checks. Repair and rerun after each coherent batch.
+6. Review the relationship graph: persist supported foreign keys, keep unresolved candidates in task evidence and explain isolated Entities.
+7. Submit related work together, not per Entity: follow the [Change Set lifecycle](../../references/change-set-lifecycle.md) by repeating `next --session <dir> --area project`.
 
-1. Use [logical design](../../references/logical-build/logical-design.md) to establish each Entity's business meaning, one-row grain and complete natural identity, including source namespace where necessary. Resolve ambiguity before designing dependent keys/relationships.
-2. Apply [normalization decisions](../../references/logical-build/normalization.md) to actual dependencies and lifecycle, not a mechanical split-per-table rule. Reuse equivalent concepts and distinguish real roles. Preserve the requested scope and explicit design decisions.
-3. Use configured logical schemas, [Entity ownership](../../references/project/entity-ownership.md), [naming](../../references/project/naming.md) and [key/audit policy](../../references/project/keys-and-audit.md). Read actual Project policies/templates; examples are not proof of configured types or defaults.
-4. Design Attributes, key roles, nullability and relationships using [Logical records](../../references/project/logical.md). Logical cardinality must be supported; unresolved candidates stay in task evidence. A physical Attribute source requires its matching Object source on the Entity. Intentional generated structures may lack physical sources; available lineage must not be hidden.
-5. Organize useful Submodels around understandable business areas without duplicating Entities solely for grouping. Persist supported FK relationships and perform the [relationship/graph review](../../references/logical-build/logical-design.md#relationship-and-graph-review). Explain isolated Entities/disconnected groups; standalone designs are allowed with an applicable reason. Matching names alone do not establish a relationship.
-6. Respect [record state](../../references/record-state.md) and [existing-work scope](../../references/methods/change-impact.md). Write complete changed records through [Project authoring](../../references/project/change-sets.md); preserve unrelated drafts, protected records and valid manual decisions. Context records are optional attributable rules, not required for every answer.
-7. Run [local validation](../../references/local-validation.md) and design-quality checks after each coherent batch. Check the complete effective graph, selected-input coverage and dependency effects, not just the last Entity. Resolve failures before dependent work; report uncertain or excluded inputs explicitly.
+## Done when
 
-## Completion and transitions
+- Every selected input is modeled, excluded with a reason, or reported as blocked.
+- `validate` passes and `coverage` meets the Project target; when `enforced` is false, the user may accept a gap.
+- You showed grain, identity, relationships, validation results and open questions.
 
-Show requested coverage, grain/identity decisions, relationships, validation results and unresolved business questions. Accumulate related local phases where contracts permit; use the [Change Set lifecycle](../../references/change-set-lifecycle.md) when ready or when a downstream applied prerequisite requires it. Do not Stage/Apply after every Entity or interview answer.
+## Ask the user when
 
-After required modeling changes are applied, requested [Mapping](../atlas-mapping/SKILL.md) or [Dimensional modeling](../atlas-dimensional-model/SKILL.md) can continue. [Target registration](../atlas-registration/SKILL.md) is an optional operational handoff, not a Mapping prerequisite. For a change spanning existing downstream artifacts, use [project change](../atlas-project-change/SKILL.md).
+- Grain or business identity is ambiguous, or evidence conflicts.
+- Two sources may be the same business entity, or a split or merge changes meaning.
+- Approving Stage and, separately, Apply.
+
+Guided explanation is the default. For requested Grill Me, use the interview method linked from working context; it changes questions, not records.
+
+## Next
+
+After Apply, continue to [dimensional modeling](../atlas-dimensional-model/SKILL.md) or [mapping](../atlas-mapping/SKILL.md) when requested. [Registration](../atlas-registration/SKILL.md) is optional and never a Mapping prerequisite.

@@ -36,7 +36,7 @@ contracts; see [architecture decisions](../docs/architecture/decisions.md).
 Backend setup follows the [MCP README](../mcp_server/README.md) and
 [fresh-install database sequence](../database/README.md).
 
-The current artifacts are Atlas plugin 0.3.0 and VS Code Stage Runner 0.2.0. Rebuild the matching artifacts after source changes; version labels alone do not prove source equality. Installing the plugin does not install the extension or update the deployed backend. Publication and deployment require separate approval.
+The current artifacts are Atlas plugin 0.4.0 and VS Code Stage Runner 0.3.0. Rebuild the matching artifacts after source changes; version labels alone do not prove source equality. Installing the plugin does not install the extension or update the deployed backend. Publication and deployment require separate approval.
 
 ## Build
 
@@ -57,6 +57,8 @@ The [entry skill](atlas-plugin/skills/atlas/SKILL.md) routes outcomes across 12 
 Local `select` supports digest-bound continuation and field projection with canonical keys retained. `status` defaults to the active task summary; explicit task detail and paged history avoid loading unrelated evidence. Both Node and native PowerShell expose the same command contract. These are local read aids, not authorization or business-readiness verdicts.
 
 Code owns exact fields, limits and behavior. Distributed skills and references are runtime instructions; retain their links when changing the package.
+
+Each skill uses one short template (When to use, What you need, Steps, Done when, Ask the user when, Next) with at most 450 words and five reference links; shared rules live once in the [golden rules](atlas-plugin/references/working-method.md#golden-rules). Submission runs through `atlas-local next`, which returns one action at a time and one recovery action for a failed MCP call. `policy-apply` and `coverage` reuse the web workflow's policy columns and coverage rule. `tests/atlas/test_instructions.py` enforces the template and command flags; the [evaluation harness](../tests/atlas/eval/README.md) scores agent runs against a replayed MCP server.
 
 | Source | Responsibility |
 |---|---|

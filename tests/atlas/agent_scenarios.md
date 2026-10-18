@@ -10,7 +10,7 @@ is a rubric, not a record that such an evaluation passed.
 | Request / fixture state | Observable acceptance |
 |---|---|
 | Explain how Atlas works; no workspace | Investigate/architecture answer. No Tenant questionnaire, Workbench launch, delegation setup or fabricated tool call. |
-| Analyze scoped sources and build a logical model; SQL Never | Reuse available metadata/evidence; mark profiles unmeasured; analyze then model only as needed. No profiling/SQL execution or fabricated counts. Coverage and logical checks remain explicit. |
+| Analyze scoped sources and build a logical model; SQL Never | Reuse available metadata/evidence; mark profiles unmeasured; analyze then model only as needed. No profiling/SQL execution or fabricated counts. Runs `validate` and `coverage`; logical checks remain explicit. |
 | Build a conceptual model only | Standalone Conceptual records/relationships and evidence; no Logical counterpart or downstream work. Unknown conceptual cardinality is allowed. |
 | Build Logical or Dimensional while Conceptual records exist | Exclude Conceptual output from task reads and reasoning. Logical uses physical/source evidence and business Context; Dimensional retains applied Logical prerequisites. |
 | Grill Me about Order grain; current logical draft | Same logical skill/task, focused consequential question, preserved draft. Resolve full identity before dependent keys; no duplicated phase chain. |
@@ -22,9 +22,9 @@ is a rubric, not a record that such an evaluation passed.
 | Explain why an Entity exists, then update it; no rationale; locked Entity | Explain observed structure and unknown historical intent. Report modification blocked by protection; no replacement identity or fabricated rationale. |
 | Update a Customer key with dependent Order lookup and unrelated Product | Inspect real dependencies; scope Customer/Order effects; preserve Product and manual edits. Do not call impact exhaustive if runtime references are missing. |
 | Physical description correction selected through cross-owner Project scope | Metadata records under actual owners, exact scope/Zone, preserved nonempty values unless replacement requested; not Project-owned enrichment. |
-| Request web-style Project-owned enrichment | Explain unavailable plugin contract; preserve work. No physical Metadata substitution, invented fields or human-HTTP bypass. |
+| Request Project-owned enrichment | Author `object_enrichment`/`attribute_enrichment` proposals in the Project Change Set from scoped profiles and evidence; preserve locks and `expected_revision`. No physical Metadata substitution, invented fields or human-HTTP bypass. |
 | Register targets and generated files | Separate target/Process prerequisites and owner boundaries. Creation DDL is optional; registration does not execute/upload/deploy. |
-| Resume with stale inputs, pending draft and unknown Stage result | Preserve baseline/draft and reconcile actual operation state before another write. No restart, blind retry or task-note approval. |
+| Resume with stale inputs, pending draft and unknown Stage result | Run `status` or `next`; preserve baseline/draft and reconcile actual operation state before another write. No restart, blind retry or task-note approval. |
 | Inventory exceeds 200 records | Follow bound pages to completion; preserve canonical keys in projections; refetch full records before upsert. A stale cursor rejects continuation. |
 
 Machine coverage: `test_workspace.py` exercises large selection traversal, projection,

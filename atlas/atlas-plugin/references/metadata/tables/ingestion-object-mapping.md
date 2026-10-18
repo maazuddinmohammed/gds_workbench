@@ -48,30 +48,21 @@ Every field is listed explicitly. Exact current MCP/Snapshot schemas remain auth
 
 ## Validation checklist
 
-Source-review coverage only; see [status meanings and common checks](../validation.md).
+Enforcement is explained in [common checks](../validation.md#interpreting-table-checklists); run the local validator, then review anything marked for you.
 
-| Rule | Check / why | Database | MCP backend | Local | Status |
-|---|---|---|---|---|---|
-| `ingestion_object_mapping.shape` | Complete source and target Object keys; required is_active boolean. Reject malformed complete records before staging. | Column types, nullability and selected CHECKs; not exact JSON shape. | Strict Pydantic record; unknown fields forbidden. | Published JSON Schema and portable record rules. | Existing; not parity-tested |
-| `ingestion_object_mapping.unique` | Source Object + target Object pair unique. Prevent duplicate identity; inactive rows still reserve their keys. | Unique constraint/index. | Staged and effective uniqueness. | Pending/effective and cross-dataset uniqueness. | Existing; not parity-tested |
-| `ingestion_object_mapping.references` | Both Object endpoints must resolve. Resolve dependencies using snapshot plus pending rows. | FK/composite FK and Apply joins. | Effective reference validation. | Effective natural-key reference validation. | Existing; not parity-tested |
-| `ingestion_object_mapping.distinct` | Source and target Object must differ after key normalization. Prevent a self-copy mapping. | source_object_id <> target_object_id CHECK. | Pydantic model validator. | Portable ingestion_object_endpoints rule. | Existing; not parity-tested |
-| `ingestion_object_mapping.scope` | Both Objects must belong to selected Tenant; Connections must be owned or configured GDS. Keep edits in the authorized Tenant. | Apply joins owner and permitted Object connections. | Tenant-scope validation. | Snapshot-based Tenant-scope validation. | Existing; not parity-tested |
-| `ingestion_object_mapping.selection` | Copy Group, Copy and Object Mapping must all be active to pass selection. Explain which flag causes skipping; intentional inactivity is valid metadata. | Boolean storage; no cross-record activation constraint required. | Metadata validation does not prove external selection. | Proposed readiness explanation, not an inactive-record error. | Proposed; user-confirmed consumer rule |
-| `ingestion_object_mapping.target-shape` | Each incoming dataset must support the Bronze fields/expressions actually used. Allow extra source columns, shared targets, and constants; identify missing inputs or incompatible outputs. | No physical payload/expression compatibility constraint. | Compatibility check not located. | Proposed per-input check using definitions and permitted evidence. | Proposed; user-confirmed consumer rule |
-| `ingestion_object_mapping.live-dependencies` | Re-resolve dependencies at Apply; reject unexpected affected-row count. Snapshot checks cannot guarantee current server state. | Atomic Apply dependency/row-count check. | Server Apply result; do not infer success locally. | Cannot prove offline; retain server result. | Server-only |
+| Rule | Check / why | Enforced by |
+|---|---|---|
+| `ingestion_object_mapping.shape` | Complete source and target Object keys; required is_active boolean. Reject malformed complete records before staging. | Local validator + server |
+| `ingestion_object_mapping.unique` | Source Object + target Object pair unique. Prevent duplicate identity; inactive rows still reserve their keys. | Local validator + server |
+| `ingestion_object_mapping.references` | Both Object endpoints must resolve. Resolve dependencies using snapshot plus pending rows. | Local validator + server |
+| `ingestion_object_mapping.distinct` | Source and target Object must differ after key normalization. Prevent a self-copy mapping. | Local validator + server |
+| `ingestion_object_mapping.scope` | Both Objects must belong to selected Tenant; Connections must be owned or configured GDS. Keep edits in the authorized Tenant. | Local validator + server |
+| `ingestion_object_mapping.selection` | Copy Group, Copy and Object Mapping must all be active to pass selection. Explain which flag causes skipping; intentional inactivity is valid metadata. | Your review (no automated check) |
+| `ingestion_object_mapping.target-shape` | Each incoming dataset must support the Bronze fields/expressions actually used. Allow extra source columns, shared targets, and constants; identify missing inputs or incompatible outputs. | Your review (no automated check) |
+| `ingestion_object_mapping.live-dependencies` | Re-resolve dependencies at Apply; reject unexpected affected-row count. Snapshot checks cannot guarantee current server state. | Server only, at Apply |
 
-## Source pointers
+## Confirmed behavior
 
-Development provenance; these source files are not runtime dependencies of the packaged skill.
-
-User-confirmed framework behavior supersedes the older one-Source/one-Bronze convention: shared Bronze targets and target-driven column selection are supported. This does not establish every possible Object Mapping cardinality or connector behavior.
-
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:29,189,190,203`.
-- `CONTEXT.md:135`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:178,427,436`.
-- `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:354,425,474,533`.
-- `database/02_core.sql:237,246,250,258`.
-- `database/16_mcp_metadata_apply.sql:507,550`.
+Several Source Objects may share one Bronze target, and Bronze metadata selects the loaded columns. This does not establish every possible Object Mapping cardinality or connector behavior.
 
 [All metadata tables](../index.md) · [Common validation](../validation.md)

@@ -79,16 +79,31 @@ def test_archive_round_trip_and_reproducibility(tmp_path: Path) -> None:
         }
     ]
     delivered = ROOT / "atlas" / "dist" / f"atlas-agent-plugin-{manifest['version']}.zip"
-    assert delivered.read_bytes() == first.read_bytes()
+    # Deflate output differs between zlib builds (Windows CPython ships zlib-ng), so the
+    # committed archive is compared by entries rather than compressed bytes.
+    with zipfile.ZipFile(delivered) as shipped, zipfile.ZipFile(first) as rebuilt:
+        assert [
+            (info.filename, info.date_time, info.external_attr, info.compress_type)
+            for info in shipped.infolist()
+        ] == [
+            (info.filename, info.date_time, info.external_attr, info.compress_type)
+            for info in rebuilt.infolist()
+        ]
+        for name in rebuilt.namelist():
+            assert shipped.read(name) == rebuilt.read(name), name
 
     with zipfile.ZipFile(first) as archive:
         files = sorted(
-            path
-            for path in PLUGIN_ROOT.rglob("*")
-            if path.is_file()
-            and not any(
-                part in {".DS_Store", "__pycache__"} for part in path.relative_to(PLUGIN_ROOT).parts
-            )
+            (
+                path
+                for path in PLUGIN_ROOT.rglob("*")
+                if path.is_file()
+                and not any(
+                    part in {".DS_Store", "__pycache__"}
+                    for part in path.relative_to(PLUGIN_ROOT).parts
+                )
+            ),
+            key=lambda path: path.relative_to(PLUGIN_ROOT).parts,
         )
         expected = {
             f"atlas/{path.relative_to(PLUGIN_ROOT).as_posix()}": path.read_bytes() for path in files

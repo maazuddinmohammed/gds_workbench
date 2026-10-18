@@ -2,6 +2,19 @@
 
 Use this shared entry contract once per task, including direct skill entry. Load only the selected workflow and the references needed for its next decision. Reading another skill changes instructions in the same conversation; it is not a portable skill-call API.
 
+## Golden rules
+
+1. **Server truth comes only from governed MCP tools and installed Snapshots.** Never invent IDs, codes, revisions, digests or results. Never edit Snapshot files or `.atlas/` state by hand.
+2. **Local edits go through the helper.** Run `node scripts/atlas-local.js <command>` from the installed plugin directory, or `powershell.exe -NoProfile -File scripts/atlas-local.ps1 <command>` when Node is unavailable; `--session` is the user's working directory. Write complete records and preserve other pending drafts. Each write takes `--expected-digest`: the `digest` returned by the previous write or `review` (`empty` only for an empty draft). Commands written like `next --session <dir>` in skills mean this helper.
+3. **Submit only through `next`.** It returns one action at a time. The user approves Stage and, separately, Apply. Earlier messages, task notes or a host confirmation never count as either approval.
+4. **Never call Stage upload tools** (`stage_*`, `begin_*`, `put_*`, `commit_*`); the server refuses them. Never override a Tenant Lock unless the user explicitly asks.
+5. **Project Input Scope and Profiling results are read-only here.** The web app manages Input Scope; backend Profiling writes profiles.
+6. **Conceptual is a standalone deliverable.** Never use it as input to Logical, Dimensional, Mapping, Code or SQL Validation work.
+7. **Label evidence.** Separate measured, declared and inferred facts; a sample is not proof and unknown stays unknown. Run SQL only through `execute_databricks_sql` under the saved SQL policy and [query scope](query-scope.md).
+8. **Ask instead of guessing consequential business decisions:** grain, identity, history, cross-System matching and missing-value policy. Stop at the requested outcome.
+9. **Keep secrets and raw data out of chat and files:** no credentials, signed URLs, raw rows, prompts or tool dumps.
+10. **After a failed MCP call**, run `next --session <dir> --area <area> --error <code>` and follow its one recovery action.
+
 ## Initialize or resume
 
 1. Identify the requested outcome before setup. General Atlas explanations and supplied-code discussion need no Tenant, Project, workspace or Workbench.

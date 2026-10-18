@@ -41,14 +41,4 @@ Copy.source_file_type_name references the registered format used by the applicab
 
 Apply the [shared read-only checks](../index.md#using-read-only-tables) to the exact Keys, Fields, and dependencies above. Resolve table-specific conditions under “How authoring uses these values.”
 
-## Source pointers
-
-Development provenance; these source files are not runtime dependencies of the packaged skill.
-
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:127,315`.
-- `database/01_reference.sql:144`.
-- `database/seed/01_metadata_snapshot_demo.sql:43`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:342,513`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:291`.
-
 [All metadata tables](../index.md) · [Common validation](../validation.md)

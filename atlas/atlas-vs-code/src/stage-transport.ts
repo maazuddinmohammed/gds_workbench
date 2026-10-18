@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { stableStringify, UUID, SHA256, DIRECT_STAGE_MAX_BYTES, MAX_STAGE_CHUNKS,
  MAX_STAGE_CHUNK_RECORDS, METADATA_STAGE_CHUNK_MAX_BYTES, PROJECT_STAGE_CHUNK_MAX_BYTES,
- ALLOWED_DATASETS, fail, isObject, hasExactKeys, requireObject, canonicalRecordsSha256,
+ ALLOWED_DATASETS, compareOrdinal, fail, isObject, hasExactKeys, requireObject, canonicalRecordsSha256,
  type StageRequest, type JsonRecord, type McpToolClient } from "./stage-contract.js";
 function recordChunks(records: JsonRecord[], maximumBytes: number): JsonRecord[][] | null {
   const chunks: JsonRecord[][] = [];
@@ -339,7 +339,7 @@ export async function executeStage(
         (left, right) =>
           Buffer.byteLength(stableStringify(right.records), "utf8") -
             Buffer.byteLength(stableStringify(left.records), "utf8") ||
-          left.dataset.localeCompare(right.dataset),
+          compareOrdinal(left.dataset, right.dataset),
       );
     const selected = removable[0];
     if (selected === undefined) {

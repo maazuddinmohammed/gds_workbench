@@ -1,40 +1,47 @@
 ---
 name: atlas-mapping
-description: Define transformations from eligible inputs to Logical or Dimensional Entities. Author concise Object steps, Attribute rules and dependencies per target/source System so Coding and Validation can consume the complete Mapping without reconstructing the project.
+description: Author Atlas source-to-target Mapping for applied logical (Silver) or dimensional (Gold) Entities, one target Entity and source System per branch, complete enough to generate and validate code. Use for mapping, lineage-rule or transformation-design requests.
 ---
 
-# Mapping
+# Map sources to an applied target
 
-Logical Mapping supplies Silver targets; Dimensional Mapping supplies Gold targets. Each Mapping branch is one schema-qualified Entity and originating source System. Code Generation later chooses one file per target or separate System/target files.
+Goal: per branch (one schema-qualified target Entity and source System), a transformation complete enough to code and validate without rediscovering the design.
 
-Conceptual is a separate deliverable. Exclude its output from Mapping inputs and reasoning; use eligible modeled sources, business Context and target definitions directly.
+## When to use
 
-## Establish inputs
+- Map sources to applied Logical (Silver) or Dimensional (Gold) Entities, or update existing Mapping.
+- Not for: target design ([logical](../atlas-logical-model/SKILL.md), [dimensional](../atlas-dimensional-model/SKILL.md)) or SQL ([code generation](../atlas-code-generation/SKILL.md)).
 
-1. Follow the [working method](../../references/working-method.md). Reuse Tenant, working directory, Project, selected targets and Logical/Silver or Dimensional/Gold route. Resolve SQL policy/environment only when evidence queries are relevant. Start/reuse Atlas Local Workbench through its verified launcher.
-2. Require active applied modeled Entities and Attributes. Read [Entity ownership](../../references/project/entity-ownership.md). Read the bound [Project](../../references/snapshots/project.md) and [Metadata](../../references/snapshots/metadata.md) Snapshots, including pending Mapping work. Confirm current target/source definitions; reconcile any required refresh without replacing pending edits. Entity/project changes needed upstream must finish before dependent Mapping authoring.
-3. Read the [Mapping record contract](../../references/project/mapping.md). Resolve every active modeled Attribute, including keys, audits, constants and generated fields. Inspect existing branch documents and dependencies under [record state](../../references/record-state.md); preserve valid locked and unrelated work.
-4. Use the exact existing GDS [Mapping templates](../../references/project/mapping-documents.md). Reuse an explicitly selected template; otherwise inspect the configured template and resolve only a real ambiguity. Show a representative result and exceptions; do not ask again merely to choose the same template. Verify installed template codes before referencing them; preserve a previously selected custom template or resolve an actual conflict.
-5. Resolve [existing work and update scope](../../references/methods/change-impact.md). Inspect existing Mapping and known project/source changes; show affected target/System branches and their reasons. Ask the contextual selection question unless already answered. Regenerate selected affected logic and retain compatible unchanged rules; do not rebuild every target because the Project revision changed.
+## What you need
 
-## Author the complete transformation
+- [Working context](../../references/working-method.md) and its golden rules. Conceptual output is never a Mapping input.
+- Active applied target Entities and Attributes in current Project and Metadata Snapshots; upstream design changes finish first.
+- The [Mapping record contract](../../references/project/mapping.md) and the [transformation documents guide](../../references/project/mapping-documents.md), including its exact existing templates.
 
-1. **Resolve contributions.** Start from the modeled supporting Objects/Attributes, source ownership and existing mappings. Determine which inputs actually supply this target/System branch. Include needed lookup/preparation inputs; do not copy every supporting Object into the query or infer origin from its physical GDS System. Apply the route-specific eligibility checks.
-2. **Establish grain and identity.** Retain the agreed target grain and complete business/merge-key tuple, including source namespace where needed. Distinguish generated own keys from mapped foreign keys. For multiple Systems, state whether identities stay separate or are reconciled and how; file grouping does not settle collisions or precedence.
-3. **Write Object steps.** Follow the [document guide](../../references/project/mapping-documents.md#object-level-steps): read/preparation, joins and exact predicates, filter placement, any justified grouping/deduplication, output grain and final ordered projection. Use short ordered instructions; include only necessary stages. Resolve any generation-only inputs and runtime parameter rules.
-4. **Write Attribute rules.** Follow [Attribute instructions](../../references/project/mapping-documents.md#attribute-level-instructions). Cover each active modeled column per System with real lineage and an expression or generation rule. Reconcile storage/inferred/target types, identifier formatting, precision, nulls and invalid values. Keep field transformations here; Object steps refer to them.
-5. **Resolve dependencies.** Preserve branch `object_dependency_order` and explain actual predecessor/lookups where needed. Keep source contribution order, Attribute ordinal and Object dependency order distinct. Source-System ordering is not Mapping configuration; Process Groups and Processes own the runtime schedule. Preserve explicit business precedence between Systems independently of scheduling. Equal Object ordering is suitable only when confirmed work is independent; unresolved cycles or repeated execution needs require an explicit supported plan.
-6. **Check independent usability.** Follow the [consumer context](../../references/project/mapping-documents.md#complete-context-for-coding-and-validation) and checks. A coding/validation reader must obtain target placement, physical aliases, types/nullability/order, all System branches, dependencies and population rules from one complete Mapping view. Do not make it rediscover the design through Conceptual/Logical records or interpret a list of supports as transformation logic.
-7. **Write and validate locally.** Save complete changed records in `project-change-set/mapping_object.json` and `mapping_attribute.json` using [Project authoring](../../references/project/change-sets.md). Preserve previous pending content. Run [local validation](../../references/local-validation.md), Mapping structural checks and the document-quality checks. Repair substantive gaps before considering the affected branch ready.
-8. **Review and finish.** Show sources, concise steps, Attribute rules, generated omissions and dependency order in Atlas Local Workbench. Accumulate related branches locally; then follow the shared [Change Set lifecycle](../../references/change-set-lifecycle.md). After verified Apply, refresh the Project Snapshot and confirm the applied Mapping. Stop before [Code Generation](../atlas-code-generation/SKILL.md) unless already requested.
+## Steps
 
-## Ask only about unresolved rules
+1. Read applied targets with `select --session <dir> --area project --dataset <name> --view snapshot` and existing Mapping with `--view effective`.
+2. Resolve [update scope](../../references/methods/change-impact.md): show affected target and System branches with reasons. Regenerate selected branches and keep compatible unchanged rules; a new Project revision alone is no reason to rebuild.
+3. Use the selected or configured template; verify installed template codes and show one representative result before writing many.
+4. For each branch, decide which inputs really supply it, including needed lookups; never copy every supporting Object or infer origin from the GDS System. Keep the agreed target grain and complete merge key; separate generated own keys from mapped foreign keys.
+5. Write ordered Object steps (reads, joins with exact predicates, filter placement, justified deduplication, output grain) and an Attribute rule for every active modeled column per System, including keys, audits, constants and generated fields. Reconcile types, formats, precision and nulls.
+6. Set `object_dependency_order` from real prerequisites. Contribution order, Attribute ordinal and Object order are distinct; Process Groups own the runtime schedule.
+7. Write `mapping_object` and `mapping_attribute` records with `upsert-batch --session <dir> --area project --changes <JSON> --expected-digest <digest>`, then run `validate --session <dir> --area project` and the document quality checks.
+8. Show sources, steps, rules and dependency order in Atlas Local Workbench, then follow the [Change Set lifecycle](../../references/change-set-lifecycle.md) by repeating `next --session <dir> --area project`.
 
-Group related exceptions and recommend an evidence-based option:
+## Done when
 
-- **Cross-System identity:** keep source-qualified records separate, or reconcile the same business entity? If reconciled, what matching/survivorship rule applies?
-- **Competing rows:** which evidenced key and ordering choose a row, and what happens on a tie? Do not assume latest-wins or add DISTINCT.
-- **Lookup/conversion failures:** reject, preserve a null where allowed, or use a specified fallback? Do not invent missing-value policy.
-- **Consumer behavior:** if runtime batching, parameters or loading behavior are unclear, ask for the relevant rule or orchestration code and inspect it.
+- Every selected branch covers all active modeled Attributes with real lineage and a rule, or is explicitly blocked.
+- `validate` and the document quality checks pass, and one Mapping view supplies placement, aliases, types, order, branches, dependencies and population rules.
 
-Reuse confirmed answers. Straightforward direct mappings need no interview. Independent branches may progress while a blocked branch remains explicit; no invented `needs_review` status or activation of incomplete instructions. SQL is optional evidence under [query scope](../../references/query-scope.md), with its batch and masking rules; saved profiling batch IDs are not runtime transformation parameters.
+## Ask the user when
+
+- Cross-System identity, competing-row choice, lookup or conversion failures, or runtime consumer behavior is unresolved; the documents guide lists the questions.
+- A template choice is genuinely ambiguous.
+- Approving Stage and, separately, Apply.
+
+Direct mappings need no interview; SQL is optional evidence.
+
+## Next
+
+After Apply, refresh the Project Snapshot and confirm the applied Mapping. Stop before [code generation](../atlas-code-generation/SKILL.md) unless it was requested.
