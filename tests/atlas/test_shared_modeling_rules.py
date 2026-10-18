@@ -1,9 +1,10 @@
 """Modeling rules the web workflow prompts and Atlas both state.
 
-The web prompts (`database/seed/05_global_prompt_defaults.template.sql`) and the Atlas
-references are written for different agents, so their prose differs, but these rules must
-agree. Each row names the rule, the web workflows and Atlas file that state it, and a
-pattern each side must keep. When a rule changes, change both sides and this table.
+The web prompts (`database/seed/05_global_prompt_defaults.template.sql` and the alternate
+set in its `.v2.sql` sibling) and the Atlas references are written for different agents, so
+their prose differs, but these rules must agree. Each row names the rule, the web workflows
+and Atlas file that state it, and a pattern each side must keep. When a rule changes, change
+both sides and this table.
 """
 
 from __future__ import annotations
@@ -16,11 +17,16 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN = ROOT / "atlas/atlas-plugin"
-SEED = ROOT / "database/seed/05_global_prompt_defaults.template.sql"
-
-_DEFAULTS: list[dict[str, str]] = json.loads(
-    SEED.read_text(encoding="utf-8").split("$workflow_defaults$")[1]
-)
+SEEDS = {
+    "default": (
+        ROOT / "database/seed/05_global_prompt_defaults.template.sql",
+        "$workflow_defaults$",
+    ),
+    "alternate": (
+        ROOT / "database/seed/05_global_prompt_defaults.template.v2.sql",
+        "$alternate_defaults$",
+    ),
+}
 
 
 def _flat(text: str) -> str:
@@ -28,14 +34,19 @@ def _flat(text: str) -> str:
     return " ".join(text.split())
 
 
-WEB: dict[str, str] = {}
-for _default in _DEFAULTS:
-    _parts = (
-        _default.get(key) or ""
-        for key in ("system_prompt", "instruction_prompt", "tool_instruction_prompt")
-    )
-    _workflow = _default["project_workflow"]
-    WEB[_workflow] = _flat(" ".join([WEB.get(_workflow, ""), *_parts]))
+def _web_prompts(seed: Path, payload_tag: str) -> dict[str, str]:
+    prompts: dict[str, str] = {}
+    for default in json.loads(seed.read_text(encoding="utf-8").split(payload_tag)[1]):
+        parts = (
+            default.get(key) or ""
+            for key in ("system_prompt", "instruction_prompt", "tool_instruction_prompt")
+        )
+        workflow = default["project_workflow"]
+        prompts[workflow] = _flat(" ".join([prompts.get(workflow, ""), *parts]))
+    return prompts
+
+
+WEB_SETS = {name: _web_prompts(*seed) for name, seed in SEEDS.items()}
 
 ZONE_WORKFLOWS = ("analysis", "code_generation", "conceptual", "mapping", "validation")
 # (rule, web workflows, web pattern, Atlas file, Atlas pattern)
@@ -128,8 +139,9 @@ SHARED_RULES = [
 def test_web_prompts_and_atlas_state_the_same_rule(
     rule: str, workflows: tuple[str, ...], web_pattern: str, atlas_file: str, atlas_pattern: str
 ) -> None:
-    for workflow in workflows:
-        assert re.search(web_pattern, WEB[workflow], re.DOTALL), (rule, workflow)
+    for name, web in WEB_SETS.items():
+        for workflow in workflows:
+            assert re.search(web_pattern, web[workflow], re.DOTALL), (rule, name, workflow)
     atlas = _flat((PLUGIN / atlas_file).read_text(encoding="utf-8"))
     assert re.search(atlas_pattern, atlas, re.DOTALL), (rule, atlas_file)
 
@@ -137,6 +149,7 @@ def test_web_prompts_and_atlas_state_the_same_rule(
 def test_zone_codes_match_on_both_sides() -> None:
     zones = ("source", "bronze", "silver", "gold")
     terminology = (PLUGIN / "references/terminology.md").read_text(encoding="utf-8")
-    for workflow in ZONE_WORKFLOWS:
-        assert all(f"`{zone}`" in WEB[workflow] for zone in zones), workflow
+    for name, web in WEB_SETS.items():
+        for workflow in ZONE_WORKFLOWS:
+            assert all(f"`{zone}`" in web[workflow] for zone in zones), (name, workflow)
     assert all(f"`{zone}`:" in terminology for zone in zones)
