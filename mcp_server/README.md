@@ -85,3 +85,19 @@ Every MCP process runs a lease-based worker. PostgreSQL claims prevent duplicate
 execution across processes and separate MCP Profiling from web workers. Runs
 survive process restarts; expired claims can be recovered up to five times. Only
 complete, current, authorized results commit. Project and Tenant Lock rules apply.
+
+## Release notes
+
+### 0.3.0
+
+Breaking for older clients:
+
+- `apply_metadata_change_set` and `apply_project_change_set` require
+  `expected_candidate_digest`, the `candidate_digest` of the approved validation.
+  Calls without it fail argument validation; a mismatch is
+  `candidate_digest_conflict` and writes nothing.
+- Stage upload tools work only on requests carrying
+  `x-gds-mcp-client: atlas-stage-runner`; others get `stage_runner_required`.
+
+Release order: Atlas Stage Runner 0.3.0 first (older servers ignore its header), then
+server 0.3.0 together with Atlas plugin 0.4.0. Each release needs separate approval.

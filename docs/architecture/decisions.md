@@ -233,8 +233,8 @@ Apply requires `expected_candidate_digest`, the `candidate_digest` of the valida
 the user approved. Project Apply compares it with the stored validation before
 revalidating; Metadata Apply compares it with its fresh revalidation because current
 metadata can change. A mismatch is `candidate_digest_conflict` and writes nothing.
-Recording a new validation clears the local Apply approval. Server and plugin release
-together because the argument is required.
+Recording a new validation clears the local Apply approval. The argument breaks older
+callers, so server 0.3.0 releases together with plugin 0.4.0, after Stage Runner 0.3.0.
 
 `project_input_scope` and `profiling_profile` remain server Change Set datasets used
 by the web app and server tests. Atlas treats them as read-only: helper writes,

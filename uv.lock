@@ -450,7 +450,7 @@ wheels = [
 
 [[package]]
 name = "gds-etl-workbench-mcp"
-version = "0.2.0"
+version = "0.3.0"
 source = { directory = "mcp_server" }
 dependencies = [
     { name = "aiohttp" },
