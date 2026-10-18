@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -1147,12 +1148,15 @@ def test_context_uuid_is_created_once_and_published_schema_rejects_legacy_fields
     )
     assert edited["context_record_id"] == record_id
     assert json.loads(pending.read_text(encoding="utf-8")) == [record]
-    for invalid in (
+    invalid_records = [
         {**record, "context_record_id": "human-entered-key"},
         {**record, "record_key": "identity"},
         {**record, "source_reference": {"section": "2"}},
-        {**record, "source_reference": "é" * 32769},
-    ):
+    ]
+    # Windows caps a whole command line at 32,767 characters, below this field's limit.
+    if os.name != "nt":
+        invalid_records.append({**record, "source_reference": "é" * 32769})
+    for invalid in invalid_records:
         run(
             "upsert",
             *args,
