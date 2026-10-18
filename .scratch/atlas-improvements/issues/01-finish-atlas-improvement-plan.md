@@ -16,10 +16,8 @@ Open items:
 1. Decide whether MCP Stage should also reject `project_input_scope` and
    `profiling_profile`. Today only Atlas refuses them; server E2E tests in
    `tests/mcp/test_database_project_change_set_round_trip.py` stage both through MCP.
-2. Decide whether to bump the MCP server version label (`mcp_server/pyproject.toml`,
-   both `gds-etl-workbench-mcp==0.2.0` pins and lockfiles). Apply gained a required
-   argument, so release the server with plugin 0.4.0 and Stage Runner 0.3.0
-   (Stage Runner first; older servers ignore its header).
+2. Closed: MCP server bumped to 0.3.0 (version, pins, lockfiles, release note in
+   `mcp_server/README.md`); decision in `docs/architecture/decisions.md`.
 3. Live agent evaluations (`tests/atlas/eval/README.md`) have not been run; they call
    a model and cost money.
 
