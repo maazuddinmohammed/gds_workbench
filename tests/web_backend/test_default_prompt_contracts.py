@@ -122,6 +122,53 @@ def test_enrichment_examples_have_one_object_and_explicit_write_targets(
     assert set(selected) < {attribute["attribute_name"] for attribute in group["attributes"]}
 
 
+@pytest.mark.parametrize(
+    "workflow", ("metadata_enrichment_object", "metadata_enrichment_attribute")
+)
+def test_enrichment_inputs_carry_registered_descriptions_as_own_fields(
+    workflow: str,
+) -> None:
+    contracts = workflow_input_contracts(workflow)
+    objects = contracts["object_context"]
+    groups = contracts["object_attribute_context"]
+    object_entry = objects["schema"]["$defs"]["object_context_entry"]
+    attribute_item = groups["schema"]["$defs"]["object_attribute_context_entry"][
+        "properties"
+    ]["attributes"]["items"]
+    assert "registered_object_description" in object_entry["required"]
+    assert "registered_attribute_description" in attribute_item["required"]
+    assert "registered_object_description" in objects["description"]
+    assert "registered_attribute_description" in groups["description"]
+
+    # A Project description alone no longer satisfies the enrichment contract.
+    project_only = deepcopy(objects["example"])
+    del project_only[0]["registered_object_description"]
+    assert not cast(Any, Draft202012Validator(objects["schema"])).is_valid(project_only)
+    # Other workflows keep the shared shape without registered descriptions.
+    shared = workflow_input_contracts("analysis")["object_context"]["schema"]
+    assert "registered_object_description" not in json.dumps(shared)
+
+
+@pytest.mark.parametrize("workflow", ("analysis", "conceptual", "logical", "dimensional"))
+def test_context_records_description_names_the_delivered_fields(workflow: str) -> None:
+    contract = workflow_input_contracts(workflow)["context_records"]
+    fields = contract["schema"]["$defs"]["context_records_entry"]["properties"]
+
+    assert set(fields) == {
+        "context_record_id",
+        "context_group_name",
+        "context_type_name",
+        "context_text",
+        "source_reference",
+    }
+    assert all(field in contract["description"] for field in fields)
+    # Retired document-era fields must not reappear in author help.
+    assert not any(
+        stale in contract["description"]
+        for stale in ("record_type", "details", "document_name", "source_location")
+    )
+
+
 @pytest.mark.parametrize("mode", ("one_shot", "tool_assisted"))
 def test_mapping_defaults_render_selected_seeded_templates_with_nested_guidance(
     mode: Any,

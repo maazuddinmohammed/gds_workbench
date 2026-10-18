@@ -17,7 +17,6 @@ from gds_etl_workbench.domain.modeling_records import (
     Code100,
     InferredCardinality,
     Name400,
-    NonblankText,
     PhysicalAttributeKey,
     normalize_project_key_value,
 )
@@ -56,7 +55,11 @@ class AnalysisInferenceRelationship(BaseModel):
         str,
         StringConstraints(min_length=1, max_length=100, pattern=r"\S"),
     ]
-    relationship_basis: NonblankText
+    # Validation runs reject a longer basis, so the agent must repair it here.
+    relationship_basis: Annotated[
+        str,
+        StringConstraints(min_length=1, max_length=8_000, pattern=r"\S"),
+    ]
     inferred_cardinality: InferredCardinality
 
 

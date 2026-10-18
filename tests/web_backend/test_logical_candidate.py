@@ -12,6 +12,9 @@ from gds_etl_workbench.domain.modeling_records import (
     PhysicalObjectKey,
 )
 from gds_etl_workbench.domain.snapshots.project import LogicalSection
+from gds_etl_workbench.domain.snapshots.project_guidance import (
+    project_dataset_population_rules,
+)
 from gds_workbench_api.features.logical.candidate import LogicalCandidateValidator
 from jsonschema import Draft202012Validator
 from pydantic import JsonValue
@@ -352,6 +355,20 @@ def test_candidate_schema_includes_shared_logical_population_rules() -> None:
         "Use PascalCase; identifier Attributes end in ID" in rule
         for rule in cast(list[str], attribute_schema["x-gds-population-rules"])
     )
+
+
+def test_candidate_schema_replaces_only_the_shared_audit_attribute_rule() -> None:
+    schema = _validator().output_schema()
+    definitions = cast(dict[str, object], schema["$defs"])
+    attribute_schema = cast(dict[str, object], definitions["LogicalAttributeRecord"])
+    rules = cast(list[str], attribute_schema["x-gds-population-rules"])
+
+    # The backend projects audit Attributes and rejects candidates that author them.
+    shared = project_dataset_population_rules("logical_attribute")
+    changed = [(old, new) for old, new in zip(shared, rules, strict=True) if old != new]
+    assert len(changed) == 1
+    assert "including audit" in changed[0][0]
+    assert "omit audit Attributes" in changed[0][1]
 
 
 def test_parse_accepts_an_explicit_unchanged_candidate() -> None:

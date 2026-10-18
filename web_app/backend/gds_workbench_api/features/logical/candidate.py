@@ -173,6 +173,18 @@ class LogicalCandidateValidator:
         )
         _set_lock_fields_false(schema)
         enrich_agent_output_project_definitions(schema)
+        # The shared Change Set rule asks for audit Attributes; this workflow projects them.
+        attribute_schema = cast(
+            dict[str, JsonValue],
+            cast(dict[str, JsonValue], schema["$defs"])["LogicalAttributeRecord"],
+        )
+        attribute_schema["x-gds-population-rules"] = [
+            "Author business Attributes only; omit audit Attributes, which the backend "
+            "projects from Project policy."
+            if rule.startswith("Include every physical target Attribute")
+            else rule
+            for rule in cast(list[str], attribute_schema["x-gds-population-rules"])
+        ]
         return schema
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:

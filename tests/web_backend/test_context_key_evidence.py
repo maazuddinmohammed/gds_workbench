@@ -29,7 +29,9 @@ from tests.web_backend.test_logical_executor import _context_bundle
     [
         name
         for name, inputs in WORKFLOW_INPUTS.items()
+        # Enrichment inputs come from the SQL execution context, not this projection.
         if "object_attribute_context" in inputs
+        and not name.startswith("metadata_enrichment")
     ],
 )
 @pytest.mark.parametrize("registered", [True, False])
