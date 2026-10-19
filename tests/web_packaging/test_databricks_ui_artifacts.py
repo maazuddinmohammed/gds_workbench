@@ -119,6 +119,7 @@ def test_generated_app_contains_runtime_source_only(tmp_path: Path) -> None:
     assert "web_app/frontend/index.html" in app_files
     assert "web_app/frontend/src/main.tsx" in app_files
     assert "web_app/frontend/public/assets/atlas.svg" in app_files
+    assert "web_app/frontend/public/assets/atlas-favicon.svg" in app_files
     for name in (
         "OpenSans-Regular.woff2",
         "OpenSans-SemiBold.woff2",

@@ -58,7 +58,9 @@ uppercase **ATLAS** wordmark. Use KPMG-inspired colors without the official KPMG
 - Canonical vector: `web_app/frontend/public/assets/atlas.svg`; Workbench packages
   an identical `workbench/atlas.svg`. Both headers reference that asset rather than
   redrawing it. Scope `brightness(0) invert(1)` to header images for the white
-  treatment; keep the canonical blue favicon and light-surface logo. Keep the
+  treatment; keep the canonical blue light-surface logo. The browser favicon uses
+  `atlas-favicon.svg`, the same blue silhouette over a white circle, so its A stays
+  white on dark browser tabs. Keep the
   32×32 viewBox and even-odd aperture. The extension icon is an antialiased
   512×512 PNG using the same silhouette on a pale tile.
 - Fonts and OFL license ship in web `public/assets/fonts` and Workbench `fonts`.

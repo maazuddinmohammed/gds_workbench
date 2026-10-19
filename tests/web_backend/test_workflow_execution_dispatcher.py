@@ -83,7 +83,7 @@ def _services() -> tuple[WorkflowExecutionServices, dict[str, RecordingExecutor]
             "metadata_enrichment",
         )
     }
-    return WorkflowExecutionServices(**executors, usage_recorder=None), executors
+    return WorkflowExecutionServices(**executors, usage_recorder=None, lifecycle=None), executors
 
 
 @pytest.mark.parametrize("mode", [None, "tool_assisted"])

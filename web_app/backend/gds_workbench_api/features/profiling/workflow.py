@@ -25,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from gds_workbench_api.features.profiling.execution import (
     ProfileMetric,
     ProfileObject,
+    ProfileQuery,
     ProfilingExecutor,
     ProfilingPolicy,
     build_profile_queries,
@@ -241,50 +242,73 @@ class ProfilingWorkflowOrchestrator:
             event_sequence = 3
             progress_points = _intermediate_progress_points(object_total) | {object_total}
             metrics_by_attribute: dict[int, tuple[int, ProfileMetric]] = {}
-            for offset in range(0, len(plans), self._policy.max_parallel_queries):
-                batch = plans[offset : offset + self._policy.max_parallel_queries]
-                results = await asyncio.gather(
-                    *(
-                        self._executor.execute(
-                            connection=target.connection,
-                            query=query,
-                            timeout_seconds=self._policy.statement_timeout_seconds,
-                        )
-                        for target, query in batch
-                    )
-                )
-                for (target, query), metrics in zip(batch, results, strict=True):
-                    if tuple(metric.attribute_id for metric in metrics) != query.attribute_ids:
-                        raise RuntimeError("Profiling result coverage is invalid")
-                    for metric in metrics:
-                        if metric.attribute_id in metrics_by_attribute:
-                            raise RuntimeError("Profiling result coverage is duplicated")
-                        metrics_by_attribute[metric.attribute_id] = (
-                            target.object.object_id,
-                            metric,
-                        )
-                    object_id = target.object.object_id
-                    query_counts_by_object[object_id] -= 1
-                    if query_counts_by_object[object_id] == 0:
-                        completed_objects += 1
-                        if completed_objects in progress_points:
-                            await self._repository.append_event(
-                                principal,
-                                workflow_run_id=workflow_run_id,
-                                expected_project_revision=expected_project_revision,
-                                workflow_run_claim_token=workflow_run_claim_token,
-                                sequence=event_sequence,
-                                stage="profiling.execute",
-                                status="running",
-                                message=(
-                                    f"Profiling completed {completed_objects} of "
-                                    f"{object_total} Objects."
-                                ),
-                                current=completed_objects,
-                                total=object_total,
-                                finding_count=len(metrics_by_attribute),
+            remaining_plans = iter(plans)
+            pending: dict[
+                asyncio.Task[tuple[ProfileMetric, ...]],
+                tuple[ProfilingExecutionTarget, ProfileQuery],
+            ] = {}
+            try:
+                while True:
+                    # Refill each free slot without waiting for slower sibling queries.
+                    for _ in range(self._policy.max_parallel_queries - len(pending)):
+                        plan = next(remaining_plans, None)
+                        if plan is None:
+                            break
+                        target, query = plan
+                        task = asyncio.create_task(
+                            self._executor.execute(
+                                connection=target.connection,
+                                query=query,
+                                timeout_seconds=self._policy.statement_timeout_seconds,
                             )
-                            event_sequence += 1
+                        )
+                        pending[task] = plan
+                    if not pending:
+                        break
+                    completed, _ = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                    # Keep plan order when several queries finish in the same turn.
+                    for task in tuple(pending):
+                        if task not in completed:
+                            continue
+                        target, query = pending.pop(task)
+                        metrics = task.result()
+                        if tuple(metric.attribute_id for metric in metrics) != query.attribute_ids:
+                            raise RuntimeError("Profiling result coverage is invalid")
+                        for metric in metrics:
+                            if metric.attribute_id in metrics_by_attribute:
+                                raise RuntimeError("Profiling result coverage is duplicated")
+                            metrics_by_attribute[metric.attribute_id] = (
+                                target.object.object_id,
+                                metric,
+                            )
+                        object_id = target.object.object_id
+                        query_counts_by_object[object_id] -= 1
+                        if query_counts_by_object[object_id] == 0:
+                            completed_objects += 1
+                            if completed_objects in progress_points:
+                                await self._repository.append_event(
+                                    principal,
+                                    workflow_run_id=workflow_run_id,
+                                    expected_project_revision=expected_project_revision,
+                                    workflow_run_claim_token=workflow_run_claim_token,
+                                    sequence=event_sequence,
+                                    stage="profiling.execute",
+                                    status="running",
+                                    message=(
+                                        f"Profiling completed {completed_objects} of "
+                                        f"{object_total} Objects."
+                                    ),
+                                    current=completed_objects,
+                                    total=object_total,
+                                    finding_count=len(metrics_by_attribute),
+                                )
+                                event_sequence += 1
+            finally:
+                # A failed or cancelled run must not leave warehouse queries running.
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    await asyncio.gather(*pending, return_exceptions=True)
 
             attributes = {
                 attribute.attribute_id: (target.object, attribute)

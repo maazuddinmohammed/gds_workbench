@@ -126,6 +126,7 @@ def test_workflow_runtime_services_share_one_executor_graph(
     assert execution.validation is services.validation
     assert execution.metadata_enrichment is services.metadata_enrichment
     assert execution.usage_recorder is services.usage_recorder
+    assert execution.lifecycle is authoring[0]["lifecycle"]
 
 
 def test_workflow_runtime_services_forward_provider_authentications(

@@ -33,6 +33,7 @@ _APP_ROOT_FILES = (
 _FRONTEND_ROOT_FILES = (
     "index.html",
     "public/assets/atlas.svg",
+    "public/assets/atlas-favicon.svg",
     "public/assets/fonts/OpenSans-Regular.woff2",
     "public/assets/fonts/OpenSans-SemiBold.woff2",
     "public/assets/fonts/OpenSans_Condensed-Bold.woff2",

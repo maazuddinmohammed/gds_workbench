@@ -80,6 +80,7 @@ class WorkflowRuntimeDatabase(Protocol):
 @dataclass(frozen=True, slots=True)
 class WorkflowRuntimeServices:
     usage_recorder: DatabaseWorkflowUsageRecorder
+    lifecycle: DatabaseAgentWorkflowLifecycle
     agent_executor: AgentExecutionRouter
     profiling: ProfilingWorkflowOrchestrator
     analysis_inference: AnalysisInferenceWorkflow
@@ -98,6 +99,7 @@ class WorkflowRuntimeServices:
     def execution_services(self) -> WorkflowExecutionServices:
         return WorkflowExecutionServices(
             usage_recorder=self.usage_recorder,
+            lifecycle=self.lifecycle,
             profiling=self.profiling,
             analysis_inference=self.analysis_inference,
             analysis_validation=self.analysis_validation,
@@ -205,6 +207,7 @@ def create_workflow_runtime_services(
 
     return WorkflowRuntimeServices(
         usage_recorder=usage_recorder,
+        lifecycle=lifecycle,
         agent_executor=agent_executor,
         profiling=ProfilingWorkflowOrchestrator(
             repository=DatabaseProfilingWorkflowRepository(

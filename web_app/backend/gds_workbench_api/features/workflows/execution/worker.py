@@ -1,13 +1,69 @@
 """Single-claim durable Workflow Run worker behavior."""
 
 import asyncio
+import logging
 from contextlib import suppress
 from enum import StrEnum
 from typing import Protocol
 from uuid import UUID
 
+from gds_etl_workbench.domain.errors import DependencyUnavailableError, WorkbenchError
+from psycopg import InterfaceError, OperationalError
+from psycopg.errors import (
+    DeadlockDetected,
+    InsufficientPrivilege,
+    InvalidAuthorizationSpecification,
+    InvalidSchemaName,
+    LockNotAvailable,
+    QueryCanceled,
+    RaiseException,
+    SerializationFailure,
+    UndefinedColumn,
+    UndefinedFunction,
+    UndefinedObject,
+    UndefinedTable,
+)
+
 from .contracts import WorkflowExecutionClaim
 from .repository import WorkflowClaimLease
+
+_logger = logging.getLogger(__name__)
+
+
+def _failure_category(error: Exception) -> str:
+    """Classify a bounded exception chain without reading messages or diagnostics."""
+    current: BaseException | None = error
+    seen: set[int] = set()
+    category = "unexpected"
+    for _ in range(6):
+        if current is None or id(current) in seen:
+            break
+        seen.add(id(current))
+        if isinstance(
+            current,
+            UndefinedFunction
+            | UndefinedTable
+            | UndefinedColumn
+            | UndefinedObject
+            | InvalidSchemaName,
+        ):
+            return "database_schema"
+        if isinstance(current, InsufficientPrivilege | InvalidAuthorizationSpecification):
+            return "database_access"
+        if isinstance(
+            current, DeadlockDetected | SerializationFailure | LockNotAvailable | QueryCanceled
+        ):
+            return "database_contention"
+        if isinstance(current, OperationalError | InterfaceError):
+            return "database_connectivity"
+        if isinstance(current, RaiseException):
+            return "workflow_guard"
+        if isinstance(current, DependencyUnavailableError):
+            category = "dependency_unavailable"
+        elif isinstance(current, WorkbenchError):
+            category = "workflow_guard"
+        current = current.__cause__ or current.__context__
+    return category
 
 
 class WorkflowClaimLeaseRepository(Protocol):
@@ -73,34 +129,50 @@ class WorkflowClaimRunner:
                 {execution, heartbeat},
                 return_when=asyncio.FIRST_COMPLETED,
             )
-            if execution in done:
-                heartbeat.cancel()
-                with suppress(asyncio.CancelledError):
-                    await heartbeat
+            if execution not in done:
+                category = "unexpected"
                 try:
-                    await execution
+                    await heartbeat
                 except asyncio.CancelledError:
                     raise
-                except Exception:
-                    return WorkerRunResult.EXECUTION_FAILED
-                return WorkerRunResult.COMPLETED
+                except Exception as error:
+                    category = _failure_category(error)
+                # Completion may clear the claim while its last heartbeat is in
+                # flight. A finished executor remains the authoritative outcome.
+                if not execution.done():
+                    _logger.warning(
+                        "workflow_claim_lost run_id=%s recovery_count=%s category=%s",
+                        claim.workflow_run_id,
+                        claim.workflow_run_recovery_count,
+                        category,
+                    )
+                    execution.cancel()
+                    with suppress(asyncio.CancelledError, Exception):
+                        await execution
+                    return WorkerRunResult.CLAIM_LOST
 
-            try:
+            heartbeat.cancel()
+            with suppress(asyncio.CancelledError, Exception):
                 await heartbeat
+            try:
+                await execution
             except asyncio.CancelledError:
                 raise
-            except Exception:
-                pass
-            execution.cancel()
-            with suppress(asyncio.CancelledError):
-                await execution
-            return WorkerRunResult.CLAIM_LOST
+            except Exception as error:
+                _logger.warning(
+                    "workflow_execution_failed run_id=%s recovery_count=%s category=%s",
+                    claim.workflow_run_id,
+                    claim.workflow_run_recovery_count,
+                    _failure_category(error),
+                )
+                return WorkerRunResult.EXECUTION_FAILED
+            return WorkerRunResult.COMPLETED
         except asyncio.CancelledError:
             execution.cancel()
             heartbeat.cancel()
-            with suppress(asyncio.CancelledError):
+            with suppress(asyncio.CancelledError, Exception):
                 await execution
-            with suppress(asyncio.CancelledError):
+            with suppress(asyncio.CancelledError, Exception):
                 await heartbeat
             with suppress(Exception):
                 await asyncio.shield(

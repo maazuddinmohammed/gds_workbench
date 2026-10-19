@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -28,6 +29,7 @@ from gds_workbench_api.features.profiling.execution import (
     ProfileMetric,
     ProfileObject,
     ProfileQuery,
+    ProfilingPolicy,
 )
 from gds_workbench_api.features.profiling.repository import (
     DatabaseProfilingWorkflowRepository,
@@ -341,6 +343,177 @@ async def test_profiling_run_bounds_large_object_progress() -> None:
         80,
     ]
     assert all(event[4] == object_count for event in repository.events)
+
+
+@pytest.mark.asyncio
+async def test_profiling_refills_free_query_slots_before_slow_queries_finish() -> None:
+    repository = _Repository(
+        context=ProfilingExecutionContext(
+            workflow_run_id=1048,
+            project_id=18,
+            project_revision=4,
+            requested_batch_id=None,
+            targets=tuple(
+                _target(object_id=object_id, attribute_id=object_id + 900)
+                for object_id in range(101, 105)
+            ),
+        )
+    )
+    slow_query_release = asyncio.Event()
+    next_query_started = asyncio.Event()
+    active_queries = 0
+    peak_queries = 0
+
+    class GatedExecutor(_Executor):
+        async def execute(
+            self,
+            *,
+            connection: DatabricksSqlConnection,
+            query: ProfileQuery,
+            timeout_seconds: int,
+        ) -> tuple[ProfileMetric, ...]:
+            nonlocal active_queries, peak_queries
+            active_queries += 1
+            peak_queries = max(peak_queries, active_queries)
+            try:
+                if query.object_id == 101:
+                    await slow_query_release.wait()
+                if query.object_id == 103:
+                    next_query_started.set()
+                return await super().execute(
+                    connection=connection,
+                    query=query,
+                    timeout_seconds=timeout_seconds,
+                )
+            finally:
+                active_queries -= 1
+
+    orchestrator = ProfilingWorkflowOrchestrator(
+        repository=repository,
+        executor=GatedExecutor(),
+        policy=ProfilingPolicy(
+            schema_version="1.0",
+            attributes_per_query=50,
+            max_parallel_queries=2,
+            statement_timeout_seconds=300,
+            max_attributes_per_object=2_000,
+        ),
+    )
+    run = asyncio.create_task(
+        orchestrator.execute_started(
+            _principal(),
+            tenant_id=7,
+            project_id=18,
+            workflow_run_id=1048,
+            expected_project_revision=4,
+            workflow_run_claim_token=_CLAIM_TOKEN,
+        )
+    )
+    try:
+        await asyncio.wait_for(next_query_started.wait(), timeout=1)
+        assert repository.committed_profiles is None
+        assert peak_queries == 2
+    finally:
+        slow_query_release.set()
+        await run
+
+    assert repository.failed is None
+    assert repository.committed_profiles is not None
+    assert len(repository.committed_profiles) == 4
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure_source", ["query", "progress", "cancellation"])
+async def test_profiling_failure_cancels_other_in_flight_queries(
+    failure_source: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = _Repository(
+        context=ProfilingExecutionContext(
+            workflow_run_id=1048,
+            project_id=18,
+            project_revision=4,
+            requested_batch_id=None,
+            targets=tuple(
+                _target(object_id=object_id, attribute_id=object_id + 900)
+                for object_id in range(101, 112)
+            ),
+        )
+    )
+    original_append_event = repository.append_event
+
+    async def append_event(principal: RequestPrincipal, **values: Any) -> None:
+        if failure_source == "progress" and values["stage"] == "profiling.execute":
+            raise DependencyUnavailableError()
+        await original_append_event(principal, **values)
+
+    monkeypatch.setattr(repository, "append_event", append_event)
+    other_query_started = asyncio.Event()
+    other_query_release = asyncio.Event()
+    other_query_finished = asyncio.Event()
+    other_query_cancelled = False
+
+    class FailingExecutor(_Executor):
+        async def execute(
+            self,
+            *,
+            connection: DatabricksSqlConnection,
+            query: ProfileQuery,
+            timeout_seconds: int,
+        ) -> tuple[ProfileMetric, ...]:
+            nonlocal other_query_cancelled
+            if query.object_id == 101:
+                await other_query_started.wait()
+                if failure_source == "query":
+                    raise DatabricksStatementFailedError(1)
+            if query.object_id != 102:
+                return await super().execute(
+                    connection=connection,
+                    query=query,
+                    timeout_seconds=timeout_seconds,
+                )
+            other_query_started.set()
+            try:
+                await other_query_release.wait()
+                return await super().execute(
+                    connection=connection,
+                    query=query,
+                    timeout_seconds=timeout_seconds,
+                )
+            except asyncio.CancelledError:
+                other_query_cancelled = True
+                raise
+            finally:
+                other_query_finished.set()
+
+    run = asyncio.create_task(
+        ProfilingWorkflowOrchestrator(
+            repository=repository,
+            executor=FailingExecutor(),
+        ).execute_started(
+            _principal(),
+            tenant_id=7,
+            project_id=18,
+            workflow_run_id=1048,
+            expected_project_revision=4,
+            workflow_run_claim_token=_CLAIM_TOKEN,
+        )
+    )
+    try:
+        if failure_source == "cancellation":
+            await asyncio.wait_for(other_query_started.wait(), timeout=1)
+            run.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await run
+        else:
+            await run
+        assert other_query_cancelled
+        assert other_query_finished.is_set()
+        assert (repository.failed is None) == (failure_source == "cancellation")
+        assert repository.committed_profiles is None
+    finally:
+        other_query_release.set()
+        await asyncio.wait_for(other_query_finished.wait(), timeout=1)
 
 
 @pytest.mark.asyncio

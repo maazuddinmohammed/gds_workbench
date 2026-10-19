@@ -131,17 +131,26 @@ def test_frontend_declares_a_local_self_contained_atlas_svg_favicon() -> None:
 
     match = re.search(
         r'<link\s+rel="icon"\s+type="image/svg\+xml"\s+sizes="any"\s+'
-        r'href="/assets/atlas.svg"\s*/>',
+        r'href="/assets/atlas-favicon.svg"\s*/>',
         index,
     )
     assert match is not None
     root = ET.fromstring(
-        (FRONTEND_INDEX.parent / "public" / "assets" / "atlas.svg").read_text()
+        (FRONTEND_INDEX.parent / "public" / "assets" / "atlas-favicon.svg").read_text()
     )
     assert root.tag == "{http://www.w3.org/2000/svg}svg"
     x, y, width, height = (float(value) for value in root.attrib["viewBox"].split())
     assert x == y == 0 and width == height and width > 0
-    assert root.find("{http://www.w3.org/2000/svg}path") is not None
+    # The A must stay white when Chrome's tab background is dark.
+    circle = root.find("{http://www.w3.org/2000/svg}circle")
+    path = root.find("{http://www.w3.org/2000/svg}path")
+    assert circle is not None and path is not None
+    assert circle.attrib == {"cx": "16", "cy": "16", "r": "14", "fill": "#FFFFFF"}
+    assert list(root).index(circle) < list(root).index(path)
+    canonical = ET.fromstring(
+        (FRONTEND_INDEX.parent / "public" / "assets" / "atlas.svg").read_text()
+    ).find("{http://www.w3.org/2000/svg}path")
+    assert canonical is not None and path.attrib == canonical.attrib
     assert all(not element.tag.endswith("script") for element in root.iter())
     assert all(
         not key.endswith("href") for element in root.iter() for key in element.attrib

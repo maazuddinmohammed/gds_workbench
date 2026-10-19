@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from contextlib import nullcontext
+from contextlib import nullcontext, suppress
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -11,6 +11,9 @@ from gds_etl_workbench.domain.errors import InvalidRequestError
 from .contracts import WorkflowExecutionClaim, WorkflowExecutor
 
 if TYPE_CHECKING:
+    from gds_workbench_api.features.workflows.authoring.lifecycle import (
+        DatabaseAgentWorkflowLifecycle,
+    )
     from gds_workbench_api.features.workflows.usage.service import DatabaseWorkflowUsageRecorder
 
 
@@ -27,6 +30,7 @@ class WorkflowExecutionServices:
     validation: WorkflowExecutor
     metadata_enrichment: WorkflowExecutor
     usage_recorder: DatabaseWorkflowUsageRecorder | None = None
+    lifecycle: DatabaseAgentWorkflowLifecycle | None = None
 
 
 class WorkflowExecutionDispatcher:
@@ -64,15 +68,37 @@ class WorkflowExecutionDispatcher:
             if self._services.usage_recorder is not None
             else nullcontext()
         )
-        async with recording:
-            return await executor.execute_started(
-                claim.principal,
-                tenant_id=claim.tenant_id,
-                project_id=claim.project_id,
-                workflow_run_id=claim.workflow_run_id,
-                expected_project_revision=claim.project_revision,
-                workflow_run_claim_token=claim.workflow_run_claim_token,
-            )
+        executor_started = False
+        try:
+            async with recording:
+                executor_started = True
+                return await executor.execute_started(
+                    claim.principal,
+                    tenant_id=claim.tenant_id,
+                    project_id=claim.project_id,
+                    workflow_run_id=claim.workflow_run_id,
+                    expected_project_revision=claim.project_revision,
+                    workflow_run_claim_token=claim.workflow_run_claim_token,
+                )
+        except Exception:
+            if not executor_started and self._services.lifecycle is not None:
+                # Startup runs before the executor's failure handler. Use the same
+                # governed claim/revision/identity checks; never clear a claim directly.
+                with suppress(Exception):
+                    await self._services.lifecycle.fail(
+                        claim.principal,
+                        workflow_run_id=claim.workflow_run_id,
+                        expected_project_revision=claim.project_revision,
+                        workflow_run_claim_token=claim.workflow_run_claim_token,
+                        failure_code="workflow_usage_unavailable",
+                        safe_failure_message=(
+                            "Workflow usage tracking could not initialize before execution. "
+                            "Check database compatibility and access."
+                        ),
+                    )
+            # If terminalization is unavailable, preserve bounded recovery and the
+            # original cause for the worker's non-disclosing diagnostic.
+            raise
 
 
 __all__ = ["WorkflowExecutionDispatcher", "WorkflowExecutionServices"]
