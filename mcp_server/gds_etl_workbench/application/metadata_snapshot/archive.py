@@ -113,6 +113,7 @@ def build_dataset_document(definition: DatasetDefinition) -> MetadataDatasetDocu
         ),
         "type": "object",
         "additionalProperties": False,
+        "$defs": generated.get("$defs", {}),
         "properties": typed_properties,
         "required": required,
         "x-gds-dataset": definition.name,

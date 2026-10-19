@@ -20,7 +20,7 @@ Get these release files:
 
 | File | Purpose |
 |---|---|
-| `atlas-agent-plugin-0.4.0.zip` | Skills, helpers, and Workbench for Copilot |
+| `atlas-agent-plugin-0.4.1.zip` | Skills, helpers, and Workbench for Copilot |
 | `atlas-stage-runner-0.3.0.vsix` | VS Code Stage Runner |
 
 Save them in Downloads. Extract the plugin ZIP into your Atlas installation folder.
@@ -29,14 +29,14 @@ Windows PowerShell:
 
 ```powershell
 New-Item -ItemType Directory -Force "$HOME\Tools\Atlas" | Out-Null
-Expand-Archive "$HOME\Downloads\atlas-agent-plugin-0.4.0.zip" "$HOME\Tools\Atlas"
+Expand-Archive "$HOME\Downloads\atlas-agent-plugin-0.4.1.zip" "$HOME\Tools\Atlas"
 ```
 
 macOS / Linux:
 
 ```sh
 mkdir -p "$HOME/Tools/Atlas"
-unzip "$HOME/Downloads/atlas-agent-plugin-0.4.0.zip" -d "$HOME/Tools/Atlas"
+unzip "$HOME/Downloads/atlas-agent-plugin-0.4.1.zip" -d "$HOME/Tools/Atlas"
 ```
 
 The ZIP includes its `atlas` folder. Avoid an extra nesting level. In VS Code,

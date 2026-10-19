@@ -151,6 +151,40 @@ def test_governed_writes_are_refused_and_logged(tmp_path: Path) -> None:
     assert outcomes == ["error"] * len(refused)
 
 
+def test_mapping_replay_skips_omitted_fences_and_refuses_stale_ones(tmp_path: Path) -> None:
+    # The real reader checks expected_* fences only when supplied, against current values.
+    world = json.loads((FIXTURES / "world.json").read_text())
+    digest = next(
+        response["result"]["context_digest"]
+        for response in world["responses"]
+        if response["arguments"].get("modeled_entity_name") == "Customer"
+    )
+    target = {
+        "project_id": 1,
+        "modeled_entity_type": "logical_entity",
+        "modeled_entity_schema_name": "silver_demo",
+        "modeled_entity_name": "Customer",
+    }
+    current = [
+        {"component": "target_metadata"},
+        {"component": "source_metadata", "expected_project_revision": None},
+        {"component": "source_systems", "expected_project_revision": 1},
+        {"component": "target_metadata", "expected_context_digest": digest},
+    ]
+    stale = [
+        {"component": "target_metadata", "expected_project_revision": 2},
+        {"component": "source_metadata", "expected_context_digest": "0" * 64},
+    ]
+    results = _calls(
+        tmp_path, [("read_mapping_context", {**target, **fences}) for fences in current + stale]
+    )
+    assert [result.is_error for result in results] == [False] * len(current) + [True] * len(stale)
+    replayed = results[: len(current)]
+    assert {result.structured_content["context_digest"] for result in replayed} == {digest}
+    assert "invalid_request: Project revision changed" in results[-2].content[0].text
+    assert "invalid_request: Mapping context changed" in results[-1].content[0].text
+
+
 def test_dry_run_sandboxes_seed_real_workspaces_and_isolate_the_plugin(tmp_path: Path) -> None:
     scenarios = {scenario["id"]: scenario for scenario in harness.load_scenarios()}
     sandbox = harness.build_sandbox(scenarios["resume-uncertain-stage"], tmp_path)
@@ -176,16 +210,30 @@ def test_dry_run_sandboxes_seed_real_workspaces_and_isolate_the_plugin(tmp_path:
         check=True,
     )
     assert json.loads(status.stdout)["task_count"] == 1
-    assert json.loads(harness_log.read_text())["argv"][0] == "status"
+    unknown = subprocess.run(["node", str(shim), "no-such-command"], capture_output=True)
+    assert unknown.returncode == 1
+    logged = [json.loads(line) for line in harness_log.read_text().splitlines()]
+    assert [(call["argv"][0], call["status"]) for call in logged] == [
+        ("status", 0),
+        ("no-such-command", 1),
+    ]
 
 
-def _simulate(sandbox: harness.Sandbox, *, tools: list[str], helpers: list[list[str]]) -> None:
+def _simulate(
+    sandbox: harness.Sandbox,
+    *,
+    tools: list[str],
+    helpers: list[list[str]],
+    failed_helpers: tuple[list[str], ...] = (),
+) -> None:
     with (sandbox.logs / "mcp_calls.jsonl").open("a") as handle:
         for index, tool in enumerate(tools, start=1):
             handle.write(json.dumps({"seq": index, "tool": tool, "arguments": {}}) + "\n")
     with (sandbox.logs / "helper_calls.jsonl").open("a") as handle:
         for argv in helpers:
-            handle.write(json.dumps({"argv": argv}) + "\n")
+            handle.write(json.dumps({"argv": argv, "status": 0}) + "\n")
+        for argv in failed_helpers:
+            handle.write(json.dumps({"argv": argv, "status": 1}) + "\n")
 
 
 def test_scorer_passes_a_compliant_run_and_names_each_violation(tmp_path: Path) -> None:
@@ -220,6 +268,7 @@ def test_scorer_passes_a_compliant_run_and_names_each_violation(tmp_path: Path) 
         bad,
         tools=["stage_project_change_set", "execute_databricks_sql", "apply_project_change_set"],
         helpers=[["select", "--dataset", "conceptual_object"]],
+        failed_helpers=(["validate", "--area", "project"],),  # A failed run is not a pass.
     )
     manifest = bad.workspace / "project/project-snapshot/manifest.json"
     manifest.write_text(manifest.read_text() + " ")

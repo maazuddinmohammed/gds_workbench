@@ -150,6 +150,20 @@ def _install_seeds(database: DisposablePostgres, entra_tenant_id: UUID, object_i
         )
         assert review_seed.count(guard) == 1
         connection.execute(cast(LiteralString, review_seed.replace(guard, fixture_guard, 1)))
+        # The seeds describe every physical column. One gap beside kept values gives the
+        # physical-description scenario something to fill.
+        blanked = connection.execute(
+            """
+            UPDATE core.attribute AS attribute
+               SET attribute_description = NULL
+              FROM core.object AS object
+             WHERE object.object_id = attribute.object_id
+               AND object.object_schema = 'bronze_demo'
+               AND object.object_name = 'customer'
+               AND attribute.attribute_name = 'customer_name'
+            """
+        )
+        assert blanked.rowcount == 1
 
 
 async def _record(

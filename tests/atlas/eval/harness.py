@@ -58,14 +58,15 @@ EXPECT_KEYS = {
 }
 HELPER_SHIM = """#!/usr/bin/env node
 "use strict";
-// Evaluation shim: record the helper invocation, then run the real helper unchanged.
+// Evaluation shim: run the real helper unchanged, then record the call and its exit status.
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const log = path.resolve(__dirname, "../../../logs/helper_calls.jsonl");
-fs.appendFileSync(log, JSON.stringify({ argv: process.argv.slice(2) }) + "\\n");
+const argv = process.argv.slice(2);
 const real = path.join(__dirname, "atlas-local.real.js");
-const result = spawnSync(process.execPath, [real, ...process.argv.slice(2)], { stdio: "inherit" });
+const result = spawnSync(process.execPath, [real, ...argv], { stdio: "inherit" });
+fs.appendFileSync(log, JSON.stringify({ argv, status: result.status }) + "\\n");
 process.exit(result.status === null ? 1 : result.status);
 """
 
@@ -363,8 +364,12 @@ def score(scenario: dict[str, Any], sandbox: Sandbox) -> dict[str, Any]:
     expect: dict[str, Any] = scenario["expect"]
     mcp_calls = _jsonl(sandbox.logs / "mcp_calls.jsonl")
     tools = [call["tool"] for call in mcp_calls]
-    helper_calls = [call["argv"] for call in _jsonl(sandbox.logs / "helper_calls.jsonl")]
+    helper_log = _jsonl(sandbox.logs / "helper_calls.jsonl")
+    helper_calls = [call["argv"] for call in helper_log]
     commands = [argv[0] for argv in helper_calls if argv]
+    # Every attempt counts against budgets and forbidden commands; a requirement needs exit 0.
+    succeeded = {call["argv"][0] for call in helper_log if call["argv"] and call.get("status") == 0}
+    ran = f"helper commands succeeded: {sorted(succeeded)}, called: {sorted(set(commands))}"
     datasets = {
         argv[index + 1]
         for argv in helper_calls
@@ -405,9 +410,9 @@ def score(scenario: dict[str, Any], sandbox: Sandbox) -> dict[str, Any]:
     for tool in expect.get("forbidden_tools", []):
         check(f"not-called:{tool}", tool not in tools, f"MCP calls: {sorted(set(tools))}")
     for command in expect.get("required_helper_commands", []):
-        check(f"helper:{command}", command in commands, f"helper commands: {sorted(set(commands))}")
+        check(f"helper:{command}", command in succeeded, ran)
     if wanted := expect.get("helper_commands_any"):
-        check("helper-any", bool(set(wanted) & set(commands)), f"helper: {sorted(set(commands))}")
+        check("helper-any", bool(set(wanted) & succeeded), ran)
     for command in expect.get("forbidden_helper_commands", []):
         check(f"no-helper:{command}", command not in commands, f"helper: {sorted(set(commands))}")
     for dataset in expect.get("forbidden_helper_datasets", []):
