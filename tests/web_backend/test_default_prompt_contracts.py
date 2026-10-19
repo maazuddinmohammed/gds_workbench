@@ -37,20 +37,20 @@ DEFAULTS = json.loads(
     .read_text()
     .split("$workflow_defaults$")[1]
 )
-# Seed 05 v2 publishes an alternate global set that Projects can assign instead.
-ALTERNATES = json.loads(
+# Seed 05 v2 publishes a second version of the same global defaults.
+V2_DEFAULTS = json.loads(
     (ROOT / "database/seed/05_global_prompt_defaults.template.v2.sql")
     .read_text()
-    .split("$alternate_defaults$")[1]
+    .split("$workflow_defaults$")[1]
 )
 
 
 @pytest.mark.parametrize(
     "default",
-    [*DEFAULTS, *ALTERNATES],
+    [*DEFAULTS, *V2_DEFAULTS],
     ids=[
         f"{prefix}.{row['project_workflow']}.{row['workflow_execution_mode'] or 'common'}"
-        for prefix, rows in (("default", DEFAULTS), ("alternate", ALTERNATES))
+        for prefix, rows in (("default", DEFAULTS), ("v2", V2_DEFAULTS))
         for row in rows
     ],
 )
@@ -243,7 +243,7 @@ def test_mapping_defaults_render_selected_seeded_templates_with_nested_guidance(
     values = project_prompt_input_values(
         plan=plan, stage=stage, context=context, resolver_values={}
     )
-    for prompts in (DEFAULTS, ALTERNATES):
+    for prompts in (DEFAULTS, V2_DEFAULTS):
         default = next(
             row
             for row in prompts
