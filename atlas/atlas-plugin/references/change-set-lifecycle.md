@@ -2,7 +2,7 @@
 
 Use this procedure for Metadata or Project changes. Finish related work locally, then submit one reviewed batch at a meaningful completion/dependency boundary. Read-only work stops before submission; saving generated files does not deploy or execute them.
 
-Run `node scripts/atlas-local.js <command>` from the installed plugin directory. `--session` is the working directory containing `.atlas`; add `--owner <verified-Tenant-id>` for another registered Metadata owner. The [runtime reference](local-runtime.md) covers the PowerShell fallback; [command-contract](../contracts/local-helper.json) owns exact flags.
+Run `node <plugin>/scripts/atlas-local.js <command>` with literal absolute paths, one helper command per terminal command; `<plugin>` is the installed plugin folder. `--session` is the working directory containing `.atlas`; add `--owner <verified-Tenant-id>` for another registered Metadata owner. The [runtime reference](local-runtime.md) covers the PowerShell fallback; [command-contract](../contracts/local-helper.json) owns exact flags.
 
 ## Submit with `next`
 

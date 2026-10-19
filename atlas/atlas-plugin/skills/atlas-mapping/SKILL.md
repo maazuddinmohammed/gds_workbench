@@ -5,7 +5,7 @@ description: Author Atlas source-to-target Mapping for applied logical (Silver) 
 
 # Map sources to an applied target
 
-Goal: per branch (one schema-qualified target Entity and source System), a transformation complete enough to code and validate without rediscovering the design.
+Goal: per branch (one schema-qualified target Entity and source System), a transformation complete enough to code and validate.
 
 ## When to use
 
@@ -26,7 +26,7 @@ Goal: per branch (one schema-qualified target Entity and source System), a trans
 4. For each branch, decide which inputs really supply it, including needed lookups; never copy every supporting Object or infer origin from the GDS System. Keep the agreed target grain and complete merge key; separate generated own keys from mapped foreign keys.
 5. Write ordered Object steps (reads, joins with exact predicates, filter placement, justified deduplication, output grain) and an Attribute rule for every active modeled column per System, including keys, audits, constants and generated fields. Reconcile types, formats, precision and nulls.
 6. Set `object_dependency_order` from real prerequisites. Contribution order, Attribute ordinal and Object order are distinct; Process Groups own the runtime schedule.
-7. Write `mapping_object` and `mapping_attribute` records with `upsert-batch --session <dir> --area project --changes <JSON> --expected-digest <digest>`, then run `validate --session <dir> --area project` and the document quality checks.
+7. Write `mapping_object` and `mapping_attribute` records with `upsert-batch --session <dir> --area project --changes <JSON> --expected-digest <digest>`. Run `validate --session <dir> --area project` and the document quality checks even when nothing changed, after `task-add` if no task is active.
 8. Show sources, steps, rules and dependency order in Atlas Local Workbench, then follow the [Change Set lifecycle](../../references/change-set-lifecycle.md) by repeating `next --session <dir> --area project`.
 
 ## Done when
@@ -36,7 +36,7 @@ Goal: per branch (one schema-qualified target Entity and source System), a trans
 
 ## Ask the user when
 
-- Cross-System identity, competing-row choice, lookup or conversion failures, or runtime consumer behavior is unresolved; the documents guide lists the questions.
+- Cross-System identity, competing-row choice, lookup or conversion failures, or runtime consumer behavior is unresolved.
 - A template choice is genuinely ambiguous.
 - Approving Stage and, separately, Apply.
 

@@ -24,7 +24,7 @@ Atlas preserves the verified Project Snapshot format and uses the shared [runtim
 | rows.jsonl | One complete Project record per line. Records may contain nested objects/arrays; preserve their complete structure. |
 | project-change-set/<dataset>.json | JSON array of complete pending records, overlaid by canonical key onto the unchanged Snapshot. |
 
-Follow catalog rows_file/schema_file paths. Archive format version 3.0, Snapshot ID, Project revision and server Change Set draft revision identify different things: file format, export, applied Project state and pending server edits. Project ID/revision belong to the Snapshot context; do not invent project_id fields on records whose schema omits them.
+Read records with `select --view effective` (pending drafts included) or `--view snapshot` (applied baseline), never by opening rows files; the helper follows catalog rows_file/schema_file paths. Archive format version 3.0, Snapshot ID, Project revision and server Change Set draft revision identify different things: file format, export, applied Project state and pending server edits. Project ID/revision belong to the Snapshot context; do not invent project_id fields on records whose schema omits them.
 
 Current Project catalogs contain 25 datasets. Mapping contains Object and Attribute records. Atlas rejects retired Binding or Mapping System-dependency datasets; refresh the Snapshot before authoring against this fresh-install release.
 

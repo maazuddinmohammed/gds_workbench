@@ -26,8 +26,8 @@ Goal: the requested kind of verification, reporting exactly which checks ran, wh
 
 ## Steps
 
-1. Read the selected records with `select --session <dir> --area <area> --dataset <name> --view effective`.
-2. Run `validate --session <dir> --area <area>` and read the actual findings. `review_required`, `not_run` and `server_only` are not passes.
+1. Read the selected records with `select --session <dir> --area <area> --dataset <name> --view effective`, never from Snapshot files.
+2. If no task is active, run `task-add --session <dir> --outcome <outcome>` first (local bookkeeping, allowed even when nothing may change). Run `validate --session <dir> --area <area>` and read the actual findings. `review_required`, `not_run` and `server_only` are not passes.
 3. Review business correctness against requirements and evidence with the one quality guide that fits, listed in [local validation](../../references/local-validation.md).
 4. Keep completeness boundaries: partial Mapping can support explicitly incomplete draft Code with typed placeholders, but never SQL Validation authoring or claims of executable correctness.
 5. Repair defects through the owning skill only when repair is requested or part of the current task; never invent an expectation to make a check pass.

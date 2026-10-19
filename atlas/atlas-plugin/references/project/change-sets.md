@@ -32,7 +32,7 @@ Local upsert merges complete records into the existing pending dataset. Server s
 
 ## Atlas helpers
 
-Run these Atlas commands through `node scripts/atlas-local.js`; `--session` is the directory containing `.atlas`. Read `command-contract --command <name>` before use.
+Run these Atlas commands through `node <plugin>/scripts/atlas-local.js`, one per terminal command with absolute paths; `--session` is the directory containing `.atlas`. Read `command-contract --command <name>` before use.
 
 | Helper | Purpose and limitation |
 |---|---|
