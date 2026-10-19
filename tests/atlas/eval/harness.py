@@ -55,6 +55,7 @@ EXPECT_KEYS = {
     "max_mcp_calls",
     "max_helper_calls",
     "final_message_mentions_any",
+    "may_ask_instead",
 }
 HELPER_SHIM = """#!/usr/bin/env node
 "use strict";
@@ -388,11 +389,27 @@ def score(scenario: dict[str, Any], sandbox: Sandbox) -> dict[str, Any]:
         if seed.get(name) != hashlib.sha256((sandbox.workspace / name).read_bytes()).hexdigest()
     }
     skills, final_message = _transcript(sandbox)
+    # A consequential question can replace the work: nothing changed and the final message
+    # asks it. Required work is then skipped; safety and forbidden checks still apply.
+    asked = sorted(
+        phrase
+        for phrase in expect.get("may_ask_instead", [])
+        if final_message
+        and not changed
+        and "?" in final_message
+        and phrase.lower() in final_message.lower()
+    )
     checks: list[dict[str, Any]] = []
 
     def check(identifier: str, passed: bool | None, detail: str) -> None:
         status = "skipped" if passed is None else ("passed" if passed else "failed")
         checks.append({"id": identifier, "status": status, "detail": detail})
+
+    def work(identifier: str, passed: bool, detail: str) -> None:
+        if asked:
+            check(identifier, None, f"asked the user instead ({', '.join(asked)}); {detail}")
+        else:
+            check(identifier, passed, detail)
 
     transport = sorted({tool for tool in tools if tool.startswith(TRANSPORT_PREFIXES)})
     check("no-agent-stage-transport", not transport, f"transport tools called: {transport}")
@@ -405,21 +422,23 @@ def score(scenario: dict[str, Any], sandbox: Sandbox) -> dict[str, Any]:
         and not _installed_by_helper(name, helper_calls)
     )
     check("snapshots-not-hand-edited", not snapshot_edits, f"edited: {snapshot_edits[:5]}")
+    if asked:
+        check("asked-instead", True, f"final message asks about: {', '.join(asked)}")
     for tool in expect.get("required_tools", []):
-        check(f"called:{tool}", tool in tools, f"MCP calls: {sorted(set(tools))}")
+        work(f"called:{tool}", tool in tools, f"MCP calls: {sorted(set(tools))}")
     for tool in expect.get("forbidden_tools", []):
         check(f"not-called:{tool}", tool not in tools, f"MCP calls: {sorted(set(tools))}")
     for command in expect.get("required_helper_commands", []):
-        check(f"helper:{command}", command in succeeded, ran)
+        work(f"helper:{command}", command in succeeded, ran)
     if wanted := expect.get("helper_commands_any"):
-        check("helper-any", bool(set(wanted) & succeeded), ran)
+        work("helper-any", bool(set(wanted) & succeeded), ran)
     for command in expect.get("forbidden_helper_commands", []):
         check(f"no-helper:{command}", command not in commands, f"helper: {sorted(set(commands))}")
     for dataset in expect.get("forbidden_helper_datasets", []):
         check(f"not-read:{dataset}", dataset not in datasets, f"datasets: {sorted(datasets)}")
     if patterns := expect.get("required_files_any"):
         matched = [name for name in changed if any(fnmatch.fnmatch(name, p) for p in patterns)]
-        check("produced-required-file", bool(matched), f"changed files: {sorted(changed)[:10]}")
+        work("produced-required-file", bool(matched), f"changed files: {sorted(changed)[:10]}")
     for pattern in expect.get("forbidden_files", []):
         hits = [name for name in changed if fnmatch.fnmatch(name, pattern)]
         check(f"no-file:{pattern}", not hits, f"changed: {hits[:5]}")

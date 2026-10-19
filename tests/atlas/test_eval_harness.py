@@ -287,6 +287,45 @@ def test_scorer_passes_a_compliant_run_and_names_each_violation(tmp_path: Path) 
     }
 
 
+def test_scorer_accepts_a_needed_question_only_when_nothing_changed(tmp_path: Path) -> None:
+    scenario = next(
+        item for item in harness.load_scenarios() if item["id"] == "dimension-from-logical"
+    )
+    question = (
+        "Dim Customer has no history rule. Should it overwrite (Type 1) or keep history (Type 2)?"
+    )
+
+    def run(name: str, final: str, *, edit: bool = False) -> dict[str, str]:
+        sandbox = harness.build_sandbox(scenario, tmp_path / name)
+        _simulate(
+            sandbox, tools=[], helpers=[["inspect"], ["select", "--dataset", "dimensional_entity"]]
+        )
+        if edit:
+            (sandbox.workspace / "project-change-set").mkdir(exist_ok=True)
+            (sandbox.workspace / "project-change-set/dimensional_entity.json").write_text("[]")
+        (sandbox.logs / "transcript.jsonl").write_text(
+            json.dumps(
+                {"type": "tool_use", "input": {"path": "skills/atlas-dimensional-model/SKILL.md"}}
+            )
+            + "\n"
+            + json.dumps({"type": "result", "result": final})
+            + "\n"
+        )
+        report = harness.score(scenario, sandbox)
+        return {item["id"]: item["status"] for item in report["checks"]} | {
+            "passed": str(report["passed"])
+        }
+
+    asked = run("asked", question)
+    assert asked["passed"] == "True"
+    assert asked["asked-instead"] == "passed"
+    assert asked["helper:validate"] == asked["produced-required-file"] == "skipped"
+    # A statement is not a question, and a question does not excuse a partial edit.
+    assert run("statement", "Dim Customer uses Type 1.")["helper:validate"] == "failed"
+    edited = run("edited", question, edit=True)
+    assert "asked-instead" not in edited and edited["helper:validate"] == "failed"
+
+
 _RANDOM = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\b[0-9a-f]{64}\b"
 )

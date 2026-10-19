@@ -14,7 +14,7 @@ is a rubric, not a record that such an evaluation passed.
 | Build a conceptual model only | Standalone Conceptual records/relationships and evidence; no Logical counterpart or downstream work. Unknown conceptual cardinality is allowed. |
 | Build Logical or Dimensional while Conceptual records exist | Exclude Conceptual output from task reads and reasoning. Logical uses physical/source evidence and business Context; Dimensional retains applied Logical prerequisites. |
 | Grill Me about Order grain; current logical draft | Same logical skill/task, focused consequential question, preserved draft. Resolve full identity before dependent keys; no duplicated phase chain. |
-| Build one dimension from applied Logical inputs | Dimensional workflow; no invented fact, new profiling dataset, mandatory target registration or logical rebuild. |
+| Build one dimension from applied Logical inputs | Dimensional workflow; no invented fact, new profiling dataset, mandatory target registration or logical rebuild. When the Project leaves history unset, asking Type 1 or Type 2 before drafting is also acceptable. |
 | Map selected Objects to an existing applied project | Mapping uses current configured template and complete target/System coverage. No automatic conceptual rebuild or target registration requirement. |
 | Generate SQL from nonempty partial applied Mapping | Incomplete Code with explicit issues and justified typed placeholders/zero-row projection; no invented joins or claim of executable business correctness. |
 | Author SQL Validation with incomplete Mapping | Block the affected definition authoring on completeness; ordinary structural/project quality verification can still proceed. |

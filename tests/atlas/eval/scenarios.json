@@ -144,6 +144,12 @@
         "forbidden_files": [
           "project-change-set/logical_*.json",
           "metadata-change-set/*.json"
+        ],
+        "may_ask_instead": [
+          "Type 1",
+          "Type 2",
+          "SCD",
+          "slowly changing"
         ]
       }
     },
