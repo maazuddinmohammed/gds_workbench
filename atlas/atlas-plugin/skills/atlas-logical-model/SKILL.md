@@ -32,7 +32,7 @@ Goal: a normalized Silver design with explicit grain, complete identity and trac
 
 - Every selected input is modeled, excluded with a reason, or reported as blocked.
 - `validate` passes and `coverage` meets the Project target; when `enforced` is false, the user may accept a gap.
-- You showed grain, identity, relationships, validation results and open questions.
+- You showed grain, identity, relationships, validation findings with how each warning was resolved, coverage against the target, and open questions.
 
 ## Ask the user when
 
