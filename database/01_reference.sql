@@ -13,6 +13,10 @@ CREATE TABLE reference.context_type (
     context_type_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name VARCHAR(200) NOT NULL,
     description TEXT,
+    created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
+    updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     CONSTRAINT ck_context_type_name CHECK (reference.is_nonblank(name))
 );
 CREATE UNIQUE INDEX ux_context_type_name_ci

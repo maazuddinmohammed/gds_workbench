@@ -35,7 +35,15 @@ def test_rework_tables_expose_only_the_approved_columns(
     postgres_database: DisposablePostgres,
 ) -> None:
     expected = {
-        ("reference", "context_type"): ("context_type_id", "name", "description"),
+        ("reference", "context_type"): (
+            "context_type_id",
+            "name",
+            "description",
+            "created_time",
+            "created_by",
+            "updated_time",
+            "updated_by",
+        ),
         ("project", "context_group"): (
             "context_group_id",
             "project_id",
