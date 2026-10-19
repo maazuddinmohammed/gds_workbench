@@ -435,6 +435,83 @@
         ],
         "min_optional": 3
       }
+    },
+    {
+      "id": "code-error-fix",
+      "rubric": "Fix generated SQL from a pasted runtime error without running SQL",
+      "request": "I ran code/silver_customer.sql in Databricks and got this error:\n\n[TABLE_OR_VIEW_NOT_FOUND] The table or view `bronze_demo`.`customers` cannot be found. Verify the spelling and correctness of the schema and catalog. SQLSTATE: 42P01; line 2 pos 5\n\nFix the code.",
+      "workspace": "project",
+      "sql_policy": "never",
+      "seed_files": {
+        "code/silver_customer.sql": "SELECT customer_id AS `Customer ID`, cust_name AS `Customer Name`\nFROM bronze_demo.customers\n"
+      },
+      "expect": {
+        "skills_read_any": [
+          "atlas-code-generation",
+          "atlas"
+        ],
+        "forbidden_tools": [
+          "execute_databricks_sql",
+          "create_project_change_set",
+          "create_metadata_change_set"
+        ],
+        "required_files_any": [
+          "code/silver_customer.sql"
+        ],
+        "forbidden_files": [
+          "code/silver_orders.sql",
+          "code/dim_customer.sql",
+          "code/fact_order.sql",
+          "metadata-change-set/*.json"
+        ]
+      },
+      "quality": {
+        "reference": [
+          "The reported error is the table name: the registered Bronze Object is bronze_demo.customer (singular), and the applied Mapping for silver_demo.Customer reads from it.",
+          "The same statement has a second problem the error doesn't show yet: cust_name doesn't exist. The registered Bronze Attribute and the Mapping use customer_name, so fixing only the table would fail next with UNRESOLVED_COLUMN.",
+          "Fixed code: SELECT customer_id AS `Customer ID`, customer_name AS `Customer Name` FROM bronze_demo.customer. This matches the applied generated code for silver_demo.Customer, so the local file had drifted from it.",
+          "Change only code/silver_customer.sql, plus its generated-code record if Atlas updates it. Don't change metadata, Mappings or other code.",
+          "SQL policy is Never: don't run the query. Explain the cause plainly and ask the user to rerun it and bring back any new error."
+        ],
+        "criteria": [
+          {
+            "id": "fixes-table",
+            "required": true,
+            "text": "Changes the source table to bronze_demo.customer, based on the registered metadata or the Mapping."
+          },
+          {
+            "id": "fixes-column-too",
+            "required": true,
+            "text": "Also replaces cust_name with customer_name, so the next run doesn't fail on the column."
+          },
+          {
+            "id": "minimal-change",
+            "required": true,
+            "text": "Changes only the silver_customer code (the file, and its generated-code record if updated); no metadata, Mapping or other code changes."
+          },
+          {
+            "id": "explains-cause",
+            "required": false,
+            "text": "Explains in plain words why the code failed: names that don't match the registered Bronze table."
+          },
+          {
+            "id": "matches-applied-code",
+            "required": false,
+            "text": "Notices that the fixed statement matches the applied generated code, or that the local file had drifted from it."
+          },
+          {
+            "id": "asks-to-rerun",
+            "required": false,
+            "text": "Doesn't run the query itself, and asks the user to rerun it and report any new error."
+          },
+          {
+            "id": "checks-against-mapping",
+            "required": false,
+            "text": "Checks the whole statement against the Mapping or metadata before handing it back, not only the line in the error."
+          }
+        ],
+        "min_optional": 2
+      }
     }
   ]
 }

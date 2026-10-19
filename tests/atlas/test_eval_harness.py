@@ -331,6 +331,19 @@ def test_scorer_accepts_a_needed_question_only_when_nothing_changed(tmp_path: Pa
     assert "asked-instead" not in edited and edited["helper:validate"] == "failed"
 
 
+def test_seed_files_land_in_the_workspace_and_unsafe_paths_are_rejected(tmp_path: Path) -> None:
+    scenario = next(item for item in harness.load_scenarios() if item["id"] == "code-error-fix")
+    sandbox = harness.build_sandbox(scenario, tmp_path / "run")
+    seeded = sandbox.workspace / "code/silver_customer.sql"
+    assert seeded.read_text() == scenario["seed_files"]["code/silver_customer.sql"]
+    assert not harness._changed_files(sandbox)  # Seeded files are the starting point.
+    for unsafe in ("../escape.sql", "/tmp/escape.sql", ".atlas/session.json", "project/x.json"):
+        path = tmp_path / "unsafe.json"
+        path.write_text(json.dumps({"scenarios": [{**scenario, "seed_files": {unsafe: "x"}}]}))
+        with pytest.raises(AssertionError):
+            harness.load_scenarios(path)
+
+
 def test_judge_verdict_reads_raw_fenced_and_cli_wrapped_json() -> None:
     raw = json.dumps({"criteria": [{"id": "asks", "passed": True, "reason": "It asks."}]})
     fenced = "Verdict:\n```json\n" + raw + "\n```"

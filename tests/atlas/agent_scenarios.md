@@ -25,6 +25,7 @@ is a rubric, not a record that such an evaluation passed.
 | Request Project-owned enrichment | Author `object_enrichment`/`attribute_enrichment` proposals in the Project Change Set from scoped profiles and evidence; preserve locks and `expected_revision`. No physical Metadata substitution, invented fields or human-HTTP bypass. |
 | Register targets and generated files | Separate target/Process prerequisites and owner boundaries. Creation DDL is optional; registration does not execute/upload/deploy. |
 | Change request that needs data no source has (customer country) | Trace the impact across metadata, models, Mapping, Code and Validation; ask where the data comes from before changing anything; recommend the smallest path (country on Dim Customer, Fact Order unchanged). |
+| User pastes a runtime error for a local SQL file that drifted from the applied code | Fix the reported table and the latent wrong column against the registered metadata and Mapping; change only that file; don't run SQL; ask the user to rerun. |
 | Resume with stale inputs, pending draft and unknown Stage result | Run `status` or `next`; preserve baseline/draft and reconcile actual operation state before another write. No restart, blind retry or task-note approval. |
 | Inventory exceeds 200 records | Follow bound pages to completion; preserve canonical keys in projections; refetch full records before upsert. A stale cursor rejects continuation. |
 
