@@ -561,3 +561,8 @@ DATASETS = (
 DATASETS_BY_NAME = {definition.name: definition for definition in DATASETS}
 CHANGE_SET_DATASETS = tuple(definition for definition in DATASETS if definition.change_set_eligible)
 CHANGE_SET_DATASETS_BY_NAME = {definition.name: definition for definition in CHANGE_SET_DATASETS}
+# Changed only by governed web commands and Profiling runs, so MCP Stage refuses them.
+# Atlas mirrors this list in atlas/atlas-plugin/workbench/core.js.
+WEB_MANAGED_PROJECT_DATASETS: frozenset[ProjectChangeSetDataset] = frozenset(
+    {"project_input_scope", "profiling_profile"}
+)

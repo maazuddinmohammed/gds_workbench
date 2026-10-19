@@ -213,6 +213,14 @@ class StageChunkConflictError(WorkbenchError):
         )
 
 
+class WebManagedDatasetError(WorkbenchError):
+    def __init__(self, dataset: str) -> None:
+        super().__init__(
+            code="web_managed_dataset",
+            message=f"{dataset} is managed in the web application and cannot be staged.",
+        )
+
+
 class DependencyUnavailableError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(

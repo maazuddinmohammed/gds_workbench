@@ -236,11 +236,15 @@ metadata can change. A mismatch is `candidate_digest_conflict` and writes nothin
 Recording a new validation clears the local Apply approval. The argument breaks older
 callers, so server 0.3.0 releases together with plugin 0.4.0, after Stage Runner 0.3.0.
 
-`project_input_scope` and `profiling_profile` remain server Change Set datasets used
-by the web app and server tests. Atlas treats them as read-only: helper writes,
-Workbench editing and Stage Runner manifests refuse them, and local validation
-reports stale drafts as `web_managed_dataset`. Whether MCP Stage should also reject
-them is an open decision. After a failed governed MCP call,
+`project_input_scope` and `profiling_profile` are web-managed: only the web app's
+governed Input Scope command and Profiling runs change them. Atlas treats them as
+read-only: helper writes, Workbench editing and Stage Runner manifests refuse them,
+and local validation reports stale drafts as `web_managed_dataset`. The server
+enforces the rule too: MCP Stage, Begin, Put and Commit refuse both datasets with
+`web_managed_dataset` before writing anything (`WEB_MANAGED_PROJECT_DATASETS` in
+`domain/snapshots/project.py`); the web app's generic Stage already refused them.
+Shared validation and materialization still handle both, because the web commands
+use them. After a failed governed MCP call,
 `atlas-local next --area <area> --error <code>` returns one recovery action from a
 fixed table and says stop for unknown codes.
 
