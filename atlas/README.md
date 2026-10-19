@@ -4,16 +4,15 @@ Atlas is a portable Agent Plugins 1.0 plugin with 12 task-oriented skills, share
 
 ## User guides
 
-Complete the Copilot setup guide, then follow the usage guide.
+Complete the setup guide, then follow the usage guide.
 
 | Guide | When to use it |
 |---|---|
-| [Copilot - VS Code installation and setup](atlas-plugin/docs/copilot-vs-code-installation-and-setup.md) | Register the plugin, install Stage Runner, and sign in to Atlas. |
-| [Installation and updates](atlas-plugin/docs/install-and-update.md) | Install the plugin ZIP and matching Stage Runner VSIX in one permanent location. |
-| [Atlas usage](atlas-plugin/docs/usage-guide.md) | Start work, review local changes, Stage, Apply, and resume later. |
+| [Atlas setup](atlas-plugin/docs/copilot-vs-code-installation-and-setup.md) | Install and update the plugin and Stage Runner, register them in VS Code, and sign in. |
+| [Atlas usage](atlas-plugin/docs/usage-guide.md) | What you can ask Atlas, with sample prompts; review, Stage, Apply and resume. |
 
-The plugin ZIP includes these guides and install/update instructions in its `docs/` folder. Users do not
-need a source checkout or a local build.
+The plugin ZIP includes both guides in its `docs/` folder. Users do not need a
+source checkout or a local build.
 
 Before authorized delegation, Atlas saves a [sub-agent model policy](atlas-plugin/docs/usage-guide.md#choose-the-sub-agent-policy)
 per working folder: current model only, agent-selected model, or one specified
@@ -37,6 +36,8 @@ Backend setup follows the [MCP README](../mcp_server/README.md) and
 [fresh-install database sequence](../database/README.md).
 
 The current artifacts are Atlas plugin 0.4.1 and VS Code Stage Runner 0.3.0. Rebuild the matching artifacts after source changes; version labels alone do not prove source equality. Installing the plugin does not install the extension or update the deployed backend. Publication and deployment require separate approval.
+
+Release order: Stage Runner 0.3.0 first (older servers ignore its client header), then MCP server 0.3.0 together with plugin 0.4.1. Users' laptop files never update the server or database, so a user who reports a version or compatibility error needs the matching server release.
 
 ## Build
 

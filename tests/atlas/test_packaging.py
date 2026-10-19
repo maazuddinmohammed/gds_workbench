@@ -114,7 +114,6 @@ def test_archive_round_trip_and_reproducibility(tmp_path: Path) -> None:
         assert {name for name in expected if name.startswith("atlas/docs/")} == {
             "atlas/docs/copilot-vs-code-installation-and-setup.md",
             "atlas/docs/usage-guide.md",
-            "atlas/docs/install-and-update.md",
         }
         assert "atlas/references/local-runtime.md" in expected
         assert "atlas/docs/assets/workbench-table-preview.png" not in expected

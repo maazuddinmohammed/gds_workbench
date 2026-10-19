@@ -1,214 +1,222 @@
 # Atlas usage guide
 
-Use this guide after completing the
-[Copilot - VS Code setup](copilot-vs-code-installation-and-setup.md).
+Atlas helps Copilot build and maintain GDS Workbench metadata, models, mappings
+and code. You describe the work in plain English and Atlas prepares it locally.
+Records in GDS Workbench change only after you approve twice: Stage, then Apply.
 
-The Atlas workflow:
+Set up Atlas first with the [setup guide](copilot-vs-code-installation-and-setup.md).
 
-```text
-Open your working folder
-          |
-       Start Atlas
-          |
-Review and check local changes
-          |
-     Approve Stage
-          |
-Review the checked server draft
-          |
-     Approve Apply
-```
+## Words you'll see
 
-**Stage** sends reviewed files to a server draft. **Apply** saves the approved
-draft as current Atlas records. They are separate actions.
-
-## 1. Open your working folder
-
-Use a folder for your work, separate from the Atlas installation folder.
-
-Open the working folder in VS Code, then open Copilot Chat in a local agent session.
-
-To use another folder, open that folder in a new agent session. You do not need
-to install Atlas again. Microsoft sign-in may be reused by VS Code. Keep Atlas
-files inside the opened folder or its child folders so Stage Runner can read them.
-
-## 2. Start Atlas and describe the work
-
-Send:
-
-```text
-Start atlas.
-```
-
-Atlas asks only for missing information needed by your request. It opens
-Atlas Local Workbench when preparing or reviewing local changes.
-It reuses saved choices when you resume.
-
-| Information | What to provide |
+| Term | Meaning |
 |---|---|
-| Tenant | Your team's Tenant name or code. If unsure, ask Atlas to list your available Tenants. |
-| Task | Describe what you want to create, change, or inspect. |
-| Project | The Project name, if the task needs one. Ask Atlas to list available Projects if needed. |
-| Working folder | Confirm the current folder, or give the full path to a folder inside it. |
-| Sub-agent policy, only before authorized delegation | Choose **Current model only**, **Agent selects the model**, or **Specified model only**. For the last choice, give the exact AI model name or ID. |
-| SQL permission | **Never**: no SQL execution. **Essential**: run SQL only for evidence needed to continue. **Proactive**: also run useful checks. |
-| Environment | When SQL is needed, choose `dev`, `qa`, `stg`, or `prod`. The default is `dev`. |
+| Tenant | Your team's space in GDS Workbench. It owns metadata and Projects. |
+| Project | One modeling effort in a Tenant: its scope, models, Mappings and code. |
+| Scope | The source tables chosen for a Project in the web app. |
+| Snapshot | A local copy of saved records that Atlas reads. |
+| Change Set | One reviewed batch of draft changes. |
+| Applied | Saved with Apply. |
 
-The SQL environment does not change your Microsoft account or Atlas backend.
+## How it works
 
-For example:
+```text
+You ask
+  -> Atlas prepares local drafts
+  -> You review them in Atlas Local Workbench
+  -> You approve Stage: Stage Runner uploads a server draft
+  -> You approve Apply: Atlas saves the records
+```
+
+- Questions and explanations are answered directly, with nothing to approve.
+- Copilot also asks you to **Allow** Atlas's helper commands and server tools.
+  That's normal; saving records still needs your Stage and Apply approvals. The
+  one exception is a profiling run, which saves its profiles directly.
+- Apply saves Atlas records only. It doesn't deploy code, run pipelines or commit
+  to Git.
+
+## Start or resume
+
+For Project work, your Project must already exist in the web app with its source
+tables in scope.
+
+1. Open your working folder in VS Code: one folder per Project, outside
+   `Tools/Atlas`. Open the Chat view and select **Local**, then **Agent**.
+2. Send `Start atlas.` To continue earlier work, send
+   `Resume atlas. Show the unfinished work in this folder.`
+
+Atlas asks only for what it's missing:
+
+| Atlas may ask for | What to answer |
+|---|---|
+| Tenant | Your team's Tenant name or code. Ask `List my tenants.` if unsure. |
+| Project | The Project name. Ask `List the projects.` if unsure. |
+| SQL policy | Whether Atlas may run read-only queries on your data. It writes SQL code either way. **Never**: no queries or profiling. **Essential**: only queries needed to continue. **Proactive**: also useful checks. |
+| Environment | `dev`, `qa`, `stg` or `prod`, when queries run. The default is `dev`. |
+| Sub-agent policy | Asked only before Atlas delegates work. See [below](#choose-the-sub-agent-policy). |
+
+To give everything at once:
 
 ```text
 Start atlas.
 Tenant: [your Tenant code]
 Project: [your Project name]
-Task: Improve missing descriptions for the selected customer tables.
-Keep existing descriptions. Use the current working folder.
-SQL policy: Never.
-Sub-agent policy: Current model only.
+SQL policy: [Never / Essential / Proactive]
+Task: [what you want done]
 ```
 
-### Choose the sub-agent policy
+## What you can ask, with sample prompts
 
-A sub-agent is a helper agent assigned part of the work. Choose its model rule:
+Copy a prompt and replace the parts in [brackets]. Plain English works too. Use
+the names you see in Atlas Local Workbench: entity names such as [Customer] for
+models, and `schema.table` for physical tables.
 
-| Choice | What Atlas must do |
-|---|---|
-| **Current model only** (recommended) | Use the same AI model as your main chat for every sub-agent. |
-| **Agent selects the model** | Select a suitable available model for each sub-agent's task. |
-| **Specified model only** | Use only the exact model you name for every sub-agent. |
-
-This choice does not change your main chat model or your Atlas Project.
-It applies to all workflows and nested sub-agents in this working folder.
-Atlas saves the choice and reuses it when you return. Older folders without a
-saved choice prompt you only before authorized delegation.
-
-You can change it in chat, for example: `Set the sub-agent policy to Specified
-model only. Use [exact model name or ID].` Replace the brackets with your choice.
-Atlas must check that your host can use that model. If it cannot follow the
-rule, Atlas continues in the main agent and explains the limit. It must not
-select a substitute model without your instruction. Choosing a policy does not
-require Atlas to use sub-agents.
-
-## 3. Let Atlas prepare the local work
-
-Atlas checks the selected Tenant, Project, and existing work. It gets the required
-Snapshot: a local copy of the saved Atlas records. It puts proposed changes in
-separate local files, then checks them.
-
-Wait for Atlas to report that the changes are ready for review. For a read-only
-request, Atlas can answer without preparing changes or using Stage and Apply.
-
-## Atlas Local Workbench
-
-1. Select **Open working directory**.
-2. Select your working folder: the folder that contains `.atlas`. Do not select
-   the `.atlas` folder itself.
-3. Allow folder access in Chrome or Edge when asked.
-4. Review the proposed changes and validation findings.
-
-The top bar shows the saved sub-agent policy. **Not set** means that Atlas still
-has no saved delegation preference. Independent work can continue. Use
-**Reload local files** after changing the policy in chat.
-
-| Control | What it does |
-|---|---|
-| **Save changes** | Saves an edit to local files. |
-| **Reload local files** | Reads the latest local files after agent edits. It does not download new server records. |
-| **Validate locally** | Checks the local changes and shows findings. |
-| **Generate DBML** | Exports a diagram description of the complete local Project. This is an optional user action. |
-
-If the page did not open, ask Atlas to open Atlas Local Workbench again.
-If it reports a file conflict, review that conflict before saving.
-
-## 4. Review and approve Stage
-
-1. Check the complete batch in Atlas Local Workbench.
-2. Ask Atlas to correct unwanted changes or unresolved findings.
-3. When the batch is correct, tell Atlas: `I approve these changes for Stage.`
-4. Complete any tool confirmation shown by your agent host.
-
-Stage Runner reads the approved local files and sends them to the server draft.
-It returns a short receipt to the agent. You do not need to paste the records,
-copy hashes, or run helper commands. Bulk Stage records are sent directly by the
-runner; the agent still reads records when it needs to author or review them.
-
-If the content changes after approval, Atlas must check it and ask you to review
-it again. Atlas Local Workbench has no Stage or Apply button in this release.
-
-## 5. Review and approve Apply
-
-1. Atlas checks the staged draft on the server and shows the result.
-2. Review the proposed actions for the selected Tenant and Project.
-3. If the result is correct, approve Atlas's separate **Apply** request.
-4. Wait for Atlas to confirm success and refresh the affected local Snapshots.
-
-Apply saves Atlas records. It does not deploy generated code, run a pipeline,
-or commit files to Git. A successful local check alone does not mean Apply is
-complete.
-
-## 6. Resume work later
-
-Open the same working folder in VS Code Copilot. Send:
+### Understand what exists
 
 ```text
-Resume atlas. Show the unfinished work in this folder.
+Explain how Atlas works.
+Why does the [Customer] logical entity exist? Explain only; don't change anything.
+Show the lineage of [gold_demo.fact_order.order_amount] back to its source.
 ```
 
-Select the same folder in Atlas Local Workbench if asked. Use
-**Reload local files** after the agent changes files.
+### Register and fix physical metadata
 
-One working folder holds one active Project. Use another folder for a different
-Project. Starting a new task preserves existing drafts.
+```text
+Register the tables defined in [customer-spec.md] under System [ERP] and Connection [ERP_SQL]. Set up Source and Bronze ingestion.
+Fill missing physical descriptions for [bronze_demo.customer]. Keep existing descriptions.
+List the Systems and Connections in [your Tenant].
+```
 
-## Choose a task
+Atlas can take definitions from DDL, a schema export or documentation in your
+working folder. It asks whether you want Source registration only or Bronze
+ingestion too. If your framework's usage is unclear, it asks for the relevant
+orchestration code. Physical metadata is shared across Projects.
 
-You can describe your request in plain English or name a workflow:
+### Prepare a Project's sources
 
-| Workflow | Use it to |
+Scope is managed in the web app. Atlas uses it but doesn't change it.
+
+```text
+Which source tables should I add to the Project scope for [order reporting]?
+Profile the scoped tables. SQL policy: Essential.
+Write Project enrichment for the scoped tables: missing descriptions and key findings. Keep existing values.
+Analyze the scoped tables: grain, candidate keys and relationships.
+```
+
+Project enrichment records this Project's own descriptions and findings; it never
+edits shared physical metadata.
+
+### Build the models
+
+Each layer builds on applied work: a dimensional model needs an applied logical
+model. The conceptual model is optional, and nothing else uses it.
+
+```text
+Build the logical model from the current scope. SQL policy: Never.
+Build the dimension [Dim Customer] from the applied logical entity [Customer]. Dimension only.
+Grill me on the [Order] grain.
+Build the conceptual model for the scoped sources. Conceptual only.
+```
+
+For a logical model, Atlas checks coverage of the scoped tables and columns,
+lineage back to sources, normalization, naming standards, column order and
+relationships. Say **Grill me** to settle design questions together, one at a time.
+
+### Map and generate code
+
+A Mapping needs an applied target, and code needs an applied Mapping.
+
+```text
+Complete the Mapping for [silver_demo.Order] from System [ERP]. Update only what is missing.
+Generate the transformation SQL for [silver_demo.Customer] from its applied Mapping.
+I ran [silver_customer.sql] and got this error: [paste the error]. Fix the code.
+Register [silver_demo.Customer] and its generated SQL for the pipeline.
+```
+
+Atlas writes generated SQL to the `code/` folder in your working folder. You run
+it yourself; Atlas doesn't execute or deploy it. Bring any error back and Atlas
+fixes the code locally.
+
+### Validate
+
+```text
+Validate the logical model. Don't change anything.
+Write validation checks for [Fact Order] that catch real data problems, not trivial ones.
+```
+
+### Change an existing Project
+
+```text
+Change request [CR-1042]: [Finance needs order amounts by customer country]. Show me what has to change and recommend the smallest option before changing anything.
+Set the Project's default dimensional history to [Type 2].
+```
+
+Atlas traces the impact across metadata, models, Mappings, code and validation,
+offers options and recommends the one with the fewest changes. It asks you
+before drafting anything.
+
+## Review in Atlas Local Workbench
+
+Atlas opens Atlas Local Workbench in your browser when changes are ready.
+
+1. Select **Open working directory** and choose your working folder: the one that
+   contains `.atlas`, not `.atlas` itself. Allow folder access.
+2. Review the proposed records and any validation findings.
+
+| Button | What it does |
 |---|---|
-| Investigate | Explain Atlas, existing projects, lineage or recorded rationale. |
-| Source analysis | Profile/analyze selected sources, grain, candidate keys and relationships. |
-| Conceptual model | Define business concepts and relationships. |
-| Logical model | Develop normalized Entities, Attributes and Submodels. |
-| Dimensional model | Design dimensions, facts, measures and history. |
-| Mapping | Define transformations into an applied target project. |
-| Code generation | Generate SQL from applied Mapping. |
-| Verify | Check artifacts or author SQL Validation definitions; distinguish checks from execution. |
-| Project change | Assess impact and update the affected existing design. |
-| Metadata | Correct physical Metadata, descriptions or ingestion settings. |
-| Registration | Register modeled targets or generated files; optionally prepare local creation DDL. |
+| **Save changes** | Saves your own edit to the local draft files |
+| **Reload local files** | Shows Atlas's latest local edits; it doesn't download server records |
+| **Validate locally** | Checks the local changes and lists findings |
+| **Generate DBML** | Exports a diagram description of the whole local Project |
 
-Guided explanation is the default. Ask for **Grill Me** to discuss design choices
-step by step; switching modes keeps the same work. Atlas reuses valid existing
-artifacts and enters the needed stage instead of restarting the whole SDLC.
+To change something, ask Atlas in chat, then select **Reload local files**. If
+you edit a record yourself, select **Save changes** and tell Atlas what you
+changed. If the Workbench reports a conflict, reload and redo your edit.
+Approvals happen in chat; the Workbench has no Stage or Apply button.
 
-Examples:
+## Approve Stage, then Apply
 
-- “Analyze these source tables and build a logical model. SQL Never.”
-- “Map these objects to the existing project.”
-- “Explain why this entity exists, then update its grain.”
-- “Validate this logical model without generating SQL checks.”
+1. When the changes are right, tell Atlas: `I approve these changes for Stage.`
+   VS Code asks to allow **Stage approved Atlas Change Set**. It replaces only
+   your pending server draft; select **Allow**. Stage Runner uploads the changes.
+2. Atlas validates the draft on the server and shows the result.
+3. When Atlas asks `Apply these validated changes to [Project]?`, reply
+   `Yes, apply.` Atlas saves the records and refreshes your local Snapshots.
 
-Physical description correction and Project-owned enrichment are different operations.
-Physical corrections change shared Metadata through a Metadata Change Set. Project
-enrichment records this Project's descriptions, inferred types and key/nullability/PII
-findings in a Project Change Set, the same records the web app's Metadata Enrichment
-workflow writes. Atlas never edits physical Metadata as a substitute for Project
-enrichment. See [Project enrichment](../references/project/enrichment.md).
+If anything changes after you approve, Atlas asks you to review it again.
 
-## If work stops
+## Choose the sub-agent policy
+
+Before Atlas hands work to a helper agent, it asks once per working folder:
+
+| Choice | Meaning |
+|---|---|
+| **Current model only** (recommended) | Helpers use the same AI model as your chat |
+| **Agent selects the model** | Atlas picks a suitable available model for each task |
+| **Specified model only** | Helpers use only the exact model you name |
+
+Change it any time, for example: `Set the sub-agent policy to Current model only.`
+If your editor can't follow the rule, Atlas works without helpers.
+
+## Tips for good results
+
+- Name the Tenant, Project and tables, and say what to keep, such as "keep
+  existing descriptions".
+- Point to documents and standards by their path in your working folder.
+- When you're unsure, ask: "Give me options and recommend one."
+- You can start a new task in the same folder any time; existing drafts are kept.
+- Don't paste passwords, tokens or raw source data into chat.
+
+Not supported yet: building models from existing code (reverse engineering).
+
+## If something goes wrong
 
 | Problem | What to do |
 |---|---|
-| Sign-in is required | Follow the [Copilot sign-in steps](copilot-vs-code-installation-and-setup.md#when-atlas-asks-you-to-sign-in-again). Keep the same dev account. |
-| A tool is missing | Repair your host setup. Keep the local drafts. |
-| Validation fails | Ask Atlas to explain and correct the findings, then review again. |
-| Stage or Apply has an uncertain result | Ask Atlas to check the saved operation and server state before retrying. |
-| Records are locked or have changed on the server | Ask Atlas to explain the conflict. Do not replace local drafts or Snapshots to force the action. |
-
-Do not put passwords, tokens, or raw source data in chat. The
-[technical runtime reference](../references/local-runtime.md) is for agents and
-maintainers; normal use does not require its commands.
-
-For Project-specific source meaning, follow [enrichment](../references/project/enrichment.md). For schemas, naming, SCD, templates or default source System, follow [settings](../references/project/settings.md). Both use local drafts and the existing Change Set lifecycle; Project names and web-agent defaults are not editable through the plugin.
+| VS Code asks you to sign in for **gds-workbench** | Sign in with the same Atlas account. |
+| Atlas says Stage Runner needs sign-in | Run **ATLAS: Check Stage Runner** and sign in. |
+| Atlas Local Workbench didn't open | Ask Atlas to open it again, in Chrome or Edge. |
+| A tool is missing | Use a **Local** session with **Agent**, and check **Configure Tools**. See [setup troubleshooting](copilot-vs-code-installation-and-setup.md#troubleshooting). Your drafts are kept. |
+| Validation fails | Ask Atlas to explain and fix the findings, then review again. |
+| Stage or Apply result is uncertain | Ask Atlas to check the saved operation and server state before retrying. |
+| Records are locked or changed on the server | Ask Atlas to explain the conflict. Don't replace local files to force it. |
