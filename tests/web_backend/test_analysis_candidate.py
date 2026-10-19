@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from gds_etl_workbench.domain.errors import InvalidRequestError
@@ -11,6 +11,7 @@ from gds_etl_workbench.domain.modeling_records import (
 from gds_workbench_api.features.analysis.candidate import (
     AnalysisInferenceCandidateValidator,
 )
+from jsonschema import Draft202012Validator
 from pydantic import JsonValue
 
 
@@ -389,4 +390,23 @@ async def test_cardinality_change_preserves_evidence_and_respects_lock() -> None
     locked = _validator(applied=(_applied(locked=True),))
     assert [issue.code for issue in (await locked.validate(candidate)).issues] == [
         "candidate.record_locked"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_basis_longer_than_validation_run_limit_needs_repair() -> None:
+    validator = _validator()
+    longest: JsonValue = {"relationships": [_candidate(basis="é" * 8_000)]}
+    overlong: JsonValue = {"relationships": [_candidate(basis="é" * 8_001)]}
+
+    # The repair runner checks this schema first and names the overlong field.
+    schema = cast(Any, Draft202012Validator(validator.output_schema()))
+    assert [
+        (error.validator, tuple(error.absolute_path))
+        for error in schema.iter_errors(overlong)
+    ] == [("maxLength", ("relationships", 0, "relationship_basis"))]
+    assert not list(schema.iter_errors(longest))
+    assert (await validator.validate(longest)).issues == ()
+    assert [issue.code for issue in (await validator.validate(overlong)).issues] == [
+        "candidate.schema_invalid"
     ]

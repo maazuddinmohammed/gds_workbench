@@ -196,6 +196,11 @@ def project_context_inputs(
                 None if rows is None else [{name: row[name] for name in fields} for row in rows]
             )
     details = context["project_details"]
+    if workflow == "conceptual":
+        # Conceptual follows the Silver override, as its stage resolver does.
+        values["naming_instructions"] = effective_naming_instructions(
+            "conceptual", details["silver_model_naming_instructions"]
+        )
     if workflow in {"logical", "dimensional"}:
         layer = "silver" if workflow == "logical" else "gold"
         values["coverage_threshold_percent"] = details.get(

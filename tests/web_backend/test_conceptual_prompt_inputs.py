@@ -8,6 +8,9 @@ from typing import Any, cast
 
 import pytest
 from gds_etl_workbench.domain.errors import InvalidRequestError
+from gds_workbench_api.features.workflows.authoring.naming import (
+    effective_naming_instructions,
+)
 from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
     get_prompt_input_contract,
     project_prompt_input_values,
@@ -103,3 +106,45 @@ def test_conceptual_inputs_match_actual_context_and_documented_examples(
             project_prompt_input_values(
                 plan=plan, stage=stage, context=broken, resolver_values=legacy
             )
+
+
+@pytest.mark.parametrize("override", ["Use business language.", None])
+def test_registered_naming_instructions_resolve_the_effective_silver_override(
+    override: str | None,
+) -> None:
+    resolver_key = (
+        "workflow.conceptual.common.candidate_authoring.inputs.naming_instructions"
+    )
+    contract = get_prompt_input_contract(
+        project_workflow="conceptual",
+        workflow_execution_mode="one_shot",
+        stage_code="candidate_authoring",
+        resolver_key=resolver_key,
+    )
+    assert contract is not None and contract.data_type == "text"
+    plan = _plan(mode="one_shot")
+    stage = plan.stages[0].model_copy(
+        update={
+            "variables": (
+                PromptVariableDefinition(
+                    name="naming_instructions",
+                    resolver_key=resolver_key,
+                    data_type="text",
+                    is_required=False,
+                ),
+            )
+        }
+    )
+    context = cast(dict[str, Any], deepcopy(_context_bundle().embedded_context))
+    context["project_details"]["silver_model_naming_instructions"] = override
+
+    values = project_prompt_input_values(
+        plan=plan.model_copy(update={"stages": (stage,)}),
+        stage=stage,
+        context=context,
+        resolver_values={},
+    )
+
+    # Without an override the value is the documented Conceptual default.
+    assert values[resolver_key] == (override or contract.example)
+    assert values[resolver_key] == effective_naming_instructions("conceptual", override)

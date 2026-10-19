@@ -201,6 +201,19 @@ class DimensionalCandidateValidator:
         )
         _set_lock_fields_false(schema)
         enrich_agent_output_project_definitions(schema)
+        # The shared Change Set rule asks for technical and audit Attributes; this
+        # workflow projects them.
+        attribute_schema = cast(
+            dict[str, JsonValue],
+            cast(dict[str, JsonValue], schema["$defs"])["DimensionalAttributeRecord"],
+        )
+        attribute_schema["x-gds-population-rules"] = [
+            "Author business Attributes only; the backend projects surrogate-key, "
+            "foreign-key, Type 2 and audit Attributes from Project policy."
+            if rule.startswith("Include every physical target Attribute")
+            else rule
+            for rule in cast(list[str], attribute_schema["x-gds-population-rules"])
+        ]
         return schema
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:

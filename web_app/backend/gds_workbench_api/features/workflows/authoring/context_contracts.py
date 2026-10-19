@@ -471,20 +471,16 @@ INPUT_SHAPES: dict[str, Any] = {
         },
     },
     "context_records": {
-        "description": "Active context records from active documents in authorized "
-        "Project/System scope, available automatically to all "
-        "downstream workflows. Determine relevance from the "
-        "statement and task, not legacy layer flags. "
-        "record_type is a free-text classification of facts, "
-        "definitions, relationships, conventions, constraints "
-        "or requirements. text is the statement; details.notes "
-        "adds context, examples and exceptions. Other details "
-        "may contain formula, grain, dimensions, date_basis, "
-        "exclusions, history or acceptance_criteria; missing "
-        "details are unspecified. document_name and "
-        "source_location identify provenance. Keys link project "
-        "support to context records; they are not physical lineage "
-        "or proof of source data.",
+        "description": "Active Context records from active groups in authorized "
+        "Project/Source System scope are reusable guidance for every workflow. "
+        "Each record has context_record_id (canonical UUID), context_group_name, "
+        "context_type_name, context_text and nullable source_reference. The type "
+        "classifies its purpose; context_text contains the requirement, decision, rule, "
+        "convention or other guidance, including relevant exceptions and acceptance "
+        "criteria. source_reference records provenance. Use UUIDs for Context support "
+        "references. Context applicability does not prove physical source data or "
+        "replace measured validation; preserve registered lineage and distinguish "
+        "guidance from observed evidence.",
         "schema": {
             "type": "array",
             "items": {"$ref": "#/$defs/context_records_entry"},
@@ -1147,6 +1143,15 @@ INPUT_SHAPES: dict[str, Any] = {
                 {"type": "null"},
             ],
         },
+    },
+    "conceptual.naming_instructions": {
+        "description": "Effective Conceptual naming guidance. Use the "
+        "saved Silver Project override when present, "
+        "otherwise the existing Conceptual default. "
+        "Advisory guidance; preserve saved identities. "
+        "This is resolved before rendering and remains "
+        "a Conceptual-local variable.",
+        "schema": {"maxLength": 32768, "minLength": 1, "pattern": "\\S", "type": "string"},
     },
     "logical_submodel_list": {
         "description": "Compact existing Logical submodel identities only. "
@@ -3828,6 +3833,7 @@ WORKFLOW_INPUTS: dict[str, dict[str, str]] = {
         "conceptual_objects": "conceptual_objects",
         "conceptual_relationship_list": "conceptual_relationship_list",
         "conceptual_relationships": "conceptual_relationships",
+        "naming_instructions": "conceptual.naming_instructions",
     },
     "logical": {
         "source_context": "source_context",
@@ -4296,6 +4302,8 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
         "conceptual_objects": [],
         "conceptual_relationship_list": [],
         "conceptual_relationships": [],
+        "naming_instructions": "Use PascalCase for Conceptual concept and relationship "
+        "names. Keep names business-facing and independent of physical table names.",
     },
     "logical": {
         "source_context": [
@@ -5616,22 +5624,23 @@ def workflow_input_contracts(workflow: str) -> dict[str, dict[str, Any]]:
     return contracts
 
 
-# The two enrichment workflows reuse the same five exact foundational shapes.
+# The two enrichment workflows reuse the five foundational inputs. Their Object and
+# Attribute shapes, defined below, add the registered physical descriptions.
 for _enrichment_workflow in ("metadata_enrichment_object", "metadata_enrichment_attribute"):
     WORKFLOW_INPUTS[_enrichment_workflow] = {
-        name: name
-        for name in (
-            "source_context",
-            "gds_context",
-            "object_context",
-            "object_attribute_context",
-            "ingestion_mapping",
-        )
+        "source_context": "source_context",
+        "gds_context": "gds_context",
+        "object_context": "metadata_enrichment.object_context",
+        "object_attribute_context": "metadata_enrichment.object_attribute_context",
+        "ingestion_mapping": "ingestion_mapping",
     }
     INPUT_EXAMPLES[_enrichment_workflow] = {
         name: deepcopy(INPUT_EXAMPLES["analysis"][name][:1])
         for name in WORKFLOW_INPUTS[_enrichment_workflow]
     }
+    INPUT_EXAMPLES[_enrichment_workflow]["object_context"][0]["registered_object_description"] = (
+        "ERP sales order headers."
+    )
     _attribute_group = INPUT_EXAMPLES[_enrichment_workflow]["object_attribute_context"][0]
     _attribute_group["attributes"].append(
         {
@@ -5642,6 +5651,8 @@ for _enrichment_workflow in ("metadata_enrichment_object", "metadata_enrichment_
             "profile": None,
         }
     )
+    _attribute_group["attributes"][0]["registered_attribute_description"] = "Customer code."
+    _attribute_group["attributes"][1]["registered_attribute_description"] = None
     _attribute_group["selected_attribute_names"] = (
         [] if _enrichment_workflow == "metadata_enrichment_object" else ["CustomerCode"]
     )
@@ -5664,3 +5675,34 @@ INPUT_SHAPES["object_attribute_context"]["description"] += (
     "profiles cannot establish whole-table uniqueness or non-nullability. PII is an "
     "inferred classification and must not weaken registered masking requirements."
 )
+
+# Enrichment replaces the saved Project descriptions, so it also needs the
+# registered physical descriptions, as separate read-only fields.
+INPUT_SHAPES["metadata_enrichment.object_context"] = deepcopy(INPUT_SHAPES["object_context"])
+INPUT_SHAPES["metadata_enrichment.object_context"]["description"] = (
+    "The selected physical Object. object_description is the current saved Project "
+    "description; registered_object_description is registered physical metadata."
+)
+INPUT_SHAPES["metadata_enrichment.object_attribute_context"] = deepcopy(
+    INPUT_SHAPES["object_attribute_context"]
+)
+INPUT_SHAPES["metadata_enrichment.object_attribute_context"]["description"] += (
+    " registered_attribute_description is registered physical metadata, separate from "
+    "the Project attribute_description."
+)
+_object_entry = INPUT_SHAPES["metadata_enrichment.object_context"]["schema"]["$defs"][
+    "object_context_entry"
+]
+_attribute_entry = INPUT_SHAPES["metadata_enrichment.object_attribute_context"]["schema"]["$defs"][
+    "object_attribute_context_entry"
+]["properties"]["attributes"]["items"]
+for _entry, _field, _project_field in (
+    (_object_entry, "registered_object_description", "object_description"),
+    (_attribute_entry, "registered_attribute_description", "attribute_description"),
+):
+    _entry["properties"][_field] = {
+        "type": ["string", "null"],
+        "description": "Registered physical description; read-only evidence, independent "
+        f"of the Project-owned {_project_field}.",
+    }
+    _entry["required"].append(_field)

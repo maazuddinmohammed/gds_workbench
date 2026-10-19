@@ -13,6 +13,9 @@ from gds_etl_workbench.domain.modeling_records import (
     LogicalEntityKey,
 )
 from gds_etl_workbench.domain.snapshots.project import DimensionalSection
+from gds_etl_workbench.domain.snapshots.project_guidance import (
+    project_dataset_population_rules,
+)
 from gds_workbench_api.features.dimensional.candidate import (
     DimensionalCandidateValidator,
 )
@@ -285,6 +288,20 @@ async def test_candidate_schema_forbids_agent_lock_authority() -> None:
     issues = (await _validator().validate(cast(JsonValue, candidate))).issues
 
     assert [issue.code for issue in issues].count("candidate.lock_forbidden") == 3
+
+
+def test_candidate_schema_replaces_only_the_shared_policy_attribute_rule() -> None:
+    schema = _validator().output_schema()
+    definitions = cast(dict[str, object], schema["$defs"])
+    attribute_schema = cast(dict[str, object], definitions["DimensionalAttributeRecord"])
+    rules = cast(list[str], attribute_schema["x-gds-population-rules"])
+
+    # The backend projects technical and audit Attributes and rejects authored ones.
+    shared = project_dataset_population_rules("dimensional_attribute")
+    changed = [(old, new) for old, new in zip(shared, rules, strict=True) if old != new]
+    assert len(changed) == 1
+    assert "including technical, audit" in changed[0][0]
+    assert "the backend projects surrogate-key, foreign-key" in changed[0][1]
 
 
 async def test_candidate_rejects_changes_to_applied_main_and_nested_locks() -> None:

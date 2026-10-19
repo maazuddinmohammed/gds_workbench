@@ -121,6 +121,20 @@ class DescriptionAgent(LocalFakeAgentAdapter):
             [] if len(keys[0]) == 5 else [key[-1] for key in keys]
         )
         assert group["attributes"], "Sibling Attributes remain available as evidence."
+        if self.behavior == "normal":
+            # Registered descriptions arrive beside, never instead of, Project values.
+            objects = inputs["object_context"]
+            attributes = group["attributes"]
+            assert isinstance(objects, list) and isinstance(objects[0], dict)
+            assert isinstance(attributes, list)
+            assert objects[0]["registered_object_description"] == "Registered Object."
+            assert objects[0]["object_description"] != "Registered Object."
+            assert all(
+                isinstance(attribute, dict)
+                and attribute["registered_attribute_description"] == "Registered Attribute."
+                and attribute["attribute_description"] is None
+                for attribute in attributes
+            )
         if self.behavior == "context_exhausted" and self.calls == 1:
             raise AgentExecutionFailedError("context_exhausted")
         if self.behavior == "regenerate_attributes":
@@ -348,6 +362,18 @@ async def test_shared_executor_completes_physical_enrichment(
             )
     with database.connect_owner() as connection:
         seed_project_enrichment(connection, context.project_id)
+        if behavior == "normal":
+            # Registered metadata now differs from the copied Project baseline.
+            connection.execute(
+                "UPDATE core.object SET object_description='Registered Object.' "
+                "WHERE object_id=ANY(%s)",
+                (list(context.selected_object_ids),),
+            )
+            connection.execute(
+                "UPDATE core.attribute SET attribute_description='Registered Attribute.' "
+                "WHERE object_id=ANY(%s)",
+                (list(context.selected_object_ids),),
+            )
         regenerations = [
             EnrichmentDescriptionTarget(
                 object_id=object_id,

@@ -2707,7 +2707,9 @@ BEGIN
                    'gds_context', CASE WHEN object.zone_code = 'source' THEN '[]'::JSONB
                        ELSE jsonb_build_array(object.gds_context) END,
                    'object_context', jsonb_build_array(object.physical_key || jsonb_build_object(
-                       'object_description', object.project_object_description, 'zone_code', object.zone_code)),
+                       'object_description', object.project_object_description,
+                       'registered_object_description', object.object_description,
+                       'zone_code', object.zone_code)),
                    'object_attribute_context', jsonb_build_array(object.physical_key || jsonb_build_object(
                        'selected_attribute_names', (SELECT coalesce(jsonb_agg(attribute.attribute_name
                            ORDER BY attribute.attribute_ordinal_position, attribute.attribute_id), '[]'::JSONB)
@@ -2715,6 +2717,7 @@ BEGIN
                        'attributes', (SELECT coalesce(jsonb_agg(jsonb_build_object(
                            'attribute_name', attribute.attribute_name,
                            'attribute_description', attribute.project_attribute_description,
+                           'registered_attribute_description', attribute.attribute_description,
                            'attribute_data_type', attribute.attribute_data_type,
                            'attribute_inferred_data_type', attribute.project_inferred_data_type,
                            'attribute_nullability', attribute.attribute_nullability,

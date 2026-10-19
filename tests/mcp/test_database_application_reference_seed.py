@@ -109,7 +109,7 @@ EXPECTED_NAMES = {
     "metadata_enrichment_attribute": FOUNDATIONAL_NAMES
     - {"object_relationship_context", "context_records"},
     "analysis": FOUNDATIONAL_NAMES,
-    "conceptual": FOUNDATIONAL_NAMES | CONCEPTUAL_NAMES,
+    "conceptual": FOUNDATIONAL_NAMES | CONCEPTUAL_NAMES | {"naming_instructions"},
     "logical": FOUNDATIONAL_NAMES
     | LOGICAL_NAMES
     | {
