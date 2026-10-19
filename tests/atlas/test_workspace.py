@@ -1786,6 +1786,28 @@ def test_web_managed_project_datasets_stay_read_only_in_atlas(tmp_path: Path) ->
     )
 
 
+def test_metadata_records_copied_from_a_server_snapshot_can_be_written(tmp_path: Path) -> None:
+    # Server Metadata records carry the nullable JSON `value` field; its schema reference
+    # must resolve inside the installed schema or the helper refuses the whole record.
+    root = _review_workspace(tmp_path)
+    metadata = ["--session", str(root), "--area", "metadata"]
+    where = {"object_name": "customer", "attribute_name": "customer_name"}
+    record = run(
+        "select", *metadata, "--dataset", "bronze_attribute", "--where", json.dumps(where)
+    )["records"][0]
+    assert record["value"] is None
+    record["attribute_description"] = "Customer display name"
+    run(
+        "upsert-batch",
+        *metadata,
+        "--changes",
+        json.dumps({"bronze_attribute": [record]}),
+        "--expected-digest",
+        "empty",
+    )
+    assert run("validate", *metadata)["valid"] is True
+
+
 def test_next_error_returns_one_recovery_action_per_server_code(tmp_path: Path) -> None:
     root = _review_workspace(tmp_path)
     tenant_id = json.loads((root / ".atlas/session.json").read_text())["tenant"]["id"]
