@@ -136,7 +136,7 @@ foreach ($case in $cases) {
             ],
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=600,  # Windows PowerShell 5.1 on CI runners is several times slower.
         )
         assert result.returncode == 0, result.stderr
         actual = json.loads(output.read_text(encoding="utf-8"))
@@ -217,7 +217,7 @@ def test_native_cli_runs_sql_policy_without_revalidating_retained_code(tmp_path:
                 helper + ["validate", "--session", str(root), "--area", "project"],
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=600,  # Windows PowerShell 5.1 on CI runners is several times slower.
             )
             assert result.returncode == 0, result.stderr
             report = json.loads(result.stdout)

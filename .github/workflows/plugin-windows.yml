@@ -3,6 +3,7 @@ name: Atlas Windows smoke
 on:
   pull_request:
   push:
+    branches: [main]
     paths:
       - "mcp_server/**"
       - "atlas/**"
@@ -73,4 +74,4 @@ jobs:
         shell: powershell
         run: |
           $env:ATLAS_POWERSHELL = (Get-Command powershell.exe).Source
-          uv run --frozen --project mcp_server python -m pytest -c mcp_server/pyproject.toml tests/atlas/test_native_parity.py tests/atlas/test_profiling_native.py tests/atlas/test_profiling_runtime.py tests/atlas/test_native_quality.py tests/atlas/test_native_policy.py tests/atlas/test_native_sql.py tests/atlas/test_handoff.py -q
+          uv run --frozen --project mcp_server --with pytest-xdist==3.8.0 --with execnet==2.1.2 python -m pytest -c mcp_server/pyproject.toml tests/atlas/test_native_parity.py tests/atlas/test_profiling_native.py tests/atlas/test_profiling_runtime.py tests/atlas/test_native_quality.py tests/atlas/test_native_policy.py tests/atlas/test_native_sql.py tests/atlas/test_handoff.py -q -n auto

@@ -65,7 +65,7 @@ foreach ($value in (ConvertFrom-GdsJson ([IO.File]::ReadAllText($CasesPath)))) {
         ],
         capture_output=True,
         text=True,
-        timeout=60,
+        timeout=600,  # Windows PowerShell 5.1 on CI runners is several times slower.
     )
     assert result.returncode == 0, result.stderr
     assert json.loads(output.read_text()) == [
@@ -159,7 +159,7 @@ foreach ($case in $cases) {
         ],
         capture_output=True,
         text=True,
-        timeout=120,
+        timeout=600,  # Windows PowerShell 5.1 on CI runners is several times slower.
     )
     assert result.returncode == 0, result.stderr
     actual = json.loads(output.read_text())
@@ -241,7 +241,7 @@ foreach ($case in $cases) {
         ],
         capture_output=True,
         text=True,
-        timeout=60,
+        timeout=600,  # Windows PowerShell 5.1 on CI runners is several times slower.
     )
     assert result.returncode == 0, result.stderr
     actual = json.loads(output.read_text())

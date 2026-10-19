@@ -19,6 +19,7 @@ on:
       - "uv.lock"
       - "web_app/**"
   push:
+    branches: [main]
     paths:
       - ".github/workflows/web-app.yml"
       - "app.yaml"

@@ -100,7 +100,7 @@ foreach ($case in (ConvertFrom-GdsJson ([IO.File]::ReadAllText($CasesPath)))) {
         ],
         capture_output=True,
         text=True,
-        timeout=90,
+        timeout=600,  # Windows PowerShell 5.1 on CI runners is several times slower.
     )
     assert result.returncode == 0, result.stderr
     actual = json.loads(output.read_text())
@@ -268,7 +268,7 @@ def test_native_aggregate_manifest_matches_node_in_never_policy(tmp_path: Path) 
         ],
         capture_output=True,
         text=True,
-        timeout=45,
+        timeout=600,  # Windows PowerShell 5.1 on CI runners is several times slower.
     )
     assert result.returncode == 0, result.stderr
     actual = json.loads(result.stdout)
