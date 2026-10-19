@@ -34,11 +34,11 @@ The layout above shows the primary owner root. For Project-derived work with oth
 ## Read only what is needed
 
 1. Verify installed Snapshot kind, identity and owning Tenant through the supported installer/reader. Read the catalog inventory, then select affected datasets and their schemas; check required Source Tenant/Object coverage separately from the owning Tenant header.
-2. Filter by known complete Object/group keys or a bounded set of related records. Use declared lookup files to locate rows when useful; if search_result_complete=false, retrieve the full rows_file record.
+2. Filter by known complete Object/group keys or a bounded set of related records with `select --where`. The helper reads complete records from the catalog's rows files; never open rows or lookup files directly.
 3. Include pending records when asking what the workspace currently means. A baseline-only query does not include new Objects or earlier edits.
 4. Load referenced records as needed. Consulting a foreign key does not require opening every linked reference document or all Snapshot files.
 
-Atlas `inspect` lists datasets/counts; `describe` defaults to compact schemas; `select --view snapshot` returns baseline records; `--view effective` overlays pending changes using the same canonical merger as validation. Both use normalized AND-equality filters. Its default limit is 50, maximum 200, with truncated but no cursor/offset. Narrow incomplete results by known keys; use paginated inventory only when needed to discover missing keys. A larger helper scan can stay inside the program without flooding agent context.
+Atlas `inspect` lists datasets/counts; `describe` defaults to compact schemas; `select --view snapshot` returns baseline records; `--view effective` overlays pending changes using the same canonical merger as validation. Both use normalized AND-equality filters. Its default limit is 50, maximum 200; follow `next_cursor` until null with unchanged arguments. Narrow incomplete results by known keys; use paginated inventory only when needed to discover missing keys. A larger helper scan can stay inside the program without flooding agent context.
 
 ## Edit complete records in the draft
 

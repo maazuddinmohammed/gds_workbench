@@ -55,7 +55,7 @@ Analysis `inferred_cardinality` is independent of measured validation. When know
 
 ## Run and repair
 
-1. From the installed plugin directory, run `node scripts/atlas-local.js validate --session <working-directory> --area metadata|project`. For another registered Metadata owner, add `--owner <verified-Tenant-id>`. The working directory contains `.atlas`; use `command-contract --command validate` for supported flags. Atlas Local Workbench's **Validate locally** uses the same runner.
+1. Run `node <plugin>/scripts/atlas-local.js validate --session <working-directory> --area metadata|project` as its own terminal command, with absolute paths; `<plugin>` is the installed plugin folder. For another registered Metadata owner, add `--owner <verified-Tenant-id>`. The working directory contains `.atlas`; use `command-contract --command validate` for supported flags. If no task is active, run `task-add` first; the report is saved in that task's evidence. Atlas Local Workbench's **Validate locally** uses the same runner.
 2. Repair invalid records against real inputs. Never auto-unlock, reactivate, expand scope, rename an endpoint or fabricate evidence to clear an error. Preserve unaffected work.
 3. Keep the report under `.atlas/tasks/<task>.evidence/`, with owner, Snapshot/draft hashes and retained evidence hashes. Content changes invalidate the result. Record concise remaining blockers in the task; failed required checks leave the phase incomplete.
 4. Before submission, validate the complete batch again and follow the [Change Set lifecycle](change-set-lifecycle.md). The user reviews locally; server validation and separately approved Apply remain necessary.
