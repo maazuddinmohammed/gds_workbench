@@ -10,7 +10,7 @@ is a rubric, not a record that such an evaluation passed.
 | Request / fixture state | Observable acceptance |
 |---|---|
 | Explain how Atlas works; no workspace | Investigate/architecture answer. No Tenant questionnaire, Workbench launch, delegation setup or fabricated tool call. |
-| Analyze scoped sources and build a logical model; SQL Never | Reuse available metadata/evidence; mark profiles unmeasured; analyze then model only as needed. No profiling/SQL execution or fabricated counts. Runs `validate` and `coverage`; logical checks remain explicit. |
+| Analyze scoped sources and build a logical model; SQL Never | Reuse available metadata/evidence; mark profiles unmeasured; analyze then model only as needed. No profiling/SQL execution or fabricated counts. Runs `validate` and `coverage`; logical checks remain explicit. Adds the Project framework audit columns through the policy, states grain from saved evidence, and never renames existing names without asking. |
 | Build a conceptual model only | Standalone Conceptual records/relationships and evidence; no Logical counterpart or downstream work. Unknown conceptual cardinality is allowed. |
 | Build Logical or Dimensional while Conceptual records exist | Exclude Conceptual output from task reads and reasoning. Logical uses physical/source evidence and business Context; Dimensional retains applied Logical prerequisites. |
 | Grill Me about Order grain; current logical draft | Same logical skill/task, focused consequential question, preserved draft. Resolve full identity before dependent keys; no duplicated phase chain. |

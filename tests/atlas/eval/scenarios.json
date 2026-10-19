@@ -44,6 +44,68 @@
           "project-change-set/analysis_result.json",
           "project-change-set/*_enrichment.json"
         ]
+      },
+      "quality": {
+        "reference": [
+          "Scope: bronze_demo.customer (customer_id, customer_name) and bronze_demo.orders (order_id, customer_id, order_date, order_amount).",
+          "The applied model already covers both: Customer (Customer ID natural key, Customer Name) and Order (Order ID natural key, Customer ID, Order Date, Order Amount), with Order to Customer many-to-one on Customer ID. Every business attribute has source lineage, and coverage is 2 of 2 scoped Objects against a 70% target.",
+          "SQL policy is Never: run no queries and no new profiling. Use the Project's saved profiles and the applied Analysis result (orders.customer_id to customer.customer_id) as evidence.",
+          "Improvements expected:",
+          "- Grain stated precisely: one row per Customer ID, and one row per Order ID at order-header level (no order lines in scope), backed by the saved profiles (non-null, fully distinct).",
+          "- Definitions and the relationship basis cite that evidence instead of assuming it.",
+          "- Framework columns: run policy-apply (dry run first) to add the Project's 10 audit columns to each Entity after its business columns: SourceSystemID, IsDataValid, HashKey, IsActive, GDSBatchID, PipelineRunID, CreatedDate, UpdatedDate, CreatedBy, UpdatedBy.",
+          "Validation passes with one advisory warning, source_shaped_project. Review grain and dependencies: Customer and Order are independent business subjects at their natural grain, so no split or merge is needed.",
+          "Keep the keys, business Attributes, the many-to-one relationship, lineage and names. Existing names such as Customer ID follow neither the Project's Silver instruction (snake_case) nor Atlas's PascalCase default; point this out and ask before renaming, because renaming also affects Mappings and code.",
+          "Invent no Entity, Attribute or relationship the scope doesn't support, and never use Conceptual records. Report the validation and coverage results and keep the work local."
+        ],
+        "criteria": [
+          {
+            "id": "keeps-business-model",
+            "required": true,
+            "text": "Keeps Customer and Order, their natural keys, business Attributes and the Order-to-Customer many-to-one relationship, and invents no Entity, Attribute or relationship the scope doesn't support. Framework audit columns from the Project policy are allowed."
+          },
+          {
+            "id": "adds-framework-columns",
+            "required": true,
+            "text": "Adds the Project's framework audit columns to both Entities through the policy, placed after the business columns."
+          },
+          {
+            "id": "no-silent-rename",
+            "required": true,
+            "text": "Renames no existing Entity or Attribute without asking first."
+          },
+          {
+            "id": "precise-grain",
+            "required": false,
+            "text": "States each Entity's grain precisely (one row per Customer ID; one row per Order ID at header level) and backs it with the saved profile evidence."
+          },
+          {
+            "id": "evidence-based-relationship",
+            "required": false,
+            "text": "Bases the Order-to-Customer relationship on the existing Analysis result and profiles, not on assumption."
+          },
+          {
+            "id": "respects-sql-never",
+            "required": false,
+            "text": "Runs no SQL and no new profiling, and relies on the saved profiles and Analysis as evidence."
+          },
+          {
+            "id": "reviews-source-shape",
+            "required": false,
+            "text": "Addresses the source-shaped warning with a grain and dependency review, and explains why no split is needed or justifies one."
+          },
+          {
+            "id": "reports-checks",
+            "required": false,
+            "text": "Reports the validation result and the coverage accurately."
+          },
+          {
+            "id": "flags-naming",
+            "required": false,
+            "text": "Points out that the existing names don't follow the Project's snake_case Silver instruction and asks whether to rename."
+          }
+        ],
+        "min_optional": 3
       }
     },
     {
