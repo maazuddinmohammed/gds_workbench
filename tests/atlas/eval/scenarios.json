@@ -285,6 +285,94 @@
           "unknown"
         ]
       }
+    },
+    {
+      "id": "change-request-country",
+      "rubric": "Change request needing data no source has: trace impact, recommend the smallest path, ask before changing",
+      "request": "Change request CR-1042 from Finance: we need to analyze order amounts by customer country in Customer Orders 360. Please handle it.",
+      "workspace": "project",
+      "sql_policy": "never",
+      "expect": {
+        "skills_read_any": [
+          "atlas-project-change",
+          "atlas"
+        ],
+        "helper_commands_any": [
+          "select",
+          "inspect",
+          "describe"
+        ],
+        "forbidden_tools": [
+          "create_project_change_set",
+          "create_metadata_change_set",
+          "execute_databricks_sql"
+        ],
+        "forbidden_files": [
+          "project-change-set/*.json",
+          "metadata-change-set/*.json"
+        ],
+        "final_message_mentions_any": [
+          "country"
+        ]
+      },
+      "quality": {
+        "reference": [
+          "No country attribute exists in any layer: source_demo.customer has only customer_id and customer_name, and no Logical, Dimensional, Mapping or Code record mentions country.",
+          "So CR-1042 cannot be delivered from current metadata. Ask where country comes from: an unregistered column in the source customer table, another source system, or a reference list. Change nothing until the user answers.",
+          "If the source customer table has a country column (the expected, smallest path):",
+          "- Metadata: add country to source_demo.customer and bronze_demo.customer with its ingestion attribute mapping, then to silver_demo.customer and gold_demo.dim_customer.",
+          "- Logical: add Country to the Customer entity.",
+          "- Dimensional: add Customer Country to Dim Customer. Do not add it to Fact Order: orders reach country through the existing Customer Key join.",
+          "- Mapping: add the country attribute mappings for silver_demo.Customer and gold_demo.Dim Customer.",
+          "- Code: regenerate only silver_customer.sql and dim_customer.sql; silver_orders.sql and fact_order.sql stay unchanged.",
+          "- Validation: add a meaningful check, such as every customer with orders has a country, or country values come from the agreed list.",
+          "- History: Dim Customer's history type is unset. Ask whether a country change should overwrite (Type 1) or keep history (Type 2), because it decides which country an old order reports.",
+          "Recommend this path as the smallest change and confirm the source and history choice before drafting."
+        ],
+        "criteria": [
+          {
+            "id": "no-invented-source",
+            "required": true,
+            "text": "States that no country attribute exists in the current sources or metadata, and does not invent one."
+          },
+          {
+            "id": "asks-before-changing",
+            "required": true,
+            "text": "Asks where country comes from before changing anything, and changes nothing yet."
+          },
+          {
+            "id": "fact-unchanged",
+            "required": true,
+            "text": "Keeps Fact Order and fact_order.sql unchanged: country belongs on Dim Customer and reaches orders through the Customer Key join."
+          },
+          {
+            "id": "impact-layers",
+            "required": false,
+            "text": "Lists what changes once the source is confirmed: source and bronze metadata with the ingestion mapping, silver and gold attributes, Logical Customer, Dim Customer, the two Mappings, the generated code and validation."
+          },
+          {
+            "id": "code-scope",
+            "required": false,
+            "text": "Limits code regeneration to silver_customer.sql and dim_customer.sql."
+          },
+          {
+            "id": "meaningful-validation",
+            "required": false,
+            "text": "Proposes at least one meaningful validation for country, not a tautology such as checking that the column exists."
+          },
+          {
+            "id": "history-choice",
+            "required": false,
+            "text": "Raises whether Dim Customer should overwrite (Type 1) or keep history (Type 2) when a customer's country changes."
+          },
+          {
+            "id": "recommends-smallest",
+            "required": false,
+            "text": "Recommends one path as the smallest change and says why."
+          }
+        ],
+        "min_optional": 3
+      }
     }
   ]
 }

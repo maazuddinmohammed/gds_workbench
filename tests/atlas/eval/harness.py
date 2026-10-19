@@ -98,12 +98,32 @@ def load_scenarios(path: Path = SCENARIOS_FILE) -> list[dict[str, Any]]:
     scenarios: list[dict[str, Any]] = document["scenarios"]
     seen: set[str] = set()
     for scenario in scenarios:
-        assert set(scenario) <= {"id", "rubric", "request", "workspace", "sql_policy", "expect"}
+        assert set(scenario) <= {
+            "id",
+            "rubric",
+            "request",
+            "workspace",
+            "sql_policy",
+            "expect",
+            "quality",
+        }
         assert re.fullmatch(r"[a-z0-9-]+", scenario["id"]) and scenario["id"] not in seen
         seen.add(scenario["id"])
         assert scenario["workspace"] in WORKSPACES, scenario["id"]
         assert scenario.get("sql_policy") in (None, "never", "essential", "proactive")
         assert set(scenario["expect"]) <= EXPECT_KEYS, scenario["id"]
+        if quality := scenario.get("quality"):
+            # Reference answer and graded criteria; judged separately from the process checks.
+            assert set(quality) == {"reference", "criteria", "min_optional"}, scenario["id"]
+            ids = [criterion["id"] for criterion in quality["criteria"]]
+            assert len(ids) == len(set(ids)) and all(
+                isinstance(line, str) for line in quality["reference"]
+            )
+            assert all(
+                set(criterion) == {"id", "required", "text"} for criterion in quality["criteria"]
+            )
+            optional = sum(not criterion["required"] for criterion in quality["criteria"])
+            assert 0 <= quality["min_optional"] <= optional, scenario["id"]
     return scenarios
 
 
