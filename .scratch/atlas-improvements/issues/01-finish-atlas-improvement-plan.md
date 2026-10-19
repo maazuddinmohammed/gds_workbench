@@ -21,7 +21,7 @@ Open items:
 3. Live agent evaluations ran once: Claude Code 2.1.218 headless, Sonnet 5.5 (effort
    high), 12 scenarios x 3, about $24 at API prices. 27/36 passed. No run used Stage
    upload, Apply or lock override, or edited a Snapshot. Eight scenarios passed 3/3.
-   Harness defects to fix before the next run:
+   Harness defects, now fixed:
    - `physical-description` (0/3): the fixture has no empty descriptions; agents
      correctly changed nothing.
    - `code-from-mapping` (0/3): replay demands the optional `expected_project_revision`
@@ -32,7 +32,7 @@ Open items:
    - The README Claude Code template needs allow rules for `-p` mode:
      `--allowedTools "mcp__gds-workbench" "Bash(node *)" "Bash(cd *)"`. Inside Claude
      Code, run the CLI with `env -i` and its own login.
-   Instruction fixes (proposed, not applied):
+   Instruction fixes, now applied in the skills and references:
    - `validate` requires a task, so agents skip or fail it on no-change requests: it
      succeeded in 0/3 `mapping-applied-target` and 1/3 `logical-validate-only` runs.
      State that `task-add` is local bookkeeping, or let `validate` run without a task.
