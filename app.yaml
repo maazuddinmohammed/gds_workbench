@@ -25,6 +25,8 @@ env:
     valueFrom: entra-tenant-id
   - name: GDS_WEB_DATABRICKS_ENVIRONMENT_CODE
     valueFrom: databricks-environment-code
+  - name: GDS_WEB_FOUNDRY_ANTHROPIC_BASE_URL
+    value: auto
   - name: GDS_WEB_FOUNDRY_OPENAI_BASE_URL
     valueFrom: foundry-openai-base-url
   - name: GDS_WEB_FOUNDRY_API_KEY

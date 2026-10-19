@@ -90,13 +90,15 @@ configuration also accepts the resource `.services.ai.azure.com/openai/v1/` rout
 Project routes under `/api/projects/` are rejected.
 
 To enable Claude Opus 5.5 remotely, deploy `claude-opus-5-5` in the same Foundry
-resource and configure optional `GDS_WEB_FOUNDRY_ANTHROPIC_BASE_URL` with that
-resource's `https://<resource>.services.ai.azure.com/anthropic` endpoint. Use the
+resource. The canonical `app.yaml` sets `GDS_WEB_FOUNDRY_ANTHROPIC_BASE_URL=auto`,
+deriving `https://<resource>.services.ai.azure.com/anthropic` from the validated
+OpenAI endpoint without another resource binding. Custom deployments can use
+`auto` or supply that explicit endpoint. Omit the setting to exclude Claude. Use the
 deployment name registered in `agent_capabilities.json`; customize that registry
 entry if the deployed name differs. It reuses the configured API key or Entra
 application. Claude's Entra audience is `https://ai.azure.com/.default`; a separate
 authentication adapter prevents reusing an OpenAI-audience token. Without this
-endpoint Claude is excluded from the remote model choices. No cloud deployment or
+setting Claude is excluded from the remote model choices. No cloud deployment or
 permission change happens at application startup.
 
 Claude accepts `low`, `medium`, `high`, `xhigh`, and `max`; provider default omits

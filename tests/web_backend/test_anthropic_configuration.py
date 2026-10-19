@@ -113,6 +113,50 @@ def test_remote_claude_is_exposed_only_with_its_endpoint(configured: bool) -> No
 
 
 @pytest.mark.parametrize("entra", [False, True])
+def test_auto_anthropic_endpoint_exposes_claude_from_existing_foundry_resource(entra: bool) -> None:
+    values = _environment(entra=entra)
+    values["GDS_WEB_FOUNDRY_ANTHROPIC_BASE_URL"] = "auto"
+    runtime = AgentRuntimeConfiguration.from_environment(values, production=True)
+    registry = select_agent_runtime_capabilities(
+        load_default_agent_capabilities(),
+        configured_models={(item.provider_code, item.model_code) for item in runtime.connections},
+    )
+    claude = next(item for item in runtime.connections if item.model_code == CLAUDE_CODE)
+    assert claude.anthropic_base_url == ANTHROPIC_URL
+    assert claude.openai_base_url is None
+    assert claude.token_scope == ("https://ai.azure.com/.default" if entra else None)
+    assert CLAUDE_CODE in {model.code for model in registry.models}
+
+
+def test_auto_anthropic_endpoint_accepts_services_openai_route() -> None:
+    values = _environment()
+    values["GDS_WEB_FOUNDRY_OPENAI_BASE_URL"] = "https://fixture.services.ai.azure.com/openai/v1/"
+    values["GDS_WEB_FOUNDRY_ANTHROPIC_BASE_URL"] = "auto"
+    runtime = AgentRuntimeConfiguration.from_environment(values, production=True)
+    claude = next(item for item in runtime.connections if item.model_code == CLAUDE_CODE)
+    assert claude.anthropic_base_url == ANTHROPIC_URL
+
+
+@pytest.mark.parametrize(
+    "hostname",
+    [
+        "fixture.other.openai.azure.com",
+        "fixture.other.services.ai.azure.com",
+        ".openai.azure.com",
+        ".services.ai.azure.com",
+        "-fixture.openai.azure.com",
+        "fixture-.openai.azure.com",
+    ],
+)
+def test_auto_anthropic_endpoint_rejects_malformed_resource_hosts(hostname: str) -> None:
+    values = _environment()
+    values["GDS_WEB_FOUNDRY_OPENAI_BASE_URL"] = f"https://{hostname}/openai/v1/"
+    values["GDS_WEB_FOUNDRY_ANTHROPIC_BASE_URL"] = "auto"
+    with pytest.raises(ConfigurationError):
+        AgentRuntimeConfiguration.from_environment(values, production=True)
+
+
+@pytest.mark.parametrize("entra", [False, True])
 def test_claude_and_openai_keep_separate_authentication_audiences(entra: bool) -> None:
     runtime = AgentRuntimeConfiguration.from_environment(_environment(entra=entra), production=True)
     claude = next(item for item in runtime.connections if item.model_code == CLAUDE_CODE)

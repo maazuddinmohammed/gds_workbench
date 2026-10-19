@@ -32,6 +32,7 @@ def test_databricks_app_runs_one_supervised_python_process() -> None:
         "GDS_WEB_CURSOR_SIGNING_KEY",
         "GDS_WEB_ENTRA_TENANT_ID",
         "GDS_WEB_DATABRICKS_ENVIRONMENT_CODE",
+        "GDS_WEB_FOUNDRY_ANTHROPIC_BASE_URL",
         "GDS_WEB_FOUNDRY_OPENAI_BASE_URL",
         "GDS_WEB_FOUNDRY_API_KEY",
     }
@@ -69,6 +70,11 @@ def test_canonical_app_manifest_requires_foundry_secret_resources() -> None:
     assert "name: GDS_WEB_FOUNDRY_API_KEY\n    valueFrom: foundry-api-key" in app_config
     assert "GDS_WEB_DATABRICKS_MODEL_ENDPOINT" not in app_config
     assert "GDS_WEB_FOUNDRY_CLIENT_SECRET" not in app_config
+
+
+def test_canonical_app_enables_claude_without_another_resource_binding() -> None:
+    app_config = (ROOT / "app.yaml").read_text(encoding="utf-8")
+    assert "name: GDS_WEB_FOUNDRY_ANTHROPIC_BASE_URL\n    value: auto" in app_config
 
 
 def test_bundle_grants_only_required_app_resources() -> None:

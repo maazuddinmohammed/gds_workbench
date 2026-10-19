@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Literal, Protocol, Self, cast
@@ -199,6 +200,10 @@ class AgentRuntimeConfiguration(BaseModel):
                     allow_services_host=bool(foundry_api_key.strip()),
                 )
                 _validate_foundry_scope(foundry_scope)
+                if anthropic_base_url == "auto":
+                    # The canonical app opts in using its already validated resource.
+                    resource = (urlsplit(foundry_base_url).hostname or "").split(".")[0]
+                    anthropic_base_url = f"https://{resource}.services.ai.azure.com/anthropic"
                 if anthropic_base_url:
                     _validate_foundry_anthropic_base_url(anthropic_base_url, foundry_base_url)
                 pricing_by_model: dict[str, FoundryModelPricing] = {}
@@ -306,7 +311,11 @@ def _validate_foundry_base_url(
         port = -1
     if (
         parsed.scheme != "https"
-        or not hostname
+        or re.fullmatch(
+            r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.(?:openai|services\.ai)\.azure\.com",
+            hostname,
+        )
+        is None
         or port not in (None, 443)
         or parsed.username is not None
         or parsed.password is not None

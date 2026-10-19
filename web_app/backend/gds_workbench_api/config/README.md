@@ -49,7 +49,10 @@ input counts; missing counters remain unknown. See
 [Microsoft's Claude API contract](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/claude-models)
 and [Anthropic's exact effort levels](https://platform.claude.com/docs/en/build-with-claude/effort).
 Local fake mode includes Claude. Remote mode exposes it only when its separate
-Foundry Anthropic endpoint is configured; see the deployment guide.
+Foundry Anthropic endpoint is configured. The canonical app sets
+`GDS_WEB_FOUNDRY_ANTHROPIC_BASE_URL=auto`, which derives the same resource's
+Anthropic route from the validated OpenAI endpoint. Custom deployments may supply
+the explicit endpoint or omit the setting to exclude Claude; see the deployment guide.
 
 Internal keys remain `foundry-primary` and `foundry-gpt-5.6-luna` so saved Project
 defaults and operator pricing retain their selected tier. The historical Luna key
