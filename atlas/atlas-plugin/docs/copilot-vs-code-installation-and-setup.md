@@ -19,7 +19,7 @@ Get these files from your Atlas administrator:
 
 | File | Purpose |
 |---|---|
-| `atlas-agent-plugin-0.4.0.zip` | Skills, local tools, and Atlas Local Workbench. |
+| `atlas-agent-plugin-0.4.1.zip` | Skills, local tools, and Atlas Local Workbench. |
 | `atlas-stage-runner-0.3.0.vsix` | The Stage Runner extension for VS Code. |
 
 Follow the [installation steps](install-and-update.md#first-installation).

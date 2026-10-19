@@ -36,7 +36,7 @@ contracts; see [architecture decisions](../docs/architecture/decisions.md).
 Backend setup follows the [MCP README](../mcp_server/README.md) and
 [fresh-install database sequence](../database/README.md).
 
-The current artifacts are Atlas plugin 0.4.0 and VS Code Stage Runner 0.3.0. Rebuild the matching artifacts after source changes; version labels alone do not prove source equality. Installing the plugin does not install the extension or update the deployed backend. Publication and deployment require separate approval.
+The current artifacts are Atlas plugin 0.4.1 and VS Code Stage Runner 0.3.0. Rebuild the matching artifacts after source changes; version labels alone do not prove source equality. Installing the plugin does not install the extension or update the deployed backend. Publication and deployment require separate approval.
 
 ## Build
 

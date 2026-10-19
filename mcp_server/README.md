@@ -106,4 +106,4 @@ Fixed:
   Install a fresh Metadata Snapshot to get the fixed schemas.
 
 Release order: Atlas Stage Runner 0.3.0 first (older servers ignore its header), then
-server 0.3.0 together with Atlas plugin 0.4.0. Each release needs separate approval.
+server 0.3.0 together with Atlas plugin 0.4.1. Each release needs separate approval.
