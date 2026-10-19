@@ -13,14 +13,7 @@ Operator-registered classification of a System, with a code, name, and explanato
 
 ## Fields
 
-Every field is listed explicitly. Exact current MCP/Snapshot schemas remain authoritative if the contract changes.
-
-| Field | Accepted value / presence | Meaning and use |
-|---|---|---|
-| `system_type_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the System Type. |
-| `system_type_name` | string; minLength=1; maxLength=200; pattern=\S; required | Name identifying the System Type. |
-| `system_type_description` | string; required; null allowed | Plain-language description of the System Type. |
-| `is_active` | `false`, `true`; required | Whether the record is active for normal governed use. |
+Run `describe --dataset system_type` for every field: it states each one's type, limits, required and null rules, description and population guidance.
 
 ## References and dependencies
 

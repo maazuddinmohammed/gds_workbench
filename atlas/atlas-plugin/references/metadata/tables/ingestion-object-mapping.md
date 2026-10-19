@@ -13,21 +13,21 @@ A registered Source-to-Bronze Object link used by Copy selection and as ingestio
 
 ## Fields
 
-Every field is listed explicitly. Exact current MCP/Snapshot schemas remain authoritative if the contract changes.
+Run `describe --dataset ingestion_object_mapping` for every field's type, limits, required and null rules, description and population guidance. This table lists only fields with rules that `describe` does not state.
 
-| Field | Accepted value / presence | Meaning and use |
-|---|---|---|
-| `source_tenant_code` | string; minLength=1; maxLength=100; pattern=\S; required | Tenant component of the source Object's physical Connection key; not a substitute for the Object's source-owner field. Reference: [object](object.md). |
-| `source_system_code` | string; minLength=1; maxLength=100; pattern=\S; required | System code of the source physical endpoint; resolve the complete referenced key. Reference: [object](object.md). |
-| `source_connection_code` | string; minLength=1; maxLength=100; pattern=\S; required | Connection code of the source physical endpoint; resolve the complete referenced key. Reference: [object](object.md). |
-| `source_object_schema` | string; minLength=1; maxLength=400; pattern=\S; required | Object schema of the source physical endpoint; resolve the complete referenced key. Reference: [object](object.md). |
-| `source_object_name` | string; minLength=1; maxLength=400; pattern=\S; required | Object name of the source physical endpoint; resolve the complete referenced key. Reference: [object](object.md). |
-| `target_tenant_code` | string; minLength=1; maxLength=100; pattern=\S; required | Tenant component of the target Object's physical Connection key; Bronze normally uses the selected source Tenant's configured GDS placement. Reference: [object](object.md). |
-| `target_system_code` | string; minLength=1; maxLength=100; pattern=\S; required | System code of the target physical endpoint; resolve the complete referenced key. Reference: [object](object.md). |
-| `target_connection_code` | string; minLength=1; maxLength=100; pattern=\S; required | Connection code of the target physical endpoint; resolve the complete referenced key. Reference: [object](object.md). |
-| `target_object_schema` | string; minLength=1; maxLength=400; pattern=\S; required | Object schema of the target physical endpoint; resolve the complete referenced key. Reference: [object](object.md). |
-| `target_object_name` | string; minLength=1; maxLength=400; pattern=\S; required | Object name of the target physical endpoint; resolve the complete referenced key. Reference: [object](object.md). |
-| `is_active` | `false`, `true`; required | Default true for new records unless requested otherwise. Copy selection requires an active Copy Group, Copy and this mapping. False skips the pair without changing other stored flags. Preserve existing values on unrelated edits. |
+| Field | Meaning and use |
+|---|---|
+| `source_tenant_code` | Tenant component of the source Object's physical Connection key; not a substitute for the Object's source-owner field. Reference: [object](object.md). |
+| `source_system_code` | System code of the source physical endpoint; resolve the complete referenced key. Reference: [object](object.md). |
+| `source_connection_code` | Connection code of the source physical endpoint; resolve the complete referenced key. Reference: [object](object.md). |
+| `source_object_schema` | Object schema of the source physical endpoint; resolve the complete referenced key. Reference: [object](object.md). |
+| `source_object_name` | Object name of the source physical endpoint; resolve the complete referenced key. Reference: [object](object.md). |
+| `target_tenant_code` | Tenant component of the target Object's physical Connection key; Bronze normally uses the selected source Tenant's configured GDS placement. Reference: [object](object.md). |
+| `target_system_code` | System code of the target physical endpoint; resolve the complete referenced key. Reference: [object](object.md). |
+| `target_connection_code` | Connection code of the target physical endpoint; resolve the complete referenced key. Reference: [object](object.md). |
+| `target_object_schema` | Object schema of the target physical endpoint; resolve the complete referenced key. Reference: [object](object.md). |
+| `target_object_name` | Object name of the target physical endpoint; resolve the complete referenced key. Reference: [object](object.md). |
+| `is_active` | Default true for new records unless requested otherwise. Copy selection requires an active Copy Group, Copy and this mapping. False skips the pair without changing other stored flags. Preserve existing values on unrelated edits. |
 
 ## References and dependencies
 
@@ -51,7 +51,7 @@ Every field is listed explicitly. Exact current MCP/Snapshot schemas remain auth
 Enforcement is explained in [common checks](../validation.md#interpreting-table-checklists); run the local validator, then review anything marked for you.
 
 | Rule | Check / why | Enforced by |
-|---|---|---|
+|---|---|
 | `ingestion_object_mapping.shape` | Complete source and target Object keys; required is_active boolean. Reject malformed complete records before staging. | Local validator + server |
 | `ingestion_object_mapping.unique` | Source Object + target Object pair unique. Prevent duplicate identity; inactive rows still reserve their keys. | Local validator + server |
 | `ingestion_object_mapping.references` | Both Object endpoints must resolve. Resolve dependencies using snapshot plus pending rows. | Local validator + server |

@@ -13,16 +13,11 @@ Registered named system providing business and technical context; classified by 
 
 ## Fields
 
-Every field is listed explicitly. Exact current MCP/Snapshot schemas remain authoritative if the contract changes.
+Run `describe --dataset system` for every field's type, limits, required and null rules, description and population guidance. This table lists only fields with rules that `describe` does not state.
 
-| Field | Accepted value / presence | Meaning and use |
-|---|---|---|
-| `value` | any valid JSON; optional; null allowed | Optional additional details. Preserve existing JSON; populate only when requested. No implied execution behavior. |
-| `system_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the System. |
-| `system_name` | string; minLength=1; maxLength=200; pattern=\S; required | Name identifying the System. |
-| `system_description` | string; required; null allowed | Plain-language description of the System. |
-| `system_type_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the System Type. Reference: [system type](system-type.md). |
-| `is_active` | `false`, `true`; required | Whether the record is active for normal governed use. |
+| Field | Meaning and use |
+|---|---|
+| `value` | Optional additional details. Preserve existing JSON; populate only when requested. No implied execution behavior. |
 
 ## References and dependencies
 

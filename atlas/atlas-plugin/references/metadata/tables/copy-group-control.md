@@ -14,17 +14,15 @@ Stored ingestion progress for one Copy Group and an optional Member Group.
 
 ## Fields
 
-Every field is listed explicitly. Exact current MCP/Snapshot schemas remain authoritative if the contract changes.
+Run `describe --dataset copy_group_control` for every field's type, limits, required and null rules, description and population guidance. This table lists only fields with rules that `describe` does not state.
 
-| Field | Accepted value / presence | Meaning and use |
-|---|---|---|
-| `tenant_code` | string; minLength=1; maxLength=100; pattern=\S; required | Owning Tenant code for this group/record; match the selected Change Set Tenant. Reference: [copy group](copy-group.md), [member group](member-group.md). |
-| `system_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the System. Reference: [copy group](copy-group.md), [member group](member-group.md). |
-| `copy_group_name` | string; minLength=1; maxLength=200; pattern=\S; required | Name identifying the Copy Group. Reference: [copy group](copy-group.md). |
-| `member_group_name` | string; minLength=1; maxLength=200; pattern=\S; required; null allowed | Null for new controls under the default non-member setup. Preserve existing identities. A supplied Member Group must share Tenant/System. Reference: [member group](member-group.md). |
-| `copy_group_control_initial_load_date` | string; format=date; required; null allowed | Optional initial-load filter date supplied to the framework when the load configuration needs it. Default null; populate only the established filter value, never today's date by assumption. |
-| `copy_group_control_last_run_time` | string; format=date-time; required; null allowed | Framework-maintained last-run timestamp. Default null on new controls; preserve existing values during unrelated edits. |
-| `copy_group_control_last_run_value` | string; minLength=1; pattern=\S; required; null allowed | Framework-maintained run value/cursor. Default null on new controls; preserve existing serialized values. Its format depends on the extraction contract. |
+| Field | Meaning and use |
+|---|---|
+| `tenant_code` | Owning Tenant code for this group/record; match the selected Change Set Tenant. Reference: [copy group](copy-group.md), [member group](member-group.md). |
+| `member_group_name` | Null for new controls under the default non-member setup. Preserve existing identities. A supplied Member Group must share Tenant/System. Reference: [member group](member-group.md). |
+| `copy_group_control_initial_load_date` | Optional initial-load filter date supplied to the framework when the load configuration needs it. Default null; populate only the established filter value, never today's date by assumption. |
+| `copy_group_control_last_run_time` | Framework-maintained last-run timestamp. Default null on new controls; preserve existing values during unrelated edits. |
+| `copy_group_control_last_run_value` | Framework-maintained run value/cursor. Default null on new controls; preserve existing serialized values. Its format depends on the extraction contract. |
 
 ## References and dependencies
 
@@ -48,7 +46,7 @@ Every field is listed explicitly. Exact current MCP/Snapshot schemas remain auth
 Enforcement is explained in [common checks](../validation.md#interpreting-table-checklists); run the local validator, then review anything marked for you.
 
 | Rule | Check / why | Enforced by |
-|---|---|---|
+|---|---|
 | `copy_group_control.shape` | Complete Copy Group key; nullable Member Group; date/time nullable; watermark null or nonblank. Reject malformed complete records before staging. | Local validator + server |
 | `copy_group_control.unique` | Copy Group + Member Group unique; null Member Group counts as one group-level identity. Existing controls retain their keys regardless of parent activity. | Local validator + server |
 | `copy_group_control.references` | Copy Group and optional Member Group must share supplied Tenant/System. Resolve dependencies using snapshot plus pending rows. | Local validator + server |

@@ -13,19 +13,16 @@ A Tenant/System/Zone processing group linked to the actual Copy Group whose inge
 
 ## Fields
 
-Every field is listed explicitly. Exact current MCP/Snapshot schemas remain authoritative if the contract changes.
+Run `describe --dataset process_group` for every field's type, limits, required and null rules, description and population guidance. This table lists only fields with rules that `describe` does not state.
 
-| Field | Accepted value / presence | Meaning and use |
-|---|---|---|
-| `value` | any valid JSON; optional; null allowed | Optional additional details. Preserve existing JSON; populate only when requested. No implied execution behavior. |
-| `tenant_code` | string; minLength=1; maxLength=100; pattern=\S; required | Owning Tenant code for this group/record; match the selected Change Set Tenant. Reference: [tenant](../read-only/tenant.md), [copy group](copy-group.md). |
-| `system_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the System. Reference: [system](../read-only/system.md), [copy group](copy-group.md). |
-| `zone_code` | string; minLength=1; maxLength=30; required | Registered Zone identifying the group and its execution phase: selected Silver groups finish before Gold starts. Not automatically derived from the target Object. Reference: [zone](../read-only/zone.md). |
-| `process_group_name` | string; minLength=1; maxLength=200; pattern=\S; required | Name identifying the Process Group. |
-| `process_group_description` | string; required; null allowed | Plain-language description of the Process Group. Provide concise business or operational context; use null when no description is available. |
-| `copy_group_name` | string; minLength=1; maxLength=200; pattern=\S; required | Actual Copy Group in this group's Tenant/System; ties processing selection to relevant ingestion. Reference: [copy group](copy-group.md). |
-| `process_group_dependency_order` | integer; 1–2147483647; required | Default 1 for new groups; mutable outside the natural key. Equal levels permit concurrent groups in one Zone phase; lower levels complete successfully before higher levels. |
-| `is_active` | `false`, `true`; required | Default true for new records unless requested otherwise. False retains the existing record and identity. Preserve existing values on unrelated edits. |
+| Field | Meaning and use |
+|---|---|
+| `value` | Optional additional details. Preserve existing JSON; populate only when requested. No implied execution behavior. |
+| `tenant_code` | Owning Tenant code for this group/record; match the selected Change Set Tenant. Reference: [tenant](../read-only/tenant.md), [copy group](copy-group.md). |
+| `zone_code` | Registered Zone identifying the group and its execution phase: selected Silver groups finish before Gold starts. Not automatically derived from the target Object. Reference: [zone](../read-only/zone.md). |
+| `copy_group_name` | Actual Copy Group in this group's Tenant/System; ties processing selection to relevant ingestion. Reference: [copy group](copy-group.md). |
+| `process_group_dependency_order` | Default 1 for new groups; mutable outside the natural key. Equal levels permit concurrent groups in one Zone phase; lower levels complete successfully before higher levels. |
+| `is_active` | Default true for new records unless requested otherwise. False retains the existing record and identity. Preserve existing values on unrelated edits. |
 
 ## Dependency order
 
@@ -68,7 +65,7 @@ The Copy Group link therefore affects which processing follows ingestion. Do not
 Enforcement is explained in [common checks](../validation.md#interpreting-table-checklists); run the local validator, then review anything marked for you.
 
 | Rule | Check / why | Enforced by |
-|---|---|---|
+|---|---|
 | `process_group.shape` | Tenant/System/Zone/name and Copy Group required; name nonblank <=200; nullable description; active boolean. Reject malformed complete records before staging. | Local validator + server |
 | `process_group.unique` | Tenant + System + Zone + normalized Process Group name unique. Prevent duplicate identity; inactive rows still reserve their keys. | Local validator + server |
 | `process_group.references` | Tenant/System/Zone exist; Copy Group matches the same Tenant/System. Resolve dependencies using snapshot plus pending rows. | Local validator + server |

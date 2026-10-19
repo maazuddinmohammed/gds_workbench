@@ -13,37 +13,35 @@ Ingestion configuration for one Object Mapping within a Copy Group: extraction f
 
 ## Fields
 
-Every field is listed explicitly. Exact current MCP/Snapshot schemas remain authoritative if the contract changes.
+Run `describe --dataset copy` for every field's type, limits, required and null rules, description and population guidance. This table lists only fields with rules that `describe` does not state.
 
-| Field | Accepted value / presence | Meaning and use |
-|---|---|---|
-| `value` | any valid JSON; optional; null allowed | Optional additional details. Preserve existing JSON; populate only when requested. No implied execution behavior. |
-| `tenant_code` | string; minLength=1; maxLength=100; pattern=\S; required | Owning Tenant code for this group/record; match the selected Change Set Tenant. Reference: [copy group](copy-group.md). |
-| `system_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the System. Reference: [copy group](copy-group.md). |
-| `copy_group_name` | string; minLength=1; maxLength=200; pattern=\S; required | Name identifying the Copy Group. Reference: [copy group](copy-group.md). |
-| `source_tenant_code` | string; minLength=1; maxLength=100; pattern=\S; required | Tenant code of the source physical endpoint; resolve the complete referenced key. This is placement, not the referenced Object's owner field. Reference: [ingestion object mapping](ingestion-object-mapping.md). |
-| `source_system_code` | string; minLength=1; maxLength=100; pattern=\S; required | System code of the source physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md). |
-| `source_connection_code` | string; minLength=1; maxLength=100; pattern=\S; required | Connection code of the source physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md). |
-| `source_object_schema` | string; minLength=1; maxLength=400; pattern=\S; required | Object schema of the source physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md). |
-| `source_object_name` | string; minLength=1; maxLength=400; pattern=\S; required | Object name of the source physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md). |
-| `target_tenant_code` | string; minLength=1; maxLength=100; pattern=\S; required | Tenant code of the target physical endpoint; resolve the complete referenced key. This is placement, not the referenced Object's owner field. Reference: [ingestion object mapping](ingestion-object-mapping.md). |
-| `target_system_code` | string; minLength=1; maxLength=100; pattern=\S; required | System code of the target physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md). |
-| `target_connection_code` | string; minLength=1; maxLength=100; pattern=\S; required | Connection code of the target physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md). |
-| `target_object_schema` | string; minLength=1; maxLength=400; pattern=\S; required | Object schema of the target physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md). |
-| `target_object_name` | string; minLength=1; maxLength=400; pattern=\S; required | Object name of the target physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md). |
-| `copy_source_record_limit` | string; pattern=^-?[0-9]+$; required; null allowed | Numeric parameter for selected chunking logic, stored as a signed BIGINT decimal string. Null leaves it unset; exact meaning and allowed values come from the chunk description/code. |
-| `copy_source_record_limit_attribute` | string; maxLength=400; required; null allowed | Text parameter for selected chunking logic. The description/code determines its use and whether it must name a real Attribute. Null when unused. |
-| `chunk_type_name` | string; minLength=1; maxLength=200; pattern=\S; required; null allowed | Registered logic splitting a large initial extraction into smaller queries. Default null; use only when the user explicitly requests chunking. Reference: [chunk type](../read-only/chunk-type.md). |
-| `copy_source_initial_sql_script` | string; required; null allowed | Optional filter fragment for initial extraction, including the WHERE keyword. Inserted as supplied; null/blank adds nothing. |
-| `copy_source_incremental_sql_script` | string; required; null allowed | Optional filter fragment for incremental extraction, including the WHERE keyword. Inserted as supplied; null/blank adds nothing. Use only confirmed control-value placeholders. |
-| `copy_source_file_name` | string; required; null allowed | Name used for the intermediate landing artifact between Source and Bronze. Exact construction comes from the framework's landing writer/reader convention; null when unused. |
-| `copy_source_file_pattern` | string; required; null allowed | Pattern/template used by the framework for intermediate landing naming. Placeholder syntax and interaction with file_name are consumer-defined; null when unused. |
-| `copy_source_file_delimiter` | string; maxLength=20; required; null allowed | Delimiter expected by the applicable framework reader for delimited data. Confirm its stage/format when unclear; null when unused. |
-| `source_file_type_name` | string; minLength=1; maxLength=200; pattern=\S; required; null allowed | Registered file format for the representation consumed by the applicable framework step. Use actual extraction output or supplied-file evidence, not the field prefix alone. Reference: [file type](../read-only/file-type.md). |
-| `copy_source_order` | integer; maximum=2147483647; exclusiveMinimum=0; required | Sort value used like ORDER BY; no current execution-stage barrier. Agreed new-record default 1. Compatible Atlas installations permit repeated order values. |
-| `source_data_operation_name` | string; minLength=1; maxLength=200; pattern=\S; required | Required registered value with no runtime effect. Prefer a registered unused-source value or reuse the existing Copy convention; never invent a name or use null. Reference: [data operation](../read-only/data-operation.md). |
-| `target_data_operation_name` | string; minLength=1; maxLength=200; pattern=\S; required | Selects the framework's target loading function. Copy Into appends; other operations follow their registered descriptions and confirmed scope. Reference: [data operation](../read-only/data-operation.md). |
-| `is_active` | `false`, `true`; required | Default true for new records unless requested otherwise; preserve existing values on unrelated edits. Copy Group, Copy and Object Mapping must all be active for selection. Any false skips this Copy; stored flags and identities remain unchanged. |
+| Field | Meaning and use |
+|---|---|
+| `value` | Optional additional details. Preserve existing JSON; populate only when requested. No implied execution behavior. |
+| `tenant_code` | Owning Tenant code for this group/record; match the selected Change Set Tenant. Reference: [copy group](copy-group.md). |
+| `source_tenant_code` | Tenant code of the source physical endpoint; resolve the complete referenced key. This is placement, not the referenced Object's owner field. Reference: [ingestion object mapping](ingestion-object-mapping.md). |
+| `source_system_code` | System code of the source physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md). |
+| `source_connection_code` | Connection code of the source physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md). |
+| `source_object_schema` | Object schema of the source physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md). |
+| `source_object_name` | Object name of the source physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md). |
+| `target_tenant_code` | Tenant code of the target physical endpoint; resolve the complete referenced key. This is placement, not the referenced Object's owner field. Reference: [ingestion object mapping](ingestion-object-mapping.md). |
+| `target_system_code` | System code of the target physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md). |
+| `target_connection_code` | Connection code of the target physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md). |
+| `target_object_schema` | Object schema of the target physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md). |
+| `target_object_name` | Object name of the target physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md). |
+| `copy_source_record_limit` | Numeric parameter for selected chunking logic, stored as a signed BIGINT decimal string. Null leaves it unset; exact meaning and allowed values come from the chunk description/code. |
+| `copy_source_record_limit_attribute` | Text parameter for selected chunking logic. The description/code determines its use and whether it must name a real Attribute. Null when unused. |
+| `chunk_type_name` | Registered logic splitting a large initial extraction into smaller queries. Default null; use only when the user explicitly requests chunking. Reference: [chunk type](../read-only/chunk-type.md). |
+| `copy_source_initial_sql_script` | Optional filter fragment for initial extraction, including the WHERE keyword. Inserted as supplied; null/blank adds nothing. |
+| `copy_source_incremental_sql_script` | Optional filter fragment for incremental extraction, including the WHERE keyword. Inserted as supplied; null/blank adds nothing. Use only confirmed control-value placeholders. |
+| `copy_source_file_name` | Name used for the intermediate landing artifact between Source and Bronze. Exact construction comes from the framework's landing writer/reader convention; null when unused. |
+| `copy_source_file_pattern` | Pattern/template used by the framework for intermediate landing naming. Placeholder syntax and interaction with file_name are consumer-defined; null when unused. |
+| `copy_source_file_delimiter` | Delimiter expected by the applicable framework reader for delimited data. Confirm its stage/format when unclear; null when unused. |
+| `source_file_type_name` | Registered file format for the representation consumed by the applicable framework step. Use actual extraction output or supplied-file evidence, not the field prefix alone. Reference: [file type](../read-only/file-type.md). |
+| `copy_source_order` | Sort value used like ORDER BY; no current execution-stage barrier. Agreed new-record default 1. Compatible Atlas installations permit repeated order values. |
+| `source_data_operation_name` | Required registered value with no runtime effect. Prefer a registered unused-source value or reuse the existing Copy convention; never invent a name or use null. Reference: [data operation](../read-only/data-operation.md). |
+| `target_data_operation_name` | Selects the framework's target loading function. Copy Into appends; other operations follow their registered descriptions and confirmed scope. Reference: [data operation](../read-only/data-operation.md). |
+| `is_active` | Default true for new records unless requested otherwise; preserve existing values on unrelated edits. Copy Group, Copy and Object Mapping must all be active for selection. Any false skips this Copy; stored flags and identities remain unchanged. |
 
 ## References and dependencies
 
@@ -105,7 +103,7 @@ For a source with a string `status` column, a saved filter can be `WHERE status 
 Enforcement is explained in [common checks](../validation.md#interpreting-table-checklists); run the local validator, then review anything marked for you.
 
 | Rule | Check / why | Enforced by |
-|---|---|---|
+|---|---|
 | `copy.shape` | Complete group/endpoint keys; nullable copy settings; explicit operations/order/active; delimiter <=20. Reject malformed complete records before staging. | Local validator + server |
 | `copy.unique` | Copy Group + Ingestion Object Mapping unique. Prevent duplicate identity; inactive rows still reserve their keys. | Local validator + server |
 | `copy.order` | Positive sorting value, default 1 for new rows; repeated values allowed. No runtime sequencing guarantee. | Local validator + server |

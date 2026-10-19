@@ -13,14 +13,7 @@ Registered physical data classification. Current Object datasets separate source
 
 ## Fields
 
-Every field is listed explicitly. Exact current MCP/Snapshot schemas remain authoritative if the contract changes.
-
-| Field | Accepted value / presence | Meaning and use |
-|---|---|---|
-| `zone_code` | string; minLength=1; maxLength=30; pattern=\S; required | Stable code identifying the Zone. |
-| `zone_name` | string; minLength=1; maxLength=200; pattern=\S; required | Name identifying the Zone. |
-| `zone_description` | string; required; null allowed | Plain-language description of the Zone. |
-| `is_active` | `false`, `true`; required | Whether the record is active for normal governed use. |
+Run `describe --dataset zone` for every field: it states each one's type, limits, required and null rules, description and population guidance.
 
 ## References and dependencies
 

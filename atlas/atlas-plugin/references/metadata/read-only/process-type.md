@@ -13,13 +13,7 @@ Operator-registered type of the file containing Process logic. The confirmed fra
 
 ## Fields
 
-Every field is listed explicitly. Exact current MCP/Snapshot schemas remain authoritative if the contract changes.
-
-| Field | Accepted value / presence | Meaning and use |
-|---|---|---|
-| `process_type_name` | string; minLength=1; maxLength=200; pattern=\S; required | Name identifying the Process Type. |
-| `process_type_description` | string; required; null allowed | Plain-language description of the Process Type. |
-| `is_active` | `false`, `true`; required | Whether the record is active for normal governed use. |
+Run `describe --dataset process_type` for every field: it states each one's type, limits, required and null rules, description and population guidance.
 
 ## References and dependencies
 
@@ -31,7 +25,7 @@ Every field is listed explicitly. Exact current MCP/Snapshot schemas remain auth
 Process.process_type_name references process_type.process_type_name. The confirmed meanings are:
 
 | Logic type | Executable | Location |
-|---|---|---|
+|---|---|
 | SQL | Actual filename including .sql, for example build_customer.sql. | Path to the logic file in the framework's expected form. |
 | Python | Actual filename including .python, for example build_customer.python. | Path to the logic file in the framework's expected form. |
 

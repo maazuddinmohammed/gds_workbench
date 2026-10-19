@@ -18,25 +18,21 @@ Use the [Process metadata workflow](../../../skills/atlas-registration/SKILL.md)
 
 ## Fields
 
-Every field is listed explicitly. Exact current MCP/Snapshot schemas remain authoritative if the contract changes.
+Run `describe --dataset process` for every field's type, limits, required and null rules, description and population guidance. This table lists only fields with rules that `describe` does not state.
 
-| Field | Accepted value / presence | Meaning and use |
-|---|---|---|
-| `value` | any valid JSON; optional; null allowed | Optional additional details. Preserve existing JSON; populate only when requested. No implied execution behavior. |
-| `tenant_code` | string; minLength=1; maxLength=100; pattern=\S; required | Owner of the Process Group context; use the locked Tenant. Reference: [process group](process-group.md). |
-| `system_code` | string; minLength=1; maxLength=100; pattern=\S; required | System component of the Process Group identity; may differ from the target Object's physical GDS System. Reference: [process group](process-group.md). |
-| `zone_code` | string; minLength=1; maxLength=30; required | Zone component of the referenced Process Group key, not an independent Process Zone or the target Object's Zone. Resolve the exact group before authoring. Reference: [process group](process-group.md). |
-| `process_group_name` | string; minLength=1; maxLength=200; pattern=\S; required | Name identifying the Process Group. Reference: [process group](process-group.md). |
-| `process_execution_order` | integer; maximum=2147483647; exclusiveMinimum=0; required | Positive execution stage within a Process Group dependency level. Equal orders across eligible groups run together; all resulting invocations must succeed before advancement. Part of identity; changing it requires manual correction. |
-| `process_location` | string; minLength=1; pattern=\S; required | Path to the logic file in the framework's expected form. Part of identity; preserve case/spaces and the supplied path convention. |
-| `process_executable` | string; minLength=1; pattern=\S; required | Actual file name including its extension: .sql for SQL or .python for Python in the confirmed framework. Part of identity; preserve the exact name. |
-| `object_tenant_code` | string; minLength=1; maxLength=100; pattern=\S; required | Tenant component of the target Object's physical Connection key; may be the configured GDS Tenant. Reference: [object](object.md). |
-| `object_system_code` | string; minLength=1; maxLength=100; pattern=\S; required | System component of the target Object's physical Connection key; distinct from the Process Group System. Reference: [object](object.md). |
-| `object_connection_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the Object Connection. Reference: [object](object.md). |
-| `object_schema` | string; minLength=1; maxLength=400; pattern=\S; required | Schema containing the Object. Reference: [object](object.md). |
-| `object_name` | string; minLength=1; maxLength=400; pattern=\S; required | Name identifying the Object. Reference: [object](object.md). |
-| `process_type_name` | string; minLength=1; maxLength=200; pattern=\S; required | File's logic type: SQL or Python in the confirmed framework. Use the corresponding registered Process Type name from the Snapshot. Reference: [process type](../read-only/process-type.md). |
-| `is_active` | `false`, `true`; required | Default true for new records unless requested otherwise. False retains the existing record and identity. Preserve existing values on unrelated edits. |
+| Field | Meaning and use |
+|---|---|
+| `value` | Optional additional details. Preserve existing JSON; populate only when requested. No implied execution behavior. |
+| `tenant_code` | Owner of the Process Group context; use the locked Tenant. Reference: [process group](process-group.md). |
+| `system_code` | System component of the Process Group identity; may differ from the target Object's physical GDS System. Reference: [process group](process-group.md). |
+| `zone_code` | Zone component of the referenced Process Group key, not an independent Process Zone or the target Object's Zone. Resolve the exact group before authoring. Reference: [process group](process-group.md). |
+| `process_execution_order` | Positive execution stage within a Process Group dependency level. Equal orders across eligible groups run together; all resulting invocations must succeed before advancement. Part of identity; changing it requires manual correction. |
+| `process_location` | Path to the logic file in the framework's expected form. Part of identity; preserve case/spaces and the supplied path convention. |
+| `process_executable` | Actual file name including its extension: .sql for SQL or .python for Python in the confirmed framework. Part of identity; preserve the exact name. |
+| `object_tenant_code` | Tenant component of the target Object's physical Connection key; may be the configured GDS Tenant. Reference: [object](object.md). |
+| `object_system_code` | System component of the target Object's physical Connection key; distinct from the Process Group System. Reference: [object](object.md). |
+| `process_type_name` | File's logic type: SQL or Python in the confirmed framework. Use the corresponding registered Process Type name from the Snapshot. Reference: [process type](../read-only/process-type.md). |
+| `is_active` | Default true for new records unless requested otherwise. False retains the existing record and identity. Preserve existing values on unrelated edits. |
 
 ## References and dependencies
 
@@ -80,7 +76,7 @@ These are runtime scheduling rules, not database or offline-validator guarantees
 Enforcement is explained in [common checks](../validation.md#interpreting-table-checklists); run the local validator, then review anything marked for you.
 
 | Rule | Check / why | Enforced by |
-|---|---|---|
+|---|---|
 | `process.shape` | Complete Process Group/Object keys; positive int32 order; nonblank location/executable; Process Type; active boolean. Reject malformed complete records before staging. | Local validator + server |
 | `process.unique` | Process Group + order + exact location + exact executable unique; order alone need not be unique. Same executable at different orders is valid. Existing key changes follow the manual database-change rule. | Local validator + server |
 | `process.references` | Process Group and Type exist; Object belongs to specified Connection. Resolve dependencies using snapshot plus pending rows. | Local validator + server |
