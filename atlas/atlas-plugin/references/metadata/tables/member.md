@@ -10,15 +10,14 @@ is `(member_group_id, member_code)`, using normalized code uniqueness. Snapshots
 replace the FK with `tenant_code`, `system_code`, `member_group_name`; append
 `member_code` to obtain the complete authoring key.
 
-| Field | Meaning |
+Run `describe --dataset member` for every field's type, limits, required and null
+rules, description and population guidance. This table lists only fields with rules
+that `describe` does not state.
+
+| Field | Meaning and use |
 | --- | --- |
 | `tenant_code`, `system_code`, `member_group_name` | Existing or pending parent Member Group; same Change Set Tenant. |
-| `member_code` | Nonblank string, maximum 100 characters; unique within its Group. |
-| `member_name` | Nonblank display name, maximum 200 characters. |
-| `member_description` | Optional description, or null. |
-| `member_attribute_name` | Optional filter Attribute name, maximum 400 characters; use the explicitly supplied source meaning. |
-| `value` | Optional JSON details, default null; no implied behavior. |
-| `is_active` | Boolean; new records default true. |
+| `is_active` | New records default true. |
 
 Created/updated time and actor fields are maintained by the backend. Do not include
 IDs or audit fields in Change Sets. Preserve unrelated values and inactive history.

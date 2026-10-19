@@ -13,13 +13,12 @@ Registered framework operation/function selected by a Copy's target operation. T
 
 ## Fields
 
-Every field is listed explicitly. Exact current MCP/Snapshot schemas remain authoritative if the contract changes.
+Run `describe --dataset data_operation` for every field's type, limits, required and null rules, description and population guidance. This table lists only fields with rules that `describe` does not state.
 
-| Field | Accepted value / presence | Meaning and use |
-|---|---|---|
-| `data_operation_name` | string; minLength=1; maxLength=200; pattern=\S; required | Registered name selecting an implemented framework operation. |
-| `data_operation_description` | string; required; null allowed | Explains the function's actual target behavior, scope and custom rules. Use it to match the requested loading behavior. |
-| `is_active` | `false`, `true`; required | Whether the record is active for normal governed use. |
+| Field | Meaning and use |
+|---|---|
+| `data_operation_name` | Registered name selecting an implemented framework operation. |
+| `data_operation_description` | Explains the function's actual target behavior, scope and custom rules. Use it to match the requested loading behavior. |
 
 ## References and dependencies
 

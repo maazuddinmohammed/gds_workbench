@@ -13,13 +13,12 @@ Registered framework logic that splits a large initial extraction into smaller i
 
 ## Fields
 
-Every field is listed explicitly. Exact current MCP/Snapshot schemas remain authoritative if the contract changes.
+Run `describe --dataset chunk_type` for every field's type, limits, required and null rules, description and population guidance. This table lists only fields with rules that `describe` does not state.
 
-| Field | Accepted value / presence | Meaning and use |
-|---|---|---|
-| `chunk_type_name` | string; minLength=1; maxLength=200; pattern=\S; required | Registered name selecting the framework's implemented chunking logic. |
-| `chunk_type_description` | string; required; null allowed | Explains table-specific or reusable scope, applicability and how the chunking logic is used. Missing details require clarification before selection. |
-| `is_active` | `false`, `true`; required | Whether the record is active for normal governed use. |
+| Field | Meaning and use |
+|---|---|
+| `chunk_type_name` | Registered name selecting the framework's implemented chunking logic. |
+| `chunk_type_description` | Explains table-specific or reusable scope, applicability and how the chunking logic is used. Missing details require clarification before selection. |
 
 ## References and dependencies
 

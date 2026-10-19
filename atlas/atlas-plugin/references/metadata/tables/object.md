@@ -34,7 +34,7 @@ For a Silver Object combining data from several Tenants, the user may choose the
 Synthetic examples:
 
 | Object | tenant_code | source_tenant_code |
-|---|---|---|
+|---|---|
 | Tenant A's Source Customer | tenant_a | tenant_a |
 | Tenant A's Bronze Customer in the shared store | store | tenant_a |
 | Tenant A's Silver Customer or Gold Customer dimension in the shared store | store | tenant_a |
@@ -44,26 +44,20 @@ Metadata changes use the chosen Object owner's Change Set. Existing ownership ca
 
 ## Fields
 
-Every field is listed explicitly. Exact current MCP/Snapshot schemas remain authoritative if the contract changes.
+Run `describe --dataset <dataset>` for every field's type, limits, required and null rules, description and population guidance. This table lists only fields with rules that `describe` does not state.
 
-| Field | Accepted value / presence | Meaning and use |
-|---|---|---|
-| `value` | any valid JSON; optional; null allowed | Optional additional details. Preserve existing JSON; populate only when requested. No implied execution behavior. |
-| `tenant_code` | string; minLength=1; maxLength=100; pattern=\S; required | Tenant component of the physical Connection key; may differ from the Source Tenant owning the data. Reference: [tenant](../read-only/tenant.md). |
-| `system_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the System. Reference: [system](../read-only/system.md). |
-| `connection_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the Connection. |
-| `source_tenant_code` | string; minLength=1; maxLength=100; pattern=\S; required | Data/metadata owner; must match the Change Set Tenant. This field is not part of the physical natural key. Reference: [tenant](../read-only/tenant.md). |
-| `object_schema` | string; minLength=1; maxLength=400; pattern=\S; required | Schema containing the Object. |
-| `object_name` | string; minLength=1; maxLength=400; pattern=\S; required | Name identifying the Object. |
-| `fc_object_schema` | string; maxLength=400; required; null allowed | Optional foreign-catalog schema containing the Object. |
-| `fc_object_name` | string; maxLength=400; required; null allowed | Optional foreign-catalog name of the Object. |
-| `object_transformation` | string; required; null allowed | Currently unused downstream (user-confirmed). Default new records to null; preserve existing values during unrelated edits. Column SELECT expressions belong in attribute_custom_code. |
-| `object_description` | string; required; null allowed | Meaning and purpose of the Object, including supported row grain. Avoid generic Zone/storage boilerplate; see [enrichment quality](../enrichment-quality.md). Null when no description is available. |
-| `batch_attribute_name` | string; maxLength=400; required; null allowed | Optional Attribute identifying a batch within this Object. Follow shared [query-scope rules](../../query-scope.md#batch-selection) for profiling and relationship evidence; a populated value requires resolved explicit IDs and a supported active Attribute. |
-| `object_type_code` | string; minLength=1; maxLength=100; pattern=\S; required | Registered Object Type code describing the physical kind; resolve its current description. Reference: [object type](../read-only/object-type.md). |
-| `zone_code` | `source`, `bronze`, `silver`, `gold`; exact dataset zone; required | Physical layer represented by the selected Object dataset. The four datasets share one database Object table. Reference: [zone](../read-only/zone.md). |
-| `is_locked` | `false`, `true`; required | Object protection flag. Existing locked Objects cannot be changed, including through their Attributes; do not unlock by ordinary authoring. |
-| `is_active` | `false`, `true`; required | Default true for new records unless requested otherwise. False retains an inactive record and its identity; it does not create version history. Preserve existing values on unrelated edits. |
+| Field | Meaning and use |
+|---|---|
+| `value` | Optional additional details. Preserve existing JSON; populate only when requested. No implied execution behavior. |
+| `tenant_code` | Tenant component of the physical Connection key; may differ from the Source Tenant owning the data. Reference: [tenant](../read-only/tenant.md). |
+| `source_tenant_code` | Data/metadata owner; must match the Change Set Tenant. This field is not part of the physical natural key. Reference: [tenant](../read-only/tenant.md). |
+| `object_transformation` | Currently unused downstream (user-confirmed). Default new records to null; preserve existing values during unrelated edits. Column SELECT expressions belong in attribute_custom_code. |
+| `object_description` | Meaning and purpose of the Object, including supported row grain. Avoid generic Zone/storage boilerplate; see [enrichment quality](../enrichment-quality.md). Null when no description is available. |
+| `batch_attribute_name` | Optional Attribute identifying a batch within this Object. Follow shared [query-scope rules](../../query-scope.md#batch-selection) for profiling and relationship evidence; a populated value requires resolved explicit IDs and a supported active Attribute. |
+| `object_type_code` | Registered Object Type code describing the physical kind; resolve its current description. Reference: [object type](../read-only/object-type.md). |
+| `zone_code` | Physical layer represented by the selected Object dataset. The four datasets share one database Object table. Reference: [zone](../read-only/zone.md). |
+| `is_locked` | Object protection flag. Existing locked Objects cannot be changed, including through their Attributes; do not unlock by ordinary authoring. |
+| `is_active` | Default true for new records unless requested otherwise. False retains an inactive record and its identity; it does not create version history. Preserve existing values on unrelated edits. |
 
 ## References and dependencies
 
@@ -89,7 +83,7 @@ Every field is listed explicitly. Exact current MCP/Snapshot schemas remain auth
 Enforcement is explained in [common checks](../validation.md#interpreting-table-checklists); run the local validator, then review anything marked for you.
 
 | Rule | Check / why | Enforced by |
-|---|---|---|
+|---|---|
 | `object.shape` | Exact Object fields; required codes/names; schema/name <=400; explicit booleans; nullable optional fields. Reject malformed complete records before staging. | Local validator + server |
 | `object.unique` | Connection + normalized schema/name unique across all four zone datasets; owner and zone are not key fields. Prevent duplicate identity; inactive rows still reserve their keys. | Local validator + server |
 | `object.references` | Connection, owner Tenant, Object Type and Zone must resolve. Resolve dependencies using snapshot plus pending rows. | Local validator + server |

@@ -13,32 +13,22 @@ A physical field/column of an Object, with source/storage type, ordinal, optiona
 
 ## Fields
 
-Every field is listed explicitly. Exact current MCP/Snapshot schemas remain authoritative if the contract changes.
+Run `describe --dataset <dataset>` for every field's type, limits, required and null rules, description and population guidance. This table lists only fields with rules that `describe` does not state.
 
-| Field | Accepted value / presence | Meaning and use |
-|---|---|---|
-| `value` | any valid JSON; optional; null allowed | Optional additional details. Preserve existing JSON; populate only when requested. No implied execution behavior. |
-| `tenant_code` | string; minLength=1; maxLength=100; pattern=\S; required | Physical Connection Tenant from the parent Object key; may differ from the Object's metadata owner. Reference: [object](object.md). |
-| `system_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the System. Reference: [object](object.md). |
-| `connection_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the Connection. Reference: [object](object.md). |
-| `object_schema` | string; minLength=1; maxLength=400; pattern=\S; required | Schema containing the Object. Reference: [object](object.md). |
-| `object_name` | string; minLength=1; maxLength=400; pattern=\S; required | Name identifying the Object. Reference: [object](object.md). |
-| `attribute_name` | string; minLength=1; maxLength=400; pattern=\S; required | Name identifying the Attribute. |
-| `fc_attribute_name` | string; maxLength=400; required; null allowed | Optional foreign-catalog name of the Attribute. |
-| `attribute_ordinal_position` | integer; maximum=2147483647; exclusiveMinimum=0; required | One-based position of the Attribute within its Object. Use a positive integer unique within the Object and preserve the intended column order. |
-| `attribute_description` | string; required; null allowed | Meaning of the Attribute in its Object's context, including supported units/code/time distinctions where useful; see [enrichment quality](../enrichment-quality.md). Null when no description is available. |
-| `attribute_data_type` | string; minLength=1; maxLength=100; required | Physical data type of the Attribute. Use the data-type spelling accepted by the owning platform, including precision or scale when applicable. |
-| `attribute_inferred_data_type` | string; minLength=1; maxLength=100; pattern=\S; required; null allowed | Evidence-supported logical interpretation separate from physical storage. Preserve known values during unrelated edits; follow the [type evidence procedure](../enrichment-quality.md#infer-types-with-evidence) when enriching. |
-| `attribute_nullability` | `false`, `true`; required | Whether the physical Attribute permits null values. Use true when null is permitted and false when every row must contain a value. |
-| `attribute_custom_code` | string; required; null allowed | Complete replacement SELECT item for SQL Source extraction or Bronze loading; include the output alias. Default null. Source file transfer ignores it; API support is connector-dependent; Silver/Gold ignore it. See rules below. |
-| `is_surrogate_key` | `false`, `true`; required | Whether this physical Attribute is designated as a surrogate key; does not itself create or generate database values. |
-| `is_natural_key` | `false`, `true`; required | Whether the physical Attribute participates in the Object's business identity; unrelated to the metadata row's own natural key. |
-| `is_meta_data` | `false`, `true`; required | Whether the Attribute contains operational metadata rather than business data. Use true for audit, lineage, or framework-maintained Attributes; otherwise use false. |
-| `is_masking_required` | `false`, `true`; required | Marks data requiring masking protection. Preserve it during unrelated edits; evidence queries must respect masking rules. |
-| `is_mapped` | `false`, `true`; required | Currently unused downstream (user-confirmed). Default new records to false; preserve existing values in unrelated edits. Do not derive it from mappings. |
-| `is_purge` | `false`, `true`; required | Currently unused downstream (user-confirmed). Default new records to false; preserve existing values in unrelated edits. No purge behavior is assigned. |
-| `is_locked` | `false`, `true`; required | Attribute protection flag; an existing locked Attribute or locked parent Object prevents ordinary changes. |
-| `is_active` | `false`, `true`; required | Default true for new records unless requested otherwise. False retains an inactive record, its name and ordinal; it does not create version history. Preserve existing values on unrelated edits. |
+| Field | Meaning and use |
+|---|---|
+| `value` | Optional additional details. Preserve existing JSON; populate only when requested. No implied execution behavior. |
+| `tenant_code` | Physical Connection Tenant from the parent Object key; may differ from the Object's metadata owner. Reference: [object](object.md). |
+| `attribute_description` | Meaning of the Attribute in its Object's context, including supported units/code/time distinctions where useful; see [enrichment quality](../enrichment-quality.md). Null when no description is available. |
+| `attribute_inferred_data_type` | Evidence-supported logical interpretation separate from physical storage. Preserve known values during unrelated edits; follow the [type evidence procedure](../enrichment-quality.md#infer-types-with-evidence) when enriching. |
+| `attribute_custom_code` | Complete replacement SELECT item for SQL Source extraction or Bronze loading; include the output alias. Default null. Source file transfer ignores it; API support is connector-dependent; Silver/Gold ignore it. See rules below. |
+| `is_surrogate_key` | Whether this physical Attribute is designated as a surrogate key; does not itself create or generate database values. |
+| `is_natural_key` | Whether the physical Attribute participates in the Object's business identity; unrelated to the metadata row's own natural key. |
+| `is_masking_required` | Marks data requiring masking protection. Preserve it during unrelated edits; evidence queries must respect masking rules. |
+| `is_mapped` | Currently unused downstream (user-confirmed). Default new records to false; preserve existing values in unrelated edits. Do not derive it from mappings. |
+| `is_purge` | Currently unused downstream (user-confirmed). Default new records to false; preserve existing values in unrelated edits. No purge behavior is assigned. |
+| `is_locked` | Attribute protection flag; an existing locked Attribute or locked parent Object prevents ordinary changes. |
+| `is_active` | Default true for new records unless requested otherwise. False retains an inactive record, its name and ordinal; it does not create version history. Preserve existing values on unrelated edits. |
 
 ## References and dependencies
 
@@ -94,7 +84,7 @@ A fixed domain column can use `'retail' AS business_domain`; it needs a Bronze A
 Enforcement is explained in [common checks](../validation.md#interpreting-table-checklists); run the local validator, then review anything marked for you.
 
 | Rule | Check / why | Enforced by |
-|---|---|---|
+|---|---|
 | `attribute.shape` | Exact Attribute fields; required type 1..100 chars; inferred type null/nonblank; ordinal 1..2147483647; explicit booleans. Reject malformed complete records before staging. | Local validator + server |
 | `attribute.unique` | Object + normalized Attribute name unique across zone datasets. Prevent duplicate identity; inactive rows still reserve their keys. | Local validator + server |
 | `attribute.ordinal` | Ordinal must be positive and unique within its Object. Preserve unambiguous column order. | Local validator + server |

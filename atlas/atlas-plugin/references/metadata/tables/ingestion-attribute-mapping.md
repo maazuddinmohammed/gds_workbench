@@ -13,23 +13,23 @@ Optional reference correspondence from a Source Attribute to a Bronze Attribute 
 
 ## Fields
 
-Every field is listed explicitly. Exact current MCP/Snapshot schemas remain authoritative if the contract changes.
+Run `describe --dataset ingestion_attribute_mapping` for every field's type, limits, required and null rules, description and population guidance. This table lists only fields with rules that `describe` does not state.
 
-| Field | Accepted value / presence | Meaning and use |
-|---|---|---|
-| `source_tenant_code` | string; minLength=1; maxLength=100; pattern=\S; required | Tenant code of the source physical endpoint; resolve the complete referenced key. This is placement, not the referenced Object's owner field. Reference: [ingestion object mapping](ingestion-object-mapping.md), [attribute](attribute.md). |
-| `source_system_code` | string; minLength=1; maxLength=100; pattern=\S; required | System code of the source physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md), [attribute](attribute.md). |
-| `source_connection_code` | string; minLength=1; maxLength=100; pattern=\S; required | Connection code of the source physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md), [attribute](attribute.md). |
-| `source_object_schema` | string; minLength=1; maxLength=400; pattern=\S; required | Object schema of the source physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md), [attribute](attribute.md). |
-| `source_object_name` | string; minLength=1; maxLength=400; pattern=\S; required | Object name of the source physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md), [attribute](attribute.md). |
-| `source_attribute_name` | string; minLength=1; maxLength=400; pattern=\S; required | Actual registered source Attribute name. An extraction alias in custom code does not rename this identity. Reference: [attribute](attribute.md). |
-| `target_tenant_code` | string; minLength=1; maxLength=100; pattern=\S; required | Tenant code of the target physical endpoint; resolve the complete referenced key. This is placement, not the referenced Object's owner field. Reference: [ingestion object mapping](ingestion-object-mapping.md), [attribute](attribute.md). |
-| `target_system_code` | string; minLength=1; maxLength=100; pattern=\S; required | System code of the target physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md), [attribute](attribute.md). |
-| `target_connection_code` | string; minLength=1; maxLength=100; pattern=\S; required | Connection code of the target physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md), [attribute](attribute.md). |
-| `target_object_schema` | string; minLength=1; maxLength=400; pattern=\S; required | Object schema of the target physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md), [attribute](attribute.md). |
-| `target_object_name` | string; minLength=1; maxLength=400; pattern=\S; required | Object name of the target physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md), [attribute](attribute.md). |
-| `target_attribute_name` | string; minLength=1; maxLength=400; pattern=\S; required | Exact registered Bronze Attribute name; account for the field name actually emitted by extraction or supplied files. Reference: [attribute](attribute.md). |
-| `is_active` | `false`, `true`; required | Default true for new records unless requested otherwise; preserve existing values on unrelated edits. Active status of this optional reference record does not control column ingestion. Attribute is_mapped remains unused; no synchronization is required. |
+| Field | Meaning and use |
+|---|---|
+| `source_tenant_code` | Tenant code of the source physical endpoint; resolve the complete referenced key. This is placement, not the referenced Object's owner field. Reference: [ingestion object mapping](ingestion-object-mapping.md), [attribute](attribute.md). |
+| `source_system_code` | System code of the source physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md), [attribute](attribute.md). |
+| `source_connection_code` | Connection code of the source physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md), [attribute](attribute.md). |
+| `source_object_schema` | Object schema of the source physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md), [attribute](attribute.md). |
+| `source_object_name` | Object name of the source physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md), [attribute](attribute.md). |
+| `source_attribute_name` | Actual registered source Attribute name. An extraction alias in custom code does not rename this identity. Reference: [attribute](attribute.md). |
+| `target_tenant_code` | Tenant code of the target physical endpoint; resolve the complete referenced key. This is placement, not the referenced Object's owner field. Reference: [ingestion object mapping](ingestion-object-mapping.md), [attribute](attribute.md). |
+| `target_system_code` | System code of the target physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md), [attribute](attribute.md). |
+| `target_connection_code` | Connection code of the target physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md), [attribute](attribute.md). |
+| `target_object_schema` | Object schema of the target physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md), [attribute](attribute.md). |
+| `target_object_name` | Object name of the target physical endpoint; resolve the complete referenced key. Reference: [ingestion object mapping](ingestion-object-mapping.md), [attribute](attribute.md). |
+| `target_attribute_name` | Exact registered Bronze Attribute name; account for the field name actually emitted by extraction or supplied files. Reference: [attribute](attribute.md). |
+| `is_active` | Default true for new records unless requested otherwise; preserve existing values on unrelated edits. Active status of this optional reference record does not control column ingestion. Attribute is_mapped remains unused; no synchronization is required. |
 
 ## References and dependencies
 
@@ -55,7 +55,7 @@ Enforcement is explained in [common checks](../validation.md#interpreting-table-
 Apply these checks only to records that are present. No minimum record count or ingestion-coverage check is required.
 
 | Rule | Check / why | Enforced by |
-|---|---|---|
+|---|---|
 | `ingestion_attribute_mapping.shape` | Complete source/target Object and Attribute keys; required is_active boolean. Reject malformed complete records before staging. | Local validator + server |
 | `ingestion_attribute_mapping.unique` | Parent Object Mapping + source Attribute + target Attribute unique. Prevent duplicate identity; inactive rows still reserve their keys. | Local validator + server |
 | `ingestion_attribute_mapping.references` | Parent Object Mapping exists; each Attribute belongs to its stated endpoint Object. Resolve dependencies using snapshot plus pending rows. | Local validator + server |

@@ -13,21 +13,11 @@ Registered physical access or placement context joining a Tenant, System, and Co
 
 ## Fields
 
-Every field is listed explicitly. Exact current MCP/Snapshot schemas remain authoritative if the contract changes.
+Run `describe --dataset connection` for every field's type, limits, required and null rules, description and population guidance. This table lists only fields with rules that `describe` does not state.
 
-| Field | Accepted value / presence | Meaning and use |
-|---|---|---|
-| `value` | any valid JSON; optional; null allowed | Optional additional details. Preserve existing JSON; populate only when requested. No implied execution behavior. |
-| `tenant_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the Tenant. Reference: [tenant](tenant.md). |
-| `system_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the System. Reference: [system](system.md). |
-| `connection_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the Connection. |
-| `connection_name` | string; minLength=1; maxLength=200; pattern=\S; required | Name identifying the Connection. |
-| `connection_description` | string; optional field; null allowed | Plain-language description of the Connection. |
-| `connection_type_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the Connection Type. Reference: [connection type](connection-type.md). |
-| `has_foreign_catalog` | `false`, `true`; required | Whether the Connection exposes its Objects through a foreign catalog. |
-| `foreign_catalog` | string; maxLength=255; required; null allowed | Optional external catalog associated with the Connection. |
-| `is_global_data_store` | `false`, `true`; required | Whether the Connection is the governed global data-store Connection. |
-| `is_active` | `false`, `true`; required | Whether the record is active for normal governed use. |
+| Field | Meaning and use |
+|---|---|
+| `value` | Optional additional details. Preserve existing JSON; populate only when requested. No implied execution behavior. |
 
 ## References and dependencies
 

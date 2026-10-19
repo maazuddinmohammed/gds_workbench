@@ -13,22 +13,12 @@ Ownership and authorization scope for metadata, Projects, and principals; belong
 
 ## Fields
 
-Every field is listed explicitly. Exact current MCP/Snapshot schemas remain authoritative if the contract changes.
+Run `describe --dataset tenant` for every field's type, limits, required and null rules, description and population guidance. This table lists only fields with rules that `describe` does not state.
 
-| Field | Accepted value / presence | Meaning and use |
-|---|---|---|
-| `value` | any valid JSON; optional; null allowed | Optional additional details. Preserve existing JSON; populate only when requested. No implied execution behavior. |
-| `tenant_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the Tenant. |
-| `lane_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the Lane. Reference: [lane](lane.md). |
-| `tenant_name` | string; minLength=1; maxLength=200; pattern=\S; required | Name identifying the Tenant. |
-| `tenant_description` | string; required; null allowed | Plain-language description of the Tenant. |
-| `tenant_catalog` | string; minLength=1; maxLength=255; required | Target data catalog assigned to this Tenant. Used in qualified Databricks evidence queries for its owned Bronze/Silver/Gold Objects. |
-| `gds_admin_catalog` | string; minLength=1; maxLength=255; required | Catalog containing administrative GDS metadata for the Tenant. |
-| `gds_connection_tenant_code` | string; minLength=1; maxLength=100; pattern=\S; required; null allowed | Tenant code owning the optional GDS data-store Connection. Reference: [connection](connection.md). |
-| `gds_connection_system_code` | string; minLength=1; maxLength=100; pattern=\S; required; null allowed | System code of the optional GDS data-store Connection for the Tenant. Reference: [connection](connection.md). |
-| `gds_connection_code` | string; minLength=1; maxLength=100; pattern=\S; required; null allowed | Connection code of the optional GDS data-store Connection for the Tenant. Reference: [connection](connection.md). |
-| `tenant_visibility` | `"global"`, `"private"`; required | Visibility boundary of the Tenant. |
-| `is_active` | `false`, `true`; required | Whether the record is active for normal governed use. |
+| Field | Meaning and use |
+|---|---|
+| `value` | Optional additional details. Preserve existing JSON; populate only when requested. No implied execution behavior. |
+| `tenant_catalog` | Target data catalog assigned to this Tenant. Used in qualified Databricks evidence queries for its owned Bronze/Silver/Gold Objects. |
 
 ## References and dependencies
 

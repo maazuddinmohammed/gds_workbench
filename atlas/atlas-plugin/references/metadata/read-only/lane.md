@@ -13,14 +13,7 @@ Registered organizational grouping to which Tenants belong.
 
 ## Fields
 
-Every field is listed explicitly. Exact current MCP/Snapshot schemas remain authoritative if the contract changes.
-
-| Field | Accepted value / presence | Meaning and use |
-|---|---|---|
-| `lane_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the Lane. |
-| `lane_name` | string; minLength=1; maxLength=200; pattern=\S; required | Name identifying the Lane. |
-| `lane_description` | string; required; null allowed | Plain-language description of the Lane. |
-| `is_active` | `false`, `true`; required | Whether the record is active for normal governed use. |
+Run `describe --dataset lane` for every field: it states each one's type, limits, required and null rules, description and population guidance.
 
 ## References and dependencies
 

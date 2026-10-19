@@ -13,17 +13,15 @@ A Tenant/System ingestion group containing Copy entries and associated execution
 
 ## Fields
 
-Every field is listed explicitly. Exact current MCP/Snapshot schemas remain authoritative if the contract changes.
+Run `describe --dataset copy_group` for every field's type, limits, required and null rules, description and population guidance. This table lists only fields with rules that `describe` does not state.
 
-| Field | Accepted value / presence | Meaning and use |
-|---|---|---|
-| `value` | any valid JSON; optional; null allowed | Optional additional details. Preserve existing JSON; populate only when requested. No implied execution behavior. |
-| `tenant_code` | string; minLength=1; maxLength=100; pattern=\S; required | Tenant owning the Copy Group; must be the locked Tenant. Reference: [tenant](../read-only/tenant.md). |
-| `system_code` | string; minLength=1; maxLength=100; pattern=\S; required | Source System whose ingestion this group organizes; use the registered System code. Reference: [system](../read-only/system.md). |
-| `copy_group_name` | string; minLength=1; maxLength=200; pattern=\S; required | Name identifying the Copy Group. |
-| `copy_group_description` | string; required; null allowed | Plain-language description of the Copy Group. Provide concise business or operational context; use null when no description is available. |
-| `is_member_group_required` | `false`, `true`; required | Default false on new records. Member Group filtering is optional and explicit; preserve existing values during unrelated edits. |
-| `is_active` | `false`, `true`; required | Default true for new records unless requested otherwise; preserve existing values on unrelated edits. False skips all Copies belonging to this group regardless of child active flags; their stored flags remain unchanged. |
+| Field | Meaning and use |
+|---|---|
+| `value` | Optional additional details. Preserve existing JSON; populate only when requested. No implied execution behavior. |
+| `tenant_code` | Tenant owning the Copy Group; must be the locked Tenant. Reference: [tenant](../read-only/tenant.md). |
+| `system_code` | Source System whose ingestion this group organizes; use the registered System code. Reference: [system](../read-only/system.md). |
+| `is_member_group_required` | Default false on new records. Member Group filtering is optional and explicit; preserve existing values during unrelated edits. |
+| `is_active` | Default true for new records unless requested otherwise; preserve existing values on unrelated edits. False skips all Copies belonging to this group regardless of child active flags; their stored flags remain unchanged. |
 
 ## References and dependencies
 
@@ -61,7 +59,7 @@ Selected Copies load Source → landing → Bronze, followed by [Process Group s
 Enforcement is explained in [common checks](../validation.md#interpreting-table-checklists); run the local validator, then review anything marked for you.
 
 | Rule | Check / why | Enforced by |
-|---|---|---|
+|---|---|
 | `copy_group.shape` | Tenant/System/name required; name nonblank <=200; description nullable; two explicit booleans. Reject malformed complete records before staging. | Local validator + server |
 | `copy_group.unique` | Tenant + System + normalized Copy Group name unique. Prevent duplicate identity; inactive rows still reserve their keys. | Local validator + server |
 | `copy_group.references` | Tenant and System must exist. Resolve dependencies using snapshot plus pending rows. | Local validator + server |
