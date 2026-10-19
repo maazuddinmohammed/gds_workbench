@@ -23,6 +23,7 @@ There is no separate notebook workflow runtime.
 | HTTP setup and dependencies | `web_app/backend/gds_workbench_api/main.py`, `runtime.py`, `dependencies.py` |
 | Web feature orchestration and SQL I/O | Backend `features/<feature>/` |
 | Worker composition | Backend `features/workflows/execution/assembly.py` |
+| Foundry model transports and usage | Backend `integrations/agents/`; `anthropic_model.py` adapts Claude Messages to the shared Agents SDK loop |
 | Prompt variables, readers and rendering | Backend `features/workflows/authoring/` |
 | Frontend screens | `web_app/frontend/src/features/` |
 | Shared UI and formatting | Frontend `shared/ui.tsx`, `shared/presentation.ts` |

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from typing import Literal, Self, cast
+from dataclasses import dataclass, field
+from typing import Literal, Protocol, Self, cast
 from urllib.parse import urlsplit
 from uuid import UUID
 
@@ -18,6 +19,22 @@ from gds_workbench_api.capabilities import (
 from gds_workbench_api.features.workflows.usage.contracts import FoundryModelPricing
 
 _DEFAULT_TIMEOUT_SECONDS = 7200
+
+
+@dataclass(frozen=True, slots=True)
+class OpenAIProviderCredentials:
+    """Shared endpoint credentials; retained name preserves existing adapter consumers."""
+
+    api_key: SecretStr = field(repr=False)
+    base_url: str
+
+
+class ModelAuthentication(Protocol):
+    async def authenticate(self) -> OpenAIProviderCredentials: ...
+
+
+class ManagedModelAuthentication(ModelAuthentication, Protocol):
+    async def close(self) -> None: ...
 
 
 class FoundryClientCredentials(BaseModel):
@@ -36,6 +53,7 @@ class AgentProviderConnection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     provider_code: Literal["microsoft_foundry"]
+    api_protocol: Literal["openai", "anthropic_messages"] = "openai"
     model_code: str = Field(
         min_length=1,
         max_length=200,
@@ -48,10 +66,20 @@ class AgentProviderConnection(BaseModel):
     )
     timeout_seconds: int = Field(default=_DEFAULT_TIMEOUT_SECONDS, ge=1)
     openai_base_url: str | None = Field(default=None, max_length=2048)
+    anthropic_base_url: str | None = Field(default=None, max_length=2048)
     token_scope: str | None = Field(default=None, max_length=2048)
     foundry_client_credentials: FoundryClientCredentials | None = None
     foundry_api_key: SecretStr | None = None
     pricing: FoundryModelPricing | None = None
+
+    @property
+    def authentication_key(self) -> str:
+        """Keep Claude's endpoint and token audience separate from OpenAI's."""
+        return (
+            self.provider_code
+            if self.api_protocol == "openai"
+            else f"{self.provider_code}.anthropic"
+        )
 
 
 class AgentRuntimeConfiguration(BaseModel):
@@ -108,6 +136,7 @@ class AgentRuntimeConfiguration(BaseModel):
             model for model in registry.models if model.provider_code == "microsoft_foundry"
         )
         foundry_base_url = source.get("GDS_WEB_FOUNDRY_OPENAI_BASE_URL", "").strip()
+        anthropic_base_url = source.get("GDS_WEB_FOUNDRY_ANTHROPIC_BASE_URL", "").strip()
         foundry_scope = "https://cognitiveservices.azure.com/.default"
         foundry_tenant_id = _optional_uuid(source, "GDS_WEB_FOUNDRY_ENTRA_TENANT_ID")
         foundry_client_id = _optional_uuid(source, "GDS_WEB_FOUNDRY_CLIENT_ID")
@@ -118,6 +147,7 @@ class AgentRuntimeConfiguration(BaseModel):
         supplied_foundry_values = any(
             (
                 foundry_base_url,
+                anthropic_base_url,
                 foundry_tenant_id,
                 foundry_client_id,
                 foundry_client_secret,
@@ -169,6 +199,8 @@ class AgentRuntimeConfiguration(BaseModel):
                     allow_services_host=bool(foundry_api_key.strip()),
                 )
                 _validate_foundry_scope(foundry_scope)
+                if anthropic_base_url:
+                    _validate_foundry_anthropic_base_url(anthropic_base_url, foundry_base_url)
                 pricing_by_model: dict[str, FoundryModelPricing] = {}
                 if pricing_json:
                     if len(pricing_json.encode("utf-8")) > 64 * 1024:
@@ -194,11 +226,25 @@ class AgentRuntimeConfiguration(BaseModel):
                 connections = tuple(
                     AgentProviderConnection(
                         provider_code="microsoft_foundry",
+                        api_protocol=model.api_protocol,
                         model_code=model.code,
                         model_endpoint=model.deployment_name,
                         timeout_seconds=timeout_seconds,
-                        openai_base_url=foundry_base_url,
-                        token_scope=None if foundry_api_key.strip() else foundry_scope,
+                        openai_base_url=(
+                            foundry_base_url if model.api_protocol == "openai" else None
+                        ),
+                        anthropic_base_url=(
+                            anthropic_base_url
+                            if model.api_protocol == "anthropic_messages"
+                            else None
+                        ),
+                        token_scope=(
+                            None
+                            if foundry_api_key.strip()
+                            else "https://ai.azure.com/.default"
+                            if model.api_protocol == "anthropic_messages"
+                            else foundry_scope
+                        ),
                         foundry_client_credentials=(
                             None
                             if foundry_api_key.strip()
@@ -214,6 +260,7 @@ class AgentRuntimeConfiguration(BaseModel):
                         pricing=pricing_by_model.get(model.code),
                     )
                     for model in foundry_models
+                    if model.api_protocol == "openai" or anthropic_base_url
                 )
         except ConfigurationError:
             raise
@@ -269,6 +316,29 @@ def _validate_foundry_base_url(
     ):
         raise ConfigurationError(
             "GDS_WEB_FOUNDRY_OPENAI_BASE_URL must be an Azure resource HTTPS /openai/v1 endpoint"
+        )
+
+
+def _validate_foundry_anthropic_base_url(value: str, openai_base_url: str) -> None:
+    parsed = urlsplit(value)
+    hostname = (parsed.hostname or "").lower()
+    openai_hostname = (urlsplit(openai_base_url).hostname or "").lower()
+    try:
+        port = parsed.port
+    except ValueError:
+        port = -1
+    if (
+        parsed.scheme != "https"
+        or hostname != openai_hostname.split(".")[0] + ".services.ai.azure.com"
+        or parsed.path.rstrip("/") != "/anthropic"
+        or port not in (None, 443)
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ConfigurationError(
+            "The Anthropic endpoint must be the same Foundry resource's HTTPS /anthropic route"
         )
 
 

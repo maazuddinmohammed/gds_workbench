@@ -23,6 +23,7 @@ class ProviderUsageHooks:
         self._recorder = recorder
         self._request_ordinal = 0
         self.error: WorkbenchError | None = None
+        self.last_usage = ModelTokenUsage()
 
     async def on_request(self, request: httpx2.Request) -> None:
         if self.error is not None:
@@ -46,6 +47,13 @@ class ProviderUsageHooks:
             if isinstance(payload, dict):
                 decoded = cast(dict[str, object], payload)
                 responses_api = response.request.url.path.rstrip("/").endswith("/responses")
+                anthropic_api = response.request.url.path.rstrip("/").endswith("/messages")
+                if response.is_success and anthropic_api:
+                    stop_reason = decoded.get("stop_reason")
+                    if stop_reason in ("max_tokens", "model_context_window_exceeded", "refusal"):
+                        self.error = AgentExecutionFailedError(
+                            "output_refused" if stop_reason == "refusal" else "output_truncated"
+                        )
                 if response.is_success and responses_api:
                     status = decoded.get("status")
                     if status in ("incomplete", "failed"):
@@ -84,7 +92,52 @@ class ProviderUsageHooks:
                         elif finish_reason == "content_filter":
                             self.error = AgentExecutionFailedError("output_refused")
                 raw = decoded.get("usage")
-                if isinstance(raw, dict):
+                if isinstance(raw, dict) and anthropic_api:
+                    counts = cast(dict[str, object], raw)
+                    # Claude reports uncached input separately. Atlas stores total input.
+                    inputs = [
+                        counts.get(key)
+                        for key in (
+                            "input_tokens",
+                            "cache_read_input_tokens",
+                            "cache_creation_input_tokens",
+                        )
+                    ]
+                    total_input = (
+                        sum(cast(list[int], inputs))
+                        if all(type(value) is int and value >= 0 for value in inputs)
+                        else None
+                    )
+                    output = counts.get("output_tokens")
+                    total = (
+                        total_input + output
+                        if total_input is not None and type(output) is int
+                        else None
+                    )
+                    usage = ModelTokenUsage.model_validate(
+                        {
+                            "input_tokens": total_input,
+                            "output_tokens": output,
+                            "total_tokens": total,
+                            "cached_input_tokens": counts.get("cache_read_input_tokens"),
+                            "cache_write_input_tokens": counts.get("cache_creation_input_tokens"),
+                            "other_token_types": any(
+                                value not in (None, 0, {})
+                                for key, value in counts.items()
+                                if key
+                                not in {
+                                    "input_tokens",
+                                    "output_tokens",
+                                    "cache_read_input_tokens",
+                                    "cache_creation_input_tokens",
+                                    "cache_creation",
+                                    "service_tier",
+                                    "inference_geo",
+                                }
+                            ),
+                        }
+                    )
+                elif isinstance(raw, dict):
                     counts = cast(dict[str, object], raw)
                     input_key = "input_tokens" if responses_api else "prompt_tokens"
                     output_key = "output_tokens" if responses_api else "completion_tokens"
@@ -122,6 +175,7 @@ class ProviderUsageHooks:
         except ValueError, RecursionError:
             # Invalid/missing provider counters are unknown, never fabricated free calls.
             usage = ModelTokenUsage()
+        self.last_usage = usage
         if self._recorder is None:
             return
         assert isinstance(request_id, UUID)

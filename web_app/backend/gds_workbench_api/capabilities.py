@@ -59,6 +59,7 @@ class AgentModelCapability(CapabilityModel):
     code: str = Field(pattern=_MODEL_CODE_PATTERN, max_length=200)
     name: str = Field(min_length=1, max_length=200)
     provider_code: str = Field(pattern=_CODE_PATTERN, max_length=100)
+    api_protocol: Literal["openai", "anthropic_messages"] = "openai"
     deployment_name: str = Field(
         min_length=1,
         max_length=200,

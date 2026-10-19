@@ -6,9 +6,8 @@ import asyncio
 import json
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
 from threading import Lock
-from typing import Any, Protocol, cast
+from typing import Any, cast
 
 from agents import (
     Agent,
@@ -52,27 +51,21 @@ from gds_workbench_api.features.workflows.authoring.agent_execution import (
     LocalAgentToolDefinition,
     agent_input_payload,
 )
+from gds_workbench_api.integrations.agents.anthropic_model import FoundryAnthropicModel
 from gds_workbench_api.integrations.agents.configuration import (
     AgentProviderConnection,
+    ModelAuthentication,
+)
+from gds_workbench_api.integrations.agents.configuration import (
+    ManagedModelAuthentication as ManagedModelAuthentication,
+)
+from gds_workbench_api.integrations.agents.configuration import (
+    OpenAIProviderCredentials as OpenAIProviderCredentials,
 )
 from gds_workbench_api.integrations.agents.usage import ProviderUsageHooks
 
 _JSON_VALUE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 _JSON_OBJECT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
-
-
-@dataclass(frozen=True, slots=True)
-class OpenAIProviderCredentials:
-    api_key: SecretStr = field(repr=False)
-    base_url: str
-
-
-class ModelAuthentication(Protocol):
-    async def authenticate(self) -> OpenAIProviderCredentials: ...
-
-
-class ManagedModelAuthentication(ModelAuthentication, Protocol):
-    async def close(self) -> None: ...
 
 
 class FoundryApiKeyAuthentication:
@@ -99,7 +92,7 @@ class FoundryApiKeyAuthentication:
 
 
 class FoundryModelAuthentication:
-    """Resolve a short-lived Entra token for one direct Foundry OpenAI endpoint."""
+    """Resolve a short-lived Entra token for one direct Foundry endpoint/audience."""
 
     def __init__(
         self,
@@ -160,7 +153,7 @@ class OpenAIAgentsSdkAdapter:
             (connection.provider_code, connection.model_code): connection
             for connection in connections
         }
-        provider_codes = {connection.provider_code for connection in connections}
+        provider_codes = {connection.authentication_key for connection in connections}
         self._model_authentications = dict(model_authentications or {})
         if provider_codes != set(self._model_authentications):
             raise ValueError("Every Agent provider connection requires one authentication adapter")
@@ -179,7 +172,7 @@ class OpenAIAgentsSdkAdapter:
         return connection
 
     def _authentication(self, connection: AgentProviderConnection) -> ModelAuthentication:
-        authentication = self._model_authentications.get(connection.provider_code)
+        authentication = self._model_authentications.get(connection.authentication_key)
         if authentication is None:
             raise InvalidRequestError("The selected agent provider is unavailable.")
         return authentication
@@ -205,6 +198,7 @@ class OpenAIAgentsSdkAdapter:
     async def execute(self, request: AgentExecutionRequest) -> AgentExecutionResult:
         connection = self._connection(request)
         client: AsyncOpenAI | None = None
+        anthropic_model: FoundryAnthropicModel | None = None
         http_client = None
         hooks = ProviderUsageHooks(request.model_request_recorder)
         try:
@@ -223,20 +217,29 @@ class OpenAIAgentsSdkAdapter:
                 timeout=connection.timeout_seconds,
                 event_hooks={"request": [hooks.on_request], "response": [hooks.on_response]},
             )
-            client = AsyncOpenAI(
-                api_key=refresh_api_key,
-                base_url=credentials.base_url,
-                timeout=connection.timeout_seconds,
-                max_retries=MAX_AGENT_HTTP_RETRIES,
-                http_client=http_client,
-            )
-            # GPT-6.1 Sol tools require Responses; GPT-6 Luna also requires it
-            # for tools with reasoning. Preserve the selected reasoning effort.
-            model_type = OpenAIResponsesModel if tools else OpenAIChatCompletionsModel
-            model = model_type(
-                model=connection.model_endpoint,
-                openai_client=client,
-            )
+            if connection.api_protocol == "anthropic_messages":
+                anthropic_model = FoundryAnthropicModel(
+                    connection=connection,
+                    authentication=authentication,
+                    http_client=http_client,
+                    hooks=hooks,
+                )
+                model = anthropic_model
+            else:
+                client = AsyncOpenAI(
+                    api_key=refresh_api_key,
+                    base_url=credentials.base_url,
+                    timeout=connection.timeout_seconds,
+                    max_retries=MAX_AGENT_HTTP_RETRIES,
+                    http_client=http_client,
+                )
+                # GPT-6.1 Sol tools require Responses; GPT-6 Luna also requires it
+                # for tools with reasoning. Preserve the selected reasoning effort.
+                model_type = OpenAIResponsesModel if tools else OpenAIChatCompletionsModel
+                model = model_type(
+                    model=connection.model_endpoint,
+                    openai_client=client,
+                )
             if request.selection.reasoning_effort_code == "default":
                 model_settings = ModelSettings(
                     parallel_tool_calls=False,
@@ -252,13 +255,14 @@ class OpenAIAgentsSdkAdapter:
                     parallel_tool_calls=False,
                     timeout=connection.timeout_seconds,
                 )
-            if tools:
-                model_settings.extra_body = {"text": {"format": {"type": "json_object"}}}
-                model_settings.store = False
-                # Carry reasoning across stateless tool turns without stored responses.
-                model_settings.response_include = ["reasoning.encrypted_content"]
-            else:
-                model_settings.extra_body = {"response_format": {"type": "json_object"}}
+            if connection.api_protocol == "openai":
+                if tools:
+                    model_settings.extra_body = {"text": {"format": {"type": "json_object"}}}
+                    model_settings.store = False
+                    # Carry reasoning across stateless tool turns without stored responses.
+                    model_settings.response_include = ["reasoning.encrypted_content"]
+                else:
+                    model_settings.extra_body = {"response_format": {"type": "json_object"}}
             agent = Agent(
                 name=f"{request.workflow}_{request.stage}",
                 instructions=_system_prompt(request),
@@ -275,6 +279,7 @@ class OpenAIAgentsSdkAdapter:
                     tracing_disabled=True,
                     trace_include_sensitive_data=False,
                     workflow_name="Atlas agent stage",
+                    reasoning_item_id_policy="preserve",
                 ),
             )
             if hooks.error is not None:
@@ -360,6 +365,8 @@ class OpenAIAgentsSdkAdapter:
                 raise AgentExecutionFailedError("output_refused") from None
             raise AgentExecutionFailedError() from None
         finally:
+            if anthropic_model is not None:
+                await anthropic_model.close()
             if client is not None:
                 await client.close()
             elif http_client is not None:

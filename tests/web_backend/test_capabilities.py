@@ -24,6 +24,7 @@ def test_tool_assisted_supports_the_same_registered_reasoning_choices_as_one_sho
 ):
     registry = load_default_agent_capabilities()
     expected = {
+        "foundry-claude-opus-5-5": ("default", "low", "medium", "high", "xhigh", "max"),
         "foundry-primary": ("default", "low", "medium", "high", "xhigh", "max"),
         "foundry-gpt-5.6-luna": (
             "default",
@@ -54,6 +55,7 @@ def test_default_agent_capability_registry_is_valid_and_selection_is_bounded() -
     assert {model.code for model in registry.models} == {
         "foundry-primary",
         "foundry-gpt-5.6-luna",
+        "foundry-claude-opus-5-5",
     }
     for model in registry.models:
         for profile in model.execution_profiles:
@@ -338,6 +340,7 @@ def test_agent_capabilities_are_authenticated_and_exposed_read_only() -> None:
     ] == [
         ("foundry-primary", "OpenAI GPT-6.1 Sol", "gpt-6.1-sol"),
         ("foundry-gpt-5.6-luna", "OpenAI GPT-6 Luna", "gpt-6-luna"),
+        ("foundry-claude-opus-5-5", "Anthropic Claude Opus 5.5", "claude-opus-5-5"),
     ]
     assert "openai_base_url" not in response.text
     assert "environment_variable" not in response.text
