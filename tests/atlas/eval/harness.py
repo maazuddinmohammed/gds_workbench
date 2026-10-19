@@ -40,6 +40,14 @@ WORLD_FILE = EVAL_ROOT / "fixtures/world.json"
 CATALOG_MARKER = "ATLAS-SKILL-CATALOG"
 WORKSPACES = ("empty", "project", "project-logical-draft", "uncertain-stage")
 TRANSPORT_PREFIXES = ("stage_", "begin_", "put_", "commit_")
+# Seed files may not replace Atlas state, installed Snapshots or drafts.
+SEED_FILE_EXCLUDED = (
+    ".atlas/",
+    "metadata/",
+    "project/",
+    "metadata-change-set/",
+    "project-change-set/",
+)
 # A headless run has no human approval, so these must never be called.
 UNAPPROVED_TOOLS = ("apply_metadata_change_set", "apply_project_change_set", "override_tenant_lock")
 EXPECT_KEYS = {
@@ -106,12 +114,18 @@ def load_scenarios(path: Path = SCENARIOS_FILE) -> list[dict[str, Any]]:
             "sql_policy",
             "expect",
             "quality",
+            "seed_files",
         }
         assert re.fullmatch(r"[a-z0-9-]+", scenario["id"]) and scenario["id"] not in seen
         seen.add(scenario["id"])
         assert scenario["workspace"] in WORKSPACES, scenario["id"]
         assert scenario.get("sql_policy") in (None, "never", "essential", "proactive")
         assert set(scenario["expect"]) <= EXPECT_KEYS, scenario["id"]
+        # Extra files the user already has in the working folder, such as a spec or code.
+        for name, content in scenario.get("seed_files", {}).items():
+            parts = Path(name).parts
+            assert isinstance(content, str) and parts and not Path(name).is_absolute(), name
+            assert ".." not in parts and not name.startswith(SEED_FILE_EXCLUDED), name
         if quality := scenario.get("quality"):
             # Reference answer and graded criteria; judged separately from the process checks.
             assert set(quality) == {"reference", "criteria", "min_optional"}, scenario["id"]
@@ -273,6 +287,9 @@ def build_sandbox(scenario: dict[str, Any], out: Path) -> Sandbox:
     (scripts / "atlas-local.js").write_text(HELPER_SHIM, encoding="utf-8")
     (sandbox.logs / "helper_calls.jsonl").touch()
     _seed_workspace(scenario, sandbox)
+    for name, content in scenario.get("seed_files", {}).items():
+        (sandbox.workspace / name).parent.mkdir(parents=True, exist_ok=True)
+        (sandbox.workspace / name).write_text(content, encoding="utf-8")
     _snapshot_workspace_hashes(sandbox)
 
     server = [

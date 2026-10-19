@@ -10,7 +10,7 @@ is a rubric, not a record that such an evaluation passed.
 | Request / fixture state | Observable acceptance |
 |---|---|
 | Explain how Atlas works; no workspace | Investigate/architecture answer. No Tenant questionnaire, Workbench launch, delegation setup or fabricated tool call. |
-| Analyze scoped sources and build a logical model; SQL Never | Reuse available metadata/evidence; mark profiles unmeasured; analyze then model only as needed. No profiling/SQL execution or fabricated counts. Runs `validate` and `coverage`; logical checks remain explicit. |
+| Analyze scoped sources and build a logical model; SQL Never | Reuse available metadata/evidence; mark profiles unmeasured; analyze then model only as needed. No profiling/SQL execution or fabricated counts. Runs `validate` and `coverage`; logical checks remain explicit. Adds the Project framework audit columns through the policy, states grain from saved evidence, and never renames existing names without asking. |
 | Build a conceptual model only | Standalone Conceptual records/relationships and evidence; no Logical counterpart or downstream work. Unknown conceptual cardinality is allowed. |
 | Build Logical or Dimensional while Conceptual records exist | Exclude Conceptual output from task reads and reasoning. Logical uses physical/source evidence and business Context; Dimensional retains applied Logical prerequisites. |
 | Grill Me about Order grain; current logical draft | Same logical skill/task, focused consequential question, preserved draft. Resolve full identity before dependent keys; no duplicated phase chain. |
@@ -25,6 +25,8 @@ is a rubric, not a record that such an evaluation passed.
 | Request Project-owned enrichment | Author `object_enrichment`/`attribute_enrichment` proposals in the Project Change Set from scoped profiles and evidence; preserve locks and `expected_revision`. No physical Metadata substitution, invented fields or human-HTTP bypass. |
 | Register targets and generated files | Separate target/Process prerequisites and owner boundaries. Creation DDL is optional; registration does not execute/upload/deploy. |
 | Change request that needs data no source has (customer country) | Trace the impact across metadata, models, Mapping, Code and Validation; ask where the data comes from before changing anything; recommend the smallest path (country on Dim Customer, Fact Order unchanged). |
+| User pastes a runtime error for a local SQL file that drifted from the applied code | Fix the reported table and the latent wrong column against the registered metadata and Mapping; change only that file; don't run SQL; ask the user to rerun. |
+| Register a Source table from a spec with one unconfirmed column type | Draft the Object and confirmed Attributes on the stated System and Connection with actual types, keys and descriptions; ask about the unconfirmed type instead of inventing it; no Bronze, ingestion or Project records. |
 | Resume with stale inputs, pending draft and unknown Stage result | Run `status` or `next`; preserve baseline/draft and reconcile actual operation state before another write. No restart, blind retry or task-note approval. |
 | Inventory exceeds 200 records | Follow bound pages to completion; preserve canonical keys in projections; refetch full records before upsert. A stale cursor rejects continuation. |
 

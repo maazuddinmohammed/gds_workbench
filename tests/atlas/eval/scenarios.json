@@ -44,6 +44,68 @@
           "project-change-set/analysis_result.json",
           "project-change-set/*_enrichment.json"
         ]
+      },
+      "quality": {
+        "reference": [
+          "Scope: bronze_demo.customer (customer_id, customer_name) and bronze_demo.orders (order_id, customer_id, order_date, order_amount).",
+          "The applied model already covers both: Customer (Customer ID natural key, Customer Name) and Order (Order ID natural key, Customer ID, Order Date, Order Amount), with Order to Customer many-to-one on Customer ID. Every business attribute has source lineage, and coverage is 2 of 2 scoped Objects against a 70% target.",
+          "SQL policy is Never: run no queries and no new profiling. Use the Project's saved profiles and the applied Analysis result (orders.customer_id to customer.customer_id) as evidence.",
+          "Improvements expected:",
+          "- Grain stated precisely: one row per Customer ID, and one row per Order ID at order-header level (no order lines in scope), backed by the saved profiles (non-null, fully distinct).",
+          "- Definitions and the relationship basis cite that evidence instead of assuming it.",
+          "- Framework columns: run policy-apply (dry run first) to add the Project's 10 audit columns to each Entity after its business columns: SourceSystemID, IsDataValid, HashKey, IsActive, GDSBatchID, PipelineRunID, CreatedDate, UpdatedDate, CreatedBy, UpdatedBy.",
+          "Validation passes with one advisory warning, source_shaped_project. Review grain and dependencies: Customer and Order are independent business subjects at their natural grain, so no split or merge is needed.",
+          "Keep the keys, business Attributes, the many-to-one relationship, lineage and names. Existing names such as Customer ID follow neither the Project's Silver instruction (snake_case) nor Atlas's PascalCase default; point this out and ask before renaming, because renaming also affects Mappings and code.",
+          "Invent no Entity, Attribute or relationship the scope doesn't support, and never use Conceptual records. Report the validation and coverage results and keep the work local."
+        ],
+        "criteria": [
+          {
+            "id": "keeps-business-model",
+            "required": true,
+            "text": "Keeps Customer and Order, their natural keys, business Attributes and the Order-to-Customer many-to-one relationship, and invents no Entity, Attribute or relationship the scope doesn't support. Framework audit columns from the Project policy are allowed."
+          },
+          {
+            "id": "adds-framework-columns",
+            "required": true,
+            "text": "Adds the Project's framework audit columns to both Entities through the policy, placed after the business columns."
+          },
+          {
+            "id": "no-silent-rename",
+            "required": true,
+            "text": "Renames no existing Entity or Attribute without asking first."
+          },
+          {
+            "id": "precise-grain",
+            "required": false,
+            "text": "States each Entity's grain precisely (one row per Customer ID; one row per Order ID at header level) and backs it with the saved profile evidence."
+          },
+          {
+            "id": "evidence-based-relationship",
+            "required": false,
+            "text": "Bases the Order-to-Customer relationship on the existing Analysis result and profiles, not on assumption."
+          },
+          {
+            "id": "respects-sql-never",
+            "required": false,
+            "text": "Runs no SQL and no new profiling, and relies on the saved profiles and Analysis as evidence."
+          },
+          {
+            "id": "reviews-source-shape",
+            "required": false,
+            "text": "Addresses the source-shaped warning with a grain and dependency review, and explains why no split is needed or justifies one."
+          },
+          {
+            "id": "reports-checks",
+            "required": false,
+            "text": "Reports the validation result and the coverage accurately."
+          },
+          {
+            "id": "flags-naming",
+            "required": false,
+            "text": "Points out that the existing names don't follow the Project's snake_case Silver instruction and asks whether to rename."
+          }
+        ],
+        "min_optional": 3
       }
     },
     {
@@ -372,6 +434,164 @@
           }
         ],
         "min_optional": 3
+      }
+    },
+    {
+      "id": "code-error-fix",
+      "rubric": "Fix generated SQL from a pasted runtime error without running SQL",
+      "request": "I ran code/silver_customer.sql in Databricks and got this error:\n\n[TABLE_OR_VIEW_NOT_FOUND] The table or view `bronze_demo`.`customers` cannot be found. Verify the spelling and correctness of the schema and catalog. SQLSTATE: 42P01; line 2 pos 5\n\nFix the code.",
+      "workspace": "project",
+      "sql_policy": "never",
+      "seed_files": {
+        "code/silver_customer.sql": "SELECT customer_id AS `Customer ID`, cust_name AS `Customer Name`\nFROM bronze_demo.customers\n"
+      },
+      "expect": {
+        "skills_read_any": [
+          "atlas-code-generation",
+          "atlas"
+        ],
+        "forbidden_tools": [
+          "execute_databricks_sql",
+          "create_project_change_set",
+          "create_metadata_change_set"
+        ],
+        "required_files_any": [
+          "code/silver_customer.sql"
+        ],
+        "forbidden_files": [
+          "code/silver_orders.sql",
+          "code/dim_customer.sql",
+          "code/fact_order.sql",
+          "metadata-change-set/*.json"
+        ]
+      },
+      "quality": {
+        "reference": [
+          "The reported error is the table name: the registered Bronze Object is bronze_demo.customer (singular), and the applied Mapping for silver_demo.Customer reads from it.",
+          "The same statement has a second problem the error doesn't show yet: cust_name doesn't exist. The registered Bronze Attribute and the Mapping use customer_name, so fixing only the table would fail next with UNRESOLVED_COLUMN.",
+          "Fixed code: SELECT customer_id AS `Customer ID`, customer_name AS `Customer Name` FROM bronze_demo.customer. This matches the applied generated code for silver_demo.Customer, so the local file had drifted from it.",
+          "Change only code/silver_customer.sql, plus its generated-code record if Atlas updates it. Don't change metadata, Mappings or other code.",
+          "SQL policy is Never: don't run the query. Explain the cause plainly and ask the user to rerun it and bring back any new error."
+        ],
+        "criteria": [
+          {
+            "id": "fixes-table",
+            "required": true,
+            "text": "Changes the source table to bronze_demo.customer, based on the registered metadata or the Mapping."
+          },
+          {
+            "id": "fixes-column-too",
+            "required": true,
+            "text": "Also replaces cust_name with customer_name, so the next run doesn't fail on the column."
+          },
+          {
+            "id": "minimal-change",
+            "required": true,
+            "text": "Changes only the silver_customer code (the file, and its generated-code record if updated); no metadata, Mapping or other code changes."
+          },
+          {
+            "id": "explains-cause",
+            "required": false,
+            "text": "Explains in plain words why the code failed: names that don't match the registered Bronze table."
+          },
+          {
+            "id": "matches-applied-code",
+            "required": false,
+            "text": "Notices that the fixed statement matches the applied generated code, or that the local file had drifted from it."
+          },
+          {
+            "id": "asks-to-rerun",
+            "required": false,
+            "text": "Doesn't run the query itself, and asks the user to rerun it and report any new error."
+          },
+          {
+            "id": "checks-against-mapping",
+            "required": false,
+            "text": "Checks the whole statement against the Mapping or metadata before handing it back, not only the line in the error."
+          }
+        ],
+        "min_optional": 2
+      }
+    },
+    {
+      "id": "document-intake-source",
+      "rubric": "Register a Source table from a spec document; ask about the one unconfirmed type",
+      "request": "Register the table defined in specs/payments-spec.md under System DEMO_CUSTOMER_SYSTEM and Connection DEMO_SOURCE. Source registration only for now. Keep the work local; don't submit it.",
+      "workspace": "project",
+      "sql_policy": "never",
+      "seed_files": {
+        "specs/payments-spec.md": "# Payments: source table specification\n\nSystem: DEMO_CUSTOMER_SYSTEM (commerce platform)\nConnection: DEMO_SOURCE\nTable: source_demo.payments, one row per payment received against an order.\n\n| Column | Type | Nullable | Key | Description |\n|---|---|---|---|---|\n| payment_id | BIGINT | No | Primary key | Unique payment identifier from the commerce platform. |\n| order_id | BIGINT | No | References orders.order_id | Order the payment settles. |\n| payment_date | DATE | No | | Date the payment was received. |\n| payment_amount | DECIMAL(18,2) | No | | Amount received, in USD. |\n| payment_method | VARCHAR(20) | Yes | | One of card, transfer or cash. |\n| payment_status | TBD, confirm with the payments team | Yes | | Settlement status of the payment. |\n"
+      },
+      "expect": {
+        "skills_read_any": [
+          "atlas-metadata",
+          "atlas"
+        ],
+        "required_helper_commands": [
+          "validate"
+        ],
+        "forbidden_tools": [
+          "execute_databricks_sql",
+          "create_metadata_change_set",
+          "create_project_change_set"
+        ],
+        "required_files_any": [
+          "metadata-change-set/source_attribute.json",
+          "metadata-change-set/source_object.json"
+        ],
+        "forbidden_files": [
+          "metadata-change-set/bronze_*.json",
+          "metadata-change-set/ingestion_*.json",
+          "project-change-set/*.json"
+        ]
+      },
+      "quality": {
+        "reference": [
+          "Draft source_demo.payments under Tenant DEMO_TENANT, System DEMO_CUSTOMER_SYSTEM and Connection DEMO_SOURCE, next to the existing source_demo.customer and source_demo.orders: a TABLE in the Source zone, described as one row per payment received against an order.",
+          "Draft one Attribute per confirmed column, in the spec's order, with the spec's actual types, nullability and descriptions: payment_id BIGINT not null (natural key), order_id BIGINT not null, payment_date DATE not null, payment_amount DECIMAL(18,2) not null, payment_method VARCHAR(20) nullable.",
+          "payment_status has no confirmed type. Don't invent one: ask the user, and leave that Attribute out or clearly pending until they answer.",
+          "order_id references orders.order_id. Keep that information, for example in the description, and invent no metadata field for it; the relationship itself belongs to Project analysis.",
+          "Follow the existing Source conventions: a TABLE in the Source zone. The foreign-catalog schema and names must be copied exactly as that catalog exposes them, which the spec doesn't state; the sibling tables use schema public with matching names. Either assume that convention and say so, or leave the fields pending and ask. Add no Bronze, ingestion or Project records.",
+          "Ask only about genuine unknowns (the payment_status type, and possibly the foreign-catalog names), run metadata validation, and report what was drafted and what waits for the answer."
+        ],
+        "criteria": [
+          {
+            "id": "registers-from-spec",
+            "required": true,
+            "text": "Drafts source_demo.payments with the five confirmed columns in the spec's order, with their actual types, nullability and descriptions, and payment_id as the natural key; invents no columns."
+          },
+          {
+            "id": "no-invented-type",
+            "required": true,
+            "text": "Doesn't invent a data type for payment_status; asks about it and leaves it out or pending until answered."
+          },
+          {
+            "id": "right-placement",
+            "required": true,
+            "text": "Places the table under Tenant DEMO_TENANT, System DEMO_CUSTOMER_SYSTEM, Connection DEMO_SOURCE and schema source_demo, reusing the existing System and Connection."
+          },
+          {
+            "id": "keeps-reference",
+            "required": false,
+            "text": "Keeps the order_id reference to orders (in a description or a note) and invents no metadata field for it."
+          },
+          {
+            "id": "foreign-catalog-handled",
+            "required": false,
+            "text": "Handles the foreign-catalog fields openly: fills them from the Connection's existing convention and says it assumed that, or leaves them pending and asks. Silently leaving them empty fails."
+          },
+          {
+            "id": "focused-question",
+            "required": false,
+            "text": "Asks only about genuine unknowns (the payment_status type, and possibly the foreign-catalog names), not about what the request or spec already gave."
+          },
+          {
+            "id": "validates-and-reports",
+            "required": false,
+            "text": "Runs metadata validation and reports what was drafted and what waits for the user's answer."
+          }
+        ],
+        "min_optional": 2
       }
     }
   ]
