@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Never
+from typing import Any, LiteralString, Never
 from uuid import UUID
 
 import pytest
@@ -13,6 +13,7 @@ from gds_etl_workbench.infrastructure.postgres import (
 )
 from gds_workbench_api.configuration import RuntimeSettings
 from gds_workbench_api.features.workflows.execution import (
+    DatabaseWorkflowClaimRepository,
     WorkerRunResult,
     WorkflowClaimLease,
     WorkflowExecutionClaim,
@@ -26,6 +27,7 @@ from gds_workbench_api.workflow_worker import (
     run_worker_loop,
     run_worker_process,
 )
+from test_workflow_claim_repository import ClaimDatabase, ClaimTransaction
 
 
 class StopLoopError(Exception):
@@ -55,6 +57,52 @@ async def test_worker_loop_waits_with_distinct_idle_and_error_intervals() -> Non
         await run_worker_loop(worker, configuration=configuration, wait=wait)
 
     assert delays == [1, 5]
+
+
+@pytest.mark.asyncio
+async def test_worker_loop_reports_invalid_claim_without_logging_its_contents(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    private_marker = "synthetic-private-claim-input"
+
+    class InvalidClaimTransaction(ClaimTransaction):
+        async def fetch_one(
+            self,
+            query: LiteralString,
+            parameters: tuple[Any, ...] = (),
+        ) -> dict[str, Any] | None:
+            row = await super().fetch_one(query, parameters)
+            assert row is not None
+            row["workflow_execution_mode"] = private_marker
+            return row
+
+    database = ClaimDatabase()
+    database.transaction = InvalidClaimTransaction()
+    dispatcher = BlockingDispatcher()
+    worker = WorkflowExecutionWorker(
+        claims=DatabaseWorkflowClaimRepository(database=database),
+        dispatcher=dispatcher,
+        lease_duration_seconds=30,
+        heartbeat_interval_seconds=10,
+    )
+
+    async def stop_after_failure(delay: float) -> None:
+        assert delay == 5
+        raise StopLoopError
+
+    with pytest.raises(StopLoopError):
+        await run_worker_loop(
+            worker,
+            configuration=WorkflowExecutionConfiguration.from_environment({}),
+            wait=stop_after_failure,
+        )
+
+    assert "workflow_poll_failed category=invalid_contract" in caplog.text
+    assert private_marker not in caplog.text
+    assert str(database.transaction.claim_token) not in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
+    assert dispatcher.started.is_set() is False
+    assert database.rolled_back is True
 
 
 class ProcessDatabase:

@@ -27,6 +27,13 @@ Workflow Run per Tenant across processes. Super Admins bypass neither. Claim,
 revision and idempotency fences prevent stale workers or uncertain retries from
 reapplying work.
 
+Run input snapshots use a key-share Run lock so heartbeat updates can continue
+during preparation; Project and authorization locks remain in force. Executors
+recheck the live claim before external execution and writes. Claim clocks start
+after acquisition waits, and renewal/release validate expiry after lock waits.
+Pickup records stale revision or lost write authorization as a terminal failure
+instead of spending recovery attempts on a context that cannot execute.
+
 ## Persistent Project lock
 
 `project.project.is_locked` is independent of the Tenant lease and individual record

@@ -17,27 +17,35 @@ spacing and implementations. This document records decisions worth preserving.
 | Workflow commands and run monitor | `styles/profiling.css`, `styles/workflow-runs.css` |
 | Feature behavior | Matching `features/` package and its tests |
 
-Use the selected **Signature** identity: KPMG-blue mastheads, white Meridian/ATLAS
-lockups, pale neutral navigation, white working areas, blue page headings and actions,
-and readable dense working text.
+Use the selected **Navigator** web workspace: continuous KPMG-blue left navigation
+and brand corner, white Meridian/ATLAS lockup, white header and working areas,
+blue page headings and actions, and readable dense working text. The selected
+navigation item is white with blue text; other items use white text on blue.
+Tenant entry and local Workbench retain their existing Signature mastheads.
 Tables/ledgers suit comparable records; cards suit summaries or choices.
 Reuse semantic tokens instead of copying colors. Use shared outline icons, not emoji.
 The current palette is light-only. Use short functional motion and reduced-motion
 support. Every flexible layout child needs `min-width: 0`; wide tables scroll inside
 an intentional container instead of truncating governed values.
 
-## ATLAS Signature / Meridian identity
+## ATLAS Navigator / Meridian identity
 
-Selected on 2026-10-16 after prototype review. Keep the Atlas product name and an
-uppercase **ATLAS** wordmark. Use KPMG-inspired colors without the official KPMG logo.
+Meridian identity selected on 2026-10-16; Navigator web shell approved on 2026-10-19
+after prototype review. Keep the Atlas product name and an uppercase **ATLAS**
+wordmark. Use KPMG-inspired colors without the official KPMG logo.
 
-- `--brand: #00338D` for continuous mastheads and blue page headings. Navigation
-  uses `--nav: #F5F6FA`; records, fields and dialogs remain white.
-- Mastheads use `--on-brand: #FFFFFF` and `--on-brand-muted: #D9E5FB` text,
-  `--on-brand-line: #8BA6D2` control borders and `--brand-raised: #164795` badges.
-  Header controls are transparent with white text; hover reverses to white with
-  blue text. Keyboard focus is white, including mobile navigation controls.
-  Reduced-transparency mode retains the solid blue mastheads.
+- `--brand: #00338D` fills the web sidebar and its aligned brand corner. The
+  expanded sidebar is 14.5rem (12.5rem at tablet widths), collapsing to 4.75rem.
+  Keep the 4.5rem header height and existing Project ribbon offsets. The header
+  prioritizes Tenant/Project identity at narrow widths, hiding the supporting role
+  badge and avatar. `--nav: #F5F6FA` remains a neutral token;
+  records, fields, dialogs and the web header use `--surface: #FFFFFF`.
+- Blue navigation uses `--on-brand: #FFFFFF` and `--on-brand-muted: #D9E5FB` text,
+  `--on-brand-line: #8BA6D2` borders and `--brand-raised: #164795` hover surfaces.
+  Active items remain white with blue text, including while hovered. Sidebar
+  keyboard focus is white; header and content focus use `--accent`. Tenant/Project
+  identity and role text use ink/muted tokens on the white header, with pale blue
+  revision badges and avatar. Reduced-transparency mode preserves this placement.
 - `--accent: #1E49E2`, `--accent-dark: #00338D`, `--accent-soft: #EDF2FF`
   for commands, links, focus and selection, including portaled dialogs.
 - `--ink: #0C233C`, white working surfaces and `--paper: #F5F6FA` canvas.
@@ -56,9 +64,12 @@ uppercase **ATLAS** wordmark. Use KPMG-inspired colors without the official KPMG
 - Shared lockup: 32px Meridian symbol, 11px gap, 23px Open Sans SemiBold **ATLAS**
   with 1.8px tracking. Use identical proportions on tenant entry, web and Workbench.
 - Canonical vector: `web_app/frontend/public/assets/atlas.svg`; Workbench packages
-  an identical `workbench/atlas.svg`. Both headers reference that asset rather than
-  redrawing it. Scope `brightness(0) invert(1)` to header images for the white
-  treatment; keep the canonical blue light-surface logo. The browser favicon uses
+  an identical `workbench/atlas.svg`. The web imports the canonical asset so Vite
+  emits a content-hashed URL; fixed URLs can retain an older logo in browser caches.
+  Both headers reference that asset rather than redrawing it.
+  Scope `brightness(0) invert(1)` to blue brand areas for the white
+  treatment; keep the canonical blue logo on light surfaces, including the mobile
+  web header. The browser favicon uses
   `atlas-favicon.svg`, the same blue silhouette over a white circle, so its A stays
   white on dark browser tabs. Keep the
   32×32 viewBox and even-odd aperture. The extension icon is an antialiased
@@ -67,8 +78,9 @@ uppercase **ATLAS** wordmark. Use KPMG-inspired colors without the official KPMG
   Workbench embeds font data in generated `fonts/fonts.css` for offline file launch;
   regenerate with `python3 atlas/build_workbench_fonts.py` after changing fonts.
   Keep plugin builder, Connector setup/updater and web upload allowlists in sync.
-- Preserve desktop navigation collapse and mobile bottom navigation. Mobile web
-  keeps the wordmark above Tenant/Project context. Workbench dataset navigation stays
+- Preserve desktop navigation collapse and mobile bottom navigation. The mobile web
+  header stays white, with the blue wordmark above wrapping Tenant/Project rows; bottom
+  navigation is blue with a white selected item. Workbench dataset navigation stays
   vertical on desktop and horizontal at 58rem and below.
   Tenant entry keeps clear space around the logo; sign-in details and long Tenant
   names wrap within their available width at small sizes.

@@ -79,7 +79,8 @@ BEGIN
         ON target_project.project_id = run.project_id
        AND target_project.is_active
      WHERE run.workflow_run_id = p_workflow_run_id
-     FOR SHARE OF run, target_project;
+     -- Run inputs are immutable; heartbeat updates must remain independent.
+     FOR KEY SHARE OF run FOR SHARE OF target_project;
     IF NOT FOUND THEN
         RAISE EXCEPTION
             'profiling_run_not_found: Profiling Workflow Run is unavailable';
@@ -612,7 +613,8 @@ BEGIN
         ON target_project.project_id = run.project_id
        AND target_project.is_active
      WHERE run.workflow_run_id = p_workflow_run_id
-     FOR SHARE OF run, target_project;
+     -- Run inputs are immutable; heartbeat updates must remain independent.
+     FOR KEY SHARE OF run FOR SHARE OF target_project;
     IF NOT FOUND THEN
         RAISE EXCEPTION
             'analysis_validation_run_not_found: Analysis Workflow Run is unavailable';
@@ -2499,7 +2501,8 @@ BEGIN
       FROM application.workflow_run AS run
       JOIN project.project AS target_project USING (project_id, tenant_id)
      WHERE run.workflow_run_id = p_workflow_run_id AND target_project.is_active
-     FOR SHARE OF run, target_project;
+     -- Run inputs are immutable; heartbeat updates must remain independent.
+     FOR KEY SHARE OF run FOR SHARE OF target_project;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'metadata_enrichment_run_unavailable';
     END IF;

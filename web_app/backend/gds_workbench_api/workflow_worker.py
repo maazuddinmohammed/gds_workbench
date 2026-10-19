@@ -1,6 +1,7 @@
 """Separate durable Workflow execution process."""
 
 import asyncio
+import logging
 import signal
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
@@ -29,7 +30,10 @@ from gds_workbench_api.features.workflows.execution.assembly import (
 from gds_workbench_api.features.workflows.execution.configuration import (
     WorkflowExecutionConfiguration,
 )
+from gds_workbench_api.features.workflows.execution.worker import workflow_failure_category
 from gds_workbench_api.integrations.databricks import create_databricks_execution_adapters
+
+_logger = logging.getLogger(__name__)
 
 
 class WorkerLoop(Protocol):
@@ -81,7 +85,8 @@ async def run_worker_loop(
             result = await worker.run_once()
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as error:
+            _logger.warning("workflow_poll_failed category=%s", workflow_failure_category(error))
             delay = configuration.error_poll_interval_seconds
         else:
             if result is WorkerRunResult.COMPLETED:

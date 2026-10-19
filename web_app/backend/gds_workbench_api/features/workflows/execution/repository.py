@@ -54,9 +54,10 @@ class DatabaseWorkflowClaimRepository:
                 _CLAIM_NEXT_SQL,
                 (lease_duration_seconds,),
             )
-        if row is None:
-            return None
-        return WorkflowExecutionClaim.model_validate(row, strict=False)
+            if row is None:
+                return None
+            # Do not commit a lease that this worker cannot execute or heartbeat.
+            return WorkflowExecutionClaim.model_validate(row, strict=False)
 
     async def renew(
         self,
@@ -75,9 +76,9 @@ class DatabaseWorkflowClaimRepository:
                     lease_duration_seconds,
                 ),
             )
-        if row is None:
-            raise DependencyUnavailableError()
-        return WorkflowClaimLease.model_validate(row, strict=False)
+            if row is None:
+                raise DependencyUnavailableError()
+            return WorkflowClaimLease.model_validate(row, strict=False)
 
     async def release(
         self,

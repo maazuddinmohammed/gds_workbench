@@ -9,6 +9,7 @@ from gds_etl_workbench.infrastructure.postgres import ReadIsolation
 from gds_workbench_api.features.workflows.execution import (
     DatabaseWorkflowClaimRepository,
 )
+from pydantic import ValidationError
 
 
 class ClaimTransaction:
@@ -65,6 +66,8 @@ class ClaimDatabase:
     def __init__(self) -> None:
         self.transaction = ClaimTransaction()
         self.isolations: list[ReadIsolation] = []
+        self.committed = False
+        self.rolled_back = False
 
     @asynccontextmanager
     async def write_transaction(
@@ -73,7 +76,13 @@ class ClaimDatabase:
         isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
     ) -> AsyncGenerator[ClaimTransaction]:
         self.isolations.append(isolation)
-        yield self.transaction
+        try:
+            yield self.transaction
+        except BaseException:
+            self.rolled_back = True
+            raise
+        else:
+            self.committed = True
 
 
 @pytest.mark.asyncio
@@ -134,3 +143,36 @@ async def test_repository_renews_and_releases_only_with_the_raw_claim_token() ->
     assert renew_parameters == (701, token, 30)
     assert "application.release_workflow_run_claim" in release_query
     assert release_parameters == (701, token)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["claim", "renew"])
+async def test_invalid_claim_response_rolls_back_its_lease_update(operation: str) -> None:
+    class InvalidClaimTransaction(ClaimTransaction):
+        async def fetch_one(
+            self,
+            query: LiteralString,
+            parameters: tuple[Any, ...] = (),
+        ) -> dict[str, Any] | None:
+            row = await super().fetch_one(query, parameters)
+            assert row is not None
+            # Model incompatible persisted data without accessing any database.
+            row["workflow_run_id"] = "synthetic-private-invalid-run"
+            return row
+
+    database = ClaimDatabase()
+    database.transaction = InvalidClaimTransaction()
+    repository = DatabaseWorkflowClaimRepository(database=database)
+
+    with pytest.raises(ValidationError):
+        if operation == "claim":
+            await repository.claim_next(lease_duration_seconds=30)
+        else:
+            await repository.renew(
+                workflow_run_id=701,
+                workflow_run_claim_token=database.transaction.claim_token,
+                lease_duration_seconds=30,
+            )
+
+    assert database.rolled_back is True
+    assert database.committed is False

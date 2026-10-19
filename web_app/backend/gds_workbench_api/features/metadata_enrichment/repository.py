@@ -57,14 +57,18 @@ class MetadataEnrichmentRepository:
         workflow_run_claim_token: UUID,
     ) -> tuple[AgentRunPlan, MetadataEnrichmentContext]:
         try:
-            async with self._database.write_transaction(
-                isolation=ReadIsolation.REPEATABLE_READ
-            ) as transaction:
+            # Claim verification briefly locks the Run. Release it before loading
+            # the snapshot so slow preparation cannot block worker heartbeats.
+            # The executor fences its first progress event before external calls.
+            async with self._database.write_transaction() as transaction:
                 await assert_workflow_run_claim(
                     transaction,
                     workflow_run_id=workflow_run_id,
                     workflow_run_claim_token=workflow_run_claim_token,
                 )
+            async with self._database.write_transaction(
+                isolation=ReadIsolation.REPEATABLE_READ
+            ) as transaction:
                 row = await transaction.fetch_one(
                     "SELECT application.get_metadata_enrichment_execution_context"
                     "(%s,%s,%s,%s,%s) AS context",

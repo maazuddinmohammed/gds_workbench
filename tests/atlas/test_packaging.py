@@ -29,12 +29,16 @@ def test_brand_assets_match_across_independent_packages() -> None:
     assert len(paths) == 1
     assert paths[0].attrib["fill-rule"] == "evenodd"
     assert paths[0].attrib["fill"] == "#00338D"
-    for header, asset in (
-        (ROOT / "web_app/frontend/src/shared/ui.tsx", "/assets/atlas.svg"),
-        (PLUGIN_ROOT / "workbench/app.js", "atlas.svg"),
+    web_header = ROOT / "web_app/frontend/src/shared/ui.tsx"
+    assert 'import atlasMarkUrl from "../../public/assets/atlas.svg?no-inline"' in (
+        web_header.read_text(encoding="utf-8")
+    )
+    for header, asset_source in (
+        (web_header, "src={atlasMarkUrl}"),
+        (PLUGIN_ROOT / "workbench/app.js", 'src="atlas.svg"'),
     ):
         source = header.read_text(encoding="utf-8")
-        assert f'src="{asset}" width="32" height="32"' in source
+        assert f'{asset_source} width="32" height="32"' in source
         assert ">ATLAS<" in source
     font_names = {
         "OpenSans-Regular.woff2",

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 
+import atlasMarkUrl from "../../public/assets/atlas.svg?no-inline";
 import { initials } from "./presentation";
 
 export function SelectAllCheckbox({ label, selectedCount, totalCount, disabled, onChange }: {
@@ -30,7 +31,7 @@ export function WorkspaceToolbar({ children, actions }: {
 export function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <div className={compact ? "brand is-compact" : "brand"} aria-label="Atlas">
-      <img className="brand-mark" src="/assets/atlas.svg" width="32" height="32" alt="" />
+      <img className="brand-mark" src={atlasMarkUrl} width="32" height="32" alt="" />
       <strong>ATLAS</strong>
     </div>
   );

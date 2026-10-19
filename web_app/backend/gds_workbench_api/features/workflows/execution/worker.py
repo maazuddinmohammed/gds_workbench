@@ -23,6 +23,7 @@ from psycopg.errors import (
     UndefinedObject,
     UndefinedTable,
 )
+from pydantic import ValidationError
 
 from .contracts import WorkflowExecutionClaim
 from .repository import WorkflowClaimLease
@@ -30,7 +31,7 @@ from .repository import WorkflowClaimLease
 _logger = logging.getLogger(__name__)
 
 
-def _failure_category(error: Exception) -> str:
+def workflow_failure_category(error: Exception) -> str:
     """Classify a bounded exception chain without reading messages or diagnostics."""
     current: BaseException | None = error
     seen: set[int] = set()
@@ -39,6 +40,8 @@ def _failure_category(error: Exception) -> str:
         if current is None or id(current) in seen:
             break
         seen.add(id(current))
+        if isinstance(current, ValidationError):
+            return "invalid_contract"
         if isinstance(
             current,
             UndefinedFunction
@@ -136,7 +139,7 @@ class WorkflowClaimRunner:
                 except asyncio.CancelledError:
                     raise
                 except Exception as error:
-                    category = _failure_category(error)
+                    category = workflow_failure_category(error)
                 # Completion may clear the claim while its last heartbeat is in
                 # flight. A finished executor remains the authoritative outcome.
                 if not execution.done():
@@ -163,7 +166,7 @@ class WorkflowClaimRunner:
                     "workflow_execution_failed run_id=%s recovery_count=%s category=%s",
                     claim.workflow_run_id,
                     claim.workflow_run_recovery_count,
-                    _failure_category(error),
+                    workflow_failure_category(error),
                 )
                 return WorkerRunResult.EXECUTION_FAILED
             return WorkerRunResult.COMPLETED
@@ -231,4 +234,5 @@ __all__ = [
     "WorkflowClaimRepository",
     "WorkflowClaimRunner",
     "WorkflowExecutionWorker",
+    "workflow_failure_category",
 ]

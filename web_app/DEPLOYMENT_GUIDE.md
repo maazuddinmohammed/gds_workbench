@@ -204,7 +204,9 @@ compatibility and preserve immutable historical provenance.
 | Readiness 503 | Database network/TLS/runtime role and exact installed release/reference metadata. |
 | Foundry failure | Accepted URL, exact registry deployment, one complete authentication method, inference permission, egress and mode/reasoning support. |
 | Queue stalled | Supervised worker, claims, lock/revision state and bounded workflow events. |
-| Recovery limit exhausted | The worker lost its claim or execution failed repeatedly. Inspect the earlier `workflow_execution_failed` / `workflow_claim_lost` worker diagnostic by Run ID and recovery count; its fixed category distinguishes database compatibility, access, connectivity and workflow guards without exposing raw errors. |
+| Recovery limit exhausted | The worker acquired the Run but repeatedly lost its claim or failed execution. Inspect earlier `workflow_execution_failed` / `workflow_claim_lost` diagnostics by Run ID and recovery count. `workflow_poll_failed` identifies errors before dispatch, including `invalid_contract` for incompatible claim data. Categories contain no raw errors. |
+| Workflow Run revision stale | The Project changed after Run creation. Refresh the Project and start a new Run; the frozen revision is never rewritten. |
+| Workflow Run authorization unavailable | Before pickup/recovery, the owner lost write access or its Tenant Lock. Restore access and the owner's Tenant Lock, then start a new Run. A live claim remains owned by its worker. |
 | Workflow usage unavailable | Usage initialization failed before the executor started. Check database release compatibility and runtime access; a guarded failure is recorded when the Run still permits it. |
 
 Platform reference: [Databricks Apps](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/),

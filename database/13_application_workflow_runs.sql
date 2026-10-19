@@ -2611,6 +2611,17 @@ BEGIN
                run.project_id,
                run.correlation_id,
                run.project_workflow,
+               CASE
+                   WHEN target_project.project_id IS NULL
+                     OR NOT target_project.is_active
+                     OR actor.principal_id IS NULL
+                     OR NOT actor.is_active
+                     OR identity_context.active_identity_count <> 1
+                       THEN 'workflow_run_context_unavailable'
+                   WHEN target_project.project_revision <> run.project_revision
+                       THEN 'workflow_run_revision_stale'
+                   ELSE 'workflow_run_authorization_unavailable'
+               END AS failure_code,
                coalesce(event.maximum_attempt, 1) AS event_attempt,
                coalesce(event.maximum_sequence, 0) + 1 AS event_sequence
           FROM application.workflow_run AS run
@@ -2645,6 +2656,34 @@ BEGIN
                OR actor.principal_id IS NULL
                OR NOT actor.is_active
                OR identity_context.active_identity_count <> 1
+               OR (
+                   -- Check startup guards only at pickup/recovery. Another worker's
+                   -- live claim keeps ownership of its execution and final outcome.
+                   (run.workflow_run_claim_token_digest IS NULL
+                    OR run.workflow_run_claim_expires_time <= v_claimed_time)
+                   AND (
+                       target_project.project_revision <> run.project_revision
+                       OR NOT EXISTS (
+                           SELECT 1
+                             FROM security.entra_principal_identity AS identity
+                             CROSS JOIN LATERAL security.authorize_tenant_operation(
+                                 identity.entra_tenant_id,
+                                 identity.entra_object_id,
+                                 identity.principal_type,
+                                 run.tenant_id,
+                                 'tenant_project_write'
+                             ) AS decision
+                            WHERE identity.principal_id = run.actor_principal_id
+                              AND identity.principal_type = actor.principal_type
+                              AND identity.is_active
+                              AND (run.actor_entra_principal_identity_id IS NULL
+                                   OR identity.entra_principal_identity_id =
+                                      run.actor_entra_principal_identity_id)
+                              AND decision.authorized
+                              AND decision.principal_id = run.actor_principal_id
+                       )
+                   )
+               )
            )
          ORDER BY run.created_time, run.workflow_run_id
          FOR UPDATE OF run SKIP LOCKED
@@ -2654,9 +2693,15 @@ BEGIN
         UPDATE application.workflow_run AS run
            SET workflow_run_state = 'failed',
                completed_time = v_claimed_time,
-               failure_code = 'workflow_run_context_unavailable',
-               failure_message =
-                   'Workflow Run execution context is unavailable.',
+               failure_code = invalid.failure_code,
+               failure_message = CASE invalid.failure_code
+                   WHEN 'workflow_run_revision_stale' THEN
+                       'Project changed after this Workflow Run started. Start a new run.'
+                   WHEN 'workflow_run_authorization_unavailable' THEN
+                       'Workflow Run requires current write access and its owner’s Tenant Lock. '
+                       'Restore access and start a new run.'
+                   ELSE 'Workflow Run execution context is unavailable.'
+               END,
                workflow_run_claim_token_digest = NULL,
                workflow_run_claimed_time = NULL,
                workflow_run_claim_heartbeat_time = NULL,
@@ -2668,7 +2713,8 @@ BEGIN
         RETURNING run.workflow_run_id,
                   run.project_id,
                   run.correlation_id,
-                  run.project_workflow
+                  run.project_workflow,
+                  run.failure_message
     ),
     invalid_failure_events AS (
         INSERT INTO project.project_event_log (
@@ -2692,7 +2738,7 @@ BEGIN
                invalid_failed.project_workflow,
                'workflow_run',
                'failed',
-               'Workflow Run execution context is unavailable.',
+               invalid_failed.failure_message,
                0,
                v_claimed_time
           FROM invalid_failed
@@ -2834,7 +2880,14 @@ BEGIN
            )
          ORDER BY run.created_time, run.workflow_run_id
          FOR UPDATE OF run SKIP LOCKED
+         FOR SHARE OF target_project
          LIMIT 1
+    ),
+    ready AS MATERIALIZED (
+        -- Selection and its Project write fence may wait. Start the lease only
+        -- after those locks and startup authorization checks have completed.
+        SELECT candidate.*, clock_timestamp() AS claimed_time
+          FROM candidate
     ),
     claimed AS (
         UPDATE application.workflow_run AS run
@@ -2842,16 +2895,16 @@ BEGIN
                    sha256(convert_to(v_claim_token::TEXT, 'UTF8')),
                    'hex'
                ),
-               workflow_run_claimed_time = v_claimed_time,
-               workflow_run_claim_heartbeat_time = v_claimed_time,
-               workflow_run_claim_expires_time = v_claimed_time
+               workflow_run_claimed_time = candidate.claimed_time,
+               workflow_run_claim_heartbeat_time = candidate.claimed_time,
+               workflow_run_claim_expires_time = candidate.claimed_time
                    + make_interval(secs => p_lease_duration_seconds),
                workflow_run_recovery_count =
                    run.workflow_run_recovery_count
                    + candidate.is_recovery::INTEGER,
-               updated_time = v_claimed_time,
+               updated_time = candidate.claimed_time,
                updated_by = CURRENT_USER
-          FROM candidate
+          FROM ready AS candidate
          WHERE run.workflow_run_id = candidate.workflow_run_id
         RETURNING run.workflow_run_id,
                   candidate.tenant_id,
@@ -2929,6 +2982,7 @@ SET search_path = pg_catalog
 AS $renew_workflow_run_claim$
 DECLARE
     v_heartbeat_time TIMESTAMPTZ;
+    v_project_id BIGINT;
 BEGIN
     IF p_lease_duration_seconds IS NULL
        OR p_lease_duration_seconds NOT BETWEEN 1 AND 300 THEN
@@ -2939,6 +2993,22 @@ BEGIN
         RAISE EXCEPTION 'Workflow Run claim is unavailable';
     END IF;
 
+    -- Context readers may hold KEY SHARE while loading immutable Run inputs.
+    -- Match UPDATE's non-key lock so heartbeats can proceed during those reads.
+    SELECT run.project_id INTO v_project_id
+      FROM application.workflow_run AS run
+     WHERE run.workflow_run_id = p_workflow_run_id
+       AND run.workflow_run_state = 'running'
+       AND run.workflow_run_claim_token_digest = encode(
+               sha256(convert_to(p_workflow_run_claim_token::TEXT, 'UTF8')), 'hex'
+           )
+     FOR NO KEY UPDATE OF run;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Workflow Run claim is unavailable';
+    END IF;
+    PERFORM project.assert_writable(v_project_id);
+    -- Both the Run lock and the Project write fence can wait. Only database time
+    -- after those waits may authorize renewal; an expired claim cannot revive.
     v_heartbeat_time := clock_timestamp();
     RETURN QUERY
     UPDATE application.workflow_run AS run
@@ -2985,12 +3055,25 @@ AS $release_workflow_run_claim$
 DECLARE
     v_released BOOLEAN;
     v_released_time TIMESTAMPTZ;
+    v_project_id BIGINT;
 BEGIN
     IF p_workflow_run_id IS NULL OR p_workflow_run_id <= 0
        OR p_workflow_run_claim_token IS NULL THEN
         RAISE EXCEPTION 'Workflow Run claim is unavailable';
     END IF;
 
+    SELECT run.project_id INTO v_project_id
+      FROM application.workflow_run AS run
+     WHERE run.workflow_run_id = p_workflow_run_id
+       AND run.workflow_run_state = 'running'
+       AND run.workflow_run_claim_token_digest = encode(
+               sha256(convert_to(p_workflow_run_claim_token::TEXT, 'UTF8')), 'hex'
+           )
+     FOR NO KEY UPDATE OF run;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Workflow Run claim is unavailable';
+    END IF;
+    PERFORM project.assert_writable(v_project_id);
     v_released_time := clock_timestamp();
     UPDATE application.workflow_run AS run
        SET workflow_run_claim_token_digest = NULL,
@@ -3033,15 +3116,14 @@ SECURITY DEFINER
 SET search_path = pg_catalog
 AS $assert_workflow_run_claim$
 DECLARE
-    v_checked_time TIMESTAMPTZ;
+    v_expires_time TIMESTAMPTZ;
 BEGIN
     IF p_workflow_run_id IS NULL OR p_workflow_run_id <= 0
        OR p_workflow_run_claim_token IS NULL THEN
         RAISE EXCEPTION 'Workflow Run claim is unavailable';
     END IF;
 
-    v_checked_time := clock_timestamp();
-    PERFORM 1
+    SELECT run.workflow_run_claim_expires_time INTO v_expires_time
       FROM application.workflow_run AS run
      WHERE run.workflow_run_id = p_workflow_run_id
        AND run.workflow_run_state = 'running'
@@ -3051,9 +3133,8 @@ BEGIN
                ),
                'hex'
            )
-       AND run.workflow_run_claim_expires_time > v_checked_time
      FOR UPDATE OF run;
-    IF NOT FOUND THEN
+    IF NOT FOUND OR v_expires_time <= clock_timestamp() THEN
         RAISE EXCEPTION 'Workflow Run claim is unavailable';
     END IF;
 END;

@@ -1,6 +1,6 @@
-/* Tenant workspace */
+/* Navigator shell: a continuous blue navigation column and a light working header. */
 .app-shell {
-  --global-nav-width: 13rem;
+  --global-nav-width: 14.5rem;
 
   display: grid;
   min-height: 100vh;
@@ -41,17 +41,17 @@
   grid-template-columns: var(--global-nav-width) minmax(0, 1fr) auto;
   align-items: center;
   padding: 0;
-  border-bottom: 1px solid var(--brand);
-  color: var(--on-brand);
-  background: var(--brand);
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: inset 0 -1px var(--line);
   transition: grid-template-columns 180ms var(--ease-fluid);
 }
 
 .topbar .brand {
   height: 100%;
-  padding: 0 1.2rem;
+  padding: 0 1.5rem;
   color: var(--on-brand);
-  background: transparent;
+  background: var(--brand);
 }
 
 .topbar .brand-mark {
@@ -59,7 +59,7 @@
 }
 
 .app-shell .topbar :focus-visible {
-  outline-color: var(--on-brand);
+  outline-color: var(--accent);
   outline-offset: 4px;
 }
 
@@ -84,11 +84,11 @@
 
 .tenant-context-item + .tenant-context-item {
   padding-left: 1.5rem;
-  border-left: 1px solid var(--on-brand-line);
+  border-left: 1px solid var(--line);
 }
 
 .tenant-context dt {
-  color: var(--on-brand-muted);
+  color: var(--muted);
   font-size: 0.6rem;
   font-weight: 600;
   letter-spacing: 0.09em;
@@ -106,7 +106,7 @@
 
 .tenant-context strong {
   overflow: hidden;
-  color: var(--on-brand);
+  color: var(--ink);
   font-size: 0.875rem;
   font-weight: 550;
   letter-spacing: -0.015em;
@@ -118,8 +118,8 @@
 .tenant-code-badge {
   flex: 0 0 auto;
   padding: 0.12rem 0.38rem;
-  color: var(--on-brand);
-  background: var(--brand-raised);
+  color: var(--brand);
+  background: var(--accent-soft);
   font-size: 0.6rem;
   font-weight: 500;
   letter-spacing: 0;
@@ -137,16 +137,16 @@
 .topbar-actions .avatar {
   width: 2.1rem;
   height: 2.1rem;
-  border: 1px solid var(--on-brand-line);
-  color: var(--on-brand);
-  background: var(--brand-raised);
+  border: 1px solid var(--line);
+  color: var(--brand);
+  background: var(--accent-soft);
   font-size: 0.65rem;
   font-weight: 600;
   box-shadow: none;
 }
 
 .role-badge {
-  color: var(--on-brand-muted);
+  color: var(--muted);
   font-size: 0.72rem;
   font-weight: 500;
   letter-spacing: 0;
@@ -155,8 +155,8 @@
 .switch-tenant {
   min-height: 2.2rem;
   padding: 0.55rem 0.75rem;
-  color: var(--on-brand);
-  border-color: var(--on-brand-line);
+  color: var(--ink);
+  border-color: var(--line-strong);
   background: transparent;
   font-size: 0.75rem;
   font-weight: 400;
@@ -165,8 +165,8 @@
 
 .switch-tenant:hover {
   color: var(--brand);
-  border-color: var(--on-brand);
-  background: var(--on-brand);
+  border-color: var(--line-strong);
+  background: var(--accent-soft);
   box-shadow: none;
 }
 
@@ -176,11 +176,11 @@
   height: calc(100vh - 4.5rem);
   grid-column: 1;
   grid-row: 2;
-  padding: 1.45rem 0.7rem;
+  padding: 0.5rem 0.7rem 1.45rem;
   overflow-y: auto;
-  border-right: 1px solid var(--line);
-  background: var(--nav);
-  color: var(--ink);
+  border-right: 1px solid var(--brand);
+  background: var(--brand);
+  color: var(--on-brand);
 }
 
 .sidebar-header {
@@ -189,7 +189,7 @@
   align-items: center;
   justify-content: flex-start;
   gap: 0.5rem;
-  margin: 0 0.35rem 0.65rem;
+  margin: 0 0.35rem 1.75rem;
 }
 
 .sidebar-toggle,
@@ -226,19 +226,19 @@
 
 .mobile-sidebar-toggle {
   display: none;
-  color: var(--on-brand);
-  border-color: var(--on-brand-line);
+  color: var(--brand);
+  border-color: var(--line-strong);
   background: transparent;
 }
 
 .sidebar-toggle {
-  color: var(--muted);
-  border-color: var(--line);
+  color: var(--on-brand-muted);
+  border-color: var(--on-brand-line);
   background: transparent;
 }
 
 .app-shell .sidebar :is(button, a):focus-visible {
-  outline-color: var(--accent);
+  outline-color: var(--on-brand);
 }
 
 .sidebar-toggle:active,
@@ -252,30 +252,23 @@
 }
 
 @media (hover: hover) {
-  .sidebar-toggle:hover,
   .mobile-sidebar-toggle:hover {
-    color: var(--ink);
-    border-color: var(--line-strong);
-    background: var(--soft);
-  }
-
-  .sidebar-toggle:hover {
     color: var(--brand);
     border-color: var(--line-strong);
     background: var(--accent-soft);
   }
 
-  .topbar .mobile-sidebar-toggle:hover {
-    color: var(--brand);
+  .sidebar-toggle:hover {
+    color: var(--on-brand);
     border-color: var(--on-brand);
-    background: var(--on-brand);
+    background: var(--brand-raised);
   }
 }
 
 .sidebar nav {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.4rem;
 }
 
 .nav-item {
@@ -285,8 +278,8 @@
   gap: 0.8rem;
   padding: 0 0.8rem;
   border: 1px solid transparent;
-  border-radius: 0.68rem;
-  color: var(--muted);
+  border-radius: 0.375rem;
+  color: var(--on-brand);
   font-size: 0.82rem;
   font-weight: 400;
   transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, transform 150ms var(--ease-fluid);
@@ -295,13 +288,13 @@
 .nav-item.is-active {
   color: var(--brand);
   border-color: transparent;
-  background: var(--accent-soft);
+  background: var(--surface);
   box-shadow: none;
   font-weight: 400;
 }
 
 .nav-item.is-disabled {
-  color: var(--faint);
+  color: var(--on-brand-muted);
 }
 
 .nav-item svg {
@@ -321,20 +314,20 @@
 }
 
 .sidebar .open-project {
-  border-color: var(--line);
+  border-color: var(--on-brand-line);
 }
 
 .sidebar .open-project small,
 .sidebar .open-project span {
-  color: var(--muted);
+  color: var(--on-brand-muted);
 }
 
 .sidebar .open-project strong {
-  color: var(--ink);
+  color: var(--on-brand);
 }
 
 .sidebar .open-project a {
-  color: var(--brand);
+  color: var(--on-brand);
 }
 
 .nav-item:active {
@@ -343,9 +336,12 @@
 
 @media (hover: hover) {
   .nav-item:hover {
-    color: var(--brand);
-    background: var(--accent-soft);
     transform: translateX(2px);
+  }
+
+  .nav-item:hover:not(.is-active) {
+    color: var(--on-brand);
+    background: var(--brand-raised);
   }
 }
 
@@ -369,7 +365,7 @@
   }
 
   .is-global-nav-collapsed .sidebar-header {
-    justify-content: flex-start;
+    justify-content: center;
     margin-right: 0;
     margin-left: 0;
   }
@@ -887,6 +883,13 @@ tbody tr:hover {
 }
 
 @media (max-width: 58rem) {
+  .app-shell { --global-nav-width: 12.5rem; }
+  .tenant-context { gap: 0.75rem; padding-inline: 1.25rem; }
+  .tenant-context-item + .tenant-context-item { padding-left: 0.75rem; }
+  .tenant-context strong { font-size: 0.75rem; }
+  .topbar-actions .role-badge,
+  .topbar-actions .avatar { display: none; }
+
   .tenant-entry {
     padding-top: 4.2rem;
   }
@@ -1042,7 +1045,7 @@ tbody tr:hover {
     display: grid;
     grid-column: 1 / -1;
     grid-row: 2;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     gap: 0.35rem;
     padding: 0;
   }
@@ -1050,12 +1053,13 @@ tbody tr:hover {
   .tenant-context-item { grid-template-columns: 2.6rem minmax(0, 1fr); align-items: center; gap: 0.35rem; }
   .tenant-context-item:only-child { grid-column: 1 / -1; }
   .tenant-context-item + .tenant-context-item { padding-left: 0; border-left: 0; }
-  .tenant-context strong { font-size: 0.75rem; }
+  .tenant-context strong { overflow: visible; font-size: 0.75rem; overflow-wrap: anywhere; white-space: normal; }
   .tenant-context dt { font-size: 0.55rem; }
   .topbar { gap: 0.75rem; }
   .topbar-actions { gap: 0.5rem; padding-right: 0; }
 
-  .topbar .brand { padding: 0; }
+  .topbar .brand { padding: 0; color: var(--brand); background: transparent; }
+  .topbar .brand-mark { filter: none; }
 
   .role-badge,
   .topbar-actions .avatar {
@@ -1074,8 +1078,8 @@ tbody tr:hover {
     height: auto;
     padding: 0.35rem max(0.35rem, env(safe-area-inset-right)) calc(0.35rem + env(safe-area-inset-bottom)) max(0.35rem, env(safe-area-inset-left));
     overflow: visible;
-    border-top: 1px solid var(--line);
-    background: var(--nav);
+    border-top: 1px solid var(--brand);
+    background: var(--brand);
     box-shadow: 0 -4px 16px rgb(12 35 60 / 6%);
     transition: visibility 180ms ease, transform 180ms var(--ease-fluid);
   }
@@ -1118,7 +1122,7 @@ tbody tr:hover {
   }
 
   .nav-item.is-active {
-    box-shadow: inset 0 -2px var(--accent);
+    box-shadow: none;
   }
 
   .nav-item svg {
@@ -1231,15 +1235,19 @@ tbody tr:hover {
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .entry-topbar,
-  .topbar {
+  .entry-topbar {
     background: var(--brand);
     backdrop-filter: none;
   }
 
+  .topbar {
+    background: var(--surface);
+    backdrop-filter: none;
+  }
+
   .sidebar {
-    color: var(--ink);
-    background: var(--nav);
+    color: var(--on-brand);
+    background: var(--brand);
     backdrop-filter: none;
   }
 }
