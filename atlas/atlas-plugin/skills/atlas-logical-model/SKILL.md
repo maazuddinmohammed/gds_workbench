@@ -21,7 +21,7 @@ Goal: a normalized Silver design with explicit grain, complete identity and trac
 ## Steps
 
 1. Read selected sources and existing design with `select --session <dir> --area project --dataset <name> --view effective`, following `next_cursor` until it is null.
-2. For each business area, state what one row means and its complete natural key, including source namespace when needed. Normalize by real dependencies and lifecycle with [logical design](../../references/logical-build/logical-design.md); matching names never prove a relationship. Under SQL policy `never`, model from metadata and label findings unmeasured.
+2. For each business area, record in the Entity what one row means and its complete natural key, including source namespace when needed. Normalize by real dependencies and lifecycle with [logical design](../../references/logical-build/logical-design.md); matching names never prove a relationship. Under SQL policy `never`, model from metadata and label findings unmeasured.
 3. Write complete Entity, Attribute, Relationship and Submodel records with `upsert-batch --session <dir> --area project --changes <JSON> --expected-digest <digest>` per [Logical records](../../references/project/logical.md). Use configured schemas and naming, give business fields distinct names such as `SourceCreatedDate`, and pair each physical Attribute source with its Object source on the Entity.
 4. Add framework columns: run `policy-apply --session <dir> --layer logical --expected-digest <digest> --dry-run true`, show the result, then run it without `--dry-run`.
 5. Run `validate --session <dir> --area project`, `coverage --session <dir> --layer logical` and the logical design quality checks. Repair and rerun after each coherent batch.
