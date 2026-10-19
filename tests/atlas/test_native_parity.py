@@ -45,7 +45,7 @@ def native_run(*args: str, success: bool = True) -> dict[str, Any]:
         ],
         capture_output=True,
         text=True,
-        timeout=60,
+        timeout=600,  # Windows PowerShell 5.1 on CI runners is several times slower.
     )
     if success:
         assert result.returncode == 0, result.stderr
