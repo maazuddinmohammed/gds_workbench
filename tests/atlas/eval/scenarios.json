@@ -512,6 +512,87 @@
         ],
         "min_optional": 2
       }
+    },
+    {
+      "id": "document-intake-source",
+      "rubric": "Register a Source table from a spec document; ask about the one unconfirmed type",
+      "request": "Register the table defined in specs/payments-spec.md under System DEMO_CUSTOMER_SYSTEM and Connection DEMO_SOURCE. Source registration only for now. Keep the work local; don't submit it.",
+      "workspace": "project",
+      "sql_policy": "never",
+      "seed_files": {
+        "specs/payments-spec.md": "# Payments: source table specification\n\nSystem: DEMO_CUSTOMER_SYSTEM (commerce platform)\nConnection: DEMO_SOURCE\nTable: source_demo.payments, one row per payment received against an order.\n\n| Column | Type | Nullable | Key | Description |\n|---|---|---|---|---|\n| payment_id | BIGINT | No | Primary key | Unique payment identifier from the commerce platform. |\n| order_id | BIGINT | No | References orders.order_id | Order the payment settles. |\n| payment_date | DATE | No | | Date the payment was received. |\n| payment_amount | DECIMAL(18,2) | No | | Amount received, in USD. |\n| payment_method | VARCHAR(20) | Yes | | One of card, transfer or cash. |\n| payment_status | TBD, confirm with the payments team | Yes | | Settlement status of the payment. |\n"
+      },
+      "expect": {
+        "skills_read_any": [
+          "atlas-metadata",
+          "atlas"
+        ],
+        "required_helper_commands": [
+          "validate"
+        ],
+        "forbidden_tools": [
+          "execute_databricks_sql",
+          "create_metadata_change_set",
+          "create_project_change_set"
+        ],
+        "required_files_any": [
+          "metadata-change-set/source_attribute.json",
+          "metadata-change-set/source_object.json"
+        ],
+        "forbidden_files": [
+          "metadata-change-set/bronze_*.json",
+          "metadata-change-set/ingestion_*.json",
+          "project-change-set/*.json"
+        ]
+      },
+      "quality": {
+        "reference": [
+          "Draft source_demo.payments under Tenant DEMO_TENANT, System DEMO_CUSTOMER_SYSTEM and Connection DEMO_SOURCE, next to the existing source_demo.customer and source_demo.orders: a TABLE in the Source zone, described as one row per payment received against an order.",
+          "Draft one Attribute per confirmed column, in the spec's order, with the spec's actual types, nullability and descriptions: payment_id BIGINT not null (natural key), order_id BIGINT not null, payment_date DATE not null, payment_amount DECIMAL(18,2) not null, payment_method VARCHAR(20) nullable.",
+          "payment_status has no confirmed type. Don't invent one: ask the user, and leave that Attribute out or clearly pending until they answer.",
+          "order_id references orders.order_id. That is a relationship for Project analysis, not a metadata field; mention it rather than inventing one.",
+          "Follow the existing Source conventions, such as the object type, the Source zone and a foreign-catalog name matching the table name. Add no Bronze, ingestion or Project records.",
+          "Ask only what is missing (the payment_status type), run metadata validation, and report what was drafted and what waits for the answer."
+        ],
+        "criteria": [
+          {
+            "id": "registers-from-spec",
+            "required": true,
+            "text": "Drafts source_demo.payments with the five confirmed columns in the spec's order, with their actual types, nullability and descriptions, and payment_id as the natural key; invents no columns."
+          },
+          {
+            "id": "no-invented-type",
+            "required": true,
+            "text": "Doesn't invent a data type for payment_status; asks about it and leaves it out or pending until answered."
+          },
+          {
+            "id": "right-placement",
+            "required": true,
+            "text": "Places the table under Tenant DEMO_TENANT, System DEMO_CUSTOMER_SYSTEM, Connection DEMO_SOURCE and schema source_demo, reusing the existing System and Connection."
+          },
+          {
+            "id": "relationship-as-analysis",
+            "required": false,
+            "text": "Treats the order_id reference as a relationship for Project analysis, not as a metadata field."
+          },
+          {
+            "id": "follows-conventions",
+            "required": false,
+            "text": "Follows the existing Source table conventions, such as the object type, the Source zone and the foreign-catalog name."
+          },
+          {
+            "id": "focused-question",
+            "required": false,
+            "text": "Asks only the necessary question (the payment_status type) and doesn't re-ask what the request or spec already gave."
+          },
+          {
+            "id": "validates-and-reports",
+            "required": false,
+            "text": "Runs metadata validation and reports what was drafted and what waits for the user's answer."
+          }
+        ],
+        "min_optional": 2
+      }
     }
   ]
 }
