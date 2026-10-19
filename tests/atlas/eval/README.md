@@ -85,7 +85,7 @@ a criterion the judge leaves out counts as failed. Each graded sandbox gets `gra
 Claude Code as the judge (one model call per graded run, without tools or MCP servers):
 
 ```bash
-PYTHONPATH=mcp_server:web_app/backend:. web_app/backend/.venv/bin/python -m tests.atlas.eval.harness --scenario change-request-country --out /tmp/atlas-eval --score-only --grade-command 'env -i HOME="$HOME" PATH="$PATH" USER="$USER" LOGNAME="$LOGNAME" SHELL="$SHELL" TMPDIR="$TMPDIR" LANG=en_US.UTF-8 claude -p "$(cat {prompt})" --model claude-opus-5-5 --strict-mcp-config --setting-sources project,local --disable-slash-commands --no-session-persistence --max-budget-usd 1 --output-format json < /dev/null'
+PYTHONPATH=mcp_server:web_app/backend:. web_app/backend/.venv/bin/python -m tests.atlas.eval.harness --scenario change-request-country --out /tmp/atlas-eval --score-only --grade-command 'env -i HOME="$HOME" PATH="$PATH" USER="$USER" LOGNAME="$LOGNAME" SHELL="$SHELL" TMPDIR="$TMPDIR" LANG=en_US.UTF-8 claude -p "$(cat {prompt})" --model claude-sonnet-5-5 --strict-mcp-config --setting-sources project,local --disable-slash-commands --no-session-persistence --max-budget-usd 1 --output-format json < /dev/null'
 ```
 
 ## Maintain

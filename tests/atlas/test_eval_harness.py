@@ -375,11 +375,17 @@ def test_grader_builds_its_prompt_and_applies_the_pass_rule(tmp_path: Path) -> N
     assert all(f"- {identifier} (" in prompt for identifier in ids)
     assert ".atlas/" not in prompt.split("## Files the run changed")[1]
     # A criterion the judge leaves out counts as failed.
-    empty = tmp_path / "empty.json"
-    empty.write_text(json.dumps({"criteria": []}))
-    unanswered = harness.grade(scenario, sandbox, f"cat {shlex.quote(str(empty))}", 30)
+    partial = tmp_path / "partial.json"
+    partial.write_text(
+        json.dumps({"criteria": [{"id": i, "passed": True, "reason": "r"} for i in required]})
+    )
+    unanswered = harness.grade(scenario, sandbox, f"cat {shlex.quote(str(partial))}", 30)
     assert unanswered["quality_passed"] is False
-    assert {item["reason"] for item in unanswered["criteria"]} == {"not graded"}
+    assert {i["reason"] for i in unanswered["criteria"] if not i["required"]} == {"not graded"}
+    # No verdict at all, such as a judge that cannot run, is a grading error, not a failed run.
+    failed_judge = harness.grade(scenario, sandbox, "echo 'API Error: 400' && exit 1", 30)
+    assert failed_judge["quality_passed"] is None
+    assert failed_judge["judge_error"] == "no verdict from the judge (exit status 1)"
 
 
 _RANDOM = re.compile(

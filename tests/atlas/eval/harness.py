@@ -580,7 +580,8 @@ def grade(
     scenario: dict[str, Any], sandbox: Sandbox, template: str, timeout_seconds: int
 ) -> dict[str, Any]:
     """Judge a scored run. Quality passes when every required criterion passes and at least
-    `min_optional` of the others do; a criterion the judge leaves out counts as failed."""
+    `min_optional` of the others do; a criterion the judge leaves out counts as failed. A
+    judge that returns no verdict at all is a grading error, not a failed run."""
     quality = scenario["quality"]
     prompt = sandbox.root / "grade_prompt.md"
     prompt.write_text(grade_prompt(scenario, sandbox), encoding="utf-8")
@@ -594,6 +595,12 @@ def grade(
         check=False,
     )
     verdict = _judge_verdict(completed.stdout)
+    if not verdict:
+        return {
+            "scenario": scenario["id"],
+            "quality_passed": None,
+            "judge_error": f"no verdict from the judge (exit status {completed.returncode})",
+        }
     criteria: list[dict[str, Any]] = [
         {
             "id": item["id"],
@@ -659,10 +666,14 @@ def main() -> None:
         if arguments.grade_command and scenario.get("quality"):
             graded = grade(scenario, sandbox, arguments.grade_command, arguments.timeout)
             (sandbox.root / "grade.json").write_text(json.dumps(graded, indent=2), encoding="utf-8")
-            print(
-                f"{'QUALITY PASS' if graded['quality_passed'] else 'QUALITY FAIL'} {scenario['id']}"
-                f" required {graded['required_passed']}, optional {graded['optional_passed']}"
-            )
+            if graded["quality_passed"] is None:
+                print(f"QUALITY ERROR {scenario['id']} {graded['judge_error']}")
+            else:
+                print(
+                    f"{'QUALITY PASS' if graded['quality_passed'] else 'QUALITY FAIL'}"
+                    f" {scenario['id']} required {graded['required_passed']},"
+                    f" optional {graded['optional_passed']}"
+                )
     if results:
         passed = sum(1 for report in results if report["passed"])
         print(f"{passed}/{len(results)} scenarios passed")
