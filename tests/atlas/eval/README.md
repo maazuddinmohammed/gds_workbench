@@ -67,12 +67,32 @@ lock override, no hand edits to installed Snapshots. Per scenario: required/forb
 tools and helper commands, Conceptual datasets not read by downstream work, required or
 forbidden draft files, call budgets, skills read and final-message content (the last two
 only with a transcript). A required helper command needs a run that exited 0; forbidden
-commands and budgets count every attempt.
+commands and budgets count every attempt. `may_ask_instead` lets a consequential question
+replace the required work when no draft or code changed.
+
+## Quality grading
+
+The checks above test process, not output quality. A scenario with a `quality` block
+also carries a reviewed reference answer and criteria, each required or optional.
+`--grade-command` runs a judge model after scoring, or on existing runs with
+`--score-only`. The judge receives `grade_prompt.md`: the request, the reference answer,
+the criteria, the run's final message and the drafts and code it changed (not `.atlas/`
+bookkeeping or installed Snapshots). It must reply with
+`{"criteria": [{"id", "passed", "reason"}]}`, either raw or inside a CLI JSON envelope.
+Quality passes when every required criterion passes and at least `min_optional` others do;
+a criterion the judge leaves out counts as failed. Each graded sandbox gets `grade.json`.
+
+Claude Code as the judge (one model call per graded run, without tools or MCP servers):
+
+```bash
+PYTHONPATH=mcp_server:web_app/backend:. web_app/backend/.venv/bin/python -m tests.atlas.eval.harness --scenario change-request-country --out /tmp/atlas-eval --score-only --grade-command 'env -i HOME="$HOME" PATH="$PATH" USER="$USER" LOGNAME="$LOGNAME" SHELL="$SHELL" TMPDIR="$TMPDIR" LANG=en_US.UTF-8 claude -p "$(cat {prompt})" --model claude-sonnet-5-5 --strict-mcp-config --setting-sources project,local --disable-slash-commands --no-session-persistence --max-budget-usd 1 --output-format json < /dev/null'
+```
 
 ## Maintain
 
 - New scenario: add it to `scenarios.json`; `../test_eval_harness.py` validates names
-  against the real tool inventory, helper contract and skills.
+  against the real tool inventory, helper contract and skills. Get a `quality` reference
+  answer and criteria reviewed by a domain owner before any paid run.
 - Schema, seed or Snapshot changes: regenerate the world (needs Docker):
   `PYTHONPATH=mcp_server:web_app/backend:. web_app/backend/.venv/bin/python -m tests.atlas.eval.build_fixtures`.
   `test_eval_world_matches_current_server` fails while the recording is stale.

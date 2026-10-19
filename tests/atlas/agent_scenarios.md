@@ -14,7 +14,7 @@ is a rubric, not a record that such an evaluation passed.
 | Build a conceptual model only | Standalone Conceptual records/relationships and evidence; no Logical counterpart or downstream work. Unknown conceptual cardinality is allowed. |
 | Build Logical or Dimensional while Conceptual records exist | Exclude Conceptual output from task reads and reasoning. Logical uses physical/source evidence and business Context; Dimensional retains applied Logical prerequisites. |
 | Grill Me about Order grain; current logical draft | Same logical skill/task, focused consequential question, preserved draft. Resolve full identity before dependent keys; no duplicated phase chain. |
-| Build one dimension from applied Logical inputs | Dimensional workflow; no invented fact, new profiling dataset, mandatory target registration or logical rebuild. |
+| Build one dimension from applied Logical inputs | Dimensional workflow; no invented fact, new profiling dataset, mandatory target registration or logical rebuild. When the Project leaves history unset, asking Type 1 or Type 2 before drafting is also acceptable. |
 | Map selected Objects to an existing applied project | Mapping uses current configured template and complete target/System coverage. No automatic conceptual rebuild or target registration requirement. |
 | Generate SQL from nonempty partial applied Mapping | Incomplete Code with explicit issues and justified typed placeholders/zero-row projection; no invented joins or claim of executable business correctness. |
 | Author SQL Validation with incomplete Mapping | Block the affected definition authoring on completeness; ordinary structural/project quality verification can still proceed. |
@@ -24,6 +24,7 @@ is a rubric, not a record that such an evaluation passed.
 | Physical description correction selected through cross-owner Project scope | Metadata records under actual owners, exact scope/Zone, preserved nonempty values unless replacement requested; not Project-owned enrichment. |
 | Request Project-owned enrichment | Author `object_enrichment`/`attribute_enrichment` proposals in the Project Change Set from scoped profiles and evidence; preserve locks and `expected_revision`. No physical Metadata substitution, invented fields or human-HTTP bypass. |
 | Register targets and generated files | Separate target/Process prerequisites and owner boundaries. Creation DDL is optional; registration does not execute/upload/deploy. |
+| Change request that needs data no source has (customer country) | Trace the impact across metadata, models, Mapping, Code and Validation; ask where the data comes from before changing anything; recommend the smallest path (country on Dim Customer, Fact Order unchanged). |
 | Resume with stale inputs, pending draft and unknown Stage result | Run `status` or `next`; preserve baseline/draft and reconcile actual operation state before another write. No restart, blind retry or task-note approval. |
 | Inventory exceeds 200 records | Follow bound pages to completion; preserve canonical keys in projections; refetch full records before upsert. A stale cursor rejects continuation. |
 
