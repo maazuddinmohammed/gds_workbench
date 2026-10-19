@@ -372,13 +372,17 @@ def create_agent_execution_router(
 ) -> AgentExecutionRouter:
     adapters: tuple[AgentExecutionAdapter, ...]
     registered_deployments = {
-        (model.provider_code, model.code): model.deployment_name for model in capabilities.models
+        (model.provider_code, model.code): (model.deployment_name, model.api_protocol)
+        for model in capabilities.models
     }
     for connection in configuration.connections:
         connection_key = (connection.provider_code, connection.model_code)
         if connection_key not in registered_deployments:
             raise ValueError("A configured Agent model deployment is not registered")
-        if registered_deployments[connection_key] != connection.model_endpoint:
+        if registered_deployments[connection_key] != (
+            connection.model_endpoint,
+            connection.api_protocol,
+        ):
             raise ValueError(
                 "The configured Agent model deployment does not match the Agent registry"
             )
@@ -394,7 +398,7 @@ def create_agent_execution_router(
         )
     )
     configured_provider_codes = {
-        connection.provider_code for connection in configuration.connections
+        connection.authentication_key for connection in configuration.connections
     }
     authentications = {} if provider_authentications is None else dict(provider_authentications)
     if provider_authentications is not None and set(authentications) != configured_provider_codes:
@@ -411,11 +415,12 @@ def create_agent_execution_router(
                 provider_connections = tuple(
                     connection
                     for connection in configuration.connections
-                    if connection.provider_code == provider_code
+                    if connection.authentication_key == provider_code
                 )
                 connection = provider_connections[0]
                 resource_configuration = (
                     connection.openai_base_url,
+                    connection.anthropic_base_url,
                     connection.token_scope,
                     connection.foundry_client_credentials,
                     connection.foundry_api_key,
@@ -423,6 +428,7 @@ def create_agent_execution_router(
                 if any(
                     (
                         candidate.openai_base_url,
+                        candidate.anthropic_base_url,
                         candidate.token_scope,
                         candidate.foundry_client_credentials,
                         candidate.foundry_api_key,
@@ -433,7 +439,12 @@ def create_agent_execution_router(
                     raise ValueError(
                         "Foundry model deployments must share one resource and authentication"
                     )
-                if connection.openai_base_url is None:
+                base_url = (
+                    connection.anthropic_base_url
+                    if connection.api_protocol == "anthropic_messages"
+                    else connection.openai_base_url
+                )
+                if base_url is None:
                     raise ValueError("Foundry authentication configuration is incomplete")
                 if connection.foundry_api_key is not None:
                     if (
@@ -442,7 +453,7 @@ def create_agent_execution_router(
                     ):
                         raise ValueError("Foundry authentication configuration is incomplete")
                     authentications[provider_code] = FoundryApiKeyAuthentication(
-                        base_url=connection.openai_base_url,
+                        base_url=base_url,
                         api_key=connection.foundry_api_key,
                     )
                 else:
@@ -453,7 +464,7 @@ def create_agent_execution_router(
                         raise ValueError("Foundry authentication configuration is incomplete")
                     credentials = connection.foundry_client_credentials
                     authentications[provider_code] = FoundryModelAuthentication(
-                        base_url=connection.openai_base_url,
+                        base_url=base_url,
                         token_scope=connection.token_scope,
                         tenant_id=str(credentials.tenant_id),
                         client_id=str(credentials.client_id),

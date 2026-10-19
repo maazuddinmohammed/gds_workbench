@@ -52,7 +52,7 @@ def test_foundry_api_key_deployment_example_uses_a_secret_resource() -> None:
     assert "API key or the three Entra client credential variables, never both" in guide
     assert "GDS_WEB_FOUNDRY_API_KEY\n     value:" not in guide
     assert "https://cognitiveservices.azure.com/.default" in guide
-    assert "https://ai.azure.com/.default" not in guide
+    assert "Claude's Entra audience is `https://ai.azure.com/.default`" in guide
     assert "/api/projects/" in guide
     assert "are rejected" in guide
     assert "api/projects/<project>/openai/v1" not in guide

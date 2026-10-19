@@ -81,6 +81,39 @@
           ]
         }
       ]
+    },
+    {
+      "code": "foundry-claude-opus-5-5",
+      "name": "Anthropic Claude Opus 5.5",
+      "provider_code": "microsoft_foundry",
+      "api_protocol": "anthropic_messages",
+      "deployment_name": "claude-opus-5-5",
+      "execution_profiles": [
+        {
+          "sdk_code": "openai_agents_sdk",
+          "execution_mode": "one_shot",
+          "reasoning_effort_codes": [
+            "default",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        {
+          "sdk_code": "openai_agents_sdk",
+          "execution_mode": "tool_assisted",
+          "reasoning_effort_codes": [
+            "default",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        }
+      ]
     }
   ],
   "reasoning_efforts": [

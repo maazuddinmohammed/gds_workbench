@@ -28,12 +28,28 @@ The default model deployments use these reasoning settings in both execution mod
 | --- | --- |
 | `gpt-6.1-sol` | `low`, `medium`, `high`, `xhigh`, `max` |
 | `gpt-6-luna` | `none`, `low`, `medium`, `high`, `xhigh`, `max` |
+| `claude-opus-5-5` | `low`, `medium`, `high`, `xhigh`, `max` |
 
-`default` omits the setting; both models default to `medium`. Neither supports
+`default` omits the setting; these models default to `medium`. None supports
 `minimal` or `ultra`. See the official [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol)
 and [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna) contracts.
-Foundry must have the configured deployment names available. Tool calls use
-Responses; calls without tools use Chat Completions.
+Foundry must have the configured deployment names available. OpenAI tool calls use
+Responses; OpenAI calls without tools use Chat Completions.
+
+Claude uses the native Messages API through a custom model in the same Agents SDK
+loop. `api_protocol` binds each registry model to its transport. Opus 5.5 always
+uses adaptive thinking; `none` and manual thinking budgets are unsupported. Effort
+is sent as `output_config.effort`, with `default` omitted. The native assistant
+blocks/signatures stay in memory for the current invocation and are replayed
+unchanged across tool turns, then discarded. Tools, turn limits, JSON instructions,
+and backend candidate validation/repair remain shared; Claude does not receive
+OpenAI JSON-mode parameters. Output is capped at its documented 128,000 tokens.
+The numeric usage recorder combines Claude's uncached, cached, and cache-write
+input counts; missing counters remain unknown. See
+[Microsoft's Claude API contract](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/claude-models)
+and [Anthropic's exact effort levels](https://platform.claude.com/docs/en/build-with-claude/effort).
+Local fake mode includes Claude. Remote mode exposes it only when its separate
+Foundry Anthropic endpoint is configured; see the deployment guide.
 
 Internal keys remain `foundry-primary` and `foundry-gpt-5.6-luna` so saved Project
 defaults and operator pricing retain their selected tier. The historical Luna key

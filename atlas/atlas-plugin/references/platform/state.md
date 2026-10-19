@@ -29,7 +29,7 @@ Create only what the work needs. The [workspace file contract](../workspace-cont
 - Temporary archives/scripts/intermediates use `.atlas/temp/`. Material needed for resumption or approval must have durable storage before cleanup.
 - A question or simple read need not create a task. Substantial authoring uses one task per meaningful outcome, not one per tool call.
 
-Reuse this workspace across workflows and tasks for its primary Tenant/Project. Atlas Local Workbench opens the working-directory root, containing `.atlas` and the sibling data folders. Users and agents edit the same local Change Set files; Snapshot files remain immutable. Metadata owner selection resolves its subtree and independent operation evidence without changing the Project context. See the [Atlas Local Workbench guide](../../docs/usage-guide.md#atlas-local-workbench) for opening, resuming and handling concurrent local edits.
+Reuse this workspace across workflows and tasks for its primary Tenant/Project. Atlas Local Workbench opens the working-directory root, containing `.atlas` and the sibling data folders. Users and agents edit the same local Change Set files; Snapshot files remain immutable. Metadata owner selection resolves its subtree and independent operation evidence without changing the Project context. See the [Atlas Local Workbench guide](../../docs/usage-guide.md#review-in-atlas-local-workbench) for opening, resuming and handling concurrent local edits.
 
 ## Snapshot use
 

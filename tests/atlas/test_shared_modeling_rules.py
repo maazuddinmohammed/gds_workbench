@@ -1,7 +1,7 @@
 """Modeling rules the web workflow prompts and Atlas both state.
 
-The web prompts (`database/seed/05_global_prompt_defaults.template.sql` and the alternate
-set in its `.v2.sql` sibling) and the Atlas references are written for different agents, so
+The web prompts (`database/seed/05_global_prompt_defaults.template.sql` and its `.v2.sql`
+second version) and the Atlas references are written for different agents, so
 their prose differs, but these rules must agree. Each row names the rule, the web workflows
 and Atlas file that state it, and a pattern each side must keep. When a rule changes, change
 both sides and this table.
@@ -22,9 +22,9 @@ SEEDS = {
         ROOT / "database/seed/05_global_prompt_defaults.template.sql",
         "$workflow_defaults$",
     ),
-    "alternate": (
+    "v2": (
         ROOT / "database/seed/05_global_prompt_defaults.template.v2.sql",
-        "$alternate_defaults$",
+        "$workflow_defaults$",
     ),
 }
 

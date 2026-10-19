@@ -55,8 +55,9 @@ project codes, actual deployment names, execution modes and reasoning choices. C
 only combinations verified for the destination resource, then rebuild. There is no
 per-project environment override. Historical Run selections remain immutable.
 
-The SDK adapter selects Responses for requests with tools and Chat Completions for
-requests without tools. Do not remove reasoning merely to fit a different transport.
+For OpenAI models, the SDK adapter selects Responses for requests with tools and
+Chat Completions for requests without tools. Claude Opus 5.5 uses the native Messages
+API through the same agent loop. Do not remove reasoning to fit a different transport.
 Backend configuration rejects unsupported project/mode/reasoning combinations.
 
 Canonical App configuration uses secret resources:
@@ -87,6 +88,24 @@ credentials are not Foundry credentials; implicit host managed-identity discover
 not used. Entra accepts `https://<resource>.openai.azure.com/openai/v1/`; API-key
 configuration also accepts the resource `.services.ai.azure.com/openai/v1/` route.
 Project routes under `/api/projects/` are rejected.
+
+To enable Claude Opus 5.5 remotely, deploy `claude-opus-5-5` in the same Foundry
+resource and configure optional `GDS_WEB_FOUNDRY_ANTHROPIC_BASE_URL` with that
+resource's `https://<resource>.services.ai.azure.com/anthropic` endpoint. Use the
+deployment name registered in `agent_capabilities.json`; customize that registry
+entry if the deployed name differs. It reuses the configured API key or Entra
+application. Claude's Entra audience is `https://ai.azure.com/.default`; a separate
+authentication adapter prevents reusing an OpenAI-audience token. Without this
+endpoint Claude is excluded from the remote model choices. No cloud deployment or
+permission change happens at application startup.
+
+Claude accepts `low`, `medium`, `high`, `xhigh`, and `max`; provider default omits
+the setting and currently means `medium`. Adaptive thinking is always on, and
+forced tool choice is unsupported. Verify one-shot and tool-assisted workflows
+against the actual deployment before release; local fake and HTTP fixture tests
+do not establish deployment access or model output quality. See
+[Microsoft's deployment/API guide](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/use-foundry-models-claude)
+and [Anthropic's Opus 5.5 contract](https://platform.claude.com/docs/en/models/opus-5-5/overview).
 
 Project-call timeout, worker lease/heartbeat and SQL limits are independent. Their
 current defaults/bounds are in backend config and settings; do not copy deployment
