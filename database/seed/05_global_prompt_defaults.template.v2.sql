@@ -1,26 +1,24 @@
--- Alternate global Prompt set for every active agentic Workflow Stage (v2).
+-- Governed global default Prompts for every active agentic Workflow Stage (v2).
 --
 -- Copy this file outside the repository and replace all three identity
 -- placeholders with one existing active Super Admin Entra identity. The
 -- identity is used only for database authorization and audit attribution.
 --
--- Publishes 14 separate global templates coded
--- global_alternate_claude.<workflow>.<mode>.<stage>, named "Alternate (Claude) · ...".
--- It never creates or changes Prompt assignments: the active global defaults from
--- 05_global_prompt_defaults.template.sql stay in force. Select an alternate per
--- Project as a custom Prompt assignment. An exact replay changes nothing; changed
--- content publishes one new immutable version; an unrelated draft is never overwritten.
---
--- Assign the alternate Mapping and Code Generation templates together: alternate
--- Mapping writes a `<CRM System ID>`-style placeholder for SourceSystemID, and only
--- the alternate Code Generation and Validation templates bind it to the System's
--- registered source_system_value.
+-- Version 2 of 05_global_prompt_defaults.template.sql, with the same governed merge:
+-- it reuses each global_default.<workflow>.<mode>.<stage> template by its stable
+-- code, never duplicating one. Running it publishes the v2 Prompt content as one new
+-- immutable version per template and switches the active global-default selection
+-- to it; running the v1 file again switches back to its already published versions.
+-- An exact replay changes nothing. Published versions and frozen Runs are never
+-- overwritten; Project assignments and custom defaults stay protected. Templates that
+-- earlier runs of this file published as separate "Alternate (Claude)" templates are
+-- left as they are.
 --
 -- Edit the JSON payload below. Templates use restricted Jinja; evidence enters only
 -- through registered variables/readers. No rendering, model call, or external
 -- execution occurs in this seed.
 
-DO $alternate_prompt_seed$
+DO $global_prompt_seed$
 DECLARE
     v_entra_tenant_text TEXT := '__REPLACE_WITH_ENTRA_TENANT_ID__';
     v_entra_object_text TEXT := '__REPLACE_WITH_ENTRA_OBJECT_ID__';
@@ -32,6 +30,7 @@ DECLARE
     v_saved_template application.prompt_template%ROWTYPE;
     v_existing_draft application.prompt_template_version%ROWTYPE;
     v_target_version application.prompt_template_version%ROWTYPE;
+    v_current_assignment application.prompt_assignment%ROWTYPE;
     v_system_prompt TEXT;
     v_instruction_prompt TEXT;
     v_tool_instruction_prompt TEXT;
@@ -81,10 +80,8 @@ BEGIN
      WHERE stage.is_active
        AND stage.workflow_stage_is_agentic;
 
-    -- Separate global templates, published but never assigned; active global defaults
-    -- stay untouched. Assign this set per Project when wanted.
     FOR v_seed IN
-        SELECT * FROM jsonb_to_recordset($alternate_defaults$
+        SELECT * FROM jsonb_to_recordset($workflow_defaults$
 [
   {
     "project_workflow": "metadata_enrichment_object",
@@ -272,7 +269,7 @@ BEGIN
     ]
   }
 ]
-$alternate_defaults$::JSONB) AS seed(
+$workflow_defaults$::JSONB) AS seed(
             project_workflow VARCHAR, workflow_execution_mode VARCHAR,
             workflow_stage_code VARCHAR, system_prompt TEXT, instruction_prompt TEXT,
             agent_tool_names JSONB
@@ -296,7 +293,7 @@ $alternate_defaults$::JSONB) AS seed(
         v_agent_tool_names := CASE WHEN v_seed.agent_tool_names IS NULL
             OR v_seed.agent_tool_names = 'null'::JSONB THEN NULL
             ELSE ARRAY(SELECT jsonb_array_elements_text(v_seed.agent_tool_names)) END;
-        v_template_code := format('global_alternate_claude.%s.%s.%s', v_seed.project_workflow,
+        v_template_code := format('global_default.%s.%s.%s', v_seed.project_workflow,
             coalesce(v_seed.workflow_execution_mode, 'common'), v_seed.workflow_stage_code);
         v_existing_template := NULL;
         SELECT template.*
@@ -319,7 +316,7 @@ $alternate_defaults$::JSONB) AS seed(
               NULL::BIGINT,
               v_template_code,
               format(
-                  'Alternate (Claude) · %s · %s',
+                  '%s · %s',
                   initcap(replace(v_seed.project_workflow, '_', ' ')),
                   CASE v_seed.workflow_execution_mode
                       WHEN 'one_shot' THEN 'One-shot'
@@ -328,7 +325,7 @@ $alternate_defaults$::JSONB) AS seed(
                   END
               )::VARCHAR,
               format(
-                  'Alternate Claude-authored prompt set for the %s %s %s agent stage; not the active global default.',
+                  'GDS-owned global default for the %s %s %s agent stage.',
                   v_seed.project_workflow,
                   coalesce(v_seed.workflow_execution_mode, 'common'),
                   v_seed.workflow_stage_code
@@ -375,7 +372,7 @@ $alternate_defaults$::JSONB) AS seed(
 
             IF FOUND AND v_existing_draft.prompt_template_digest <> v_prompt_digest THEN
                 RAISE EXCEPTION
-                    'Alternate Prompt seed will not overwrite an existing draft: %.%.%',
+                    'Prompt seed will not overwrite an existing draft: %.%.%',
                     v_seed.project_workflow,
                     coalesce(v_seed.workflow_execution_mode, 'common'),
                     v_seed.workflow_stage_code;
@@ -408,13 +405,49 @@ $alternate_defaults$::JSONB) AS seed(
               ) AS published;
         END IF;
 
+        v_current_assignment := NULL;
+        SELECT assignment.*
+          INTO v_current_assignment
+          FROM application.prompt_assignment AS assignment
+         WHERE assignment.workflow_stage_id = v_stage.workflow_stage_id
+           AND assignment.prompt_assignment_scope = 'global_default'
+           AND assignment.project_id IS NULL
+           AND assignment.is_active
+         FOR UPDATE OF assignment;
+
+        IF FOUND AND NOT EXISTS (
+            SELECT 1
+              FROM application.prompt_template_version AS assigned_version
+             WHERE assigned_version.prompt_template_version_id =
+                   v_current_assignment.prompt_template_version_id
+               AND assigned_version.prompt_template_id =
+                   v_saved_template.prompt_template_id
+        ) THEN
+            RAISE EXCEPTION
+                'active global default is not managed by this seed: %.%.%',
+                v_seed.project_workflow,
+                coalesce(v_seed.workflow_execution_mode, 'common'),
+                v_seed.workflow_stage_code;
+        END IF;
+
+        PERFORM 1
+          FROM application.set_prompt_assignment(
+              v_entra_tenant_text::UUID,
+              v_entra_object_text::UUID,
+              v_principal_type::VARCHAR,
+              v_stage.workflow_stage_id,
+              'global_default'::VARCHAR,
+              NULL::BIGINT,
+              v_target_version.prompt_template_version_id,
+              v_current_assignment.prompt_assignment_id
+          );
     END LOOP;
 
     IF v_seed_count <> 14 OR v_seed_count <> v_agentic_stage_count THEN
         RAISE EXCEPTION
-            'Alternate Prompt seed inventory mismatch: seed %, active agentic stages %',
+            'Prompt seed inventory mismatch: seed %, active agentic stages %',
             v_seed_count,
             v_agentic_stage_count;
     END IF;
 END;
-$alternate_prompt_seed$;
+$global_prompt_seed$;

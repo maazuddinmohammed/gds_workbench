@@ -88,7 +88,7 @@ def _apply_sql(postgres_database: DisposablePostgres, content: str) -> None:
     ("filename", "payload_tag"),
     [
         ("05_global_prompt_defaults.template.sql", "$workflow_defaults$"),
-        ("05_global_prompt_defaults.template.v2.sql", "$alternate_defaults$"),
+        ("05_global_prompt_defaults.template.v2.sql", "$workflow_defaults$"),
     ],
 )
 def test_default_prompt_versions_keep_conceptual_out_of_downstream_inputs(
@@ -533,70 +533,77 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
 
 
 @pytest.fixture
-def alternate_seed_database() -> Iterator[DisposablePostgres]:
+def v2_seed_database() -> Iterator[DisposablePostgres]:
     yield from disposable_postgres()
 
 
-def test_alternate_prompt_seed_publishes_unassigned_templates_and_replays_safely(
-    alternate_seed_database: DisposablePostgres,
+def test_v2_prompt_seed_switches_global_defaults_and_v1_switches_back(
+    v2_seed_database: DisposablePostgres,
 ) -> None:
-    postgres_database = alternate_seed_database
+    postgres_database = v2_seed_database
     _apply_sql(postgres_database, REFERENCE_SEED.read_text(encoding="utf-8"))
     _seed_super_admin(postgres_database)
-    _apply_sql(postgres_database, _render_seed())
-    defaults = _snapshot(postgres_database)
-    template = (SEED_ROOT / "05_global_prompt_defaults.template.v2.sql").read_text(
+    v2_template = (SEED_ROOT / "05_global_prompt_defaults.template.v2.sql").read_text(
         encoding="utf-8"
     )
-    payload = json.loads(template.split("$alternate_defaults$")[1])
-
-    def alternates() -> list[TestRow]:
-        with postgres_database.connect_owner() as connection:
-            return connection.execute(
-                """
-                SELECT template.prompt_template_code,
-                       version.prompt_template_version_id,
-                       version.prompt_template_version_status,
-                       version.system_prompt_template,
-                       version.instruction_prompt_template,
-                       version.agent_tool_names,
-                       (SELECT count(*)
-                          FROM application.prompt_assignment AS assignment
-                         WHERE assignment.prompt_template_version_id =
-                               version.prompt_template_version_id) AS assignment_count
-                  FROM application.prompt_template AS template
-                  JOIN application.prompt_template_version AS version
-                    ON version.prompt_template_id = template.prompt_template_id
-                 WHERE template.prompt_template_code LIKE 'global_alternate_claude.%'
-                 ORDER BY template.prompt_template_code
-                """
-            ).fetchall()
-
-    _apply_sql(postgres_database, _render_seed(template))
-    first = alternates()
-    expected = {
-        f"global_alternate_claude.{row['project_workflow']}."
-        f"{row['workflow_execution_mode'] or 'common'}.{row['workflow_stage_code']}": row
-        for row in payload
+    payload = {
+        (row["project_workflow"], row["workflow_execution_mode"], row["workflow_stage_code"]): row
+        for row in json.loads(v2_template.split("$workflow_defaults$")[1])
     }
-    assert {row["prompt_template_code"] for row in first} == set(expected)
-    assert len(first) == len(EXPECTED_AGENTIC_STAGES)
-    for row in first:
-        seeded = expected[row["prompt_template_code"]]
-        assert row["prompt_template_version_status"] == "published"
-        assert row["assignment_count"] == 0
+
+    def counts() -> tuple[int, int]:
+        with postgres_database.connect_owner() as connection:
+            row = require_row(
+                connection.execute(
+                    """
+                    SELECT (SELECT count(*)
+                              FROM application.prompt_template
+                             WHERE prompt_template_ownership_scope = 'global') AS templates,
+                           (SELECT count(*)
+                              FROM application.prompt_template_version) AS versions
+                    """
+                ).fetchone()
+            )
+        return row["templates"], row["versions"]
+
+    _apply_sql(postgres_database, _render_seed())
+    v1 = _snapshot(postgres_database)
+    templates, versions = counts()
+
+    _apply_sql(postgres_database, _render_seed(v2_template))
+    v2 = _snapshot(postgres_database)
+    # Same templates, one new published version each, now the active global default.
+    assert counts() == (templates, versions + len(EXPECTED_AGENTIC_STAGES))
+    assert len(v2) == len(EXPECTED_AGENTIC_STAGES)
+    for before, after in zip(v1, v2, strict=True):
+        seeded = payload[
+            after["project_workflow"],
+            after["workflow_execution_mode"],
+            after["workflow_stage_code"],
+        ]
+        assert after["prompt_template_id"] == before["prompt_template_id"]
+        assert after["prompt_template_code"] == before["prompt_template_code"]
+        assert after["prompt_template_version_number"] == (
+            before["prompt_template_version_number"] + 1
+        )
+        assert after["prompt_template_version_status"] == "published"
         # Hash comparisons keep prompt bodies out of assertion failure output.
         assert (
-            sha256(row["system_prompt_template"].encode()).digest()
+            sha256(after["system_prompt_template"].encode()).digest()
             == sha256(seeded["system_prompt"].encode()).digest()
         )
         assert (
-            sha256(row["instruction_prompt_template"].encode()).digest()
+            sha256(after["instruction_prompt_template"].encode()).digest()
             == sha256(seeded["instruction_prompt"].encode()).digest()
         )
-        assert row["agent_tool_names"] == seeded["agent_tool_names"]
-    assert _snapshot(postgres_database) == defaults
+        assert after["agent_tool_names"] == seeded["agent_tool_names"]
 
-    _apply_sql(postgres_database, _render_seed(template))
-    assert alternates() == first
-    assert _snapshot(postgres_database) == defaults
+    _apply_sql(postgres_database, _render_seed(v2_template))
+    assert _snapshot(postgres_database) == v2
+
+    # Running v1 again reuses its published versions instead of adding new ones.
+    _apply_sql(postgres_database, _render_seed())
+    assert counts() == (templates, versions + len(EXPECTED_AGENTIC_STAGES))
+    assert [row["prompt_template_version_id"] for row in _snapshot(postgres_database)] == [
+        row["prompt_template_version_id"] for row in v1
+    ]

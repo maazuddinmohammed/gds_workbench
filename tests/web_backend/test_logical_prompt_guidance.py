@@ -16,17 +16,17 @@ from pydantic import JsonValue
 from tests.web_backend.test_logical_candidate import _candidate, _validator
 
 SEED_ROOT = Path(__file__).resolve().parents[2] / "database/seed"
-# Seed 05 v2 publishes an alternate global set that must keep the same boundaries.
+# Seed 05 v2 is a second version of the global defaults and must keep the same boundaries.
 PROMPT_SETS = {
     "default": json.loads(
         (SEED_ROOT / "05_global_prompt_defaults.template.sql")
         .read_text()
         .split("$workflow_defaults$")[1]
     ),
-    "alternate": json.loads(
+    "v2": json.loads(
         (SEED_ROOT / "05_global_prompt_defaults.template.v2.sql")
         .read_text()
-        .split("$alternate_defaults$")[1]
+        .split("$workflow_defaults$")[1]
     ),
 }
 
