@@ -3,6 +3,7 @@ name: Atlas Windows smoke
 on:
   pull_request:
   push:
+    branches: [main]
     paths:
       - "mcp_server/**"
       - "atlas/**"
