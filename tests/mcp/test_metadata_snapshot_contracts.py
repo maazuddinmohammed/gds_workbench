@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 from typing import cast
 
 import pytest
@@ -330,6 +332,20 @@ def test_dataset_schema_exposes_enforced_fields_keys_and_references() -> None:
     ]
     properties = _object_value(schema, "properties")
     assert _object_value(properties, "zone_code")["const"] == "source"
+
+
+def test_dataset_schema_references_resolve_inside_each_schema() -> None:
+    # Atlas validates records against each schema file alone; a dangling $ref
+    # rejects every record that carries the field.
+    referencing: set[str] = set()
+    for dataset in DATASETS:
+        schema = build_dataset_document(dataset).schema
+        definitions = _object_value(schema, "$defs")
+        for reference in re.findall(r'"\$ref": "([^"]*)"', json.dumps(schema)):
+            name = reference.removeprefix("#/$defs/")
+            assert name != reference and name in definitions, (dataset.name, reference)
+            referencing.add(dataset.name)
+    assert "bronze_attribute" in referencing
 
 
 def test_all_dataset_columns_publish_complete_authoring_guidance() -> None:

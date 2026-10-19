@@ -99,5 +99,11 @@ Breaking for older clients:
 - Stage upload tools work only on requests carrying
   `x-gds-mcp-client: atlas-stage-runner`; others get `stage_runner_required`.
 
+Fixed:
+
+- Metadata Snapshot schemas include their `$defs`. The `value` field referenced a
+  missing definition, so Atlas rejected every Metadata record copied from a Snapshot.
+  Install a fresh Metadata Snapshot to get the fixed schemas.
+
 Release order: Atlas Stage Runner 0.3.0 first (older servers ignore its header), then
 server 0.3.0 together with Atlas plugin 0.4.0. Each release needs separate approval.
