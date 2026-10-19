@@ -295,7 +295,7 @@ def test_scorer_accepts_a_needed_question_only_when_nothing_changed(tmp_path: Pa
         "Dim Customer has no history rule. Should it overwrite (Type 1) or keep history (Type 2)?"
     )
 
-    def run(name: str, final: str, *, edit: bool = False) -> dict[str, str]:
+    def run(name: str, final: str, *, edit: bool = False, task: bool = False) -> dict[str, str]:
         sandbox = harness.build_sandbox(scenario, tmp_path / name)
         _simulate(
             sandbox, tools=[], helpers=[["inspect"], ["select", "--dataset", "dimensional_entity"]]
@@ -303,6 +303,9 @@ def test_scorer_accepts_a_needed_question_only_when_nothing_changed(tmp_path: Pa
         if edit:
             (sandbox.workspace / "project-change-set").mkdir(exist_ok=True)
             (sandbox.workspace / "project-change-set/dimensional_entity.json").write_text("[]")
+        if task:  # Task bookkeeping is not a draft change.
+            (sandbox.workspace / ".atlas/tasks").mkdir(parents=True, exist_ok=True)
+            (sandbox.workspace / ".atlas/tasks/dimension.json").write_text("{}")
         (sandbox.logs / "transcript.jsonl").write_text(
             json.dumps(
                 {"type": "tool_use", "input": {"path": "skills/atlas-dimensional-model/SKILL.md"}}
@@ -320,6 +323,7 @@ def test_scorer_accepts_a_needed_question_only_when_nothing_changed(tmp_path: Pa
     assert asked["passed"] == "True"
     assert asked["asked-instead"] == "passed"
     assert asked["helper:validate"] == asked["produced-required-file"] == "skipped"
+    assert run("asked-with-task", question, task=True)["asked-instead"] == "passed"
     # A statement is not a question, and a question does not excuse a partial edit.
     assert run("statement", "Dim Customer uses Type 1.")["helper:validate"] == "failed"
     edited = run("edited", question, edit=True)
