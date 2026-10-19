@@ -9,6 +9,7 @@ import asyncio
 import io
 import json
 import re
+import shlex
 import shutil
 import zipfile
 from pathlib import Path
@@ -328,6 +329,57 @@ def test_scorer_accepts_a_needed_question_only_when_nothing_changed(tmp_path: Pa
     assert run("statement", "Dim Customer uses Type 1.")["helper:validate"] == "failed"
     edited = run("edited", question, edit=True)
     assert "asked-instead" not in edited and edited["helper:validate"] == "failed"
+
+
+def test_judge_verdict_reads_raw_fenced_and_cli_wrapped_json() -> None:
+    raw = json.dumps({"criteria": [{"id": "asks", "passed": True, "reason": "It asks."}]})
+    fenced = "Verdict:\n```json\n" + raw + "\n```"
+    envelope = json.dumps({"type": "result", "result": fenced})
+    stream = json.dumps({"type": "system", "subtype": "init"}) + "\n" + envelope + "\n"
+    for output in (raw, fenced, envelope, stream):
+        assert harness._judge_verdict(output)["asks"]["passed"] is True, output
+    assert harness._judge_verdict("I could not decide.") == {}
+
+
+def test_grader_builds_its_prompt_and_applies_the_pass_rule(tmp_path: Path) -> None:
+    scenario = next(
+        item for item in harness.load_scenarios() if item["id"] == "change-request-country"
+    )
+    quality = scenario["quality"]
+    sandbox = harness.build_sandbox(scenario, tmp_path / "run")
+    final = "No source has country. Where does it come from?"
+    (sandbox.logs / "transcript.jsonl").write_text(
+        json.dumps({"type": "result", "result": final}) + "\n"
+    )
+    (sandbox.workspace / "code").mkdir()
+    (sandbox.workspace / "code/dim_customer.sql").write_text("select 1")
+    ids = [item["id"] for item in quality["criteria"]]
+    required = [item["id"] for item in quality["criteria"] if item["required"]]
+    optional = [item for item in ids if item not in required]
+
+    def judge(passed: set[str], name: str = "verdict.json") -> dict[str, Any]:
+        verdict = tmp_path / name
+        verdict.write_text(
+            json.dumps({"criteria": [{"id": i, "passed": i in passed, "reason": "r"} for i in ids]})
+        )
+        # A stand-in judge that ignores the prompt and prints a fixed verdict.
+        return harness.grade(scenario, sandbox, f"cat {shlex.quote(str(verdict))}", 30)
+
+    need = quality["min_optional"]
+    assert judge({*required, *optional[:need]})["quality_passed"] is True
+    assert judge({*required, *optional[: need - 1]})["quality_passed"] is False
+    assert judge({*required[1:], *optional})["quality_passed"] is False
+    prompt = (sandbox.root / "grade_prompt.md").read_text()
+    assert scenario["request"] in prompt and final in prompt
+    assert quality["reference"][0] in prompt and "### code/dim_customer.sql\nselect 1" in prompt
+    assert all(f"- {identifier} (" in prompt for identifier in ids)
+    assert ".atlas/" not in prompt.split("## Files the run changed")[1]
+    # A criterion the judge leaves out counts as failed.
+    empty = tmp_path / "empty.json"
+    empty.write_text(json.dumps({"criteria": []}))
+    unanswered = harness.grade(scenario, sandbox, f"cat {shlex.quote(str(empty))}", 30)
+    assert unanswered["quality_passed"] is False
+    assert {item["reason"] for item in unanswered["criteria"]} == {"not graded"}
 
 
 _RANDOM = re.compile(

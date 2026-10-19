@@ -30,7 +30,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 EVAL_ROOT = Path(__file__).resolve().parent
 REPOSITORY = EVAL_ROOT.parents[2]
@@ -503,6 +503,122 @@ def _installed_by_helper(name: str, helper_calls: list[list[str]]) -> bool:
     return any(argv[:1] == ["snapshot-install"] and area in argv for argv in helper_calls)
 
 
+GRADE_INSTRUCTIONS = """\
+You grade one run of the Atlas agent against a reviewed reference answer.
+
+Judge only what the run shows: its final message and the files it changed. Credit
+substance that matches the reference even when the wording differs; do not credit claims
+that the changed files contradict. For each criterion decide passed true or false and give
+a one-sentence reason.
+
+Reply with JSON only, no prose and no code fence:
+{"criteria": [{"id": "<criterion id>", "passed": true, "reason": "<one sentence>"}]}"""
+JUDGE_FILE_BUDGET = 40_000  # characters of changed-file content the judge sees
+NOT_EVIDENCE = (".atlas/", "metadata/metadata-snapshot/", "project/project-snapshot/")
+
+
+def grade_prompt(scenario: dict[str, Any], sandbox: Sandbox) -> str:
+    """The request, reference answer and criteria, then the run's final message and output."""
+    quality = scenario["quality"]
+    _, final_message = _transcript(sandbox)
+    evidence: list[str] = []
+    budget = JUDGE_FILE_BUDGET
+    # Drafts and code are the run's output; bookkeeping and installed Snapshots are not.
+    for name in sorted(
+        name for name in _changed_files(sandbox) if not name.startswith(NOT_EVIDENCE)
+    ):
+        text = (sandbox.workspace / name).read_text(encoding="utf-8", errors="replace")
+        shown = text[: max(budget, 0)]
+        budget -= len(text)
+        evidence.append(
+            f"### {name}\n{shown}" + ("\n[truncated]" if len(shown) < len(text) else "")
+        )
+    criteria = "\n".join(
+        f"- {item['id']} ({'required' if item['required'] else 'optional'}): {item['text']}"
+        for item in quality["criteria"]
+    )
+    sections = [
+        GRADE_INSTRUCTIONS,
+        f"## Request\n{scenario['request']}",
+        "## Reference answer\n" + "\n".join(quality["reference"]),
+        f"## Criteria\n{criteria}",
+        f"## Run's final message\n{final_message or '(no final message)'}",
+        "## Files the run changed\n" + ("\n\n".join(evidence) or "(none)"),
+    ]
+    return "\n\n".join(sections) + "\n"
+
+
+def _judge_verdict(output: str) -> dict[str, dict[str, Any]]:
+    """Find the judge's {"criteria": [...]} object, raw or inside a CLI JSON envelope."""
+    texts = [output]
+    for line in output.splitlines():
+        try:
+            event: Any = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        result = cast(dict[str, Any], event).get("result") if isinstance(event, dict) else None
+        if isinstance(result, str):
+            texts.append(result)  # `claude -p --output-format json` or stream-json
+    decoder = json.JSONDecoder()
+    for text in texts:
+        start = text.find("{")
+        while start != -1:
+            try:
+                value: Any = decoder.raw_decode(text, start)[0]
+            except json.JSONDecodeError:
+                value = None
+            found = cast(dict[str, Any], value).get("criteria") if isinstance(value, dict) else None
+            if isinstance(found, list):
+                entries = cast(list[Any], found)
+                items = [cast(dict[str, Any], item) for item in entries if isinstance(item, dict)]
+                return {item["id"]: item for item in items if isinstance(item.get("id"), str)}
+            start = text.find("{", start + 1)
+    return {}
+
+
+def grade(
+    scenario: dict[str, Any], sandbox: Sandbox, template: str, timeout_seconds: int
+) -> dict[str, Any]:
+    """Judge a scored run. Quality passes when every required criterion passes and at least
+    `min_optional` of the others do; a criterion the judge leaves out counts as failed."""
+    quality = scenario["quality"]
+    prompt = sandbox.root / "grade_prompt.md"
+    prompt.write_text(grade_prompt(scenario, sandbox), encoding="utf-8")
+    completed = subprocess.run(
+        template.format(prompt=shlex.quote(str(prompt))),
+        shell=True,
+        cwd=sandbox.root,
+        capture_output=True,
+        text=True,
+        timeout=timeout_seconds,
+        check=False,
+    )
+    verdict = _judge_verdict(completed.stdout)
+    criteria: list[dict[str, Any]] = [
+        {
+            "id": item["id"],
+            "required": item["required"],
+            "passed": verdict.get(item["id"], {}).get("passed") is True,
+            "reason": str(verdict.get(item["id"], {}).get("reason", "not graded")),
+        }
+        for item in quality["criteria"]
+    ]
+    required_total = sum(1 for item in criteria if item["required"])
+    required_passed = sum(1 for item in criteria if item["required"] and item["passed"])
+    optional_passed = sum(1 for item in criteria if not item["required"] and item["passed"])
+    return {
+        "scenario": scenario["id"],
+        "quality_passed": required_passed == required_total
+        and optional_passed >= quality["min_optional"],
+        "required_passed": f"{required_passed}/{required_total}",
+        "optional_passed": (
+            f"{optional_passed}/{len(criteria) - required_total} (need {quality['min_optional']})"
+        ),
+        "judge_exit_status": completed.returncode,
+        "criteria": criteria,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawTextHelpFormatter
@@ -511,6 +627,10 @@ def main() -> None:
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--agent-command", help="shell template; see README for placeholders")
     parser.add_argument("--timeout", type=int, default=1800)
+    parser.add_argument(
+        "--grade-command",
+        help="shell template for the quality judge; {prompt} is the grading prompt file",
+    )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--dry-run", action="store_true", help="build sandboxes only")
     mode.add_argument("--score-only", action="store_true", help="score existing sandboxes")
@@ -536,6 +656,13 @@ def main() -> None:
         results.append(report)
         failed = [item["id"] for item in report["checks"] if item["status"] == "failed"]
         print(f"{'PASS' if report['passed'] else 'FAIL'} {scenario['id']} {failed or ''}")
+        if arguments.grade_command and scenario.get("quality"):
+            graded = grade(scenario, sandbox, arguments.grade_command, arguments.timeout)
+            (sandbox.root / "grade.json").write_text(json.dumps(graded, indent=2), encoding="utf-8")
+            print(
+                f"{'QUALITY PASS' if graded['quality_passed'] else 'QUALITY FAIL'} {scenario['id']}"
+                f" required {graded['required_passed']}, optional {graded['optional_passed']}"
+            )
     if results:
         passed = sum(1 for report in results if report["passed"])
         print(f"{passed}/{len(results)} scenarios passed")
