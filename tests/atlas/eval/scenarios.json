@@ -550,9 +550,9 @@
           "Draft source_demo.payments under Tenant DEMO_TENANT, System DEMO_CUSTOMER_SYSTEM and Connection DEMO_SOURCE, next to the existing source_demo.customer and source_demo.orders: a TABLE in the Source zone, described as one row per payment received against an order.",
           "Draft one Attribute per confirmed column, in the spec's order, with the spec's actual types, nullability and descriptions: payment_id BIGINT not null (natural key), order_id BIGINT not null, payment_date DATE not null, payment_amount DECIMAL(18,2) not null, payment_method VARCHAR(20) nullable.",
           "payment_status has no confirmed type. Don't invent one: ask the user, and leave that Attribute out or clearly pending until they answer.",
-          "order_id references orders.order_id. That is a relationship for Project analysis, not a metadata field; mention it rather than inventing one.",
-          "Follow the existing Source conventions, such as the object type, the Source zone and a foreign-catalog name matching the table name. Add no Bronze, ingestion or Project records.",
-          "Ask only what is missing (the payment_status type), run metadata validation, and report what was drafted and what waits for the answer."
+          "order_id references orders.order_id. Keep that information, for example in the description, and invent no metadata field for it; the relationship itself belongs to Project analysis.",
+          "Follow the existing Source conventions: a TABLE in the Source zone. The foreign-catalog schema and names must be copied exactly as that catalog exposes them, which the spec doesn't state; the sibling tables use schema public with matching names. Either assume that convention and say so, or leave the fields pending and ask. Add no Bronze, ingestion or Project records.",
+          "Ask only about genuine unknowns (the payment_status type, and possibly the foreign-catalog names), run metadata validation, and report what was drafted and what waits for the answer."
         ],
         "criteria": [
           {
@@ -571,19 +571,19 @@
             "text": "Places the table under Tenant DEMO_TENANT, System DEMO_CUSTOMER_SYSTEM, Connection DEMO_SOURCE and schema source_demo, reusing the existing System and Connection."
           },
           {
-            "id": "relationship-as-analysis",
+            "id": "keeps-reference",
             "required": false,
-            "text": "Treats the order_id reference as a relationship for Project analysis, not as a metadata field."
+            "text": "Keeps the order_id reference to orders (in a description or a note) and invents no metadata field for it."
           },
           {
-            "id": "follows-conventions",
+            "id": "foreign-catalog-handled",
             "required": false,
-            "text": "Follows the existing Source table conventions, such as the object type, the Source zone and the foreign-catalog name."
+            "text": "Handles the foreign-catalog fields openly: fills them from the Connection's existing convention and says it assumed that, or leaves them pending and asks. Silently leaving them empty fails."
           },
           {
             "id": "focused-question",
             "required": false,
-            "text": "Asks only the necessary question (the payment_status type) and doesn't re-ask what the request or spec already gave."
+            "text": "Asks only about genuine unknowns (the payment_status type, and possibly the foreign-catalog names), not about what the request or spec already gave."
           },
           {
             "id": "validates-and-reports",
