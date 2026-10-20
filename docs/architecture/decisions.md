@@ -131,6 +131,14 @@ and locks. Saved-record witnesses also reject concurrent enrichment edits that d
 not advance the Project revision. Runtime roles retain no direct enrichment table mutation privileges.
 Later local phases can consume pending findings without per-phase Apply.
 
+Web enrichment description import reuses the human review boundary: `import` fills
+missing Project descriptions and explicitly selected `reimport` replaces existing
+descriptions from current registered Metadata. Both read canonical values server-side,
+preserve other enrichment findings, skip empty sources and use the same lock, Scope,
+revision, atomic receipt and replay checks as edits. Imports create no agent Run and
+make no provider calls. This extends the fresh-install review contract; it is not a
+populated-database migration.
+
 ## Partial authoring and protected work
 
 Conceptual is a standalone deliverable across web and Atlas. Neither Logical nor

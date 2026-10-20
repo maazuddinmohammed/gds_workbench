@@ -1,4 +1,4 @@
-"""Human edits of Project enrichment, with revision fencing and durable replay."""
+"""Human Project enrichment edits/imports, with revision fencing and durable replay."""
 
 import re
 from contextlib import AbstractAsyncContextManager
@@ -84,7 +84,7 @@ class ReviewEnrichmentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
     expected_project_revision: int = Field(gt=0)
     record_type: Literal["object", "attribute"]
-    action: Literal["edit", "lock", "unlock"]
+    action: Literal["edit", "lock", "unlock", "import", "reimport"]
     records: list[EnrichmentReviewRecord] = Field(min_length=1, max_length=200)
 
     @model_validator(mode="after")
@@ -156,6 +156,11 @@ class DatabaseEnrichmentReviewService:
                 message = error.diag.message_primary
                 if message == "enrichment_invalid_review":
                     raise InvalidRequestError("The enrichment edit is invalid.") from None
+                if message == "enrichment_invalid_source_description":
+                    raise InvalidRequestError(
+                        "A metadata description exceeds 2000 UTF-8 bytes or contains "
+                        "unsupported control characters. Update Metadata before importing."
+                    ) from None
                 if message in (
                     "enrichment_revision_conflict",
                     "enrichment_selection_conflict",

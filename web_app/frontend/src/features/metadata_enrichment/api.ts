@@ -52,7 +52,7 @@ export interface EnrichmentEditFields {
 }
 export interface ReviewEnrichmentCommand {
   record_type: "object" | "attribute";
-  action: "edit" | "lock" | "unlock";
+  action: "edit" | "lock" | "unlock" | "import" | "reimport";
   records: Array<{ record_id: number; expected_revision: string; description?: string | null } & Partial<EnrichmentEditFields>>;
 }
 

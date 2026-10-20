@@ -1,4 +1,4 @@
-import type { ReviewEnrichmentCommand } from "./api";
+import type { MetadataEnrichmentTransport, ReviewEnrichmentCommand } from "./api";
 import { MetadataEnrichmentScreen } from "./MetadataEnrichmentScreen";
 import type { ProjectInputScopeDetail } from "../project_input_scope/api";
 import { ApiError } from "../../core/http";
@@ -168,6 +168,133 @@ describe("Metadata enrichment scope and run creation", () => {
     expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
     await user.tab(); expect(close).toHaveFocus();
     await user.keyboard("{Escape}"); expect(onClose).toHaveBeenCalledOnce();
+  });
+});
+
+describe("Metadata description import", () => {
+  it.each([false, true])("imports eligible Object descriptions without agent options (replace: %s)", async (replace) => {
+    const api = creationApi(); const user = userEvent.setup(); const onClose = vi.fn();
+    const onImported = vi.fn(async () => undefined); const onCreated = vi.fn(async () => undefined);
+    const execute = vi.fn(async () => undefined);
+    api.readAgentCapabilities.mockRejectedValue(new TypeError("Agent options unavailable"));
+    api.listProjectInputScope.mockResolvedValue({ project_revision: 18,
+      items: [scope(501), scope(502, "bronze"), { ...scope(503), is_locked: true }, { ...scope(504), source_tenant_id: 8 }], next_cursor: null });
+    const receipt = { review_event_id: 42, action_count: 2,
+      records: [501, 502].map((record_id) => ({ record_id, review_revision: "b".repeat(64), is_active: true, is_locked: false })) };
+    const review = vi.fn<MetadataEnrichmentTransport["reviewEnrichment"]>(async () => receipt);
+    setup(<WorkflowRunDialog api={api} tenantId={7} project={project} kind="inference" workflow="metadata_enrichment"
+      reviewEnrichment={review} onImported={onImported} executeCreated={execute} onClose={onClose} onCreated={onCreated} />);
+    await screen.findByText("Agent options could not be loaded.");
+    expect(screen.getByRole("radio", { name: "Generate with AI" })).toBeChecked();
+    await user.click(screen.getByRole("radio", { name: "Import from Metadata" }));
+    expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Reasoning effort" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Agent options could not be loaded.")).not.toBeInTheDocument();
+    const overwrite = screen.getByRole("checkbox", { name: "Replace existing enrichment descriptions" });
+    expect(overwrite).not.toBeChecked();
+    expect(screen.getByText("Existing enrichment descriptions will be kept.")).toBeVisible();
+    if (replace) await user.click(overwrite);
+    const submit = screen.getByRole("button", { name: "Import descriptions" });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await user.click(submit);
+    await waitFor(() => expect(onImported).toHaveBeenCalledWith(receipt));
+    expect(review).toHaveBeenCalledExactlyOnceWith(7, 18, 18, {
+      record_type: "object", action: replace ? "reimport" : "import",
+      records: [501, 502].map((record_id) => ({ record_id, expected_revision: "a".repeat(64) })),
+    }, expect.any(String));
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(api.createWorkflowRun).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+    expect(onCreated).not.toHaveBeenCalled();
+  });
+
+  it.each(["network failure", "incomplete receipt"])("freezes an unconfirmed import and retries the identical command after %s", async (failure) => {
+    const api = creationApi(); const user = userEvent.setup(); const onClose = vi.fn();
+    const onImported = vi.fn(async () => undefined);
+    const receipt = { review_event_id: 42, action_count: 1,
+      records: [{ record_id: 502, review_revision: "b".repeat(64), is_active: true, is_locked: false }] };
+    const review = vi.fn<MetadataEnrichmentTransport["reviewEnrichment"]>(async () => receipt);
+    if (failure === "network failure") review.mockRejectedValueOnce(new TypeError("Synthetic network failure"));
+    else review.mockResolvedValueOnce({ ...receipt, records: [] });
+    setup(<WorkflowRunDialog api={api} tenantId={7} project={project} kind="inference" workflow="metadata_enrichment"
+      initialSelectedIds={[502]} reviewEnrichment={review} onImported={onImported} onClose={onClose} onCreated={vi.fn(async () => undefined)} />);
+    await user.click(screen.getByRole("radio", { name: "Import from Metadata" }));
+    const submit = screen.getByRole("button", { name: "Import descriptions" });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await user.click(submit);
+    const retry = await screen.findByRole("button", { name: "Retry same import" });
+    expect(screen.getByRole("alert")).toHaveTextContent("Import outcome is unconfirmed.");
+    expect(screen.getByRole("radio", { name: "Generate with AI" })).toBeDisabled();
+    expect(screen.getByRole("radio", { name: "All unlocked Objects" })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: "Replace existing enrichment descriptions" })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: "Select all unlocked Objects" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Close Enrich objects" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onImported).not.toHaveBeenCalled();
+    const original = review.mock.calls[0];
+    expect(original?.[3]).toEqual({ record_type: "object", action: "import",
+      records: [{ record_id: 502, expected_revision: "a".repeat(64) }] });
+    await user.click(retry);
+    await waitFor(() => expect(onImported).toHaveBeenCalledWith(receipt));
+    expect(review.mock.calls[1]).toEqual(original);
+    expect(api.createWorkflowRun).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("retries an unconfirmed import with its original Project revision after props refresh", async () => {
+    const api = creationApi(); const user = userEvent.setup(); const onClose = vi.fn();
+    const onImported = vi.fn(async () => undefined); const onCreated = vi.fn(async () => undefined);
+    const receipt = { review_event_id: 42, action_count: 1,
+      records: [{ record_id: 502, review_revision: "b".repeat(64), is_active: true, is_locked: false }] };
+    const review = vi.fn<MetadataEnrichmentTransport["reviewEnrichment"]>(async () => receipt)
+      .mockRejectedValueOnce(new TypeError("Response lost after import committed"));
+    const mounted = setup(<WorkflowRunDialog api={api} tenantId={7} project={project} kind="inference"
+      workflow="metadata_enrichment" initialSelectedIds={[502]} reviewEnrichment={review}
+      onImported={onImported} onClose={onClose} onCreated={onCreated} />);
+    await user.click(screen.getByRole("radio", { name: "Import from Metadata" }));
+    const submit = screen.getByRole("button", { name: "Import descriptions" });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await user.click(submit);
+    await screen.findByRole("button", { name: "Retry same import" });
+    const original = review.mock.calls[0];
+    expect(original).toEqual([7, 18, 18, { record_type: "object", action: "import",
+      records: [{ record_id: 502, expected_revision: "a".repeat(64) }] }, expect.any(String)]);
+    mounted.rerender(<QueryClientProvider client={mounted.client}>
+      <WorkflowRunDialog api={api} tenantId={7} project={{ ...project, project_revision: 19 }} kind="inference"
+        workflow="metadata_enrichment" initialSelectedIds={[502]} reviewEnrichment={review}
+        onImported={onImported} onClose={onClose} onCreated={onCreated} />
+    </QueryClientProvider>);
+    expect(screen.getByText(/The Project changed/)).toBeVisible();
+    const retry = screen.getByRole("button", { name: "Retry same import" });
+    expect(retry).toBeEnabled();
+    await user.click(retry);
+    await waitFor(() => expect(onImported).toHaveBeenCalledWith(receipt));
+    expect(review.mock.calls[1]).toEqual(original);
+    expect(api.createWorkflowRun).not.toHaveBeenCalled();
+    expect(onCreated).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("bounds Metadata imports to 200 records without narrowing AI run selection", async () => {
+    const api = creationApi(); const user = userEvent.setup();
+    api.listProjectInputScope.mockResolvedValue({ project_revision: 18,
+      items: Array.from({ length: 201 }, (_, index) => scope(index + 1)), next_cursor: null });
+    const review = vi.fn<MetadataEnrichmentTransport["reviewEnrichment"]>();
+    setup(<WorkflowRunDialog api={api} tenantId={7} project={project} kind="inference" workflow="metadata_enrichment"
+      reviewEnrichment={review} onClose={vi.fn()} onCreated={vi.fn(async () => undefined)} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Run object enrichment" })).toBeEnabled());
+    await user.click(screen.getByRole("radio", { name: "Import from Metadata" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Select up to 200 objects per Metadata import.");
+    expect(screen.getByRole("button", { name: "Import descriptions" })).toBeDisabled();
+    await user.click(screen.getByRole("radio", { name: "Selected Objects" }));
+    await user.click(screen.getByRole("checkbox", { name: "Select all unlocked Objects" }));
+    await user.click(screen.getByRole("checkbox", { name: /customer_201/ }));
+    expect(screen.getByText("200 selected")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Import descriptions" })).toBeEnabled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(review).not.toHaveBeenCalled();
   });
 });
 
@@ -525,6 +652,33 @@ describe("current metadata enrichment workspace", () => {
     expect(command.selected_object_ids).toEqual([501]);
     expect(command.description_targets).toEqual([{ object_id: 501, attribute_id: 81, expected_revision: "a".repeat(64) }]);
     expect(command.agent?.model_code).toBe("one-shot");
+  });
+
+  it("imports only the chosen Attribute from the Project screen and refreshes its saved description", async () => {
+    const api = metadataFixture({ secondObject: true }); const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Show details for customers" }));
+    const attributes = await screen.findByRole("table", { name: "Attributes for customers" });
+    await user.click(within(attributes).getByRole("checkbox", { name: "Select Attribute 81" }));
+    const before = await api.readEnrichmentObject(7, 18, 501);
+    await user.click(screen.getByRole("button", { name: "Run attribute enrichment" }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("radio", { name: "Import from Metadata" }));
+    expect(within(dialog).getByRole("checkbox", { name: "Replace existing enrichment descriptions" })).not.toBeChecked();
+    const submit = within(dialog).getByRole("button", { name: "Import descriptions" });
+    await waitFor(() => expect(submit).toBeEnabled());
+    api.readEnrichmentObject.mockResolvedValue({ ...before, review_revision: "b".repeat(64),
+      attributes: before.attributes.map((attribute) => ({ ...attribute, review_revision: "b".repeat(64),
+        attribute_description: "Registered customer identifier.",
+      })) });
+    await user.click(submit);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(api.reviewEnrichment).toHaveBeenCalledExactlyOnceWith(7, 18, 18, {
+      record_type: "attribute", action: "import", records: [{ record_id: 81, expected_revision: "a".repeat(64) }],
+    }, expect.any(String));
+    expect(api.createWorkflowRun).not.toHaveBeenCalled();
+    expect(api.executeMetadataEnrichmentRun).not.toHaveBeenCalled();
+    expect(await screen.findByText(/Imported 1 of 1 selected descriptions from Metadata/)).toBeVisible();
+    expect(await screen.findByText("Registered customer identifier.")).toBeVisible();
   });
 
   it("shows usage on demand and keeps foreign metadata read-only", async () => {

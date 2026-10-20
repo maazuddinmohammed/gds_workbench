@@ -1,9 +1,10 @@
 import type { LogicalTransport, LogicalEntity } from "../logical/api";
 import type { ProjectInputScopeApi, ProjectInputScopeDetail } from "../project_input_scope/api";
 import { EnrichmentAttributeSelection, type EnrichmentAttributeSelectionValue } from "../metadata_enrichment/EnrichmentAttributeSelection";
+import type { MetadataEnrichmentTransport, ReviewEnrichmentCommand, ReviewEnrichmentResult } from "../metadata_enrichment/api";
 import { useEffect, useRef, useState } from "react";
 import { useForm, useStore } from "@tanstack/react-form";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { ApiError } from "../../core/http";
 import { SelectAllCheckbox } from "../../shared/ui";
@@ -40,6 +41,8 @@ export function WorkflowRunDialog({
   logicalEntitySource,
   enrichmentTarget,
   readEnrichmentObject,
+  reviewEnrichment,
+  onImported,
   initialSelectedIds = [],
   executeValidationCreated,
   onClose,
@@ -54,6 +57,8 @@ export function WorkflowRunDialog({
   logicalEntitySource?: Pick<LogicalTransport, "listLogicalEntities">;
   enrichmentTarget?: "object" | "attribute";
   readEnrichmentObject?: ProjectInputScopeApi["readProjectInputScopeObject"];
+  reviewEnrichment?: MetadataEnrichmentTransport["reviewEnrichment"];
+  onImported?: (result: ReviewEnrichmentResult) => Promise<void>;
   initialSelectedIds?: number[];
   executeCreated?: (
     workflowRunId: number,
@@ -67,6 +72,39 @@ export function WorkflowRunDialog({
   const dialog = useRef<HTMLElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const isEnrichment = workflow === "metadata_enrichment";
+  const [enrichmentMethod, setEnrichmentMethod] = useState<"agent" | "metadata">("agent");
+  const [replaceDescriptions, setReplaceDescriptions] = useState(false);
+  const [importRefreshRequired, setImportRefreshRequired] = useState(false);
+  const pendingImport = useRef<{
+    tenantId: number; projectId: number; projectRevision: number;
+    command: ReviewEnrichmentCommand; key: string;
+  } | null>(null);
+  const isMetadataImport = isEnrichment && enrichmentMethod === "metadata";
+  const importMutation = useMutation({
+    mutationFn: async () => {
+      const attempt = pendingImport.current;
+      if (!attempt || !reviewEnrichment) throw new Error("Metadata import is unavailable.");
+      const receipt = await reviewEnrichment(attempt.tenantId, attempt.projectId, attempt.projectRevision, attempt.command, attempt.key);
+      const expected = new Set(attempt.command.records.map((row) => row.record_id));
+      if (receipt.records.length !== expected.size || new Set(receipt.records.map((row) => row.record_id)).size !== expected.size
+        || receipt.records.some((row) => !expected.has(row.record_id) || !/^[0-9a-f]{64}$/.test(row.review_revision))) {
+        throw new Error("Import outcome unconfirmed.");
+      }
+      return receipt;
+    },
+    onSuccess: async (receipt) => {
+      await onImported?.(receipt);
+      pendingImport.current = null;
+      onClose();
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && error.status < 500 && error.status !== 408) {
+        pendingImport.current = null;
+        setImportRefreshRequired(true);
+      }
+    },
+  });
+  const uncertainImport = importMutation.isError && pendingImport.current !== null;
   const isAttributeEnrichment = isEnrichment && (enrichmentTarget === "attribute" || enrichmentObject !== undefined);
   const [attributeSelection, setAttributeSelection] = useState<EnrichmentAttributeSelectionValue>({ targets: [], ready: false });
   const isDimensional = workflow === "dimensional";
@@ -120,7 +158,7 @@ export function WorkflowRunDialog({
   const capabilitiesQuery = useQuery({
     queryKey: workflowCreationQueryKeys.capabilities,
     queryFn: api.readAgentCapabilities,
-    enabled: kind === "inference",
+    enabled: kind === "inference" && !isMetadataImport,
   });
   const form = useForm({
     defaultValues: {
@@ -132,11 +170,16 @@ export function WorkflowRunDialog({
       reasoningEffortCode: project.default_reasoning_effort_code ?? "",
     },
     onSubmit: ({ value }) => {
+      if (submitting) return;
+      if (isMetadataImport && pendingImport.current) {
+        importMutation.mutate();
+        return;
+      }
       if (pendingStart) {
         runMutation.mutate(undefined);
         return;
       }
-      if (kind === "inference" && !agentSelectionValid) return;
+      if (!isMetadataImport && kind === "inference" && !agentSelectionValid) return;
       if (isAttributeEnrichment && (!attributeSelection.ready || scopeQuery.isFetching || scopeQuery.isError || revisionChanged)) return;
       const selectedRows = value.scopeMode === "all" ? scopeRows : scopeRows.filter((item) => value.selectedObjectIds.includes(item.id));
       const descriptionTargets = isAttributeEnrichment ? attributeSelection.targets
@@ -146,6 +189,24 @@ export function WorkflowRunDialog({
       if (isEnrichment && (selectedObjectIds.length === 0
         || value.executionMode !== "one_shot" || selectedObjectIds.some((id) =>
           !scopeQuery.data?.items.some((item) => item.object_id === id)))) return;
+      if (isMetadataImport) {
+        if (!reviewEnrichment || importRefreshRequired || revisionChanged || scopeQuery.isFetching
+          || scopeQuery.isError || descriptionTargets.length === 0 || descriptionTargets.length > 200) return;
+        pendingImport.current = {
+          tenantId, projectId: project.project_id, projectRevision: project.project_revision,
+          key: crypto.randomUUID(),
+          command: {
+            record_type: isAttributeEnrichment ? "attribute" : "object",
+            action: replaceDescriptions ? "reimport" : "import",
+            records: descriptionTargets.map((target) => ({
+              record_id: target.attribute_id ?? target.object_id,
+              expected_revision: target.expected_revision,
+            })),
+          },
+        };
+        importMutation.mutate();
+        return;
+      }
       runMutation.mutate({
         expected_project_revision: project.project_revision,
         project_workflow: workflow,
@@ -211,6 +272,9 @@ export function WorkflowRunDialog({
   const agentSelectionValid = agent !== null
     && compatibleExecutionModes.includes(executionMode)
     && agent.model_code === modelCode && agent.reasoning_effort_code === reasoningEffortCode;
+  const importingCount = isAttributeEnrichment ? attributeSelection.targets.length : effectiveRows.length;
+  const submitting = runMutation.isPending || importMutation.isPending;
+  const selectionDisabled = submitting || pendingStart !== null || uncertainImport;
 
   useEffect(() => {
     const returnFocus = document.activeElement;
@@ -253,7 +317,7 @@ export function WorkflowRunDialog({
         aria-modal="true"
         aria-labelledby="workflow-run-dialog-heading"
         onKeyDown={(event) => {
-          if (event.key === "Escape" && !runMutation.isPending) onClose();
+          if (event.key === "Escape" && !submitting && !uncertainImport) onClose();
           if (event.key !== "Tab") return;
           const focusable = [...(dialog.current?.querySelectorAll<HTMLElement>("*") ?? [])]
             .filter((element) => element.matches(
@@ -282,7 +346,7 @@ export function WorkflowRunDialog({
             className="panel-close"
             type="button"
             aria-label={`Close ${title}`}
-            disabled={runMutation.isPending}
+            disabled={submitting || uncertainImport}
             onClick={onClose}
           >
             <span aria-hidden="true">×</span>
@@ -297,12 +361,24 @@ export function WorkflowRunDialog({
           }}
         >
           {enrichmentObject ? <p className="run-kind-note">{enrichmentObject.object_schema}.{enrichmentObject.object_name}</p> : null}
-          {kind === "inference" ? (
+          {isEnrichment && reviewEnrichment ? <fieldset className="scope-mode-options" disabled={selectionDisabled}>
+            <legend>Description source</legend>
+            <label><input type="radio" name="enrichment-method" checked={!isMetadataImport}
+              onChange={() => setEnrichmentMethod("agent")} /><span><strong>Generate with AI</strong></span></label>
+            <label><input type="radio" name="enrichment-method" checked={isMetadataImport}
+              onChange={() => setEnrichmentMethod("metadata")} /><span><strong>Import from Metadata</strong></span></label>
+          </fieldset> : null}
+          {isMetadataImport ? <div className="run-kind-note">
+            <p>Copy registered descriptions into this Project. No AI is used. Empty Metadata descriptions are skipped; other enrichment fields stay unchanged.</p>
+            <label><input type="checkbox" checked={replaceDescriptions} disabled={selectionDisabled}
+              onChange={(event) => setReplaceDescriptions(event.target.checked)} /> Replace existing enrichment descriptions</label>
+            <p>{replaceDescriptions ? "Import will replace saved descriptions for the selected records where Metadata has a description." : "Existing enrichment descriptions will be kept."}</p>
+          </div> : kind === "inference" ? (
             <section className="agent-run-configuration" aria-labelledby="agent-run-heading">
               <header className={isEnrichment ? "sr-only" : undefined}>
                 <strong id="agent-run-heading">Run configuration</strong>
               </header>
-              <fieldset className={`agent-run-grid${isEnrichment ? " agent-run-grid-two" : ""}`} disabled={runMutation.isPending || pendingStart !== null}>
+              <fieldset className={`agent-run-grid${isEnrichment ? " agent-run-grid-two" : ""}`} disabled={selectionDisabled}>
                 <legend className="sr-only">Run configuration</legend>
                 {isEnrichment ? null : <form.Field name="executionMode">
                   {(field) => (
@@ -356,10 +432,10 @@ export function WorkflowRunDialog({
               : readEnrichmentObject && scopeQuery.data ? <EnrichmentAttributeSelection
                 objects={scopeQuery.data.items} tenantId={tenantId} projectId={project.project_id}
                 readObject={readEnrichmentObject} {...(enrichmentObject ? { initialObject: enrichmentObject } : {})}
-                initialSelectedIds={initialSelectedIds} disabled={runMutation.isPending || pendingStart !== null || scopeQuery.isFetching || revisionChanged}
+                initialSelectedIds={initialSelectedIds} disabled={selectionDisabled || scopeQuery.isFetching || revisionChanged}
                 onChange={setAttributeSelection} />
                 : <p className="inline-error" role="alert">Attribute selection is unavailable.</p>
-            : <><fieldset className="scope-mode-options" disabled={runMutation.isPending || pendingStart !== null}>
+            : <><fieldset className="scope-mode-options" disabled={selectionDisabled}>
             <legend>{recordName}</legend>
             <form.Field name="scopeMode">
               {(field) => (
@@ -408,7 +484,7 @@ export function WorkflowRunDialog({
                     <label className="run-selection-all">
                       <SelectAllCheckbox label={`Select all ${isEnrichment ? "unlocked " : ""}${recordName}`}
                         selectedCount={effectiveRows.length} totalCount={scopeRows.length}
-                        disabled={runMutation.isPending || pendingStart !== null}
+                        disabled={selectionDisabled}
                         onChange={(checked) => {
                           form.setFieldValue("scopeMode", "selected");
                           field.handleChange(checked ? scopeRows.map((item) => item.id) : []);
@@ -420,7 +496,7 @@ export function WorkflowRunDialog({
                         <input
                           type="checkbox"
                           checked={scopeMode === "all" || field.state.value.includes(item.id)}
-                          disabled={runMutation.isPending || pendingStart !== null || scopeMode === "all"}
+                          disabled={selectionDisabled || scopeMode === "all"}
                           onChange={(event) => field.handleChange(event.target.checked
                             ? [...field.state.value, item.id]
                             : field.state.value.filter((id) => id !== item.id))}
@@ -444,7 +520,7 @@ export function WorkflowRunDialog({
                 <span>Batch ID (optional)</span>
                 <input
                   aria-label="Batch ID (optional)"
-                  disabled={runMutation.isPending || pendingStart !== null}
+                  disabled={selectionDisabled}
                   value={field.state.value}
                   onBlur={field.handleBlur}
                   onChange={(event) => field.handleChange(event.target.value)}
@@ -454,10 +530,10 @@ export function WorkflowRunDialog({
             )}
           </form.Field> : null}
 
-          {kind === "inference" && capabilitiesQuery.isError ? (
+          {!isMetadataImport && kind === "inference" && capabilitiesQuery.isError ? (
             <p className="inline-error" role="alert">Agent options could not be loaded.</p>
           ) : null}
-          {kind === "inference" && capabilitiesQuery.data && !agentSelectionValid ? (
+          {!isMetadataImport && kind === "inference" && capabilitiesQuery.data && !agentSelectionValid ? (
             <p className="inline-error" role="alert">No compatible agent configuration is available.</p>
           ) : null}
           {batchIsIncoherent ? (
@@ -470,7 +546,15 @@ export function WorkflowRunDialog({
               The Project changed. Close this dialog and refresh before creating the run.
             </p>
           ) : null}
-          {runMutation.isError ? (
+          {isMetadataImport && importingCount > 200 ? <p className="inline-error" role="alert">Select up to 200 {recordName.toLowerCase()} per Metadata import.</p> : null}
+          {isMetadataImport && importMutation.isError ? <p className="inline-error" role="alert">
+            {uncertainImport ? "Import outcome is unconfirmed. Retry the same import to check its saved result."
+              : isTenantWorkflowConflict(importMutation.error) ? TENANT_WORKFLOW_CONFLICT_MESSAGE
+                : importMutation.error instanceof ApiError && importMutation.error.code === "invalid_request"
+                  ? "Import was rejected. Check Metadata descriptions for unsupported characters or text over 2,000 UTF-8 bytes, then refresh and retry."
+                : "Metadata import could not be completed. Close this dialog, refresh, and check selection and locks before retrying."}
+          </p> : null}
+          {!isMetadataImport && runMutation.isError ? (
             <p className="inline-error" role="alert">
               {isEnrichment && runMutation.error instanceof ApiError && runMutation.error.code === "metadata_revision_conflict"
                 ? "Metadata changed or was locked. Close this dialog, refresh, and try again."
@@ -489,7 +573,7 @@ export function WorkflowRunDialog({
               <button
                 className="button button-secondary button-small"
                 type="button"
-                disabled={runMutation.isPending}
+                disabled={submitting || uncertainImport}
                 onClick={onClose}
               >
                 Cancel
@@ -498,7 +582,11 @@ export function WorkflowRunDialog({
                 className="button button-primary button-small"
                 type="submit"
                 disabled={
-                  runMutation.isPending
+                  isMetadataImport ? submitting || importRefreshRequired || (!uncertainImport && (
+                    !reviewEnrichment || selectionQuery.isPending || selectionQuery.isError || scopeQuery.isFetching
+                    || revisionChanged || importingCount === 0 || importingCount > 200
+                    || (isAttributeEnrichment && !attributeSelection.ready)
+                  )) : runMutation.isPending
                   || (pendingStart === null && (
                     selectionQuery.isPending
                     || selectionQuery.isError
@@ -509,7 +597,8 @@ export function WorkflowRunDialog({
                   ))
                 }
               >
-                {runMutation.isPending
+                {isMetadataImport ? importMutation.isPending ? "Importing…" : uncertainImport ? "Retry same import" : "Import descriptions"
+                  : runMutation.isPending
                   ? pendingStart
                     ? "Starting…"
                     : workflow !== "analysis" || executeCreated || executeValidationCreated

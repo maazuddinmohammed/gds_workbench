@@ -39,7 +39,15 @@ not silently change installed or already-running prompts.
 Web Attribute Enrichment reads physical evidence only for missing inferred types.
 It resolves source schema and bounded samples first, then reads Bronze only for
 unresolved columns. PII/masking exclusions and per-query limits still apply.
-Object and Attribute authoring remain separate agent calls.
+Object and Attribute AI authoring remain separate agent calls. Their web run dialogs
+also offer **Import from Metadata**: copy registered descriptions into Project-owned
+enrichment without creating an agent Run or calling AI/Databricks. Each import accepts
+up to 200 selected Objects or Attributes, skips blank source descriptions, and keeps
+existing enrichment descriptions unless the user explicitly selects replacement.
+Types and key/nullability/PII findings remain unchanged. The backend reads source text
+under the existing scope, Tenant/Project lock, revision and idempotency protections;
+the review audit records witnesses and counts, never description text. Invalid or
+oversized source descriptions reject the transaction without partial imports.
 
 Logical defaults require evidence-based business grain, identity, normalization and
 consolidation decisions. One-shot embeds enrichment, Profiles with provenance and

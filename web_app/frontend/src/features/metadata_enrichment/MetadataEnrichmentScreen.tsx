@@ -206,6 +206,11 @@ export function MetadataEnrichmentScreen({ api, tenantId, project, hasTenantLock
       onClose={() => setEditor(null)} onRetry={() => { if (pendingReview.current) review.mutate(pendingReview.current); }}
       onSave={(description, fields) => submitReview({ record_type: editor.type, action: "edit", records: [{ record_id: editor.id, expected_revision: editor.revision, description, ...fields }] })} /> : null}
     {runDialog ? <WorkflowRunDialog api={{ ...api, listProjectInputScope: api.listEnrichmentObjects }} tenantId={tenantId} project={project} kind="inference" workflow="metadata_enrichment" enrichmentTarget={runDialog} readEnrichmentObject={api.readEnrichmentObject} {...(current && runDialog === "attribute" ? { enrichmentObject: current } : {})} initialSelectedIds={[...selectedIds]}
+      reviewEnrichment={api.reviewEnrichment} onImported={async (receipt) => {
+        setSelectedIds(new Set());
+        setNotice(`Imported ${receipt.action_count} of ${receipt.records.length} selected descriptions from Metadata.${receipt.action_count < receipt.records.length ? " Remaining records were left unchanged." : ""}`);
+        await refreshMetadata();
+      }}
       executeCreated={async (runId, _mode, expectedProjectRevision) => { await api.executeMetadataEnrichmentRun(tenantId, project.project_id, runId, expectedProjectRevision); }}
       onClose={() => setRunDialog(null)} onCreated={async (runId) => { setRecentRunId(runId); await client.invalidateQueries({ queryKey: workflowRunQueryKeys.recent(tenantId, project.project_id, "metadata_enrichment") }); }} /> : null}
   </WorkflowCommandCenter>;

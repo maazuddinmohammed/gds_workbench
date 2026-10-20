@@ -3271,8 +3271,8 @@ CREATE TABLE application.metadata_review_event (
         REFERENCES project.project (project_id, tenant_id) ON DELETE NO ACTION,
     CONSTRAINT uq_metadata_review_request UNIQUE (tenant_id, actor_principal_id, correlation_id),
     CONSTRAINT ck_metadata_review_action CHECK (
-        record_type IN ('object', 'attribute') AND action IN ('lock', 'unlock', 'deactivate', 'reactivate', 'describe', 'edit')
-        AND (action <> 'edit' OR project_id IS NOT NULL)
+        record_type IN ('object', 'attribute') AND action IN ('lock', 'unlock', 'deactivate', 'reactivate', 'describe', 'edit', 'import', 'reimport')
+        AND (action NOT IN ('edit', 'import', 'reimport') OR project_id IS NOT NULL)
         AND request_digest ~ '^[0-9a-f]{64}$'
     ),
     CONSTRAINT ck_metadata_review_records CHECK (
@@ -3531,7 +3531,7 @@ $delete_project_records$;
 REVOKE ALL ON FUNCTION application.delete_project_records(
     UUID, UUID, BIGINT, BIGINT, BIGINT, UUID, JSONB) FROM PUBLIC;
 
--- Human Project-local enrichment edits. The receipt stores witnesses, never descriptions.
+-- Human Project-local enrichment edits/imports. Receipts store witnesses, never descriptions.
 CREATE FUNCTION application.review_project_enrichment(
     p_entra_tenant_id UUID, p_entra_object_id UUID, p_tenant_id BIGINT,
     p_project_id BIGINT, p_expected_project_revision BIGINT,
@@ -3554,10 +3554,12 @@ DECLARE
     v_locked BOOLEAN;
     v_parent_locked BOOLEAN;
     v_allowed TEXT[];
+    v_source_description TEXT;
+    v_current_description TEXT;
 BEGIN
     IF p_correlation_id IS NULL OR p_record_type IS NULL
        OR p_record_type NOT IN ('object', 'attribute') OR p_action IS NULL
-       OR p_action NOT IN ('edit', 'lock', 'unlock') OR p_records IS NULL
+       OR p_action NOT IN ('edit', 'lock', 'unlock', 'import', 'reimport') OR p_records IS NULL
        OR jsonb_typeof(p_records) <> 'array' THEN
         RAISE EXCEPTION 'enrichment_invalid_review';
     END IF;
@@ -3643,11 +3645,58 @@ BEGIN
             SELECT is_locked INTO v_locked FROM workflow.attribute_enrichment
              WHERE project_id = p_project_id AND attribute_id = v_attribute_id FOR UPDATE;
         END IF;
-        IF p_action = 'edit' AND coalesce(v_locked, FALSE) THEN
+        IF p_action IN ('edit', 'import', 'reimport') AND coalesce(v_locked, FALSE) THEN
             RAISE EXCEPTION 'enrichment_locked';
         END IF;
         v_before := v_before || jsonb_build_array(jsonb_build_object(
             'record_id', (v_item->>'record_id')::BIGINT, 'review_revision', v_revision));
+        IF p_action IN ('import', 'reimport') THEN
+            -- Source rows and enrichment witnesses are locked above; never trust browser text.
+            IF v_attribute_id IS NULL THEN
+                SELECT object.object_description, enriched.object_description
+                  INTO v_source_description, v_current_description
+                  FROM core.object AS object
+                  LEFT JOIN workflow.object_enrichment AS enriched
+                    ON enriched.project_id = p_project_id AND enriched.object_id = object.object_id
+                 WHERE object.object_id = v_object_id;
+            ELSE
+                SELECT attribute.attribute_description, enriched.attribute_description
+                  INTO v_source_description, v_current_description
+                  FROM core.attribute AS attribute
+                  LEFT JOIN workflow.attribute_enrichment AS enriched
+                    ON enriched.project_id = p_project_id AND enriched.attribute_id = attribute.attribute_id
+                 WHERE attribute.attribute_id = v_attribute_id;
+            END IF;
+            v_source_description := nullif(btrim(v_source_description, E' \t\n\r'), '');
+            IF v_source_description IS NULL
+               OR (p_action = 'import' AND nullif(btrim(v_current_description, E' \t\n\r'), '') IS NOT NULL)
+               OR v_source_description IS NOT DISTINCT FROM v_current_description THEN
+                CONTINUE;
+            END IF;
+            IF octet_length(v_source_description) > 2000
+               OR translate(v_source_description, chr(9)||chr(10)||chr(13), '') ~ '[[:cntrl:]]' THEN
+                RAISE EXCEPTION 'enrichment_invalid_source_description';
+            END IF;
+            IF v_attribute_id IS NULL THEN
+                INSERT INTO workflow.object_enrichment (project_id, object_id, object_description,
+                    created_by, updated_by)
+                VALUES (p_project_id, v_object_id, v_source_description,
+                    v_decision.principal_id::TEXT, v_decision.principal_id::TEXT)
+                ON CONFLICT (project_id, object_id) DO UPDATE SET
+                    object_description = EXCLUDED.object_description, workflow_run_id = NULL,
+                    updated_time = clock_timestamp(), updated_by = EXCLUDED.updated_by;
+            ELSE
+                INSERT INTO workflow.attribute_enrichment (project_id, object_id, attribute_id,
+                    attribute_description, created_by, updated_by)
+                VALUES (p_project_id, v_object_id, v_attribute_id, v_source_description,
+                    v_decision.principal_id::TEXT, v_decision.principal_id::TEXT)
+                ON CONFLICT (project_id, attribute_id) DO UPDATE SET
+                    attribute_description = EXCLUDED.attribute_description, workflow_run_id = NULL,
+                    updated_time = clock_timestamp(), updated_by = EXCLUDED.updated_by;
+            END IF;
+            v_count := v_count + 1;
+            CONTINUE;
+        END IF;
         IF v_attribute_id IS NULL THEN
             INSERT INTO workflow.object_enrichment (project_id, object_id, object_description,
                 is_locked, created_by, updated_by)
@@ -3688,7 +3737,7 @@ BEGIN
             (SELECT is_locked FROM workflow.object_enrichment WHERE project_id = p_project_id AND object_id = v_object_id)
             ELSE (SELECT is_locked FROM workflow.attribute_enrichment WHERE project_id = p_project_id AND attribute_id = v_attribute_id) END;
         v_records := v_records || jsonb_build_array(jsonb_build_object(
-            'record_id', (v_item->>'record_id')::BIGINT, 'is_active', TRUE, 'is_locked', v_locked,
+            'record_id', (v_item->>'record_id')::BIGINT, 'is_active', TRUE, 'is_locked', coalesce(v_locked, FALSE),
             'review_revision', workflow.enrichment_review_revision(p_project_id, v_object_id, v_attribute_id)));
     END LOOP;
     SELECT * INTO v_decision FROM application.authorize_project_record_review(
