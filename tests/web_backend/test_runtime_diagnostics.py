@@ -140,9 +140,11 @@ def test_runtime_endpoint_observes_same_diagnostics_as_assembled_worker() -> Non
             assert payload["worker"]["last_fault"]["boundary"] == "claim"
             assert "synthetic-private-claim-error" not in after.text
             assert set(payload) == {"installed_source", "worker"}
+            assert payload["worker"]["active_runs"] == 0
             assert set(payload["worker"]) == {
                 "state",
                 "started",
+                "active_runs",
                 "readiness_code",
                 "boundary",
                 "last_poll_result",

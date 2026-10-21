@@ -1,6 +1,6 @@
 import { ApiError } from "../../core/http";
 import { formatDateTime } from "../../shared/presentation";
-import type { WorkflowRunEvent, WorkflowRunRecord } from "./api";
+import type { WorkflowRunDetail, WorkflowRunEvent, WorkflowRunRecord } from "./api";
 
 export function workflowRunDuration(run: WorkflowRunRecord): string {
   if (!run.started_at) return "Not started";
@@ -25,6 +25,23 @@ export function WorkflowRunTiming({ run }: { run: WorkflowRunRecord }) {
     <div><dt>Ended</dt><dd>{timestamp(run.completed_at, isActiveRun(run) ? "—" : "Not recorded")}</dd></div>
     <div><dt>Duration</dt><dd>{workflowRunDuration(run)}</dd></div>
   </dl>;
+}
+
+// The backend decides whether a started Run has a worker; screens refresh manually, so
+// show the saved start of a model wait rather than a ticking timer.
+export function WorkflowRunExecution({ run }: { run: WorkflowRunDetail }) {
+  if (run.workflow_run_state !== "running" || !run.execution_status) return null;
+  if (run.execution_status === "waiting_for_worker") {
+    return <p className="workflow-run-execution is-waiting">
+      Waiting for a free worker. The run starts when one becomes available; refresh to check.
+    </p>;
+  }
+  const modelSince = formatDateTime(run.model_request_started_at ?? null, { second: "2-digit", timeZoneName: "short" });
+  return <p className="workflow-run-execution">
+    {modelSince && run.model_request_started_at
+      ? <>Waiting for the model response since <time dateTime={run.model_request_started_at}>{modelSince}</time>.</>
+      : "Running on a worker."}
+  </p>;
 }
 
 export const TENANT_WORKFLOW_CONFLICT_MESSAGE = (

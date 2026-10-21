@@ -7,7 +7,10 @@ test counts are intentionally omitted.
 ## Independent servers, shared source
 
 MCP runs on Azure App Service; the web App runs on Databricks with its own durable
-worker. Each artifact receives shared domain/application code at build time and
+worker. That worker executes several claimed Runs at once (four by default) because
+model calls can take an hour; the per-Tenant running-Run constraint is unchanged, so
+one slow Run cannot hold other Tenants' Runs in the queue. Each artifact receives
+shared domain/application code at build time and
 connects directly to PostgreSQL with a separate least-privilege role. Web features
 own their orchestration. MCP also owns a durable deterministic Profiling worker;
 web and MCP claim only runs assigned to their backend. Shared aggregate SQL

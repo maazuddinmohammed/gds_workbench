@@ -25,6 +25,7 @@ from gds_workbench_api.features.workflows.execution import (
 from gds_workbench_api.features.workflows.execution.configuration import (
     WorkflowExecutionConfiguration,
 )
+from gds_workbench_api.runtime_diagnostics import RuntimeDiagnostics
 from gds_workbench_api.workflow_worker import (
     create_worker_runtime,
     run_worker_loop,
@@ -249,6 +250,68 @@ async def test_worker_process_closes_database_and_releases_active_claim_on_shutd
     assert database.closed is True
     assert database.readiness_calls == 1
     assert claims.release_calls == [(701, claim.workflow_run_claim_token)]
+
+
+@pytest.mark.asyncio
+async def test_one_slow_run_does_not_hold_other_tenants_runs_in_the_queue() -> None:
+    database = ProcessDatabase()
+    queued = [
+        _claim().model_copy(update={"workflow_run_id": 701 + index, "tenant_id": 7 + index})
+        for index in range(4)
+    ]
+    released: list[int] = []
+    executing: set[int] = set()
+    three_executing = asyncio.Event()
+
+    class QueueRepository(OneClaimRepository):
+        async def claim_next(self, *, lease_duration_seconds: int) -> WorkflowExecutionClaim | None:
+            del lease_duration_seconds
+            return queued.pop(0) if queued else None
+
+        async def release(self, *, workflow_run_id: int, workflow_run_claim_token: UUID) -> bool:
+            del workflow_run_claim_token
+            released.append(workflow_run_id)
+            return True
+
+    class SlowDispatcher:
+        async def execute(self, claim: WorkflowExecutionClaim) -> object:
+            executing.add(claim.workflow_run_id)
+            if len(executing) == 3:
+                three_executing.set()
+            await asyncio.Event().wait()
+            return object()
+
+    diagnostics = RuntimeDiagnostics()
+    worker = WorkflowExecutionWorker(
+        claims=QueueRepository(queued[0]),
+        dispatcher=SlowDispatcher(),
+        lease_duration_seconds=30,
+        heartbeat_interval_seconds=10,
+        diagnostics=diagnostics,
+    )
+    shutdown = asyncio.Event()
+    process = asyncio.create_task(
+        run_worker_process(
+            database=database,
+            worker=worker,
+            configuration=WorkflowExecutionConfiguration.from_environment(
+                {"GDS_WEB_WORKFLOW_MAX_CONCURRENT_RUNS": "3"}
+            ),
+            shutdown=shutdown,
+            diagnostics=diagnostics,
+        )
+    )
+    await asyncio.wait_for(three_executing.wait(), timeout=2)
+
+    assert executing == {701, 702, 703}
+    assert [claim.workflow_run_id for claim in queued] == [704]
+    assert diagnostics.snapshot().worker.active_runs == 3
+    assert diagnostics.snapshot().worker.state == "executing"
+    shutdown.set()
+    await asyncio.wait_for(process, timeout=2)
+    assert sorted(released) == [701, 702, 703]
+    assert diagnostics.snapshot().worker.active_runs == 0
+    assert database.closed is True
 
 
 @pytest.mark.asyncio

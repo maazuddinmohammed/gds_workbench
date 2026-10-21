@@ -167,7 +167,12 @@ async def run_worker_process(
             diagnostics.readiness_code = "ready"
             diagnostics.state = "ready"
             diagnostics.boundary = None
-        await run_worker_loop(worker, configuration=configuration)
+        # One long Run (for example a slow model call) must not hold every other Tenant's
+        # Run in the queue. Claims stay exclusive per Run; PostgreSQL still allows one
+        # running Run per Tenant.
+        async with asyncio.TaskGroup() as loops:
+            for _ in range(configuration.max_concurrent_runs):
+                loops.create_task(run_worker_loop(worker, configuration=configuration))
 
     loop_task = asyncio.create_task(run_ready_worker())
     shutdown_task = asyncio.create_task(shutdown.wait())
@@ -206,7 +211,11 @@ def create_worker_runtime(
     runtime_database = database or WebPostgresDatabase(
         dsn=runtime_settings.database_dsn,
         pool_min=runtime_settings.pool_min,
-        pool_max=runtime_settings.pool_max,
+        # Each concurrent Run can hold an execution, a heartbeat and a sub-task connection.
+        pool_max=max(
+            runtime_settings.pool_max,
+            3 * runtime_settings.workflow_execution.max_concurrent_runs,
+        ),
         pool_timeout_seconds=runtime_settings.pool_timeout_seconds,
     )
     authorizer = AuthorizationService()

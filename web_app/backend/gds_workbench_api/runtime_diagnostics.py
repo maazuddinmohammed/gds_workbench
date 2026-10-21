@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable
+from contextvars import Context, ContextVar
 from dataclasses import dataclass
 from importlib.util import find_spec
 from pathlib import Path
@@ -40,6 +41,11 @@ ReadinessCode = Literal[
     "database_unavailable",
 ]
 PollResult = Literal["idle", "completed", "execution_failed", "claim_lost", "poll_failed"]
+
+# Each Run executes in its own task context, so concurrent Runs keep separate boundaries.
+_EXECUTION_BOUNDARY: ContextVar[WorkerBoundary | None] = ContextVar(
+    "workflow_execution_boundary", default=None
+)
 
 
 def source_tree_sha256(root: Path) -> str:
@@ -84,6 +90,7 @@ class WorkerFaultSnapshot:
 class WorkerSnapshot:
     state: WorkerState
     started: bool
+    active_runs: int
     readiness_code: ReadinessCode | None
     boundary: WorkerBoundary | None
     last_poll_result: PollResult | None
@@ -110,6 +117,7 @@ class RuntimeDiagnostics:
         self._clock = clock
         self.state: WorkerState = "not_attached"
         self.started = False
+        self.active_runs = 0
         self.readiness_code: ReadinessCode | None = None
         self.boundary: WorkerBoundary | None = None
         self._last_poll: tuple[PollResult, float] | None = None
@@ -131,6 +139,7 @@ class RuntimeDiagnostics:
 
     def enter(self, boundary: WorkerBoundary) -> None:
         self.boundary = boundary
+        _EXECUTION_BOUNDARY.set(boundary)
         self.state = (
             "starting"
             if boundary in {"database_open", "database_readiness"}
@@ -148,6 +157,13 @@ class RuntimeDiagnostics:
         # Accept only categories, never an exception object, message or Run identity.
         self._last_fault = (category, boundary, self._clock())
 
+    @staticmethod
+    def execution_fault_boundary(context: Context) -> WorkerBoundary:
+        """Attribute a failed execution from its own task context, not a concurrent Run's."""
+        if context.get(_EXECUTION_BOUNDARY) == "usage_initialization":
+            return "usage_initialization"
+        return "executor"
+
     def snapshot(self) -> RuntimeDiagnosticsSnapshot:
         now = self._clock()
         poll = self._last_poll
@@ -155,8 +171,9 @@ class RuntimeDiagnostics:
         return RuntimeDiagnosticsSnapshot(
             installed_source=self._installed_source,
             worker=WorkerSnapshot(
-                state=self.state,
+                state="executing" if self.active_runs else self.state,
                 started=self.started,
+                active_runs=self.active_runs,
                 readiness_code=self.readiness_code,
                 boundary=self.boundary,
                 last_poll_result=None if poll is None else poll[0],

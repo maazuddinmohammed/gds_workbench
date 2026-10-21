@@ -23,6 +23,7 @@ import {
   RunStateBadge,
   WorkflowEventProgress,
   workflowStageLabel,
+  WorkflowRunExecution,
   WorkflowRunTiming,
   workflowRunDuration,
 } from "./presentation";
@@ -540,6 +541,7 @@ function WorkflowRunDetailView({
         <RunStateBadge state={run.workflow_run_state} partial={partialMapping} />
       </header>
       <WorkflowRunTiming run={run} />
+      <WorkflowRunExecution run={run} />
       {tabbed ? <nav className="workspace-tabs workflow-activity-tabs" aria-label="Run detail sections">
         {["Overview", "Activity", "Usage", physicalMetadata ? "Results" : "Draft"].map((name) => <button key={name} type="button"
           aria-pressed={tab === name} onClick={() => setTab(name)}>{name}</button>)}

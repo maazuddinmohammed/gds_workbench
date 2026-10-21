@@ -206,6 +206,17 @@
 .workflow-run-timing dt { color: var(--muted); }
 .workflow-run-timing dd { margin: .35rem 0 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 
+.workflow-run-execution {
+  margin: -0.25rem 0 1rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.workflow-run-execution.is-waiting {
+  padding-left: 0.6rem;
+  border-left: 3px solid var(--amber);
+}
+
 .workflow-run-facts {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

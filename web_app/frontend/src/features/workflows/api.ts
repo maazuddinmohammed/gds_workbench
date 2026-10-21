@@ -195,6 +195,8 @@ export interface WorkflowRunDetail extends WorkflowRunRecord {
   draft_revision: number | null;
   candidate_digest: string | null;
   validated_at: string | null;
+  execution_status?: "waiting_for_worker" | "executing" | null;
+  model_request_started_at?: string | null;
 }
 
 export interface WorkflowRunEvent {

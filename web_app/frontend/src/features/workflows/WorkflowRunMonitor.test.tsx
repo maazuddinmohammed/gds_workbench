@@ -86,6 +86,24 @@ describe("Workflow Run monitor", () => {
     await waitFor(() => expect(api.cancelWorkflowRun).toHaveBeenCalledTimes(2));
   });
 
+  it("says when a started run is still waiting for a worker", async () => {
+    const api = monitorApi();
+    api.readWorkflowRun.mockResolvedValue({ ...workflowRun(false), workflow_run_state: "running",
+      execution_status: "waiting_for_worker" });
+    renderMonitor(api, vi.fn(async () => undefined));
+    expect(await screen.findByText(/Waiting for a free worker/)).toBeInTheDocument();
+  });
+
+  it("shows when a running run started waiting for the model", async () => {
+    const api = monitorApi();
+    api.readWorkflowRun.mockResolvedValue({ ...workflowRun(false), workflow_run_state: "running",
+      execution_status: "executing", model_request_started_at: "2026-10-21T19:45:12Z" });
+    renderMonitor(api, vi.fn(async () => undefined));
+    const message = await screen.findByText(/Waiting for the model response since/);
+    expect(message.querySelector("time")).toHaveAttribute("datetime", "2026-10-21T19:45:12Z");
+    expect(screen.queryByText(/Waiting for a free worker/)).not.toBeInTheDocument();
+  });
+
   it("requires a Tenant Lock for cancellation", async () => {
     const api = monitorApi();
     api.readWorkflowRun.mockResolvedValue({ ...workflowRun(false), workflow_run_state: "running" });

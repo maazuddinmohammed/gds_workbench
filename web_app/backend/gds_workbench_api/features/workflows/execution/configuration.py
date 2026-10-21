@@ -13,6 +13,7 @@ _ENVIRONMENT_OVERRIDES = {
     "GDS_WEB_WORKFLOW_HEARTBEAT_SECONDS": ("heartbeat_interval_seconds", float),
     "GDS_WEB_WORKFLOW_IDLE_POLL_SECONDS": ("idle_poll_interval_seconds", float),
     "GDS_WEB_WORKFLOW_ERROR_POLL_SECONDS": ("error_poll_interval_seconds", float),
+    "GDS_WEB_WORKFLOW_MAX_CONCURRENT_RUNS": ("max_concurrent_runs", int),
 }
 
 
@@ -26,6 +27,8 @@ class WorkflowExecutionConfiguration(BaseModel):
     heartbeat_interval_seconds: float = Field(gt=0, le=299)
     idle_poll_interval_seconds: float = Field(ge=0.05, le=60)
     error_poll_interval_seconds: float = Field(ge=0.05, le=300)
+    # PostgreSQL still allows one running Run per Tenant; this bounds Runs across Tenants.
+    max_concurrent_runs: int = Field(ge=1, le=16)
 
     @model_validator(mode="after")
     def validate_heartbeat(self) -> Self:

@@ -110,6 +110,8 @@ class WorkflowRunDetail(WorkflowRunLedgerRecord):
         pattern=r"^[0-9a-f]{64}$",
     )
     validated_at: datetime | None = None
+    execution_status: Literal["waiting_for_worker", "executing"] | None = None
+    model_request_started_at: datetime | None = None
 
 
 class WorkflowRunCollection(BaseModel):

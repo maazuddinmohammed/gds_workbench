@@ -81,7 +81,20 @@ SELECT run.workflow_run_id,
        change_set.project_change_set_status,
        change_set.draft_revision,
        change_set.candidate_digest,
-       change_set.validated_time AS validated_at
+       change_set.validated_time AS validated_at,
+       -- A started Run without a live claim is still waiting for a free worker.
+       CASE
+           WHEN run.workflow_run_state <> 'running' THEN NULL
+           WHEN run.workflow_run_claim_expires_time > clock_timestamp() THEN 'executing'
+           ELSE 'waiting_for_worker'
+       END AS execution_status,
+       -- Only this attempt's unanswered model calls; abandoned attempts never finish theirs.
+       (SELECT min(request.started_time)
+          FROM application.workflow_run_model_request AS request
+         WHERE request.workflow_run_id = run.workflow_run_id
+           AND request.completed_time IS NULL
+           AND request.started_time >= run.workflow_run_claimed_time
+       ) AS model_request_started_at
   FROM application.workflow_run AS run
   JOIN project.project AS project
     ON project.project_id = run.project_id

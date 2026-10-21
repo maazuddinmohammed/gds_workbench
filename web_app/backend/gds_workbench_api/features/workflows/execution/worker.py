@@ -1,6 +1,7 @@
 """Single-claim durable Workflow Run worker behavior."""
 
 import asyncio
+import contextvars
 import logging
 from contextlib import suppress
 from enum import StrEnum
@@ -131,7 +132,10 @@ class WorkflowClaimRunner:
         """Execute one already-acquired claim with the shared lease behavior."""
         if self._diagnostics is not None:
             self._diagnostics.enter("executor")
-        execution = asyncio.create_task(self._dispatcher.execute(claim))
+            self._diagnostics.active_runs += 1
+        # Concurrent Runs share one process; keep this execution's boundary in its own context.
+        context = contextvars.copy_context()
+        execution = asyncio.create_task(self._dispatcher.execute(claim), context=context)
         heartbeat = asyncio.create_task(self._heartbeat(claim, execution))
         try:
             done, _ = await asyncio.wait(
@@ -171,12 +175,9 @@ class WorkflowClaimRunner:
                 raise
             except Exception as error:
                 if self._diagnostics is not None:
-                    boundary = self._diagnostics.boundary
                     self._diagnostics.record_fault(
                         workflow_failure_category(error),
-                        "usage_initialization"
-                        if boundary == "usage_initialization"
-                        else "executor",
+                        RuntimeDiagnostics.execution_fault_boundary(context),
                     )
                 _logger.warning(
                     "workflow_execution_failed run_id=%s recovery_count=%s category=%s",
@@ -201,6 +202,9 @@ class WorkflowClaimRunner:
                     )
                 )
             raise
+        finally:
+            if self._diagnostics is not None:
+                self._diagnostics.active_runs -= 1
 
     async def _heartbeat(
         self,
