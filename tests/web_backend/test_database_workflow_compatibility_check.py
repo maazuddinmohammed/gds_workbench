@@ -2,9 +2,10 @@
 
 from collections.abc import Iterator
 from pathlib import Path
-from typing import LiteralString, cast
+from typing import Literal, LiteralString, cast
 
 import pytest
+from psycopg import sql
 from psycopg.pq import TransactionStatus
 
 from tests.mcp.conftest import DisposablePostgres, disposable_postgres
@@ -13,6 +14,15 @@ CHECK_SQL = (
     Path(__file__).parents[2] / "deployment/databricks_ui/check_workflow_compatibility.sql"
 ).read_text(encoding="utf-8")
 RENEW_SIGNATURE = "application.renew_workflow_run_claim(bigint,uuid,integer)"
+PROFILING_EXECUTION_SIGNATURES: tuple[LiteralString, ...] = (
+    "application.get_profiling_connection_values("
+    "uuid,uuid,character varying,bigint,bigint,character varying)",
+    "application.append_workflow_run_event("
+    "uuid,uuid,character varying,bigint,bigint,bigint,integer,"
+    "character varying,character varying,character varying,integer,integer,integer)",
+    "application.persist_profiling_results(uuid,uuid,character varying,bigint,bigint,jsonb)",
+    "application.complete_workflow_run(uuid,uuid,character varying,bigint,bigint,integer)",
+)
 
 
 @pytest.fixture(scope="module")
@@ -42,6 +52,49 @@ def test_operator_check_accepts_current_workflow_contracts(
     compatibility_database: DisposablePostgres, web_role: bool
 ) -> None:
     assert _check(compatibility_database, web_role=web_role) == {"workflow_sql_checks": "PASS"}
+
+
+@pytest.mark.parametrize(
+    "signature", PROFILING_EXECUTION_SIGNATURES, ids=["connection", "event", "persist", "complete"]
+)
+@pytest.mark.parametrize("fault", ["missing", "grant", "security"])
+def test_operator_check_requires_each_profiling_execution_function(
+    compatibility_database: DisposablePostgres,
+    signature: LiteralString,
+    fault: Literal["missing", "grant", "security"],
+) -> None:
+    if fault == "missing":
+        change = sql.SQL("ALTER FUNCTION {} RENAME TO fixture_renamed_profiling_function").format(
+            sql.SQL(signature)
+        )
+        name, arguments = signature.split("(", 1)
+        restore = sql.SQL(
+            "ALTER FUNCTION application.fixture_renamed_profiling_function({} RENAME TO {}"
+        ).format(sql.SQL(arguments), sql.Identifier(name.split(".")[1]))
+        check = "function_exists"
+    elif fault == "grant":
+        change = sql.SQL("REVOKE EXECUTE ON FUNCTION {} FROM gds_web_write").format(
+            sql.SQL(signature)
+        )
+        restore = sql.SQL("GRANT EXECUTE ON FUNCTION {} TO gds_web_write").format(
+            sql.SQL(signature)
+        )
+        check = "web_execute_required"
+    else:
+        change = sql.SQL("ALTER FUNCTION {} SECURITY INVOKER").format(sql.SQL(signature))
+        restore = sql.SQL("ALTER FUNCTION {} SECURITY DEFINER").format(sql.SQL(signature))
+        check = "security_definer_and_safe_search_path"
+    # Only mutate the fixture's disposable installation; never call these functions.
+    with compatibility_database.connect_owner() as connection:
+        connection.execute(change)
+    try:
+        results = _check(compatibility_database)
+        assert results["workflow_sql_checks"] == "FAIL"
+        assert results[signature + ": " + check] == "FAIL"
+        assert all(value == "FAIL" for value in results.values())
+    finally:
+        with compatibility_database.connect_owner() as connection:
+            connection.execute(restore)
 
 
 def test_operator_check_names_stale_renewal_without_returning_definition(

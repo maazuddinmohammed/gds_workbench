@@ -10,6 +10,12 @@ transaction and reports a summary plus failed workflow-function, permission or u
 column checks. It never executes workflow functions. PASS covers these workflow
 contracts; the app's `/readyz` also checks other schema, reference data and login rules.
 
+For an exhausted Run, use [inspect_workflow_recovery.sql](inspect_workflow_recovery.sql)
+after setting its Tenant, Project and Run IDs. It reports bounded recovery, usage and
+event counters in a read-only transaction; it omits event messages, tokens and physical
+data. Both diagnostic files are included beside the source ZIP and covered by its
+checksum list. They can be run before deploying.
+
 ```bash
 python3 deployment/databricks_ui/build_uploads.py
 ```

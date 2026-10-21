@@ -235,13 +235,22 @@ def _write_operator_files(staging: Path, app: Path) -> tuple[Path, Path]:
     _copy_file(
         Path(__file__).with_name("README.md"), staging / "UPLOAD_INSTRUCTIONS.md"
     )
+    diagnostics = tuple(
+        staging / name
+        for name in (
+            "check_workflow_compatibility.sql",
+            "inspect_workflow_recovery.sql",
+        )
+    )
+    for path in diagnostics:
+        _copy_file(Path(__file__).with_name(path.name), path)
 
     checksums = staging / "SHA256SUMS.txt"
-    archives = (staging / f"{APP_DIRECTORY_NAME}.zip",)
+    checked_files = (staging / f"{APP_DIRECTORY_NAME}.zip", *diagnostics)
     checksums.write_text(
         "".join(
             f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n"
-            for path in archives
+            for path in checked_files
         ),
         encoding="utf-8",
     )

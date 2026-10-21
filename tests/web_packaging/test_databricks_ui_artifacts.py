@@ -86,8 +86,14 @@ def test_builder_creates_exact_ui_upload_roots(tmp_path: Path) -> None:
         "artifact-manifest.json",
         "SHA256SUMS.txt",
         "UPLOAD_INSTRUCTIONS.md",
+        "check_workflow_compatibility.sql",
+        "inspect_workflow_recovery.sql",
         builder.GENERATED_MARKER,
     }
+    for name in ("check_workflow_compatibility.sql", "inspect_workflow_recovery.sql"):
+        assert (result.output_directory / name).read_bytes() == (
+            ROOT / "deployment/databricks_ui" / name
+        ).read_bytes()
     assert "/artifacts/databricks-ui/" in ROOT_GITIGNORE.read_text(encoding="utf-8")
     assert "/artifacts/databricks-ui-foundry/" in ROOT_GITIGNORE.read_text(
         encoding="utf-8"
@@ -261,7 +267,7 @@ def test_manifest_matches_every_generated_source_file(tmp_path: Path) -> None:
             assert record["sha256"] == hashlib.sha256(content).hexdigest()
 
 
-def test_checksum_file_matches_app_archive(tmp_path: Path) -> None:
+def test_checksum_file_matches_app_archive_and_diagnostics(tmp_path: Path) -> None:
     builder = _load_builder()
     result = builder.build_uploads(tmp_path / "release")
     records = {
@@ -274,6 +280,12 @@ def test_checksum_file_matches_app_archive(tmp_path: Path) -> None:
 
     assert records == {
         result.app_archive.name: _sha256(result.app_archive),
+        "check_workflow_compatibility.sql": _sha256(
+            result.output_directory / "check_workflow_compatibility.sql"
+        ),
+        "inspect_workflow_recovery.sql": _sha256(
+            result.output_directory / "inspect_workflow_recovery.sql"
+        ),
     }
 
 

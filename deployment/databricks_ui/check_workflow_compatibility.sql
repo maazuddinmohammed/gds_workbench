@@ -1,6 +1,6 @@
 -- Run this entire script in a fresh SQL session against the intended database.
 -- Catalog reads only: no application functions, project data, DDL or data writes.
--- PASS covers the current workflow fixes and usage contracts, not full app readiness.
+-- PASS covers workflow lock fixes and selected Profiling/usage contracts, not full app readiness.
 -- Output contains one summary row and only failed checks; no function bodies.
 BEGIN TRANSACTION READ ONLY;
 SET LOCAL statement_timeout = '15s';
@@ -31,6 +31,19 @@ WITH required_functions(signature, required_source, web_execute, expected_return
         ('application.get_profiling_execution_context('
          'uuid,uuid,character varying,bigint,bigint)',
          ARRAY['%FOR KEY SHARE OF run FOR SHARE OF target_project%'], TRUE, NULL),
+        ('application.get_profiling_connection_values('
+         'uuid,uuid,character varying,bigint,bigint,character varying)',
+         ARRAY[]::TEXT[], TRUE, 'record'),
+        ('application.append_workflow_run_event('
+         'uuid,uuid,character varying,bigint,bigint,bigint,integer,'
+         'character varying,character varying,character varying,integer,integer,integer)',
+         ARRAY[]::TEXT[], TRUE, 'project.project_event_log'),
+        ('application.persist_profiling_results('
+         'uuid,uuid,character varying,bigint,bigint,jsonb)',
+         ARRAY[]::TEXT[], TRUE, 'record'),
+        ('application.complete_workflow_run('
+         'uuid,uuid,character varying,bigint,bigint,integer)',
+         ARRAY[]::TEXT[], TRUE, 'record'),
         ('application.get_analysis_validation_execution_context('
          'uuid,uuid,character varying,bigint,bigint,character varying)',
          ARRAY['%FOR KEY SHARE OF run FOR SHARE OF target_project%'], TRUE, NULL),
