@@ -70,6 +70,7 @@ from gds_workbench_api.frontend import (
 )
 from gds_workbench_api.integrations.databricks import create_databricks_execution_adapters
 from gds_workbench_api.main import ReadinessDependency, create_app
+from gds_workbench_api.runtime_diagnostics import RuntimeDiagnostics
 
 
 class RuntimeDatabase(ReadinessDependency, WorkflowRuntimeDatabase, Protocol):
@@ -82,6 +83,7 @@ def create_runtime_app(
     *,
     settings: RuntimeSettings | None = None,
     database: RuntimeDatabase | None = None,
+    diagnostics: RuntimeDiagnostics | None = None,
 ) -> FastAPI:
     """Build one local-testable and container-ready API process."""
     runtime_settings = settings or RuntimeSettings.from_environment()
@@ -142,6 +144,7 @@ def create_runtime_app(
                 await runtime_database.close()
 
     app = create_app(
+        runtime_diagnostics=diagnostics or RuntimeDiagnostics.capture_installed_sources(),
         readiness=runtime_database,
         identity_provider=identity_provider,
         session_service=DatabaseSessionService(

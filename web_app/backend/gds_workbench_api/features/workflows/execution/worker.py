@@ -25,17 +25,19 @@ from psycopg.errors import (
 )
 from pydantic import ValidationError
 
+from gds_workbench_api.runtime_diagnostics import RuntimeDiagnostics, WorkflowFailureCategory
+
 from .contracts import WorkflowExecutionClaim
 from .repository import WorkflowClaimLease
 
 _logger = logging.getLogger(__name__)
 
 
-def workflow_failure_category(error: Exception) -> str:
+def workflow_failure_category(error: Exception) -> WorkflowFailureCategory:
     """Classify a bounded exception chain without reading messages or diagnostics."""
     current: BaseException | None = error
     seen: set[int] = set()
-    category = "unexpected"
+    category: WorkflowFailureCategory = "unexpected"
     for _ in range(6):
         if current is None or id(current) in seen:
             break
@@ -113,6 +115,7 @@ class WorkflowClaimRunner:
         dispatcher: WorkflowClaimDispatcher,
         lease_duration_seconds: int,
         heartbeat_interval_seconds: float,
+        diagnostics: RuntimeDiagnostics | None = None,
     ) -> None:
         if lease_duration_seconds < 1 or lease_duration_seconds > 300:
             raise ValueError("Workflow Run lease duration must be between 1 and 300 seconds")
@@ -122,9 +125,12 @@ class WorkflowClaimRunner:
         self._dispatcher = dispatcher
         self._lease_duration_seconds = lease_duration_seconds
         self._heartbeat_interval_seconds = heartbeat_interval_seconds
+        self._diagnostics = diagnostics
 
     async def run(self, claim: WorkflowExecutionClaim) -> WorkerRunResult:
         """Execute one already-acquired claim with the shared lease behavior."""
+        if self._diagnostics is not None:
+            self._diagnostics.enter("executor")
         execution = asyncio.create_task(self._dispatcher.execute(claim))
         heartbeat = asyncio.create_task(self._heartbeat(claim, execution))
         try:
@@ -133,7 +139,7 @@ class WorkflowClaimRunner:
                 return_when=asyncio.FIRST_COMPLETED,
             )
             if execution not in done:
-                category = "unexpected"
+                category: WorkflowFailureCategory = "unexpected"
                 try:
                     await heartbeat
                 except asyncio.CancelledError:
@@ -143,6 +149,8 @@ class WorkflowClaimRunner:
                 # Completion may clear the claim while its last heartbeat is in
                 # flight. A finished executor remains the authoritative outcome.
                 if not execution.done():
+                    if self._diagnostics is not None:
+                        self._diagnostics.record_fault(category, "heartbeat")
                     _logger.warning(
                         "workflow_claim_lost run_id=%s recovery_count=%s category=%s",
                         claim.workflow_run_id,
@@ -162,6 +170,14 @@ class WorkflowClaimRunner:
             except asyncio.CancelledError:
                 raise
             except Exception as error:
+                if self._diagnostics is not None:
+                    boundary = self._diagnostics.boundary
+                    self._diagnostics.record_fault(
+                        workflow_failure_category(error),
+                        "usage_initialization"
+                        if boundary == "usage_initialization"
+                        else "executor",
+                    )
                 _logger.warning(
                     "workflow_execution_failed run_id=%s recovery_count=%s category=%s",
                     claim.workflow_run_id,
@@ -210,6 +226,7 @@ class WorkflowExecutionWorker:
         dispatcher: WorkflowClaimDispatcher,
         lease_duration_seconds: int,
         heartbeat_interval_seconds: float,
+        diagnostics: RuntimeDiagnostics | None = None,
     ) -> None:
         self._claims = claims
         self._runner = WorkflowClaimRunner(
@@ -217,14 +234,30 @@ class WorkflowExecutionWorker:
             dispatcher=dispatcher,
             lease_duration_seconds=lease_duration_seconds,
             heartbeat_interval_seconds=heartbeat_interval_seconds,
+            diagnostics=diagnostics,
         )
         self._lease_duration_seconds = lease_duration_seconds
+        self._diagnostics = diagnostics
 
     async def run_once(self) -> WorkerRunResult:
-        claim = await self._claims.claim_next(lease_duration_seconds=self._lease_duration_seconds)
+        if self._diagnostics is not None:
+            self._diagnostics.enter("claim")
+        try:
+            claim = await self._claims.claim_next(
+                lease_duration_seconds=self._lease_duration_seconds
+            )
+        except Exception as error:
+            if self._diagnostics is not None:
+                self._diagnostics.record_fault(workflow_failure_category(error), "claim")
+                self._diagnostics.record_poll("poll_failed")
+            raise
         if claim is None:
-            return WorkerRunResult.IDLE
-        return await self._runner.run(claim)
+            result = WorkerRunResult.IDLE
+        else:
+            result = await self._runner.run(claim)
+        if self._diagnostics is not None:
+            self._diagnostics.record_poll(result.value)
+        return result
 
 
 __all__ = [

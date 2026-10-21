@@ -11,6 +11,7 @@ from gds_etl_workbench.configuration import ConfigurationError
 
 from gds_workbench_api.configuration import RuntimeSettings
 from gds_workbench_api.runtime import create_runtime_app
+from gds_workbench_api.runtime_diagnostics import RuntimeDiagnostics
 from gds_workbench_api.workflow_worker import create_worker_runtime
 
 DATABRICKS_SHUTDOWN_DEADLINE_SECONDS = 15.0
@@ -93,8 +94,9 @@ def app_port(source: Mapping[str, str] | None = None) -> int:
 
 async def _run() -> None:
     settings = RuntimeSettings.from_environment()
-    app = create_runtime_app(settings=settings)
-    worker = create_worker_runtime(settings=settings)
+    diagnostics = RuntimeDiagnostics.capture_installed_sources()
+    app = create_runtime_app(settings=settings, diagnostics=diagnostics)
+    worker = create_worker_runtime(settings=settings, diagnostics=diagnostics)
     server = uvicorn.Server(
         uvicorn.Config(
             app,

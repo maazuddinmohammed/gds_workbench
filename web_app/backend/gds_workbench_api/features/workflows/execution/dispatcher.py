@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 
 from gds_etl_workbench.domain.errors import InvalidRequestError
 
+from gds_workbench_api.runtime_diagnostics import RuntimeDiagnostics
+
 from .contracts import WorkflowExecutionClaim, WorkflowExecutor
 
 if TYPE_CHECKING:
@@ -34,8 +36,11 @@ class WorkflowExecutionServices:
 
 
 class WorkflowExecutionDispatcher:
-    def __init__(self, services: WorkflowExecutionServices) -> None:
+    def __init__(
+        self, services: WorkflowExecutionServices, *, diagnostics: RuntimeDiagnostics | None = None
+    ) -> None:
         self._services = services
+        self._diagnostics = diagnostics
 
     async def execute(self, claim: WorkflowExecutionClaim) -> object:
         if claim.project_workflow == "profiling":
@@ -70,8 +75,12 @@ class WorkflowExecutionDispatcher:
         )
         executor_started = False
         try:
+            if self._diagnostics is not None:
+                self._diagnostics.enter("usage_initialization")
             async with recording:
                 executor_started = True
+                if self._diagnostics is not None:
+                    self._diagnostics.enter("executor")
                 return await executor.execute_started(
                     claim.principal,
                     tenant_id=claim.tenant_id,

@@ -4,7 +4,7 @@ from collections.abc import AsyncGenerator, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import LiteralString, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import psycopg
 import pytest
@@ -14,6 +14,12 @@ from psycopg import sql
 from psycopg.errors import InsufficientPrivilege
 
 from tests.mcp.conftest import DisposablePostgres, disposable_postgres
+from tests.web_backend.test_database_workflow_compatibility_check import (
+    _check,  # pyright: ignore[reportPrivateUsage]
+)
+from tests.web_backend.test_database_workflow_usage import (
+    _run,  # pyright: ignore[reportPrivateUsage]
+)
 
 APPLICATION_REFERENCE_SEED = (
     Path(__file__).parents[2] / "database" / "seed" / "04_application_reference.sql"
@@ -64,6 +70,103 @@ async def test_readiness_accepts_a_random_fixture_login_with_exact_web_posture(
     readiness = await _readiness(readiness_postgres)
 
     assert readiness == ReadinessRecord(ready=True, code="ready")
+
+
+@pytest.mark.parametrize(
+    "owner_posture",
+    ["runtime_role", "column_privileges", "no_schema", "missing_select", "no_update"],
+)
+async def test_claim_definer_readiness_matches_real_row_lock_permissions(
+    readiness_postgres: DisposablePostgres,
+    owner_posture: str,
+) -> None:
+    _, claim, runtime = _run(readiness_postgres, workflow="profiling")
+    role = sql.Identifier(
+        "gds_web_write" if owner_posture == "runtime_role" else f"fixture_definer_{uuid4().hex}"
+    )
+    with readiness_postgres.connect_owner() as connection:
+        row = connection.execute(
+            "SELECT owner.rolname FROM pg_proc AS proc "
+            "JOIN pg_roles AS owner ON owner.oid=proc.proowner "
+            "WHERE proc.oid='application.assert_workflow_run_claim(bigint,uuid)'::regprocedure"
+        ).fetchone()
+        assert row is not None
+        original_owner = sql.Identifier(str(row["rolname"]))
+        if owner_posture != "runtime_role":
+            connection.execute(sql.SQL("CREATE ROLE {} NOLOGIN NOINHERIT").format(role))
+            if owner_posture != "no_schema":
+                connection.execute(sql.SQL("GRANT USAGE ON SCHEMA application TO {}").format(role))
+            connection.execute(
+                sql.SQL(
+                    "GRANT SELECT (workflow_run_id, workflow_run_state, "
+                    "workflow_run_claim_token_digest) ON application.workflow_run TO {}"
+                ).format(role)
+            )
+            if owner_posture != "missing_select":
+                connection.execute(
+                    sql.SQL(
+                        "GRANT SELECT (workflow_run_claim_expires_time) "
+                        "ON application.workflow_run TO {}"
+                    ).format(role)
+                )
+            if owner_posture != "no_update":
+                # PostgreSQL permits FOR UPDATE with UPDATE on any one column,
+                # including a column not referenced by the locking SELECT.
+                connection.execute(
+                    sql.SQL("GRANT UPDATE (created_by) ON application.workflow_run TO {}").format(
+                        role
+                    )
+                )
+        connection.execute(
+            sql.SQL(
+                "ALTER FUNCTION application.assert_workflow_run_claim(bigint,uuid) OWNER TO {}"
+            ).format(role)
+        )
+    try:
+        await runtime.open()
+        ready = owner_posture == "column_privileges"
+        readiness = await runtime.readiness()
+        checks = _check(readiness_postgres)
+        assert readiness == ReadinessRecord(
+            ready=ready, code="ready" if ready else "database_role_invalid"
+        )
+        assert checks == (
+            {"workflow_sql_checks": "PASS"}
+            if ready
+            else {
+                "workflow_sql_checks": "FAIL",
+                "application.assert_workflow_run_claim(bigint,uuid): definer_claim_access": "FAIL",
+            }
+        )
+        # Test the same SQL row lock directly under the actual web role, without
+        # changing Run data. The disposable connection rolls its lock back.
+        with readiness_postgres.connect_owner() as connection:
+            connection.execute("SET LOCAL ROLE gds_web_write")
+            if ready:
+                connection.execute(
+                    "SELECT application.assert_workflow_run_claim(%s,%s)",
+                    (claim.workflow_run_id, claim.workflow_run_claim_token),
+                )
+            else:
+                with pytest.raises(InsufficientPrivilege):
+                    connection.execute(
+                        "SELECT application.assert_workflow_run_claim(%s,%s)",
+                        (claim.workflow_run_id, claim.workflow_run_claim_token),
+                    )
+            connection.rollback()
+    finally:
+        await runtime.close()
+        with readiness_postgres.connect_owner() as connection:
+            connection.execute(
+                sql.SQL(
+                    "ALTER FUNCTION application.assert_workflow_run_claim(bigint,uuid) OWNER TO {}"
+                ).format(original_owner)
+            )
+            # Restoring ownership from the runtime role removes its owner ACL.
+            connection.execute(
+                "GRANT EXECUTE ON FUNCTION application.assert_workflow_run_claim(bigint,uuid) "
+                "TO gds_web_write"
+            )
 
 
 @pytest.mark.asyncio

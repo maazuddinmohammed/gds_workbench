@@ -84,6 +84,7 @@ installed AS (
            proc.proconfig,
            proc.prosrc,
            proc.prorettype,
+           proc.proowner,
            runtime_role.oid AS role_oid
       FROM required_functions AS required
       LEFT JOIN pg_catalog.pg_proc AS proc
@@ -102,6 +103,28 @@ checks(check_name, passed) AS (
     UNION ALL
     SELECT signature || ': function_exists', function_oid IS NOT NULL
       FROM installed
+    UNION ALL
+    SELECT signature || ': definer_claim_access',
+           coalesce(
+               pg_catalog.has_schema_privilege(proowner, 'application', 'USAGE')
+               AND pg_catalog.has_any_column_privilege(
+                   proowner, pg_catalog.to_regclass('application.workflow_run'), 'UPDATE'
+               )
+               AND (
+                   SELECT count(*) = 4 AND bool_and(pg_catalog.has_column_privilege(
+                       installed.proowner, attribute.attrelid, attribute.attnum, 'SELECT'
+                   ))
+                     FROM pg_catalog.pg_attribute AS attribute
+                    WHERE attribute.attrelid = pg_catalog.to_regclass('application.workflow_run')
+                      AND attribute.attnum > 0 AND NOT attribute.attisdropped
+                      AND attribute.attname IN (
+                          'workflow_run_id', 'workflow_run_state',
+                          'workflow_run_claim_token_digest', 'workflow_run_claim_expires_time'
+                      )
+               ), FALSE
+           )
+      FROM installed
+     WHERE signature = 'application.assert_workflow_run_claim(bigint,uuid)'
     UNION ALL
     SELECT signature || ': security_definer_and_safe_search_path',
            coalesce(prosecdef AND provolatile = 'v'

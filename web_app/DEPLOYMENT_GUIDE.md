@@ -192,11 +192,26 @@ Verify in the intended environment using authorized data:
 - App group access, valid mapped identity and bounded unauthorized denials.
 - Tenant roles, owned lock, revision conflict and idempotent retries.
 - Worker claim/heartbeat/completion and safe failure reporting.
+- Authenticated `/api/v1/config/runtime-diagnostics`: its `installed_source` must
+  match `expected_installed_source` in the upload's `artifact-manifest.json`.
 - Representative workflows with actual Foundry deployments, both supported modes,
   required reasoning and governed Databricks data access.
 - No credentials, raw prompts, rows, tool output or stack traces in logs/telemetry.
 
 Local synthetic checks do not certify live-provider quality or production networking.
+The runtime diagnostic reports the worker attached to the same HTTP process, its
+readiness and last poll, and the last bounded fault category and execution boundary.
+It makes no database calls and returns no configuration values, paths, Run IDs,
+exception text or workflow content. Faults survive later idle polls but reset when
+the process restarts. Source fingerprints are captured from installed Python/JSON
+files at startup; they attest those disk files, not already-loaded bytecode. A matching
+fingerprint establishes package identity, not successful execution. An HTTP-only
+startup reports `not_attached`; it cannot claim an embedded worker is healthy.
+When the Run's usage initialization is missing, the upload also includes
+`inspect_workflow_startup_access.sql`. This catalog-only, read-only probe checks
+direct owner privileges for usage initialization and its binding helper. It does
+not call those functions or establish that nested authorization will succeed.
+
 Rollback redeploys a known-good compatible source revision using validate/deploy/run;
 it never resets PostgreSQL or invokes `bundle destroy`. Recheck active Project default
 compatibility and preserve immutable historical provenance.
@@ -210,9 +225,9 @@ compatibility and preserve immutable historical provenance.
 | Readiness 503 | Database network/TLS/runtime role and exact installed release/reference metadata. |
 | Workflow database not ready | Read the safe startup category: `database_schema_unavailable` means incompatible schema, reference metadata or workflow functions; `database_role_invalid` means runtime role/grants; `database_unavailable` means connection/readiness failure. Resolve compatibility before restarting. No Run is claimed during this check. |
 | Foundry failure | Accepted URL, exact registry deployment, one complete authentication method, inference permission, egress and mode/reasoning support. |
-| Latest upload still runs old behavior | Rebuild the source artifact and deploy the expanded folder containing the current backend `pyproject.toml`. Both Python packages track Python/JSON source changes in their build cache; copying individual files into an older artifact can omit this fix. |
+| Latest upload still runs old behavior | Compare authenticated runtime `installed_source` against the artifact manifest's `expected_installed_source`. Rebuild and deploy the complete expanded source folder if they differ. Both Python packages track Python/JSON source changes in their build cache; copying individual files into an older artifact can omit this fix. |
 | Queue stalled | Supervised worker, claims, lock/revision state and bounded workflow events. |
-| Recovery limit exhausted | The worker acquired the Run but repeatedly lost its claim or failed execution. Default 30-second leases and five recoveries can reach this failure near three minutes; it is separate from the model timeout. Inspect earlier `workflow_execution_failed` / `workflow_claim_lost` diagnostics by Run ID and recovery count. `workflow_poll_failed` identifies errors before dispatch, including `invalid_contract` for incompatible claim data. Categories contain no raw errors. |
+| Recovery limit exhausted | The worker acquired the Run but repeatedly lost its claim or failed execution. Default 30-second leases and five recoveries can reach this failure near three minutes; it is separate from the model timeout. Read the authenticated runtime diagnostic's fault boundary/category and age, or inspect earlier `workflow_execution_failed` / `workflow_claim_lost` logs by Run ID and recovery count. `workflow_poll_failed` identifies errors before dispatch, including `invalid_contract` for incompatible claim data. Categories contain no raw errors. |
 | Workflow Run revision stale | The Project changed after Run creation. Refresh the Project and start a new Run; the frozen revision is never rewritten. |
 | Workflow Run authorization unavailable | Before pickup/recovery, the owner lost write access or its Tenant Lock. Restore access and the owner's Tenant Lock, then start a new Run. A live claim remains owned by its worker. |
 | Workflow usage unavailable | Usage initialization failed before the executor started. Check database release compatibility and runtime access; a guarded failure is recorded when the Run still permits it. |

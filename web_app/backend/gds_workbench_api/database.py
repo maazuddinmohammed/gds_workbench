@@ -165,6 +165,30 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
                   'gds_web_write', to_regprocedure(required.signature), 'EXECUTE'
               ), FALSE)
        )
+       AND EXISTS (
+           -- SECURITY DEFINER must be able to read and lock the Run itself.
+           -- FOR UPDATE needs UPDATE on any column, not a table-wide grant.
+           SELECT 1 FROM pg_catalog.pg_proc AS claim_guard
+            WHERE claim_guard.oid = to_regprocedure(
+                'application.assert_workflow_run_claim(bigint,uuid)'
+            )
+              AND has_schema_privilege(claim_guard.proowner, 'application', 'USAGE')
+              AND has_any_column_privilege(
+                  claim_guard.proowner, to_regclass('application.workflow_run'), 'UPDATE'
+              )
+              AND (
+                  SELECT count(*) = 4 AND bool_and(has_column_privilege(
+                      claim_guard.proowner, attribute.attrelid, attribute.attnum, 'SELECT'
+                  ))
+                    FROM pg_catalog.pg_attribute AS attribute
+                   WHERE attribute.attrelid = to_regclass('application.workflow_run')
+                     AND attribute.attnum > 0 AND NOT attribute.attisdropped
+                     AND attribute.attname IN (
+                         'workflow_run_id', 'workflow_run_state',
+                         'workflow_run_claim_token_digest', 'workflow_run_claim_expires_time'
+                     )
+              )
+       )
        AND NOT EXISTS (
            SELECT 1 FROM unnest(ARRAY[
                'application.authorize_project_record_review('

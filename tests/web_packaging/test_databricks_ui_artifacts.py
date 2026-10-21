@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import runpy
 import stat
 import subprocess
 import sys
@@ -88,9 +89,14 @@ def test_builder_creates_exact_ui_upload_roots(tmp_path: Path) -> None:
         "UPLOAD_INSTRUCTIONS.md",
         "check_workflow_compatibility.sql",
         "inspect_workflow_recovery.sql",
+        "inspect_workflow_startup_access.sql",
         builder.GENERATED_MARKER,
     }
-    for name in ("check_workflow_compatibility.sql", "inspect_workflow_recovery.sql"):
+    for name in (
+        "check_workflow_compatibility.sql",
+        "inspect_workflow_recovery.sql",
+        "inspect_workflow_startup_access.sql",
+    ):
         assert (result.output_directory / name).read_bytes() == (
             ROOT / "deployment/databricks_ui" / name
         ).read_bytes()
@@ -112,9 +118,9 @@ def test_generated_app_contains_runtime_source_only(tmp_path: Path) -> None:
     assert "mcp_server/pyproject.toml" in app_files
     assert "mcp_server/gds_etl_workbench/runtime.py" in app_files
     assert "web_app/backend/pyproject.toml" in app_files
-    assert (result.app_source_directory / "web_app/backend/pyproject.toml").read_bytes() == (
-        ROOT / "web_app/backend/pyproject.toml"
-    ).read_bytes()
+    assert (
+        result.app_source_directory / "web_app/backend/pyproject.toml"
+    ).read_bytes() == (ROOT / "web_app/backend/pyproject.toml").read_bytes()
     assert "web_app/backend/uv.lock" not in app_files
     assert "web_app/backend/gds_workbench_api/app_process.py" in app_files
     assert "web_app/backend/gds_workbench_api/dependencies.py" in app_files
@@ -256,7 +262,11 @@ def test_manifest_matches_every_generated_source_file(tmp_path: Path) -> None:
     result = builder.build_uploads(tmp_path / "release")
     manifest = json.loads(result.manifest.read_text(encoding="utf-8"))
     assert manifest["agent_provider"] == "microsoft_foundry"
-    assert set(manifest) == {"agent_provider", "app_source"}
+    assert set(manifest) == {
+        "agent_provider",
+        "app_source",
+        "expected_installed_source",
+    }
 
     for key, directory in (("app_source", result.app_source_directory),):
         records = {record["path"]: record for record in manifest[key]}
@@ -265,6 +275,51 @@ def test_manifest_matches_every_generated_source_file(tmp_path: Path) -> None:
             content = (directory / relative).read_bytes()
             assert record["size"] == len(content)
             assert record["sha256"] == hashlib.sha256(content).hexdigest()
+
+
+def test_manifest_fingerprint_matches_packaged_runtime_and_detects_stale_worker(
+    tmp_path: Path,
+) -> None:
+    builder = _load_builder()
+    result = builder.build_uploads(tmp_path / "release")
+    manifest = json.loads(result.manifest.read_text(encoding="utf-8"))
+    expected = manifest["expected_installed_source"]
+    api_root = result.app_source_directory / "web_app/backend/gds_workbench_api"
+    shared_root = result.app_source_directory / "mcp_server/gds_etl_workbench"
+    fingerprint = runpy.run_path(str(api_root / "runtime_diagnostics.py"))[
+        "source_tree_sha256"
+    ]
+
+    assert expected == {
+        "fingerprint_version": 1,
+        "api_sha256": fingerprint(api_root),
+        "shared_sha256": fingerprint(shared_root),
+    }
+    worker = api_root / "features/workflows/execution/worker.py"
+    worker.write_bytes(
+        worker.read_bytes() + b"\n# Different deployed worker release.\n"
+    )
+    assert fingerprint(api_root) != expected["api_sha256"]
+    assert fingerprint(shared_root) == expected["shared_sha256"]
+
+
+def test_builder_fingerprints_without_installed_application_dependencies(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "standalone-release"
+    completed = subprocess.run(
+        [sys.executable, "-I", "-S", str(BUILDER_PATH), "--output", str(output)],
+        cwd=tmp_path,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+    assert completed.returncode == 0, "Standalone stdlib-only artifact build failed"
+    expected = json.loads(
+        (output / "artifact-manifest.json").read_text(encoding="utf-8")
+    )["expected_installed_source"]
+    assert expected["fingerprint_version"] == 1
+    assert all(len(expected[key]) == 64 for key in ("api_sha256", "shared_sha256"))
 
 
 def test_checksum_file_matches_app_archive_and_diagnostics(tmp_path: Path) -> None:
@@ -285,6 +340,9 @@ def test_checksum_file_matches_app_archive_and_diagnostics(tmp_path: Path) -> No
         ),
         "inspect_workflow_recovery.sql": _sha256(
             result.output_directory / "inspect_workflow_recovery.sql"
+        ),
+        "inspect_workflow_startup_access.sql": _sha256(
+            result.output_directory / "inspect_workflow_startup_access.sql"
         ),
     }
 
@@ -358,6 +416,7 @@ def test_archives_are_reproducible_and_source_files_are_unchanged(
     second = builder.build_uploads(tmp_path / "second")
 
     assert _sha256(first.app_archive) == _sha256(second.app_archive)
+    assert first.manifest.read_bytes() == second.manifest.read_bytes()
     assert (first.app_source_directory / "app.yaml").read_bytes() == (
         ROOT / "app.yaml"
     ).read_bytes()
@@ -380,7 +439,11 @@ def test_explicit_foundry_build_uses_canonical_manifest_and_is_self_contained(
     assert app_yaml.read_bytes() == (ROOT / "app.yaml").read_bytes()
     assert guide.read_bytes() == (ROOT / "web_app/DEPLOYMENT_GUIDE.md").read_bytes()
     assert manifest["agent_provider"] == "microsoft_foundry"
-    assert set(manifest) == {"agent_provider", "app_source"}
+    assert set(manifest) == {
+        "agent_provider",
+        "app_source",
+        "expected_installed_source",
+    }
     assert app_records["app.yaml"]["sha256"] == _sha256(app_yaml)
     with ZipFile(result.app_archive) as package:
         assert package.read("app.yaml") == app_yaml.read_bytes()

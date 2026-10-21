@@ -6,7 +6,7 @@ import signal
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, cast
 
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.infrastructure.postgres import ReadinessRecord
@@ -33,6 +33,7 @@ from gds_workbench_api.features.workflows.execution.configuration import (
 )
 from gds_workbench_api.features.workflows.execution.worker import workflow_failure_category
 from gds_workbench_api.integrations.databricks import create_databricks_execution_adapters
+from gds_workbench_api.runtime_diagnostics import ReadinessCode, RuntimeDiagnostics
 
 _logger = logging.getLogger(__name__)
 
@@ -63,6 +64,7 @@ class WorkflowWorkerRuntime:
     worker: WorkflowExecutionWorker
     configuration: WorkflowExecutionConfiguration
     services: WorkflowRuntimeServices
+    diagnostics: RuntimeDiagnostics | None = None
 
     async def run(self, shutdown: asyncio.Event) -> None:
         try:
@@ -71,6 +73,7 @@ class WorkflowWorkerRuntime:
                 worker=self.worker,
                 configuration=self.configuration,
                 shutdown=shutdown,
+                diagnostics=self.diagnostics,
             )
         finally:
             await self.services.close()
@@ -108,16 +111,30 @@ async def run_worker_process(
     worker: WorkerLoop,
     configuration: WorkflowExecutionConfiguration,
     shutdown: asyncio.Event,
+    diagnostics: RuntimeDiagnostics | None = None,
 ) -> None:
     """Require a compatible database before claiming; release work on shutdown."""
 
     async def run_ready_worker() -> None:
         if shutdown.is_set():
             return
+        if diagnostics is not None:
+            diagnostics.started = True
+            diagnostics.enter("database_open")
         try:
             await database.open()
+            if diagnostics is not None:
+                diagnostics.enter("database_readiness")
             readiness = await database.readiness()
-        except Exception:
+        except Exception as error:
+            if diagnostics is not None:
+                diagnostics.readiness_code = "database_unavailable"
+                diagnostics.record_fault(
+                    workflow_failure_category(error),
+                    "database_open"
+                    if diagnostics.boundary == "database_open"
+                    else "database_readiness",
+                )
             _logger.error("workflow_database_not_ready code=database_unavailable")
             raise RuntimeError("workflow_database_not_ready") from None
         if shutdown.is_set():
@@ -134,8 +151,22 @@ async def run_worker_process(
                 }
                 else "database_unavailable"
             )
+            if diagnostics is not None:
+                diagnostics.readiness_code = cast(ReadinessCode, safe_code)
+                diagnostics.record_fault(
+                    "database_access"
+                    if safe_code == "database_role_invalid"
+                    else "database_connectivity"
+                    if safe_code == "database_unavailable"
+                    else "database_schema",
+                    "database_readiness",
+                )
             _logger.error("workflow_database_not_ready code=%s", safe_code)
             raise RuntimeError("workflow_database_not_ready")
+        if diagnostics is not None:
+            diagnostics.readiness_code = "ready"
+            diagnostics.state = "ready"
+            diagnostics.boundary = None
         await run_worker_loop(worker, configuration=configuration)
 
     loop_task = asyncio.create_task(run_ready_worker())
@@ -154,16 +185,24 @@ async def run_worker_process(
         for task in tasks:
             with suppress(asyncio.CancelledError, Exception):
                 await task
-        await database.close()
+        try:
+            await database.close()
+        finally:
+            if diagnostics is not None:
+                diagnostics.state = "stopped"
+                diagnostics.boundary = None
 
 
 def create_worker_runtime(
     *,
     settings: RuntimeSettings | None = None,
     database: WorkflowWorkerDatabase | None = None,
+    diagnostics: RuntimeDiagnostics | None = None,
 ) -> WorkflowWorkerRuntime:
     """Assemble the worker without opening a database or starting execution."""
     runtime_settings = settings or RuntimeSettings.from_environment()
+    runtime_diagnostics = diagnostics or RuntimeDiagnostics.capture_installed_sources()
+    runtime_diagnostics.state = "starting"
     runtime_database = database or WebPostgresDatabase(
         dsn=runtime_settings.database_dsn,
         pool_min=runtime_settings.pool_min,
@@ -196,15 +235,19 @@ def create_worker_runtime(
     configuration = runtime_settings.workflow_execution
     worker = WorkflowExecutionWorker(
         claims=DatabaseWorkflowClaimRepository(database=runtime_database),
-        dispatcher=WorkflowExecutionDispatcher(services.execution_services()),
+        dispatcher=WorkflowExecutionDispatcher(
+            services.execution_services(), diagnostics=runtime_diagnostics
+        ),
         lease_duration_seconds=configuration.lease_duration_seconds,
         heartbeat_interval_seconds=configuration.heartbeat_interval_seconds,
+        diagnostics=runtime_diagnostics,
     )
     return WorkflowWorkerRuntime(
         database=runtime_database,
         worker=worker,
         configuration=configuration,
         services=services,
+        diagnostics=runtime_diagnostics,
     )
 
 

@@ -7,14 +7,29 @@ Building locally does not deploy or authorize external changes.
 Before redeployment, run [check_workflow_compatibility.sql](check_workflow_compatibility.sql)
 in a fresh SQL session on the intended database. It reads catalogs inside a read-only
 transaction and reports a summary plus failed workflow-function, permission or usage
-column checks. It never executes workflow functions. PASS covers these workflow
-contracts; the app's `/readyz` also checks other schema, reference data and login rules.
+column checks. This includes the claim-validation function owner's permission to
+read and lock Run rows; permission to call the function alone is insufficient.
+It never executes workflow functions. PASS covers these workflow contracts, not a
+successful workflow run; the app's `/readyz` also checks other schema, reference data
+and login rules.
 
 For an exhausted Run, use [inspect_workflow_recovery.sql](inspect_workflow_recovery.sql)
 after setting its Tenant, Project and Run IDs. It reports bounded recovery, usage and
 event counters in a read-only transaction; it omits event messages, tokens and physical
-data. Both diagnostic files are included beside the source ZIP and covered by its
-checksum list. They can be run before deploying.
+data. If usage initialization is missing, run
+[inspect_workflow_startup_access.sql](inspect_workflow_startup_access.sql). Its two
+rows check the usage-startup function owners' direct privileges; a passing result
+does not verify nested authorization or all runtime dependencies. It reads catalogs
+only, returning static check labels without role names or application data. All three
+SQL diagnostics are included beside the source ZIP and covered by its checksum list.
+They can be run before deploying.
+
+After deployment, open `/api/v1/config/runtime-diagnostics` in the authenticated
+App session. Compare `installed_source` with `expected_installed_source` in this
+upload's `artifact-manifest.json`. The response also reports the attached worker's
+state and last safe fault boundary/category. It contains no Run content or settings;
+the in-memory fault record resets on process restart. Matching source fingerprints
+and SQL checks do not replace a successful live workflow run.
 
 ```bash
 python3 deployment/databricks_ui/build_uploads.py

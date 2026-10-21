@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import runpy
 import shutil
 import stat
 import tempfile
@@ -219,12 +220,22 @@ def _write_zip(source_directory: Path, archive: Path) -> None:
 
 
 def _write_operator_files(staging: Path, app: Path) -> tuple[Path, Path]:
+    api_root = app / "web_app" / "backend" / "gds_workbench_api"
+    shared_root = app / "mcp_server" / "gds_etl_workbench"
+    # Load the packaged stdlib-only helper without installing application dependencies.
+    fingerprinting = runpy.run_path(str(api_root / "runtime_diagnostics.py"))
+    source_tree_sha256 = fingerprinting["source_tree_sha256"]
     manifest = staging / "artifact-manifest.json"
     manifest.write_text(
         json.dumps(
             {
                 "agent_provider": "microsoft_foundry",
                 "app_source": _tree_manifest(app),
+                "expected_installed_source": {
+                    "fingerprint_version": fingerprinting["SOURCE_FINGERPRINT_VERSION"],
+                    "api_sha256": source_tree_sha256(api_root),
+                    "shared_sha256": source_tree_sha256(shared_root),
+                },
             },
             indent=2,
             sort_keys=True,
@@ -240,6 +251,7 @@ def _write_operator_files(staging: Path, app: Path) -> tuple[Path, Path]:
         for name in (
             "check_workflow_compatibility.sql",
             "inspect_workflow_recovery.sql",
+            "inspect_workflow_startup_access.sql",
         )
     )
     for path in diagnostics:

@@ -144,6 +144,7 @@ from gds_workbench_api.features.workflows.runs import (
     WorkflowRunService,
     create_workflow_runs_router,
 )
+from gds_workbench_api.runtime_diagnostics import RuntimeDiagnostics, RuntimeDiagnosticsSnapshot
 
 
 class ReadinessDependency(Protocol):
@@ -193,6 +194,7 @@ def create_app(
     workflow_overview_service: WorkflowOverviewService | None = None,
     workflow_run_service: WorkflowRunService | None = None,
     workflow_command_service: WorkflowCommandService | None = None,
+    runtime_diagnostics: RuntimeDiagnostics | None = None,
     lifespan: Lifespan[FastAPI] | None = None,
 ) -> FastAPI:
     """Create one independently testable Workbench API process."""
@@ -226,6 +228,21 @@ def create_app(
 
     if identity_provider is None:
         return app
+
+    if runtime_diagnostics is not None:
+
+        async def read_runtime_diagnostics(response: Response) -> RuntimeDiagnosticsSnapshot:
+            response.headers["Cache-Control"] = "no-store"
+            return runtime_diagnostics.snapshot()
+
+        app.add_api_route(
+            "/api/v1/config/runtime-diagnostics",
+            read_runtime_diagnostics,
+            methods=["GET"],
+            response_model=RuntimeDiagnosticsSnapshot,
+            dependencies=[Depends(principal_dependency(identity_provider))],
+            tags=["configuration"],
+        )
 
     if session_service is not None:
         app.include_router(
