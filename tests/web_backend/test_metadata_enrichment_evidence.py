@@ -3,6 +3,7 @@
 # pyright: reportPrivateUsage=false
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
@@ -11,7 +12,12 @@ from typing import Any
 import pytest
 from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
 from gds_etl_workbench.domain.databricks_sql import ValidatedDatabricksSql
+from gds_etl_workbench.domain.errors import (
+    DatabricksConnectionFailedError,
+    DatabricksStatementFailedError,
+)
 from gds_etl_workbench.infrastructure.databricks_sql import DatabricksSqlExecutionResult
+from gds_workbench_api.features.metadata_enrichment import evidence
 from gds_workbench_api.features.metadata_enrichment.contracts import EnrichmentObject
 from gds_workbench_api.features.metadata_enrichment.evidence import (
     MetadataEvidenceReader,
@@ -568,6 +574,49 @@ async def test_raw_samples_are_not_retained_in_reader_evidence() -> None:
     assert sample not in repr(reader._samples)
     assert sample not in repr(reader._schemas)
     assert sample not in item.model_dump_json()
+
+
+@pytest.mark.asyncio
+async def test_unreachable_warehouse_is_read_once_and_logged_without_values(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # A stopped or unreachable Warehouse used to cost one stalled read per batch.
+    item = _object(columns=101, source=False)
+    executor = _Executor({"bronze_catalog": DatabricksConnectionFailedError()})
+    reader = _reader(executor)
+    with caplog.at_level(logging.WARNING):
+        await reader.collect((item,))
+    assert executor.calls == [("schema", "bronze_catalog", executor.calls[0][2])]
+    assert [record.getMessage() for record in caplog.records] == [
+        "metadata_evidence_connection_skipped reason=connection_failed"
+    ]
+    assert not any(
+        value in caplog.text
+        for value in ("synthetic.invalid", "/synthetic", "synthetic-test-value", "column_000")
+    )
+    assert reader.infer_type(item, item.attributes[0]).method == "none"
+
+
+@pytest.mark.asyncio
+async def test_read_that_uses_its_whole_budget_stops_that_warehouse(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    clock = iter(range(0, 10_000, 31))
+    monkeypatch.setattr(evidence, "monotonic", lambda: next(clock))
+    item = _object(columns=101, source=False)
+    executor = _Executor({"bronze_catalog": DatabricksStatementFailedError(1)})
+    with caplog.at_level(logging.WARNING):
+        await _reader(executor).collect((item,))
+    assert len(executor.calls) == 1
+    assert "metadata_evidence_connection_skipped reason=read_timeout" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_quick_statement_failure_keeps_reading_remaining_batches() -> None:
+    item = _object(columns=101, source=False)
+    executor = _Executor({"bronze_catalog": DatabricksStatementFailedError(1)})
+    await _reader(executor).collect((item,))
+    assert [kind for kind, _, _ in executor.calls] == ["schema"] * 3 + ["sample"] * 5
 
 
 def test_enrichment_context_preserves_all_attributes_above_former_cap() -> None:

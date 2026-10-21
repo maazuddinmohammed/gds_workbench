@@ -460,6 +460,15 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
              WHERE is_active) AS application_reference_ready
 """
 
+# No web transaction may wait forever. These limits sit above normal work, including a
+# large result commit that briefly blocks a heartbeat, so they only end stuck waits: a
+# held lock or stalled statement then fails with a safe error instead of a silent hang.
+_TRANSACTION_LIMITS_SQL = """
+SELECT set_config('lock_timeout', '60s', TRUE),
+       set_config('statement_timeout', '600s', TRUE),
+       set_config('idle_in_transaction_session_timeout', '300s', TRUE)
+"""
+
 
 class _WebTransaction:
     def __init__(self, connection: AsyncConnection[Any]) -> None:
@@ -544,6 +553,7 @@ class WebPostgresDatabase:
             elif read_only:
                 await connection.execute("SET TRANSACTION READ ONLY")
             await connection.execute("SET LOCAL ROLE gds_web_write")
+            await connection.execute(_TRANSACTION_LIMITS_SQL)
             yield connection
 
     @asynccontextmanager

@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from time import monotonic
 
 from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
 from gds_etl_workbench.domain.databricks_sql import validate_databricks_sql
+from gds_etl_workbench.domain.errors import DatabricksConnectionFailedError
 from gds_etl_workbench.infrastructure.databricks_sql import DatabricksSqlExecutor
 
 from .contracts import EnrichmentAttribute, EnrichmentObject, EvidenceMethod, PhysicalRelation
 from .inference import infer_sample_data_type, normalize_data_type
+
+_logger = logging.getLogger(__name__)
+_READ_TIMEOUT_SECONDS = 30
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +43,7 @@ class MetadataEvidenceReader:
         self._executor = executor
         self._connection_loader = connection_loader
         self._connections: dict[int, DatabricksSqlConnection | None] = {}
+        self._unavailable_connections: set[int] = set()
         self._schemas: dict[tuple[PhysicalRelation, str], ColumnSchema] = {}
         self._samples: dict[tuple[PhysicalRelation, str], TypeEvidence] = {}
 
@@ -130,12 +137,13 @@ class MetadataEvidenceReader:
                     f"AND lower(table_name) = lower('{table}') "
                     f"AND lower(column_name) IN ({names}) LIMIT 50"
                 )
+                started = monotonic()
                 try:
                     result = await self._executor.execute(
                         connection=connection,
                         batch=validate_databricks_sql(sql),
                         max_rows=50,
-                        timeout_seconds=30,
+                        timeout_seconds=_READ_TIMEOUT_SECONDS,
                     )
                     if result.rows_truncated:
                         continue
@@ -163,8 +171,10 @@ class MetadataEvidenceReader:
                             and row[2].strip()
                             else None,
                         )
-                except Exception:
+                except Exception as error:
                     # Connector details and schema/tool rows never enter diagnostics.
+                    if self._skip_connection(relation.connection_id, error, started):
+                        break
                     continue
 
     async def _collect_samples(self, sample_columns: dict[PhysicalRelation, set[str]]) -> None:
@@ -184,6 +194,7 @@ class MetadataEvidenceReader:
                     _quote_identifier(value)
                     for value in (relation.catalog, relation.schema_name, relation.table)
                 )
+                started = monotonic()
                 try:
                     result = await self._executor.execute(
                         connection=connection,
@@ -191,7 +202,7 @@ class MetadataEvidenceReader:
                             f"SELECT {projected} FROM {qualified} LIMIT 50"
                         ),
                         max_rows=50,
-                        timeout_seconds=30,
+                        timeout_seconds=_READ_TIMEOUT_SECONDS,
                     )
                     if (
                         result.cells_truncated
@@ -210,10 +221,28 @@ class MetadataEvidenceReader:
                             sample_count=len(values),
                         )
                     # Neither raw rows nor individual samples are retained in this reader.
-                except Exception:
+                except Exception as error:
+                    if self._skip_connection(relation.connection_id, error, started):
+                        break
                     continue
 
+    def _skip_connection(self, connection_id: int, error: Exception, started: float) -> bool:
+        """Stop reading a Warehouse that cannot connect or used a whole read budget."""
+        if isinstance(error, DatabricksConnectionFailedError):
+            reason = "connection_failed"
+        elif monotonic() - started >= _READ_TIMEOUT_SECONDS:
+            reason = "read_timeout"
+        else:
+            return False
+        # Evidence is optional, and every later read would stall the same way. Log only
+        # the reason: connection values, SQL and rows never enter application logs.
+        self._unavailable_connections.add(connection_id)
+        _logger.warning("metadata_evidence_connection_skipped reason=%s", reason)
+        return True
+
     async def _connection(self, connection_id: int) -> DatabricksSqlConnection | None:
+        if connection_id in self._unavailable_connections:
+            return None
         if connection_id not in self._connections:
             # Authorization failures propagate. Only unavailable physical execution falls back.
             self._connections[connection_id] = await self._connection_loader(connection_id)

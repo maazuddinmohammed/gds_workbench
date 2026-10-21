@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import re
 from collections.abc import Callable, Sequence
@@ -28,6 +27,10 @@ from gds_etl_workbench.domain.modeling_records import (
     AnalysisValidationEvidence as AnalysisValidationEvidence,
 )
 from gds_etl_workbench.domain.modeling_records import InferredCardinality
+from gds_etl_workbench.infrastructure.databricks_sql import (
+    bounded_connector_options,
+    run_connector_call,
+)
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 _MAX_RELATIONSHIPS = 50_000
@@ -227,7 +230,7 @@ class ConnectorAnalysisValidationExecutor:
             raise InvalidRequestError(
                 "Analysis validation timeout must be between 1 and 3600 seconds."
             )
-        return await asyncio.to_thread(
+        return await run_connector_call(
             self._execute_sync,
             connection,
             query,
@@ -250,9 +253,8 @@ class ConnectorAnalysisValidationExecutor:
                 user_agent_entry="gds-workbench-web",
                 use_cloud_fetch=False,
                 enable_telemetry=0,
-                _socket_timeout=timeout_seconds,
-                _retry_stop_after_attempts_count=3,
                 _use_arrow_native_complex_types=False,
+                **bounded_connector_options(timeout_seconds),
             )
         except DatabricksError:
             raise DatabricksConnectionFailedError() from None

@@ -39,6 +39,10 @@ from gds_etl_workbench.domain.errors import (
     DatabricksStatementFailedError,
     InvalidRequestError,
 )
+from gds_etl_workbench.infrastructure.databricks_sql import (
+    bounded_connector_options,
+    run_connector_call,
+)
 
 _MAX_ATTRIBUTES = 2_000
 _MAX_ATTRIBUTES_PER_QUERY = 50
@@ -264,7 +268,7 @@ class ConnectorProfilingExecutor:
         cancelled = threading.Event()
         cursors: list[_Cursor] = []
         task = asyncio.create_task(
-            asyncio.to_thread(
+            run_connector_call(
                 self._execute_sync,
                 connection,
                 query,
@@ -302,9 +306,8 @@ class ConnectorProfilingExecutor:
                 user_agent_entry="gds-workbench-profiling",
                 use_cloud_fetch=False,
                 enable_telemetry=0,
-                _socket_timeout=timeout_seconds,
-                _retry_stop_after_attempts_count=3,
                 _use_arrow_native_complex_types=False,
+                **bounded_connector_options(timeout_seconds),
             )
         except DatabricksError:
             raise DatabricksConnectionFailedError() from None

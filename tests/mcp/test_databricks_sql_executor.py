@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from datetime import UTC, datetime
 from decimal import Decimal
 from types import TracebackType
@@ -18,6 +19,7 @@ from gds_etl_workbench.infrastructure.databricks_sql import (
     ConnectorDatabricksSqlExecutor,
     DatabricksError,
     DatabricksSqlConnection,
+    bounded_connector_options,
 )
 from gds_etl_workbench.domain.databricks_sql import validate_databricks_sql
 
@@ -86,9 +88,11 @@ class CapturingConnect:
         self.connection = connection
         self.failure = failure
         self.arguments: dict[str, object] = {}
+        self.thread_name = ""
 
     def __call__(self, **kwargs: object) -> FakeConnection:
         self.arguments = kwargs
+        self.thread_name = threading.current_thread().name
         if self.failure is not None:
             raise self.failure
         assert self.connection is not None
@@ -148,10 +152,31 @@ async def test_executor_runs_all_statements_and_returns_only_50_final_rows() -> 
         "user_agent_entry": "gds-etl-workbench",
         "use_cloud_fetch": False,
         "enable_telemetry": 0,
+        "_use_arrow_native_complex_types": False,
         "_socket_timeout": 90,
         "_retry_stop_after_attempts_count": 3,
-        "_use_arrow_native_complex_types": False,
+        "_retry_delay_min": 1.0,
+        "_retry_delay_max": 5.0,
+        "_retry_stop_after_attempts_duration": 90.0,
     }
+    assert connect.thread_name.startswith("databricks-sql")
+
+
+def test_connector_retry_limits_are_inside_the_connector_policy() -> None:
+    # The connector silently clamps out-of-range retry values, including the 60 s
+    # minimum sleep and 15 minute retry window this bound replaces.
+    from databricks.sql.backend.thrift_backend import (  # pyright: ignore[reportMissingTypeStubs]
+        _retry_policy,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    for timeout_seconds in (1, 30, 300, 3_600):
+        options = bounded_connector_options(timeout_seconds)
+        for key, value in options.items():
+            if key in _retry_policy:
+                _, _, minimum, maximum = _retry_policy[key]
+                assert minimum <= value <= maximum, key
+        assert options["_retry_stop_after_attempts_duration"] == timeout_seconds
+        assert options["_retry_delay_max"] < 60
 
 
 @pytest.mark.asyncio

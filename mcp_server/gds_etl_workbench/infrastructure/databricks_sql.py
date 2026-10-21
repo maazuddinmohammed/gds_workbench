@@ -10,9 +10,11 @@ import base64
 import json
 import logging
 from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal
+from functools import partial
 from math import isfinite
 from types import TracebackType
 from typing import Any, Protocol, Self, cast
@@ -43,6 +45,35 @@ _MAX_ROWS = 50
 _MAX_CELL_CHARACTERS = 20_000
 _MAX_COLLECTION_ITEMS = 1_000
 _MAX_RESULT_BYTES = 1_000_000
+
+# A connector call blocks its thread for its whole duration, retries included. Keep
+# those threads off the event loop's default executor, which also resolves database
+# hosts and authenticates web requests, so a stalled Warehouse cannot starve them.
+_CONNECTOR_THREADS = ThreadPoolExecutor(max_workers=16, thread_name_prefix="databricks-sql")
+
+
+def bounded_connector_options(timeout_seconds: int) -> dict[str, int | float]:
+    """Keep each connector request, including its retries, inside the caller's budget.
+
+    By default the connector sleeps at least 60 seconds before every retry and keeps
+    retrying for up to 15 minutes while a Warehouse starts or throttles.
+    """
+    return {
+        "_socket_timeout": timeout_seconds,
+        "_retry_stop_after_attempts_count": 3,
+        "_retry_delay_min": 1.0,
+        "_retry_delay_max": 5.0,
+        "_retry_stop_after_attempts_duration": float(timeout_seconds),
+    }
+
+
+async def run_connector_call[**P, R](
+    function: Callable[P, R], *args: P.args, **kwargs: P.kwargs
+) -> R:
+    """Run one blocking connector call on the dedicated connector threads."""
+    return await asyncio.get_running_loop().run_in_executor(
+        _CONNECTOR_THREADS, partial(function, *args, **kwargs)
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,7 +145,7 @@ class ConnectorDatabricksSqlExecutor:
         max_rows: int,
         timeout_seconds: int,
     ) -> DatabricksSqlExecutionResult:
-        return await asyncio.to_thread(
+        return await run_connector_call(
             self._execute_sync,
             connection,
             batch,
@@ -140,9 +171,8 @@ class ConnectorDatabricksSqlExecutor:
                 user_agent_entry="gds-etl-workbench",
                 use_cloud_fetch=False,
                 enable_telemetry=0,
-                _socket_timeout=timeout_seconds,
-                _retry_stop_after_attempts_count=3,
                 _use_arrow_native_complex_types=False,
+                **bounded_connector_options(timeout_seconds),
             )
         except DatabricksError:
             raise DatabricksConnectionFailedError() from None
