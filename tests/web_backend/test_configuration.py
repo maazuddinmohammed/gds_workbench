@@ -4,7 +4,10 @@ from uuid import UUID
 import certifi
 import pytest
 from gds_etl_workbench.configuration import ConfigurationError
-from gds_workbench_api.capabilities import load_default_agent_capabilities
+from gds_workbench_api.capabilities import (
+    load_default_agent_capabilities,
+    select_agent_runtime_capabilities,
+)
 from gds_workbench_api.configuration import Environment, RuntimeSettings
 from gds_workbench_api.integrations.agents.configuration import (
     AgentRuntimeConfiguration,
@@ -60,7 +63,14 @@ def test_runtime_settings_accepts_worker_timing_overrides() -> None:
     assert settings.workflow_execution.heartbeat_interval_seconds == 12
 
 
-def test_complete_databricks_app_environment_builds_production_settings() -> None:
+@pytest.mark.parametrize(
+    "anthropic_route",
+    [None, "auto", "https://fixture.services.ai.azure.com/anthropic"],
+    ids=["openai_only", "derived_claude", "explicit_claude"],
+)
+def test_complete_databricks_app_environment_builds_production_settings(
+    anthropic_route: str | None,
+) -> None:
     settings = RuntimeSettings.from_environment(
         {
             "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": "https://fixture.openai.azure.com/openai/v1/",
@@ -79,6 +89,11 @@ def test_complete_databricks_app_environment_builds_production_settings() -> Non
             "DATABRICKS_HOST": "https://fixture.azuredatabricks.net",
             "DATABRICKS_APP_NAME": "gds-workbench",
             "DATABRICKS_WORKSPACE_ID": "123456789",
+            **(
+                {"GDS_WEB_FOUNDRY_ANTHROPIC_BASE_URL": anthropic_route}
+                if anthropic_route is not None
+                else {}
+            ),
         }
     )
 
@@ -91,6 +106,16 @@ def test_complete_databricks_app_environment_builds_production_settings() -> Non
     assert settings.databricks_app_name == "gds-workbench"
     assert settings.databricks_workspace_id == 123456789
     assert conninfo_to_dict(settings.database_dsn)["sslrootcert"] == certifi.where()
+    capabilities = select_agent_runtime_capabilities(
+        load_default_agent_capabilities(),
+        configured_models={
+            (connection.provider_code, connection.model_code)
+            for connection in settings.agent_runtime.connections
+        },
+    )
+    assert (
+        "foundry-claude-opus-5-5" in {model.code for model in capabilities.models}
+    ) is (anthropic_route is not None)
 
 
 def test_remote_agent_configuration_binds_multiple_registered_deployments() -> None:

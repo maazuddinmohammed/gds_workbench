@@ -5,7 +5,6 @@ import re
 import tomllib
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 WEB_APP_CI = ROOT / ".github" / "workflows" / "web-app.yml"
 DEPLOYMENT_GUIDE = ROOT / "web_app" / "DEPLOYMENT_GUIDE.md"
@@ -75,6 +74,47 @@ def test_canonical_app_manifest_requires_foundry_secret_resources() -> None:
 def test_canonical_app_enables_claude_without_another_resource_binding() -> None:
     app_config = (ROOT / "app.yaml").read_text(encoding="utf-8")
     assert "name: GDS_WEB_FOUNDRY_ANTHROPIC_BASE_URL\n    value: auto" in app_config
+
+
+def test_canonical_app_settings_expose_claude_without_external_io() -> None:
+    from gds_workbench_api.capabilities import (
+        load_default_agent_capabilities,
+        select_agent_runtime_capabilities,
+    )
+    from gds_workbench_api.configuration import RuntimeSettings
+
+    app_config = (ROOT / "app.yaml").read_text(encoding="utf-8")
+    values = {
+        name: value
+        for name, value in re.findall(
+            r"^  - name: (\S+)\n    value: ([^\n]+)$", app_config, re.MULTILINE
+        )
+    }
+    values.update(
+        {
+            "GDS_WEB_DATABASE_DSN": (
+                "postgresql://gds_web_runtime:fixture_password@fixture.invalid/workbench"
+                "?sslmode=require"
+            ),
+            "GDS_WEB_CURSOR_SIGNING_KEY": "synthetic-production-key-32-bytes-long",
+            "GDS_WEB_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
+            "GDS_WEB_DATABRICKS_ENVIRONMENT_CODE": "TEST",
+            "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": "https://fixture.openai.azure.com/openai/v1/",
+            "GDS_WEB_FOUNDRY_API_KEY": "synthetic-fixture-credential",
+            "DATABRICKS_HOST": "https://fixture.azuredatabricks.net",
+            "DATABRICKS_APP_NAME": "fixture-app",
+            "DATABRICKS_WORKSPACE_ID": "123456789",
+        }
+    )
+    settings = RuntimeSettings.from_environment(values)
+    capabilities = select_agent_runtime_capabilities(
+        load_default_agent_capabilities(),
+        configured_models={
+            (connection.provider_code, connection.model_code)
+            for connection in settings.agent_runtime.connections
+        },
+    )
+    assert "foundry-claude-opus-5-5" in {model.code for model in capabilities.models}
 
 
 def test_bundle_grants_only_required_app_resources() -> None:

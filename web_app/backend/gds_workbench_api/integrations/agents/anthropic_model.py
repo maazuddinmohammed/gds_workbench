@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
+import time
 from collections.abc import AsyncIterator
+from email.utils import mktime_tz, parsedate_tz
 from typing import Any, cast
 from uuid import uuid4
 
@@ -35,6 +38,8 @@ from gds_workbench_api.integrations.agents.configuration import (
     ModelAuthentication,
 )
 from gds_workbench_api.integrations.agents.usage import ProviderUsageHooks
+
+_MAX_RETRY_AFTER_SECONDS = 120
 
 
 class FoundryAnthropicModel(Model):
@@ -114,6 +119,7 @@ class FoundryAnthropicModel(Model):
     async def _send(self, payload: dict[str, Any]) -> dict[str, Any]:
         status = 503
         for attempt in range(MAX_AGENT_HTTP_RETRIES + 1):
+            retry_delay = 0.5 * (2**attempt)
             if self._hooks.error is not None:
                 raise self._hooks.error
             credentials = await self._authentication.authenticate()
@@ -151,7 +157,31 @@ class FoundryAnthropicModel(Model):
                     break
                 if attempt == MAX_AGENT_HTTP_RETRIES:
                     break
-            await asyncio.sleep(0.5 * (2**attempt))
+                # Match the OpenAI SDK's bounded provider-directed waits. Retrying
+                # before a rate-limit window resets only spends the retry allowance.
+                retry_after: float | None = None
+                for header, divisor in (("retry-after-ms", 1000), ("retry-after", 1)):
+                    raw_delay = response.headers.get(header)
+                    if raw_delay is None:
+                        continue
+                    try:
+                        retry_after = float(raw_delay) / divisor
+                    except ValueError:
+                        continue
+                    break
+                else:
+                    try:
+                        retry_date = parsedate_tz(response.headers.get("retry-after", ""))
+                        if retry_date is not None:
+                            retry_after = mktime_tz(retry_date) - time.time()
+                    except ValueError, TypeError, OverflowError, OSError:
+                        pass
+                if retry_after is not None and math.isfinite(retry_after):
+                    if retry_after > _MAX_RETRY_AFTER_SECONDS:
+                        break
+                    if retry_after > 0:
+                        retry_delay = retry_after
+            await asyncio.sleep(retry_delay)
         # Never surface provider messages, headers, or identifiers.
         if status in {401, 403}:
             raise AgentExecutionFailedError("authentication_failed")

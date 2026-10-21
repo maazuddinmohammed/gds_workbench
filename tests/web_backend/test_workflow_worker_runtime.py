@@ -3,14 +3,17 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any, LiteralString, Never
+from unittest.mock import AsyncMock
 from uuid import UUID
 
 import pytest
 from gds_etl_workbench.infrastructure.postgres import (
+    ReadinessRecord,
     ReadIsolation,
     ReadTransaction,
     WriteTransaction,
 )
+from gds_workbench_api.app_process import run_app_processes
 from gds_workbench_api.configuration import RuntimeSettings
 from gds_workbench_api.features.workflows.execution import (
     DatabaseWorkflowClaimRepository,
@@ -27,6 +30,7 @@ from gds_workbench_api.workflow_worker import (
     run_worker_loop,
     run_worker_process,
 )
+from test_app_process import FakeServer
 from test_workflow_claim_repository import ClaimDatabase, ClaimTransaction
 
 
@@ -109,6 +113,15 @@ class ProcessDatabase:
     def __init__(self) -> None:
         self.opened = False
         self.closed = False
+        self.readiness_calls = 0
+        self.ready = True
+
+    async def readiness(self) -> ReadinessRecord:
+        assert self.opened and not self.closed
+        self.readiness_calls += 1
+        return ReadinessRecord(
+            ready=self.ready, code="ready" if self.ready else "database_schema_unavailable"
+        )
 
     async def open(self) -> None:
         self.opened = True
@@ -234,7 +247,130 @@ async def test_worker_process_closes_database_and_releases_active_claim_on_shutd
 
     assert database.opened is True
     assert database.closed is True
+    assert database.readiness_calls == 1
     assert claims.release_calls == [(701, claim.workflow_run_claim_token)]
+
+
+@pytest.mark.asyncio
+async def test_incompatible_database_stops_worker_before_claiming_and_closes_resources(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    database = ProcessDatabase()
+    database.ready = False
+    worker = SequencedWorker([WorkerRunResult.IDLE])
+
+    with pytest.raises(RuntimeError, match="^workflow_database_not_ready$") as caught:
+        await asyncio.wait_for(
+            run_worker_process(
+                database=database,
+                worker=worker,
+                configuration=WorkflowExecutionConfiguration.from_environment({}),
+                shutdown=asyncio.Event(),
+            ),
+            timeout=1,
+        )
+
+    assert caught.value.__cause__ is None
+    assert database.closed and database.readiness_calls == 1
+    assert "workflow_database_not_ready code=database_schema_unavailable" in caplog.text
+    assert worker._results == [WorkerRunResult.IDLE]  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.asyncio
+async def test_startup_readiness_error_is_redacted_and_database_is_closed(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class UnavailableDatabase(ProcessDatabase):
+        async def readiness(self) -> ReadinessRecord:
+            raise RuntimeError("synthetic-private-database-diagnostic")
+
+    database = UnavailableDatabase()
+    with pytest.raises(RuntimeError, match="^workflow_database_not_ready$") as caught:
+        await run_worker_process(
+            database=database,
+            worker=SequencedWorker([]),
+            configuration=WorkflowExecutionConfiguration.from_environment({}),
+            shutdown=asyncio.Event(),
+        )
+
+    assert database.closed
+    assert caught.value.__suppress_context__
+    assert "workflow_database_not_ready code=database_unavailable" in caplog.text
+    assert "synthetic-private-database-diagnostic" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_incompatible_worker_database_stops_http_and_closes_agent_clients(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = ProcessDatabase()
+    database.ready = False
+    runtime = create_worker_runtime(settings=_settings(), database=database)
+    close_agent = AsyncMock()
+    monkeypatch.setattr(runtime.services.agent_executor, "close", close_agent)
+    server = FakeServer()
+
+    with pytest.raises(RuntimeError, match="^workflow_database_not_ready$"):
+        await asyncio.wait_for(run_app_processes(server=server, worker=runtime), timeout=1)
+
+    assert database.closed and server.stopped.is_set()
+    close_agent.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["open", "readiness"])
+async def test_http_shutdown_interrupts_worker_database_startup(
+    monkeypatch: pytest.MonkeyPatch,
+    phase: str,
+) -> None:
+    checking = asyncio.Event()
+
+    class CheckingDatabase(ProcessDatabase):
+        async def open(self) -> None:
+            await super().open()
+            if phase == "open":
+                checking.set()
+                await asyncio.Event().wait()
+
+        async def readiness(self) -> ReadinessRecord:
+            checking.set()
+            await asyncio.Event().wait()
+            return await super().readiness()
+
+    database = CheckingDatabase()
+    runtime = create_worker_runtime(settings=_settings(), database=database)
+    claim = AsyncMock(side_effect=AssertionError("Startup must not claim a run"))
+    monkeypatch.setattr(runtime.worker, "run_once", claim)
+    close_agent = AsyncMock()
+    monkeypatch.setattr(runtime.services.agent_executor, "close", close_agent)
+    server = FakeServer()
+    process = asyncio.create_task(
+        run_app_processes(server=server, worker=runtime, shutdown_timeout_seconds=0.05)
+    )
+    await asyncio.wait_for(checking.wait(), timeout=1)
+    server.should_exit = True
+    await asyncio.wait_for(process, timeout=1)
+
+    assert database.closed and server.stopped.is_set()
+    claim.assert_not_awaited()
+    close_agent.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_worker_never_claims_after_shutdown_was_already_requested() -> None:
+    database = ProcessDatabase()
+    worker = SequencedWorker([WorkerRunResult.IDLE])
+    shutdown = asyncio.Event()
+    shutdown.set()
+    await run_worker_process(
+        database=database,
+        worker=worker,
+        configuration=WorkflowExecutionConfiguration.from_environment({}),
+        shutdown=shutdown,
+    )
+
+    assert database.closed
+    assert worker._results == [WorkerRunResult.IDLE]  # pyright: ignore[reportPrivateUsage]
 
 
 def _settings() -> RuntimeSettings:

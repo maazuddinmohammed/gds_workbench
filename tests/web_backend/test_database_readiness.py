@@ -67,6 +67,89 @@ async def test_readiness_accepts_a_random_fixture_login_with_exact_web_posture(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "signature",
+    [
+        "application.claim_next_workflow_run(integer)",
+        "application.renew_workflow_run_claim(bigint,uuid,integer)",
+        "application.release_workflow_run_claim(bigint,uuid)",
+        "application.assert_workflow_run_claim(bigint,uuid)",
+        "application.fail_workflow_run(uuid,uuid,character varying,bigint,bigint,"
+        "character varying,character varying)",
+    ],
+)
+async def test_readiness_requires_workflow_worker_execution_grants(
+    readiness_postgres: DisposablePostgres,
+    signature: LiteralString,
+) -> None:
+    with readiness_postgres.connect_owner() as connection:
+        connection.execute(
+            sql.SQL("REVOKE EXECUTE ON FUNCTION {} FROM gds_web_write").format(sql.SQL(signature))
+        )
+    try:
+        readiness = await _readiness(readiness_postgres)
+    finally:
+        with readiness_postgres.connect_owner() as connection:
+            connection.execute(
+                sql.SQL("GRANT EXECUTE ON FUNCTION {} TO gds_web_write").format(sql.SQL(signature))
+            )
+    assert readiness == ReadinessRecord(ready=False, code="database_role_invalid")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("signature", "current", "stale"),
+    [
+        (
+            "application.renew_workflow_run_claim(bigint,uuid,integer)",
+            "FOR NO KEY UPDATE OF run",
+            "FOR UPDATE OF run",
+        ),
+        (
+            "application.release_workflow_run_claim(bigint,uuid)",
+            "PERFORM project.assert_writable(v_project_id);\n"
+            "    v_released_time := clock_timestamp();",
+            "v_released_time := clock_timestamp();\n"
+            "    PERFORM project.assert_writable(v_project_id);",
+        ),
+        *[
+            (
+                "application." + name + "(uuid,uuid,character varying,bigint,bigint" + tail + ")",
+                "FOR KEY SHARE OF run FOR SHARE OF target_project",
+                "FOR SHARE OF run, target_project",
+            )
+            for name, tail in (
+                ("get_profiling_execution_context", ""),
+                ("get_analysis_validation_execution_context", ",character varying"),
+                ("get_metadata_enrichment_execution_context", ""),
+            )
+        ],
+    ],
+)
+async def test_readiness_rejects_installed_workflow_functions_without_lease_fixes(
+    readiness_postgres: DisposablePostgres,
+    signature: str,
+    current: str,
+    stale: str,
+) -> None:
+    # Alter only this fixture's disposable installation; restore its exact definition.
+    with readiness_postgres.connect_owner() as connection:
+        row = connection.execute(
+            "SELECT pg_get_functiondef(to_regprocedure(%s)) AS definition", (signature,)
+        ).fetchone()
+        assert row is not None
+        definition = row["definition"]
+        assert isinstance(definition, str) and current in definition
+        connection.execute(cast(LiteralString, definition.replace(current, stale)))
+    try:
+        readiness = await _readiness(readiness_postgres)
+    finally:
+        with readiness_postgres.connect_owner() as connection:
+            connection.execute(cast(LiteralString, definition))
+    assert readiness == ReadinessRecord(ready=False, code="database_schema_unavailable")
+
+
+@pytest.mark.asyncio
 async def test_readiness_rejects_an_unsafe_session_login_posture(
     readiness_postgres: DisposablePostgres,
 ) -> None:

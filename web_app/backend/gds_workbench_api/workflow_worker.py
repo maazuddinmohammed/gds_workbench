@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from gds_etl_workbench.application.authorization import AuthorizationService
+from gds_etl_workbench.infrastructure.postgres import ReadinessRecord
 
 from gds_workbench_api.capabilities import (
     load_default_agent_capabilities,
@@ -44,6 +45,8 @@ class WorkerProcessDatabase(Protocol):
     async def open(self) -> None: ...
 
     async def close(self) -> None: ...
+
+    async def readiness(self) -> ReadinessRecord: ...
 
 
 class WorkflowWorkerDatabase(
@@ -106,9 +109,36 @@ async def run_worker_process(
     configuration: WorkflowExecutionConfiguration,
     shutdown: asyncio.Event,
 ) -> None:
-    """Own database lifecycle; cancel execution and release its lease on shutdown."""
-    await database.open()
-    loop_task = asyncio.create_task(run_worker_loop(worker, configuration=configuration))
+    """Require a compatible database before claiming; release work on shutdown."""
+
+    async def run_ready_worker() -> None:
+        if shutdown.is_set():
+            return
+        try:
+            await database.open()
+            readiness = await database.readiness()
+        except Exception:
+            _logger.error("workflow_database_not_ready code=database_unavailable")
+            raise RuntimeError("workflow_database_not_ready") from None
+        if shutdown.is_set():
+            return
+        if not readiness.ready:
+            safe_code = (
+                readiness.code
+                if readiness.code
+                in {
+                    "database_version_invalid",
+                    "database_schema_unavailable",
+                    "database_role_invalid",
+                    "database_unavailable",
+                }
+                else "database_unavailable"
+            )
+            _logger.error("workflow_database_not_ready code=%s", safe_code)
+            raise RuntimeError("workflow_database_not_ready")
+        await run_worker_loop(worker, configuration=configuration)
+
+    loop_task = asyncio.create_task(run_ready_worker())
     shutdown_task = asyncio.create_task(shutdown.wait())
     try:
         done, _ = await asyncio.wait(
@@ -118,12 +148,12 @@ async def run_worker_process(
         if loop_task in done:
             await loop_task
     finally:
-        loop_task.cancel()
-        shutdown_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await loop_task
-        with suppress(asyncio.CancelledError):
-            await shutdown_task
+        tasks = (loop_task, shutdown_task)
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            with suppress(asyncio.CancelledError, Exception):
+                await task
         await database.close()
 
 

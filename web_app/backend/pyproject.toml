@@ -24,6 +24,13 @@ dependencies = [
 [project.scripts]
 gds-workbench-worker = "gds_workbench_api.workflow_worker:main"
 
+[tool.uv]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "gds_workbench_api/**/*.py" },
+    { file = "gds_workbench_api/**/*.json" },
+]
+
 [tool.uv.sources]
 gds-etl-workbench-mcp = { path = "../../mcp_server", editable = false }
 

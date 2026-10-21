@@ -1,7 +1,9 @@
 """Native Foundry Messages through the real Agents Runner; in-memory HTTP only."""
 
 # pyright: reportPrivateUsage=false
+import asyncio
 import json
+import time
 from collections.abc import Callable, Mapping
 from typing import Any, cast
 from unittest.mock import AsyncMock
@@ -246,6 +248,150 @@ async def test_native_authentication_refreshes_on_retry_and_each_tool_turn(
     assert len(observed) == len(set(observed)) == 3
     assert [ordinal for _, ordinal in recorder.started] == [1, 2, 3]
     assert [usage.total_tokens for _, usage in recorder.completed] == [None, 19, 19]
+
+
+@pytest.mark.parametrize("status", [429, 503])
+@pytest.mark.parametrize(
+    "headers, delay",
+    [
+        ({"retry-after": "3"}, 3.0),
+        ({"retry-after-ms": "3000"}, 3.0),
+        ({"retry-after-ms": "3000", "retry-after": "60"}, 3.0),
+        ({"retry-after-ms": "invalid", "retry-after": "3"}, 3.0),
+        ({"retry-after": "Thu, 01 Jan 1970 00:00:03 GMT"}, 3.0),
+        ({"retry-after": "120"}, 120.0),
+    ],
+)
+async def test_native_retry_after_waits_until_provider_can_complete(
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+    headers: dict[str, str],
+    delay: float,
+) -> None:
+    elapsed = 0.0
+    waits: list[float] = []
+    recorder = MemoryRecorder()
+
+    async def advance(seconds: float) -> None:
+        nonlocal elapsed
+        waits.append(seconds)
+        elapsed += seconds
+
+    def handler(_: httpx2.Request) -> httpx2.Response:
+        if elapsed < delay:
+            return httpx2.Response(status, headers=headers, json={"error": {"type": "busy"}})
+        return httpx2.Response(200, json=_response())
+
+    monkeypatch.setattr(time, "time", lambda: 0.0)
+    monkeypatch.setattr(anthropic_model.asyncio, "sleep", advance)
+    router = _router(monkeypatch, recorder, handler)
+    try:
+        result = await router.execute(_request(model_code=CLAUDE_CODE))
+    finally:
+        await router.close()
+    assert result.candidate == {"result": "valid"}
+    assert waits == [delay]
+    assert len(recorder.started) == len(recorder.completed) == 2
+    assert [usage.total_tokens for _, usage in recorder.completed] == [None, 19]
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {},
+        {"retry-after": "invalid"},
+        {"retry-after": "NaN"},
+        {"retry-after": "Infinity"},
+        {"retry-after": "-Infinity"},
+        {"retry-after": "0"},
+        {"retry-after": "-2"},
+        {"retry-after-ms": "1e9999"},
+        {"retry-after": "Thu, 01 Jan 1970 00:00:00 GMT"},
+    ],
+)
+async def test_native_invalid_retry_after_keeps_bounded_exponential_backoff(
+    monkeypatch: pytest.MonkeyPatch,
+    headers: dict[str, str],
+) -> None:
+    recorder = MemoryRecorder()
+    sleep = AsyncMock()
+    monkeypatch.setattr(anthropic_model.asyncio, "sleep", sleep)
+    router = _router(
+        monkeypatch,
+        recorder,
+        lambda _: httpx2.Response(429, headers=headers, json={"error": {"type": "busy"}}),
+    )
+    try:
+        with pytest.raises(WorkbenchError) as raised:
+            await router.execute(_request(model_code=CLAUDE_CODE))
+    finally:
+        await router.close()
+    assert raised.value.code == "agent_rate_limited"
+    assert [call.args[0] for call in sleep.await_args_list] == [0.5, 1.0]
+    assert len(recorder.started) == len(recorder.completed) == 3
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"retry-after": "120.001"},
+        {"retry-after-ms": "120001"},
+        {"retry-after": "Thu, 01 Jan 1970 00:02:01 GMT"},
+    ],
+)
+async def test_native_retry_after_over_cap_stops_without_premature_retry(
+    monkeypatch: pytest.MonkeyPatch,
+    headers: dict[str, str],
+) -> None:
+    recorder = MemoryRecorder()
+    sleep = AsyncMock()
+    monkeypatch.setattr(time, "time", lambda: 0.0)
+    monkeypatch.setattr(anthropic_model.asyncio, "sleep", sleep)
+    router = _router(
+        monkeypatch,
+        recorder,
+        lambda _: httpx2.Response(429, headers=headers, json={"error": {"type": "busy"}}),
+    )
+    try:
+        with pytest.raises(WorkbenchError) as raised:
+            await router.execute(_request(model_code=CLAUDE_CODE))
+    finally:
+        await router.close()
+    assert raised.value.code == "agent_rate_limited"
+    sleep.assert_not_awaited()
+    assert len(recorder.started) == len(recorder.completed) == 1
+
+
+async def test_native_retry_wait_cancellation_prevents_another_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    waiting = asyncio.Event()
+    recorder = MemoryRecorder()
+    clients: list[httpx2.AsyncClient] = []
+
+    async def wait_for_cancel(_: float) -> None:
+        waiting.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(anthropic_model.asyncio, "sleep", wait_for_cancel)
+    router = _router(
+        monkeypatch,
+        recorder,
+        lambda _: httpx2.Response(429, headers={"retry-after": "3"}),
+        clients=clients,
+    )
+    execution = asyncio.create_task(router.execute(_request(model_code=CLAUDE_CODE)))
+    try:
+        await asyncio.wait_for(waiting.wait(), timeout=1)
+        execution.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await execution
+    finally:
+        execution.cancel()
+        await asyncio.gather(execution, return_exceptions=True)
+        await router.close()
+    assert len(recorder.started) == len(recorder.completed) == 1
+    assert clients and all(client.is_closed for client in clients)
 
 
 @pytest.mark.parametrize("api_key", [False, True])

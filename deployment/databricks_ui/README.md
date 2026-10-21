@@ -4,6 +4,12 @@ Use [the deployment runbook](../../web_app/DEPLOYMENT_GUIDE.md) for identities,
 resources, acceptance and rollback. This file covers packaging/upload mechanics only.
 Building locally does not deploy or authorize external changes.
 
+Before redeployment, run [check_workflow_compatibility.sql](check_workflow_compatibility.sql)
+in a fresh SQL session on the intended database. It reads catalogs inside a read-only
+transaction and reports a summary plus failed workflow-function, permission or usage
+column checks. It never executes workflow functions. PASS covers these workflow
+contracts; the app's `/readyz` also checks other schema, reference data and login rules.
+
 ```bash
 python3 deployment/databricks_ui/build_uploads.py
 ```
@@ -12,6 +18,9 @@ The builder creates `artifacts/databricks-ui/` with one source directory and tra
 ZIP, upload instructions, manifest and checksums. `--replace` replaces only output
 previously owned by this builder. Canonical `app.yaml` is included before hashing;
 never edit a generated artifact afterward.
+
+Both Python packages include runtime `.py` and `.json` files in their `uv` build
+cache keys. Source updates rebuild installed packages even when versions stay unchanged.
 
 On Windows, the builder retries brief directory locks automatically. If access is
 still denied, close programs using the artifact folders and retry with `--replace`,

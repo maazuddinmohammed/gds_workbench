@@ -214,6 +214,12 @@ backfill path. Runtime startup never applies DDL. Local integration tests create
 one disposable container with random credentials/database and a per-run sentinel;
 container disposal is the only local database cleanup.
 
+The web worker requires database readiness before claiming Runs, including the
+installed lease/context-lock behavior and worker grants. Incompatibility stops
+the supervised app instead of consuming Run recovery attempts. Both noneditable
+Python packages track source and JSON changes in the build cache so redeployment
+cannot silently reuse an older package merely because its version is unchanged.
+
 Prompt/default seeds have their documented replay behavior; that does not make
 numbered schema installation repeatable. Changes to source and artifacts do not
 change installed databases or deployments. Live provider/Databricks execution needs

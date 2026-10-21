@@ -106,6 +106,9 @@ def test_generated_app_contains_runtime_source_only(tmp_path: Path) -> None:
     assert "mcp_server/pyproject.toml" in app_files
     assert "mcp_server/gds_etl_workbench/runtime.py" in app_files
     assert "web_app/backend/pyproject.toml" in app_files
+    assert (result.app_source_directory / "web_app/backend/pyproject.toml").read_bytes() == (
+        ROOT / "web_app/backend/pyproject.toml"
+    ).read_bytes()
     assert "web_app/backend/uv.lock" not in app_files
     assert "web_app/backend/gds_workbench_api/app_process.py" in app_files
     assert "web_app/backend/gds_workbench_api/dependencies.py" in app_files

@@ -170,6 +170,12 @@ matching governed Project function signatures from this release. App-only redepl
 against an older schema fails readiness. Numbered SQL remains fresh-install-only;
 an existing installation needs a separately reviewed schema transition.
 
+The worker checks database readiness before claiming any Run. This includes its
+execution grants and the installed claim/context-lock fixes needed for heartbeats
+during preparation. An incompatible installation stops the supervised app with
+`workflow_database_not_ready` and a safe database category. Uploading app source
+does not update installed SQL; do not replay the fresh-install files on existing data.
+
 After schema compatibility is established, refresh reference seed 04 and publish the
 updated Logical defaults through the documented seed 05 replay or the Prompts UI.
 Seed replay preserves custom defaults; explicitly select a new published version
@@ -202,9 +208,11 @@ compatibility and preserve immutable historical provenance.
 | 401 | User authorization/scopes, forwarded token, active SCIM user and Entra `externalId`. |
 | 403 | App `CAN_USE`, registered Principal, Tenant role, ownership and lock. |
 | Readiness 503 | Database network/TLS/runtime role and exact installed release/reference metadata. |
+| Workflow database not ready | Read the safe startup category: `database_schema_unavailable` means incompatible schema, reference metadata or workflow functions; `database_role_invalid` means runtime role/grants; `database_unavailable` means connection/readiness failure. Resolve compatibility before restarting. No Run is claimed during this check. |
 | Foundry failure | Accepted URL, exact registry deployment, one complete authentication method, inference permission, egress and mode/reasoning support. |
+| Latest upload still runs old behavior | Rebuild the source artifact and deploy the expanded folder containing the current backend `pyproject.toml`. Both Python packages track Python/JSON source changes in their build cache; copying individual files into an older artifact can omit this fix. |
 | Queue stalled | Supervised worker, claims, lock/revision state and bounded workflow events. |
-| Recovery limit exhausted | The worker acquired the Run but repeatedly lost its claim or failed execution. Inspect earlier `workflow_execution_failed` / `workflow_claim_lost` diagnostics by Run ID and recovery count. `workflow_poll_failed` identifies errors before dispatch, including `invalid_contract` for incompatible claim data. Categories contain no raw errors. |
+| Recovery limit exhausted | The worker acquired the Run but repeatedly lost its claim or failed execution. Default 30-second leases and five recoveries can reach this failure near three minutes; it is separate from the model timeout. Inspect earlier `workflow_execution_failed` / `workflow_claim_lost` diagnostics by Run ID and recovery count. `workflow_poll_failed` identifies errors before dispatch, including `invalid_contract` for incompatible claim data. Categories contain no raw errors. |
 | Workflow Run revision stale | The Project changed after Run creation. Refresh the Project and start a new Run; the frozen revision is never rewritten. |
 | Workflow Run authorization unavailable | Before pickup/recovery, the owner lost write access or its Tenant Lock. Restore access and the owner's Tenant Lock, then start a new Run. A live claim remains owned by its worker. |
 | Workflow usage unavailable | Usage initialization failed before the executor started. Check database release compatibility and runtime access; a guarded failure is recorded when the Run still permits it. |

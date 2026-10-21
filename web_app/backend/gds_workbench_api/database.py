@@ -20,6 +20,36 @@ from psycopg_pool import AsyncConnectionPool
 type QueryParameters = tuple[Any, ...]
 
 _READINESS_SQL = """
+WITH workflow_functions(signature, required_source, direct_execute) AS (
+    VALUES
+        ('application.claim_next_workflow_run(integer)',
+         ARRAY['%application.claim_workflow_run(p_lease_duration_seconds, ''web'')%'], TRUE),
+        ('application.claim_workflow_run(integer,character varying)',
+         ARRAY['%ready AS MATERIALIZED%clock_timestamp() AS claimed_time%',
+               '%workflow_run_revision_stale%', '%workflow_run_authorization_unavailable%'], FALSE),
+        ('application.renew_workflow_run_claim(bigint,uuid,integer)',
+         ARRAY['%FOR NO KEY UPDATE OF run;%PERFORM project.assert_writable(v_project_id);%'
+               'v_heartbeat_time := clock_timestamp();%'
+               'workflow_run_claim_expires_time > v_heartbeat_time%'], TRUE),
+        ('application.release_workflow_run_claim(bigint,uuid)',
+         ARRAY['%FOR NO KEY UPDATE OF run;%PERFORM project.assert_writable(v_project_id);%'
+               'v_released_time := clock_timestamp();%'
+               'workflow_run_claim_expires_time > v_released_time%'], TRUE),
+        ('application.assert_workflow_run_claim(bigint,uuid)',
+         ARRAY['%FOR UPDATE OF run;%v_expires_time <= clock_timestamp()%'], TRUE),
+        ('application.fail_workflow_run(uuid,uuid,character varying,bigint,bigint,'
+         'character varying,character varying)',
+         ARRAY['%Workflow Run has a durable authoring outcome%'], TRUE),
+        ('application.get_profiling_execution_context('
+         'uuid,uuid,character varying,bigint,bigint)',
+         ARRAY['%FOR KEY SHARE OF run FOR SHARE OF target_project%'], TRUE),
+        ('application.get_analysis_validation_execution_context('
+         'uuid,uuid,character varying,bigint,bigint,character varying)',
+         ARRAY['%FOR KEY SHARE OF run FOR SHARE OF target_project%'], TRUE),
+        ('application.get_metadata_enrichment_execution_context('
+         'uuid,uuid,character varying,bigint,bigint)',
+         ARRAY['%FOR KEY SHARE OF run FOR SHARE OF target_project%'], TRUE)
+)
 SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        to_regclass('application.workflow_run') IS NOT NULL
        AND to_regclass('application.metadata_review_event') IS NOT NULL
@@ -127,6 +157,13 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        AND NOT has_table_privilege(
            'gds_web_write', 'application.metadata_review_event',
            'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
+       )
+       AND NOT EXISTS (
+           SELECT 1 FROM workflow_functions AS required
+            WHERE required.direct_execute
+              AND NOT coalesce(has_function_privilege(
+                  'gds_web_write', to_regprocedure(required.signature), 'EXECUTE'
+              ), FALSE)
        )
        AND NOT EXISTS (
            SELECT 1 FROM unnest(ARRAY[
@@ -367,6 +404,20 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
               AND function_record.prosrc LIKE
                   '%uq_workflow_run_running_tenant%'
               AND function_record.prosrc LIKE '%tenant_workflow_conflict%'
+       )
+       -- Application deployment does not update installed SQL. Reject the older
+       -- claim/context locks that prevent heartbeats during slow preparation.
+       AND NOT EXISTS (
+           SELECT 1 FROM workflow_functions AS required
+            WHERE NOT EXISTS (
+                SELECT 1 FROM pg_catalog.pg_proc AS installed
+                 WHERE installed.oid = to_regprocedure(required.signature)
+                   AND installed.prosecdef
+                   AND installed.provolatile = 'v'
+                   AND installed.proconfig = ARRAY['search_path=pg_catalog']::TEXT[]
+                   AND regexp_replace(installed.prosrc, '[[:space:]]+', ' ', 'g')
+                       LIKE ALL (required.required_source)
+            )
        )
        AND EXISTS (
            SELECT 1 FROM information_schema.columns

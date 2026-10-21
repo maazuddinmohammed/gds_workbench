@@ -2,6 +2,7 @@
 
 # Existing builders create only fixture-owned disposable database contents.
 # pyright: reportPrivateUsage=false
+import asyncio
 from typing import Literal, cast
 from uuid import uuid4
 
@@ -37,6 +38,10 @@ from gds_workbench_api.features.workflows.authoring.lifecycle import (
 from gds_workbench_api.features.workflows.commands import (
     CreateWorkflowRunRequest,
     DatabaseWorkflowCommandService,
+)
+from gds_workbench_api.features.workflows.execution import (
+    WorkerRunResult,
+    WorkflowExecutionWorker,
 )
 from gds_workbench_api.features.workflows.execution.assembly import (
     create_workflow_runtime_services,
@@ -89,6 +94,124 @@ def pipeline_database(
     _apply_sql(database, _render_seed())
     seed_mapping_output_templates(database)
     return database
+
+
+async def test_worker_completes_validated_mapping_after_its_initial_lease_expires(
+    pipeline_database: DisposablePostgres,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = pipeline_database
+    scope = _seed_mapping_scope(fixture, dimensional=False, create_run=False)
+    with fixture.connect_owner() as connection:
+        actor = require_row(
+            connection.execute(
+                "SELECT entra_tenant_id, entra_object_id FROM security.entra_principal_identity "
+                "WHERE principal_id=%s", (scope.plan.actor_principal_id,),
+            ).fetchone()
+        )
+        assert require_row(
+            connection.execute(
+                "SELECT acquired FROM security.acquire_tenant_lock(%s,%s,'user',%s,60,"
+                "'Fixture delayed worker verification')",
+                (actor["entra_tenant_id"], actor["entra_object_id"], scope.tenant_id),
+            ).fetchone()
+        )["acquired"]
+    principal = RequestPrincipal(
+        actor_kind=ActorKind.HUMAN,
+        entra_tenant_id=actor["entra_tenant_id"],
+        entra_object_id=actor["entra_object_id"],
+    )
+    database = WebPostgresDatabase(
+        dsn=fixture.web_runtime_dsn(), pool_min=2, pool_max=3, pool_timeout_seconds=5
+    )
+    authorizer = AuthorizationService()
+    capabilities = load_default_agent_capabilities()
+    services = create_workflow_runtime_services(
+        database=database,
+        authorizer=authorizer,
+        agent_runtime=AgentRuntimeConfiguration(mode="fake", timeout_seconds=120, connections=()),
+        agent_capability_registry=capabilities,
+        databricks_environment_code="fixture",
+        databricks_execution=create_databricks_execution_adapters("fake"),
+    )
+    original_execute = LocalFakeAgentAdapter.execute
+    provider_calls = 0
+
+    async def slow_execute(
+        self: LocalFakeAgentAdapter, request: AgentExecutionRequest
+    ) -> AgentExecutionResult:
+        nonlocal provider_calls
+        provider_calls += 1
+        # Actual PostgreSQL time, real claim renewal, synthetic model output only.
+        await asyncio.sleep(2.25)
+        async with database.read_transaction() as transaction:
+            row = await transaction.fetch_one(
+                "SELECT clock_timestamp() > workflow_run_claimed_time "
+                "+ interval '2 seconds' AS initial_lease_elapsed, "
+                "workflow_run_claim_heartbeat_time > workflow_run_claimed_time AS renewed, "
+                "workflow_run_claim_expires_time > clock_timestamp() AS live, "
+                "workflow_run_recovery_count "
+                "FROM application.workflow_run WHERE workflow_run_id=%s",
+                (request.workflow_run_id,),
+            )
+        assert row == {
+            "initial_lease_elapsed": True, "renewed": True, "live": True,
+            "workflow_run_recovery_count": 0,
+        }
+        return await original_execute(self, request)
+
+    monkeypatch.setattr(LocalFakeAgentAdapter, "execute", slow_execute)
+    await database.open()
+    try:
+        created = await DatabaseWorkflowCommandService(
+            database=database, authorizer=authorizer, agent_capability_registry=capabilities
+        ).create_run(
+            principal, tenant_id=scope.tenant_id, project_id=scope.plan.project_id,
+            correlation_id=uuid4(),
+            command=CreateWorkflowRunRequest(
+                expected_project_revision=1, project_workflow="mapping",
+                workflow_execution_mode="one_shot", modeled_entity_type="logical_entity",
+                selected_entity_ids=[scope.plan.pair.modeled_entity_id],
+                mapping_operation="extend", mapping_coverage_mode="selected_targets",
+                mapping_source_system_id=scope.source_system_id,
+                agent=AgentRunSelection(
+                    sdk_code="openai_agents_sdk", provider_code="microsoft_foundry",
+                    model_code="foundry-primary", reasoning_effort_code="low",
+                    max_turns=8, validation_retry_count=1,
+                ),
+            ),
+        )
+        await services.lifecycle.start(
+            principal, tenant_id=scope.tenant_id, project_id=scope.plan.project_id,
+            workflow_run_id=created.workflow_run_id, expected_workflow="mapping",
+            expected_execution_mode="one_shot", expected_project_revision=1,
+        )
+        worker = WorkflowExecutionWorker(
+            claims=DatabaseWorkflowClaimRepository(database=database),
+            dispatcher=WorkflowExecutionDispatcher(services.execution_services()),
+            lease_duration_seconds=2, heartbeat_interval_seconds=0.2,
+        )
+        assert await asyncio.wait_for(worker.run_once(), timeout=10) is WorkerRunResult.COMPLETED
+        detail = await DatabaseWorkflowRunService(
+            database=database, authorizer=authorizer, cursor_signing_key=b"fixture-key" * 4,
+        ).read_run(
+            principal, tenant_id=scope.tenant_id, project_id=scope.plan.project_id,
+            workflow_run_id=created.workflow_run_id,
+        )
+        assert detail.workflow_run_state == "completed"
+        assert detail.project_change_set_status == "validated"
+        assert detail.failure_code is None
+        assert provider_calls == 1
+        async with database.read_transaction() as transaction:
+            row = await transaction.fetch_one(
+                "SELECT workflow_run_recovery_count, workflow_run_claim_token_digest IS NULL "
+                "AS claim_cleared FROM application.workflow_run WHERE workflow_run_id=%s",
+                (created.workflow_run_id,),
+            )
+        assert row == {"workflow_run_recovery_count": 0, "claim_cleared": True}
+    finally:
+        await services.close()
+        await database.close()
 
 
 @pytest.mark.parametrize("mapping_mode", ["one_shot", "tool_assisted"])
