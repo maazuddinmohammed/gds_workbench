@@ -11,7 +11,13 @@ from typing import LiteralString, cast
 import pytest
 from gds_workbench_api import database as database_module
 from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.workflows.execution import DatabaseWorkflowClaimRepository
+from gds_workbench_api.features.workflows.execution import (
+    DatabaseWorkflowClaimRepository,
+    WorkerRunResult,
+    WorkflowClaimRunner,
+    WorkflowExecutionClaim,
+)
+from gds_workbench_api.features.workflows.execution.fence import assert_workflow_run_claim
 from gds_workbench_api.features.workflows.execution.worker import workflow_failure_category
 
 from tests.mcp.conftest import DisposablePostgres, disposable_postgres
@@ -94,3 +100,43 @@ async def test_heartbeat_ends_a_held_run_lock_wait_with_a_contention_error(
         assert lease.workflow_run_id == claim.workflow_run_id
     finally:
         await runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_long_fenced_write_does_not_cost_the_run_its_live_claim(
+    limits_postgres: DisposablePostgres,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Draft staging and validation hold the Run row while the heartbeat waits for it.
+    monkeypatch.setattr(
+        database_module,
+        "_TRANSACTION_LIMITS_SQL",
+        database_module._TRANSACTION_LIMITS_SQL.replace("'60s'", "'1s'"),
+    )
+    _, claim, _ = _run(limits_postgres, workflow="profiling")
+    database = WebPostgresDatabase(
+        dsn=limits_postgres.web_runtime_dsn(), pool_min=2, pool_max=2, pool_timeout_seconds=5
+    )
+
+    class LongFencedWrite:
+        async def execute(self, claim: WorkflowExecutionClaim) -> object:
+            async with database.write_transaction() as transaction:
+                await assert_workflow_run_claim(
+                    transaction,
+                    workflow_run_id=claim.workflow_run_id,
+                    workflow_run_claim_token=claim.workflow_run_claim_token,
+                )
+                await asyncio.sleep(3)
+            return object()
+
+    runner = WorkflowClaimRunner(
+        claims=DatabaseWorkflowClaimRepository(database=database),
+        dispatcher=LongFencedWrite(),
+        lease_duration_seconds=30,
+        heartbeat_interval_seconds=0.5,
+    )
+    await database.open()
+    try:
+        assert await asyncio.wait_for(runner.run(claim), timeout=20) is (WorkerRunResult.COMPLETED)
+    finally:
+        await database.close()

@@ -1,8 +1,10 @@
 import asyncio
+import logging
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
+from gds_etl_workbench.domain.errors import DependencyUnavailableError
 from gds_workbench_api.features.workflows.execution import (
     WorkerRunResult,
     WorkflowClaimLease,
@@ -10,6 +12,7 @@ from gds_workbench_api.features.workflows.execution import (
     WorkflowExecutionClaim,
     WorkflowExecutionWorker,
 )
+from psycopg.errors import LockNotAvailable
 
 
 def _claim() -> WorkflowExecutionClaim:
@@ -41,6 +44,7 @@ class FakeClaimRepository:
         self.renewed = asyncio.Event()
         self.released = asyncio.Event()
         self.renew_fails = False
+        self.renew_errors: list[Exception] = []
 
     async def claim_next(
         self,
@@ -68,6 +72,8 @@ class FakeClaimRepository:
         self.renewed.set()
         if self.renew_fails:
             raise RuntimeError("claim lost")
+        if self.renew_errors:
+            raise self.renew_errors.pop(0)
         now = datetime.now(UTC)
         return WorkflowClaimLease(
             workflow_run_id=workflow_run_id,
@@ -294,6 +300,65 @@ async def test_worker_cancels_execution_when_the_claim_is_lost(workflow: str) ->
     assert result is WorkerRunResult.CLAIM_LOST
     assert dispatcher.cancelled.is_set()
     assert repository.release_calls == []
+
+
+def _lock_wait_ended() -> Exception:
+    # The database adapter wraps a lock timeout exactly like this.
+    error = DependencyUnavailableError()
+    error.__cause__ = LockNotAvailable()
+    return error
+
+
+@pytest.mark.asyncio
+async def test_worker_keeps_a_live_lease_when_renewal_waits_behind_its_own_write(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    repository = FakeClaimRepository(_claim())
+    repository.renew_errors = [_lock_wait_ended(), _lock_wait_ended()]
+    dispatcher = BlockingDispatcher()
+    worker = WorkflowExecutionWorker(
+        claims=repository,
+        dispatcher=dispatcher,
+        lease_duration_seconds=30,
+        heartbeat_interval_seconds=0.01,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        running = asyncio.create_task(worker.run_once())
+        await dispatcher.started.wait()
+        while len(repository.renew_calls) < 3:
+            repository.renewed.clear()
+            await repository.renewed.wait()
+        dispatcher.finish.set()
+        result = await asyncio.wait_for(running, timeout=1)
+
+    assert result is WorkerRunResult.COMPLETED
+    assert not dispatcher.cancelled.is_set()
+    assert (
+        caplog.messages.count(
+            "workflow_heartbeat_delayed run_id=701 recovery_count=0 category=database_contention"
+        )
+        == 2
+    )
+
+
+@pytest.mark.asyncio
+async def test_worker_gives_up_a_claim_it_cannot_renew_before_its_lease_ends() -> None:
+    repository = FakeClaimRepository(_claim())
+    repository.renew_errors = [_lock_wait_ended() for _ in range(10)]
+    dispatcher = BlockingDispatcher()
+    worker = WorkflowExecutionWorker(
+        claims=repository,
+        dispatcher=dispatcher,
+        lease_duration_seconds=1,
+        heartbeat_interval_seconds=0.4,
+    )
+
+    result = await asyncio.wait_for(worker.run_once(), timeout=5)
+
+    assert result is WorkerRunResult.CLAIM_LOST
+    assert dispatcher.cancelled.is_set()
+    assert len(repository.renew_calls) == 2
 
 
 @pytest.mark.asyncio

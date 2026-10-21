@@ -40,7 +40,7 @@ def test_local_settings_are_explicit_and_hide_the_database_dsn() -> None:
     assert settings.cursor_signing_key == b"development-only-key-32-bytes-long"
     assert settings.agent_runtime.mode == "fake"
     assert settings.agent_runtime.connections == ()
-    assert settings.workflow_execution.lease_duration_seconds == 30
+    assert settings.workflow_execution.lease_duration_seconds == 120
     assert "fixture_password" not in repr(settings)
     assert "development-only-key" not in repr(settings)
 

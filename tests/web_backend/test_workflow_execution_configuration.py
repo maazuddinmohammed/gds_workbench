@@ -8,7 +8,8 @@ from gds_workbench_api.features.workflows.execution.configuration import (
 def test_workflow_execution_configuration_uses_packaged_defaults() -> None:
     configuration = WorkflowExecutionConfiguration.from_environment({})
 
-    assert configuration.lease_duration_seconds == 30
+    # Long fenced writes hold the Run row; the lease must outlast them, not only polls.
+    assert configuration.lease_duration_seconds == 120
     assert configuration.heartbeat_interval_seconds == 10
     assert configuration.idle_poll_interval_seconds == 1
     assert configuration.error_poll_interval_seconds == 5

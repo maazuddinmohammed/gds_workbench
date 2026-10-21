@@ -207,15 +207,37 @@ class WorkflowClaimRunner:
         claim: WorkflowExecutionClaim,
         execution: asyncio.Task[object],
     ) -> None:
+        clock = asyncio.get_running_loop()
+        confirmed = clock.time()
         while not execution.done():
             await asyncio.sleep(self._heartbeat_interval_seconds)
             if execution.done():
                 return
-            await self._claims.renew(
-                workflow_run_id=claim.workflow_run_id,
-                workflow_run_claim_token=claim.workflow_run_claim_token,
-                lease_duration_seconds=self._lease_duration_seconds,
-            )
+            try:
+                await self._claims.renew(
+                    workflow_run_id=claim.workflow_run_id,
+                    workflow_run_claim_token=claim.workflow_run_claim_token,
+                    lease_duration_seconds=self._lease_duration_seconds,
+                )
+            except Exception as error:
+                # Renewal can wait behind this Run's own long write, which holds the
+                # Run row, or meet a brief database outage. Retry while the lease may
+                # still be live; a definite "claim unavailable" still ends the attempt.
+                category = workflow_failure_category(error)
+                lease_left = self._lease_duration_seconds - (clock.time() - confirmed)
+                if (
+                    category not in {"database_contention", "database_connectivity"}
+                    or lease_left <= self._heartbeat_interval_seconds
+                ):
+                    raise
+                _logger.warning(
+                    "workflow_heartbeat_delayed run_id=%s recovery_count=%s category=%s",
+                    claim.workflow_run_id,
+                    claim.workflow_run_recovery_count,
+                    category,
+                )
+                continue
+            confirmed = clock.time()
 
 
 class WorkflowExecutionWorker:

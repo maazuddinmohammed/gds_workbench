@@ -156,15 +156,17 @@ async def test_heartbeat_loss_during_usage_startup_has_heartbeat_boundary() -> N
         usage_recorder=DatabaseWorkflowUsageRecorder(database=database),
         lifecycle=DatabaseAgentWorkflowLifecycle(database=database),
     )
+    # Contention is retried while the lease may be live, so use a short lease that
+    # runs out before the claim is reported lost.
     worker = WorkflowExecutionWorker(
         claims=LostClaimRepository(claim),
         dispatcher=WorkflowExecutionDispatcher(services, diagnostics=diagnostics),
-        lease_duration_seconds=30,
-        heartbeat_interval_seconds=0.001,
+        lease_duration_seconds=1,
+        heartbeat_interval_seconds=0.3,
         diagnostics=diagnostics,
     )
 
-    assert await asyncio.wait_for(worker.run_once(), timeout=1) is WorkerRunResult.CLAIM_LOST
+    assert await asyncio.wait_for(worker.run_once(), timeout=5) is WorkerRunResult.CLAIM_LOST
     snapshot = diagnostics.snapshot().worker
     assert snapshot.last_poll_result == "claim_lost"
     assert snapshot.last_fault is not None
