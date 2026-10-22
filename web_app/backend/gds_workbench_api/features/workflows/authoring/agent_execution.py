@@ -233,6 +233,9 @@ def agent_input_payload(request: AgentExecutionRequest) -> dict[str, JsonValue]:
     return {
         "instruction": request.instruction_prompt,
         "context": {"repair": repair},
+        # OpenAI JSON mode rejects input without the word "JSON"; Responses ignores
+        # instructions for that check, and editable prompts need not mention it.
+        "response_format": "JSON object",
         "required_output_schema": request.output_schema,
     }
 

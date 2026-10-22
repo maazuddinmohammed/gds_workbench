@@ -510,6 +510,7 @@ def test_agent_envelope_budget_counts_output_instruction_schema_and_json_format(
             "input": {
                 "instruction": request.instruction_prompt,
                 "context": request.context,
+                "response_format": "JSON object",
                 "required_output_schema": request.output_schema,
             },
             "response_format": {"type": "json_object"},

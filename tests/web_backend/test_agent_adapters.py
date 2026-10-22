@@ -329,6 +329,7 @@ async def test_openai_agents_adapter_disables_tracing_and_parses_json(
     assert json.loads(run_args[1]) == {
         "instruction": request.instruction_prompt,
         "context": {"repair": None},
+        "response_format": "JSON object",
         "required_output_schema": request.output_schema,
     }
     assert captured["agent"]["instructions"].endswith(AGENT_OUTPUT_CONTRACT_INSTRUCTION)

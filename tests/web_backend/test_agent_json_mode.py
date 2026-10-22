@@ -2,6 +2,7 @@
 
 # pyright: reportPrivateUsage=false
 import json
+import re
 from copy import deepcopy
 from typing import Any
 from uuid import UUID
@@ -117,6 +118,9 @@ async def test_json_mode_preserves_actual_candidate_schema_tools_repairs_and_usa
             user_message = next(
                 item for item in body["messages"] if item["role"] == "user"
             )
+        # Providers reject JSON mode unless input messages say "JSON"; Responses
+        # ignores instructions, and the fixture prompt and schema never say it.
+        assert re.search(r"\bjson\b", user_message["content"], re.IGNORECASE)
         payload = json.loads(user_message["content"])
         schema_preserved.append(payload["required_output_schema"] == schema)
         repair = payload["context"]["repair"]

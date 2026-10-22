@@ -34,7 +34,9 @@ The default model deployments use these reasoning settings in both execution mod
 `minimal` or `ultra`. See the official [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol)
 and [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna) contracts.
 Foundry must have the configured deployment names available. OpenAI tool calls use
-Responses; OpenAI calls without tools use Chat Completions.
+Responses; OpenAI calls without tools use Chat Completions. Both use JSON mode, which
+rejects input messages without the word "JSON"; Responses ignores instructions for
+that check, so the backend input always carries `response_format: "JSON object"`.
 
 Claude uses the native Messages API through a custom model in the same Agents SDK
 loop. `api_protocol` binds each registry model to its transport. Opus 5.5 always
