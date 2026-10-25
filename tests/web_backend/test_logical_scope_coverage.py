@@ -54,9 +54,7 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
     selected: list[dict[str, Any]] = []
     complete = cast(dict[str, Any], _candidate())
     entity_template = deepcopy(complete["entities"][0])
-    attribute_template = deepcopy(complete["attributes"][0])
     complete["entities"] = cast(list[dict[str, Any]], [])
-    complete["attributes"] = cast(list[dict[str, Any]], [])
     for index in range(27):
         item = cast(dict[str, Any], deepcopy(_selected_object()))
         item["selection_order"] = index + 1
@@ -73,9 +71,10 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
                 "object_name",
             )
         }
+        # Answers cite each selected Object by its table_index id.
+        table_id = f"t{index + 1}"
         entity = deepcopy(entity_template)
-        entity["logical_entity_name"] = entity_name
-        entity["sources"][0]["source_object"] = source_key
+        entity.update(name=entity_name, sources=[table_id], attributes=[])
         complete["entities"].append(entity)
         physical_template = deepcopy(item["attributes"][0])
         item["attributes"] = cast(list[dict[str, Any]], [])
@@ -88,19 +87,16 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
                 "attribute_ordinal_position": column + 1,
             }
             item["attributes"].append(physical)
-            attribute = deepcopy(attribute_template)
-            attribute.update(
-                logical_entity_name=entity_name,
-                logical_attribute_name=f"Column{column}",
-                logical_attribute_ordinal_position=column + 1,
-            )
-            attribute["sources"][0]["source_attribute"] = {
-                **source_key,
-                "attribute_name": name,
-            }
             # All input columns reach the agent; the design keeps one per Object.
             if column == 0:
-                complete["attributes"].append(attribute)
+                entity["attributes"].append(
+                    {
+                        "name": f"Column{column}",
+                        "type": "bigint",
+                        "natural_key": True,
+                        "from": f"{table_id}.{name}",
+                    }
+                )
         selected.append(item)
     selected[0]["object"]["object_description"] = "Enriched customer business meaning."
     selected[0]["attributes"][0].update(
@@ -169,12 +165,6 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
     )
     # Reach the 70% threshold on the second attempt, or use all three attempts.
     complete["entities"] = complete["entities"][:19]
-    complete["attributes"] = [
-        record
-        for record in complete["attributes"]
-        if record["logical_entity_name"]
-        in {entity["logical_entity_name"] for entity in complete["entities"]}
-    ]
     agent = _AgentExecutor(
         responses=[
             _candidate(),
@@ -385,7 +375,7 @@ async def test_coverage_enforcement_rejects_after_retries_without_handoff(
     )
     candidates: list[JsonValue | Exception] = [_candidate() for _ in range(retries + 1)]
     if final_invalid:
-        candidates[-1] = _candidate(source_name="unselected")
+        candidates[-1] = _candidate(table_id="t9")
     agent = _AgentExecutor(responses=candidates)
     service, _, _, handoff, lifecycle = _service(
         agent=agent,

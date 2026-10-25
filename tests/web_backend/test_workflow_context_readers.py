@@ -224,7 +224,8 @@ def test_relationship_context_does_not_widen_selected_objects(
     [
         ("analysis", 6),
         ("conceptual", 10),
-        ("logical", 14),
+        # Logical reads no Submodels; Dimensional still reads both Submodel families.
+        ("logical", 12),
         ("dimensional", 23),
     ],
 )

@@ -1,4 +1,8 @@
-"""Canonical applied echoes preserve history without authorizing new evidence."""
+"""Canonical applied echoes preserve history without authorizing new evidence.
+
+Logical answers are compact and cite only selected tables; their history rules are in
+test_logical_candidate.py.
+"""
 
 # pyright: reportPrivateUsage=false
 
@@ -13,7 +17,6 @@ from gds_etl_workbench.domain.modeling_records import PhysicalObjectKey
 from gds_etl_workbench.domain.snapshots.project import (
     ConceptualSection,
     DimensionalSection,
-    LogicalSection,
 )
 from gds_workbench_api.features.analysis.candidate import (
     AnalysisInferenceCandidateValidator,
@@ -22,24 +25,20 @@ from gds_workbench_api.features.conceptual.candidate import ConceptualCandidateV
 from gds_workbench_api.features.dimensional.candidate import (
     DimensionalCandidateValidator,
 )
-from gds_workbench_api.features.logical.candidate import LogicalCandidateValidator
 
 from tests.web_backend import test_analysis_candidate as analysis
 from tests.web_backend import test_conceptual_candidate as conceptual
 from tests.web_backend import test_dimensional_candidate as dimensional
-from tests.web_backend import test_logical_candidate as logical
 
-FAMILIES = ("analysis", "conceptual", "logical", "dimensional")
+FAMILIES = ("analysis", "conceptual", "dimensional")
 CODES = {
     "analysis": "candidate.endpoint_outside_selection",
     "conceptual": "candidate.support_outside_selection",
-    "logical": "candidate.source_outside_selection",
     "dimensional": "candidate.source_outside_selection",
 }
 type CandidateValidator = (
     AnalysisInferenceCandidateValidator
     | ConceptualCandidateValidator
-    | LogicalCandidateValidator
     | DimensionalCandidateValidator
 )
 
@@ -105,27 +104,10 @@ def _case(
             context_record_ids=(),
             applied=history if applied else None,
         ), candidate
-    fixtures = logical if family == "logical" else dimensional
-    candidate = fixtures._candidate()
+    candidate = dimensional._candidate()
     history_doc = deepcopy(candidate)
     if locked:
         _lock_history(history_doc)
-    if family == "logical":
-        obj = logical._object()
-        attr = logical._attribute()
-        if not selected:
-            obj = obj.model_copy(update={"object_name": "new_selected_raw"})
-            attr = attr.model_copy(update={"object_name": "new_selected_raw"})
-        return LogicalCandidateValidator(
-            selected_object_keys=(obj,),
-            selected_attribute_keys=(attr,),
-            context_record_ids=(),
-            applied=LogicalSection.model_validate_json(
-                json.dumps(history_doc), strict=True
-            )
-            if applied
-            else None,
-        ), candidate
     entity_key = dimensional._object()
     attribute_key = dimensional._attribute()
     if not selected:
@@ -351,7 +333,7 @@ async def test_historical_echo_can_accompany_new_selected_output(family: str) ->
     assert (await validator.validate(candidate)).issues == ()
     changes = validator.parse_validated(candidate)
     assert sum(len(change.records) for change in changes) == (
-        2 if family in ("logical", "dimensional") else 1
+        2 if family == "dimensional" else 1
     )
     assert candidate == original
 

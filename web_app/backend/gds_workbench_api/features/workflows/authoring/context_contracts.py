@@ -3193,6 +3193,37 @@ INPUT_SHAPES: dict[str, Any] = {
         "Only after the final retry may the backend return otherwise valid partial coverage.",
         "schema": {"type": "integer", "minimum": 1, "maximum": 100},
     },
+    "table_index": {
+        "description": "Short id of every selected Object, in selection order. Cite a table "
+        "by its id (t1) and a column as id.column (t1.order_no); the backend expands each id "
+        "to its full key.",
+        "schema": {
+            "type": "array",
+            "items": {"$ref": "#/$defs/table_index_entry"},
+            "$defs": {
+                "table_index_entry": {
+                    "type": "object",
+                    "properties": {
+                        "table": {"type": "string", "pattern": "^t[1-9][0-9]*$"},
+                        "tenant_code": {"type": "string", "minLength": 1},
+                        "system_code": {"type": "string", "minLength": 1},
+                        "connection_code": {"type": "string", "minLength": 1},
+                        "object_schema": {"type": "string", "minLength": 1},
+                        "object_name": {"type": "string", "minLength": 1},
+                    },
+                    "required": [
+                        "table",
+                        "tenant_code",
+                        "system_code",
+                        "connection_code",
+                        "object_schema",
+                        "object_name",
+                    ],
+                    "additionalProperties": False,
+                }
+            },
+        },
+    },
     "logical.logical_entity_scd_type": {
         "description": "Frozen Project guidance for Logical Entity change history. type_1 means "
         "overwrite current values; type_2 means preserve versions. Null means unspecified. "
@@ -3843,8 +3874,6 @@ WORKFLOW_INPUTS: dict[str, dict[str, str]] = {
         "ingestion_mapping": "ingestion_mapping",
         "object_relationship_context": "object_relationship_context",
         "context_records": "context_records",
-        "logical_submodel_list": "logical_submodel_list",
-        "logical_submodels": "logical_submodels",
         "logical_entity_list": "logical_entity_list",
         "logical_entities": "logical_entities",
         "logical_attribute_list": "logical_attribute_list",
@@ -3856,6 +3885,7 @@ WORKFLOW_INPUTS: dict[str, dict[str, str]] = {
         "schemas": "logical.schemas",
         "logical_entity_scd_type": "logical.logical_entity_scd_type",
         "coverage_threshold_percent": "coverage_threshold_percent",
+        "table_index": "table_index",
     },
     "dimensional": {
         "source_context": "source_context",
@@ -5550,6 +5580,24 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
     },
 }
 
+
+# Logical answers cite tables by these ids, numbered in selection order.
+INPUT_EXAMPLES["logical"]["table_index"] = [
+    {
+        "table": f"t{position}",
+        **{
+            name: entry[name]
+            for name in (
+                "tenant_code",
+                "system_code",
+                "connection_code",
+                "object_schema",
+                "object_name",
+            )
+        },
+    }
+    for position, entry in enumerate(INPUT_EXAMPLES["logical"]["object_context"], start=1)
+]
 
 # Use one complete saved validation example in each physical modeling workflow.
 # These are aggregate measurements, never sample source rows.

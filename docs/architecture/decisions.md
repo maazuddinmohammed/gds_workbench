@@ -167,6 +167,21 @@ as no effective change with a zero-coverage warning. When on, below-target candi
 fail after repair attempts and never reach Change Set handoff. Schema, reference,
 lock, policy and full-graph failures remain blocking and retain existing recovery rules.
 
+The Logical agent writes only judgment calls in a compact answer: Entities with nested
+Attributes, child-to-parent Relationships, and explicit retirements. It cites selected
+Objects by `table_index` id. The backend fills everything it can work out:
+
+- physical keys;
+- generated keys and audit columns;
+- column and dependency order;
+- Relationship names and parent keys;
+- lifecycle, locks and saved values;
+- definitions copied from a single source column's Project description.
+
+It then validates the expanded records exactly like any Logical change. The Change Set,
+Snapshot and Stage contracts keep complete records; only the provider answer is
+compact, which keeps one answer far below the output limit.
+
 Mapping operates on frozen Entity/System pairs. Supported partial documents are
 useful progress. Omitted selected, unlocked transformations clear on regeneration;
 locked/unselected content stays protected. Protect parent rowset logic when any

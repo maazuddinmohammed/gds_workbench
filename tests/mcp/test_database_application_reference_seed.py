@@ -111,13 +111,14 @@ EXPECTED_NAMES = {
     "analysis": FOUNDATIONAL_NAMES,
     "conceptual": FOUNDATIONAL_NAMES | CONCEPTUAL_NAMES | {"naming_instructions"},
     "logical": FOUNDATIONAL_NAMES
-    | LOGICAL_NAMES
+    | (LOGICAL_NAMES - {"logical_submodel_list", "logical_submodels"})
     | {
         "naming_instructions",
         "audit_columns",
         "schemas",
         "logical_entity_scd_type",
         "coverage_threshold_percent",
+        "table_index",
     },
     "dimensional": LOGICAL_NAMES
     | DIMENSIONAL_NAMES

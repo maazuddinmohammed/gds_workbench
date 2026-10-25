@@ -294,9 +294,22 @@ class _ConceptualCatalog:
         }
 
 
+_CUSTOMER_TABLE_INDEX: list[JsonValue] = [
+    {
+        "table": "t1",
+        "tenant_code": "NWA",
+        "system_code": "CRM",
+        "connection_code": "SOURCE",
+        "object_schema": "bronze",
+        "object_name": "customer_raw",
+    }
+]
+
+
 class _LogicalCatalog:
     max_cumulative_result_bytes = 64 * 1024
     definitions = _ConceptualCatalog.definitions
+    prompt_values: dict[str, JsonValue] = {"table_index": _CUSTOMER_TABLE_INDEX}
 
     def invoke(
         self,
@@ -579,6 +592,7 @@ def _logical_request(*, sdk_code: str) -> AgentExecutionRequest:
                 "project_details": {
                     "logical_schemas": [{"schema_name": "silver", "description": None}]
                 },
+                "prompt_inputs": {"table_index": _CUSTOMER_TABLE_INDEX},
                 "selected_objects": [
                     {
                         "selection_order": 1,
@@ -876,8 +890,18 @@ async def test_local_fake_returns_deterministic_valid_logical_candidate(
     assert result.candidate == repeated.candidate
     assert (await _logical_validator().validate(result.candidate)).issues == ()
     candidate = cast(dict[str, JsonValue], result.candidate)
-    assert len(cast(list[JsonValue], candidate["entities"])) == 1
-    assert len(cast(list[JsonValue], candidate["attributes"])) == 1
+    entities = cast(list[dict[str, JsonValue]], candidate["entities"])
+    assert len(entities) == 1
+    assert entities[0]["sources"] == ["t1"]
+    assert entities[0]["attributes"] == [
+        {
+            "name": "Logical Attribute 1",
+            "type": "string",
+            "nullable": True,
+            "from": "t1.customer_id",
+            "definition": "A locally generated Logical attribute candidate.",
+        }
+    ]
     assert "private" not in repr(candidate)
     assert result.turn_count == 1
     assert result.tool_call_count == 0

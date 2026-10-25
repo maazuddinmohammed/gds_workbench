@@ -55,10 +55,26 @@ Analysis validation in Object/Attribute/Relationship context; tool-assisted read
 expose the same evidence across complete pages. Recorded conflicts remain visible
 for design decisions; synthetic transport tests do not prove provider reasoning.
 Registered natural-key metadata and Project enrichment have separate fields, including
-when enrichment is unknown or disagrees. Logical defaults plan business Submodels
-and Entity grain before evaluating relationships. Referenced generated surrogate
-keys must be explicit candidate Attributes so initial reference validation succeeds.
-Common audit fields remain backend-projected.
+when enrichment is unknown or disagrees. Logical defaults decide Entity grain before
+evaluating relationships.
+
+The Logical agent answers in a compact shape (`features/logical/candidate.py`): Entities
+with nested Attributes, child-to-parent Relationships and a `retire` list. It cites
+tables by the `table_index` id (`t1`) and columns as `t1.column`, and sends only
+judgment calls. The backend expands the answer into complete Logical records before
+validation:
+
+- full physical keys;
+- each new Entity's `<Entity>ID` key;
+- audit columns;
+- column and dependency order;
+- the parent key and name of each Relationship;
+- a missing Attribute definition, copied from its single source column's Project
+  description.
+
+Change Sets, Snapshots and Stage keep the complete record contract. Repair issues point
+at the agent's own answer paths (`entities[2].attributes[5].from`). Logical runs no
+longer author or read Submodels; saved memberships stay unchanged.
 
 Profiling precedes Project-owned Enrichment. The plugin prefers Profiling → Enrichment
 → Analysis, then the requested independent design: Conceptual or Logical. Dimensional

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import cast
 from uuid import UUID
 
 from gds_etl_workbench.application.authorization import AuthorizationService
@@ -17,11 +18,13 @@ from gds_etl_workbench.domain.modeling_records import (
     PhysicalAttributeKey,
     PhysicalObjectKey,
 )
+from gds_etl_workbench.domain.snapshots.project import ProjectChangeSetDataset
 from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
 )
 from pydantic import JsonValue
 
+from gds_workbench_api.features.workflows.authoring.audit_policy import effective_audit_template
 from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetFinalizer,
     WorkflowChangeSetHandoffResult,
@@ -60,7 +63,6 @@ from gds_workbench_api.features.workflows.authoring.repair import (
     AgentContextPolicy,
     AgentExecutor,
     load_default_agent_context_policy,
-    project_validation_issues,
 )
 from gds_workbench_api.features.workflows.authoring.stage_runner import (
     AgentStageRunner,
@@ -220,14 +222,17 @@ class LogicalWorkflow:
                     applied=context.context.applied.logical,
                     raw_template=context.context.project_details.silver_model_audit_columns_template,
                 )
+                staged: dict[ProjectChangeSetDataset, list[dict[str, object]]] = {
+                    change.dataset: change.records for change in changes
+                }
                 checked = validate_future_graph(
                     snapshot=snapshot,
-                    staged_documents={change.dataset: change.records for change in changes},
+                    staged_documents=staged,
                     physical_scope=physical_scope,
                 )
-                coverage_issues = validator.validate_coverage(value)
                 return AgentCandidateValidation(
-                    issues=project_validation_issues(checked.issues) + coverage_issues
+                    issues=validator.agent_issues(value, checked.issues, staged)
+                    + validator.validate_coverage(value)
                 )
 
             resolver_values: dict[str, object] = {
@@ -363,16 +368,25 @@ class LogicalWorkflow:
                         recovery_bundle.context.project_details.silver_model_audit_columns_template
                     ),
                 )
+                # Issues name the agent's answer paths; the retained draft lists datasets.
                 retention_issues = tuple(
                     ProjectValidationIssue(
                         code=issue.code.removeprefix("candidate."),
-                        dataset=str(issue.path[0]) if issue.path else "logical",
-                        record_number=(
-                            issue.path[1] + 1
-                            if len(issue.path) > 1 and isinstance(issue.path[1], int)
-                            else None
+                        dataset=(
+                            "logical_relationship"
+                            if issue.path[:1] == ("relationships",)
+                            else "logical_attribute"
+                            if issue.path[:1] == ("entities",) and "attributes" in issue.path
+                            else "logical_entity"
+                            if issue.path[:1] in ((), ("entities",), ("retire",))
+                            else str(issue.path[0])
                         ),
-                        fields=tuple(str(part) for part in issue.path[1:] if isinstance(part, str)),
+                        record_number=None,
+                        fields=tuple(
+                            str(part)
+                            for part in issue.path[1:]
+                            if isinstance(part, str) and part != "attributes"
+                        ),
                         message=issue.message,
                     )
                     for issue in error.issues
@@ -473,27 +487,39 @@ def _candidate_validator(context: AgentContextBundle) -> LogicalCandidateValidat
         )
         for item in context.context.selected_objects
     )
-    selected_attributes = tuple(
-        PhysicalAttributeKey(
-            tenant_code=attribute.tenant_code,
-            system_code=attribute.system_code,
-            connection_code=attribute.connection_code,
-            object_schema=attribute.object_schema,
-            object_name=attribute.object_name,
-            attribute_name=attribute.attribute_name,
-        )
-        for selected in context.context.selected_objects
-        for attribute in selected.attributes
-    )
-    context_record_ids = tuple(
-        record.context_record_id for record in context.context.context.records
+    selected_attributes: list[PhysicalAttributeKey] = []
+    # A missing Attribute definition defaults to its source column's Project description.
+    descriptions: dict[PhysicalAttributeKey, str] = {}
+    for selected in context.context.selected_objects:
+        for attribute in selected.attributes:
+            key = PhysicalAttributeKey(
+                tenant_code=attribute.tenant_code,
+                system_code=attribute.system_code,
+                connection_code=attribute.connection_code,
+                object_schema=attribute.object_schema,
+                object_name=attribute.object_name,
+                attribute_name=attribute.attribute_name,
+            )
+            selected_attributes.append(key)
+            if attribute.attribute_description:
+                descriptions[key] = attribute.attribute_description
+    audit_template = effective_audit_template(
+        context.context.project_details.silver_model_audit_columns_template
     )
     return LogicalCandidateValidator(
         selected_object_keys=selected_objects,
-        selected_attribute_keys=selected_attributes,
-        context_record_ids=context_record_ids,
+        selected_attribute_keys=tuple(selected_attributes),
+        context_record_ids=tuple(
+            record.context_record_id for record in context.context.context.records
+        ),
         applied=context.context.applied.logical,
         coverage_threshold_percent=context.context.project_details.logical_coverage_threshold_percent,
+        attribute_descriptions=descriptions,
+        # The backend projects audit columns, so business Attributes cannot take their names.
+        reserved_attribute_names=tuple(
+            str(column["semantic_name"])
+            for column in cast(list[dict[str, object]], audit_template["columns"])
+        ),
     )
 
 

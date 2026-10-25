@@ -195,6 +195,12 @@ def project_context_inputs(
             values[f"{family}_{kind}_list"] = (
                 None if rows is None else [{name: row[name] for name in fields} for row in rows]
             )
+    if workflow == "logical":
+        # Answers cite selected Objects by these short ids; the backend numbers them the same way.
+        values["table_index"] = [
+            {"table": f"t{position}", **{name: selected["object"][name] for name in OBJECT_FIELDS}}
+            for position, selected in enumerate(context["selected_objects"], start=1)
+        ]
     details = context["project_details"]
     if workflow == "conceptual":
         # Conceptual follows the Silver override, as its stage resolver does.

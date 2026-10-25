@@ -7,13 +7,13 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import pytest
 from gds_workbench_api.features.logical.policy import project_logical_audit_policy
 from pydantic import JsonValue
 
-from tests.web_backend.test_logical_candidate import _candidate, _validator
+from tests.web_backend.test_logical_candidate import _answer, _validator
 
 SEED_ROOT = Path(__file__).resolve().parents[2] / "database/seed"
 # Seed 05 v2 is a second version of the global defaults and must keep the same boundaries.
@@ -33,7 +33,7 @@ PROMPT_SETS = {
 
 @pytest.mark.parametrize("prompt_set", sorted(PROMPT_SETS))
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
-def test_logical_defaults_are_compact_and_keep_modeling_boundaries(
+def test_logical_defaults_describe_the_compact_answer_and_keep_boundaries(
     prompt_set: str, mode: str
 ) -> None:
     row = next(
@@ -42,15 +42,18 @@ def test_logical_defaults_are_compact_and_keep_modeling_boundaries(
         if item["project_workflow"] == "logical"
         and item["workflow_execution_mode"] == mode
     )
-    system = row["system_prompt"]
+    # v1 keeps hard-wrapped lines; compare both versions as flowing text.
+    system = " ".join(row["system_prompt"].split())
     instruction = row["instruction_prompt"]
-    assert len(system) + len(instruction) < 17_000
+    assert len(row["system_prompt"]) + len(instruction) < 17_000
     placeholders = re.findall(r"\{\{\s*(\w+)\s*\}\}", instruction)
     assert len(placeholders) == len(set(placeholders))
-    assert not any("conceptual" in name for name in placeholders)
+    assert "table_index" in placeholders
+    assert not any("conceptual" in name or "submodel" in name for name in placeholders)
+    assert "Submodel" not in system
     assert (
-        system.index("Plan coherent business Submodels first")
-        < system.index("Decide each Entity's grain")
+        system.index("Decide each Entity's grain")
+        < system.index("Consolidate only compatible")
         < system.index("After normalization, revisit")
     )
     for invariant in (
@@ -61,21 +64,37 @@ def test_logical_defaults_are_compact_and_keep_modeling_boundaries(
         "one value per Attribute at that grain",
         "meaningful repeating children and multivalued facts",
         "composite join",
-        "Endpoint validation occurs before backend projection",
-        "sources=[]",
+        "Cite a table by its id (t1)",
+        "never list or source it",
+        "never list them",
+        "the backend references the parent's generated key",
+        "Omit definition when its single source column's Project description",
+        "Add note only when the value is not a straight copy",
+        "its identity plus only what changes",
+        "retire marks saved records inactive; nothing is deleted",
         "Omission is not deletion",
-        "all candidate lock flags are false",
+        "Locked records cannot change",
         "Enforcement on rejects",
         "enforcement off can return",
         "Attempts are not accumulated",
         "source_refs_truncated",
     ):
-        assert invariant in system
-    assert "only at `high` confidence" not in system
-    assert "Author a relationship only when both association" not in system
+        assert invariant in system, invariant
+    # Rules the backend now applies are no longer the agent's job.
+    for removed in (
+        "logical_attribute_is_surrogate_key",
+        "ordinal",
+        "lock flags are false",
+        "Endpoint validation occurs before backend projection",
+        "logical_relationship_cardinality_basis",
+        "dependency order is 0",
+    ):
+        assert removed not in system, removed
     if mode == "tool_assisted":
         assert "next_cursor/is_complete" in system
         assert "Reuse complete inline or previously read evidence" in system
+        assert "get_logical_submodels" not in system
+        assert "get_logical_submodels" not in row["agent_tool_names"]
     else:
         assert "All selected evidence is inline; there are no readers" in system
         assert {
@@ -85,63 +104,30 @@ def test_logical_defaults_are_compact_and_keep_modeling_boundaries(
         } <= set(placeholders)
 
 
-async def test_referenced_own_surrogate_must_be_explicit_before_policy_projection() -> (
-    None
-):
-    candidate = cast(dict[str, Any], _candidate())
-    candidate["attributes"][0]["logical_attribute_name"] = "SourceCustomerID"
+def test_generated_parent_key_is_projected_once() -> None:
+    # The answer names the parent Entity only; the backend adds and references its key.
     validator = _validator()
     projected = project_logical_audit_policy(
-        changes=validator.parse_validated(cast(JsonValue, candidate)),
+        changes=validator.parse_validated(cast(JsonValue, _answer())),
         applied=None,
         raw_template={"schema_version": "1.0", "columns": []},
     )
-    own_key = next(
+    rows = [
         row
         for change in projected
-        if change.dataset == "logical_attribute"
         for row in change.records
-        if row["logical_attribute_name"] == "CustomerID"
-    )
-    candidate["relationships"] = [
-        {
-            "logical_relationship_name": "SourceToGeneratedIdentity",
-            "logical_relationship_definition": "One source identity maps to one generated identity.",
-            "from_logical_entity_schema_name": "silver",
-            "from_logical_entity_name": "Customer",
-            "from_logical_attribute_name": "SourceCustomerID",
-            "to_logical_entity_schema_name": "silver",
-            "to_logical_entity_name": "Customer",
-            "to_logical_attribute_name": "CustomerID",
-            "logical_relationship_cardinality": "one_to_one",
-            "logical_relationship_basis": "Synthetic fixture business identity.",
-            "logical_relationship_cardinality_basis": "One generated identity per source record.",
-            "logical_relationship_status": "active",
-            "logical_relationship_is_locked": False,
-        }
+        if change.dataset == "logical_attribute"
+        and row["logical_entity_name"] == "Customer"
     ]
-    omitted = await validator.validate(cast(JsonValue, candidate))
-    assert {issue.code for issue in omitted.issues} == {
-        "candidate.relationship_endpoint_missing"
-    }
-    candidate["attributes"].append(own_key)
-    assert (await validator.validate(cast(JsonValue, candidate))).issues == ()
-    projected = project_logical_audit_policy(
-        changes=validator.parse_validated(cast(JsonValue, candidate)),
-        applied=None,
-        raw_template={"schema_version": "1.0", "columns": []},
+    keys = [row for row in rows if row["logical_attribute_is_surrogate_key"]]
+    assert [
+        (row["logical_attribute_name"], row["logical_attribute_ordinal_position"])
+        for row in keys
+    ] == [("CustomerID", 1)]
+    relationship = next(
+        row
+        for change in projected
+        for row in change.records
+        if change.dataset == "logical_relationship"
     )
-    assert (
-        sum(
-            row["logical_attribute_name"] == "CustomerID"
-            for change in projected
-            if change.dataset == "logical_attribute"
-            for row in change.records
-        )
-        == 1
-    )
-    description = validator.output_schema()["description"]
-    assert isinstance(description, str)
-    assert "Endpoint validation precedes backend projection" in description
-    assert "Legacy selected_metadata" in description
-    assert "under enrichment" in description
+    assert relationship["to_logical_attribute_name"] == "CustomerID"

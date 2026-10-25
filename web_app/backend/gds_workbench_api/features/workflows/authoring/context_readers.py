@@ -62,7 +62,9 @@ def workflow_reader_specs(workflow: str) -> ReaderSpecs:
         if workflow == "dimensional"
         else ()
     ):
-        for kind in ("submodel", "entity", "attribute", "relationship"):
+        # Logical runs no longer author Submodels, so they read none.
+        kinds = ("entity", "attribute", "relationship")
+        for kind in kinds if workflow == "logical" else ("submodel", *kinds):
             plural = "entities" if kind == "entity" else kind + "s"
             selector = (
                 None

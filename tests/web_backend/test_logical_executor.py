@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
@@ -285,99 +286,103 @@ def _context_bundle(
     )
 
 
-def _candidate(*, source_name: str = "customer_raw") -> JsonValue:
-    object_key = {
-        "tenant_code": "NWA",
-        "system_code": "CRM",
-        "connection_code": "SOURCE",
-        "object_schema": "bronze",
-        "object_name": source_name,
-    }
+def _candidate(*, table_id: str = "t1") -> JsonValue:
+    """One compact Logical answer citing the selected Object by its table_index id."""
     return cast(
         JsonValue,
         {
-            "submodels": [
-                {
-                    "logical_submodel_name": "Customer Domain",
-                    "logical_submodel_definition": "Customer data.",
-                    "logical_submodel_status": "active",
-                    "logical_submodel_is_locked": False,
-                }
-            ],
             "entities": [
                 {
-                    "logical_entity_schema_name": "silver",
-                    "logical_entity_name": "Customer",
-                    "logical_entity_definition": "One customer.",
-                    "logical_entity_type": "core",
-                    "logical_entity_type_detail": None,
-                    "logical_entity_grain": "One row per customer.",
-                    "logical_entity_dependency_order": 0,
-                    "logical_entity_status": "active",
-                    "logical_entity_is_locked": False,
-                    "submodels": [
+                    "schema": "silver",
+                    "name": "Customer",
+                    "type": "core",
+                    "definition": "One customer.",
+                    "grain": "One row per customer.",
+                    "sources": [table_id],
+                    "attributes": [
                         {
-                            "submodel_name": "Customer Domain",
-                            "membership_status": "active",
-                            "membership_is_locked": False,
-                        }
-                    ],
-                    "sources": [
-                        {
-                            "support_source_type": "object",
-                            "source_object": object_key,
-                            "source_order": 1,
-                            "rationale": "Primary customer source.",
-                            "status": "active",
-                            "is_locked": False,
-                        }
-                    ],
-                }
-            ],
-            "attributes": [
-                {
-                    "logical_entity_schema_name": "silver",
-                    "logical_entity_name": "Customer",
-                    "logical_attribute_name": "Customer Id",
-                    "logical_attribute_definition": "Customer identifier.",
-                    "logical_attribute_data_type": "bigint",
-                    "logical_attribute_is_nullable": False,
-                    "logical_attribute_is_natural_key": True,
-                    "logical_attribute_is_surrogate_key": False,
-                    "logical_attribute_ordinal_position": 1,
-                    "logical_attribute_is_audit_column": False,
-                    "logical_attribute_status": "active",
-                    "logical_attribute_is_locked": False,
-                    "sources": [
-                        {
-                            "support_source_type": "attribute",
-                            "source_attribute": {
-                                **object_key,
-                                "attribute_name": "customer_id",
-                            },
-                            "source_order": 1,
-                            "rationale": "Primary customer key.",
-                            "status": "active",
-                            "is_locked": False,
+                            "name": "Customer Id",
+                            "type": "bigint",
+                            "natural_key": True,
+                            "from": f"{table_id}.customer_id",
                         }
                     ],
                 }
             ],
             "relationships": [],
+            "retire": [],
         },
     )
 
 
 def _empty_candidate() -> JsonValue:
-    return cast(
-        JsonValue,
-        {
-            "submodels": [],
-            "entities": [],
-            "attributes": [],
-            "relationships": [],
-        },
-    )
+    return cast(JsonValue, {"entities": [], "relationships": [], "retire": []})
+
+
+def _saved_customer() -> dict[ProjectChangeSetDataset, list[dict[str, object]]]:
+    """The applied Customer Entity in complete saved-record form."""
+    object_key: dict[str, object] = {
+        "tenant_code": "NWA",
+        "system_code": "CRM",
+        "connection_code": "SOURCE",
+        "object_schema": "bronze",
+        "object_name": "customer_raw",
+    }
+    return {
+        "logical_entity": [
+            {
+                "logical_entity_schema_name": "silver",
+                "logical_entity_name": "Customer",
+                "logical_entity_definition": "One customer.",
+                "logical_entity_type": "core",
+                "logical_entity_type_detail": None,
+                "logical_entity_grain": "One row per customer.",
+                "logical_entity_dependency_order": 0,
+                "logical_entity_status": "active",
+                "logical_entity_is_locked": False,
+                "submodels": [],
+                "sources": [
+                    {
+                        "support_source_type": "object",
+                        "source_object": object_key,
+                        "source_order": 1,
+                        "rationale": "Primary customer source.",
+                        "status": "active",
+                        "is_locked": False,
+                    }
+                ],
+            }
+        ],
+        "logical_attribute": [
+            {
+                "logical_entity_schema_name": "silver",
+                "logical_entity_name": "Customer",
+                "logical_attribute_name": "Customer Id",
+                "logical_attribute_definition": "Customer identifier.",
+                "logical_attribute_data_type": "bigint",
+                "logical_attribute_is_nullable": False,
+                "logical_attribute_is_natural_key": True,
+                "logical_attribute_is_surrogate_key": False,
+                "logical_attribute_ordinal_position": 1,
+                "logical_attribute_is_audit_column": False,
+                "logical_attribute_status": "active",
+                "logical_attribute_is_locked": False,
+                "sources": [
+                    {
+                        "support_source_type": "attribute",
+                        "source_attribute": {
+                            **object_key,
+                            "attribute_name": "customer_id",
+                        },
+                        "source_order": 1,
+                        "rationale": "Primary customer key.",
+                        "status": "active",
+                        "is_locked": False,
+                    }
+                ],
+            }
+        ],
+    }
 
 
 def _validation_context(
@@ -455,11 +460,8 @@ def _mapped_context_bundle(
             }
         ),
     )
-    candidate = cast(dict[str, list[dict[str, object]]], _candidate())
     graph: dict[ProjectChangeSetDataset, list[dict[str, object]]] = {
-        "logical_submodel": candidate["submodels"],
-        "logical_entity": candidate["entities"],
-        "logical_attribute": candidate["attributes"],
+        **_saved_customer(),
         "mapping_object": [
             {
                 "modeled_entity_type": "logical_entity",
@@ -866,7 +868,7 @@ async def test_one_shot_projects_audit_columns_then_hands_off_once() -> None:
     )
 
     assert isinstance(result, WorkflowChangeSetHandoffResult)
-    assert result.staged_record_count == 5
+    assert result.staged_record_count == 4
     assert database.isolations == [ReadIsolation.REPEATABLE_READ]
     assert authorizer.calls == [(7, ToolPolicy.TENANT_PROJECT_WRITE)]
     request = agent.requests[0]
@@ -890,7 +892,7 @@ async def test_one_shot_projects_audit_columns_then_hands_off_once() -> None:
         "Customer Id",
         "CustomerID",
     ]
-    assert handoff.final_events[-1].finding_count == 5
+    assert handoff.final_events[-1].finding_count == 4
     assert lifecycle.failed is None
     assert [
         (event.sequence, event.stage)
@@ -1023,7 +1025,6 @@ async def test_tool_assisted_uses_local_catalog_and_same_change_contract() -> No
     assert request.allowed_tool_names == catalog.allowed_tool_names
     assert request.context == {"original_context": catalog.manifest, "repair": None}
     assert [change.dataset for change in handoff.calls[0]] == [
-        "logical_submodel",
         "logical_entity",
         "logical_attribute",
     ]
@@ -1032,9 +1033,7 @@ async def test_tool_assisted_uses_local_catalog_and_same_change_contract() -> No
 
 @pytest.mark.asyncio
 async def test_validation_repair_keeps_original_context_then_hands_off_once() -> None:
-    agent = _AgentExecutor(
-        responses=[_candidate(source_name="outside_selection"), _candidate()]
-    )
+    agent = _AgentExecutor(responses=[_candidate(table_id="t9"), _candidate()])
     service, _database, _authorizer, handoff, _lifecycle = _service(agent=agent)
 
     await service.execute_started(
@@ -1060,11 +1059,28 @@ async def test_validation_repair_keeps_original_context_then_hands_off_once() ->
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
 async def test_full_graph_mapping_failure_is_repaired_before_handoff(mode: str) -> None:
     bundle = _mapped_context_bundle(mode)
-    invalid = cast(dict[str, list[dict[str, object]]], _candidate())
-    invalid["entities"][0]["logical_entity_status"] = "inactive"
-    corrected = cast(dict[str, list[dict[str, object]]], _candidate())
-    corrected["entities"][0]["logical_entity_definition"] = (
-        "One customer identified by the CRM business key."
+    # Retiring the mapped Entity also retires its Attributes; Mapping still uses both.
+    invalid = cast(
+        dict[str, list[dict[str, object]]],
+        {
+            "entities": [],
+            "relationships": [],
+            "retire": [{"schema": "silver", "entity": "Customer"}],
+        },
+    )
+    corrected = cast(
+        dict[str, list[dict[str, object]]],
+        {
+            "entities": [
+                {
+                    "schema": "silver",
+                    "name": "Customer",
+                    "definition": "One customer identified by the CRM business key.",
+                }
+            ],
+            "relationships": [],
+            "retire": [],
+        },
     )
     agent = _AgentExecutor(
         responses=cast(list[JsonValue | Exception], [invalid, corrected])
@@ -1088,12 +1104,7 @@ async def test_full_graph_mapping_failure_is_repaired_before_handoff(mode: str) 
         repaired["original_context"]
         == cast(dict[str, Any], agent.requests[0].context)["original_context"]
     )
-    assert repaired["repair"]["validation_issues"][:3] == [
-        {
-            "code": "candidate.active_dependency_invalid",
-            "path": ["logical_attribute", "logical_entity_name"],
-            "message": "Active Logical Attribute requires an active parent Entity.",
-        },
+    assert repaired["repair"]["validation_issues"][:2] == [
         {
             "code": "candidate.active_dependency_invalid",
             "path": ["mapping_object", "modeled_entity_name"],
@@ -1140,7 +1151,7 @@ async def test_full_graph_mapping_failure_is_repaired_before_handoff(mode: str) 
     )
     assert (
         entity_change.records[0]["logical_entity_definition"]
-        == corrected["entities"][0]["logical_entity_definition"]
+        == corrected["entities"][0]["definition"]
     )
     assert handoff.final_events[-1].attempt == 2
     assert lifecycle.failed is None
@@ -1165,13 +1176,16 @@ async def test_post_policy_graph_failure_retains_canonical_rejected_draft() -> N
         snapshot=snapshot,
         embedded_context=cast(JsonValue, context.model_dump(mode="json")),
     )
-    candidates = [_candidate(), _candidate()]
-    for candidate in candidates:
-        # Partial Mapping is valid; an active Mapping pointing at an inactive
-        # modeled Attribute remains a real full-graph integrity violation.
-        cast(dict[str, Any], candidate)["attributes"][0]["logical_attribute_status"] = (
-            "inactive"
-        )
+    # Partial Mapping is valid; an active Mapping pointing at an inactive
+    # modeled Attribute remains a real full-graph integrity violation.
+    retire_mapped_attribute: JsonValue = {
+        "entities": [],
+        "relationships": [],
+        "retire": [
+            {"schema": "silver", "entity": "Customer", "attribute": "Customer Id"}
+        ],
+    }
+    candidates = [retire_mapped_attribute, deepcopy(retire_mapped_attribute)]
     agent = _AgentExecutor(responses=cast(list[JsonValue | Exception], candidates))
     service, _, _, handoff, lifecycle = _service(agent=agent, context_bundle=bundle)
 

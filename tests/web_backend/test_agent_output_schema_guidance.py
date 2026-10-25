@@ -14,7 +14,7 @@ from gds_etl_workbench.domain.snapshots.project import (
 )
 from gds_workbench_api.features.conceptual.candidate import _ConceptualCandidate
 from gds_workbench_api.features.dimensional.candidate import _DimensionalCandidate
-from gds_workbench_api.features.logical.candidate import _LogicalCandidate
+from gds_workbench_api.features.logical.candidate import _CompactLogicalCandidate
 from gds_workbench_api.features.workflows.authoring.repair import (
     enrich_agent_output_project_definitions,
 )
@@ -27,15 +27,6 @@ from pydantic import BaseModel, JsonValue
         (
             _ConceptualCandidate,
             {"ConceptualObjectRecord", "ConceptualRelationshipRecord"},
-        ),
-        (
-            _LogicalCandidate,
-            {
-                "LogicalSubmodelRecord",
-                "LogicalEntityRecord",
-                "LogicalAttributeRecord",
-                "LogicalRelationshipRecord",
-            },
         ),
         (
             _DimensionalCandidate,
@@ -79,6 +70,21 @@ def test_authorable_project_records_and_nested_fields_have_semantic_guidance(
                 name,
                 field,
             )
+
+
+def test_compact_logical_answer_describes_every_field() -> None:
+    # Logical answers use their own compact shape; the backend expands it into records.
+    schema = cast(dict[str, JsonValue], _CompactLogicalCandidate.model_json_schema())
+    definitions = cast(dict[str, dict[str, object]], schema["$defs"])
+    for name, definition in (
+        ("answer", cast(dict[str, object], schema)),
+        *definitions.items(),
+    ):
+        properties = cast(
+            dict[str, dict[str, object]], definition.get("properties", {})
+        )
+        for field, property_schema in properties.items():
+            assert _nonblank(property_schema.get("description")), (name, field)
 
 
 @pytest.mark.parametrize("definition", CHANGE_SET_DATASETS, ids=lambda item: item.name)

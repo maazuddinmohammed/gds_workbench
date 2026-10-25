@@ -32,6 +32,7 @@ from gds_workbench_api.integrations.agents.fake_dimensional import (
 )
 from gds_workbench_api.integrations.agents.fake_logical import (
     fake_logical_candidate,
+    fake_table_index,
 )
 from gds_workbench_api.integrations.agents.fake_mapping import (
     fake_mapping_candidate,
@@ -309,6 +310,7 @@ class LocalFakeAgentAdapter:
                 )
             candidate = fake_logical_candidate(
                 schema_name=modeled_output_schema(request.context, "logical"),
+                table_index=fake_table_index(request),
                 source_objects=source_objects,
                 source_attributes=source_attributes,
             )
