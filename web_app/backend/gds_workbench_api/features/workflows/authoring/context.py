@@ -27,13 +27,13 @@ from gds_etl_workbench.domain.modeling_records import (
 )
 from gds_etl_workbench.domain.safe_json import validate_safe_json
 from gds_etl_workbench.domain.snapshots.project import (
-    ConceptualSection,
     ContextSection,
     DimensionalSection,
     LogicalSection,
     MappingSection,
     ProjectDataset,
     ProjectSnapshot,
+    SubjectAreaSection,
     project_snapshot_records,
 )
 from gds_etl_workbench.infrastructure.postgres import ReadTransaction
@@ -226,7 +226,7 @@ SELECT selected.selection_order,
     ON system.system_id = eligibility.system_id
   JOIN reference.object_type AS object_type
     ON object_type.object_type_id = object_record.object_type_id
- WHERE %s IN ('analysis', 'conceptual', 'logical', 'dimensional')
+ WHERE %s IN ('analysis', 'subject_area', 'logical', 'dimensional')
  ORDER BY selected.selection_order
 """
 
@@ -285,7 +285,7 @@ SELECT selected.selection_order,
     ON placement_tenant.tenant_id = connection.tenant_id
   JOIN core.system AS system
     ON system.system_id = eligibility.system_id
- WHERE %s IN ('analysis', 'conceptual', 'logical', 'dimensional')
+ WHERE %s IN ('analysis', 'subject_area', 'logical', 'dimensional')
  ORDER BY selected.selection_order,
           attribute.attribute_ordinal_position,
           attribute.attribute_id
@@ -430,7 +430,7 @@ class SelectedLogicalEntityContext(BaseModel):
 class ApplicableAppliedRecords(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    conceptual: ConceptualSection | None = Field(default=None, repr=False)
+    subject_area: SubjectAreaSection | None = Field(default=None, repr=False)
     logical: LogicalSection | None = Field(default=None, repr=False)
     dimensional: DimensionalSection | None = Field(default=None, repr=False)
     mapping: MappingSection | None = Field(default=None, repr=False)
@@ -758,7 +758,7 @@ class PostgresAgentContextRepository:
             snapshot = await self._snapshot_loader(transaction, project)
             physical_scope = (
                 await self._physical_scope_loader(transaction, project)
-                if plan.project_workflow in {"conceptual", "logical", "dimensional"}
+                if plan.project_workflow in {"subject_area", "logical", "dimensional"}
                 else None
             )
             selected_logical: tuple[SelectedLogicalEntityContext, ...] = ()
@@ -1357,14 +1357,13 @@ def _applicable_applied_records(
     plan: AgentRunPlan,
     snapshot: ProjectSnapshot,
 ) -> ApplicableAppliedRecords:
-    conceptual = None
+    subject_area = None
     logical = None
     dimensional = None
     mapping = None
-    if plan.project_workflow == "conceptual":
-        conceptual = snapshot.conceptual
+    if plan.project_workflow == "subject_area":
+        subject_area = snapshot.subject_area
     elif plan.project_workflow == "logical":
-        # Logical authoring uses physical evidence independently of Conceptual.
         # Keep the full snapshot private for final graph validation only.
         logical = snapshot.logical
     elif plan.project_workflow == "dimensional":
@@ -1378,7 +1377,7 @@ def _applicable_applied_records(
         elif plan.modeled_entity_type == "dimensional_entity":
             dimensional = snapshot.dimensional
     return ApplicableAppliedRecords(
-        conceptual=conceptual,
+        subject_area=subject_area,
         logical=logical,
         dimensional=dimensional,
         mapping=mapping,
@@ -1586,10 +1585,10 @@ def _context_datasets(
             cast(JsonValue, record.model_dump(mode="json")) for record in context.context.records
         ),
     }
-    conceptual = context.applied.conceptual
-    if context.project_workflow == "conceptual" and conceptual is not None:
-        datasets["conceptual_object"] = _dump_records(conceptual.objects)
-        datasets["conceptual_relationship"] = _dump_records(conceptual.relationships)
+    subject_area = context.applied.subject_area
+    if context.project_workflow == "subject_area" and subject_area is not None:
+        datasets["subject_area"] = _dump_records(subject_area.areas)
+        datasets["subject_area_table"] = _dump_records(subject_area.tables)
     logical = context.applied.logical
     if logical is not None:
         datasets["logical_submodel"] = _dump_records(logical.submodels)
@@ -1878,9 +1877,10 @@ def _provider_context(context: AgentAuthoringContext) -> JsonValue:
             exclude={"workflow_run_id", "project_id", "context_source_scope"},
         ),
     )
-    if context.project_workflow != "conceptual":
+    if context.project_workflow != "subject_area":
+        # Subject Areas choose tables; they are not modeling evidence for other workflows.
         applied = cast(dict[str, JsonValue], provider_context["applied"])
-        applied["conceptual"] = None
+        applied["subject_area"] = None
     # Freeze projected inputs before removing internal Tenant/System scope metadata.
     provider_context["prompt_inputs"] = project_context_inputs(
         context.model_dump(mode="json"), context_source_scope=context.context_source_scope

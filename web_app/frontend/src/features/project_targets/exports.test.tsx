@@ -11,7 +11,7 @@ import { DdlExportButton } from "./DdlExportButton";
 afterEach(() => vi.restoreAllMocks());
 
 describe("Project downloads", () => {
-  it.each(["conceptual", "logical", "dimensional"] as const)("downloads %s DDL with current selection and revision", async (layer) => {
+  it.each(["logical", "dimensional"] as const)("downloads %s DDL with current selection and revision", async (layer) => {
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:ddl");
     vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
     const clicked = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});

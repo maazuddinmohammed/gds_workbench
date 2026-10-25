@@ -10,8 +10,6 @@ from pydantic import BaseModel, ConfigDict
 from gds_etl_workbench.domain.modeling_records import (
     AnalysisResultRecord,
     AttributeEnrichmentRecord,
-    ConceptualObjectRecord,
-    ConceptualRelationshipRecord,
     ContextGroupRecord,
     ContextRecord,
     ContextTypeRecord,
@@ -32,6 +30,8 @@ from gds_etl_workbench.domain.modeling_records import (
     ProfilingProfileRecord,
     ProjectDetailsRecord,
     ProjectInputScopeRecord,
+    SubjectAreaRecord,
+    SubjectAreaTableRecord,
     ValidationCheckRecord,
     ValidationGroupRecord,
 )
@@ -48,7 +48,7 @@ type ProjectSection = Literal[
     "enrichment",
     "analysis",
     "context",
-    "conceptual",
+    "subject_area",
     "logical",
     "dimensional",
     "mapping",
@@ -66,8 +66,8 @@ type ProjectDataset = Literal[
     "context_type",
     "context_group",
     "context_record",
-    "conceptual_object",
-    "conceptual_relationship",
+    "subject_area",
+    "subject_area_table",
     "logical_submodel",
     "logical_entity",
     "logical_attribute",
@@ -93,8 +93,8 @@ type ProjectChangeSetDataset = Literal[
     "analysis_result",
     "context_group",
     "context_record",
-    "conceptual_object",
-    "conceptual_relationship",
+    "subject_area",
+    "subject_area_table",
     "logical_submodel",
     "logical_entity",
     "logical_attribute",
@@ -117,7 +117,7 @@ PROJECT_SECTIONS: tuple[ProjectSection, ...] = (
     "enrichment",
     "analysis",
     "context",
-    "conceptual",
+    "subject_area",
     "logical",
     "dimensional",
     "mapping",
@@ -171,9 +171,9 @@ class ContextSection(ContractModel):
     records: tuple[ContextRecord, ...]
 
 
-class ConceptualSection(ContractModel):
-    objects: tuple[ConceptualObjectRecord, ...]
-    relationships: tuple[ConceptualRelationshipRecord, ...]
+class SubjectAreaSection(ContractModel):
+    areas: tuple[SubjectAreaRecord, ...]
+    tables: tuple[SubjectAreaTableRecord, ...]
 
 
 class LogicalSection(ContractModel):
@@ -218,7 +218,7 @@ class ProjectSnapshot(ContractModel):
     profiling: ProfilingSection
     analysis: AnalysisSection
     context: ContextSection
-    conceptual: ConceptualSection
+    subject_area: SubjectAreaSection
     logical: LogicalSection
     dimensional: DimensionalSection
     mapping: MappingSection
@@ -243,8 +243,8 @@ def project_snapshot_records(
         "context_type": snapshot.context.types,
         "context_group": snapshot.context.groups,
         "context_record": snapshot.context.records,
-        "conceptual_object": snapshot.conceptual.objects,
-        "conceptual_relationship": snapshot.conceptual.relationships,
+        "subject_area": snapshot.subject_area.areas,
+        "subject_area_table": snapshot.subject_area.tables,
         "logical_submodel": snapshot.logical.submodels,
         "logical_entity": snapshot.logical.entities,
         "logical_attribute": snapshot.logical.attributes,
@@ -401,19 +401,22 @@ DATASETS = (
         canonical_key=("context_record_id",),
     ),
     ModelingDatasetDefinition(
-        name="conceptual_object",
-        section="conceptual",
-        row_model=ConceptualObjectRecord,
-        canonical_key=("conceptual_object_name",),
+        name="subject_area",
+        section="subject_area",
+        row_model=SubjectAreaRecord,
+        canonical_key=("subject_area_name",),
     ),
     ModelingDatasetDefinition(
-        name="conceptual_relationship",
-        section="conceptual",
-        row_model=ConceptualRelationshipRecord,
+        name="subject_area_table",
+        section="subject_area",
+        row_model=SubjectAreaTableRecord,
         canonical_key=(
-            "from_conceptual_object_name",
-            "to_conceptual_object_name",
-            "conceptual_relationship_name",
+            "subject_area_name",
+            "tenant_code",
+            "system_code",
+            "connection_code",
+            "object_schema",
+            "object_name",
         ),
     ),
     ModelingDatasetDefinition(

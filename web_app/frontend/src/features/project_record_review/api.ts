@@ -3,7 +3,7 @@ import type { ReviewStatus } from "../../shared/contracts";
 
 export type ProjectReviewDataset =
   | "context_record"
-  | "conceptual_object" | "conceptual_relationship"
+  | "subject_area" | "subject_area_table"
   | "logical_submodel" | "logical_entity" | "logical_attribute" | "logical_relationship"
   | "dimensional_submodel" | "dimensional_entity" | "dimensional_attribute" | "dimensional_relationship"
   | "mapping_object" | "mapping_attribute"
@@ -16,7 +16,7 @@ export interface ProjectReviewCommand {
   action: ProjectReviewAction;
   expected_project_revision: number;
   expected_plan_digest?: string;
-  layer?: "conceptual" | "logical" | "dimensional";
+  layer?: "subject_area" | "logical" | "dimensional";
 }
 
 export interface ProjectReviewPreview {
@@ -70,7 +70,7 @@ export interface ProjectRecordHistoryApi extends ProjectRecordReviewApi {
     projectRevision: number, page?: number, entityType?: "logical_entity" | "dimensional_entity") => Promise<ProjectRecordHistoryPage>;
 }
 
-export type EditableDataset = Extract<ProjectReviewDataset, `conceptual_${string}` | `logical_${string}` | `dimensional_${string}`> | "mapping_object";
+export type EditableDataset = Extract<ProjectReviewDataset, `logical_${string}` | `dimensional_${string}`> | "mapping_object";
 export interface ProjectRecordEditorRequest {
   dataset: EditableDataset; record_id: number; expected_project_revision: number;
   mapping_target?: { entity_type: "logical_entity" | "dimensional_entity"; entity_id: number; source_system_id: number };

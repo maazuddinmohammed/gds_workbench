@@ -7,8 +7,8 @@ Load for architecture questions or to resolve responsibility; ordinary workflows
 - **Tenant** is an authorization and metadata ownership boundary. Physical storage can belong to a different GDS Tenant; never infer ownership from placement.
 - **System** identifies a contributing source/business system. A **Connection** identifies registered access or placement; its secret values are not agent inputs.
 - **Object / Attribute** describe physical relations and columns. Project Input Scope selects eligible applied inputs and is configured outside plugin authoring.
-- A **Project** owns scoped evidence, Context records, Conceptual, Logical and Dimensional designs, Mapping, Code and Validation definitions. [Terminology](../terminology.md) and individual record guides distinguish these meanings.
-- **Conceptual** is a standalone business-meaning deliverable and never feeds Logical or Dimensional. **Logical** defines normalized grain, identity and relationships from its own eligible evidence; **Dimensional** consumes applied Logical records to define analytical grain, measures and history. A Submodel organizes a useful part of a design; it is not a separate authorization boundary.
+- A **Project** owns scoped evidence, Context records, Subject Areas, Logical and Dimensional designs, Mapping, Code and Validation definitions. [Terminology](../terminology.md) and individual record guides distinguish these meanings.
+- **Subject Areas** group the Bronze Input Scope into business capabilities so each Logical Build works on one manageable set of tables; they are not evidence. **Logical** defines normalized grain, identity and relationships from its own eligible evidence; **Dimensional** consumes applied Logical records to define analytical grain, measures and history. A Submodel organizes a useful part of a design; it is not a separate authorization boundary.
 - **Mapping** specifies transformations for target/System branches. **Code** implements saved Mapping. **Validation definitions** describe checks; saving them does not execute them.
 
 ## Execution boundaries

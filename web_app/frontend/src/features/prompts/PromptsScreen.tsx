@@ -30,7 +30,7 @@ const WORKFLOWS: PromptWorkflow[] = [
   "metadata_enrichment_object",
   "metadata_enrichment_attribute",
   "analysis",
-  "conceptual",
+  "subject_area",
   "logical",
   "dimensional",
   "mapping",

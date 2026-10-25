@@ -47,10 +47,11 @@ from tests.mcp.test_database_project_change_set_round_trip import (
 @pytest.mark.parametrize(
     ("layer", "selection"),
     [
-        ("conceptual", "clear"),
+        ("subject_area", "clear"),
         ("logical", "clear"),
         ("dimensional", "clear"),
-        ("conceptual", "object"),
+        ("subject_area", "area"),
+        ("subject_area", "table"),
         ("logical", "entity"),
         ("logical", "attribute"),
         ("logical", "submodel"),
@@ -77,9 +78,7 @@ async def test_permanent_clear_includes_supports_and_replays_without_restoring_r
         async with runtime.write_transaction() as transaction:
             graph = complete_project_graph()
             # Inactive records must be deleted too, not left to block parent FKs.
-            graph["conceptual_relationship"][0]["conceptual_relationship_status"] = (
-                "inactive"
-            )
+            graph["subject_area_table"][0]["subject_area_table_status"] = "inactive"
             validation = validate_future_graph(
                 snapshot=await build_project_snapshot(transaction, project),
                 physical_scope=await load_project_physical_scope(transaction, project),
@@ -99,11 +98,11 @@ async def test_permanent_clear_includes_supports_and_replays_without_restoring_r
         database=database, authorizer=AuthorizationService()
     )
     principal = StaticIdentityProvider().request_principal(None)
+    # A layer is cleared through its root dataset: Subject Areas or Entities.
+    root = "subject_area" if layer == "subject_area" else f"{layer}_entity"
     dataset = cast(
         ProjectReviewDataset,
-        "conceptual_object"
-        if layer == "conceptual"
-        else f"{layer}_{'entity' if selection == 'clear' else selection}",
+        root if selection in {"clear", "area"} else f"{layer}_{selection}",
     )
     await database.open()
     try:
@@ -197,7 +196,7 @@ async def test_permanent_clear_includes_supports_and_replays_without_restoring_r
         assert preview.can_apply and preview.action_count > 0
         assert all(item.desired_status == "deleted" for item in preview.items)
         assert any(
-            name.endswith(("_support", "_source_mapping", "_entity_submodel"))
+            name.endswith(("_source_mapping", "_entity_submodel", "subject_area_table"))
             for name in preview.changes_by_dataset
         )
         if layer == "logical" and selection != "submodel":
@@ -214,7 +213,7 @@ async def test_permanent_clear_includes_supports_and_replays_without_restoring_r
             item
             for item in preview.items
             if item.dataset.endswith(
-                ("_support", "_source_mapping", "_entity_submodel")
+                ("_source_mapping", "_entity_submodel", "subject_area_table")
             )
         )
         with fixture.connect_owner() as connection:
@@ -324,13 +323,15 @@ async def test_permanent_clear_includes_supports_and_replays_without_restoring_r
             assert remaining.snapshot.mapping.objects
             assert remaining.snapshot.code_generation.artifacts
         assert remaining.snapshot.context.records
-        if layer == "conceptual":
+        if layer == "subject_area":
             assert (
                 remaining.snapshot.logical.entities
                 and remaining.snapshot.dimensional.entities
             )
+            # Deleting one membership keeps its area.
+            assert bool(remaining.snapshot.subject_area.areas) == (selection == "table")
         else:
-            assert remaining.snapshot.conceptual.objects
+            assert remaining.snapshot.subject_area.areas
         with fixture.connect_owner() as connection:
             for item in preview.items:
                 row = connection.execute(

@@ -37,7 +37,7 @@ _SECTION_DESCRIPTIONS = {
     "enrichment": "Project-owned Object and Attribute enrichment findings and read-only locks.",
     "analysis": "Applied relationship analysis evidence.",
     "context": "Global Context Types, Project Context Groups and reusable Context Records.",
-    "conceptual": "Applied conceptual Objects and Relationships.",
+    "subject_area": "Applied Subject Areas and the Input Scope tables in each.",
     "logical": "Applied logical Submodels, Entities, Attributes, and Relationships.",
     "dimensional": "Applied dimensional Submodels, Entities, Attributes, and Relationships.",
     "mapping": "Applied source-to-target Mapping and dependency records.",

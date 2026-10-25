@@ -35,8 +35,7 @@ export function ProjectRecordTools({ api, tenantId, projectId, projectRevision, 
       onApplied={async () => {
         setReview(null);
         if (review.action === "delete") await navigate({
-          to: dataset.startsWith("conceptual_") ? "/tenants/$tenantId/projects/$projectId/conceptual"
-            : dataset.startsWith("logical_") ? "/tenants/$tenantId/projects/$projectId/logical"
+          to: dataset.startsWith("logical_") ? "/tenants/$tenantId/projects/$projectId/logical"
               : "/tenants/$tenantId/projects/$projectId/dimensional",
           params: { tenantId: String(tenantId), projectId: String(projectId) },
         });

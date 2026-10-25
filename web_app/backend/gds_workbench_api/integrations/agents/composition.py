@@ -41,13 +41,15 @@ from gds_workbench_api.integrations.agents.fake_mapping import (
 from gds_workbench_api.integrations.agents.fake_shared import (
     analysis_selected_attributes,
     code_generation_target_refs,
-    conceptual_source_objects,
     dimensional_logical_sources,
     modeled_output_schema,
     named_tool_items,
     original_context,
-    tool_assisted_conceptual_sources,
+    selected_source_objects,
     tool_assisted_logical_sources,
+)
+from gds_workbench_api.integrations.agents.fake_subject_areas import (
+    fake_subject_area_candidate,
 )
 
 
@@ -302,7 +304,7 @@ class LocalFakeAgentAdapter:
                     request
                 )
             elif request.execution_mode == "one_shot":
-                source_objects = conceptual_source_objects(request.context)
+                source_objects = selected_source_objects(request.context)
                 source_attributes = analysis_selected_attributes(request.context)
             else:
                 raise InvalidRequestError(
@@ -314,44 +316,26 @@ class LocalFakeAgentAdapter:
                 source_objects=source_objects,
                 source_attributes=source_attributes,
             )
-        elif request.workflow == "conceptual" and request.stage == "candidate_authoring":
+        elif request.workflow == "subject_area" and request.stage == "candidate_authoring":
             if request.execution_mode == "tool_assisted":
-                source_objects, tool_call_count = tool_assisted_conceptual_sources(request)
+                scope_tables, tool_call_count = named_tool_items(request, "get_scope_tables")
+                values = getattr(request.local_tool_catalog, "prompt_values", None)
             else:
-                source_objects = conceptual_source_objects(request.context)
-            candidate = cast(
-                JsonValue,
-                {
-                    "objects": [
-                        {
-                            "conceptual_object_name": "BusinessConcept",
-                            "conceptual_object_definition": (
-                                "A compact locally generated business concept supported "
-                                "by the selected scope."
-                            ),
-                            "conceptual_object_type": "business_concept",
-                            "conceptual_object_grain": (
-                                "A stable business subject represented across the selected scope."
-                            ),
-                            "conceptual_object_aliases": [],
-                            "conceptual_object_status": "active",
-                            "conceptual_object_is_locked": False,
-                            "supports": [
-                                {
-                                    "support_source_type": "object",
-                                    "source_object": source_object,
-                                    "support_role": "source",
-                                    "support_reason": ("Selected Object supports this candidate."),
-                                    "support_reason_detail": None,
-                                    "support_status": "active",
-                                    "support_is_locked": False,
-                                }
-                                for source_object in source_objects
-                            ],
-                        }
-                    ],
-                    "relationships": [],
-                },
+                values = original_context(request.context).get("prompt_inputs")
+                scope_tables = (
+                    cast(list[dict[str, JsonValue]], values.get("scope_tables"))
+                    if isinstance(values, dict)
+                    else []
+                )
+            limit = (
+                cast(dict[str, object], values).get("max_subject_area_columns")
+                if isinstance(values, dict)
+                else None
+            )
+            if not isinstance(limit, int) or isinstance(limit, bool):
+                raise InvalidRequestError("The local fake agent context is invalid.")
+            candidate = fake_subject_area_candidate(
+                scope_tables=tuple(scope_tables), max_columns=limit
             )
         else:
             raise InvalidRequestError("The local fake does not support this agent execution path.")

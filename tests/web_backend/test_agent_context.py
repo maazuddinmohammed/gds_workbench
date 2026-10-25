@@ -14,8 +14,8 @@ from gds_etl_workbench.domain.modeling_records import (
     GeneratedCodeRecord,
     LogicalAttributeRecord,
     LogicalEntityRecord,
+    LogicalObjectSourceRecord,
     MappingObjectRecord,
-    ObjectSupportRecord,
 )
 from gds_etl_workbench.domain.snapshots.project import ProjectSnapshot
 from gds_workbench_api.capabilities import AgentRunSelection
@@ -35,7 +35,9 @@ from gds_workbench_api.prompt_rendering import PromptComponentTemplates
 def _plan(
     *,
     execution_mode: Literal["one_shot", "tool_assisted"] = "one_shot",
-    project_workflow: Literal["conceptual", "logical", "dimensional"] = "conceptual",
+    project_workflow: Literal[
+        "subject_area", "logical", "dimensional"
+    ] = "subject_area",
     selected_object_ids: tuple[int, ...] = (501,),
     max_turns: int = 8,
 ) -> AgentRunPlan:
@@ -228,20 +230,23 @@ def _snapshot() -> ProjectSnapshot:
                     }
                 ],
             },
-            "conceptual": {
-                "objects": (
+            "subject_area": {
+                "areas": (
                     {
-                        "conceptual_object_name": "Legacy Customer",
-                        "conceptual_object_definition": "Existing authored baseline.",
-                        "conceptual_object_type": "entity",
-                        "conceptual_object_grain": "One legacy customer.",
-                        "conceptual_object_aliases": (),
-                        "conceptual_object_status": "inactive",
-                        "conceptual_object_is_locked": True,
-                        "supports": (),
+                        "subject_area_name": "Legacy Customer",
+                        "subject_area_definition": "Existing authored baseline.",
+                        "subject_area_status": "inactive",
+                        "subject_area_is_locked": True,
                     },
                 ),
-                "relationships": (),
+                "tables": (
+                    {
+                        "subject_area_name": "Legacy Customer",
+                        **_object_key("customers"),
+                        "subject_area_table_status": "inactive",
+                        "subject_area_table_is_locked": True,
+                    },
+                ),
             },
             "logical": {
                 "submodels": (),
@@ -388,7 +393,7 @@ class ContextTransaction:
             assert parameters == (18, [501])
             return []
         if "attribute_ordinal_position" not in query:
-            assert parameters == ([501], 18, "conceptual")
+            assert parameters == ([501], 18, "subject_area")
             return [
                 {
                     "selection_order": 1,
@@ -406,7 +411,7 @@ class ContextTransaction:
                     "is_active": True,
                 }
             ]
-        assert parameters == ([501], 18, "conceptual", 101)
+        assert parameters == ([501], 18, "subject_area", 101)
         return [
             {
                 "object_id": 501,
@@ -482,15 +487,15 @@ class LogicalContextTransaction(ContextTransaction):
             return await super().fetch_all(query, parameters)
         assert parameters[2] == "logical"
         return await super().fetch_all(
-            query, (*parameters[:2], "conceptual", *parameters[3:])
+            query, (*parameters[:2], "subject_area", *parameters[3:])
         )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("project_workflow", ("conceptual", "logical"))
+@pytest.mark.parametrize("project_workflow", ("subject_area", "logical"))
 @pytest.mark.parametrize("execution_mode", ("one_shot", "tool_assisted"))
 async def test_full_validation_state_stays_private_while_dependencies_are_readable(
-    project_workflow: Literal["conceptual", "logical"],
+    project_workflow: Literal["subject_area", "logical"],
     execution_mode: Literal["one_shot", "tool_assisted"],
 ) -> None:
     snapshot = _dimensional_snapshot()
@@ -594,7 +599,8 @@ async def test_full_validation_state_stays_private_while_dependencies_are_readab
     assert "PRIVATE_MAPPING_BODY" not in provider_text + repr(result)
     assert "PRIVATE_CODE_BODY" not in provider_text + repr(result)
     if project_workflow == "logical":
-        assert result.context.applied.conceptual is None
+        # Subject Areas choose tables; they are not Logical modeling evidence.
+        assert result.context.applied.subject_area is None
         assert "Legacy Customer" not in provider_text
         assert {item.dataset for item in result.context.read_only_dependencies} == {
             "mapping_object",
@@ -604,7 +610,7 @@ async def test_full_validation_state_stays_private_while_dependencies_are_readab
             catalog = result.tool_catalog
             assert catalog is not None
             with pytest.raises(AgentContextToolRequestError):
-                catalog.invoke("get_conceptual_objects", {})
+                catalog.invoke("get_subject_areas", {})
             code = catalog.invoke(
                 "get_agent_context_dataset",
                 {
@@ -634,30 +640,24 @@ def _snapshot_with_policy_json(value: dict[str, object]) -> ProjectSnapshot:
     return snapshot.model_copy(update={"project_input_scope": project_input_scope})
 
 
-def _snapshot_with_nested_supports(count: int) -> ProjectSnapshot:
-    snapshot = _snapshot()
-    supports = tuple(
-        ObjectSupportRecord.model_validate(
+def _snapshot_with_nested_sources(count: int) -> ProjectSnapshot:
+    snapshot = _dimensional_snapshot()
+    sources = tuple(
+        LogicalObjectSourceRecord.model_validate(
             {
                 "support_source_type": "object",
                 "source_object": _object_key(f"source_{index}"),
-                "support_role": None,
-                "support_reason": "Existing evidence.",
-                "support_reason_detail": None,
-                "support_status": "inactive",
-                "support_is_locked": True,
+                "rationale": "Existing evidence.",
+                "status": "inactive",
+                "is_locked": True,
             },
             strict=False,
         )
         for index in range(count)
     )
-    conceptual_object = snapshot.conceptual.objects[0].model_copy(
-        update={"supports": supports}
-    )
-    conceptual = snapshot.conceptual.model_copy(
-        update={"objects": (conceptual_object,)}
-    )
-    return snapshot.model_copy(update={"conceptual": conceptual})
+    entity = snapshot.logical.entities[0].model_copy(update={"sources": sources})
+    logical = snapshot.logical.model_copy(update={"entities": (entity,)})
+    return snapshot.model_copy(update={"logical": logical})
 
 
 def _json_keys(value: object) -> set[str]:
@@ -705,9 +705,10 @@ async def test_load_builds_selected_canonical_evidence_and_reconciliation_baseli
         "f9a5bf39-7d50-5a3e-aa4c-4f7326a2c238",
         "80f02975-f05a-5bcb-9c57-cea147951c16",
     ]
-    assert context.applied.conceptual is not None
-    assert context.applied.conceptual.objects[0].conceptual_object_status == "inactive"
-    assert context.applied.conceptual.objects[0].conceptual_object_is_locked is True
+    assert context.applied.subject_area is not None
+    assert context.applied.subject_area.areas[0].subject_area_status == "inactive"
+    assert context.applied.subject_area.areas[0].subject_area_is_locked is True
+    assert context.applied.subject_area.tables[0].subject_area_table_is_locked is True
     assert context.applied.logical is None
     assert result.tool_catalog is None
     assert isinstance(result.embedded_context, dict)
@@ -848,8 +849,8 @@ async def test_tool_assisted_mode_embeds_manifest_and_pages_only_local_records()
     assert "profiles" not in manifest
     assert "workflow_run_id" not in manifest
     assert "project_id" not in manifest
-    assert len(result.tool_catalog.allowed_tool_names) == 10
-    assert "get_object_details" in result.tool_catalog.allowed_tool_names
+    assert len(result.tool_catalog.allowed_tool_names) == 6
+    assert "get_scope_tables" in result.tool_catalog.allowed_tool_names
     assert "get_agent_context_dataset" not in result.tool_catalog.allowed_tool_names
 
     page = result.tool_catalog.invoke(
@@ -1186,7 +1187,7 @@ async def test_provider_projection_rejects_unsafe_nested_json(
 @pytest.mark.asyncio
 async def test_nested_authored_records_count_toward_hard_record_bound() -> None:
     async def load_nested_snapshot(*_: object) -> ProjectSnapshot:
-        return _snapshot_with_nested_supports(25)
+        return _snapshot_with_nested_sources(25)
 
     with pytest.raises(WorkbenchError) as captured:
         await PostgresAgentContextRepository(
@@ -1200,7 +1201,11 @@ async def test_nested_authored_records_count_toward_hard_record_bound() -> None:
                 stage_max_context_bytes=1_000_000,
                 max_tool_result_bytes=1_000_000,
             ),
-        ).load(ContextTransaction(), tenant_id=7, plan=_plan())
+        ).load(
+            LogicalContextTransaction(),
+            tenant_id=7,
+            plan=_plan(project_workflow="logical"),
+        )
 
     assert captured.value.code == "agent_context_too_large"
 
@@ -1310,9 +1315,10 @@ async def test_read_committed_revision_change_fails_the_final_fence() -> None:
 
 
 @pytest.mark.asyncio
-async def test_projected_inputs_keep_actual_keys_profiles_and_scoped_relationships() -> (
-    None
-):
+@pytest.mark.parametrize("project_workflow", ("subject_area", "logical"))
+async def test_projected_inputs_keep_actual_keys_profiles_and_scoped_relationships(
+    project_workflow: Literal["subject_area", "logical"],
+) -> None:
     from gds_workbench_api.features.workflows.authoring.context_contracts import (
         workflow_input_contracts,
     )
@@ -1332,11 +1338,43 @@ async def test_projected_inputs_keep_actual_keys_profiles_and_scoped_relationshi
             stage_max_context_bytes=1_000_000,
             max_tool_result_bytes=1_000_000,
         ),
-    ).load(ContextTransaction(), tenant_id=7, plan=_plan())
+    ).load(
+        LogicalContextTransaction()
+        if project_workflow == "logical"
+        else ContextTransaction(),
+        tenant_id=7,
+        plan=_plan(project_workflow=project_workflow),
+    )
     values = project_context_inputs(result.context.model_dump(mode="json"))
-    for name, spec in workflow_input_contracts("conceptual").items():
+    for name, spec in workflow_input_contracts(project_workflow).items():
         assert cast(Any, Draft202012Validator(spec["schema"])).is_valid(values[name])
     assert values["source_context"][0]["connection_description"] == "Source application"
+    if project_workflow == "subject_area":
+        # Subject Areas cite the selected tables by id, sized by profiles and columns.
+        assert values["table_index"] == [{"table": "t1", **_object_key("customers")}]
+        assert values["scope_tables"] == [
+            {
+                "table": "t1",
+                "description": "sensitive physical description",
+                "zone_code": "bronze",
+                "row_count": 10,
+                "column_count": 1,
+                "column_names": ["customer_id"],
+            }
+        ]
+        # The saved relationship's outside endpoint never becomes a table link.
+        assert values["table_links"] == []
+        assert values["existing_subject_areas"] == [
+            {
+                "name": "Legacy Customer",
+                "definition": "Existing authored baseline.",
+                "status": "inactive",
+                "is_locked": True,
+                "tables": [],
+                "locked_tables": ["t1"],
+            }
+        ]
+        return
     assert values["object_context"][0]["connection_code"] == "GDS"
     assert values["ingestion_mapping"][0]["source"]["connection_code"] == "SOURCE"
     group = values["object_attribute_context"][0]

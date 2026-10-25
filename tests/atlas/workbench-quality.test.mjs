@@ -7,8 +7,9 @@ const { evaluateQuality } = require("../../atlas/atlas-plugin/workbench/project-
 const core = require("../../atlas/atlas-plugin/workbench/core.js");
 const physicalFields = ["tenant_code", "system_code", "connection_code", "object_schema", "object_name"];
 const keys = {
-  conceptual_object: ["conceptual_object_name"],
-  conceptual_relationship: ["from_conceptual_object_name", "to_conceptual_object_name", "conceptual_relationship_name"],
+  project_input_scope: physicalFields,
+  subject_area: ["subject_area_name"],
+  subject_area_table: ["subject_area_name", ...physicalFields],
   logical_entity: ["logical_entity_schema_name", "logical_entity_name"],
   logical_attribute: ["logical_entity_schema_name", "logical_entity_name", "logical_attribute_name"],
   logical_relationship: ["from_logical_entity_schema_name", "from_logical_entity_name", "from_logical_attribute_name", "to_logical_entity_schema_name", "to_logical_entity_name", "to_logical_attribute_name", "logical_relationship_name"],
@@ -27,8 +28,13 @@ const attr = (entityName, name, natural = false, surrogate = false) => ({ logica
   logical_attribute_name: name, logical_attribute_status: "active", logical_attribute_is_natural_key: natural,
   logical_attribute_is_surrogate_key: surrogate, logical_attribute_is_audit_column: false,
   logical_attribute_data_type: "BIGINT", sources: surrogate ? [] : [source(entityName, name)] });
-const concept = (name) => ({ conceptual_object_name: name, conceptual_object_status: "active",
-  supports: [{ support_source_type: "object", source_object: physical(name), support_status: "active" }] });
+const scope = (name) => ({ ...physical(name), project_input_scope_is_locked: false, is_active: true });
+const area = (name, status = "active") => ({ subject_area_name: name, subject_area_definition: `${name} capability.`,
+  subject_area_status: status, subject_area_is_locked: false });
+const member = (areaName, table, status = "active") => ({ subject_area_name: areaName, ...physical(table),
+  subject_area_table_status: status, subject_area_table_is_locked: false });
+const bronze = (...names) => ({ metadataMap: new Map([["bronze_object", {
+  baseline: names.map((name) => ({ ...physical(name), zone_code: "bronze", is_active: true })) }]]) });
 function project(effective, pending = effective, baseline = {}) {
   return new Map(Object.entries(keys).map(([dataset, canonical_key]) => [dataset, {
     definition: { name: dataset, canonical_key }, baseline: baseline[dataset] || [],
@@ -224,56 +230,52 @@ test("changed natural-key lineage or Analysis rechecks an otherwise unchanged re
   }
 });
 
-test("Conceptual unknown cardinality still requires supported existence and aligned Object supports", () => {
-  const { records, analysis } = sales();
-  records.conceptual_object = [concept("Order"), concept("Customer")];
-  records.conceptual_relationship = [{ from_conceptual_object_name: "Order", to_conceptual_object_name: "Customer",
-    conceptual_relationship_name: "Places", conceptual_relationship_status: "active", conceptual_relationship_cardinality: "unknown" }];
-  const graph = project(records);
-  const decisions = decisionsFor(graph);
-  for (const entry of decisions.relationships) entry.evidence = [{ dataset: "analysis_result", key: recordKey("analysis_result", analysis) }];
-  assert.equal(evaluateQuality(graph, decisions, options).status, "evidence_present");
-  records.conceptual_object[0].supports[0].source_object = physical("WrongDomain");
-  assert.ok(codes(evaluateQuality(graph, decisions, options)).includes("analysis_endpoint_mismatch"));
-});
-
-test("a standalone Conceptual deliverable does not require a Logical counterpart", () => {
-  const graph = project({
-    conceptual_object: [concept("Order"), concept("Customer")],
-    conceptual_relationship: [{ from_conceptual_object_name: "Order", to_conceptual_object_name: "Customer",
-      conceptual_relationship_name: "Places", conceptual_relationship_status: "active", conceptual_relationship_cardinality: "unknown" }],
-  });
-  const decisions = decisionsFor(graph);
-  decisions.relationships[0].evidence = [{ note }];
-  const result = evaluateQuality(graph, decisions, options);
-  assert.equal(result.status, "evidence_present");
+test("Subject Area findings list unassigned Bronze tables and empty areas once the Project has an area", () => {
+  const records = { project_input_scope: ["Order", "Customer", "Invoice", "Landing"].map(scope),
+    subject_area: [area("Sales"), area("Billing"), area("Retired", "inactive")],
+    subject_area_table: [member(" sales ", "Order"), member("Sales", "Customer", "inactive"), member("Retired", "Invoice")] };
+  const metadata = bronze("Order", "Customer", "Invoice");
+  metadata.metadataMap.set("source_object", { baseline: [{ ...physical("Landing"), zone_code: "source", is_active: true }] });
+  const result = evaluateQuality(project(records), null, metadata);
+  // Grouping is never modeling evidence, so it needs no decision review.
+  assert.equal(result.status, "not_required");
   assert.deepEqual(result.errors, []);
-  assert.deepEqual(result.warnings.map(warning => warning.code), ["relationship_inferred"]);
+  assert.deepEqual(result.warnings.map((warning) => [warning.code, warning.dataset]),
+    [["unassigned_tables", "subject_area_table"], ["empty_subject_areas", "subject_area"]]);
+  assert.equal(result.metrics.subject_areas, 2);
+  assert.equal(result.metrics.unassigned_table_count, 2);
+  assert.deepEqual(result.metrics.unassigned_tables, [physical("Customer"), physical("Invoice")]);
+  assert.equal(result.metrics.empty_subject_area_count, 1);
+  assert.deepEqual(result.metrics.empty_subject_areas, ["Billing"]);
   assert.equal(result.metrics.logical_physical_support_objects, 0);
-  assert.equal(result.metrics.conceptual_physical_support_objects, 2);
-  assert.ok([...result.template.entities, ...result.template.relationships].every(entry => entry.dataset.startsWith("conceptual_")));
+
+  // Only Metadata proves a Bronze table; without an active area nothing is unassigned.
+  assert.deepEqual(evaluateQuality(project(records), null).warnings.map((warning) => warning.code), ["empty_subject_areas"]);
+  const ungrouped = { ...records, subject_area: [area("Sales", "inactive")], subject_area_table: [] };
+  const none = evaluateQuality(project(ungrouped), null, metadata);
+  assert.deepEqual(none.warnings, []);
+  assert.equal(none.metrics.unassigned_table_count, 0);
 });
 
-test("stored Conceptual output cannot change Logical quality findings or decisions", () => {
+test("Subject Areas cannot change Logical quality findings or decisions", () => {
   const { records } = sales();
   const pending = { logical_entity: records.logical_entity };
   const graph = project(records, pending, { ...records, logical_entity: [] });
   const decisions = decisionsFor(graph);
   decisions.relationships.forEach(entry => { entry.evidence = [{ note }]; });
-  const withoutConceptual = evaluateQuality(graph, decisions, options);
-  const independent = {
-    conceptual_object: [concept("Customer"), concept("IndependentAgreement")],
-    conceptual_relationship: [{ from_conceptual_object_name: "Customer", to_conceptual_object_name: "IndependentAgreement",
-      conceptual_relationship_name: "Agrees", conceptual_relationship_status: "active", conceptual_relationship_cardinality: "unknown" }],
-  };
-  const withConceptual = evaluateQuality(project({ ...records, ...independent }, pending, { ...records, ...independent, logical_entity: [] }), decisions, options);
-  assert.equal(withConceptual.status, withoutConceptual.status);
-  assert.deepEqual(withConceptual.errors, withoutConceptual.errors);
-  assert.deepEqual(withConceptual.warnings, withoutConceptual.warnings);
-  assert.deepEqual(withConceptual.template, withoutConceptual.template);
-  assert.equal(withConceptual.metrics.logical_physical_support_objects, withoutConceptual.metrics.logical_physical_support_objects);
-  assert.equal(withConceptual.metrics.logical_physical_support_objects, 2);
-  assert.equal(withConceptual.metrics.conceptual_physical_support_objects, 2);
+  const withoutAreas = evaluateQuality(graph, decisions, options);
+  const grouping = { project_input_scope: ["Order", "Customer"].map(scope), subject_area: [area("Sales")],
+    subject_area_table: [member("Sales", "Order"), member("Sales", "Customer")] };
+  const withAreas = evaluateQuality(project({ ...records, ...grouping }, { ...pending, ...grouping }, { ...records, logical_entity: [] }),
+    decisions, { ...options, ...bronze("Order", "Customer") });
+  assert.equal(withAreas.status, withoutAreas.status);
+  assert.deepEqual(withAreas.errors, withoutAreas.errors);
+  assert.deepEqual(withAreas.warnings, withoutAreas.warnings);
+  assert.deepEqual(withAreas.template, withoutAreas.template);
+  assert.equal(withAreas.metrics.logical_physical_support_objects, withoutAreas.metrics.logical_physical_support_objects);
+  assert.equal(withAreas.metrics.logical_physical_support_objects, 2);
+  assert.equal(withAreas.metrics.subject_areas, 1);
+  assert.equal(withAreas.metrics.unassigned_table_count, 0);
 });
 
 test("topology excludes self edges from connectivity and reports framework expansion and unsafe capacity", () => {
@@ -408,49 +410,6 @@ test("complete small metric examples explicitly report no truncation", () => {
   assert.equal(result.metrics.entities_without_natural_key_count, 0);
 });
 
-test("known Conceptual cardinality follows directional Analysis while unknown remains explicit", () => {
-  const { analysis } = sales();
-  const relationship = { from_conceptual_object_name: "Order", to_conceptual_object_name: "Customer",
-    conceptual_relationship_name: "PlacedBy", conceptual_relationship_status: "active", conceptual_relationship_cardinality: "one_to_one" };
-  const records = { conceptual_object: [concept("Order"), concept("Customer")],
-    conceptual_relationship: [relationship], analysis_result: [analysis] };
-  const graph = project(records);
-  const decisions = decisionsFor(graph);
-  decisions.relationships[0].evidence = [{ dataset: "analysis_result", key: recordKey("analysis_result", analysis) }];
-  assert.ok(codes(evaluateQuality(graph, decisions, options)).includes("analysis_cardinality_mismatch"));
-  relationship.conceptual_relationship_cardinality = "many_to_one";
-  assert.equal(evaluateQuality(graph, decisions, options).status, "evidence_present");
-  relationship.conceptual_relationship_cardinality = "unknown";
-  assert.equal(evaluateQuality(graph, decisions, options).status, "evidence_present");
-
-  Object.assign(relationship, { from_conceptual_object_name: "Customer", to_conceptual_object_name: "Order",
-    conceptual_relationship_cardinality: "one_to_many" });
-  decisions.relationships[0].key = recordKey("conceptual_relationship", relationship);
-  assert.equal(evaluateQuality(graph, decisions, options).status, "evidence_present");
-  relationship.conceptual_relationship_cardinality = "many_to_one";
-  assert.ok(codes(evaluateQuality(graph, decisions, options)).includes("analysis_cardinality_mismatch"));
-});
-
-test("different Conceptual business grain needs active Context evidence in either reference order", () => {
-  for (const reverse of [false, true]) {
-    const { analysis } = sales();
-    const relationship = { from_conceptual_object_name: "Order", to_conceptual_object_name: "Customer",
-      conceptual_relationship_name: "BusinessAgreement", conceptual_relationship_status: "active", conceptual_relationship_cardinality: "one_to_one" };
-    const context = { context_record_id: "d8fa2278-0b2b-5f2c-a178-e012801681a0", context_group_name: "Policy",
-      status: "active" };
-    const graph = project({ conceptual_object: [concept("Order"), concept("Customer")],
-      conceptual_relationship: [relationship], analysis_result: [analysis], context_record: [context],
-      context_group: [{ context_group_name: "Policy", is_active: true }] });
-    const decisions = decisionsFor(graph);
-    decisions.relationships[0].evidence = [{ dataset: "analysis_result", key: recordKey("analysis_result", analysis) },
-      { dataset: "context_record", key: recordKey("context_record", context) }];
-    if (reverse) decisions.relationships[0].evidence.reverse();
-    assert.equal(evaluateQuality(graph, decisions, options).status, "evidence_present");
-    context.status = "inactive";
-    assert.ok(codes(evaluateQuality(graph, decisions, options)).includes("analysis_cardinality_mismatch"));
-  }
-});
-
 test("modeling decisions can remain in records without a compulsory sidecar or Context", () => {
   const {graph} = sales();
   const quality = evaluateQuality(graph, null);
@@ -465,7 +424,7 @@ test("shared validation checks Analysis counts and applied scope without a decis
   const measured = structuredClone(analysis);
   for (const field of Object.keys(analysis).filter(field => field.startsWith("validation_"))) analysis[field] = null;
   analysis.relationship_basis = "Orders refer to Customer business identifiers; this is metadata inference, not a measured result.";
-  const graph = project({ conceptual_object: [concept("Customer")], analysis_result: [analysis] });
+  const graph = project({ subject_area: [area("Sales")], subject_area_table: [member("Sales", "Order")], analysis_result: [analysis] });
   for (const value of graph.values()) value.schema = { "x-gds-change-set-eligible": true };
   graph.get("analysis_result").schema["x-gds-record-validation"] = { version: "1.0", rules: ["analysis_result"] };
   const objects = ["Order", "Customer"].map(name => ({ ...physical(name), zone_code: "bronze", is_active: true }));
@@ -481,8 +440,9 @@ test("shared validation checks Analysis counts and applied scope without a decis
   const validate = () => run("project", graph, metadata, { tenantCode: "Tenant", decisions: null });
   const inferred = validate();
   assert.equal(inferred.valid, true, JSON.stringify(inferred.issues));
-  assert.equal(inferred.quality.status, "review_required");
-  assert.ok(inferred.issues.some(issue => issue.code === "decision_review_required" && issue.severity === "warning"));
+  assert.equal(inferred.quality.status, "not_required");
+  // Customer is in scope but in no area: a review finding, never a blocking error.
+  assert.ok(inferred.issues.some(issue => issue.code === "unassigned_tables" && issue.severity === "warning"));
 
   Object.assign(analysis, measured, { validation_target_distinct_count: 5 });
   const inconsistent = validate();

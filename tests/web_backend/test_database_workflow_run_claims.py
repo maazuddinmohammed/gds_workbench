@@ -208,7 +208,7 @@ def test_web_worker_claims_the_oldest_running_run_without_persisting_raw_token(
     assert claimed["tenant_id"] == context.tenant_id
     assert claimed["project_id"] == context.project_id
     assert claimed["project_revision"] == context.project_revision
-    assert claimed["project_workflow"] == "conceptual"
+    assert claimed["project_workflow"] == "subject_area"
     assert claimed["workflow_execution_mode"] == "one_shot"
     assert claimed["actor_principal_type"] == "user"
     assert claimed["actor_entra_tenant_id"] == context.entra_tenant_id

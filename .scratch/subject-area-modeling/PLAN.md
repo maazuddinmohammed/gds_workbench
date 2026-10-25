@@ -1,6 +1,9 @@
 # Subject Area modeling: execution plan
 
-Status: draft for review, 2026-10-25. Nothing implemented.
+Status, 2026-10-25: Phase 1 (compact Logical answer) and Phase 3 (Subject Areas replace
+Conceptual on all four surfaces) are implemented. Phase 3 answers: cap 300 columns per
+area, no membership `reason`, the run reads column names for every Bronze scope table.
+Phase 2 and later are not started.
 
 This plan hands the work to an implementation session. Read it fully, then start with
 Phase 0. Companion material:

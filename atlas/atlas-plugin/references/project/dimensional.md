@@ -120,7 +120,7 @@ Within one parent, each source type + normalized Logical/Context key is unique *
 - Empty sources/memberships are valid. Generated calendars, constants and other justified standalone structures need no fake source or compulsory Context. Explain their generation/business meaning; attach a real applicable Context only when useful.
 - Attributes require real parents; active Attributes require active Entities. Active relationships require active endpoint Attributes and Entities. Membership references must resolve; existing reference checks alone do not require an active Submodel for an active membership.
 - Preserve locked records and nested members. Apply retains omitted nested sources/memberships; preserve complete arrays so the local effective graph represents what will remain.
-- The workflow starts from applied Logical Entities and Attributes. Conceptual output is neither an input nor a prerequisite. Physical registration and Logical Mapping are not prerequisites for Dimensional design.
+- The workflow starts from applied Logical Entities and Attributes. Subject Areas are neither an input nor a prerequisite. Physical registration and Logical Mapping are not prerequisites for Dimensional design.
 
 ## Additional Atlas checks and unresolved capabilities
 

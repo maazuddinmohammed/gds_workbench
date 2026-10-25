@@ -357,7 +357,7 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        )
        AND has_table_privilege(
            'gds_web_write',
-           'workflow.conceptual_object',
+           'workflow.subject_area',
            'SELECT,INSERT,UPDATE'
        )
        AND NOT has_table_privilege(
@@ -453,9 +453,9 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        AND (SELECT count(*) = 26
               FROM application.workflow_stage
              WHERE is_active)
-       AND (SELECT count(*) = 184
+       AND (SELECT count(*) = 176
               FROM application.workflow_stage_variable)
-       AND (SELECT count(*) = 184
+       AND (SELECT count(*) = 176
               FROM application.workflow_stage_variable
              WHERE is_active) AS application_reference_ready
 """

@@ -55,7 +55,7 @@ from tests.mcp.test_database_project_change_set_round_trip import (
 )
 
 
-@pytest.mark.parametrize("layer", ["conceptual", "logical", "dimensional"])
+@pytest.mark.parametrize("layer", ["logical", "dimensional"])
 async def test_edit_then_clear_layer_is_atomic_replayable_and_recoverable(
     web_postgres_database: DisposablePostgres,
     layer: ProjectLayer,
@@ -93,10 +93,7 @@ async def test_edit_then_clear_layer_is_atomic_replayable_and_recoverable(
         database=database, authorizer=AuthorizationService()
     )
     principal = StaticIdentityProvider().request_principal(None)
-    dataset = cast(
-        EditableDataset,
-        "conceptual_object" if layer == "conceptual" else f"{layer}_entity",
-    )
+    dataset = cast(EditableDataset, f"{layer}_entity")
     await database.open()
     try:
         async with database.read_transaction() as transaction:
@@ -306,10 +303,10 @@ async def test_mapping_edit_uses_scope_and_revision_fenced_replay(
             tenant_id=tenant_id,
             project_id=project_id,
             command=ExportProjectDdlRequest(
-                layer="conceptual", expected_project_revision=1
+                layer="logical", expected_project_revision=1
             ),
         )
-        assert "`conceptual`." in ddl and "`ConceptID` BIGINT" in ddl
+        assert "CREATE TABLE `silver`.`Order`" in ddl
         async with database.read_transaction() as transaction:
             before = await read_project_review_snapshot(transaction, project)
         record_id = (

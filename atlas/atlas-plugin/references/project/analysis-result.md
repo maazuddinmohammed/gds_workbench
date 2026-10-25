@@ -61,7 +61,7 @@ Null-key rows are excluded from these counts. The probe returns their separate c
 ## Scope and representational limits
 
 - Backend validation checks new/changed endpoints against effective active Project Input Scope. Atlas relationship analysis additionally requires **active applied Input Scope** before evidence work; pending scope additions do not satisfy that workflow prerequisite. Retained historical records are not permission to create new out-of-scope findings.
-- `inferred_cardinality` belongs to this physical Attribute pair. Later Conceptual/Logical relationships assess their own grains and cardinality; do not copy it blindly. Optionality has no dedicated Analysis field and stays in the basis/evidence.
+- `inferred_cardinality` belongs to this physical Attribute pair. Later Logical relationships assess their own grains and cardinality; do not copy it blindly. Optionality has no dedicated Analysis field and stays in the basis/evidence.
 - The record has one Attribute per endpoint, with no composite arrays. Keep composite-key/dependency measurements together in task evidence; never claim their component pairs were independently proven.
 - Grain, normalization and new reference-domain candidates without two real endpoints belong in analysis notes. Do not invent a reference Object or dummy Attribute to fit this dataset.
 - No Project ID, source Tenant code/ID, database IDs, batch fields, query SQL/hashes, measured-at, validation digest or workflow-run fields are accepted. Server-owned digests/IDs are not authoring inputs.

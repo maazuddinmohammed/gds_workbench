@@ -20,8 +20,6 @@ PROJECT_RECORD_VALIDATIONS: Final[dict[str, tuple[str, ...]]] = {
     "profiling_profile": ("profiling_profile",),
     "analysis_result": ("analysis_result",),
     "context_record": ("context_record",),
-    "conceptual_object": ("conceptual_object",),
-    "conceptual_relationship": ("conceptual_relationship",),
     "logical_entity": ("logical_entity",),
     "logical_attribute": ("logical_attribute",),
     "logical_relationship": ("logical_relationship",),

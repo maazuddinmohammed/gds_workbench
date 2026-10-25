@@ -19,7 +19,7 @@ CREATE TABLE mcp.project_change_set (
     enrichment_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     context_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     analysis_document JSONB NOT NULL DEFAULT '{}'::JSONB,
-    conceptual_document JSONB NOT NULL DEFAULT '{}'::JSONB,
+    subject_area_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     logical_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     dimensional_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     mapping_document JSONB NOT NULL DEFAULT '{}'::JSONB,
@@ -68,7 +68,7 @@ CREATE TABLE mcp.project_change_set (
         AND jsonb_typeof(enrichment_document) = 'object'
         AND jsonb_typeof(context_document) = 'object'
         AND jsonb_typeof(analysis_document) = 'object'
-        AND jsonb_typeof(conceptual_document) = 'object'
+        AND jsonb_typeof(subject_area_document) = 'object'
         AND jsonb_typeof(logical_document) = 'object'
         AND jsonb_typeof(dimensional_document) = 'object'
         AND jsonb_typeof(mapping_document) = 'object'
@@ -79,7 +79,7 @@ CREATE TABLE mcp.project_change_set (
         AND octet_length(enrichment_document::TEXT) <= 16777216
         AND octet_length(context_document::TEXT) <= 4194304
         AND octet_length(analysis_document::TEXT) <= 16777216
-        AND octet_length(conceptual_document::TEXT) <= 16777216
+        AND octet_length(subject_area_document::TEXT) <= 16777216
         AND octet_length(logical_document::TEXT) <= 16777216
         AND octet_length(dimensional_document::TEXT) <= 16777216
         AND octet_length(mapping_document::TEXT) <= 16777216
@@ -162,8 +162,8 @@ CREATE TABLE mcp.project_stage_batch (
             'project_details', 'project_input_scope', 'profiling_profile',
             'object_enrichment', 'attribute_enrichment',
             'analysis_result', 'context_group',
-            'context_record', 'conceptual_object',
-            'conceptual_relationship', 'logical_submodel', 'logical_entity',
+            'context_record', 'subject_area',
+            'subject_area_table', 'logical_submodel', 'logical_entity',
             'logical_attribute', 'logical_relationship',
             'dimensional_submodel', 'dimensional_entity',
             'dimensional_attribute', 'dimensional_relationship',
@@ -310,7 +310,7 @@ CREATE TABLE mcp.project_change_set_event (
     CONSTRAINT ck_change_set_event_section CHECK (
         section_name IS NULL
         OR section_name IN (
-            'project_input_scope', 'profiling', 'enrichment', 'context', 'analysis', 'conceptual',
+            'project_input_scope', 'profiling', 'enrichment', 'context', 'analysis', 'subject_area',
             'logical', 'dimensional', 'mapping',
             'code_generation', 'validation'
         )

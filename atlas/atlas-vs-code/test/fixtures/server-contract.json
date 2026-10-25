@@ -128,8 +128,6 @@
     "datasets": [
       "analysis_result",
       "attribute_enrichment",
-      "conceptual_object",
-      "conceptual_relationship",
       "context_group",
       "context_record",
       "dimensional_attribute",
@@ -148,6 +146,8 @@
       "profiling_profile",
       "project_details",
       "project_input_scope",
+      "subject_area",
+      "subject_area_table",
       "validation_check",
       "validation_group"
     ],
@@ -162,16 +162,6 @@
         },
         {
           "dataset": "attribute_enrichment",
-          "record_count": 0,
-          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
-        },
-        {
-          "dataset": "conceptual_object",
-          "record_count": 0,
-          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
-        },
-        {
-          "dataset": "conceptual_relationship",
           "record_count": 0,
           "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
         },
@@ -266,6 +256,16 @@
           "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
         },
         {
+          "dataset": "subject_area",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "dataset": "subject_area_table",
+          "record_count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
           "dataset": "validation_check",
           "record_count": 0,
           "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
@@ -278,7 +278,7 @@
       ],
       "draft_revision": 5,
       "expires_at": "2099-01-01T00:00:00Z",
-      "fingerprint": "1a138363cd4368ff01294697b50f4fc412bfab70df866d95352632f4ba138ad2",
+      "fingerprint": "75bc7091ac782f76e063e4d058b2515a8d7198a7b235517c94debe73aa487d63",
       "fingerprint_version": "1.0",
       "project_change_set_id": "20000000-0000-4000-8000-000000000001",
       "project_id": 42,

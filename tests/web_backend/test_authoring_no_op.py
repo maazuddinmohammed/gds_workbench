@@ -35,14 +35,14 @@ def test_candidate_digest_is_canonical_and_plan_bound() -> None:
         SimpleNamespace(
             project_id=18,
             project_revision=7,
-            project_workflow="conceptual",
+            project_workflow="subject_area",
             workflow_execution_mode="one_shot",
             selected_scope_digest="a" * 64,
         ),
     )
 
     assert authoring_no_op_candidate_digest(plan) == (
-        "6cceaf2ffa573764f8cd0a873f7e44b0a05abc6bc4e61ddfe6d6f988f1d07902"
+        "33f2716776d244f10a506aed89d68a42ab880127a4395bb0a93c68eb9b0da27b"
     )
 
 
@@ -70,16 +70,16 @@ class NoOpTransaction:
             "workflow_run_state": "completed_with_repair",
             "project_id": 18,
             "project_revision": 7,
-            "project_workflow": "conceptual",
+            "project_workflow": "subject_area",
             "workflow_execution_mode": "one_shot",
             "correlation_id": UUID("33333333-3333-3333-3333-333333333333"),
             "candidate_digest": self.candidate_digest,
             "final_event_sequence": 3,
             "final_event_attempt": 2,
-            "final_event_stage": "conceptual.backend_validation",
+            "final_event_stage": "subject_area.backend_validation",
             "final_event_status": "warning",
             "final_event_message": (
-                "Conceptual authoring completed with no effective change."
+                "Subject Area authoring completed with no effective change."
             ),
             "final_event_current": 1,
             "final_event_total": 1,
@@ -102,7 +102,7 @@ async def test_service_commits_one_server_owned_no_op_receipt() -> None:
     database = NoOpDatabase()
     service = DatabaseAuthoringNoOpService(database=database)
     request = AuthoringNoOpRequest(
-        expected_workflow="conceptual",
+        expected_workflow="subject_area",
         expected_execution_mode="one_shot",
         expected_correlation_id=UUID("33333333-3333-3333-3333-333333333333"),
         expected_project_revision=7,
@@ -110,9 +110,9 @@ async def test_service_commits_one_server_owned_no_op_receipt() -> None:
         final_event=AgentWorkflowEvent(
             sequence=3,
             attempt=2,
-            stage="conceptual.backend_validation",
+            stage="subject_area.backend_validation",
             status="warning",
-            message="Conceptual authoring completed with no effective change.",
+            message="Subject Area authoring completed with no effective change.",
             current=1,
             total=1,
             finding_count=0,
@@ -132,10 +132,10 @@ async def test_service_commits_one_server_owned_no_op_receipt() -> None:
     assert receipt.workflow_run_state == "completed_with_repair"
     assert receipt.project_revision == 7
     assert receipt.candidate_digest == "c" * 64
-    assert receipt.final_event.stage == "conceptual.backend_validation"
+    assert receipt.final_event.stage == "subject_area.backend_validation"
     assert receipt.final_event.status == "warning"
     assert receipt.final_event.message == (
-        "Conceptual authoring completed with no effective change."
+        "Subject Area authoring completed with no effective change."
     )
     assert receipt.final_event.finding_count == 0
     assert len(database.transaction.calls) == 2
@@ -151,16 +151,16 @@ async def test_service_commits_one_server_owned_no_op_receipt() -> None:
         7,
         18,
         1048,
-        "conceptual",
+        "subject_area",
         "one_shot",
         UUID("33333333-3333-3333-3333-333333333333"),
         7,
         "c" * 64,
         3,
         2,
-        "conceptual.backend_validation",
+        "subject_area.backend_validation",
         "warning",
-        "Conceptual authoring completed with no effective change.",
+        "Subject Area authoring completed with no effective change.",
         1,
         1,
         0,
@@ -198,7 +198,7 @@ async def test_service_stops_before_no_op_completion_when_claim_fence_fails() ->
     database.transaction.claim_assertion_fails = True
     service = DatabaseAuthoringNoOpService(database=database)
     request = AuthoringNoOpRequest(
-        expected_workflow="conceptual",
+        expected_workflow="subject_area",
         expected_execution_mode="one_shot",
         expected_correlation_id=UUID("33333333-3333-3333-3333-333333333333"),
         expected_project_revision=7,
@@ -206,9 +206,9 @@ async def test_service_stops_before_no_op_completion_when_claim_fence_fails() ->
         final_event=AgentWorkflowEvent(
             sequence=3,
             attempt=2,
-            stage="conceptual.backend_validation",
+            stage="subject_area.backend_validation",
             status="warning",
-            message="Conceptual authoring completed with no effective change.",
+            message="Subject Area authoring completed with no effective change.",
             current=1,
             total=1,
             finding_count=0,

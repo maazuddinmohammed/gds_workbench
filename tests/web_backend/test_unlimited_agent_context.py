@@ -54,6 +54,9 @@ class UnlimitedContextTransaction(ContextTransaction):
                 *parameters[:-1],
                 101,
             )  # Existing fixture's explicit-limit assertion.
+        if len(parameters) >= 3 and parameters[2] == "logical":
+            # The shared fixture rows are keyed to the default Subject Area workflow.
+            parameters = (*parameters[:2], "subject_area", *parameters[3:])
         rows = await super().fetch_all(query, parameters)
         for row in rows:
             if "object_description" in row:
@@ -69,10 +72,15 @@ async def test_default_repository_preserves_large_descriptions_in_both_modes(
     mode: Literal["one_shot", "tool_assisted"],
 ) -> None:
     assert len(LARGE_DESCRIPTION.encode()) > 1024 * 1024
+    # Logical reads whole physical Objects and Attributes through its readers.
     bundle = await PostgresAgentContextRepository(
         physical_scope_loader=_load_physical_scope,
         snapshot_loader=_load_snapshot,
-    ).load(UnlimitedContextTransaction(), tenant_id=7, plan=_plan(execution_mode=mode))
+    ).load(
+        UnlimitedContextTransaction(),
+        tenant_id=7,
+        plan=_plan(execution_mode=mode, project_workflow="logical"),
+    )
     if mode == "one_shot":
         assert bundle.tool_catalog is None
         embedded = cast(dict[str, Any], bundle.embedded_context)

@@ -1,7 +1,7 @@
 """Canonical applied echoes preserve history without authorizing new evidence.
 
-Logical answers are compact and cite only selected tables; their history rules are in
-test_logical_candidate.py.
+Logical and Subject Area answers are compact and cite only selected tables; their history
+rules are in their own candidate tests, such as test_logical_candidate.py.
 """
 
 # pyright: reportPrivateUsage=false
@@ -13,33 +13,24 @@ from copy import deepcopy
 from typing import Any, cast
 
 import pytest
-from gds_etl_workbench.domain.modeling_records import PhysicalObjectKey
-from gds_etl_workbench.domain.snapshots.project import (
-    ConceptualSection,
-    DimensionalSection,
-)
+from gds_etl_workbench.domain.snapshots.project import DimensionalSection
 from gds_workbench_api.features.analysis.candidate import (
     AnalysisInferenceCandidateValidator,
 )
-from gds_workbench_api.features.conceptual.candidate import ConceptualCandidateValidator
 from gds_workbench_api.features.dimensional.candidate import (
     DimensionalCandidateValidator,
 )
 
 from tests.web_backend import test_analysis_candidate as analysis
-from tests.web_backend import test_conceptual_candidate as conceptual
 from tests.web_backend import test_dimensional_candidate as dimensional
 
-FAMILIES = ("analysis", "conceptual", "dimensional")
+FAMILIES = ("analysis", "dimensional")
 CODES = {
     "analysis": "candidate.endpoint_outside_selection",
-    "conceptual": "candidate.support_outside_selection",
     "dimensional": "candidate.source_outside_selection",
 }
 type CandidateValidator = (
-    AnalysisInferenceCandidateValidator
-    | ConceptualCandidateValidator
-    | DimensionalCandidateValidator
+    AnalysisInferenceCandidateValidator | DimensionalCandidateValidator
 )
 
 
@@ -81,28 +72,6 @@ def _case(
         )
         return AnalysisInferenceCandidateValidator(
             selected_attribute_keys=keys, applied=(history,) if applied else ()
-        ), candidate
-    if family == "conceptual":
-        candidate = {
-            "objects": [conceptual._object(supports=[conceptual._support()])],
-            "relationships": [],
-        }
-        history_doc = deepcopy(candidate)
-        if locked:
-            _lock_history(history_doc)
-        history = ConceptualSection.model_validate_json(
-            json.dumps(history_doc), strict=True
-        )
-        key = PhysicalObjectKey.model_validate(
-            conceptual._physical_object(
-                name="customer_raw" if selected else "new_selected_raw"
-            ),
-            strict=True,
-        )
-        return ConceptualCandidateValidator(
-            selected_object_keys=(key,),
-            context_record_ids=(),
-            applied=history if applied else None,
         ), candidate
     candidate = dimensional._candidate()
     history_doc = deepcopy(candidate)
@@ -183,8 +152,6 @@ async def test_historical_evidence_copied_to_a_new_owner_still_rejected(
     validator, candidate = _case(family)
     if family == "analysis":
         candidate["relationships"][0]["relationship_kind"] = "association"
-    elif family == "conceptual":
-        candidate["objects"][0]["conceptual_object_name"] = "New concept"
     else:
         candidate["entities"][0][f"{family}_entity_name"] = "New entity"
         candidate["attributes"][0][f"{family}_entity_name"] = "New entity"
@@ -200,8 +167,6 @@ async def test_editing_history_content_still_requires_selected_evidence(
     validator, candidate = _case(family)
     if family == "analysis":
         candidate["relationships"][0]["relationship_basis"] = "Changed evidence."
-    elif family == "conceptual":
-        candidate["objects"][0]["conceptual_object_definition"] = "Changed definition."
     else:
         candidate["entities"][0][f"{family}_entity_definition"] = "Changed definition."
         candidate["attributes"][0][f"{family}_attribute_definition"] = (
@@ -212,55 +177,37 @@ async def test_editing_history_content_still_requires_selected_evidence(
     }
 
 
-@pytest.mark.parametrize("family", FAMILIES[1:])
 @pytest.mark.parametrize("edit", ("rationale", "status", "source"))
-async def test_changed_nested_history_is_not_an_echo(family: str, edit: str) -> None:
-    validator, candidate = _case(family)
-    if family == "conceptual":
-        source = candidate["objects"][0]["supports"][0]
-        field = "support_reason" if edit == "rationale" else "support_status"
-    else:
-        source = candidate["entities"][0]["sources"][0]
-        field = "rationale" if edit == "rationale" else "status"
+async def test_changed_nested_history_is_not_an_echo(edit: str) -> None:
+    validator, candidate = _case("dimensional")
+    source = candidate["entities"][0]["sources"][0]
     if edit == "source":
-        source_key = (
-            "source_logical_entity" if family == "dimensional" else "source_object"
+        source["source_logical_entity"]["logical_entity_name"] = (
+            "another_outside_object"
         )
-        name_field = "logical_entity_name" if family == "dimensional" else "object_name"
-        source[source_key][name_field] = "another_outside_object"
+    elif edit == "rationale":
+        source["rationale"] = "Changed evidence."
     else:
-        source[field] = "Changed evidence." if edit == "rationale" else "inactive"
-    assert CODES[family] in {
+        source["status"] = "inactive"
+    assert CODES["dimensional"] in {
         issue.code for issue in (await validator.validate(candidate)).issues
     }
 
 
-@pytest.mark.parametrize("family", FAMILIES[1:])
 @pytest.mark.parametrize("locked", (False, True))
 async def test_omitted_nested_history_is_restored_before_echo_comparison(
-    family: str, locked: bool
+    locked: bool,
 ) -> None:
-    validator, candidate = _case(family, locked=locked)
-    if family == "conceptual":
-        candidate["objects"][0]["supports"] = []
-    else:
-        candidate["entities"][0]["sources"] = []
-        candidate["attributes"][0]["sources"] = []
+    validator, candidate = _case("dimensional", locked=locked)
+    candidate["entities"][0]["sources"] = []
+    candidate["attributes"][0]["sources"] = []
     assert (await validator.validate(candidate)).issues == ()
     assert validator.parse_validated(candidate) == ()
 
 
-@pytest.mark.parametrize("family", FAMILIES[1:])
-async def test_duplicate_historical_owner_is_still_rejected(family: str) -> None:
-    validator, candidate = _case(family)
-    section = (
-        "relationships"
-        if family == "analysis"
-        else "objects"
-        if family == "conceptual"
-        else "entities"
-    )
-    candidate[section].append(deepcopy(candidate[section][0]))
+async def test_duplicate_historical_owner_is_still_rejected() -> None:
+    validator, candidate = _case("dimensional")
+    candidate["entities"].append(deepcopy(candidate["entities"][0]))
     issues = (await validator.validate(candidate)).issues
     assert any("duplicate" in issue.code for issue in issues)
 
@@ -268,18 +215,10 @@ async def test_duplicate_historical_owner_is_still_rejected(family: str) -> None
 @pytest.mark.parametrize("family", FAMILIES)
 async def test_historical_echo_does_not_grant_agent_lock_authority(family: str) -> None:
     validator, candidate = _case(family)
-    section = (
-        "relationships"
-        if family == "analysis"
-        else "objects"
-        if family == "conceptual"
-        else "entities"
-    )
+    section = "relationships" if family == "analysis" else "entities"
     field = (
         "analysis_result_is_locked"
         if family == "analysis"
-        else "conceptual_object_is_locked"
-        if family == "conceptual"
         else f"{family}_entity_is_locked"
     )
     candidate[section][0][field] = True
@@ -304,11 +243,6 @@ async def test_historical_echo_can_accompany_new_selected_output(family: str) ->
         new["to_object_name"] = "new_customers"
         new["to_attribute_name"] = "id"
         candidate["relationships"].append(new)
-    elif family == "conceptual":
-        new = deepcopy(candidate["objects"][0])
-        new["conceptual_object_name"] = "New concept"
-        new["supports"][0]["source_object"]["object_name"] = "new_selected_raw"
-        candidate["objects"].append(new)
     else:
         new_entity = deepcopy(candidate["entities"][0])
         new_entity[f"{family}_entity_name"] = "New customer"

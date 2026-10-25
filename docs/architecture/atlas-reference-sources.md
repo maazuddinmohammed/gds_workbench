@@ -10,7 +10,7 @@ its reference or source changes; code and numbered SQL stay authoritative.
 The web workflow prompts in `database/seed/05_global_prompt_defaults.template.sql` and
 the Atlas references are written for different agents, so their prose differs.
 `tests/atlas/test_shared_modeling_rules.py` lists the rules both must state (GDS and
-zone meanings, null semantics, Conceptual exclusion, Mapping row choice, SQL
+zone meanings, null semantics, Subject Areas as table choice only, Mapping row choice, SQL
 placeholders and projection, degenerate dimensions) with a pattern for each side.
 Change both sides and that table together. Making one text the single source would
 mean rewording web prompts, which publishes new prompt versions; that is a separate
@@ -211,9 +211,9 @@ Atlas target registration follows the complete-column and optional-output rules 
 
 Current contract: `mcp_server/gds_etl_workbench/domain/modeling_records.py` (`AnalysisResultRecord`, `AnalysisValidationEvidence`); key in `domain/snapshots/project.py`; scope checks in `application/change_sets/project_validation.py`; database rules in `database/05_workflow_analysis.sql`. Atlas probe planning lives in `atlas/atlas-plugin/scripts/analysis.js`.
 
-## `references/project/conceptual.md`
+## `references/project/subject-areas.md`
 
-Current field contracts: `mcp_server/gds_etl_workbench/domain/modeling_records.py` (`ConceptualObjectRecord`, `ConceptualRelationshipRecord`, `ObjectSupportRecord`, `ContextSupportRecord`). Keys: `domain/snapshots/project.py`; prerequisites: `tools/snapshots/project/archive.py`; scope/references/locks: `application/change_sets/project_validation.py`; support upserts: `application/change_sets/project_apply.py`; database contracts: `database/06_workflow_conceptual.sql`.
+Current field contracts: `mcp_server/gds_etl_workbench/domain/modeling_records.py` (`SubjectAreaRecord`, `SubjectAreaTableRecord`). Keys: `domain/snapshots/project.py`; scope/references/locks: `application/change_sets/project_validation.py`; upserts: `application/change_sets/project_apply.py`; database contracts: `database/06_workflow_subject_area.sql`. The grouping method mirrors the web Subject Area prompt in `database/seed/05_global_prompt_defaults.template*.sql` and the answer checks in `web_app/backend/gds_workbench_api/features/subject_areas/candidate.py`.
 
 ## `references/project/dimensional.md`
 

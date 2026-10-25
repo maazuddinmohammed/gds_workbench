@@ -19,8 +19,6 @@ from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     AnalysisResultRecord,
-    ConceptualObjectRecord,
-    ConceptualRelationshipRecord,
     ContextGroupRecord,
     ContextRecord,
     DimensionalAttributeRecord,
@@ -41,6 +39,8 @@ from gds_etl_workbench.domain.modeling_records import (
     ProfilingProfileRecord,
     ProjectDetailsRecord,
     ProjectInputScopeRecord,
+    SubjectAreaRecord,
+    SubjectAreaTableRecord,
     ValidationCheckRecord,
     ValidationGroupRecord,
     normalize_project_key_value,
@@ -361,141 +361,57 @@ ON CONFLICT (context_record_id, project_id) DO UPDATE
 RETURNING context_record_id::TEXT
 """
 
-_FIND_CONCEPTUAL_OBJECT_SQL: LiteralString = """
-SELECT conceptual_object_id
-  FROM workflow.conceptual_object
+_FIND_SUBJECT_AREA_SQL: LiteralString = """
+SELECT subject_area_id
+  FROM workflow.subject_area
  WHERE project_id = %s
-   AND lower(btrim(conceptual_object_name)) = lower(btrim(%s))
+   AND lower(btrim(subject_area_name)) = lower(btrim(%s))
  FOR UPDATE
 """
 
-_INSERT_CONCEPTUAL_OBJECT_SQL: LiteralString = """
-INSERT INTO workflow.conceptual_object (
+_INSERT_SUBJECT_AREA_SQL: LiteralString = """
+INSERT INTO workflow.subject_area (
     project_id,
     workflow_run_id,
-    conceptual_object_name,
-    conceptual_object_definition,
-    conceptual_object_type,
-    conceptual_object_grain,
-    conceptual_object_aliases,
-    conceptual_object_status,
-    conceptual_object_is_locked
+    subject_area_name,
+    subject_area_definition,
+    subject_area_status,
+    subject_area_is_locked
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-RETURNING conceptual_object_id
+VALUES (%s, %s, %s, %s, %s, %s)
+RETURNING subject_area_id
 """
 
-_UPDATE_CONCEPTUAL_OBJECT_SQL: LiteralString = """
-UPDATE workflow.conceptual_object
+_UPDATE_SUBJECT_AREA_SQL: LiteralString = """
+UPDATE workflow.subject_area
    SET workflow_run_id = %s,
-       conceptual_object_name = %s,
-       conceptual_object_definition = %s,
-       conceptual_object_type = %s,
-       conceptual_object_grain = %s,
-       conceptual_object_aliases = %s,
-       conceptual_object_status = %s,
-       conceptual_object_is_locked = %s,
+       subject_area_name = %s,
+       subject_area_definition = %s,
+       subject_area_status = %s,
+       subject_area_is_locked = %s,
        updated_time = CURRENT_TIMESTAMP,
        updated_by = CURRENT_USER
- WHERE conceptual_object_id = %s
-RETURNING conceptual_object_id
+ WHERE subject_area_id = %s
+RETURNING subject_area_id
 """
 
-_FIND_CONCEPTUAL_RELATIONSHIP_SQL: LiteralString = """
-SELECT conceptual_relationship_id
-  FROM workflow.conceptual_relationship
- WHERE project_id = %s
-   AND from_conceptual_object_id = %s
-   AND to_conceptual_object_id = %s
-   AND lower(btrim(conceptual_relationship_name)) = lower(btrim(%s))
- FOR UPDATE
-"""
-
-_INSERT_CONCEPTUAL_RELATIONSHIP_SQL: LiteralString = """
-INSERT INTO workflow.conceptual_relationship (
+_UPSERT_SUBJECT_AREA_TABLE_SQL: LiteralString = """
+INSERT INTO workflow.subject_area_table (
     project_id,
     workflow_run_id,
-    from_conceptual_object_id,
-    to_conceptual_object_id,
-    conceptual_relationship_name,
-    conceptual_relationship_type,
-    conceptual_relationship_definition,
-    conceptual_relationship_cardinality,
-    conceptual_relationship_basis,
-    conceptual_relationship_cardinality_basis,
-    conceptual_relationship_status,
-    conceptual_relationship_is_locked
+    subject_area_id,
+    object_id,
+    subject_area_table_status,
+    subject_area_table_is_locked
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-RETURNING conceptual_relationship_id
-"""
-
-_UPDATE_CONCEPTUAL_RELATIONSHIP_SQL: LiteralString = """
-UPDATE workflow.conceptual_relationship
-   SET workflow_run_id = %s,
-       conceptual_relationship_name = %s,
-       conceptual_relationship_type = %s,
-       conceptual_relationship_definition = %s,
-       conceptual_relationship_cardinality = %s,
-       conceptual_relationship_basis = %s,
-       conceptual_relationship_cardinality_basis = %s,
-       conceptual_relationship_status = %s,
-       conceptual_relationship_is_locked = %s,
+VALUES (%s, %s, %s, %s, %s, %s)
+ON CONFLICT ON CONSTRAINT uq_subject_area_table_member DO UPDATE
+   SET workflow_run_id = EXCLUDED.workflow_run_id,
+       subject_area_table_status = EXCLUDED.subject_area_table_status,
+       subject_area_table_is_locked = EXCLUDED.subject_area_table_is_locked,
        updated_time = CURRENT_TIMESTAMP,
        updated_by = CURRENT_USER
- WHERE conceptual_relationship_id = %s
-RETURNING conceptual_relationship_id
-"""
-
-_FIND_CONCEPTUAL_SUPPORT_SQL: LiteralString = """
-SELECT conceptual_support_id
-  FROM workflow.conceptual_support
- WHERE project_id = %s
-   AND supported_artifact_type = %s
-   AND (
-       (%s = 'conceptual_object' AND conceptual_object_id = %s)
-       OR (%s = 'conceptual_relationship' AND conceptual_relationship_id = %s)
-   )
-   AND support_source_type = %s
-   AND (
-       (%s = 'object' AND source_object_id = %s)
-       OR (%s = 'context_record' AND context_record_id = %s)
-   )
- FOR UPDATE
-"""
-
-_INSERT_CONCEPTUAL_SUPPORT_SQL: LiteralString = """
-INSERT INTO workflow.conceptual_support (
-    project_id,
-    workflow_run_id,
-    supported_artifact_type,
-    conceptual_object_id,
-    conceptual_relationship_id,
-    support_source_type,
-    source_object_id,
-    context_record_id,
-    conceptual_support_role,
-    conceptual_support_reason,
-    conceptual_support_reason_detail,
-    conceptual_support_status,
-    conceptual_support_is_locked
-)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-RETURNING conceptual_support_id
-"""
-
-_UPDATE_CONCEPTUAL_SUPPORT_SQL: LiteralString = """
-UPDATE workflow.conceptual_support
-   SET workflow_run_id = %s,
-       conceptual_support_role = %s,
-       conceptual_support_reason = %s,
-       conceptual_support_reason_detail = %s,
-       conceptual_support_status = %s,
-       conceptual_support_is_locked = %s,
-       updated_time = CURRENT_TIMESTAMP,
-       updated_by = CURRENT_USER
- WHERE conceptual_support_id = %s
-RETURNING conceptual_support_id
+RETURNING subject_area_table_id
 """
 
 _RESOLVE_OUTPUT_TEMPLATE_SQL: LiteralString = """
@@ -869,7 +785,7 @@ class ProjectMaterializer:
     _tenant_ids: dict[str, int] = field(default_factory=dict[str, int])
     _context_group_ids: dict[str, int] = field(default_factory=dict[str, int])
     _context_record_ids: dict[str, str] = field(default_factory=dict[str, str])
-    _conceptual_object_ids: dict[str, int] = field(default_factory=dict[str, int])
+    _subject_area_ids: dict[str, int] = field(default_factory=dict[str, int])
     _logical_submodel_ids: dict[str, int] = field(default_factory=dict[str, int])
     _logical_entity_ids: dict[tuple[str, str], int] = field(
         default_factory=dict[tuple[str, str], int]
@@ -987,10 +903,8 @@ class ProjectMaterializer:
         action_count += await self._apply_context_records(records.get("context_record", ()))
         action_count += await self._apply_profiles(records.get("profiling_profile", ()))
         action_count += await self._apply_analysis(records.get("analysis_result", ()))
-        action_count += await self._apply_conceptual_objects(records.get("conceptual_object", ()))
-        action_count += await self._apply_conceptual_relationships(
-            records.get("conceptual_relationship", ())
-        )
+        action_count += await self._apply_subject_areas(records.get("subject_area", ()))
+        action_count += await self._apply_subject_area_tables(records.get("subject_area_table", ()))
         action_count += await self._apply_logical(records)
         action_count += await self._apply_dimensional(records)
         action_count += await self._apply_mapping(records)
@@ -1319,173 +1233,69 @@ SELECT context_record_id::TEXT
         self._context_record_ids[normalized] = row["context_record_id"]
         return row["context_record_id"]
 
-    async def _apply_conceptual_objects(self, records: tuple[ModelingRecord, ...]) -> int:
-        action_count = 0
+    async def _apply_subject_areas(self, records: tuple[ModelingRecord, ...]) -> int:
         for raw in records:
-            record = _as(raw, ConceptualObjectRecord)
+            record = _as(raw, SubjectAreaRecord)
             existing = await self.transaction.fetch_one(
-                _FIND_CONCEPTUAL_OBJECT_SQL,
-                (self.project_id, record.conceptual_object_name),
+                _FIND_SUBJECT_AREA_SQL,
+                (self.project_id, record.subject_area_name),
             )
             values = (
-                record.conceptual_object_name,
-                record.conceptual_object_definition,
-                record.conceptual_object_type,
-                record.conceptual_object_grain,
-                list(record.conceptual_object_aliases),
-                record.conceptual_object_status,
-                record.conceptual_object_is_locked,
+                record.subject_area_name,
+                record.subject_area_definition,
+                record.subject_area_status,
+                record.subject_area_is_locked,
             )
-            if existing is None:
-                row = await self.transaction.fetch_one(
-                    _INSERT_CONCEPTUAL_OBJECT_SQL,
-                    (self.project_id, self.workflow_run_id, *values),
+            row = await self.transaction.fetch_one(
+                *(
+                    (_INSERT_SUBJECT_AREA_SQL, (self.project_id, self.workflow_run_id, *values))
+                    if existing is None
+                    else (
+                        _UPDATE_SUBJECT_AREA_SQL,
+                        (self.workflow_run_id, *values, existing["subject_area_id"]),
+                    )
                 )
-            else:
-                row = await self.transaction.fetch_one(
-                    _UPDATE_CONCEPTUAL_OBJECT_SQL,
-                    (self.workflow_run_id, *values, existing["conceptual_object_id"]),
-                )
+            )
             assert row is not None
-            object_id = row["conceptual_object_id"]
-            self._conceptual_object_ids[
-                normalize_project_key_value(record.conceptual_object_name)
-            ] = object_id
-            for support in record.supports:
-                await self._upsert_conceptual_support(
-                    parent_type="conceptual_object",
-                    parent_id=object_id,
-                    support=support,
-                )
-                action_count += 1
-            action_count += 1
-        return action_count
+            self._subject_area_ids[normalize_project_key_value(record.subject_area_name)] = row[
+                "subject_area_id"
+            ]
+        return len(records)
 
-    async def _apply_conceptual_relationships(self, records: tuple[ModelingRecord, ...]) -> int:
-        action_count = 0
+    async def _apply_subject_area_tables(self, records: tuple[ModelingRecord, ...]) -> int:
         for raw in records:
-            record = _as(raw, ConceptualRelationshipRecord)
-            from_id = await self.resolve_conceptual_object(record.from_conceptual_object_name)
-            to_id = await self.resolve_conceptual_object(record.to_conceptual_object_name)
-            existing = await self.transaction.fetch_one(
-                _FIND_CONCEPTUAL_RELATIONSHIP_SQL,
-                (
-                    self.project_id,
-                    from_id,
-                    to_id,
-                    record.conceptual_relationship_name,
-                ),
-            )
-            values = (
-                record.conceptual_relationship_name,
-                record.conceptual_relationship_type,
-                record.conceptual_relationship_definition,
-                record.conceptual_relationship_cardinality,
-                record.conceptual_relationship_basis,
-                record.conceptual_relationship_cardinality_basis,
-                record.conceptual_relationship_status,
-                record.conceptual_relationship_is_locked,
-            )
-            if existing is None:
+            record = _as(raw, SubjectAreaTableRecord)
+            name = normalize_project_key_value(record.subject_area_name)
+            area_id = self._subject_area_ids.get(name)
+            if area_id is None:
                 row = await self.transaction.fetch_one(
-                    _INSERT_CONCEPTUAL_RELATIONSHIP_SQL,
-                    (self.project_id, self.workflow_run_id, from_id, to_id, *values),
+                    _FIND_SUBJECT_AREA_SQL,
+                    (self.project_id, record.subject_area_name),
                 )
-            else:
-                row = await self.transaction.fetch_one(
-                    _UPDATE_CONCEPTUAL_RELATIONSHIP_SQL,
-                    (
-                        self.workflow_run_id,
-                        *values,
-                        existing["conceptual_relationship_id"],
-                    ),
+                if row is None:
+                    raise InvalidRequestError("A referenced Subject Area was not found.")
+                area_id = self._subject_area_ids[name] = row["subject_area_id"]
+            object_id, _ = await self.resolve_object(
+                PhysicalObjectKey(
+                    tenant_code=record.tenant_code,
+                    system_code=record.system_code,
+                    connection_code=record.connection_code,
+                    object_schema=record.object_schema,
+                    object_name=record.object_name,
                 )
-            assert row is not None
-            relationship_id = row["conceptual_relationship_id"]
-            for support in record.supports:
-                await self._upsert_conceptual_support(
-                    parent_type="conceptual_relationship",
-                    parent_id=relationship_id,
-                    support=support,
-                )
-                action_count += 1
-            action_count += 1
-        return action_count
-
-    async def _upsert_conceptual_support(
-        self,
-        *,
-        parent_type: str,
-        parent_id: int,
-        support: Any,
-    ) -> None:
-        if support.support_source_type == "object":
-            source_object_id, _ = await self.resolve_object(support.source_object)
-            context_record_id = None
-        else:
-            source_object_id = None
-            context_record_id = await self.resolve_context_record(
-                support.context_record.context_record_id
             )
-        conceptual_object_id = parent_id if parent_type == "conceptual_object" else None
-        conceptual_relationship_id = parent_id if parent_type == "conceptual_relationship" else None
-        existing = await self.transaction.fetch_one(
-            _FIND_CONCEPTUAL_SUPPORT_SQL,
-            (
-                self.project_id,
-                parent_type,
-                parent_type,
-                parent_id,
-                parent_type,
-                parent_id,
-                support.support_source_type,
-                support.support_source_type,
-                source_object_id,
-                support.support_source_type,
-                context_record_id,
-            ),
-        )
-        values = (
-            support.support_role,
-            support.support_reason,
-            support.support_reason_detail,
-            support.support_status,
-            support.support_is_locked,
-        )
-        if existing is None:
             await self.transaction.fetch_one(
-                _INSERT_CONCEPTUAL_SUPPORT_SQL,
+                _UPSERT_SUBJECT_AREA_TABLE_SQL,
                 (
                     self.project_id,
                     self.workflow_run_id,
-                    parent_type,
-                    conceptual_object_id,
-                    conceptual_relationship_id,
-                    support.support_source_type,
-                    source_object_id,
-                    context_record_id,
-                    *values,
+                    area_id,
+                    object_id,
+                    record.subject_area_table_status,
+                    record.subject_area_table_is_locked,
                 ),
             )
-        else:
-            await self.transaction.fetch_one(
-                _UPDATE_CONCEPTUAL_SUPPORT_SQL,
-                (self.workflow_run_id, *values, existing["conceptual_support_id"]),
-            )
-
-    async def resolve_conceptual_object(self, name: str) -> int:
-        normalized = normalize_project_key_value(name)
-        cached = self._conceptual_object_ids.get(normalized)
-        if cached is not None:
-            return cached
-        row = await self.transaction.fetch_one(
-            _FIND_CONCEPTUAL_OBJECT_SQL,
-            (self.project_id, name),
-        )
-        if row is None:
-            raise InvalidRequestError("A referenced Conceptual Object was not found.")
-        self._conceptual_object_ids[normalized] = row["conceptual_object_id"]
-        return row["conceptual_object_id"]
+        return len(records)
 
     async def _apply_logical(self, records: dict[str, tuple[ModelingRecord, ...]]) -> int:
         return await self._apply_layer(

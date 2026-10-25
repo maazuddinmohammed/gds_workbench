@@ -392,7 +392,7 @@ def test_output_template_router_is_bounded_read_only_and_filter_validated() -> N
         detailed = client.get("/api/v1/tenants/7/output-templates/101")
         invalid = client.get(
             "/api/v1/tenants/7/output-templates",
-            params={"target_type": "conceptual_object"},
+            params={"target_type": "logical_entity"},
         )
 
     assert listed.status_code == 200

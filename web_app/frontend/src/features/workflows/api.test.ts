@@ -23,9 +23,9 @@ describe("Workflow HTTP adapter", () => {
   it("fetches generated records for an explicitly selected draft dataset", async () => {
     const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => jsonResponse({}));
     const api = createWorkflowsApi(createHttpRequest(fetcher));
-    await api.readWorkflowDraftReview(7, 18, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "conceptual_object");
+    await api.readWorkflowDraftReview(7, 18, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "subject_area");
     expect(String(fetcher.mock.calls[0]?.[0])).toBe(
-      "/api/v1/tenants/7/projects/18/change-sets/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa?dataset=conceptual_object",
+      "/api/v1/tenants/7/projects/18/change-sets/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa?dataset=subject_area",
     );
   });
   it("owns exact capabilities and Workflow Run read transports", async () => {
@@ -83,7 +83,7 @@ describe("Workflow HTTP adapter", () => {
     await api.executeProfilingRun(7, 18, 1048, 18);
     await api.executeAnalysisInferenceRun(7, 18, 1054, "tool_assisted", 18);
     await api.executeAnalysisValidationRun(7, 18, 1055, 18);
-    await api.executeConceptualRun(7, 18, 1049, "one_shot", 18);
+    await api.executeSubjectAreaRun(7, 18, 1049, "one_shot", 18);
     await api.executeLogicalRun(7, 18, 1050, "tool_assisted", 18);
     await api.executeDimensionalRun(7, 18, 1051, "one_shot", 18);
     await api.executeMappingRun(7, 18, 1052, "tool_assisted", 18);
@@ -96,7 +96,7 @@ describe("Workflow HTTP adapter", () => {
       "/api/v1/tenants/7/projects/18/profiling/runs/1048/execute",
       "/api/v1/tenants/7/projects/18/analysis/inference-runs/1054/execute",
       "/api/v1/tenants/7/projects/18/analysis/validation-runs/1055/execute",
-      "/api/v1/tenants/7/projects/18/conceptual/runs/1049/execute",
+      "/api/v1/tenants/7/projects/18/subject-areas/runs/1049/execute",
       "/api/v1/tenants/7/projects/18/logical/runs/1050/execute",
       "/api/v1/tenants/7/projects/18/dimensional/runs/1051/execute",
       "/api/v1/tenants/7/projects/18/mapping/runs/1052/execute",

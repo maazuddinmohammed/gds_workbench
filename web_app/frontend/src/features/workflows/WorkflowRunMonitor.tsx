@@ -39,7 +39,7 @@ type DraftWorkflow = Extract<
   ProjectWorkflow,
   | "metadata_enrichment"
   | "analysis"
-  | "conceptual"
+  | "subject_area"
   | "logical"
   | "dimensional"
   | "mapping"
@@ -990,6 +990,7 @@ function workflowLabel(workflow: DraftWorkflow): string {
   if (workflow === "metadata_enrichment") return "Metadata enrichment";
   if (workflow === "validation") return "Validation";
   if (workflow === "code_generation") return "Code Generation";
+  if (workflow === "subject_area") return "Subject Areas";
   return workflow.charAt(0).toUpperCase() + workflow.slice(1);
 }
 

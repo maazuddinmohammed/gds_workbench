@@ -22,7 +22,6 @@ from gds_workbench_api.configuration import RuntimeSettings
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.analysis import DatabaseAnalysisReviewService
 from gds_workbench_api.features.code_generation import DatabaseCodeGenerationService
-from gds_workbench_api.features.conceptual import DatabaseConceptualService
 from gds_workbench_api.features.context import DatabaseContextService
 from gds_workbench_api.features.dimensional import DatabaseDimensionalService
 from gds_workbench_api.features.logical import DatabaseLogicalService
@@ -50,6 +49,7 @@ from gds_workbench_api.features.projects import (
 )
 from gds_workbench_api.features.prompts import DatabasePromptService
 from gds_workbench_api.features.session import DatabaseSessionService
+from gds_workbench_api.features.subject_areas import DatabaseSubjectAreaService
 from gds_workbench_api.features.tenant_locks import DatabaseTenantLockService
 from gds_workbench_api.features.tenants import DatabaseTenantService
 from gds_workbench_api.features.validation import DatabaseValidationReadService
@@ -223,12 +223,11 @@ def create_runtime_app(
             authorizer=authorizer,
             cursor_signing_key=runtime_settings.cursor_signing_key,
         ),
-        conceptual_service=DatabaseConceptualService(
+        subject_area_service=DatabaseSubjectAreaService(
             database=runtime_database,
             authorizer=authorizer,
-            cursor_signing_key=runtime_settings.cursor_signing_key,
         ),
-        conceptual_workflow_service=workflow_services.conceptual,
+        subject_area_workflow_service=workflow_services.subject_area,
         project_targets_service=DatabaseProjectTargetsService(
             database=runtime_database, authorizer=authorizer
         ),

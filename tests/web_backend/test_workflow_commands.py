@@ -45,7 +45,7 @@ def test_metadata_enrichment_request_requires_one_shot(mode: str | None) -> None
 
 
 @pytest.mark.parametrize(
-    "workflow", ["metadata_enrichment", "conceptual", "validation"]
+    "workflow", ["metadata_enrichment", "subject_area", "validation"]
 )
 def test_workflow_request_preserves_large_explicit_selection(workflow: str) -> None:
     objects = list(range(1, 50_002)) if workflow != "validation" else []
@@ -133,7 +133,7 @@ def test_agentic_run_is_explicit_and_queues_one_atomic_run() -> None:
             headers={"Idempotency-Key": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"},
             json={
                 "expected_project_revision": 4,
-                "project_workflow": "conceptual",
+                "project_workflow": "subject_area",
                 "workflow_execution_mode": "tool_assisted",
                 "selected_object_ids": [101, 102],
                 "agent": {
@@ -460,6 +460,10 @@ class WorkflowCommandTransaction:
                 "default_max_turns": 10,
                 "default_validation_retry_count": 2,
             }
+        if "workflow.list_project_object_eligibility" in query:
+            # The Project's active eligible Bronze Input Scope.
+            assert parameters == (18, 18)
+            return {"object_ids": [101, 102]}
         assert "application.create_workflow_run" in query
         assert len(parameters) == 29
         assert parameters[3:7] == (18, 4, "profiling", None)
@@ -791,9 +795,9 @@ async def test_database_command_passes_validated_defaults_to_governed_creation()
     command = CreateWorkflowRunRequest.model_validate(
         {
             "expected_project_revision": 4,
-            "project_workflow": "conceptual",
+            "project_workflow": "subject_area",
             "workflow_execution_mode": "one_shot",
-            "selected_object_ids": [101],
+            "selected_object_ids": [101, 102],
             "prompt_overrides": {},
         },
         strict=True,
@@ -813,7 +817,7 @@ async def test_database_command_passes_validated_defaults_to_governed_creation()
 
     assert result.workflow_run_id == 1050
     assert transaction.create_parameters is not None
-    assert transaction.create_parameters[3:7] == (18, 4, "conceptual", "one_shot")
+    assert transaction.create_parameters[3:7] == (18, 4, "subject_area", "one_shot")
     assert transaction.create_parameters[7:13] == (
         "openai_agents_sdk",
         "microsoft_foundry",
@@ -830,9 +834,9 @@ async def test_database_command_passes_validated_defaults_to_governed_creation()
         (
             {
                 "expected_project_revision": 4,
-                "project_workflow": "conceptual",
+                "project_workflow": "subject_area",
                 "workflow_execution_mode": "one_shot",
-                "selected_object_ids": [101],
+                "selected_object_ids": [101, 102],
                 "prompt_overrides": {},
             },
             "one_shot",
@@ -920,9 +924,9 @@ async def test_database_command_recovers_retired_implicit_project_agent_default(
     command = CreateWorkflowRunRequest.model_validate(
         {
             "expected_project_revision": 4,
-            "project_workflow": "conceptual",
+            "project_workflow": "subject_area",
             "workflow_execution_mode": "one_shot",
-            "selected_object_ids": [101],
+            "selected_object_ids": [101, 102],
         },
         strict=True,
     )
@@ -943,6 +947,43 @@ async def test_database_command_recovers_retired_implicit_project_agent_default(
         "microsoft_foundry",
         "foundry-primary",
     )
+
+
+@pytest.mark.parametrize("selected_object_ids", ([101], [101, 102, 103]))
+@pytest.mark.asyncio
+async def test_database_command_requires_subject_areas_to_cover_the_whole_scope(
+    selected_object_ids: list[int],
+) -> None:
+    transaction = _SuccessfulImplicitDefaultWorkflowCommandTransaction()
+    service = DatabaseWorkflowCommandService(
+        database=_SuccessfulImplicitDefaultWorkflowCommandDatabase(transaction),
+        authorizer=AuthorizationService(),
+        agent_capability_registry=load_default_agent_capabilities(),
+    )
+    command = CreateWorkflowRunRequest.model_validate(
+        {
+            "expected_project_revision": 4,
+            "project_workflow": "subject_area",
+            "workflow_execution_mode": "one_shot",
+            "selected_object_ids": selected_object_ids,
+        },
+        strict=True,
+    )
+
+    with pytest.raises(InvalidRequestError, match="whole Input Scope"):
+        await service.create_run(
+            RequestPrincipal(
+                actor_kind=ActorKind.HUMAN,
+                entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+                entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
+            ),
+            tenant_id=7,
+            project_id=18,
+            correlation_id=UUID("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+            command=command,
+        )
+
+    assert transaction.create_parameters is None
 
 
 class MappingWorkflowCommandTransaction(WorkflowCommandTransaction):

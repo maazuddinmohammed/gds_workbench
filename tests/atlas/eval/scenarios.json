@@ -36,8 +36,8 @@
           "coverage"
         ],
         "forbidden_helper_datasets": [
-          "conceptual_object",
-          "conceptual_relationship"
+          "subject_area",
+          "subject_area_table"
         ],
         "required_files_any": [
           "project-change-set/logical_*.json",
@@ -56,7 +56,7 @@
           "- Framework columns: run policy-apply (dry run first) to add the Project's 10 audit columns to each Entity after its business columns: SourceSystemID, IsDataValid, HashKey, IsActive, GDSBatchID, PipelineRunID, CreatedDate, UpdatedDate, CreatedBy, UpdatedBy.",
           "Validation passes with one advisory warning, source_shaped_project. Review grain and dependencies: Customer and Order are independent business subjects at their natural grain, so no split or merge is needed.",
           "Keep the keys, business Attributes, the many-to-one relationship, lineage and names. Existing names such as Customer ID follow neither the Project's Silver instruction (snake_case) nor Atlas's PascalCase default; point this out and ask before renaming, because renaming also affects Mappings and code.",
-          "Invent no Entity, Attribute or relationship the scope doesn't support, and never use Conceptual records. Report the validation and coverage results and keep the work local."
+          "Invent no Entity, Attribute or relationship the scope doesn't support, and never use Subject Area records as evidence. Report the validation and coverage results and keep the work local."
         ],
         "criteria": [
           {
@@ -109,25 +109,26 @@
       }
     },
     {
-      "id": "conceptual-only",
-      "rubric": "Build a conceptual model only",
-      "request": "Refine the standalone Conceptual model for the scoped sources. Conceptual only; keep it local and do not submit.",
+      "id": "subject-areas-only",
+      "rubric": "Group the Input Scope into Subject Areas only",
+      "request": "Group the scoped source tables into Subject Areas by business capability. Keep Customer Orders as it is and add a Customer Management area for the customer master table. Subject Areas only; keep the work local and do not submit.",
       "workspace": "project",
       "sql_policy": "never",
       "expect": {
         "skills_read_any": [
-          "atlas-conceptual-model"
+          "atlas-subject-areas"
         ],
         "required_helper_commands": [
           "validate"
         ],
         "required_files_any": [
-          "project-change-set/conceptual_*.json",
-          "project-change-set/context_*.json"
+          "project-change-set/subject_area.json",
+          "project-change-set/subject_area_table.json"
         ],
         "forbidden_files": [
           "project-change-set/logical_*.json",
-          "project-change-set/dimensional_*.json"
+          "project-change-set/dimensional_*.json",
+          "project-change-set/mapping_*.json"
         ]
       }
     },
@@ -197,8 +198,8 @@
           "validate"
         ],
         "forbidden_helper_datasets": [
-          "conceptual_object",
-          "conceptual_relationship"
+          "subject_area",
+          "subject_area_table"
         ],
         "required_files_any": [
           "project-change-set/dimensional_*.json"
@@ -229,8 +230,8 @@
           "validate"
         ],
         "forbidden_helper_datasets": [
-          "conceptual_object",
-          "conceptual_relationship"
+          "subject_area",
+          "subject_area_table"
         ],
         "forbidden_files": [
           "project-change-set/logical_*.json",

@@ -9,9 +9,11 @@ from uuid import UUID
 
 import httpx2
 import pytest
+from gds_etl_workbench.domain.modeling_records import PhysicalObjectKey
 from gds_workbench_api.features.mapping.complete_candidate import (
     CompleteMappingCandidateValidator,
 )
+from gds_workbench_api.features.subject_areas import SubjectAreaCandidateValidator
 from gds_workbench_api.features.workflows.authoring.repair import (
     ValidationRepairRunner,
     load_default_agent_context_policy,
@@ -26,10 +28,9 @@ from tests.web_backend.test_agent_usage import (
     _responses_response,
     _router,
 )
-from tests.web_backend.test_conceptual_candidate import _object, _validator
 
 
-@pytest.mark.parametrize("workflow", ["conceptual", "mapping"])
+@pytest.mark.parametrize("workflow", ["subject_area", "mapping"])
 @pytest.mark.parametrize(
     ("tools", "effort"),
     [
@@ -58,15 +59,34 @@ async def test_json_mode_preserves_actual_candidate_schema_tools_repairs_and_usa
             )
         )
         if workflow == "mapping"
-        else _validator()
+        else SubjectAreaCandidateValidator(
+            selected_object_keys=(
+                PhysicalObjectKey(
+                    tenant_code="TEST",
+                    system_code="ERP",
+                    connection_code="MAIN",
+                    object_schema="sales",
+                    object_name="customer",
+                ),
+            ),
+            column_counts=(3,),
+            applied=None,
+            max_subject_area_columns=300,
+        )
     )
     candidate: dict[str, JsonValue] = (
         mapping_candidate()
         if workflow == "mapping"
-        else {"objects": [_object()], "relationships": []}
+        else {
+            "areas": [
+                {"name": "Sales", "definition": "Customers who buy.", "tables": ["t1"]}
+            ],
+            "unassigned": [],
+            "retire": [],
+        }
     )
     wrong_type = deepcopy(candidate)
-    wrong_type["attribute_mappings" if workflow == "mapping" else "objects"] = (
+    wrong_type["attribute_mappings" if workflow == "mapping" else "areas"] = (
         "invalid type"
     )
     responses = iter(

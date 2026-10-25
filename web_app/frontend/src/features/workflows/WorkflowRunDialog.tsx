@@ -28,7 +28,7 @@ import {
 } from "./presentation";
 
 type AnalysisRunKind = "inference" | "validation";
-type AgenticWorkflow = "analysis" | "conceptual" | "logical" | "dimensional" | "metadata_enrichment";
+type AgenticWorkflow = "analysis" | "subject_area" | "logical" | "dimensional" | "metadata_enrichment";
 type WorkflowExecutionMode = NonNullable<CreateWorkflowRunCommand["workflow_execution_mode"]>;
 export function WorkflowRunDialog({
   api,
@@ -108,8 +108,10 @@ export function WorkflowRunDialog({
   const isAttributeEnrichment = isEnrichment && (enrichmentTarget === "attribute" || enrichmentObject !== undefined);
   const [attributeSelection, setAttributeSelection] = useState<EnrichmentAttributeSelectionValue>({ targets: [], ready: false });
   const isDimensional = workflow === "dimensional";
-  const authoringWorkflowName = isEnrichment ? "Metadata enrichment" : workflow === "conceptual"
-    ? "Conceptual"
+  // Subject Areas group the whole Bronze Input Scope, so their runs have no picker.
+  const isSubjectArea = workflow === "subject_area";
+  const authoringWorkflowName = isEnrichment ? "Metadata enrichment" : isSubjectArea
+    ? "Subject Areas"
     : workflow === "logical"
       ? "Logical"
       : "Dimensional";
@@ -213,7 +215,7 @@ export function WorkflowRunDialog({
         workflow_execution_mode: kind === "inference" ? value.executionMode : null,
         selected_object_ids: isDimensional ? [] : selectedObjectIds,
         ...(isDimensional ? { selected_entity_ids: selectedObjectIds, modeled_entity_type: "logical_entity" as const } : {}),
-        requested_batch_id: isEnrichment || isDimensional ? null : value.requestedBatchId.trim() || null,
+        requested_batch_id: isEnrichment || isDimensional || isSubjectArea ? null : value.requestedBatchId.trim() || null,
         agent: kind === "inference" ? agent : null,
         prompt_overrides: {},
         ...(isEnrichment ? { description_targets: descriptionTargets } : {}),
@@ -435,6 +437,15 @@ export function WorkflowRunDialog({
                 initialSelectedIds={initialSelectedIds} disabled={selectionDisabled || scopeQuery.isFetching || revisionChanged}
                 onChange={setAttributeSelection} />
                 : <p className="inline-error" role="alert">Attribute selection is unavailable.</p>
+            : isSubjectArea ? <section className="run-object-selection" aria-labelledby="workflow-run-scope-heading">
+              <header>
+                <strong id="workflow-run-scope-heading">Active Bronze Scope</strong>
+                <span>{scopeRows.length} table{scopeRows.length === 1 ? "" : "s"}</span>
+              </header>
+              {scopeQuery.isPending ? <div className="surface-state compact" aria-busy="true">Loading active Scope…</div>
+                : scopeQuery.isError ? <div className="surface-state is-error compact" role="alert">Active Scope could not be loaded.</div>
+                  : <p className="run-kind-note">Subject Areas group every active Bronze table in the Input Scope, so this run always covers the whole Scope. Locked areas and locked tables stay as saved.</p>}
+            </section>
             : <><fieldset className="scope-mode-options" disabled={selectionDisabled}>
             <legend>{recordName}</legend>
             <form.Field name="scopeMode">
@@ -514,7 +525,7 @@ export function WorkflowRunDialog({
           </section></>}
 
 
-          {!isEnrichment && !isDimensional ? <form.Field name="requestedBatchId">
+          {!isEnrichment && !isDimensional && !isSubjectArea ? <form.Field name="requestedBatchId">
             {(field) => (
               <label className="batch-input">
                 <span>Batch ID (optional)</span>

@@ -48,7 +48,7 @@ def _web_prompts(seed: Path, payload_tag: str) -> dict[str, str]:
 
 WEB_SETS = {name: _web_prompts(*seed) for name, seed in SEEDS.items()}
 
-ZONE_WORKFLOWS = ("analysis", "code_generation", "conceptual", "mapping", "validation")
+ZONE_WORKFLOWS = ("analysis", "code_generation", "mapping", "validation")
 # (rule, web workflows, web pattern, Atlas file, Atlas pattern)
 SHARED_RULES = [
     (
@@ -60,24 +60,24 @@ SHARED_RULES = [
     ),
     (
         "zone meanings",
-        ("analysis", "conceptual"),
+        ("analysis",),
         r"`source`: data in its originating system, before lake ingestion",
         "references/terminology.md",
         r"`source`: data in its originating system, before lake ingestion",
     ),
     (
         "null is unknown, not false or zero",
-        ("analysis", "conceptual", "mapping", "metadata_enrichment_object"),
+        ("analysis", "mapping", "metadata_enrichment_object"),
         r"`null` means (?:unspecified or )?unavailable; `false` and `0`",
         "references/project/enrichment.md",
         r"`null` means unknown, not false",
     ),
     (
-        "Conceptual is never a Logical input",
-        ("logical",),
-        r"Conceptual records are not inputs",
+        "Subject Areas choose tables and are never modeling evidence",
+        ("subject_area",),
+        r"Areas only choose tables; they are not a model",
         "references/working-method.md",
-        r"Conceptual is a standalone deliverable\.\*\* Never use it as input",
+        r"Subject areas decide which tables a Logical Build works on; they are not modeling evidence",
     ),
     (
         "no invented row choice",

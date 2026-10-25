@@ -92,7 +92,8 @@ def test_local_workbench_seed_uses_the_simplified_workflow_schema(
         )["project_id"]
         for table, expected in (
             ("analysis_result", 1),
-            ("conceptual_object", 2),
+            ("subject_area", 1),
+            ("subject_area_table", 2),
             ("logical_entity", 2),
             ("logical_attribute", 6),
             ("dimensional_entity", 2),

@@ -34,7 +34,7 @@ def test_generic_mcp_mutations_reject_workflow_bound_change_sets(
         "workflow_run_id": 1048,
         "project_change_set_status": "active",
         "expires_time": datetime.now(UTC) + timedelta(hours=1),
-        "conceptual_document": {},
+        "subject_area_document": {},
         "profiling_document": {},
         "enrichment_document": {},
         "analysis_document": {},

@@ -288,7 +288,7 @@ def test_expired_project_stage_batch_touch_is_a_safe_no_op(
                 batch_sha256, created_by_principal_id, correlation_id,
                 created_time, last_activity_time, expires_time
             ) VALUES (
-                %s, %s, %s, 'conceptual_object', 1, 1, 1, %s, %s, %s,
+                %s, %s, %s, 'subject_area', 1, 1, 1, %s, %s, %s,
                 clock_timestamp() - INTERVAL '3 hours',
                 clock_timestamp() - INTERVAL '2 hours',
                 clock_timestamp() - INTERVAL '1 hour'
@@ -430,7 +430,7 @@ async def test_get_project_change_set_persists_parent_and_batch_expiry_once(
                     "project_id": project_id,
                     "project_change_set_id": change_set_id,
                     "expected_draft_revision": 1,
-                    "dataset": "conceptual_object",
+                    "dataset": "subject_area",
                     "total_record_count": 1,
                     "total_chunk_count": 1,
                     "batch_sha256": "a" * 64,
@@ -537,7 +537,7 @@ async def test_stage_project_change_set_persists_expiry_before_rejecting_mutatio
                     "project_id": project_id,
                     "project_change_set_id": change_set_id,
                     "expected_draft_revision": 1,
-                    "changes": [{"dataset": "conceptual_object", "records": []}],
+                    "changes": [{"dataset": "subject_area", "records": []}],
                 },
             )
             assert staged.is_error is True
@@ -779,12 +779,12 @@ async def test_all_project_change_set_mutation_paths_persist_due_expiry_once(
         authorizer=authorizer,
         audit=audit,
     )
-    conceptual_record = _replace_codes(
-        complete_project_graph()["conceptual_object"][0],
+    area_record = _replace_codes(
+        complete_project_graph()["subject_area"][0],
         code_prefix="PROJECT_ALL_EXPIRY",
     )
-    assert isinstance(conceptual_record, dict)
-    chunk_sha256 = canonical_records_sha256([conceptual_record])
+    assert isinstance(area_record, dict)
+    chunk_sha256 = canonical_records_sha256([area_record])
     batch_sha256 = stage_batch_sha256([chunk_sha256])
 
     await database.open()
@@ -805,7 +805,7 @@ async def test_all_project_change_set_mutation_paths_persist_due_expiry_once(
                             "project_id": project_id,
                             "project_change_set_id": change_set_id,
                             "expected_draft_revision": 1,
-                            "dataset": "conceptual_object",
+                            "dataset": "subject_area",
                             "total_record_count": 1,
                             "total_chunk_count": 1,
                             "batch_sha256": batch_sha256,
@@ -833,7 +833,7 @@ async def test_all_project_change_set_mutation_paths_persist_due_expiry_once(
                             "project_id": project_id,
                             "project_change_set_id": change_set_id,
                             "expected_draft_revision": 1,
-                            "dataset": "conceptual_object",
+                            "dataset": "subject_area",
                             "total_record_count": 1,
                             "total_chunk_count": 1,
                             "batch_sha256": batch_sha256,
@@ -847,9 +847,9 @@ async def test_all_project_change_set_mutation_paths_persist_due_expiry_once(
                             "project_id": project_id,
                             "project_change_set_id": change_set_id,
                             "stage_batch_id": stage_batch_id,
-                            "dataset": "conceptual_object",
+                            "dataset": "subject_area",
                             "chunk_index": 1,
-                            "records": [conceptual_record],
+                            "records": [area_record],
                             "chunk_sha256": chunk_sha256,
                         },
                     )
@@ -935,12 +935,12 @@ async def test_put_and_commit_persist_due_project_stage_batch_expiry(
         authorizer=authorizer,
         audit=audit,
     )
-    conceptual_record = _replace_codes(
-        complete_project_graph()["conceptual_object"][0],
+    area_record = _replace_codes(
+        complete_project_graph()["subject_area"][0],
         code_prefix="PROJECT_BATCH_EXPIRY",
     )
-    assert isinstance(conceptual_record, dict)
-    chunk_sha256 = canonical_records_sha256([conceptual_record])
+    assert isinstance(area_record, dict)
+    chunk_sha256 = canonical_records_sha256([area_record])
     batch_sha256 = stage_batch_sha256([chunk_sha256])
 
     await database.open()
@@ -960,7 +960,7 @@ async def test_put_and_commit_persist_due_project_stage_batch_expiry(
                         "project_id": project_id,
                         "project_change_set_id": change_set_id,
                         "expected_draft_revision": 1,
-                        "dataset": "conceptual_object",
+                        "dataset": "subject_area",
                         "total_record_count": 1,
                         "total_chunk_count": 1,
                         "batch_sha256": batch_sha256,
@@ -988,9 +988,9 @@ async def test_put_and_commit_persist_due_project_stage_batch_expiry(
                             "project_id": project_id,
                             "project_change_set_id": change_set_id,
                             "stage_batch_id": stage_batch_id,
-                            "dataset": "conceptual_object",
+                            "dataset": "subject_area",
                             "chunk_index": 1,
-                            "records": [conceptual_record],
+                            "records": [area_record],
                             "chunk_sha256": chunk_sha256,
                         },
                     )
@@ -1037,9 +1037,9 @@ async def test_project_stage_batch_runs_through_validate_and_apply(
     web_managed: dict[ProjectChangeSetDataset, list[dict[str, object]]] = {
         dataset: staged.pop(dataset) for dataset in WEB_MANAGED_PROJECT_DATASETS
     }
-    conceptual_objects = staged.pop("conceptual_object")
-    assert len(conceptual_objects) == 2
-    chunks = [[conceptual_objects[0]], [conceptual_objects[1]]]
+    area_tables = staged.pop("subject_area_table")
+    assert len(area_tables) == 2
+    chunks = [[area_tables[0]], [area_tables[1]]]
     chunk_sha256s = [canonical_records_sha256(chunk) for chunk in chunks]
     batch_sha256 = stage_batch_sha256(chunk_sha256s)
     _acquire_tenant_lock(postgres_database, tenant_id)
@@ -1141,7 +1141,7 @@ async def test_project_stage_batch_runs_through_validate_and_apply(
                     "project_id": project_id,
                     "project_change_set_id": change_set_id,
                     "expected_draft_revision": 3,
-                    "dataset": "conceptual_object",
+                    "dataset": "subject_area_table",
                     "total_record_count": 2,
                     "total_chunk_count": 2,
                     "batch_sha256": batch_sha256,
@@ -1155,7 +1155,7 @@ async def test_project_stage_batch_runs_through_validate_and_apply(
                     "project_id": project_id,
                     "project_change_set_id": change_set_id,
                     "expected_draft_revision": 3,
-                    "dataset": "conceptual_object",
+                    "dataset": "subject_area_table",
                     "total_record_count": 2,
                     "total_chunk_count": 2,
                     "batch_sha256": batch_sha256,
@@ -1175,7 +1175,7 @@ async def test_project_stage_batch_runs_through_validate_and_apply(
                         "project_id": project_id,
                         "project_change_set_id": change_set_id,
                         "stage_batch_id": stage_batch_id,
-                        "dataset": "conceptual_object",
+                        "dataset": "subject_area_table",
                         "chunk_index": index,
                         "records": chunk,
                         "chunk_sha256": chunk_sha256,
@@ -1227,11 +1227,11 @@ async def test_project_stage_batch_runs_through_validate_and_apply(
                 {
                     "project_id": project_id,
                     "project_change_set_id": change_set_id,
-                    "dataset": "conceptual_object",
+                    "dataset": "subject_area_table",
                 },
             )
             assert pending.is_error is False
-            assert pending.structured_content["records"] == conceptual_objects
+            assert pending.structured_content["records"] == area_tables
             fingerprint = await client.call_tool(
                 "get_project_change_set_fingerprint",
                 {
@@ -1245,7 +1245,7 @@ async def test_project_stage_batch_runs_through_validate_and_apply(
                 CHANGE_SET_DATASETS_BY_NAME
             )
             assert fingerprint.structured_content["record_count"] == len(
-                conceptual_objects
+                area_tables
             ) + sum(len(records) for records in staged.values())
             assert "records" not in fingerprint.structured_content
             assert len(fingerprint.structured_content["fingerprint"]) == 64
@@ -1254,7 +1254,9 @@ async def test_project_stage_batch_runs_through_validate_and_apply(
             assert [
                 item["dataset"] for item in fingerprint.structured_content["datasets"]
             ] == sorted(CHANGE_SET_DATASETS_BY_NAME)
-            assert fingerprint.structured_content["fingerprint"] == stage_fingerprint_sha256(
+            assert fingerprint.structured_content[
+                "fingerprint"
+            ] == stage_fingerprint_sha256(
                 "project", fingerprint.structured_content["datasets"]
             )
             validated = await client.call_tool(
@@ -1276,7 +1278,9 @@ async def test_project_stage_batch_runs_through_validate_and_apply(
                     "project_id": project_id,
                     "project_change_set_id": change_set_id,
                     "expected_draft_revision": 4,
-                    "expected_candidate_digest": validated.structured_content["candidate_digest"],
+                    "expected_candidate_digest": validated.structured_content[
+                        "candidate_digest"
+                    ],
                 },
             )
             assert applied.is_error is False
@@ -1391,8 +1395,8 @@ async def test_mcp_stage_refuses_web_managed_datasets_before_writing(
                         "expected_draft_revision": 1,
                         "changes": [
                             {
-                                "dataset": "conceptual_object",
-                                "records": graph["conceptual_object"],
+                                "dataset": "subject_area",
+                                "records": graph["subject_area"],
                             },
                             {"dataset": dataset, "records": records},
                         ],
@@ -1433,21 +1437,21 @@ async def test_mcp_stage_refuses_web_managed_datasets_before_writing(
                 for item in unchanged.structured_content["dataset_counts"]
             )
             # Refusals spend no revision, so ordinary Stage still fences on revision 1.
-            conceptual_staged = await client.call_tool(
+            area_staged = await client.call_tool(
                 "stage_project_change_set",
                 {
                     **draft,
                     "expected_draft_revision": 1,
                     "changes": [
                         {
-                            "dataset": "conceptual_object",
-                            "records": graph["conceptual_object"],
+                            "dataset": "subject_area",
+                            "records": graph["subject_area"],
                         }
                     ],
                 },
             )
-            assert conceptual_staged.is_error is False
-            assert conceptual_staged.structured_content["draft_revision"] == 2
+            assert area_staged.is_error is False
+            assert area_staged.structured_content["draft_revision"] == 2
     finally:
         await database.close()
 
@@ -1932,7 +1936,9 @@ async def test_all_project_datasets_materialize_and_round_trip_as_one_snapshot(
                     "project_id": project_id,
                     "project_change_set_id": change_set_id,
                     "expected_draft_revision": draft_revision,
-                    "expected_candidate_digest": validated.structured_content["candidate_digest"],
+                    "expected_candidate_digest": validated.structured_content[
+                        "candidate_digest"
+                    ],
                 },
             )
             assert applied.is_error is False
@@ -2194,8 +2200,8 @@ async def test_all_project_datasets_materialize_and_round_trip_as_one_snapshot(
         "context_type": 12,
         "context_group": 1,
         "context_record": 1,
-        "conceptual_object": 2,
-        "conceptual_relationship": 1,
+        "subject_area": 1,
+        "subject_area_table": 2,
         "logical_submodel": 1,
         "logical_entity": 2,
         "logical_attribute": 3,
@@ -2758,8 +2764,8 @@ async def _assert_focused_reads(client: Client, project_id: int) -> None:
         "context_type": 12,
         "context_group": 1,
         "context_record": 1,
-        "conceptual_object": 2,
-        "conceptual_relationship": 1,
+        "subject_area": 1,
+        "subject_area_table": 2,
         "logical_submodel": 1,
         "logical_entity": 2,
         "logical_attribute": 3,

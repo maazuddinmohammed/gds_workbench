@@ -21,7 +21,6 @@ from gds_etl_workbench.domain.errors import (
 )
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.analysis.service import AnalysisInferenceWorkflow
-from gds_workbench_api.features.conceptual.service import ConceptualWorkflow
 from gds_workbench_api.features.dimensional import DimensionalWorkflow
 from gds_workbench_api.features.logical.service import LogicalWorkflow
 from gds_workbench_api.features.project_change_sets.contracts import (
@@ -35,6 +34,7 @@ from gds_workbench_api.features.project_change_sets.service import (
     DatabaseProjectChangeSetService,
 )
 from gds_workbench_api.features.projects import ProjectRevisionConflictError
+from gds_workbench_api.features.subject_areas.service import SubjectAreaWorkflow
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
     AgentExecutionResult,
@@ -88,9 +88,8 @@ _MATERIALIZED_TABLES = (
     "project.context_record",
     "workflow.analysis_result",
     "workflow.mapping_attribute",
-    "workflow.conceptual_object",
-    "workflow.conceptual_relationship",
-    "workflow.conceptual_support",
+    "workflow.subject_area",
+    "workflow.subject_area_table",
     "workflow.dimensional_attribute",
     "workflow.dimensional_attribute_source_mapping",
     "workflow.dimensional_entity",
@@ -612,7 +611,7 @@ def _make_scope_object_dimensional_eligible(
     return logical_entity_id
 
 
-def _create_running_conceptual_run(
+def _create_running_subject_area_run(
     database: DisposablePostgresFixture,
     *,
     tenant_id: int,
@@ -669,7 +668,7 @@ def _create_running_conceptual_run(
                     correlation_id,
                     started_time
                 ) VALUES (
-                    %s, %s, 1, 'conceptual', 'one_shot', %s, %s,
+                    %s, %s, 1, 'subject_area', 'one_shot', %s, %s,
                     'openai_agents_sdk', 'databricks', 'test-project',
                     'medium', 8, 1, %s, 1, 'running', %s, CURRENT_TIMESTAMP
                 )
@@ -708,7 +707,7 @@ def _create_queued_authoring_run_with_prompt(
     entra_tenant_id: UUID,
     entra_object_id: UUID,
     execution_mode: Literal["one_shot", "tool_assisted"] = "one_shot",
-    workflow: Literal["conceptual", "logical", "dimensional"],
+    workflow: Literal["subject_area", "logical", "dimensional"],
     selected_object_id: int | None = None,
 ) -> int:
     suffix = uuid4().hex
@@ -995,7 +994,7 @@ def _create_queued_authoring_run_with_prompt(
     return workflow_run_id
 
 
-def _create_queued_conceptual_run_with_prompt(
+def _create_queued_subject_area_run_with_prompt(
     database: DisposablePostgresFixture,
     *,
     project_id: int,
@@ -1011,7 +1010,7 @@ def _create_queued_conceptual_run_with_prompt(
         entra_tenant_id=entra_tenant_id,
         entra_object_id=entra_object_id,
         execution_mode=execution_mode,
-        workflow="conceptual",
+        workflow="subject_area",
     )
 
 
@@ -1379,24 +1378,20 @@ async def test_web_change_set_requires_lock_and_applies_with_null_provenance(
                 idempotency_key=uuid4(),
             )
 
-        conceptual_records: list[dict[str, object]] = [
+        area_records: list[dict[str, object]] = [
             {
-                "conceptual_object_name": name,
-                "conceptual_object_definition": f"A governed {name.lower()}.",
-                "conceptual_object_type": object_type,
-                "conceptual_object_grain": f"One {name.lower()}.",
-                "conceptual_object_aliases": [],
-                "conceptual_object_status": "active",
-                "conceptual_object_is_locked": False,
-                "supports": [],
+                "subject_area_name": name,
+                "subject_area_definition": f"Tables that describe {name.lower()}.",
+                "subject_area_status": "active",
+                "subject_area_is_locked": False,
             }
-            for name, object_type in (("Customer", "party"), ("Order", "transaction"))
+            for name in ("Customer", "Order")
         ]
-        chunks = [[conceptual_records[0]], [conceptual_records[1]]]
+        chunks = [[area_records[0]], [area_records[1]]]
         chunk_hashes = [canonical_records_sha256(chunk) for chunk in chunks]
         batch_command = BeginProjectStageBatchRequest(
             expected_draft_revision=1,
-            dataset="conceptual_object",
+            dataset="subject_area",
             total_record_count=2,
             total_chunk_count=2,
             batch_sha256=stage_batch_sha256(chunk_hashes),
@@ -1432,7 +1427,7 @@ async def test_web_change_set_requires_lock_and_applies_with_null_provenance(
                 stage_batch_id=begun.stage_batch_id,
                 chunk_index=chunk_index,
                 command=PutProjectStageChunkRequest(
-                    dataset="conceptual_object",
+                    dataset="subject_area",
                     records=chunk,
                     chunk_sha256=chunk_hash,
                 ),
@@ -1447,7 +1442,7 @@ async def test_web_change_set_requires_lock_and_applies_with_null_provenance(
             stage_batch_id=begun.stage_batch_id,
             chunk_index=1,
             command=PutProjectStageChunkRequest(
-                dataset="conceptual_object",
+                dataset="subject_area",
                 records=chunks[0],
                 chunk_sha256=chunk_hashes[0],
             ),
@@ -1593,10 +1588,10 @@ async def test_web_change_set_requires_lock_and_applies_with_null_provenance(
     with web_postgres_database.connect_owner() as connection:
         stored = connection.execute(
             """
-            SELECT agent_run_id, workflow_run_id, conceptual_object_name
-              FROM workflow.conceptual_object
+            SELECT agent_run_id, workflow_run_id, subject_area_name
+              FROM workflow.subject_area
              WHERE project_id = %s
-             ORDER BY conceptual_object_name
+             ORDER BY subject_area_name
             """,
             (project_id,),
         ).fetchall()
@@ -1610,12 +1605,12 @@ async def test_web_change_set_requires_lock_and_applies_with_null_provenance(
         {
             "agent_run_id": None,
             "workflow_run_id": None,
-            "conceptual_object_name": "Customer",
+            "subject_area_name": "Customer",
         },
         {
             "agent_run_id": None,
             "workflow_run_id": None,
-            "conceptual_object_name": "Order",
+            "subject_area_name": "Order",
         },
     ]
     assert project == {"project_revision": 2}
@@ -1633,7 +1628,7 @@ async def test_workflow_handoff_rolls_back_invalid_output_then_replays_one_bound
         entra_object_id,
         _profile,
     ) = _seed_profile_project(web_postgres_database)
-    workflow_run_id = _create_running_conceptual_run(
+    workflow_run_id = _create_running_subject_area_run(
         web_postgres_database,
         tenant_id=tenant_id,
         project_id=project_id,
@@ -1671,36 +1666,29 @@ async def test_workflow_handoff_rolls_back_invalid_output_then_replays_one_bound
         database=database,
         authorizer=AuthorizationService(),
     )
-    invalid_relationship = StageProjectChange(
-        dataset="conceptual_relationship",
+    invalid_membership = StageProjectChange(
+        dataset="subject_area_table",
         records=[
             {
-                "from_conceptual_object_name": "Missing Order",
-                "to_conceptual_object_name": "Missing Customer",
-                "conceptual_relationship_name": "belongs to",
-                "conceptual_relationship_type": "association",
-                "conceptual_relationship_definition": "Order belongs to customer.",
-                "conceptual_relationship_cardinality": "many_to_one",
-                "conceptual_relationship_basis": "Business rule.",
-                "conceptual_relationship_cardinality_basis": "Many orders per customer.",
-                "conceptual_relationship_status": "active",
-                "conceptual_relationship_is_locked": False,
-                "supports": [],
+                "subject_area_name": "Missing Area",
+                "tenant_code": "MISSING",
+                "system_code": "MISSING",
+                "connection_code": "MISSING",
+                "object_schema": "missing",
+                "object_name": "Missing",
+                "subject_area_table_status": "active",
+                "subject_area_table_is_locked": False,
             }
         ],
     )
-    valid_object = StageProjectChange(
-        dataset="conceptual_object",
+    valid_area = StageProjectChange(
+        dataset="subject_area",
         records=[
             {
-                "conceptual_object_name": "Customer",
-                "conceptual_object_definition": "A governed customer.",
-                "conceptual_object_type": "party",
-                "conceptual_object_grain": "One customer.",
-                "conceptual_object_aliases": [],
-                "conceptual_object_status": "active",
-                "conceptual_object_is_locked": False,
-                "supports": [],
+                "subject_area_name": "Customer",
+                "subject_area_definition": "Tables that describe customers.",
+                "subject_area_status": "active",
+                "subject_area_is_locked": False,
             }
         ],
     )
@@ -1718,17 +1706,17 @@ async def test_workflow_handoff_rolls_back_invalid_output_then_replays_one_bound
             claim.project_revision,
             claim.project_workflow,
             claim.workflow_execution_mode,
-        ) == (workflow_run_id, tenant_id, project_id, 1, "conceptual", "one_shot")
+        ) == (workflow_run_id, tenant_id, project_id, 1, "subject_area", "one_shot")
         with pytest.raises(WorkflowChangeSetValidationError):
             await handoff.handoff(
                 principal,
                 tenant_id=tenant_id,
                 project_id=project_id,
                 workflow_run_id=workflow_run_id,
-                expected_workflow="conceptual",
+                expected_workflow="subject_area",
                 expected_project_revision=1,
                 workflow_run_claim_token=claim.workflow_run_claim_token,
-                changes=(invalid_relationship,),
+                changes=(invalid_membership,),
             )
 
         with web_postgres_database.connect_owner() as connection:
@@ -1747,20 +1735,20 @@ async def test_workflow_handoff_rolls_back_invalid_output_then_replays_one_bound
             tenant_id=tenant_id,
             project_id=project_id,
             workflow_run_id=workflow_run_id,
-            expected_workflow="conceptual",
+            expected_workflow="subject_area",
             expected_project_revision=1,
             workflow_run_claim_token=claim.workflow_run_claim_token,
-            changes=(valid_object,),
+            changes=(valid_area,),
         )
         replayed = await handoff.handoff(
             principal,
             tenant_id=tenant_id,
             project_id=project_id,
             workflow_run_id=workflow_run_id,
-            expected_workflow="conceptual",
+            expected_workflow="subject_area",
             expected_project_revision=1,
             workflow_run_claim_token=claim.workflow_run_claim_token,
-            changes=(valid_object,),
+            changes=(valid_area,),
         )
         with pytest.raises(InvalidRequestError):
             await apply_service.apply(
@@ -1775,20 +1763,20 @@ async def test_workflow_handoff_rolls_back_invalid_output_then_replays_one_bound
                 ),
                 idempotency_key=uuid4(),
             )
-        changed_record = dict(valid_object.records[0])
-        changed_record["conceptual_object_definition"] = "A different candidate."
+        changed_record = dict(valid_area.records[0])
+        changed_record["subject_area_definition"] = "A different candidate."
         with pytest.raises(InvalidRequestError):
             await handoff.handoff(
                 principal,
                 tenant_id=tenant_id,
                 project_id=project_id,
                 workflow_run_id=workflow_run_id,
-                expected_workflow="conceptual",
+                expected_workflow="subject_area",
                 expected_project_revision=1,
                 workflow_run_claim_token=claim.workflow_run_claim_token,
                 changes=(
                     StageProjectChange(
-                        dataset="conceptual_object",
+                        dataset="subject_area",
                         records=[changed_record],
                     ),
                 ),
@@ -1802,7 +1790,7 @@ async def test_workflow_handoff_rolls_back_invalid_output_then_replays_one_bound
             SELECT project_change_set_id,
                    workflow_run_id,
                    project_change_set_status,
-                   conceptual_document,
+                   subject_area_document,
                    candidate_digest
               FROM mcp.project_change_set
              WHERE workflow_run_id = %s
@@ -1824,8 +1812,8 @@ async def test_workflow_handoff_rolls_back_invalid_output_then_replays_one_bound
         ).fetchone()
         materialized = connection.execute(
             """
-            SELECT count(*) AS conceptual_object_count
-              FROM workflow.conceptual_object
+            SELECT count(*) AS subject_area_count
+              FROM workflow.subject_area
              WHERE project_id = %s
             """,
             (project_id,),
@@ -1838,20 +1826,20 @@ async def test_workflow_handoff_rolls_back_invalid_output_then_replays_one_bound
     assert stored["workflow_run_id"] == workflow_run_id
     assert stored["project_change_set_status"] == "validated"
     assert stored["candidate_digest"] == created.candidate_digest
-    conceptual_document_value = stored["conceptual_document"]
-    assert isinstance(conceptual_document_value, dict)
-    conceptual_document = cast(dict[str, object], conceptual_document_value)
-    conceptual_objects_value = conceptual_document.get("conceptual_object")
-    assert isinstance(conceptual_objects_value, list)
-    conceptual_objects = cast(list[object], conceptual_objects_value)
-    assert len(conceptual_objects) == 1
+    subject_area_document_value = stored["subject_area_document"]
+    assert isinstance(subject_area_document_value, dict)
+    subject_area_document = cast(dict[str, object], subject_area_document_value)
+    subject_areas_value = subject_area_document.get("subject_area")
+    assert isinstance(subject_areas_value, list)
+    subject_areas = cast(list[object], subject_areas_value)
+    assert len(subject_areas) == 1
     assert events == [
         {"event_type": "created"},
         {"event_type": "section_put"},
         {"event_type": "validated"},
     ]
     assert project == {"project_revision": 1}
-    assert materialized == {"conceptual_object_count": 0}
+    assert materialized == {"subject_area_count": 0}
 
 
 @pytest.mark.asyncio
@@ -1877,7 +1865,7 @@ async def test_workflow_finalization_is_atomic_and_rejects_completed_claim_reuse
             (entra_tenant_id, entra_object_id, tenant_id),
         ).fetchone()
     assert acquired == {"acquired": True}
-    workflow_run_id = _create_queued_conceptual_run_with_prompt(
+    workflow_run_id = _create_queued_subject_area_run_with_prompt(
         web_postgres_database,
         project_id=project_id,
         tenant_id=tenant_id,
@@ -1890,17 +1878,13 @@ async def test_workflow_finalization_is_atomic_and_rejects_completed_claim_reuse
         entra_object_id=entra_object_id,
     )
     change = StageProjectChange(
-        dataset="conceptual_object",
+        dataset="subject_area",
         records=[
             {
-                "conceptual_object_name": "Customer",
-                "conceptual_object_definition": "A governed customer.",
-                "conceptual_object_type": "party",
-                "conceptual_object_grain": "One customer.",
-                "conceptual_object_aliases": [],
-                "conceptual_object_status": "active",
-                "conceptual_object_is_locked": False,
-                "supports": [],
+                "subject_area_name": "Customer",
+                "subject_area_definition": "Tables that describe customers.",
+                "subject_area_status": "active",
+                "subject_area_is_locked": False,
             }
         ],
     )
@@ -1918,9 +1902,9 @@ async def test_workflow_finalization_is_atomic_and_rejects_completed_claim_reuse
     final_event = AgentWorkflowEvent(
         sequence=2,
         attempt=1,
-        stage="conceptual.backend_validation",
+        stage="subject_area.backend_validation",
         status="running",
-        message="Conceptual candidate is ready in a validated draft.",
+        message="Subject Areas are ready in a validated draft.",
         current=1,
         total=1,
         finding_count=1,
@@ -1933,7 +1917,7 @@ async def test_workflow_finalization_is_atomic_and_rejects_completed_claim_reuse
             tenant_id=tenant_id,
             project_id=project_id,
             workflow_run_id=workflow_run_id,
-            expected_workflow="conceptual",
+            expected_workflow="subject_area",
             expected_execution_mode="one_shot",
             expected_project_revision=1,
         )
@@ -1948,14 +1932,14 @@ async def test_workflow_finalization_is_atomic_and_rejects_completed_claim_reuse
             claim.project_revision,
             claim.project_workflow,
             claim.workflow_execution_mode,
-        ) == (workflow_run_id, tenant_id, project_id, 1, "conceptual", "one_shot")
+        ) == (workflow_run_id, tenant_id, project_id, 1, "subject_area", "one_shot")
         with pytest.raises(InvalidRequestError):
             await finalizer.finalize(
                 principal,
                 tenant_id=tenant_id,
                 project_id=project_id,
                 workflow_run_id=workflow_run_id,
-                expected_workflow="conceptual",
+                expected_workflow="subject_area",
                 expected_project_revision=1,
                 workflow_run_claim_token=claim.workflow_run_claim_token,
                 changes=(change,),
@@ -1990,7 +1974,7 @@ async def test_workflow_finalization_is_atomic_and_rejects_completed_claim_reuse
             tenant_id=tenant_id,
             project_id=project_id,
             workflow_run_id=workflow_run_id,
-            expected_workflow="conceptual",
+            expected_workflow="subject_area",
             expected_project_revision=1,
             workflow_run_claim_token=claim.workflow_run_claim_token,
             changes=(change,),
@@ -2002,7 +1986,7 @@ async def test_workflow_finalization_is_atomic_and_rejects_completed_claim_reuse
                 tenant_id=tenant_id,
                 project_id=project_id,
                 workflow_run_id=workflow_run_id,
-                expected_workflow="conceptual",
+                expected_workflow="subject_area",
                 expected_project_revision=1,
                 workflow_run_claim_token=claim.workflow_run_claim_token,
                 changes=(change,),
@@ -2016,7 +2000,7 @@ async def test_workflow_finalization_is_atomic_and_rejects_completed_claim_reuse
                 tenant_id=tenant_id,
                 project_id=project_id,
                 workflow_run_id=workflow_run_id,
-                expected_workflow="conceptual",
+                expected_workflow="subject_area",
                 expected_project_revision=1,
                 workflow_run_claim_token=claim.workflow_run_claim_token,
                 changes=(change,),
@@ -2072,7 +2056,7 @@ async def test_workflow_finalization_is_atomic_and_rejects_completed_claim_reuse
         },
         {
             "sequence": 2,
-            "stage": "conceptual.backend_validation",
+            "stage": "subject_area.backend_validation",
             "status": "running",
             "finding_count": 1,
         },
@@ -2086,7 +2070,7 @@ async def test_workflow_finalization_is_atomic_and_rejects_completed_claim_reuse
 
 
 @pytest.mark.asyncio
-async def test_conceptual_executor_completes_with_one_validated_unapplied_draft(
+async def test_subject_area_executor_completes_with_one_validated_unapplied_draft(
     web_postgres_database: DisposablePostgresFixture,
 ) -> None:
     (
@@ -2102,13 +2086,13 @@ async def test_conceptual_executor_completes_with_one_validated_unapplied_draft(
             """
             SELECT acquired
               FROM security.acquire_tenant_lock(
-                  %s, %s, 'user', %s, 60, 'Conceptual execution test'
+                  %s, %s, 'user', %s, 60, 'Subject Area execution test'
               )
             """,
             (entra_tenant_id, entra_object_id, tenant_id),
         ).fetchone()
     assert acquired == {"acquired": True}
-    workflow_run_id = _create_queued_conceptual_run_with_prompt(
+    workflow_run_id = _create_queued_subject_area_run_with_prompt(
         web_postgres_database,
         project_id=project_id,
         tenant_id=tenant_id,
@@ -2129,7 +2113,7 @@ async def test_conceptual_executor_completes_with_one_validated_unapplied_draft(
     )
     authorizer = AuthorizationService()
     lifecycle = DatabaseAgentWorkflowLifecycle(database=database)
-    workflow = ConceptualWorkflow(
+    workflow = SubjectAreaWorkflow(
         database=database,
         authorizer=authorizer,
         agent_executor=LocalFakeAgentAdapter(sdk_code="openai_agents_sdk"),
@@ -2143,7 +2127,7 @@ async def test_conceptual_executor_completes_with_one_validated_unapplied_draft(
     runs = DatabaseWorkflowRunService(
         database=database,
         authorizer=authorizer,
-        cursor_signing_key=b"conceptual-test-cursor-key-32-bytes",
+        cursor_signing_key=b"subject-area-test-cursor-key-32-b",
     )
 
     await database.open()
@@ -2167,7 +2151,7 @@ async def test_conceptual_executor_completes_with_one_validated_unapplied_draft(
             claim.project_revision,
             claim.project_workflow,
             claim.workflow_execution_mode,
-        ) == (workflow_run_id, tenant_id, project_id, 1, "conceptual", "one_shot")
+        ) == (workflow_run_id, tenant_id, project_id, 1, "subject_area", "one_shot")
         result = await workflow.execute_started(
             principal,
             tenant_id=tenant_id,
@@ -2214,28 +2198,23 @@ async def test_conceptual_executor_completes_with_one_validated_unapplied_draft(
             """
             SELECT (
                        SELECT count(*)
-                         FROM workflow.conceptual_object
+                         FROM workflow.subject_area
                         WHERE project_id = %s
-                   ) AS conceptual_object_count,
+                   ) AS subject_area_count,
                    (
                        SELECT count(*)
-                         FROM workflow.conceptual_relationship
+                         FROM workflow.subject_area_table
                         WHERE project_id = %s
-                   ) AS conceptual_relationship_count,
-                   (
-                       SELECT count(*)
-                         FROM workflow.conceptual_support
-                        WHERE project_id = %s
-                   ) AS conceptual_support_count
+                   ) AS subject_area_table_count
             """,
-            (project_id, project_id, project_id),
+            (project_id, project_id),
         ).fetchone()
 
     assert started.changed is True
     assert started.workflow_run_state == "running"
     assert result.replayed is False
     assert result.workflow_run_id == workflow_run_id
-    assert result.staged_record_count == 1
+    assert result.staged_record_count == 2
     assert detail.workflow_run_state == "completed"
     assert detail.project_change_set_id == result.project_change_set_id
     assert detail.project_change_set_status == "validated"
@@ -2246,8 +2225,8 @@ async def test_conceptual_executor_completes_with_one_validated_unapplied_draft(
     assert [event.sequence for event in events.items] == [1, 2, 3, 4]
     assert [event.stage for event in events.items] == [
         "workflow_run",
-        "conceptual.candidate_authoring",
-        "conceptual.backend_validation",
+        "subject_area.candidate_authoring",
+        "subject_area.backend_validation",
         "workflow_run",
     ]
     assert [event.status for event in events.items] == [
@@ -2256,7 +2235,7 @@ async def test_conceptual_executor_completes_with_one_validated_unapplied_draft(
         "running",
         "completed",
     ]
-    assert [event.finding_count for event in events.items] == [0, 0, 1, 1]
+    assert [event.finding_count for event in events.items] == [0, 0, 2, 2]
     assert persisted == {
         "change_set_count": 1,
         "project_change_set_status": "validated",
@@ -2264,15 +2243,14 @@ async def test_conceptual_executor_completes_with_one_validated_unapplied_draft(
     }
     assert project == {"project_revision": 1}
     assert materialized == {
-        "conceptual_object_count": 0,
-        "conceptual_relationship_count": 0,
-        "conceptual_support_count": 0,
+        "subject_area_count": 0,
+        "subject_area_table_count": 0,
     }
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("execution_mode", ["one_shot", "tool_assisted"])
-async def test_completed_conceptual_draft_applies_once_with_run_provenance(
+async def test_completed_subject_area_draft_applies_once_with_run_provenance(
     web_postgres_database: DisposablePostgresFixture,
     execution_mode: Literal["one_shot", "tool_assisted"],
 ) -> None:
@@ -2289,13 +2267,13 @@ async def test_completed_conceptual_draft_applies_once_with_run_provenance(
             """
             SELECT acquired
               FROM security.acquire_tenant_lock(
-                  %s, %s, 'user', %s, 60, 'Conceptual apply test'
+                  %s, %s, 'user', %s, 60, 'Subject Area apply test'
               )
             """,
             (entra_tenant_id, entra_object_id, tenant_id),
         ).fetchone()
     assert acquired == {"acquired": True}
-    workflow_run_id = _create_queued_conceptual_run_with_prompt(
+    workflow_run_id = _create_queued_subject_area_run_with_prompt(
         web_postgres_database,
         project_id=project_id,
         tenant_id=tenant_id,
@@ -2318,7 +2296,7 @@ async def test_completed_conceptual_draft_applies_once_with_run_provenance(
     authorizer = AuthorizationService()
     lifecycle = DatabaseAgentWorkflowLifecycle(database=database)
     agent = RecordingFakeAgentAdapter()
-    workflow = ConceptualWorkflow(
+    workflow = SubjectAreaWorkflow(
         database=database,
         authorizer=authorizer,
         agent_executor=agent,
@@ -2356,7 +2334,7 @@ async def test_completed_conceptual_draft_applies_once_with_run_provenance(
             claim.project_revision,
             claim.project_workflow,
             claim.workflow_execution_mode,
-        ) == (workflow_run_id, tenant_id, project_id, 1, "conceptual", execution_mode)
+        ) == (workflow_run_id, tenant_id, project_id, 1, "subject_area", execution_mode)
         draft = await workflow.execute_started(
             principal,
             tenant_id=tenant_id,
@@ -2417,7 +2395,7 @@ async def test_completed_conceptual_draft_applies_once_with_run_provenance(
                 """
                 SELECT acquired
                   FROM security.acquire_tenant_lock(
-                      %s, %s, 'user', %s, 60, 'Conceptual apply retry'
+                      %s, %s, 'user', %s, 60, 'Subject Area apply retry'
                   )
                 """,
                 (entra_tenant_id, entra_object_id, tenant_id),
@@ -2475,21 +2453,21 @@ async def test_completed_conceptual_draft_applies_once_with_run_provenance(
             """,
             (workflow_run_id,),
         ).fetchone()
-        objects = connection.execute(
+        areas = connection.execute(
             """
-            SELECT workflow_run_id
-              FROM workflow.conceptual_object
+            SELECT workflow_run_id, subject_area_name
+              FROM workflow.subject_area
              WHERE project_id = %s
-             ORDER BY conceptual_object_name
+             ORDER BY subject_area_name
             """,
             (project_id,),
         ).fetchall()
-        supports = connection.execute(
+        memberships = connection.execute(
             """
-            SELECT workflow_run_id, supported_artifact_type, support_source_type
-              FROM workflow.conceptual_support
+            SELECT workflow_run_id, subject_area_table_status
+              FROM workflow.subject_area_table
              WHERE project_id = %s
-             ORDER BY conceptual_support_id
+             ORDER BY subject_area_table_id
             """,
             (project_id,),
         ).fetchall()
@@ -2514,13 +2492,11 @@ async def test_completed_conceptual_draft_applies_once_with_run_provenance(
     assert change_set is not None
     assert change_set["project_change_set_status"] == "applied"
     assert change_set["applied_time"] == applied.applied_at
-    assert objects == [{"workflow_run_id": workflow_run_id}]
-    assert supports == [
-        {
-            "workflow_run_id": workflow_run_id,
-            "supported_artifact_type": "conceptual_object",
-            "support_source_type": "object",
-        }
+    assert areas == [
+        {"workflow_run_id": workflow_run_id, "subject_area_name": "Business Area 1"}
+    ]
+    assert memberships == [
+        {"workflow_run_id": workflow_run_id, "subject_area_table_status": "active"}
     ]
     assert applied_events == [{"correlation_id": idempotency_key}]
 

@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 type ProjectWorkflow = Literal[
     "profiling",
     "analysis",
-    "conceptual",
+    "subject_area",
     "logical",
     "dimensional",
     "mapping",
@@ -53,7 +53,7 @@ class WorkflowExecutionClaim(BaseModel):
         ):
             raise ValueError("Metadata enrichment requires one-shot execution")
         requires_mode = self.project_workflow in {
-            "conceptual",
+            "subject_area",
             "logical",
             "dimensional",
             "mapping",

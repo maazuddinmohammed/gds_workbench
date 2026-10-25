@@ -24,7 +24,7 @@ class WorkflowExecutionServices:
     profiling: WorkflowExecutor
     analysis_inference: WorkflowExecutor
     analysis_validation: WorkflowExecutor
-    conceptual: WorkflowExecutor
+    subject_area: WorkflowExecutor
     logical: WorkflowExecutor
     dimensional: WorkflowExecutor
     mapping: WorkflowExecutor
@@ -51,8 +51,8 @@ class WorkflowExecutionDispatcher:
                 if claim.workflow_execution_mode is None
                 else self._services.analysis_inference
             )
-        elif claim.project_workflow == "conceptual":
-            executor = self._services.conceptual
+        elif claim.project_workflow == "subject_area":
+            executor = self._services.subject_area
         elif claim.project_workflow == "logical":
             executor = self._services.logical
         elif claim.project_workflow == "dimensional":

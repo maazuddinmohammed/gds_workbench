@@ -350,7 +350,7 @@ UPDATE mcp.project_change_set AS change_set
        enrichment_document = %s,
        analysis_document = %s,
        context_document = %s,
-       conceptual_document = %s,
+       subject_area_document = %s,
        logical_document = %s,
        dimensional_document = %s,
        mapping_document = %s,

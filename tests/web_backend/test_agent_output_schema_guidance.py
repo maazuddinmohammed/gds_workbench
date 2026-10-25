@@ -12,9 +12,9 @@ from gds_etl_workbench.domain.snapshots.project import (
     CHANGE_SET_DATASETS,
     ModelingDatasetDefinition,
 )
-from gds_workbench_api.features.conceptual.candidate import _ConceptualCandidate
 from gds_workbench_api.features.dimensional.candidate import _DimensionalCandidate
 from gds_workbench_api.features.logical.candidate import _CompactLogicalCandidate
+from gds_workbench_api.features.subject_areas.candidate import _SubjectAreaAnswer
 from gds_workbench_api.features.workflows.authoring.repair import (
     enrich_agent_output_project_definitions,
 )
@@ -24,10 +24,6 @@ from pydantic import BaseModel, JsonValue
 @pytest.mark.parametrize(
     ("project", "record_definitions"),
     [
-        (
-            _ConceptualCandidate,
-            {"ConceptualObjectRecord", "ConceptualRelationshipRecord"},
-        ),
         (
             _DimensionalCandidate,
             {
@@ -72,9 +68,11 @@ def test_authorable_project_records_and_nested_fields_have_semantic_guidance(
             )
 
 
-def test_compact_logical_answer_describes_every_field() -> None:
-    # Logical answers use their own compact shape; the backend expands it into records.
-    schema = cast(dict[str, JsonValue], _CompactLogicalCandidate.model_json_schema())
+@pytest.mark.parametrize("answer", [_CompactLogicalCandidate, _SubjectAreaAnswer])
+def test_compact_answer_describes_every_field(answer: type[BaseModel]) -> None:
+    # Logical and Subject Area answers use their own compact shape; the backend expands
+    # it into records.
+    schema = cast(dict[str, JsonValue], answer.model_json_schema())
     definitions = cast(dict[str, dict[str, object]], schema["$defs"])
     for name, definition in (
         ("answer", cast(dict[str, object], schema)),

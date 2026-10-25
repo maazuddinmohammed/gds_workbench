@@ -31,7 +31,7 @@ from tests.mcp.test_database_workflow_run_lifecycle import (
 def _run(
     database: DisposablePostgres,
     *,
-    workflow: str = "conceptual",
+    workflow: str = "subject_area",
     mode: str = "one_shot",
     max_turns: int = 10,
     retries: int = 2,
@@ -45,7 +45,7 @@ def _run(
                     context,
                     correlation_id=uuid4(),
                     workflow=workflow,
-                    execution_mode=mode if workflow == "conceptual" else None,
+                    execution_mode=mode if workflow == "subject_area" else None,
                     agent_configuration=(
                         "openai_agents_sdk",
                         "microsoft_foundry",
@@ -54,7 +54,7 @@ def _run(
                         max_turns,
                         retries,
                     )
-                    if workflow == "conceptual"
+                    if workflow == "subject_area"
                     else (None, None, None, None, None, None),
                 ),
             ).fetchone()
@@ -439,7 +439,7 @@ async def test_dispatcher_records_before_terminal_transition_clears_claim(
         profiling=executor,
         analysis_inference=executor,
         analysis_validation=executor,
-        conceptual=executor,
+        subject_area=executor,
         logical=executor,
         dimensional=executor,
         mapping=executor,

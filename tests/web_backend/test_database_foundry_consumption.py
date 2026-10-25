@@ -73,7 +73,7 @@ async def test_sdk_usage_and_cost_survive_a_later_workflow_failure_and_read_repl
                 _request().model_copy(
                     update={
                         "workflow_run_id": claim.workflow_run_id,
-                        "workflow": "conceptual",
+                        "workflow": "subject_area",
                     }
                 )
             )

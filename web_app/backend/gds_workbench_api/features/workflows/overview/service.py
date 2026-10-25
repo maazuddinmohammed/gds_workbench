@@ -86,20 +86,20 @@ WITH target_project AS (
         ON context_record.project_id = target_project.project_id
     UNION ALL
     SELECT 5,
-           'conceptual',
-           count(conceptual.conceptual_object_id) FILTER (
-               WHERE conceptual.conceptual_object_status = 'active'
+           'subject_area',
+           count(area.subject_area_id) FILTER (
+               WHERE area.subject_area_status = 'active'
            )::INTEGER,
-           count(conceptual.conceptual_object_id) FILTER (
-               WHERE conceptual.conceptual_object_status = 'active'
-                 AND conceptual.conceptual_object_is_locked
+           count(area.subject_area_id) FILTER (
+               WHERE area.subject_area_status = 'active'
+                 AND area.subject_area_is_locked
            )::INTEGER,
-           max(conceptual.updated_time) FILTER (
-               WHERE conceptual.conceptual_object_status = 'active'
+           max(area.updated_time) FILTER (
+               WHERE area.subject_area_status = 'active'
            )
       FROM target_project
-      LEFT JOIN workflow.conceptual_object AS conceptual
-        ON conceptual.project_id = target_project.project_id
+      LEFT JOIN workflow.subject_area AS area
+        ON area.project_id = target_project.project_id
     UNION ALL
     SELECT 6,
            'logical',
@@ -383,7 +383,7 @@ class DatabaseWorkflowOverviewService:
                 "profiling",
                 "analysis",
                 "context",
-                "conceptual",
+                "subject_area",
                 "logical",
                 "dimensional",
             )
@@ -399,7 +399,7 @@ class DatabaseWorkflowOverviewService:
             "profiling",
             "context",
             "analysis",
-            "conceptual",
+            "subject_area",
             "logical",
             "dimensional",
             "mapping",

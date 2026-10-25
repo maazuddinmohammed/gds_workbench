@@ -9,7 +9,7 @@ Use this shared entry contract once per task, including direct skill entry. Load
 3. **Submit only through `next`.** It returns one action at a time. The user approves Stage and, separately, Apply. Earlier messages, task notes or a host confirmation never count as either approval.
 4. **Never call Stage upload tools** (`stage_*`, `begin_*`, `put_*`, `commit_*`); the server refuses them. Never override a Tenant Lock unless the user explicitly asks.
 5. **Project Input Scope and Profiling results are read-only here.** The web app manages Input Scope; backend Profiling writes profiles.
-6. **Conceptual is a standalone deliverable.** Never use it as input to Logical, Dimensional, Mapping, Code or SQL Validation work.
+6. **Subject areas decide which tables a Logical Build works on; they are not modeling evidence.** Never cite an area or its definition as a source for Logical, Dimensional, Mapping, Code or SQL Validation work.
 7. **Label evidence.** Separate measured, declared and inferred facts; a sample is not proof and unknown stays unknown. Run SQL only through `execute_databricks_sql` under the saved SQL policy and [query scope](query-scope.md).
 8. **Ask instead of guessing consequential business decisions:** grain, identity, history, cross-System matching and missing-value policy. Stop at the requested outcome.
 9. **Keep secrets and raw data out of chat and files:** no credentials, signed URLs, raw rows, prompts or tool dumps.

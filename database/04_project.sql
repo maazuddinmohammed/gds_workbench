@@ -198,7 +198,7 @@ CREATE TABLE project.project_event_log (
         REFERENCES project.project (project_id) ON DELETE NO ACTION,
     CONSTRAINT ck_project_event_log_workflow CHECK (
         project_workflow IN (
-            'profiling', 'analysis', 'conceptual',
+            'profiling', 'analysis', 'subject_area',
             'logical', 'dimensional', 'mapping',
             'code_generation', 'validation', 'metadata_enrichment', 'dbml'
         )

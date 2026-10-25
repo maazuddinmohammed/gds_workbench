@@ -27,8 +27,8 @@ def _selection(*, sdk_code: str = "openai_agents_sdk") -> AgentRunSelection:
 def _request(*, sdk_code: str = "openai_agents_sdk") -> AgentExecutionRequest:
     return AgentExecutionRequest(
         workflow_run_id=1048,
-        workflow="conceptual",
-        stage="object_contribution",
+        workflow="subject_area",
+        stage="candidate_authoring",
         execution_mode="one_shot",
         selection=_selection(sdk_code=sdk_code),
         system_prompt="sensitive-system-prompt",

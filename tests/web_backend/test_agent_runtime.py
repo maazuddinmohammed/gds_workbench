@@ -27,10 +27,17 @@ from gds_workbench_api.features.mapping.complete_candidate import (
 from gds_workbench_api.features.mapping.execution_context import (
     build_mapping_execution_context,
 )
+from gds_workbench_api.features.subject_areas import SubjectAreaCandidateValidator
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
     LocalAgentToolCatalog,
     LocalAgentToolDefinition,
+)
+from gds_workbench_api.features.workflows.authoring.context_contracts import (
+    INPUT_EXAMPLES,
+)
+from gds_workbench_api.features.workflows.authoring.context_readers import (
+    FrozenContextReaders,
 )
 from gds_workbench_api.integrations.agents import (
     create_agent_execution_router,
@@ -205,10 +212,10 @@ def _tool_assisted_mapping_request(
     )
 
 
-def _conceptual_request(*, sdk_code: str) -> AgentExecutionRequest:
+def _subject_area_request(*, sdk_code: str) -> AgentExecutionRequest:
     return AgentExecutionRequest(
         workflow_run_id=1048,
-        workflow="conceptual",
+        workflow="subject_area",
         stage="candidate_authoring",
         execution_mode="one_shot",
         selection=_selection(sdk_code=sdk_code),
@@ -216,19 +223,22 @@ def _conceptual_request(*, sdk_code: str) -> AgentExecutionRequest:
         instruction_prompt="private instruction prompt",
         context={
             "original_context": {
-                "selected_objects": [
-                    {
-                        "selection_order": 1,
-                        "object": {
-                            "tenant_code": "NWA",
-                            "system_code": "CRM",
-                            "connection_code": "SOURCE",
-                            "object_schema": "bronze",
-                            "object_name": "customer_raw",
-                        },
-                        "attributes": [],
-                    }
-                ]
+                "prompt_inputs": {
+                    "scope_tables": [
+                        {
+                            "table": f"t{position}",
+                            "description": "private table context",
+                            "zone_code": "bronze",
+                            "row_count": None,
+                            "column_count": count,
+                            "column_names": [
+                                f"column_{index}" for index in range(count)
+                            ],
+                        }
+                        for position, count in enumerate((200, 150, 400), start=1)
+                    ],
+                    "max_subject_area_columns": 300,
+                }
             },
             "repair": None,
         },
@@ -237,61 +247,31 @@ def _conceptual_request(*, sdk_code: str) -> AgentExecutionRequest:
     )
 
 
-class _ConceptualCatalog:
-    max_cumulative_result_bytes = 64 * 1024
-    definitions = (
-        LocalAgentToolDefinition(
-            name="get_agent_context_manifest",
-            description="Return the local context manifest.",
-            input_schema={
-                "type": "object",
-                "properties": {},
-                "additionalProperties": False,
+_CONTEXT_DATASET_TOOLS = (
+    LocalAgentToolDefinition(
+        name="get_agent_context_manifest",
+        description="Return the local context manifest.",
+        input_schema={
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+    ),
+    LocalAgentToolDefinition(
+        name="get_agent_context_dataset",
+        description="Return one bounded local context page.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "dataset": {"type": "string"},
+                "offset": {"type": "integer", "minimum": 0},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 200},
             },
-        ),
-        LocalAgentToolDefinition(
-            name="get_agent_context_dataset",
-            description="Return one bounded local context page.",
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "dataset": {"type": "string"},
-                    "offset": {"type": "integer", "minimum": 0},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 200},
-                },
-                "required": ["dataset", "offset", "limit"],
-                "additionalProperties": False,
-            },
-        ),
-    )
-
-    def invoke(
-        self,
-        tool_name: str,
-        arguments: Mapping[str, JsonValue],
-    ) -> JsonValue:
-        if tool_name == "get_agent_context_manifest":
-            assert arguments == {}
-            return {"dataset_counts": {"selected_object": 1}}
-        assert tool_name == "get_agent_context_dataset"
-        assert arguments == {"dataset": "selected_object", "offset": 0, "limit": 1}
-        return {
-            "dataset": "selected_object",
-            "total_count": 1,
-            "offset": 0,
-            "items": [
-                {
-                    "selection_order": 1,
-                    "tenant_code": "NWA",
-                    "system_code": "CRM",
-                    "connection_code": "SOURCE",
-                    "object_schema": "bronze",
-                    "object_name": "customer_raw",
-                    "attribute_count": 0,
-                }
-            ],
-            "next_offset": None,
-        }
+            "required": ["dataset", "offset", "limit"],
+            "additionalProperties": False,
+        },
+    ),
+)
 
 
 _CUSTOMER_TABLE_INDEX: list[JsonValue] = [
@@ -308,7 +288,7 @@ _CUSTOMER_TABLE_INDEX: list[JsonValue] = [
 
 class _LogicalCatalog:
     max_cumulative_result_bytes = 64 * 1024
-    definitions = _ConceptualCatalog.definitions
+    definitions = _CONTEXT_DATASET_TOOLS
     prompt_values: dict[str, JsonValue] = {"table_index": _CUSTOMER_TABLE_INDEX}
 
     def invoke(
@@ -363,7 +343,7 @@ class _LogicalCatalog:
 class _PaginatedDimensionalCatalog:
     max_cumulative_result_bytes = 64 * 1024
     definitions = (
-        _ConceptualCatalog.definitions[0],
+        _CONTEXT_DATASET_TOOLS[0],
         LocalAgentToolDefinition(
             name="get_agent_context_dataset",
             description="Return one bounded local context page.",
@@ -427,11 +407,18 @@ class _PaginatedDimensionalCatalog:
         }
 
 
-def _tool_assisted_conceptual_request(*, sdk_code: str) -> AgentExecutionRequest:
-    catalog = _ConceptualCatalog()
+def _tool_assisted_subject_area_request(*, sdk_code: str) -> AgentExecutionRequest:
+    # Real frozen readers, one record per page; the context itself names no tables.
+    catalog = FrozenContextReaders(
+        workflow="subject_area",
+        values=INPUT_EXAMPLES["subject_area"],
+        max_result_bytes=64 * 1024,
+        max_page_records=1,
+        max_cumulative_result_bytes=64 * 1024,
+    )
     return AgentExecutionRequest(
         workflow_run_id=1048,
-        workflow="conceptual",
+        workflow="subject_area",
         stage="candidate_authoring",
         execution_mode="tool_assisted",
         selection=_selection(sdk_code=sdk_code),
@@ -439,7 +426,7 @@ def _tool_assisted_conceptual_request(*, sdk_code: str) -> AgentExecutionRequest
         instruction_prompt="private instruction prompt",
         tool_instruction="Use the local tools.",
         context={
-            "original_context": {"dataset_counts": {"selected_object": 1}},
+            "original_context": {"dataset_counts": {"selected_object": 2}},
             "repair": None,
         },
         output_schema={"type": "object"},
@@ -837,7 +824,7 @@ async def test_local_fake_returns_exact_code_generation_target_coverage(
     "sdk_code",
     ("openai_agents_sdk",),
 )
-async def test_local_fake_returns_bounded_conceptual_candidate(
+async def test_local_fake_returns_bounded_subject_area_candidate(
     sdk_code: str,
 ) -> None:
     router = create_agent_execution_router(
@@ -849,21 +836,34 @@ async def test_local_fake_returns_bounded_conceptual_candidate(
         capabilities=load_default_agent_capabilities(),
     )
 
-    result = await router.execute(_conceptual_request(sdk_code=sdk_code))
+    result = await router.execute(_subject_area_request(sdk_code=sdk_code))
 
-    candidate = result.candidate
-    assert isinstance(candidate, dict)
-    assert candidate["relationships"] == []
-    objects = cast(list[dict[str, JsonValue]], candidate["objects"])
-    supports = cast(list[dict[str, JsonValue]], objects[0]["supports"])
-    assert supports[0]["source_object"] == {
-        "tenant_code": "NWA",
-        "system_code": "CRM",
-        "connection_code": "SOURCE",
-        "object_schema": "bronze",
-        "object_name": "customer_raw",
-    }
-    assert "private" not in repr(result)
+    # Tables pack in order within the column cap; an oversized table stays unassigned.
+    candidate = cast(dict[str, JsonValue], result.candidate)
+    areas = cast(list[dict[str, JsonValue]], candidate["areas"])
+    assert [(area["name"], area["tables"]) for area in areas] == [
+        ("Business Area 1", ["t1"]),
+        ("Business Area 2", ["t2"]),
+    ]
+    assert candidate["unassigned"] == ["t3"]
+    assert candidate["retire"] == []
+    validator = SubjectAreaCandidateValidator(
+        selected_object_keys=tuple(
+            PhysicalObjectKey(
+                tenant_code="NWA",
+                system_code="CRM",
+                connection_code="SOURCE",
+                object_schema="bronze",
+                object_name=f"table_{position}",
+            )
+            for position in range(1, 4)
+        ),
+        column_counts=(200, 150, 400),
+        applied=None,
+        max_subject_area_columns=300,
+    )
+    assert (await validator.validate(result.candidate)).issues == ()
+    assert "private" not in repr(result) + repr(candidate)
     assert result.tool_call_count == 0
 
 
@@ -964,14 +964,15 @@ async def test_local_fake_uses_only_the_tool_assisted_catalog(
         capabilities=load_default_agent_capabilities(),
     )
 
-    result = await router.execute(_tool_assisted_conceptual_request(sdk_code=sdk_code))
-
-    candidate = cast(dict[str, JsonValue], result.candidate)
-    objects = cast(list[dict[str, JsonValue]], candidate["objects"])
-    supports = cast(list[dict[str, JsonValue]], objects[0]["supports"])
-    assert cast(dict[str, JsonValue], supports[0]["source_object"])["object_name"] == (
-        "customer_raw"
+    result = await router.execute(
+        _tool_assisted_subject_area_request(sdk_code=sdk_code)
     )
+
+    # The tables come only from the paged get_scope_tables reader.
+    candidate = cast(dict[str, JsonValue], result.candidate)
+    areas = cast(list[dict[str, JsonValue]], candidate["areas"])
+    assert [area["tables"] for area in areas] == [["t1", "t2"]]
+    assert candidate["unassigned"] == []
     assert result.tool_call_count == 2
 
 

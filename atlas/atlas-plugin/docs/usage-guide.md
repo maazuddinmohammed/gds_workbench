@@ -108,13 +108,14 @@ edits shared physical metadata.
 ### Build the models
 
 Each layer builds on applied work: a dimensional model needs an applied logical
-model. The conceptual model is optional, and nothing else uses it.
+model. Subject areas group the scoped tables by business capability so each logical
+build works on a manageable set; they are optional and never evidence.
 
 ```text
 Build the logical model from the current scope. SQL policy: Never.
 Build the dimension [Dim Customer] from the applied logical entity [Customer]. Dimension only.
 Grill me on the [Order] grain.
-Build the conceptual model for the scoped sources. Conceptual only.
+Group the scoped tables into subject areas. Subject areas only.
 ```
 
 For a logical model, Atlas checks coverage of the scoped tables and columns,

@@ -151,11 +151,18 @@ def complete_project_graph(
                 "is_locked": False,
             }
         ],
-        "conceptual_object": [
-            conceptual_object("Order", "transaction", source_order),
-            conceptual_object("Customer", "party", source_customer),
+        "subject_area": [
+            {
+                "subject_area_name": "Sales",
+                "subject_area_definition": "Customer orders and the customers who place them.",
+                "subject_area_status": "active",
+                "subject_area_is_locked": False,
+            }
         ],
-        "conceptual_relationship": [conceptual_relationship()],
+        "subject_area_table": [
+            subject_area_table("Sales", source_order),
+            subject_area_table("Sales", source_customer),
+        ],
         "logical_submodel": [
             {
                 "logical_submodel_name": "Sales",
@@ -288,58 +295,12 @@ def project_details(project_name: str = "SalesProject") -> dict[str, object]:
     }
 
 
-def conceptual_object(
-    name: str,
-    object_type: str,
-    source: dict[str, object],
-) -> dict[str, object]:
+def subject_area_table(area: str, source: dict[str, object]) -> dict[str, object]:
     return {
-        "conceptual_object_name": name,
-        "conceptual_object_definition": f"Business concept for {name}.",
-        "conceptual_object_type": object_type,
-        "conceptual_object_grain": f"One {name}.",
-        "conceptual_object_aliases": [],
-        "conceptual_object_status": "active",
-        "conceptual_object_is_locked": False,
-        "supports": [
-            {
-                "support_source_type": "object",
-                "source_object": source,
-                "support_role": "evidence",
-                "support_reason": "The source represents the concept.",
-                "support_reason_detail": None,
-                "support_status": "active",
-                "support_is_locked": False,
-            }
-        ],
-    }
-
-
-def conceptual_relationship() -> dict[str, object]:
-    return {
-        "from_conceptual_object_name": "Order",
-        "to_conceptual_object_name": "Customer",
-        "conceptual_relationship_name": "OrderBelongsToCustomer",
-        "conceptual_relationship_type": "association",
-        "conceptual_relationship_definition": "An Order belongs to a Customer.",
-        "conceptual_relationship_cardinality": "many_to_one",
-        "conceptual_relationship_basis": "Approved business rule.",
-        "conceptual_relationship_cardinality_basis": "Many Orders per Customer.",
-        "conceptual_relationship_status": "active",
-        "conceptual_relationship_is_locked": False,
-        "supports": [context_support()],
-    }
-
-
-def context_support() -> dict[str, object]:
-    return {
-        "support_source_type": "context_record",
-        "context_record": {"context_record_id": "00000000-0000-4000-8000-000000000001"},
-        "support_role": "cardinality",
-        "support_reason": "The rule defines the relationship.",
-        "support_reason_detail": None,
-        "support_status": "active",
-        "support_is_locked": False,
+        "subject_area_name": area,
+        **source,
+        "subject_area_table_status": "active",
+        "subject_area_table_is_locked": False,
     }
 
 
@@ -599,9 +560,9 @@ def snapshot_from_graph(
                 "groups": rows("context_group"),
                 "records": rows("context_record"),
             },
-            "conceptual": {
-                "objects": rows("conceptual_object"),
-                "relationships": rows("conceptual_relationship"),
+            "subject_area": {
+                "areas": rows("subject_area"),
+                "tables": rows("subject_area_table"),
             },
             "logical": {
                 "submodels": rows("logical_submodel"),

@@ -104,7 +104,7 @@ async def test_lifecycle_uses_governed_functions_with_server_identity() -> None:
         tenant_id=7,
         project_id=18,
         workflow_run_id=1048,
-        expected_workflow="conceptual",
+        expected_workflow="subject_area",
         expected_execution_mode="one_shot",
         expected_project_revision=7,
     )
@@ -143,7 +143,7 @@ async def test_lifecycle_uses_governed_functions_with_server_identity() -> None:
         7,
         18,
         1048,
-        "conceptual",
+        "subject_area",
         "one_shot",
     )
     assert database.transaction.calls[1][1] == identity + (1048, 7)
@@ -178,7 +178,7 @@ async def test_lifecycle_maps_tenant_workflow_conflict() -> None:
             tenant_id=7,
             project_id=18,
             workflow_run_id=1048,
-            expected_workflow="conceptual",
+            expected_workflow="subject_area",
             expected_execution_mode="one_shot",
             expected_project_revision=7,
         )

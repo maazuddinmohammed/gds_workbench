@@ -76,7 +76,7 @@ cardinality from measured validation instead of overwriting one with the other.
 ## Project, Lane and portable Context contracts
 
 `project.project` owns modeling work. `core.lane` groups Tenants; its foreign keys
-use `lane_id`. Conceptual, Logical and Dimensional models, AI model identifiers,
+use `lane_id`. Logical and Dimensional models, AI model identifiers,
 provider settings and library model APIs retain their technical meanings.
 
 Project and Metadata Snapshots use schema version 3.0. Project Change Set results
@@ -98,8 +98,7 @@ active evidence without treating a Context Record as proof of physical lineage.
 ## Logical-style Dimensional fields and evidence
 
 Workflow records omit AI-assigned confidence fields. Analysis retains inference
-reasoning and independently measured validation; Conceptual support retains its
-source, role and reason.
+reasoning and independently measured validation.
 
 Dimensional Attributes share Logical's natural-key, surrogate-key and audit flags.
 Natural and surrogate flags are mutually exclusive; either requires non-nullable
@@ -144,10 +143,16 @@ populated-database migration.
 
 ## Partial authoring and protected work
 
-Conceptual is a standalone deliverable across web and Atlas. Neither Logical nor
-Dimensional authoring consumes its objects, relationships or pending local records.
-Their prompt variables/readers and default prompts expose only eligible evidence;
-Conceptual is not a prerequisite or an overview quality warning for either layer.
+Subject Areas replace the former Conceptual model. An area is a named business
+capability over the active Bronze Input Scope; a table may belong to several. Areas
+decide which tables a Logical Build works on and are never modeling evidence: no
+Logical or Dimensional prompt variable, reader or Atlas task input carries them, and
+they are not a prerequisite or an overview quality warning. A Subject Area run always
+covers the whole Bronze scope (the backend rejects a partial selection), answers with
+table ids, and the backend checks every id, keeps locks, accounts for every table and
+caps each area at `max_subject_area_columns` (300, `config/subject_areas.json`) so one
+Logical Build fits one answer. Unassigned tables are worked out, not stored. Human edits
+use one save command per area that applies at once; a rename keeps the old area inactive.
 Logical uses physical inputs; Dimensional continues to consume Logical outputs.
 The complete snapshot stays private for final graph validation. Logical candidates
 default to 70% coverage of distinct physical Objects selected for the run through active
@@ -305,7 +310,7 @@ contracts, not populated-database migrations.
 ## Atlas task workflows and context disclosure
 
 Atlas 0.2 organizes agent instructions by requested outcome: investigation, source analysis,
-conceptual/logical/dimensional design, mapping, code, verification, project changes,
+subject areas, logical/dimensional design, mapping, code, verification, project changes,
 physical metadata and registration. The entry skill routes these tasks; Guided and
 Grill Me share the same modeling skill and records. Shared context is minimal;
 platform knowledge, domain methods, tool procedures and evidence formats load on demand.

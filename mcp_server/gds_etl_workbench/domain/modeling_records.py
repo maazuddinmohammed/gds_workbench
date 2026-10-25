@@ -436,94 +436,32 @@ class ContextRecord(ContextRecordReference):
         return value
 
 
-class ObjectSupportRecord(ModelingRecord):
-    support_source_type: Literal["object"]
-    source_object: PhysicalObjectKey
-    support_role: (
-        Annotated[
-            str,
-            StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
-        ]
-        | None
-    )
-    support_reason: NonblankText
-    support_reason_detail: NonblankText | None
-    support_status: Status
-    support_is_locked: bool
+class SubjectAreaRecord(ModelingRecord):
+    """One named focus window over Input Scope tables; not a separate model."""
 
-
-class ContextSupportRecord(ModelingRecord):
-    support_source_type: Literal["context_record"]
-    context_record: ContextRecordReference
-    support_role: (
-        Annotated[
-            str,
-            StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
-        ]
-        | None
-    )
-    support_reason: NonblankText
-    support_reason_detail: NonblankText | None
-    support_status: Status
-    support_is_locked: bool
-
-
-type SupportRecord = Annotated[
-    ObjectSupportRecord | ContextSupportRecord,
-    Field(discriminator="support_source_type"),
-]
-
-
-class ConceptualObjectRecord(ModelingRecord):
-    conceptual_object_name: Annotated[
+    subject_area_name: Annotated[
         str,
         StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
     ]
-    conceptual_object_definition: NonblankText
-    conceptual_object_type: Code100
-    conceptual_object_grain: NonblankText
-    conceptual_object_aliases: tuple[str, ...]
-    conceptual_object_status: Status
-    conceptual_object_is_locked: bool
-    supports: tuple[SupportRecord, ...]
-
-    @model_validator(mode="after")
-    def validate_nested_keys(self) -> ConceptualObjectRecord:
-        _require_unique(self.conceptual_object_aliases, "Conceptual Object aliases")
-        _require_unique_sources(self.supports, "Conceptual Object supports")
-        return self
+    subject_area_definition: NonblankText
+    subject_area_status: Status
+    subject_area_is_locked: bool
 
 
-class ConceptualRelationshipRecord(ModelingRecord):
-    from_conceptual_object_name: Annotated[
+class SubjectAreaTableRecord(ModelingRecord):
+    """One Input Scope table in one Subject Area; a table may sit in several areas."""
+
+    subject_area_name: Annotated[
         str,
         StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
     ]
-    to_conceptual_object_name: Annotated[
-        str,
-        StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
-    ]
-    conceptual_relationship_name: Annotated[
-        str,
-        StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
-    ]
-    conceptual_relationship_type: Code100
-    conceptual_relationship_definition: NonblankText
-    conceptual_relationship_cardinality: Cardinality | Literal["unknown"]
-    conceptual_relationship_basis: NonblankText
-    conceptual_relationship_cardinality_basis: NonblankText
-    conceptual_relationship_status: Status
-    conceptual_relationship_is_locked: bool
-    supports: tuple[SupportRecord, ...]
-
-    @model_validator(mode="after")
-    def validate_relationship(self) -> ConceptualRelationshipRecord:
-        if normalize_project_key_value(
-            self.from_conceptual_object_name
-        ) == normalize_project_key_value(self.to_conceptual_object_name):
-            raise ValueError("Conceptual Relationship endpoints must be different.")
-        _require_unique_sources(self.supports, "Conceptual Relationship supports")
-        return self
+    tenant_code: Code100
+    system_code: Code100
+    connection_code: Code100
+    object_schema: Name400
+    object_name: Name400
+    subject_area_table_status: Status
+    subject_area_table_is_locked: bool
 
 
 class SubmodelMembershipRecord(ModelingRecord):

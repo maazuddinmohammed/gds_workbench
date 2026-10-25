@@ -104,9 +104,9 @@ screens. Manual sections have neutral indicators. Workflow statuses come from ex
 backend section states, not record counts or guesses. Distinguish Completed from
 Results available; loading/conflicts never imply Not run. Keep every section clickable.
 Separate neutral setup sections from three navigation groups:
-Profiling / Enrichment / Analysis; Conceptual / Logical / Dimensional;
+Profiling / Enrichment / Analysis; Subject areas / Logical / Dimensional;
 Mapping / Code generation / Validation. These groups organize navigation, not workflow
-prerequisites: Conceptual is standalone; Dimensional consumes Logical. Gaps between
+prerequisites: Subject areas only choose tables; Dimensional consumes Logical. Gaps between
 groups interrupt the connector line without interrupting keyboard navigation.
 Profiling stays before Enrichment.
 

@@ -105,25 +105,38 @@ def test_direct_project_writes_do_not_require_workflow_provenance(
                 ),
             ).fetchone()
         )["analysis_result_id"]
-        conceptual_object_id = require_row(
+        subject_area_id = require_row(
             connection.execute(
                 """
-            INSERT INTO workflow.conceptual_object (
+            INSERT INTO workflow.subject_area (
                 project_id,
                 agent_run_id,
                 workflow_run_id,
-                conceptual_object_name,
-                conceptual_object_definition,
-                conceptual_object_type,
-                conceptual_object_grain
+                subject_area_name,
+                subject_area_definition
             )
-            VALUES (%s, NULL, NULL, 'Customer', 'A customer concept.',
-                    'business_object', 'One customer')
-            RETURNING conceptual_object_id
+            VALUES (%s, NULL, NULL, 'Customers', 'Customer tables.')
+            RETURNING subject_area_id
             """,
                 (project_id,),
             ).fetchone()
-        )["conceptual_object_id"]
+        )["subject_area_id"]
+        subject_area_table_id = require_row(
+            connection.execute(
+                """
+            INSERT INTO workflow.subject_area_table (
+                project_id,
+                agent_run_id,
+                workflow_run_id,
+                subject_area_id,
+                object_id
+            )
+            VALUES (%s, NULL, NULL, %s, %s)
+            RETURNING subject_area_table_id
+            """,
+                (project_id, subject_area_id, bronze["object_id"]),
+            ).fetchone()
+        )["subject_area_table_id"]
         logical_entity_id = require_row(
             connection.execute(
                 """
@@ -195,9 +208,13 @@ def test_direct_project_writes_do_not_require_workflow_provenance(
               FROM workflow.analysis_result
              WHERE analysis_result_id = %s
             UNION ALL
-            SELECT 'conceptual', agent_run_id, workflow_run_id, NULL
-              FROM workflow.conceptual_object
-             WHERE conceptual_object_id = %s
+            SELECT 'subject_area', agent_run_id, workflow_run_id, NULL
+              FROM workflow.subject_area
+             WHERE subject_area_id = %s
+            UNION ALL
+            SELECT 'subject_area_table', agent_run_id, workflow_run_id, NULL
+              FROM workflow.subject_area_table
+             WHERE subject_area_table_id = %s
             UNION ALL
             SELECT 'logical', agent_run_id, workflow_run_id, NULL
               FROM workflow.logical_entity
@@ -214,7 +231,8 @@ def test_direct_project_writes_do_not_require_workflow_provenance(
             """,
             (
                 analysis_result_id,
-                conceptual_object_id,
+                subject_area_id,
+                subject_area_table_id,
                 logical_entity_id,
                 dimensional_entity_id,
                 mapping_object_id,
@@ -223,10 +241,11 @@ def test_direct_project_writes_do_not_require_workflow_provenance(
 
     assert [row["artifact_type"] for row in provenance] == [
         "analysis",
-        "conceptual",
         "dimensional",
         "logical",
         "mapping",
+        "subject_area",
+        "subject_area_table",
     ]
     assert all(row["agent_run_id"] is None for row in provenance)
     assert all(row["workflow_run_id"] is None for row in provenance)

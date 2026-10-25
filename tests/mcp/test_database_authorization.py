@@ -438,62 +438,6 @@ def test_project_change_set_uses_context_contract_names(
         assert "evidence" not in constraint["definition"]
 
 
-def test_conceptual_support_accepts_a_context_record_source(
-    postgres_database: DisposablePostgres,
-) -> None:
-    with postgres_database.connect_owner() as connection:
-        project_id, context_record_id = _seed_project_context(
-            connection,
-            tenant_code="CONTEXT_SUPPORT",
-            project_name="Context Support Project",
-            group_name="Architecture Notes",
-            context_text="Orders belong to customers.",
-        )
-        conceptual_object = connection.execute(
-            """
-            INSERT INTO workflow.conceptual_object (
-                project_id,
-                conceptual_object_name,
-                conceptual_object_definition,
-                conceptual_object_type,
-                conceptual_object_grain
-            )
-            VALUES (%s, 'Order', 'A customer order.', 'business_object', 'One order')
-            RETURNING conceptual_object_id
-            """,
-            (project_id,),
-        ).fetchone()
-        assert conceptual_object is not None
-        support = connection.execute(
-            """
-            INSERT INTO workflow.conceptual_support (
-                project_id,
-                supported_artifact_type,
-                conceptual_object_id,
-                support_source_type,
-                context_record_id,
-                conceptual_support_reason
-            )
-            VALUES (%s, 'conceptual_object', %s, 'context_record', %s,
-                    'The Context Record establishes the business concept.')
-            RETURNING support_source_type,
-                      source_object_id,
-                      context_record_id
-            """,
-            (
-                project_id,
-                conceptual_object["conceptual_object_id"],
-                context_record_id,
-            ),
-        ).fetchone()
-
-    assert support == {
-        "support_source_type": "context_record",
-        "source_object_id": None,
-        "context_record_id": context_record_id,
-    }
-
-
 def test_logical_entity_source_accepts_a_context_record(
     postgres_database: DisposablePostgres,
 ) -> None:

@@ -50,7 +50,7 @@ describe("Workflow Run monitor", () => {
     expect(within(timing).getByText("Duration").nextElementSibling).toHaveTextContent(duration);
   });
 
-  it.each(["analysis", "conceptual", "logical", "dimensional", "mapping", "code_generation", "validation", "metadata_enrichment"] as const)(
+  it.each(["analysis", "subject_area", "logical", "dimensional", "mapping", "code_generation", "validation", "metadata_enrichment"] as const)(
     "cancels a running %s run and refreshes its saved status", async (workflow) => {
       const api = monitorApi();
       const run: WorkflowRunDetail = { ...workflowRun(false), project_workflow: workflow,
@@ -107,7 +107,7 @@ describe("Workflow Run monitor", () => {
   it("requires a Tenant Lock for cancellation", async () => {
     const api = monitorApi();
     api.readWorkflowRun.mockResolvedValue({ ...workflowRun(false), workflow_run_state: "running" });
-    renderMonitor(api, vi.fn(async () => undefined), "conceptual", 1048, undefined, false);
+    renderMonitor(api, vi.fn(async () => undefined), "subject_area", 1048, undefined, false);
     expect(await screen.findByRole("button", { name: "Cancel run" })).toBeDisabled();
     expect(api.cancelWorkflowRun).not.toHaveBeenCalled();
   });
@@ -118,12 +118,12 @@ describe("Workflow Run monitor", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><WorkflowCommandCenter className="test-page">
       <WorkflowCommandTools />
-      <WorkflowRunMonitor api={api} tenantId={7} projectId={18} projectRevision={5} workflow="conceptual"
+      <WorkflowRunMonitor api={api} tenantId={7} projectId={18} projectRevision={5} workflow="subject_area"
         hasTenantLock={false} focusRunId={null} onApplied={async () => undefined} />
     </WorkflowCommandCenter></QueryClientProvider>);
     await waitFor(() => expect(api.listWorkflowRuns).toHaveBeenCalledOnce());
     expect(api.readWorkflowRun).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "Show Conceptual run activity" }));
+    await user.click(screen.getByRole("button", { name: "Show Subject Areas run activity" }));
     await screen.findByRole("article", { name: "Run 1048 details" });
     await user.click(screen.getByRole("button", { name: "Draft" }));
     expect(await screen.findByRole("button", { name: "Apply validated draft" })).toBeDisabled();
@@ -136,8 +136,8 @@ describe("Workflow Run monitor", () => {
     await waitFor(() => expect(api.readWorkflowRun.mock.calls.length).toBeGreaterThan(reads));
     api.listWorkflowRuns.mockResolvedValue({ items: [], next_cursor: null });
     await user.selectOptions(screen.getByRole("combobox", { name: "Run state" }), "failed");
-    await screen.findByText("No recent Conceptual runs.");
-    expect(api.listWorkflowRuns).toHaveBeenLastCalledWith(7, 18, "conceptual", "failed", 5, undefined);
+    await screen.findByText("No recent Subject Areas runs.");
+    expect(api.listWorkflowRuns).toHaveBeenLastCalledWith(7, 18, "subject_area", "failed", 5, undefined);
     await user.type(screen.getByRole("spinbutton", { name: "Run ID" }), "1048");
     await user.click(screen.getByRole("button", { name: "Open run" }));
     expect(await screen.findByRole("article", { name: "Run 1048 details" })).toBeVisible();
@@ -347,8 +347,8 @@ describe("Workflow Run monitor", () => {
     api.readWorkflowRun.mockResolvedValue(run);
     api.readWorkflowDraftReview.mockImplementation(async (_tenant, _project, _id, dataset) => ({
       ...review, dataset: dataset ?? null,
-      records: dataset ? [{ conceptual_object_name: "Customer", conceptual_object_definition: "A customer account." },
-        { conceptual_object_name: "Purchase", conceptual_object_definition: "An order placed by a customer." }] : null,
+      records: dataset ? [{ subject_area_name: "Customer", subject_area_definition: "A customer account." },
+        { subject_area_name: "Purchase", subject_area_definition: "An order placed by a customer." }] : null,
     }));
     renderMonitor(api, vi.fn(async () => undefined));
     expect(await screen.findByRole("table", { name: "Validation error groups" })).toHaveTextContent("active dependency invalid");
@@ -356,12 +356,12 @@ describe("Workflow Run monitor", () => {
     expect(screen.getByText(/Group counts include all validation errors/)).toBeVisible();
     expect(screen.queryByRole("button", { name: "Apply validated draft" })).not.toBeInTheDocument();
     expect(api.readWorkflowDraftReview).toHaveBeenCalledTimes(1);
-    await user.click(screen.getByRole("button", { name: "Inspect conceptual object record 2" }));
-    const record = await screen.findByRole("article", { name: "Generated conceptual object record 2" });
+    await user.click(screen.getByRole("button", { name: "Inspect subject area record 2" }));
+    const record = await screen.findByRole("article", { name: "Generated subject area record 2" });
     expect(record).toHaveTextContent("An order placed by a customer.");
-    expect(api.readWorkflowDraftReview).toHaveBeenLastCalledWith(7, 18, run.project_change_set_id, "conceptual_object");
+    expect(api.readWorkflowDraftReview).toHaveBeenLastCalledWith(7, 18, run.project_change_set_id, "subject_area");
     await user.click(screen.getByRole("button", { name: "Previous record" }));
-    expect(screen.getByRole("article", { name: "Generated conceptual object record 1" })).toHaveTextContent("A customer account.");
+    expect(screen.getByRole("article", { name: "Generated subject area record 1" })).toHaveTextContent("A customer account.");
     expect(api.applyWorkflowDraft).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Refresh runs" }));
     await waitFor(() => expect(api.readWorkflowDraftReview).toHaveBeenCalledTimes(4));
@@ -377,14 +377,14 @@ describe("Workflow Run monitor", () => {
       api.readWorkflowDraftReview.mockImplementation(async (_tenant, _project, _id, dataset) => {
         if (!dataset) return review;
         if (reason === "unavailable") throw new Error("Unavailable");
-        return { ...review, dataset, records: [{ conceptual_object_definition: "Stale content must be hidden." }],
+        return { ...review, dataset, records: [{ subject_area_definition: "Stale content must be hidden." }],
           ...(reason === "wrong revision" ? { draft_revision: 99 } : {}),
           ...(reason === "wrong project" ? { project_id: 99 } : {}),
           ...(reason === "expired" ? { expires_at: "2020-01-01T00:00:00Z" } : {}),
         };
       });
       renderMonitor(api, vi.fn(async () => undefined));
-      await user.selectOptions(await screen.findByLabelText("Inspect generated dataset"), "conceptual_object");
+      await user.selectOptions(await screen.findByLabelText("Inspect generated dataset"), "subject_area");
       expect(await screen.findByText(/Generated records could not be loaded or the draft changed/)).toBeVisible();
       expect(screen.queryByText("Stale content must be hidden.")).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Apply validated draft" })).not.toBeInTheDocument();
@@ -404,15 +404,15 @@ describe("Workflow Run monitor", () => {
 
   it("keeps recent-run status and Refresh available in a compact monitor by default", async () => {
     const api = monitorApi();
-    renderMonitor(api, vi.fn(async () => undefined), "conceptual", null);
+    renderMonitor(api, vi.fn(async () => undefined), "subject_area", null);
 
-    const monitor = screen.getByRole("region", { name: "Conceptual recent runs" });
+    const monitor = screen.getByRole("region", { name: "Subject Areas recent runs" });
     const toggle = within(monitor).getByRole("button", {
-      name: "Show Conceptual run activity",
+      name: "Show Subject Areas run activity",
     });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(toggle).toHaveAttribute("aria-controls");
-    const summary = await within(monitor).findByLabelText("Latest Conceptual run");
+    const summary = await within(monitor).findByLabelText("Latest Subject Areas run");
     expect(within(summary).getByText("Run 1048")).toBeVisible();
     expect(within(summary).getByText(/completed/i)).toBeVisible();
     expect(within(monitor).getByRole("button", { name: /Refresh/ })).toBeVisible();
@@ -424,7 +424,7 @@ describe("Workflow Run monitor", () => {
     const user = userEvent.setup();
     renderMonitor(api, vi.fn(async () => undefined));
 
-    const hide = screen.getByRole("button", { name: "Hide Conceptual run activity" });
+    const hide = screen.getByRole("button", { name: "Hide Subject Areas run activity" });
     const bodyId = hide.getAttribute("aria-controls");
     expect(hide).toHaveAttribute("aria-expanded", "true");
     expect(bodyId).not.toBeNull();
@@ -432,14 +432,14 @@ describe("Workflow Run monitor", () => {
     expect(await screen.findByRole("article", { name: "Run 1048 details" })).toBeVisible();
 
     await user.click(hide);
-    const show = screen.getByRole("button", { name: "Show Conceptual run activity" });
+    const show = screen.getByRole("button", { name: "Show Subject Areas run activity" });
     expect(show).toHaveAttribute("aria-expanded", "false");
     expect(document.getElementById(bodyId as string)).toHaveAttribute("hidden");
     expect(screen.queryByRole("article", { name: "Run 1048 details" })).not.toBeInTheDocument();
 
     await user.click(show);
     expect(screen.getByRole("button", {
-      name: "Hide Conceptual run activity",
+      name: "Hide Subject Areas run activity",
     })).toHaveAttribute("aria-expanded", "true");
     expect(await screen.findByRole("article", { name: "Run 1048 details" })).toBeVisible();
   });
@@ -447,31 +447,31 @@ describe("Workflow Run monitor", () => {
   it("expands when a newly started run becomes the focused run", async () => {
     const api = monitorApi();
     const readOverview = vi.fn<ProjectsApi["readProjectOverview"]>().mockResolvedValue({
-      project_id: 18, project_revision: 5, items: [], section_states: [{ section: "conceptual", state: "not_run" }],
+      project_id: 18, project_revision: 5, items: [], section_states: [{ section: "subject-area", state: "not_run" }],
     });
     api.listWorkflowRuns.mockResolvedValue({ items: [workflowRun(false), { ...workflowRun(false), workflow_run_id: 1047 }], next_cursor: null });
     api.readWorkflowRun.mockImplementation(async (_tenant, _project, id) => ({ ...workflowRun(false), workflow_run_id: id }));
     const { rerenderMonitor } = renderMonitor(
       api,
       vi.fn(async () => undefined),
-      "conceptual",
+      "subject_area",
       null,
       readOverview,
     );
 
     expect(screen.getByRole("button", {
-      name: "Show Conceptual run activity",
+      name: "Show Subject Areas run activity",
     })).toHaveAttribute("aria-expanded", "false");
-    const sectionState = screen.getByLabelText("Conceptual section state");
+    const sectionState = screen.getByLabelText("Subject Areas section state");
     await waitFor(() => expect(sectionState).toHaveTextContent("not_run"));
     expect(readOverview).toHaveBeenCalledExactlyOnceWith(7, 18);
     readOverview.mockResolvedValue({
-      project_id: 18, project_revision: 5, items: [], section_states: [{ section: "conceptual", state: "queued" }],
+      project_id: 18, project_revision: 5, items: [], section_states: [{ section: "subject-area", state: "queued" }],
     });
     rerenderMonitor(1048);
 
     expect(await screen.findByRole("button", {
-      name: "Hide Conceptual run activity",
+      name: "Hide Subject Areas run activity",
     })).toHaveAttribute("aria-expanded", "true");
     expect(await screen.findByRole("article", { name: "Run 1048 details" })).toBeVisible();
     await waitFor(() => expect(sectionState).toHaveTextContent("queued"));
@@ -487,26 +487,26 @@ describe("Workflow Run monitor", () => {
     const onApplied = vi.fn(async () => undefined);
     const user = userEvent.setup();
     const readOverview = vi.fn<ProjectsApi["readProjectOverview"]>().mockResolvedValue({
-      project_id: 18, project_revision: 5, items: [], section_states: [{ section: "conceptual", state: "completed" }],
+      project_id: 18, project_revision: 5, items: [], section_states: [{ section: "subject-area", state: "completed" }],
     });
-    renderMonitor(api, onApplied, "conceptual", 1048, readOverview);
+    renderMonitor(api, onApplied, "subject_area", 1048, readOverview);
 
     const review = await screen.findByRole("table", { name: "Validated draft action counts" });
-    expect(within(review).getByText("conceptual object")).toBeVisible();
+    expect(within(review).getByText("subject area")).toBeVisible();
     expect(within(review).getAllByText("3")).toHaveLength(2);
     expect(screen.getByTitle("Candidate digest")).toHaveTextContent("d".repeat(64));
     expect(api.applyWorkflowDraft).not.toHaveBeenCalled();
-    const sectionState = screen.getByLabelText("Conceptual section state");
+    const sectionState = screen.getByLabelText("Subject Areas section state");
     await waitFor(() => expect(sectionState).toHaveTextContent("completed"));
     const overviewCalls = readOverview.mock.calls.length;
 
     await user.click(screen.getByRole("button", { name: "Apply validated draft" }));
     const confirmation = await screen.findByRole("dialog", {
-      name: "Apply validated Conceptual draft?",
+      name: "Apply validated Subject Areas draft?",
     });
     expect(api.applyWorkflowDraft).not.toHaveBeenCalled();
     readOverview.mockResolvedValue({
-      project_id: 18, project_revision: 6, items: [], section_states: [{ section: "conceptual", state: "results_available" }],
+      project_id: 18, project_revision: 6, items: [], section_states: [{ section: "subject-area", state: "results_available" }],
     });
     await user.click(within(confirmation).getByRole("button", { name: "Apply exact draft" }));
 
@@ -521,9 +521,9 @@ describe("Workflow Run monitor", () => {
     ));
     await waitFor(() => expect(onApplied).toHaveBeenCalledOnce());
     expect(screen.getByRole("button", {
-      name: "Show Conceptual run activity",
+      name: "Show Subject Areas run activity",
     })).toHaveAttribute("aria-expanded", "false");
-    const compactSummary = await screen.findByLabelText("Latest Conceptual run");
+    const compactSummary = await screen.findByLabelText("Latest Subject Areas run");
     expect(compactSummary).toHaveTextContent("Run 1048");
     expect(compactSummary).toHaveTextContent(/completed/i);
     expect(compactSummary).toHaveTextContent("Draft applied");
@@ -680,7 +680,7 @@ describe("Workflow Run monitor", () => {
   it("does not poll an active run and refreshes only after the user asks", async () => {
     const api = monitorApi();
     const readOverview = vi.fn<ProjectsApi["readProjectOverview"]>().mockResolvedValue({
-      project_id: 18, project_revision: 5, items: [], section_states: [{ section: "conceptual", state: "running" }],
+      project_id: 18, project_revision: 5, items: [], section_states: [{ section: "subject-area", state: "running" }],
     });
     const activeRun: WorkflowRunDetail = {
       ...workflowRun(false),
@@ -715,7 +715,7 @@ describe("Workflow Run monitor", () => {
       };
     });
     const user = userEvent.setup();
-    renderMonitor(api, vi.fn(async () => undefined), "conceptual", 1048, readOverview);
+    renderMonitor(api, vi.fn(async () => undefined), "subject_area", 1048, readOverview);
 
     expect(await screen.findByRole("article", { name: "Run 1048 details" })).toBeVisible();
     expect(screen.getByText(started.message)).toBeVisible();
@@ -723,7 +723,7 @@ describe("Workflow Run monitor", () => {
     const listCalls = api.listWorkflowRuns.mock.calls.length;
     const detailCalls = api.readWorkflowRun.mock.calls.length;
     const eventCalls = api.listWorkflowRunEvents.mock.calls.length;
-    const sectionState = screen.getByLabelText("Conceptual section state");
+    const sectionState = screen.getByLabelText("Subject Areas section state");
     await waitFor(() => expect(sectionState).toHaveTextContent("running"));
     const overviewCalls = readOverview.mock.calls.length;
 
@@ -736,7 +736,7 @@ describe("Workflow Run monitor", () => {
     expect(screen.queryByText(progressing.message)).not.toBeInTheDocument();
 
     readOverview.mockResolvedValue({
-      project_id: 18, project_revision: 5, items: [], section_states: [{ section: "conceptual", state: "failed" }],
+      project_id: 18, project_revision: 5, items: [], section_states: [{ section: "subject-area", state: "failed" }],
     });
     await user.click(screen.getByRole("button", { name: "Refresh runs" }));
     await waitFor(() => {
@@ -746,7 +746,7 @@ describe("Workflow Run monitor", () => {
     });
     expect(await screen.findByText(progressing.message)).toBeVisible();
     expect(screen.getByRole("progressbar", {
-      name: "Conceptual · object contribution progress: 10 of 80",
+      name: "Subject area · candidate authoring progress: 10 of 80",
     })).toHaveAttribute("value", "10");
     await waitFor(() => expect(sectionState).toHaveTextContent("failed"));
     expect(readOverview).toHaveBeenCalledTimes(overviewCalls + 1);
@@ -770,9 +770,9 @@ describe("Workflow Run monitor", () => {
         }),
         progressEvent({
           sequence: 4,
-          stage: "conceptual.backend_validation",
+          stage: "subject_area.backend_validation",
           status: "completed",
-          message: "Conceptual candidate is ready in a validated draft.",
+          message: "Subject Areas are ready in a validated draft.",
           current: 1,
           total: 1,
           finding_count: 2,
@@ -825,7 +825,7 @@ describe("Workflow Run monitor", () => {
       items: [{
         ...workflowEvent(3),
         attempt: 2,
-        stage: "conceptual.candidate_authoring",
+        stage: "subject_area.candidate_authoring",
         status: "failed",
         message: "Candidate authoring stopped safely.",
         current: 1,
@@ -841,7 +841,7 @@ describe("Workflow Run monitor", () => {
     expect(failure).toHaveTextContent(
       "The selected execution mode cannot accept this context. Choose another mode explicitly.",
     );
-    expect(failure).toHaveTextContent("Conceptual · candidate authoring");
+    expect(failure).toHaveTextContent("Subject area · candidate authoring");
     expect(failure).toHaveTextContent("Attempt 2");
     expect(failure).toHaveTextContent("databricks · databricks-primary");
     const eventMeta = screen.getByText("Event 3 · Attempt 2").closest("small");
@@ -866,13 +866,13 @@ describe("Workflow Run monitor", () => {
     renderMonitor(api, vi.fn(async () => undefined));
 
     await user.click(await screen.findByRole("button", { name: "Apply validated draft" }));
-    let confirmation = await screen.findByRole("dialog", { name: "Apply validated Conceptual draft?" });
+    let confirmation = await screen.findByRole("dialog", { name: "Apply validated Subject Areas draft?" });
     await user.click(within(confirmation).getByRole("button", { name: "Apply exact draft" }));
     expect(await within(confirmation).findByRole("alert")).toHaveTextContent("could not be applied");
     await user.click(within(confirmation).getByRole("button", { name: "Close draft confirmation" }));
 
     await user.click(screen.getByRole("button", { name: "Apply validated draft" }));
-    confirmation = await screen.findByRole("dialog", { name: "Apply validated Conceptual draft?" });
+    confirmation = await screen.findByRole("dialog", { name: "Apply validated Subject Areas draft?" });
     await user.click(within(confirmation).getByRole("button", { name: "Apply exact draft" }));
     await waitFor(() => expect(api.applyWorkflowDraft).toHaveBeenCalledTimes(2));
     expect(api.applyWorkflowDraft.mock.calls[0]?.[6]).toBe(api.applyWorkflowDraft.mock.calls[1]?.[6]);
@@ -889,13 +889,13 @@ describe("Workflow Run monitor", () => {
     renderMonitor(api, vi.fn(async () => undefined));
 
     await user.click(await screen.findByRole("button", { name: "Apply validated draft" }));
-    let confirmation = await screen.findByRole("dialog", { name: "Apply validated Conceptual draft?" });
+    let confirmation = await screen.findByRole("dialog", { name: "Apply validated Subject Areas draft?" });
     await user.click(within(confirmation).getByRole("button", { name: "Apply exact draft" }));
     expect(await within(confirmation).findByRole("alert")).toHaveTextContent("Project or draft changed");
     await user.click(within(confirmation).getByRole("button", { name: "Close draft confirmation" }));
 
     await user.click(screen.getByRole("button", { name: "Apply validated draft" }));
-    confirmation = await screen.findByRole("dialog", { name: "Apply validated Conceptual draft?" });
+    confirmation = await screen.findByRole("dialog", { name: "Apply validated Subject Areas draft?" });
     await user.click(within(confirmation).getByRole("button", { name: "Apply exact draft" }));
     await waitFor(() => expect(api.applyWorkflowDraft).toHaveBeenCalledTimes(2));
     expect(api.applyWorkflowDraft.mock.calls[0]?.[6]).not.toBe(api.applyWorkflowDraft.mock.calls[1]?.[6]);
@@ -918,7 +918,7 @@ describe("Workflow Run monitor", () => {
     const appRoot = trigger.closest("#root");
 
     await user.click(trigger);
-    const confirmation = await screen.findByRole("dialog", { name: "Apply validated Conceptual draft?" });
+    const confirmation = await screen.findByRole("dialog", { name: "Apply validated Subject Areas draft?" });
     const close = within(confirmation).getByRole("button", { name: "Close draft confirmation" });
     const apply = within(confirmation).getByRole("button", { name: "Apply exact draft" });
     expect(appRoot).toHaveAttribute("inert");
@@ -929,7 +929,7 @@ describe("Workflow Run monitor", () => {
     await user.tab();
     expect(close).toHaveFocus();
     await user.keyboard("{Escape}");
-    expect(screen.queryByRole("dialog", { name: "Apply validated Conceptual draft?" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Apply validated Subject Areas draft?" })).not.toBeInTheDocument();
     expect(appRoot).not.toHaveAttribute("inert");
     expect(appRoot).not.toHaveAttribute("aria-hidden");
     await waitFor(() => expect(trigger).toHaveFocus());
@@ -939,7 +939,7 @@ describe("Workflow Run monitor", () => {
 function renderMonitor(
   api: WorkflowRunMonitorApi,
   onApplied: () => Promise<void>,
-  workflow: Exclude<ProjectWorkflow, "profiling"> = "conceptual",
+  workflow: Exclude<ProjectWorkflow, "profiling"> = "subject_area",
   focusRunId: number | null = 1048,
   readOverview?: ProjectsApi["readProjectOverview"],
   hasTenantLock = true,
@@ -980,8 +980,8 @@ function renderMonitor(
 function SectionStatus({ readOverview }: { readOverview: ProjectsApi["readProjectOverview"] }) {
   const query = useQuery({ queryKey: ["project-overview", 7, 18], queryFn: () => readOverview(7, 18),
     staleTime: 30_000, refetchOnWindowFocus: false });
-  return <output aria-label="Conceptual section state">
-    {query.data?.section_states?.find((entry) => entry.section === "conceptual")?.state ?? "Loading"}
+  return <output aria-label="Subject Areas section state">
+    {query.data?.section_states?.find((entry) => entry.section === "subject-area")?.state ?? "Loading"}
   </output>;
 }
 
@@ -1007,7 +1007,7 @@ function monitorApi(options: {
       items: [{
         sequence: 1,
         attempt: 1,
-        stage: "conceptual.backend_validation",
+        stage: "subject_area.backend_validation",
         status: "completed" as const,
         message: "Validated one bounded candidate.",
         current: 1,
@@ -1050,7 +1050,7 @@ function workflowRun(deterministic: boolean): WorkflowRunDetail {
       history_incomplete: false,
     },
     workflow_run_id: 1048,
-    project_workflow: deterministic ? "analysis" : "conceptual",
+    project_workflow: deterministic ? "analysis" : "subject_area",
     workflow_execution_mode: deterministic ? null : "one_shot",
     modeled_entity_type: null,
     selected_scope_count: 2,
@@ -1100,7 +1100,7 @@ function workflowDraftReview(stale: boolean, expired = false): WorkflowDraftRevi
       staged_record_count: 3,
       error_count: 0,
       action_review: [{
-        dataset: "conceptual_object",
+        dataset: "subject_area",
         insert_count: 3,
         update_count: 0,
         deactivate_count: 0,
@@ -1108,7 +1108,7 @@ function workflowDraftReview(stale: boolean, expired = false): WorkflowDraftRevi
         no_change_count: 0,
       }],
     },
-    dataset_counts: [{ dataset: "conceptual_object", record_count: 3 }],
+    dataset_counts: [{ dataset: "subject_area", record_count: 3 }],
     dataset: null,
     records: null,
     created_at: "2026-08-25T12:00:00Z",
@@ -1122,12 +1122,12 @@ function workflowDraftReview(stale: boolean, expired = false): WorkflowDraftRevi
 
 function failedDraftReview(): WorkflowDraftReview {
   return { ...workflowDraftReview(false), status: "active", candidate_digest: null, validated_at: null,
-    dataset_counts: [{ dataset: "conceptual_object", record_count: 2 }],
+    dataset_counts: [{ dataset: "subject_area", record_count: 2 }],
     validation_outcome: {
       schema_version: "1.0", valid: false, phase: "complete", staged_record_count: 2,
       error_count: 26, action_review: [], errors_truncated: true,
-      error_groups: [{ dataset: "conceptual_object", code: "active_dependency_invalid", count: 26 }],
-      errors: [{ code: "active_dependency_invalid", dataset: "conceptual_object", record_number: 2,
+      error_groups: [{ dataset: "subject_area", code: "active_dependency_invalid", count: 26 }],
+      errors: [{ code: "active_dependency_invalid", dataset: "subject_area", record_number: 2,
         fields: ["is_active"], message: "An active relationship requires this object." }],
     },
   };
@@ -1152,7 +1152,7 @@ function progressEvent(overrides: Partial<WorkflowRunEvent>): WorkflowRunEvent {
   return {
     sequence: 2,
     attempt: 1,
-    stage: "conceptual.object_contribution",
+    stage: "subject_area.candidate_authoring",
     status: "running",
     message: "One-shot is running.",
     current: 0,

@@ -14,7 +14,6 @@ from gds_etl_workbench.domain.modeling_records import (
     ProjectSchemaDefinition,
 )
 from gds_etl_workbench.domain.snapshots.project import (
-    ConceptualSection,
     ContextSection,
     DimensionalSection,
     LogicalSection,
@@ -58,7 +57,7 @@ class _ProjectBrief(_PromptInput):
 class _AuthoringProjectIdentity(_PromptInput):
     project_name: str = Field(min_length=1, max_length=255, pattern=r"\S", repr=False)
     project_revision: int = Field(gt=0)
-    project_workflow: Literal["analysis", "conceptual", "logical", "dimensional"]
+    project_workflow: Literal["analysis", "logical", "dimensional"]
     workflow_execution_mode: Literal["tool_assisted"]
     selected_scope_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
@@ -73,8 +72,8 @@ type _ContextDataset = Literal[
     "context_type",
     "context_group",
     "context_record",
-    "conceptual_object",
-    "conceptual_relationship",
+    "subject_area",
+    "subject_area_table",
     "logical_submodel",
     "logical_entity",
     "logical_attribute",
@@ -137,7 +136,6 @@ _AUTHORING_ADAPTERS: dict[str, TypeAdapter[Any]] = {
     "project_identity": TypeAdapter(_AuthoringProjectIdentity),
     "evidence_datasets": TypeAdapter(list[_EvidenceDataset]),
     "analysis_evidence": TypeAdapter(list[AnalysisResultRecord]),
-    "applied_conceptual": TypeAdapter(ConceptualSection | None),
     "applied_logical": TypeAdapter(LogicalSection | None),
     "applied_dimensional": TypeAdapter(DimensionalSection | None),
     "applied_mapping": TypeAdapter(MappingSection | None),
@@ -270,7 +268,7 @@ _ANALYSIS_INPUTS: dict[str, tuple[str, str, str, JsonValue]] = {
 }
 
 
-_CONCEPTUAL_INPUTS: dict[str, tuple[str, str, str, JsonValue]] = {
+_LOGICAL_INPUTS: dict[str, tuple[str, str, str, JsonValue]] = {
     name: _ANALYSIS_INPUTS[name]
     for name in (
         "project_brief",
@@ -281,29 +279,7 @@ _CONCEPTUAL_INPUTS: dict[str, tuple[str, str, str, JsonValue]] = {
         "evidence_datasets",
     )
 }
-_CONCEPTUAL_INPUTS["project_identity"] = (
-    "tool_assisted",
-    "",
-    _ANALYSIS_INPUTS["project_identity"][2],
-    {
-        **cast(dict[str, JsonValue], _ANALYSIS_INPUTS["project_identity"][3]),
-        "project_workflow": "conceptual",
-    },
-)
-_CONCEPTUAL_INPUTS["analysis_evidence"] = _ANALYSIS_INPUTS["applied_relationships"]
-_CONCEPTUAL_INPUTS["applied_conceptual"] = (
-    "one_shot",
-    "applied.conceptual",
-    "Applied business concepts and relationships, their supports, lifecycle state and locks. "
-    "Preserve valid unchanged history and active relationship endpoints. Null means no applied "
-    "Conceptual section is available; it does not establish that a business concept is absent.",
-    {"objects": [], "relationships": []},
-)
-_LOGICAL_INPUTS = {
-    name: definition
-    for name, definition in _CONCEPTUAL_INPUTS.items()
-    if name != "applied_conceptual"
-}
+_LOGICAL_INPUTS["analysis_evidence"] = _ANALYSIS_INPUTS["applied_relationships"]
 _LOGICAL_INPUTS["project_identity"] = (
     "tool_assisted",
     "",
@@ -444,7 +420,7 @@ _DIMENSIONAL_INPUTS["gold_audit_policy"] = (
 )
 _AUTHORING_STAGES = {
     "analysis": "relationship_inference",
-    "conceptual": "candidate_authoring",
+    "subject_area": "candidate_authoring",
     "logical": "candidate_authoring",
     "dimensional": "candidate_authoring",
     "metadata_enrichment_object": "candidate_authoring",
@@ -452,7 +428,8 @@ _AUTHORING_STAGES = {
 }
 _AUTHORING_INPUTS = {
     "analysis": _ANALYSIS_INPUTS,
-    "conceptual": _CONCEPTUAL_INPUTS,
+    # Subject Area prompts use only the compact workflow inputs.
+    "subject_area": {},
     "logical": _LOGICAL_INPUTS,
     "dimensional": _DIMENSIONAL_INPUTS,
 }
@@ -1098,16 +1075,6 @@ def project_prompt_input_values(
     prompt_workflow = stage.prompt_workflow or plan.project_workflow
     requested: set[str] = set()
     for variable in stage.variables:
-        if prompt_workflow != "conceptual" and variable.resolver_key.rsplit(".", 1)[-1] in {
-            "applied_conceptual",
-            "conceptual_object_list",
-            "conceptual_objects",
-            "conceptual_relationship_list",
-            "conceptual_relationships",
-        }:
-            raise InvalidRequestError(
-                "Conceptual inputs are available only to Conceptual authoring."
-            )
         descriptor = get_prompt_input_contract(
             project_workflow=prompt_workflow,
             workflow_execution_mode=plan.workflow_execution_mode,
@@ -1252,7 +1219,6 @@ def project_prompt_input_values(
                         for dataset in sorted(names)
                     ]
                 elif name in {
-                    "applied_conceptual",
                     "applied_logical",
                     "applied_dimensional",
                     "applied_mapping",

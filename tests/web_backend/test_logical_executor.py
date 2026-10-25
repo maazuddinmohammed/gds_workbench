@@ -260,7 +260,7 @@ def _context_bundle(
                 ],
             },
             "applied": {
-                "conceptual": None,
+                "subject_area": None,
                 "logical": None,
                 "dimensional": None,
                 "mapping": None,
@@ -1277,7 +1277,7 @@ async def test_finalizer_error_never_marks_the_run_failed(
 
 @pytest.mark.asyncio
 async def test_fixed_plan_mismatch_is_rejected_before_agent_execution() -> None:
-    bad_plan = _plan().model_copy(update={"project_workflow": "conceptual"})
+    bad_plan = _plan().model_copy(update={"project_workflow": "subject_area"})
     agent = _AgentExecutor(responses=[_candidate()])
     service, _database, _authorizer, handoff, lifecycle = _service(
         agent=agent,

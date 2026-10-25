@@ -42,17 +42,13 @@ def _principal() -> RequestPrincipal:
 
 def _change() -> StageProjectChange:
     return StageProjectChange(
-        dataset="conceptual_object",
+        dataset="subject_area",
         records=[
             {
-                "conceptual_object_name": "Customer",
-                "conceptual_object_definition": "A governed customer.",
-                "conceptual_object_type": "business_object",
-                "conceptual_object_grain": "One customer.",
-                "conceptual_object_aliases": [],
-                "conceptual_object_status": "active",
-                "conceptual_object_is_locked": False,
-                "supports": [],
+                "subject_area_name": "Customer",
+                "subject_area_definition": "Customer accounts and contacts.",
+                "subject_area_status": "active",
+                "subject_area_is_locked": False,
             }
         ],
     )
@@ -76,7 +72,7 @@ def _change_set_row(*, status: str = "active") -> dict[str, Any]:
         "enrichment_document": {},
         "context_document": {},
         "analysis_document": {},
-        "conceptual_document": {"conceptual_object": _change().records},
+        "subject_area_document": {"subject_area": _change().records},
         "logical_document": {},
         "dimensional_document": {},
         "mapping_document": {},
@@ -99,7 +95,7 @@ class HandoffTransaction:
         *,
         existing: dict[str, Any] | None = None,
         actor_principal_id: int = 41,
-        workflow: str = "conceptual",
+        workflow: str = "subject_area",
         state: str = "running",
         project_revision: int = 7,
         fail_event: bool = False,
@@ -251,7 +247,7 @@ async def _valid_validator(
 ) -> ValidatedProjectChangeSet:
     del transaction, project, row
     return ValidatedProjectChangeSet(
-        records={"conceptual_object": ()},
+        records={"subject_area": ()},
         phase="complete",
         candidate_digest="d" * 64,
         issues=(),
@@ -263,9 +259,9 @@ def _final_event() -> AgentWorkflowEvent:
     return AgentWorkflowEvent(
         sequence=3,
         attempt=1,
-        stage="conceptual.backend_validation",
+        stage="subject_area.backend_validation",
         status="running",
-        message="Conceptual candidate is ready in a validated draft.",
+        message="Subject Areas are ready in a validated draft.",
         current=1,
         total=1,
         finding_count=1,
@@ -288,7 +284,7 @@ async def test_handoff_atomically_creates_stages_and_validates_one_bound_draft()
         tenant_id=7,
         project_id=18,
         workflow_run_id=1048,
-        expected_workflow="conceptual",
+        expected_workflow="subject_area",
         expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
         changes=(_change(),),
@@ -334,7 +330,7 @@ async def test_handoff_replays_the_existing_validated_bound_draft() -> None:
         tenant_id=7,
         project_id=18,
         workflow_run_id=1048,
-        expected_workflow="conceptual",
+        expected_workflow="subject_area",
         expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
         changes=(_change(),),
@@ -360,7 +356,7 @@ async def test_finalization_commits_draft_event_and_completion_together() -> Non
         tenant_id=7,
         project_id=18,
         workflow_run_id=1048,
-        expected_workflow="conceptual",
+        expected_workflow="subject_area",
         expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
         changes=(_change(),),
@@ -403,7 +399,7 @@ async def test_claim_fence_rejection_stops_before_handoff_or_finalization(
                 tenant_id=7,
                 project_id=18,
                 workflow_run_id=1048,
-                expected_workflow="conceptual",
+                expected_workflow="subject_area",
                 expected_project_revision=7,
                 workflow_run_claim_token=_CLAIM_TOKEN,
                 changes=(_change(),),
@@ -414,7 +410,7 @@ async def test_claim_fence_rejection_stops_before_handoff_or_finalization(
                 tenant_id=7,
                 project_id=18,
                 workflow_run_id=1048,
-                expected_workflow="conceptual",
+                expected_workflow="subject_area",
                 expected_project_revision=7,
                 workflow_run_claim_token=_CLAIM_TOKEN,
                 changes=(_change(),),
@@ -448,7 +444,7 @@ async def test_finalization_replays_terminal_receipt_without_current_revision() 
         tenant_id=7,
         project_id=18,
         workflow_run_id=1048,
-        expected_workflow="conceptual",
+        expected_workflow="subject_area",
         expected_project_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
         changes=(_change(),),
@@ -478,7 +474,7 @@ async def test_finalization_rolls_back_the_draft_when_workflow_event_fails() -> 
             tenant_id=7,
             project_id=18,
             workflow_run_id=1048,
-            expected_workflow="conceptual",
+            expected_workflow="subject_area",
             expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
             changes=(_change(),),
@@ -500,7 +496,7 @@ async def test_handoff_rejects_different_output_for_the_same_workflow_run() -> N
         validator=_valid_validator,
     )
     changed_record = dict(_change().records[0])
-    changed_record["conceptual_object_definition"] = "A different candidate."
+    changed_record["subject_area_definition"] = "A different candidate."
 
     with pytest.raises(
         InvalidRequestError,
@@ -511,12 +507,12 @@ async def test_handoff_rejects_different_output_for_the_same_workflow_run() -> N
             tenant_id=7,
             project_id=18,
             workflow_run_id=1048,
-            expected_workflow="conceptual",
+            expected_workflow="subject_area",
             expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
             changes=(
                 StageProjectChange(
-                    dataset="conceptual_object",
+                    dataset="subject_area",
                     records=[changed_record],
                 ),
             ),
@@ -553,7 +549,7 @@ async def test_handoff_rejects_wrong_run_binding_before_creating_a_draft(
             tenant_id=7,
             project_id=18,
             workflow_run_id=1048,
-            expected_workflow="conceptual",
+            expected_workflow="subject_area",
             expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
             changes=(_change(),),
@@ -579,10 +575,10 @@ async def test_handoff_rolls_back_an_invalid_candidate_without_a_bound_draft() -
             issues=(
                 ProjectValidationIssue(
                     code="reference_not_found",
-                    dataset="conceptual_relationship",
+                    dataset="subject_area_table",
                     record_number=1,
-                    fields=("to_conceptual_object_name",),
-                    message="Referenced Conceptual Object is unavailable.",
+                    fields=("subject_area_name",),
+                    message="Referenced record is not present in the future Project graph.",
                 ),
             ),
             action_review=(),
@@ -600,7 +596,7 @@ async def test_handoff_rolls_back_an_invalid_candidate_without_a_bound_draft() -
             tenant_id=7,
             project_id=18,
             workflow_run_id=1048,
-            expected_workflow="conceptual",
+            expected_workflow="subject_area",
             expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
             changes=(_change(),),
@@ -625,7 +621,7 @@ async def test_handoff_rolls_back_when_event_persistence_fails() -> None:
             tenant_id=7,
             project_id=18,
             workflow_run_id=1048,
-            expected_workflow="conceptual",
+            expected_workflow="subject_area",
             expected_project_revision=7,
             workflow_run_claim_token=_CLAIM_TOKEN,
             changes=(_change(),),

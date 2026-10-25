@@ -164,7 +164,7 @@ class CreateWorkflowRunRequest(BaseModel):
             self.workflow_execution_mode is not None
         )
         requires_mode = self.project_workflow in {
-            "conceptual",
+            "subject_area",
             "logical",
             "dimensional",
             "mapping",

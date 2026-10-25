@@ -63,7 +63,7 @@ export type LedgerWorkflow =
   | "profiling"
   | "analysis"
   | "context"
-  | "conceptual"
+  | "subject_area"
   | "logical"
   | "dimensional";
 
@@ -103,7 +103,7 @@ export interface ProjectWorkflowOverview {
 
 export interface ProjectSectionState {
   section: "overview" | "settings" | "scope" | "metadata-enrichment" | "profiling"
-    | "context" | "analysis" | "conceptual" | "logical" | "dimensional" | "mapping"
+    | "context" | "analysis" | "subject-area" | "logical" | "dimensional" | "mapping"
     | "code-generation" | "validation";
   state: "available" | "ready" | "empty" | "not_run" | "queued" | "running"
     | "completed" | "failed" | "cancelled" | "results_available";

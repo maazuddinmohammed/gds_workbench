@@ -154,7 +154,7 @@ def test_editor_protects_locked_records_and_shows_project_choices() -> None:
         {"record_ids": []},
         {"layer": "logical", "record_ids": [1]},
         {"layer": "logical", "record_ids": [], "action": "unlock"},
-        {"layer": "conceptual", "record_ids": []},
+        {"layer": "subject_area", "record_ids": []},
     ],
 )
 def test_clear_contract_cannot_bypass_explicit_selection(

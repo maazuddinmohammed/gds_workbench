@@ -13,7 +13,7 @@ from gds_workbench_api.capabilities import (
     load_default_agent_capabilities,
 )
 from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.conceptual.service import ConceptualWorkflow
+from gds_workbench_api.features.subject_areas.service import SubjectAreaWorkflow
 from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetHandoff,
     WorkflowChangeSetHandoffResult,
@@ -50,7 +50,7 @@ from tests.web_backend.test_database_project_change_sets import (
 )
 
 
-async def test_local_review_validation_queries_do_not_poison_conceptual_authoring(
+async def test_local_review_validation_queries_do_not_poison_subject_area_authoring(
     pipeline_database: DisposablePostgres,
 ) -> None:
     fixture = pipeline_database
@@ -102,7 +102,7 @@ async def test_local_review_validation_queries_do_not_poison_conceptual_authorin
     authorizer = AuthorizationService()
     lifecycle = DatabaseAgentWorkflowLifecycle(database=database)
     agent = RecordingFakeAgentAdapter()
-    workflow = ConceptualWorkflow(
+    workflow = SubjectAreaWorkflow(
         database=database,
         authorizer=authorizer,
         agent_executor=agent,
@@ -124,7 +124,7 @@ async def test_local_review_validation_queries_do_not_poison_conceptual_authorin
             correlation_id=uuid4(),
             command=CreateWorkflowRunRequest(
                 expected_project_revision=project["project_revision"],
-                project_workflow="conceptual",
+                project_workflow="subject_area",
                 workflow_execution_mode="tool_assisted",
                 selected_object_ids=[row["object_id"] for row in scope],
                 agent=AgentRunSelection(
@@ -158,12 +158,13 @@ async def test_local_review_validation_queries_do_not_poison_conceptual_authorin
             workflow_run_claim_token=claim.workflow_run_claim_token,
         )
         assert isinstance(draft, WorkflowChangeSetHandoffResult)
+        # One new area over both Bronze tables; the saved Customer Orders area stays.
+        assert draft.staged_record_count == 3
         assert agent.tool_call_count > 0
     finally:
         await database.close()
     assert all(
-        validate_databricks_sql(row["validation_query_sql"]).final_returns_rows
-        for row in checks
+        validate_databricks_sql(row["validation_query_sql"]).final_returns_rows for row in checks
     )
     with fixture.connect_owner() as connection:
         state = require_row(

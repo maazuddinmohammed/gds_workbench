@@ -41,7 +41,7 @@
         if (dataset === "attribute_enrichment" && parentLocks.has(physical(record))) add("enrichment_parent_locked", dataset, "object_name", "A locked Object enrichment also protects its Attribute findings.");
       }
     }
-    for (const dataset of ["conceptual_object", "conceptual_relationship", "logical_submodel", "logical_entity", "logical_attribute", "logical_relationship", "dimensional_submodel", "dimensional_entity", "dimensional_attribute", "dimensional_relationship"]) {
+    for (const dataset of ["logical_submodel", "logical_entity", "logical_attribute", "logical_relationship", "dimensional_submodel", "dimensional_entity", "dimensional_attribute", "dimensional_relationship"]) {
       const override = dataset.startsWith("dimensional") ? details.gold_model_naming_instructions : details.silver_model_naming_instructions;
       for (const record of added.get(dataset) || []) {
         const field = `${dataset}_name`, name = record[field];

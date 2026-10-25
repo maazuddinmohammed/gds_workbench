@@ -64,7 +64,7 @@ an anecdote. Copilot in VS Code is the production host; CLI agents are proxies.
 
 Always: no Stage transport tools (`stage_*`, `begin_*`, `put_*`, `commit_*`), no Apply or
 lock override, no hand edits to installed Snapshots. Per scenario: required/forbidden MCP
-tools and helper commands, Conceptual datasets not read by downstream work, required or
+tools and helper commands, Subject Area datasets not read by downstream work, required or
 forbidden draft files, call budgets, skills read and final-message content (the last two
 only with a transcript). A required helper command needs a run that exited 0; forbidden
 commands and budgets count every attempt. `may_ask_instead` lets a consequential question

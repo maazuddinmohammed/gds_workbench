@@ -142,7 +142,7 @@ def test_archive_round_trip_and_reproducibility(tmp_path: Path) -> None:
         "atlas",
         "atlas-investigate",
         "atlas-source-analysis",
-        "atlas-conceptual-model",
+        "atlas-subject-areas",
         "atlas-logical-model",
         "atlas-dimensional-model",
         "atlas-mapping",

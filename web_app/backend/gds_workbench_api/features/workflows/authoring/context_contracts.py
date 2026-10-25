@@ -511,647 +511,107 @@ INPUT_SHAPES: dict[str, Any] = {
             },
         },
     },
-    "conceptual_object_list": {
-        "description": "Compact directory of all existing eligible "
-        "Conceptual record identities in the frozen Project. "
-        "Natural-key fields only; no descriptions, types, "
-        "supports, status, or locks. Use the corresponding "
-        "detail variable or reader to interpret a record. "
-        "[] means known empty; null means the applied "
-        "Conceptual section is unavailable.",
+    "scope_tables": {
+        "description": "One entry per Input Scope table, by table_index id: its Project "
+        "description, zone, the largest profiled row count (null when unprofiled), column "
+        "count and column names. Size areas by column_count; max_subject_area_columns caps "
+        "each area.",
         "schema": {
+            "type": "array",
+            "items": {"$ref": "#/$defs/scope_table_entry"},
             "$defs": {
-                "ConceptualObjectKey": {
+                "scope_table_entry": {
                     "type": "object",
                     "properties": {
-                        "conceptual_object_name": {
-                            "maxLength": 255,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Conceptual Object Name",
-                            "type": "string",
-                        }
-                    },
-                    "required": ["conceptual_object_name"],
-                    "additionalProperties": False,
-                }
-            },
-            "anyOf": [
-                {"type": "array", "items": {"$ref": "#/$defs/ConceptualObjectKey"}},
-                {"type": "null"},
-            ],
-        },
-    },
-    "conceptual_objects": {
-        "description": "Existing Conceptual objects, retaining all existing "
-        "record fields and nested Object/Context supports, "
-        "lifecycle status and locks. Known empty "
-        "is []; null means the applied section is unavailable.",
-        "schema": {
-            "$defs": {
-                "ContextRecordReference": {
-                    "additionalProperties": False,
-                    "properties": {
-                        "context_record_id": {
-                            "pattern": (
-                                "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-                            ),
-                            "title": "Context Record Id",
-                            "type": "string",
-                        }
-                    },
-                    "required": ["context_record_id"],
-                    "title": "ContextRecordReference",
-                    "type": "object",
-                },
-                "ContextSupportRecord": {
-                    "additionalProperties": False,
-                    "properties": {
-                        "support_source_type": {
-                            "const": "context_record",
-                            "title": "Support Source Type",
-                            "type": "string",
-                        },
-                        "context_record": {"$ref": "#/$defs/ContextRecordReference"},
-                        "support_role": {
-                            "anyOf": [
-                                {
-                                    "maxLength": 255,
-                                    "minLength": 1,
-                                    "pattern": "\\S",
-                                    "type": "string",
-                                },
-                                {"type": "null"},
-                            ],
-                            "title": "Support Role",
-                        },
-                        "support_reason": {
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Support Reason",
-                            "type": "string",
-                        },
-                        "support_reason_detail": {
-                            "anyOf": [
-                                {"minLength": 1, "pattern": "\\S", "type": "string"},
-                                {"type": "null"},
-                            ],
-                            "title": "Support Reason Detail",
-                        },
-                        "support_status": {
-                            "enum": ["active", "inactive", "deprecated"],
-                            "title": "Support Status",
-                            "type": "string",
-                        },
-                        "support_is_locked": {"title": "Support Is Locked", "type": "boolean"},
-                    },
-                    "required": [
-                        "support_source_type",
-                        "context_record",
-                        "support_role",
-                        "support_reason",
-                        "support_reason_detail",
-                        "support_status",
-                        "support_is_locked",
-                    ],
-                    "title": "ContextSupportRecord",
-                    "type": "object",
-                },
-                "ConceptualObjectRecord": {
-                    "additionalProperties": False,
-                    "properties": {
-                        "conceptual_object_name": {
-                            "maxLength": 255,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Conceptual Object Name",
-                            "type": "string",
-                        },
-                        "conceptual_object_definition": {
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Conceptual Object Definition",
-                            "type": "string",
-                        },
-                        "conceptual_object_type": {
-                            "maxLength": 100,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Conceptual Object Type",
-                            "type": "string",
-                        },
-                        "conceptual_object_grain": {
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Conceptual Object Grain",
-                            "type": "string",
-                        },
-                        "conceptual_object_aliases": {
-                            "items": {"type": "string"},
-                            "title": "Conceptual Object Aliases",
+                        "table": {"type": "string", "pattern": "^t[1-9][0-9]*$"},
+                        "description": {"type": ["string", "null"]},
+                        "zone_code": {"type": "string", "minLength": 1},
+                        "row_count": {"type": ["integer", "null"], "minimum": 0},
+                        "column_count": {"type": "integer", "minimum": 0},
+                        "column_names": {
                             "type": "array",
-                        },
-                        "conceptual_object_status": {
-                            "enum": ["active", "inactive", "deprecated"],
-                            "title": "Conceptual Object Status",
-                            "type": "string",
-                        },
-                        "conceptual_object_is_locked": {
-                            "title": "Conceptual Object Is Locked",
-                            "type": "boolean",
-                        },
-                        "supports": {
-                            "items": {"$ref": "#/$defs/SupportRecord"},
-                            "title": "Supports",
-                            "type": "array",
+                            "items": {"type": "string", "minLength": 1},
                         },
                     },
                     "required": [
-                        "conceptual_object_name",
-                        "conceptual_object_definition",
-                        "conceptual_object_type",
-                        "conceptual_object_grain",
-                        "conceptual_object_aliases",
-                        "conceptual_object_status",
-                        "conceptual_object_is_locked",
-                        "supports",
-                    ],
-                    "title": "ConceptualObjectRecord",
-                    "type": "object",
-                },
-                "ObjectSupportRecord": {
-                    "additionalProperties": False,
-                    "properties": {
-                        "support_source_type": {
-                            "const": "object",
-                            "title": "Support Source Type",
-                            "type": "string",
-                        },
-                        "source_object": {"$ref": "#/$defs/PhysicalObjectKey"},
-                        "support_role": {
-                            "anyOf": [
-                                {
-                                    "maxLength": 255,
-                                    "minLength": 1,
-                                    "pattern": "\\S",
-                                    "type": "string",
-                                },
-                                {"type": "null"},
-                            ],
-                            "title": "Support Role",
-                        },
-                        "support_reason": {
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Support Reason",
-                            "type": "string",
-                        },
-                        "support_reason_detail": {
-                            "anyOf": [
-                                {"minLength": 1, "pattern": "\\S", "type": "string"},
-                                {"type": "null"},
-                            ],
-                            "title": "Support Reason Detail",
-                        },
-                        "support_status": {
-                            "enum": ["active", "inactive", "deprecated"],
-                            "title": "Support Status",
-                            "type": "string",
-                        },
-                        "support_is_locked": {"title": "Support Is Locked", "type": "boolean"},
-                    },
-                    "required": [
-                        "support_source_type",
-                        "source_object",
-                        "support_role",
-                        "support_reason",
-                        "support_reason_detail",
-                        "support_status",
-                        "support_is_locked",
-                    ],
-                    "title": "ObjectSupportRecord",
-                    "type": "object",
-                },
-                "PhysicalObjectKey": {
-                    "additionalProperties": False,
-                    "properties": {
-                        "tenant_code": {
-                            "maxLength": 100,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Tenant Code",
-                            "type": "string",
-                        },
-                        "system_code": {
-                            "maxLength": 100,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "System Code",
-                            "type": "string",
-                        },
-                        "connection_code": {
-                            "maxLength": 100,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Connection Code",
-                            "type": "string",
-                        },
-                        "object_schema": {
-                            "maxLength": 400,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Object Schema",
-                            "type": "string",
-                        },
-                        "object_name": {
-                            "maxLength": 400,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Object Name",
-                            "type": "string",
-                        },
-                    },
-                    "required": [
-                        "tenant_code",
-                        "system_code",
-                        "connection_code",
-                        "object_schema",
-                        "object_name",
-                    ],
-                    "title": "PhysicalObjectKey",
-                    "type": "object",
-                },
-                "SupportRecord": {
-                    "discriminator": {
-                        "mapping": {
-                            "context_record": "#/$defs/ContextSupportRecord",
-                            "object": "#/$defs/ObjectSupportRecord",
-                        },
-                        "propertyName": "support_source_type",
-                    },
-                    "oneOf": [
-                        {"$ref": "#/$defs/ObjectSupportRecord"},
-                        {"$ref": "#/$defs/ContextSupportRecord"},
-                    ],
-                },
-            },
-            "anyOf": [
-                {"items": {"$ref": "#/$defs/ConceptualObjectRecord"}, "type": "array"},
-                {"type": "null"},
-            ],
-        },
-    },
-    "conceptual_relationship_list": {
-        "description": "Compact directory of all existing eligible "
-        "Conceptual record identities in the frozen "
-        "Project. Natural-key fields only; no "
-        "descriptions, types, supports, status, or "
-        "locks. Use the corresponding detail variable "
-        "or reader to interpret a record. [] means "
-        "known empty; null means the applied "
-        "Conceptual section is unavailable.",
-        "schema": {
-            "$defs": {
-                "ConceptualRelationshipKey": {
-                    "type": "object",
-                    "properties": {
-                        "from_conceptual_object_name": {
-                            "maxLength": 255,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "From Conceptual Object Name",
-                            "type": "string",
-                        },
-                        "to_conceptual_object_name": {
-                            "maxLength": 255,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "To Conceptual Object Name",
-                            "type": "string",
-                        },
-                        "conceptual_relationship_name": {
-                            "maxLength": 255,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Conceptual Relationship Name",
-                            "type": "string",
-                        },
-                    },
-                    "required": [
-                        "from_conceptual_object_name",
-                        "to_conceptual_object_name",
-                        "conceptual_relationship_name",
+                        "table",
+                        "description",
+                        "zone_code",
+                        "row_count",
+                        "column_count",
+                        "column_names",
                     ],
                     "additionalProperties": False,
                 }
             },
-            "anyOf": [
-                {"type": "array", "items": {"$ref": "#/$defs/ConceptualRelationshipKey"}},
-                {"type": "null"},
-            ],
         },
     },
-    "conceptual_relationships": {
-        "description": "Existing Conceptual relationships, retaining all "
-        "existing record fields and nested "
-        "Object/Context supports, lifecycle "
-        "status, and locks. Known empty is []; null means "
-        "the applied section is unavailable.",
+    "table_links": {
+        "description": "Table-level Analysis edges between Input Scope tables, one per "
+        "ordered pair: from references to. validation_result is the strongest measured "
+        "result among its column edges (supported, inconclusive, unsupported, or null when "
+        "unvalidated, which is not disproof); edge_count counts those column edges.",
         "schema": {
+            "type": "array",
+            "items": {"$ref": "#/$defs/table_link_entry"},
             "$defs": {
-                "ContextRecordReference": {
-                    "additionalProperties": False,
-                    "properties": {
-                        "context_record_id": {
-                            "pattern": (
-                                "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-                            ),
-                            "title": "Context Record Id",
-                            "type": "string",
-                        }
-                    },
-                    "required": ["context_record_id"],
-                    "title": "ContextRecordReference",
+                "table_link_entry": {
                     "type": "object",
-                },
-                "ContextSupportRecord": {
-                    "additionalProperties": False,
                     "properties": {
-                        "support_source_type": {
-                            "const": "context_record",
-                            "title": "Support Source Type",
-                            "type": "string",
+                        "from": {"type": "string", "pattern": "^t[1-9][0-9]*$"},
+                        "to": {"type": "string", "pattern": "^t[1-9][0-9]*$"},
+                        "validation_result": {
+                            "enum": ["supported", "inconclusive", "unsupported", None]
                         },
-                        "context_record": {"$ref": "#/$defs/ContextRecordReference"},
-                        "support_role": {
-                            "anyOf": [
-                                {
-                                    "maxLength": 255,
-                                    "minLength": 1,
-                                    "pattern": "\\S",
-                                    "type": "string",
-                                },
-                                {"type": "null"},
-                            ],
-                            "title": "Support Role",
-                        },
-                        "support_reason": {
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Support Reason",
-                            "type": "string",
-                        },
-                        "support_reason_detail": {
-                            "anyOf": [
-                                {"minLength": 1, "pattern": "\\S", "type": "string"},
-                                {"type": "null"},
-                            ],
-                            "title": "Support Reason Detail",
-                        },
-                        "support_status": {
-                            "enum": ["active", "inactive", "deprecated"],
-                            "title": "Support Status",
-                            "type": "string",
-                        },
-                        "support_is_locked": {"title": "Support Is Locked", "type": "boolean"},
+                        "edge_count": {"type": "integer", "minimum": 1},
                     },
-                    "required": [
-                        "support_source_type",
-                        "context_record",
-                        "support_role",
-                        "support_reason",
-                        "support_reason_detail",
-                        "support_status",
-                        "support_is_locked",
-                    ],
-                    "title": "ContextSupportRecord",
-                    "type": "object",
-                },
-                "ConceptualRelationshipRecord": {
+                    "required": ["from", "to", "validation_result", "edge_count"],
                     "additionalProperties": False,
-                    "properties": {
-                        "from_conceptual_object_name": {
-                            "maxLength": 255,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "From Conceptual Object Name",
-                            "type": "string",
-                        },
-                        "to_conceptual_object_name": {
-                            "maxLength": 255,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "To Conceptual Object Name",
-                            "type": "string",
-                        },
-                        "conceptual_relationship_name": {
-                            "maxLength": 255,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Conceptual Relationship Name",
-                            "type": "string",
-                        },
-                        "conceptual_relationship_type": {
-                            "maxLength": 100,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Conceptual Relationship Type",
-                            "type": "string",
-                        },
-                        "conceptual_relationship_definition": {
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Conceptual Relationship Definition",
-                            "type": "string",
-                        },
-                        "conceptual_relationship_cardinality": {
-                            "anyOf": [
-                                {
-                                    "enum": [
-                                        "one_to_one",
-                                        "one_to_many",
-                                        "many_to_one",
-                                        "many_to_many",
-                                    ],
-                                    "type": "string",
-                                },
-                                {"const": "unknown", "type": "string"},
-                            ],
-                            "title": "Conceptual Relationship Cardinality",
-                        },
-                        "conceptual_relationship_basis": {
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Conceptual Relationship Basis",
-                            "type": "string",
-                        },
-                        "conceptual_relationship_cardinality_basis": {
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Conceptual Relationship Cardinality Basis",
-                            "type": "string",
-                        },
-                        "conceptual_relationship_status": {
-                            "enum": ["active", "inactive", "deprecated"],
-                            "title": "Conceptual Relationship Status",
-                            "type": "string",
-                        },
-                        "conceptual_relationship_is_locked": {
-                            "title": "Conceptual Relationship Is Locked",
-                            "type": "boolean",
-                        },
-                        "supports": {
-                            "items": {"$ref": "#/$defs/SupportRecord"},
-                            "title": "Supports",
-                            "type": "array",
-                        },
-                    },
-                    "required": [
-                        "from_conceptual_object_name",
-                        "to_conceptual_object_name",
-                        "conceptual_relationship_name",
-                        "conceptual_relationship_type",
-                        "conceptual_relationship_definition",
-                        "conceptual_relationship_cardinality",
-                        "conceptual_relationship_basis",
-                        "conceptual_relationship_cardinality_basis",
-                        "conceptual_relationship_status",
-                        "conceptual_relationship_is_locked",
-                        "supports",
-                    ],
-                    "title": "ConceptualRelationshipRecord",
-                    "type": "object",
-                },
-                "ObjectSupportRecord": {
-                    "additionalProperties": False,
-                    "properties": {
-                        "support_source_type": {
-                            "const": "object",
-                            "title": "Support Source Type",
-                            "type": "string",
-                        },
-                        "source_object": {"$ref": "#/$defs/PhysicalObjectKey"},
-                        "support_role": {
-                            "anyOf": [
-                                {
-                                    "maxLength": 255,
-                                    "minLength": 1,
-                                    "pattern": "\\S",
-                                    "type": "string",
-                                },
-                                {"type": "null"},
-                            ],
-                            "title": "Support Role",
-                        },
-                        "support_reason": {
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Support Reason",
-                            "type": "string",
-                        },
-                        "support_reason_detail": {
-                            "anyOf": [
-                                {"minLength": 1, "pattern": "\\S", "type": "string"},
-                                {"type": "null"},
-                            ],
-                            "title": "Support Reason Detail",
-                        },
-                        "support_status": {
-                            "enum": ["active", "inactive", "deprecated"],
-                            "title": "Support Status",
-                            "type": "string",
-                        },
-                        "support_is_locked": {"title": "Support Is Locked", "type": "boolean"},
-                    },
-                    "required": [
-                        "support_source_type",
-                        "source_object",
-                        "support_role",
-                        "support_reason",
-                        "support_reason_detail",
-                        "support_status",
-                        "support_is_locked",
-                    ],
-                    "title": "ObjectSupportRecord",
-                    "type": "object",
-                },
-                "PhysicalObjectKey": {
-                    "additionalProperties": False,
-                    "properties": {
-                        "tenant_code": {
-                            "maxLength": 100,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Tenant Code",
-                            "type": "string",
-                        },
-                        "system_code": {
-                            "maxLength": 100,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "System Code",
-                            "type": "string",
-                        },
-                        "connection_code": {
-                            "maxLength": 100,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Connection Code",
-                            "type": "string",
-                        },
-                        "object_schema": {
-                            "maxLength": 400,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Object Schema",
-                            "type": "string",
-                        },
-                        "object_name": {
-                            "maxLength": 400,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Object Name",
-                            "type": "string",
-                        },
-                    },
-                    "required": [
-                        "tenant_code",
-                        "system_code",
-                        "connection_code",
-                        "object_schema",
-                        "object_name",
-                    ],
-                    "title": "PhysicalObjectKey",
-                    "type": "object",
-                },
-                "SupportRecord": {
-                    "discriminator": {
-                        "mapping": {
-                            "context_record": "#/$defs/ContextSupportRecord",
-                            "object": "#/$defs/ObjectSupportRecord",
-                        },
-                        "propertyName": "support_source_type",
-                    },
-                    "oneOf": [
-                        {"$ref": "#/$defs/ObjectSupportRecord"},
-                        {"$ref": "#/$defs/ContextSupportRecord"},
-                    ],
-                },
+                }
             },
-            "anyOf": [
-                {"items": {"$ref": "#/$defs/ConceptualRelationshipRecord"}, "type": "array"},
-                {"type": "null"},
-            ],
         },
     },
-    "conceptual.naming_instructions": {
-        "description": "Effective Conceptual naming guidance. Use the "
-        "saved Silver Project override when present, "
-        "otherwise the existing Conceptual default. "
-        "Advisory guidance; preserve saved identities. "
-        "This is resolved before rendering and remains "
-        "a Conceptual-local variable.",
-        "schema": {"maxLength": 32768, "minLength": 1, "pattern": "\\S", "type": "string"},
+    "existing_subject_areas": {
+        "description": "Saved Subject Areas with lifecycle, lock and member tables by "
+        "table_index id. A locked area, and each table in locked_tables, cannot change. "
+        "List a saved area in the answer only to change it.",
+        "schema": {
+            "type": "array",
+            "items": {"$ref": "#/$defs/existing_subject_area_entry"},
+            "$defs": {
+                "existing_subject_area_entry": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "minLength": 1, "maxLength": 255},
+                        "definition": {"type": "string", "minLength": 1},
+                        "status": {"enum": ["active", "inactive", "deprecated"]},
+                        "is_locked": {"type": "boolean"},
+                        "tables": {
+                            "type": "array",
+                            "items": {"type": "string", "pattern": "^t[1-9][0-9]*$"},
+                        },
+                        "locked_tables": {
+                            "type": "array",
+                            "items": {"type": "string", "pattern": "^t[1-9][0-9]*$"},
+                        },
+                    },
+                    "required": [
+                        "name",
+                        "definition",
+                        "status",
+                        "is_locked",
+                        "tables",
+                        "locked_tables",
+                    ],
+                    "additionalProperties": False,
+                }
+            },
+        },
+    },
+    "max_subject_area_columns": {
+        "description": "Largest total column_count one Subject Area may hold, so each "
+        "Logical Build call fits one answer. Split a larger capability into narrower areas.",
+        "schema": {"type": "integer", "minimum": 1},
     },
     "logical_submodel_list": {
         "description": "Compact existing Logical submodel identities only. "
@@ -3852,19 +3312,15 @@ WORKFLOW_INPUTS: dict[str, dict[str, str]] = {
         "object_relationship_context": "object_relationship_context",
         "context_records": "context_records",
     },
-    "conceptual": {
+    "subject_area": {
         "source_context": "source_context",
         "gds_context": "gds_context",
-        "object_context": "object_context",
-        "object_attribute_context": "object_attribute_context",
-        "ingestion_mapping": "ingestion_mapping",
-        "object_relationship_context": "object_relationship_context",
+        "table_index": "table_index",
+        "scope_tables": "scope_tables",
+        "table_links": "table_links",
+        "existing_subject_areas": "existing_subject_areas",
         "context_records": "context_records",
-        "conceptual_object_list": "conceptual_object_list",
-        "conceptual_objects": "conceptual_objects",
-        "conceptual_relationship_list": "conceptual_relationship_list",
-        "conceptual_relationships": "conceptual_relationships",
-        "naming_instructions": "conceptual.naming_instructions",
+        "max_subject_area_columns": "max_subject_area_columns",
     },
     "logical": {
         "source_context": "source_context",
@@ -4124,216 +3580,6 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "source_reference": '{"section": "Orders and customers"}',
             }
         ],
-    },
-    "conceptual": {
-        "source_context": [
-            {
-                "tenant_code": "ACME",
-                "tenant_description": "Wholesale distribution business.",
-                "system_code": "ERP",
-                "system_description": "Manages sales orders and billing.",
-                "system_type_code": "ERP",
-                "system_type_description": "Systems for managing core business operations.",
-                "connection_code": "ERP_SOURCE",
-                "connection_description": None,
-                "connection_type_code": "SQL_SERVER",
-                "connection_type_description": "Connection to a Microsoft SQL Server database.",
-                "zone_code": "source",
-                "zone_description": "Originating source data.",
-            }
-        ],
-        "gds_context": [
-            {
-                "tenant_code": "GDS",
-                "system_code": "WAREHOUSE",
-                "connection_code": "MAIN",
-                "zone_code": "bronze",
-                "zone_description": "Stores ingested source data.",
-            }
-        ],
-        "object_context": [
-            {
-                "tenant_code": "GDS",
-                "system_code": "WAREHOUSE",
-                "connection_code": "MAIN",
-                "object_schema": "bronze",
-                "object_name": "Orders",
-                "object_description": "Sales orders; one row represents one order.",
-                "zone_code": "bronze",
-            },
-            {
-                "tenant_code": "GDS",
-                "system_code": "WAREHOUSE",
-                "connection_code": "MAIN",
-                "object_schema": "bronze",
-                "object_name": "Customers",
-                "object_description": "ERP customer accounts; one row per customer account.",
-                "zone_code": "bronze",
-            },
-        ],
-        "object_attribute_context": [
-            {
-                "tenant_code": "GDS",
-                "system_code": "WAREHOUSE",
-                "connection_code": "MAIN",
-                "object_schema": "bronze",
-                "object_name": "Orders",
-                "attributes": [
-                    {
-                        "attribute_name": "CustomerCode",
-                        "attribute_description": "ERP customer account that placed this order.",
-                        "attribute_data_type": "VARCHAR",
-                        "attribute_inferred_data_type": "VARCHAR",
-                        "attribute_nullability": False,
-                        "is_natural_key": False,
-                        "is_surrogate_key": False,
-                        "is_masking_required": False,
-                        "is_meta_data": False,
-                        "profile": {
-                            "profiled_at": "2026-09-07T14:30:00Z",
-                            "row_scope": "all_rows",
-                            "batch_attribute_name": None,
-                            "batch_id": None,
-                            "row_count": 1000,
-                            "non_null_count": 1000,
-                            "null_count": 0,
-                            "blank_count": 0,
-                            "distinct_count": 100,
-                            "min_data_length": 6,
-                            "max_data_length": 6,
-                            "avg_data_length": 6,
-                            "percent_populated": 100,
-                            "percent_duplicates": 90,
-                            "percent_null": 0,
-                            "percent_blank": 0,
-                            "percent_distinct": 10,
-                        },
-                    }
-                ],
-                "selected_attribute_names": ["CustomerCode"],
-            },
-            {
-                "tenant_code": "GDS",
-                "system_code": "WAREHOUSE",
-                "connection_code": "MAIN",
-                "object_schema": "bronze",
-                "object_name": "Customers",
-                "attributes": [
-                    {
-                        "attribute_name": "CustomerCode",
-                        "attribute_description": "Business "
-                        "identifier "
-                        "of "
-                        "this "
-                        "ERP "
-                        "customer "
-                        "account.",
-                        "attribute_data_type": "VARCHAR",
-                        "attribute_inferred_data_type": "VARCHAR",
-                        "attribute_nullability": False,
-                        "is_natural_key": True,
-                        "is_surrogate_key": False,
-                        "is_masking_required": False,
-                        "is_meta_data": False,
-                        "profile": {
-                            "profiled_at": "2026-09-07T14:30:00Z",
-                            "row_scope": "all_rows",
-                            "batch_attribute_name": None,
-                            "batch_id": None,
-                            "row_count": 100,
-                            "non_null_count": 100,
-                            "null_count": 0,
-                            "blank_count": 0,
-                            "distinct_count": 100,
-                            "min_data_length": 6,
-                            "max_data_length": 6,
-                            "avg_data_length": 6,
-                            "percent_populated": 100,
-                            "percent_duplicates": 0,
-                            "percent_null": 0,
-                            "percent_blank": 0,
-                            "percent_distinct": 100,
-                        },
-                    }
-                ],
-                "selected_attribute_names": ["CustomerCode"],
-            },
-        ],
-        "ingestion_mapping": [
-            {
-                "source": {
-                    "tenant_code": "ACME",
-                    "system_code": "ERP",
-                    "connection_code": "ERP_SOURCE",
-                    "object_schema": "sales",
-                    "object_name": "SalesOrder",
-                    "object_description": "Sales orders created in ERP; one row per order.",
-                },
-                "target": {
-                    "tenant_code": "GDS",
-                    "system_code": "WAREHOUSE",
-                    "connection_code": "MAIN",
-                    "object_schema": "bronze",
-                    "object_name": "Orders",
-                },
-            },
-            {
-                "source": {
-                    "tenant_code": "ACME",
-                    "system_code": "ERP",
-                    "connection_code": "ERP_SOURCE",
-                    "object_schema": "sales",
-                    "object_name": "Customer",
-                    "object_description": "ERP customer accounts; one row per customer account.",
-                },
-                "target": {
-                    "tenant_code": "GDS",
-                    "system_code": "WAREHOUSE",
-                    "connection_code": "MAIN",
-                    "object_schema": "bronze",
-                    "object_name": "Customers",
-                },
-            },
-        ],
-        "object_relationship_context": [
-            {
-                "tenant_code": "GDS",
-                "system_code": "WAREHOUSE",
-                "connection_code": "MAIN",
-                "object_schema": "bronze",
-                "object_name": "Orders",
-                "incoming_relationships": [],
-                "outgoing_relationships": [],
-            },
-            {
-                "tenant_code": "GDS",
-                "system_code": "WAREHOUSE",
-                "connection_code": "MAIN",
-                "object_schema": "bronze",
-                "object_name": "Customers",
-                "incoming_relationships": [],
-                "outgoing_relationships": [],
-            },
-        ],
-        "context_records": [
-            {
-                "context_record_id": "90b6320b-c2e0-5e9d-bd00-0e14e6d259fe",
-                "context_group_name": "ERP relationship notes",
-                "context_type_name": "Business Requirement",
-                "context_text": (
-                    "Within this ERP source, Orders.CustomerCode references "
-                    "the customer account identified by "
-                    "Customers.CustomerCode."
-                ),
-                "source_reference": '{"section": "Orders and customers"}',
-            }
-        ],
-        "conceptual_object_list": [],
-        "conceptual_objects": [],
-        "conceptual_relationship_list": [],
-        "conceptual_relationships": [],
-        "naming_instructions": "Use PascalCase for Conceptual concept and relationship "
-        "names. Keep names business-facing and independent of physical table names.",
     },
     "logical": {
         "source_context": [
@@ -5599,9 +4845,62 @@ INPUT_EXAMPLES["logical"]["table_index"] = [
     for position, entry in enumerate(INPUT_EXAMPLES["logical"]["object_context"], start=1)
 ]
 
+# Subject Area runs see the whole Input Scope in compact form, by table_index id.
+INPUT_EXAMPLES["subject_area"] = {
+    "source_context": deepcopy(INPUT_EXAMPLES["analysis"]["source_context"]),
+    "gds_context": deepcopy(INPUT_EXAMPLES["analysis"]["gds_context"]),
+    "table_index": [
+        {
+            "table": f"t{position}",
+            **{
+                name: entry[name]
+                for name in (
+                    "tenant_code",
+                    "system_code",
+                    "connection_code",
+                    "object_schema",
+                    "object_name",
+                )
+            },
+        }
+        for position, entry in enumerate(INPUT_EXAMPLES["analysis"]["object_context"], start=1)
+    ],
+    "scope_tables": [
+        {
+            "table": f"t{position}",
+            "description": entry["object_description"],
+            "zone_code": entry["zone_code"],
+            "row_count": None,
+            "column_count": len(group["attributes"]),
+            "column_names": [attribute["attribute_name"] for attribute in group["attributes"]],
+        }
+        for position, (entry, group) in enumerate(
+            zip(
+                INPUT_EXAMPLES["analysis"]["object_context"],
+                INPUT_EXAMPLES["analysis"]["object_attribute_context"],
+                strict=True,
+            ),
+            start=1,
+        )
+    ],
+    "table_links": [{"from": "t1", "to": "t2", "validation_result": "supported", "edge_count": 1}],
+    "existing_subject_areas": [
+        {
+            "name": "Sales",
+            "definition": "Customer orders and the customers who place them.",
+            "status": "active",
+            "is_locked": False,
+            "tables": ["t1", "t2"],
+            "locked_tables": [],
+        }
+    ],
+    "context_records": deepcopy(INPUT_EXAMPLES["analysis"]["context_records"]),
+    "max_subject_area_columns": 300,
+}
+
 # Use one complete saved validation example in each physical modeling workflow.
 # These are aggregate measurements, never sample source rows.
-for _relationship_workflow in ("analysis", "conceptual", "logical"):
+for _relationship_workflow in ("analysis", "logical"):
     _relationship_groups = INPUT_EXAMPLES[_relationship_workflow]["object_relationship_context"]
     _relationship_attribute = (
         "customer_id" if _relationship_workflow == "logical" else "CustomerCode"

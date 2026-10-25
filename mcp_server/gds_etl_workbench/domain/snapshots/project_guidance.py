@@ -83,17 +83,16 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
         "Keep each Context Record focused and traceable. Generate its UUID once and "
         "retain it across edits and retries.",
     ),
-    "conceptual_object": (
-        (
-            "Build compact business concepts, not one Conceptual Object per physical Object "
-            "or Logical Entity."
-        ),
-        "Define the business process and what one occurrence of each concept represents.",
-        "Classify coverage through supports; never duplicate the Logical model.",
-        "Use PascalCase by default unless user or Project policy says otherwise.",
+    "subject_area": (
+        "Name one business capability, such as Sales or Support. A Subject Area is a focus "
+        "window over Input Scope tables for Logical work, not a separate model.",
+        "Define what the area covers so each Logical Build call knows its boundary.",
+        "Keep each area small enough for one modeling call; split a large capability.",
     ),
-    "conceptual_relationship": (
-        "Use business relationships and evidence-backed high-level cardinality.",
+    "subject_area_table": (
+        "Place each active Input Scope table in every area it serves; a table may belong "
+        "to several areas. A table with no active membership is Unassigned.",
+        "Use the table's exact Input Scope key; memberships are not modeling evidence.",
     ),
     "logical_submodel": ("Group the normalized operational project by coherent business area.",),
     "logical_entity": (
@@ -219,6 +218,7 @@ _FIELD_GUIDANCE: dict[str, str] = {
     "code_entry_point": "Optional entry point as plain text.",
     "code_parameters": "Optional parameters as any JSON value; no fixed shape is required.",
     "object_dependency_order": "Use zero or a positive execution dependency order.",
+    "subject_area_name": "Use the exact Subject Area name; it is the area's identity.",
     "is_active": (
         "Use true for current records and false only for an intentional inactive replacement."
     ),

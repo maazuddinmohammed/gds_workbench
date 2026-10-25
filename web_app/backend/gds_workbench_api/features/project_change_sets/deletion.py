@@ -34,7 +34,6 @@ class ProjectDeletionPlan:
 # Fixed SQL identifiers only. Supporting rows are not standalone authored datasets,
 # but their numeric identities and locks must participate in deletion confirmation.
 _SUPPORT_PARENTS = (
-    ("conceptual_support", ("conceptual_object", "conceptual_relationship")),
     *(
         (f"{layer}_{kind}", tuple(f"{layer}_{parent}" for parent in parents))
         for layer in ("logical", "dimensional")

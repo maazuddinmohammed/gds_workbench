@@ -24,9 +24,8 @@ Use these terms consistently. Load the affected [metadata table reference](metad
 | Metadata Change Set | Tenant-owned pending physical metadata and Copy/Process configuration. It contains no Project records. |
 | Project | Tenant-owned governed aggregate containing scope, modeling sections, and revision. |
 | Project Change Set | Pending Project records; it cannot change physical metadata. |
-| Concept / Conceptual Object | Business meaning represented in a Project, independent of a particular physical Object. Several Objects may support one concept. See [business concepts](conceptual-build/business-concepts.md). |
-| Conceptual Relationship | Business association between Concepts, with direction, cardinality and an explained basis. Its [record contract](project/conceptual.md) differs from physical Attribute-level Analysis. |
-| Conceptual support | Nested evidence linking a Concept or Conceptual Relationship to an actual scoped Object or applicable Context Record. A support is not a physical join or a separate Change Set dataset. |
+| Subject Area | Named business capability, such as Sales or Billing, over Bronze Input Scope tables; a table may belong to several. It chooses the tables a Logical Build works on and is never modeling evidence. See [Subject Areas](project/subject-areas.md). |
+| Unassigned table | Active Bronze Input Scope table with no active membership in an active Subject Area. It is worked out, not stored. |
 | Logical Entity / Attribute | A modeled business occurrence and its fields. Physical lineage uses typed sources; see [Logical records](project/logical.md). |
 | Dimensional Entity / Attribute | An analytical fact, dimension or bridge and its fields, with eligible Silver lineage or justified generation. [Dimensional records](project/dimensional.md) has distinct roles, grain, measure and history fields. |
 | Conformed dimension | Shared analytical context whose meaning, identity and relevant values/history agree across processes; matching names alone is insufficient. |

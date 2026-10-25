@@ -67,7 +67,7 @@ def test_workflow_runtime_services_share_one_executor_graph(
     )
     for executor_name in (
         "AnalysisInferenceWorkflow",
-        "ConceptualWorkflow",
+        "SubjectAreaWorkflow",
         "LogicalWorkflow",
         "DimensionalWorkflow",
         "MappingWorkflow",
@@ -96,7 +96,7 @@ def test_workflow_runtime_services_share_one_executor_graph(
         captured[name]
         for name in (
             "AnalysisInferenceWorkflow",
-            "ConceptualWorkflow",
+            "SubjectAreaWorkflow",
             "LogicalWorkflow",
             "DimensionalWorkflow",
             "MappingWorkflow",
@@ -118,7 +118,7 @@ def test_workflow_runtime_services_share_one_executor_graph(
     assert execution.profiling is services.profiling
     assert execution.analysis_inference is services.analysis_inference
     assert execution.analysis_validation is services.analysis_validation
-    assert execution.conceptual is services.conceptual
+    assert execution.subject_area is services.subject_area
     assert execution.logical is services.logical
     assert execution.dimensional is services.dimensional
     assert execution.mapping is services.mapping

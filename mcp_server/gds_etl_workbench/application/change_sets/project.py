@@ -61,7 +61,7 @@ READ_SECTION_COLUMNS = (
     "enrichment_document",
     "analysis_document",
     "context_document",
-    "conceptual_document",
+    "subject_area_document",
     "logical_document",
     "dimensional_document",
     "mapping_document",

@@ -169,6 +169,14 @@ function ProjectOverviewView({
                         >
                           Review Analysis
                         </Link>
+                      ) : row.workflow === "subject_area" ? (
+                        <Link
+                          className="text-action"
+                          to="/tenants/$tenantId/projects/$projectId/subject-areas"
+                          params={{ tenantId: String(tenantId), projectId: String(project.project_id) }}
+                        >
+                          Review Subject Areas
+                        </Link>
                       ) : row.workflow === "context" ? (
                         <Link
                           className="text-action"
@@ -202,7 +210,7 @@ function WorkflowCoverage({ row }: { row: WorkflowLedgerEntry }) {
   return (
     <span className="workflow-coverage">
       <strong>
-        {row.result_count} {row.workflow === "scope" ? "Objects" : "results"}
+        {row.result_count} {row.workflow === "scope" ? "Objects" : row.workflow === "subject_area" ? "areas" : "results"}
       </strong>
       {row.locked_count ? <small>{row.locked_count} locked</small> : null}
     </span>
@@ -231,6 +239,7 @@ function WorkflowStateBadge({ state }: { state: WorkflowLedgerEntry["state"] }) 
 }
 
 function ledgerWorkflowLabel(workflow: WorkflowLedgerEntry["workflow"]): string {
+  if (workflow === "subject_area") return "Subject areas";
   return workflow[0]?.toLocaleUpperCase() + workflow.slice(1);
 }
 

@@ -63,7 +63,7 @@ def registered_tool_definitions(
     max_page_records: int = 200,
 ) -> tuple[LocalAgentToolDefinition, ...]:
     """Shared discovery contract; each run supplies its enforced paging limit."""
-    if workflow in {"analysis", "conceptual", "logical", "dimensional"}:
+    if workflow in {"analysis", "subject_area", "logical", "dimensional"}:
         from .context_readers import reader_definitions
 
         return reader_definitions(workflow)

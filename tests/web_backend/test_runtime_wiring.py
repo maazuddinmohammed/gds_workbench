@@ -87,7 +87,7 @@ def test_runtime_factory_owns_the_database_lifecycle() -> None:
         in app.openapi()["paths"]
     )
     assert (
-        "/api/v1/tenants/{tenant_id}/projects/{project_id}/conceptual/objects"
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/subject-areas"
         in app.openapi()["paths"]
     )
     assert (
@@ -99,7 +99,7 @@ def test_runtime_factory_owns_the_database_lifecycle() -> None:
         "validation-runs/{workflow_run_id}/execute" in app.openapi()["paths"]
     )
     assert (
-        "/api/v1/tenants/{tenant_id}/projects/{project_id}/conceptual/"
+        "/api/v1/tenants/{tenant_id}/projects/{project_id}/subject-areas/"
         "runs/{workflow_run_id}/execute" in app.openapi()["paths"]
     )
     assert (

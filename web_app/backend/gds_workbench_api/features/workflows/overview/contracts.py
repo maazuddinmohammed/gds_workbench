@@ -10,7 +10,7 @@ type LedgerWorkflow = Literal[
     "profiling",
     "analysis",
     "context",
-    "conceptual",
+    "subject_area",
     "logical",
     "dimensional",
 ]
@@ -25,7 +25,7 @@ type ProjectSection = Literal[
     "profiling",
     "context",
     "analysis",
-    "conceptual",
+    "subject-area",
     "logical",
     "dimensional",
     "mapping",

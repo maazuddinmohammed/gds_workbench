@@ -4,8 +4,7 @@ Confirmed Atlas defaults for newly authored names. Reuse the selected Project's 
 
 | Name | Default / example |
 |---|---|
-| Conceptual Object | PascalCase business noun: `Customer`, `OrderLine`, `ProductCategory`. |
-| Conceptual Relationship | PascalCase business phrase: `Places`, `Contains`, `BilledTo`. |
+| Subject Area | Short Title Case business capability: `Order Capture`, `Billing`, `Customer Support`. |
 | Logical Entity / Submodel | PascalCase meaningful subject: `CustomerAccount`, `Sales`. |
 | Logical Attribute | PascalCase: `CustomerName`, `OrderDate`, `TotalAmount`. Only identifiers take the `ID` suffix. |
 | Logical identifier / foreign key | Uppercase `ID`: `CustomerID`, `BillingCustomerID`; never default to `CustomerId` or `customer_id`. |

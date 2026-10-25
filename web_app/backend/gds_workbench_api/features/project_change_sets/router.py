@@ -33,6 +33,7 @@ from .contracts import (
     PutProjectStageChunkResult,
     ReviewProjectRecordsRequest,
     ReviewProjectRecordsResult,
+    SaveSubjectAreaRequest,
     StageProjectChangeSetRequest,
     StageProjectChangeSetResult,
     ValidateProjectChangeSetResult,
@@ -55,6 +56,16 @@ class ProjectChangeSetService(Protocol):
         command: ProjectRecordEditorRequest | SaveProjectRecordRequest,
         idempotency_key: UUID | None = None,
     ) -> ProjectRecordEditor | ReviewProjectRecordsResult: ...
+
+    async def save_subject_area(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        project_id: int,
+        command: SaveSubjectAreaRequest,
+        idempotency_key: UUID,
+    ) -> ReviewProjectRecordsResult: ...
 
     async def add_input_scope(
         self,
@@ -316,6 +327,28 @@ def create_project_change_sets_router(
             idempotency_key=idempotency_key,
         )
 
+    async def save_subject_area(
+        tenant_id: PositivePathId,
+        project_id: PositivePathId,
+        command: SaveSubjectAreaRequest,
+        idempotency_key: IdempotencyKey,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
+    ) -> ReviewProjectRecordsResult:
+        return await service.save_subject_area(
+            principal,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            command=command,
+            idempotency_key=idempotency_key,
+        )
+
+    router.add_api_route(
+        "/review/subject-area",
+        save_subject_area,
+        methods=["POST"],
+        response_model=ReviewProjectRecordsResult,
+    )
     router.add_api_route(
         "/review/editor", load_record_editor, methods=["POST"], response_model=ProjectRecordEditor
     )

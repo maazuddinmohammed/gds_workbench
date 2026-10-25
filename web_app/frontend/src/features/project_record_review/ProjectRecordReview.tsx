@@ -7,7 +7,7 @@ import type { ProjectRecordReviewApi, ProjectReviewCommand, ProjectReviewDataset
 import "./project-review.css";
 
 const deletionSections = [
-  { label: "Conceptual", datasets: /^conceptual_/ },
+  { label: "Subject areas", datasets: /^subject_area/ },
   { label: "Logical", datasets: /^logical_/ },
   { label: "Dimensional", datasets: /^dimensional_/ },
   { label: "Mapping", datasets: /^mapping_/ },
@@ -216,8 +216,8 @@ export function ReviewDialog({
           {previewQuery.isError ? <p role="alert">{failureMessage(previewQuery.error, false)}</p> : null}
           {stale ? <p role="alert">The Project changed. Close this preview and refresh before reviewing again.</p> : null}
           {!hasTenantLock ? <p role="alert">Tenant Lock required to apply this review.</p> : null}
-          {command.layer ? <p>{deleting ? "Includes all records in this layer, across pages and filters." : command.layer === "conceptual"
-            ? "This includes every active Conceptual object, relationship, and support link, across all pages and filters."
+          {command.layer ? <p>{deleting ? "Includes all records in this layer, across pages and filters." : command.layer === "subject_area"
+            ? "This includes every active Subject Area and its table memberships. Input Scope tables are not changed."
             : `This includes every active ${command.layer === "logical" ? "Logical" : "Dimensional"} entity, attribute, relationship, and submodel, including memberships and support records, across all pages and filters.`}</p> : null}
           {deleting ? <p className="project-delete-warning">Permanently deletes these records, including inactive records. This cannot be undone. Unlock locked records first.</p> : null}
           {command.action === "deactivate" ? <p>Deactivation keeps records in the database and excludes them from active workflows. You can activate them again. Required dependent status changes are listed below.</p> : null}

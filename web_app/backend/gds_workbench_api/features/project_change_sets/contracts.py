@@ -23,9 +23,9 @@ from gds_etl_workbench.application.change_sets.project import (
     StageProjectChangeSetResult,
     ValidateProjectChangeSetResult,
 )
-from gds_etl_workbench.domain.modeling_records import ContextRecordId
+from gds_etl_workbench.domain.modeling_records import ContextRecordId, NonblankText
 from gds_etl_workbench.domain.snapshots.project import ProjectChangeSetDataset
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from .review import ProjectReviewDataset
 
@@ -44,7 +44,7 @@ class ReviewProjectRecordsRequest(BaseModel):
     dataset: Literal["analysis_result"] | ProjectReviewDataset
     record_ids: Annotated[list[ProjectRecordId], Field(max_length=200)]
     action: Literal["lock", "unlock", "deactivate", "reactivate", "delete"]
-    layer: Literal["conceptual", "logical", "dimensional"] | None = None
+    layer: Literal["subject_area", "logical", "dimensional"] | None = None
     expected_project_revision: int = Field(gt=0)
 
     expected_plan_digest: str | None = Field(default=None, pattern=SHA256_PATTERN)
@@ -54,6 +54,44 @@ class ReviewProjectRecordsRequest(BaseModel):
         _validate_review_selection(self.dataset, self.record_ids, self.action, self.layer)
         if len(set(self.record_ids)) != len(self.record_ids):
             raise ValueError("Select each record once.")
+        return self
+
+
+class SaveSubjectAreaRequest(BaseModel):
+    """One human change to one Subject Area: create, rename, define, add or remove tables."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    expected_project_revision: int = Field(gt=0)
+    subject_area_id: int | None = Field(default=None, gt=0)
+    subject_area_name: (
+        Annotated[str, StringConstraints(min_length=1, max_length=255, pattern=r"\S")] | None
+    ) = None
+    subject_area_definition: NonblankText | None = None
+    add_object_ids: Annotated[list[Annotated[int, Field(gt=0)]], Field(max_length=5_000)] = []
+    remove_object_ids: Annotated[list[Annotated[int, Field(gt=0)]], Field(max_length=5_000)] = []
+
+    @model_validator(mode="after")
+    def validate_change(self) -> Self:
+        if self.subject_area_id is None:
+            if self.subject_area_name is None or self.subject_area_definition is None:
+                raise ValueError("A new Subject Area needs a name and a definition.")
+            if self.remove_object_ids:
+                raise ValueError("A new Subject Area has no tables to remove.")
+        elif (
+            self.subject_area_name is None
+            and self.subject_area_definition is None
+            and not self.add_object_ids
+            and not self.remove_object_ids
+        ):
+            raise ValueError("Change the name, the definition or the tables.")
+        added, removed = set(self.add_object_ids), set(self.remove_object_ids)
+        if (
+            len(added) != len(self.add_object_ids)
+            or len(removed) != len(self.remove_object_ids)
+            or added & removed
+        ):
+            raise ValueError("Add or remove each table once.")
         return self
 
 
@@ -72,7 +110,7 @@ class PreviewProjectRecordsRequest(BaseModel):
     dataset: ProjectReviewDataset
     record_ids: Annotated[list[ProjectRecordId], Field(max_length=200)]
     action: Literal["lock", "unlock", "deactivate", "reactivate", "delete"]
-    layer: Literal["conceptual", "logical", "dimensional"] | None = None
+    layer: Literal["subject_area", "logical", "dimensional"] | None = None
     expected_project_revision: int = Field(gt=0)
     expected_plan_digest: str | None = Field(default=None, pattern=SHA256_PATTERN)
 
@@ -93,8 +131,8 @@ def _validate_review_selection(
     elif any(type(record_id) is not int for record_id in record_ids):
         raise ValueError("This dataset requires numeric record identities.")
     if action == "delete" and dataset not in {
-        "conceptual_object",
-        "conceptual_relationship",
+        "subject_area",
+        "subject_area_table",
         "logical_entity",
         "logical_attribute",
         "logical_relationship",
@@ -111,7 +149,7 @@ def _validate_review_selection(
     elif (
         record_ids
         or action not in {"deactivate", "delete"}
-        or dataset != ("conceptual_object" if layer == "conceptual" else f"{layer}_entity")
+        or dataset != ("subject_area" if layer == "subject_area" else f"{layer}_entity")
     ):
         raise ValueError(
             "Clear layer requires its primary dataset, no record IDs, and a removal action."

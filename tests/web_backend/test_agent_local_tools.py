@@ -93,7 +93,7 @@ def _request(
     catalog = catalog or _Catalog()
     return AgentExecutionRequest(
         workflow_run_id=1048,
-        workflow="conceptual",
+        workflow="subject_area",
         stage="candidate_authoring",
         execution_mode="tool_assisted",
         selection=_selection(sdk_code=sdk_code),

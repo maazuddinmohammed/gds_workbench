@@ -1,0 +1,87 @@
+"""Explicit Subject Area Workflow Run execution route."""
+
+from typing import Annotated, Literal, Protocol
+
+from fastapi import APIRouter, Depends, Path, Response, status
+from gds_etl_workbench.application.identity import IdentityProvider
+from gds_etl_workbench.domain.authorization import RequestPrincipal
+from pydantic import BaseModel, ConfigDict, Field
+
+from gds_workbench_api.dependencies import principal_dependency
+from gds_workbench_api.features.workflows.authoring.lifecycle import (
+    AgentWorkflowRunStart,
+)
+
+
+class ExecuteSubjectAreaRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    execution_mode: Literal["one_shot", "tool_assisted"]
+    expected_project_revision: int = Field(gt=0)
+
+
+class SubjectAreaWorkflowService(Protocol):
+    async def start(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        project_id: int,
+        workflow_run_id: int,
+        expected_execution_mode: Literal[
+            "one_shot",
+            "tool_assisted",
+        ],
+        expected_project_revision: int,
+    ) -> AgentWorkflowRunStart: ...
+
+
+def create_subject_area_workflow_router(
+    *,
+    identity_provider: IdentityProvider,
+    service: SubjectAreaWorkflowService,
+) -> APIRouter:
+    authenticate = principal_dependency(identity_provider)
+    router = APIRouter(
+        prefix="/api/v1/tenants/{tenant_id}/projects/{project_id}/subject-areas/runs",
+        tags=["subject-areas"],
+    )
+
+    async def execute_run(
+        response: Response,
+        tenant_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
+        workflow_run_id: Annotated[int, Path(gt=0)],
+        command: ExecuteSubjectAreaRunRequest,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
+    ) -> AgentWorkflowRunStart:
+        result = await service.start(
+            principal,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            workflow_run_id=workflow_run_id,
+            expected_execution_mode=command.execution_mode,
+            expected_project_revision=command.expected_project_revision,
+        )
+        if result.changed and result.workflow_run_state == "running":
+            response.status_code = status.HTTP_202_ACCEPTED
+        else:
+            response.status_code = status.HTTP_200_OK
+        return result
+
+    router.add_api_route(
+        "/{workflow_run_id}/execute",
+        execute_run,
+        methods=["POST"],
+        response_model=AgentWorkflowRunStart,
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    return router
+
+
+__all__ = [
+    "SubjectAreaWorkflowService",
+    "ExecuteSubjectAreaRunRequest",
+    "create_subject_area_workflow_router",
+]

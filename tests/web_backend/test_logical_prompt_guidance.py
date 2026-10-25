@@ -49,7 +49,9 @@ def test_logical_defaults_describe_the_compact_answer_and_keep_boundaries(
     placeholders = re.findall(r"\{\{\s*(\w+)\s*\}\}", instruction)
     assert len(placeholders) == len(set(placeholders))
     assert "table_index" in placeholders
-    assert not any("conceptual" in name or "submodel" in name for name in placeholders)
+    assert not any(
+        "subject_area" in name or "submodel" in name for name in placeholders
+    )
     assert "Submodel" not in system
     assert (
         system.index("Decide each Entity's grain")

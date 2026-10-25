@@ -9,12 +9,12 @@ function state(records) {
   return { effective: records };
 }
 
-test("local DBML renders complete and submodel files from the effective Project", () => {
+test("local DBML renders complete and submodel files from the effective Project, never Subject Areas", () => {
   const loaded = new Map([
-    ["conceptual_object", state([
-      { conceptual_object_name: "Customer", conceptual_object_type: "party", conceptual_object_status: "active" },
+    ["subject_area", state([
+      { subject_area_name: "Sales", subject_area_definition: "Customer orders.", subject_area_status: "active", subject_area_is_locked: false },
     ])],
-    ["conceptual_relationship", state([])],
+    ["subject_area_table", state([])],
     ["logical_submodel", state([
       { logical_submodel_name: "Sales", logical_submodel_definition: "Sales operations", logical_submodel_status: "active" },
     ])],
@@ -50,14 +50,10 @@ test("local DBML renders complete and submodel files from the effective Project"
     ["dimensional_relationship", state([])],
   ]);
 
-  const documents = dbml.render(loaded, {
-    project_id: 41,
-    project_name: "Customer Operations",
-    project_revision: 8,
-  });
+  const project = { project_id: 41, project_name: "Customer Operations", project_revision: 8 };
+  const documents = dbml.render(loaded, project);
 
   assert.deepEqual(documents.map((document) => document.path), [
-    "conceptual.dbml",
     "dimensional_complete.dbml",
     "logical_complete.dbml",
     "logical_sales.dbml",
@@ -66,12 +62,11 @@ test("local DBML renders complete and submodel files from the effective Project"
   assert.match(logical.content, /Table "silver"\."Customer"/);
   assert.match(logical.content, /"CustomerID" bigint \[unique, not null/);
   assert.equal(logical.table_count, 1);
+  assert.throws(() => dbml.render(loaded, project, { modelType: "subject_area" }), /model type is invalid/);
 });
 
 test("local DBML rejects relationships whose effective endpoints are missing", () => {
   const loaded = new Map([
-    ["conceptual_object", state([])],
-    ["conceptual_relationship", state([])],
     ["logical_submodel", state([])],
     ["logical_entity", state([
       { logical_entity_schema_name: "silver", logical_entity_name: "Order", logical_entity_dependency_order: 1, logical_entity_status: "active", submodels: [] },

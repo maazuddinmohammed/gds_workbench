@@ -34,11 +34,6 @@ from gds_workbench_api.features.code_generation.router import (
     CodeGenerationWorkflowService,
     create_code_generation_workflow_router,
 )
-from gds_workbench_api.features.conceptual import ConceptualService, create_conceptual_router
-from gds_workbench_api.features.conceptual.router import (
-    ConceptualWorkflowService,
-    create_conceptual_workflow_router,
-)
 from gds_workbench_api.features.context import (
     ContextService,
     create_context_router,
@@ -117,6 +112,12 @@ from gds_workbench_api.features.projects import (
 )
 from gds_workbench_api.features.prompts import PromptService, create_prompts_router
 from gds_workbench_api.features.session import SessionService, create_session_router
+from gds_workbench_api.features.subject_areas import (
+    SubjectAreaService,
+    SubjectAreaWorkflowService,
+    create_subject_area_router,
+    create_subject_area_workflow_router,
+)
 from gds_workbench_api.features.tenant_locks import (
     TenantLockService,
     create_tenant_lock_router,
@@ -178,8 +179,8 @@ def create_app(
     analysis_inference_workflow_service: AnalysisInferenceWorkflowService | None = None,
     analysis_validation_workflow_service: AnalysisValidationWorkflowService | None = None,
     context_service: ContextService | None = None,
-    conceptual_service: ConceptualService | None = None,
-    conceptual_workflow_service: ConceptualWorkflowService | None = None,
+    subject_area_service: SubjectAreaService | None = None,
+    subject_area_workflow_service: SubjectAreaWorkflowService | None = None,
     logical_service: LogicalService | None = None,
     project_targets_service: ProjectTargetsService | None = None,
     logical_workflow_service: LogicalWorkflowService | None = None,
@@ -385,18 +386,18 @@ def create_app(
                 service=context_service,
             )
         )
-    if conceptual_service is not None:
+    if subject_area_service is not None:
         app.include_router(
-            create_conceptual_router(
+            create_subject_area_router(
                 identity_provider=identity_provider,
-                service=conceptual_service,
+                service=subject_area_service,
             )
         )
-    if conceptual_workflow_service is not None:
+    if subject_area_workflow_service is not None:
         app.include_router(
-            create_conceptual_workflow_router(
+            create_subject_area_workflow_router(
                 identity_provider=identity_provider,
-                service=conceptual_workflow_service,
+                service=subject_area_workflow_service,
             )
         )
     if project_targets_service is not None:

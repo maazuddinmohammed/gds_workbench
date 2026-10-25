@@ -17,15 +17,14 @@ from gds_etl_workbench.application.project_snapshot import (
     build_project_snapshot,
     read_project_review_snapshot,
 )
-from gds_etl_workbench.application.modeling.conceptual import (
-    CONCEPTUAL_OBJECTS_SQL,
-    CONCEPTUAL_RELATIONSHIPS_SQL,
-)
 from gds_etl_workbench.application.modeling.modeled_layer import (
     DIMENSIONAL,
     LOGICAL,
     attributes_sql,
     entities_sql,
+)
+from gds_etl_workbench.application.modeling.subject_area import (
+    CURRENT_SUBJECT_AREA_TABLES_SQL,
 )
 from gds_etl_workbench.domain.snapshots.project import project_snapshot_records
 
@@ -52,10 +51,7 @@ async def test_locked_nested_evidence_survives_physical_deactivation(
         postgres_database, code_prefix=prefix
     )
     graph = complete_project_graph()
-    # Cover physical evidence on both Conceptual parent types and both modeled layers.
-    graph["conceptual_relationship"][0]["supports"] = deepcopy(
-        graph["conceptual_object"][0]["supports"]
-    )
+    # Cover locked evidence on both modeled layers and locked Subject Area tables.
     graph["dimensional_entity"][0]["sources"] = [
         {
             "support_source_type": "logical_entity",
@@ -83,17 +79,12 @@ async def test_locked_nested_evidence_survives_physical_deactivation(
             "is_locked": True,
         }
     ]
-    for dataset in (
-        "conceptual_object",
-        "conceptual_relationship",
-        "logical_entity",
-        "logical_attribute",
-    ):
-        nested_field = "supports" if dataset.startswith("conceptual") else "sources"
-        lock_field = "support_is_locked" if nested_field == "supports" else "is_locked"
+    for dataset in ("logical_entity", "logical_attribute"):
         for record in graph[dataset]:
-            for evidence in cast(list[dict[str, object]], record[nested_field]):
-                evidence[lock_field] = True
+            for evidence in cast(list[dict[str, object]], record["sources"]):
+                evidence["is_locked"] = True
+    for membership in graph["subject_area_table"]:
+        membership["subject_area_table_is_locked"] = True
     staged = _replace_codes(graph, code_prefix=prefix)
     initial = deepcopy(staged)
     for dataset in ("dimensional_entity", "dimensional_attribute"):
@@ -151,25 +142,28 @@ async def test_locked_nested_evidence_survives_physical_deactivation(
                     for record_id in indexed
                 )
             identities = await transaction.fetch_all(
-                "SELECT conceptual_object_id, conceptual_object_name "
-                "FROM workflow.conceptual_object "
+                "SELECT subject_area_id, subject_area_name "
+                "FROM workflow.subject_area "
                 "WHERE project_id = %s",
                 (project_id,),
             )
             assert identities
             for identity in identities:
-                record = review.records_by_id["conceptual_object"][
-                    identity["conceptual_object_id"]
+                record = review.records_by_id["subject_area"][
+                    identity["subject_area_id"]
                 ]
                 assert (
-                    record.model_dump()["conceptual_object_name"]
-                    == identity["conceptual_object_name"]
+                    record.model_dump()["subject_area_name"]
+                    == identity["subject_area_name"]
                 )
             current = await load_project_physical_scope(transaction, project)
             assert validate_future_graph(
                 snapshot=baseline, staged_documents={}, physical_scope=current
             ).valid
-        assert baseline.conceptual.relationships[0].supports[0].support_is_locked
+        assert [
+            (table.object_name, table.subject_area_table_is_locked)
+            for table in baseline.subject_area.tables
+        ] == [("customers", True), ("orders", True)]
         assert any(entity.sources[0].is_locked for entity in baseline.logical.entities)
         assert any(
             source.is_locked
@@ -232,15 +226,17 @@ async def test_locked_nested_evidence_survives_physical_deactivation(
                 evidence["support_source_type"] in {"object", "attribute"}
                 for evidence in focused_record["sources"]
             )
-            if source_layer == "source" and record_type == "object":
-                objects = await transaction.fetch_all(
-                    CONCEPTUAL_OBJECTS_SQL, (project_id, [], [], 100, 0)
-                )
-                relationships = await transaction.fetch_all(
-                    CONCEPTUAL_RELATIONSHIPS_SQL, (project_id, [], [], [], 100, 0)
-                )
-                assert any(not row["supports"] for row in objects)
-                assert not relationships[0]["supports"]
+            # The complete snapshot keeps the membership; the focused read hides a
+            # table that left eligible Scope.
+            memberships = await transaction.fetch_all(
+                CURRENT_SUBJECT_AREA_TABLES_SQL,
+                (project_id, project_id, project_id, [], 100, 0),
+            )
+            assert [row["object_name"] for row in memberships] == (
+                ["customers"]
+                if source_layer == "source" and record_type == "object"
+                else ["customers", "orders"]
+            )
 
         # Placement in this Tenant does not authorize another SourceTenant's evidence.
         _, foreign_tenant = _seed_project_foundation(
@@ -275,8 +271,9 @@ async def test_locked_nested_evidence_survives_physical_deactivation(
             source.support_source_type == "attribute"
             for source in reowned_attribute.sources
         )
-        if source_layer == "source":
-            assert any(not obj.supports for obj in reowned.conceptual.objects)
-            assert not reowned.conceptual.relationships[0].supports
+        # Subject Area tables are src Objects, so only the source case hides one.
+        assert [table.object_name for table in reowned.subject_area.tables] == (
+            ["customers"] if source_layer == "source" else ["customers", "orders"]
+        )
     finally:
         await database.close()

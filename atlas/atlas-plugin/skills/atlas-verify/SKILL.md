@@ -17,7 +17,7 @@ Goal: the requested kind of verification, reporting exactly which checks ran, wh
 | Persisted SQL Validation groups and checks | Applied complete Mapping, plus actual Code when testing its implementation, with [SQL-check authoring](../../references/methods/sql-validation.md). |
 | Measured data result | Explicit execution authorization, SQL policy and a governed route under [query scope](../../references/query-scope.md). |
 
-"Validate this logical model" does not need Mapping or SQL check authoring. Review Conceptual only as its own deliverable; never use it to verify other layers.
+"Validate this logical model" does not need Mapping or SQL check authoring. Subject Areas only choose tables; never use them to verify other layers.
 
 ## What you need
 

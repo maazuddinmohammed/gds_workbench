@@ -7,10 +7,6 @@ from dataclasses import dataclass, field
 from functools import partial
 from typing import LiteralString, cast
 
-from gds_etl_workbench.application.modeling.conceptual import (
-    HISTORICAL_CONCEPTUAL_OBJECTS_SQL,
-    HISTORICAL_CONCEPTUAL_RELATIONSHIPS_SQL,
-)
 from gds_etl_workbench.application.modeling.context import GROUPS_SQL, RECORDS_SQL, TYPES_SQL
 from gds_etl_workbench.application.modeling.enrichment import (
     ATTRIBUTE_ENRICHMENT_SQL,
@@ -28,6 +24,10 @@ from gds_etl_workbench.application.modeling.modeled_layer import (
 from gds_etl_workbench.application.modeling.profiling_analysis import (
     HISTORICAL_ANALYSIS_SQL,
     HISTORICAL_PROFILING_SQL,
+)
+from gds_etl_workbench.application.modeling.subject_area import (
+    SUBJECT_AREA_TABLES_SQL,
+    SUBJECT_AREAS_SQL,
 )
 from gds_etl_workbench.application.project_read import ProjectReadContext
 from gds_etl_workbench.domain.errors import InvalidRequestError
@@ -246,9 +246,6 @@ _INTERNAL_READ_FIELDS = frozenset(
         "analysis_result_id",
         "attribute_id",
         "attribute_source_mapping_id",
-        "conceptual_object_id",
-        "conceptual_relationship_id",
-        "conceptual_support_id",
         "dimensional_attribute_id",
         "dimensional_entity_id",
         "dimensional_relationship_id",
@@ -257,7 +254,6 @@ _INTERNAL_READ_FIELDS = frozenset(
         "entity_source_mapping_id",
         "entity_submodel_id",
         "from_attribute_id",
-        "from_conceptual_object_id",
         "from_dimensional_attribute_id",
         "from_dimensional_entity_id",
         "from_logical_attribute_id",
@@ -279,9 +275,10 @@ _INTERNAL_READ_FIELDS = frozenset(
         "object_id",
         "source_system_id",
         "source_system_name",
+        "subject_area_id",
+        "subject_area_table_id",
         "submodel_id",
         "to_attribute_id",
-        "to_conceptual_object_id",
         "to_dimensional_attribute_id",
         "to_dimensional_entity_id",
         "to_logical_attribute_id",
@@ -384,17 +381,17 @@ async def read_project_review_snapshot(
         RECORDS_SQL,
         (project.project_id, [], [], limit, 0),
     )
-    rows["conceptual_object"] = await fetch(
+    rows["subject_area"] = await fetch(
         transaction,
-        "conceptual_object",
-        HISTORICAL_CONCEPTUAL_OBJECTS_SQL,
-        (project.project_id, list(project.readable_source_tenant_ids), [], [], limit, 0),
+        "subject_area",
+        SUBJECT_AREAS_SQL,
+        (project.project_id, limit, 0),
     )
-    rows["conceptual_relationship"] = await fetch(
+    rows["subject_area_table"] = await fetch(
         transaction,
-        "conceptual_relationship",
-        HISTORICAL_CONCEPTUAL_RELATIONSHIPS_SQL,
-        (project.project_id, list(project.readable_source_tenant_ids), [], [], [], limit, 0),
+        "subject_area_table",
+        SUBJECT_AREA_TABLES_SQL,
+        (project.project_id, list(project.readable_source_tenant_ids), limit, 0),
     )
     await _fetch_layer(transaction, project, LOGICAL, rows, limit)
     await _fetch_layer(transaction, project, DIMENSIONAL, rows, limit)
@@ -450,9 +447,9 @@ async def read_project_review_snapshot(
                 "groups": records["context_group"],
                 "records": records["context_record"],
             },
-            "conceptual": {
-                "objects": records["conceptual_object"],
-                "relationships": records["conceptual_relationship"],
+            "subject_area": {
+                "areas": records["subject_area"],
+                "tables": records["subject_area_table"],
             },
             "logical": {
                 "submodels": records["logical_submodel"],
@@ -487,8 +484,8 @@ async def read_project_review_snapshot(
     for dataset in (
         "context_record",
         "analysis_result",
-        "conceptual_object",
-        "conceptual_relationship",
+        "subject_area",
+        "subject_area_table",
         "logical_submodel",
         "logical_entity",
         "logical_attribute",

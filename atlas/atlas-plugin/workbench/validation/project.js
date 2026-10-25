@@ -177,7 +177,7 @@
           issue(issues, "context_group_child_locked", name, "context_group_name",
             "A locked Context Record protects its group metadata and scope.");
         }
-        for (const field of ["supports", "submodels", "sources"]) {
+        for (const field of ["submodels", "sources"]) {
           const changedItems = new Map((changed[field] || []).map((item) => [nestedKey(item), item]));
           for (const item of existing[field] || []) {
             const replacement = changedItems.get(nestedKey(item));
@@ -212,7 +212,7 @@
       if (field === "is_active" && before === true && after === false) return true;
       if ((field === "status" || field.endsWith("_status")) &&
           before === "active" && after === "inactive") return true;
-      return ["supports", "sources", "submodels"].includes(field) &&
+      return ["sources", "submodels"].includes(field) &&
         Array.isArray(before) && Array.isArray(after) && before.length === after.length &&
         before.every((item, index) => retainsPhysicalReferences(item, after[index]));
     });
@@ -340,12 +340,10 @@
       if (!(isAttribute ? attributes : objects).has(physicalKey(target, isAttribute)))
         scopeIssue(issues, dataset, isAttribute ? "source_attribute" : "source_object", message);
     };
-    for (const name of ["conceptual_object", "conceptual_relationship"])
-      for (const record of records(project, name))
-        for (const source of record.supports || []) requireSource(source, name,
-          retained(name, record) ? catalog.objects : activeInputs,
-          retained(name, record) ? catalog.attributes : activeInputAttributes,
-          "Physical support is not in active Project Input Scope.");
+    for (const record of records(project, "subject_area_table"))
+      if (!(retained("subject_area_table", record) ? catalog.objects : activeInputs).has(physicalKey(record)))
+        scopeIssue(issues, "subject_area_table", "object_name",
+          "Subject Area table is not in active Project Input Scope.");
     for (const name of ["logical_entity", "logical_attribute"])
       for (const record of records(project, name))
         for (const source of record.sources || []) requireSource(source, name,
@@ -410,19 +408,12 @@
       if (!documents.has(normalized(record.context_group_name))) issue(issues,
         "reference_not_found", "context_record", "context_group_name",
         "Referenced record is not present in the future Project graph.");
-    const conceptual = new Set(records(project, "conceptual_object")
-      .map((record) => normalized(record.conceptual_object_name)));
-    for (const record of records(project, "conceptual_object"))
-      for (const source of record.supports || []) validateContextSource(source,
-        "conceptual_object", contexts, issues);
-    for (const record of records(project, "conceptual_relationship")) {
-      if (!conceptual.has(normalized(record.from_conceptual_object_name)) ||
-          !conceptual.has(normalized(record.to_conceptual_object_name))) issue(issues,
-        "reference_not_found", "conceptual_relationship", "conceptual_object_name",
+    const subjectAreas = new Set(records(project, "subject_area")
+      .map((record) => normalized(record.subject_area_name)));
+    for (const record of records(project, "subject_area_table"))
+      if (!subjectAreas.has(normalized(record.subject_area_name))) issue(issues,
+        "reference_not_found", "subject_area_table", "subject_area_name",
         "Referenced record is not present in the future Project graph.");
-      for (const source of record.supports || []) validateContextSource(source,
-        "conceptual_relationship", contexts, issues);
-    }
     for (const layer of ["logical", "dimensional"]) {
       const submodels = new Set(records(project, `${layer}_submodel`)
         .map((record) => normalized(record[`${layer}_submodel_name`])));
@@ -515,11 +506,11 @@
       "active_dependency_invalid", dataset, field, message);
     const contextGroups = new Map(records(project, "context_group").map(record => [normalized(record.context_group_name), record]));
     const contextRecords = new Map(records(project, "context_record").map(record => [record.context_record_id, record]));
-    for (const dataset of ["conceptual_object", "conceptual_relationship", "logical_entity", "logical_attribute", "dimensional_entity", "dimensional_attribute"]) {
+    for (const dataset of ["logical_entity", "logical_attribute", "dimensional_entity", "dimensional_attribute"]) {
       for (const owner of records(project, dataset)) {
         if (!active(owner, `${dataset}_status`)) continue;
-        for (const support of owner.supports || owner.sources || []) {
-          if (support.support_source_type !== "context_record" || (support.support_status ?? support.status) !== "active") continue;
+        for (const support of owner.sources || []) {
+          if (support.support_source_type !== "context_record" || support.status !== "active") continue;
           const target = contextRecords.get(support.context_record?.context_record_id);
           const group = target && contextGroups.get(normalized(target.context_group_name));
           if (target && (target.status !== "active" || group?.is_active !== true)) invalid(dataset,
@@ -554,15 +545,14 @@
       ...records(project, "dimensional_attribute").filter((record) =>
         active(record, "dimensional_attribute_status")).map(attributeKey),
     ]);
-    const activeConcepts = new Set(records(project, "conceptual_object")
-      .filter((record) => active(record, "conceptual_object_status"))
-      .map((record) => normalized(record.conceptual_object_name)));
-    for (const record of records(project, "conceptual_relationship")) {
-      if (active(record, "conceptual_relationship_status") &&
-          [record.from_conceptual_object_name, record.to_conceptual_object_name]
-            .some((name) => !activeConcepts.has(normalized(name)))) invalid(
-        "conceptual_relationship", "conceptual_object_name",
-        "Active Conceptual Relationship requires active endpoint Objects.");
+    const activeSubjectAreas = new Set(records(project, "subject_area")
+      .filter((record) => active(record, "subject_area_status"))
+      .map((record) => normalized(record.subject_area_name)));
+    for (const record of records(project, "subject_area_table")) {
+      if (active(record, "subject_area_table_status") &&
+          !activeSubjectAreas.has(normalized(record.subject_area_name))) invalid(
+        "subject_area_table", "subject_area_name",
+        "An active Subject Area table requires an active Subject Area.");
     }
     for (const layer of ["logical", "dimensional"]) {
       const label = layer === "logical" ? "Logical" : "Dimensional";

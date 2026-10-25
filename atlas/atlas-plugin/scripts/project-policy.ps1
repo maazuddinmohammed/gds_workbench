@@ -45,7 +45,7 @@ function Get-AtlasProjectPolicy($States, $MetadataStates, $Project) {
             if ($dataset -ceq 'attribute_enrichment' -and $parentLocks.ContainsKey((Get-PolicyPhysical $record))) { Add-PolicyIssue $issues 'enrichment_parent_locked' $dataset 'object_name' 'A locked Object enrichment also protects its Attribute findings.' }
         }
     }
-    foreach ($dataset in @('conceptual_object', 'conceptual_relationship', 'logical_submodel', 'logical_entity', 'logical_attribute', 'logical_relationship', 'dimensional_submodel', 'dimensional_entity', 'dimensional_attribute', 'dimensional_relationship')) {
+    foreach ($dataset in @('logical_submodel', 'logical_entity', 'logical_attribute', 'logical_relationship', 'dimensional_submodel', 'dimensional_entity', 'dimensional_attribute', 'dimensional_relationship')) {
         $override = Get-Property $details $(if ($dataset.StartsWith('dimensional')) {'gold_model_naming_instructions'} else {'silver_model_naming_instructions'})
         foreach ($record in @($added[$dataset])) {
             if ($null -eq $record) { continue }

@@ -573,7 +573,7 @@ describe("Project overview", () => {
     expect(within(workspaceNavigation).queryByRole("link", { name: "Mapping" })).not.toBeInTheDocument();
     expect(within(projectSections).getAllByRole("link").map((item) => item.getAttribute("aria-label"))).toEqual([
       "Overview", "Settings", "Project Input Scope", "Context", "Profiling", "Metadata enrichment",
-      "Analysis", "Conceptual", "Logical", "Dimensional", "Mapping", "Code generation", "Validation",
+      "Analysis", "Subject areas", "Logical", "Dimensional", "Mapping", "Code generation", "Validation",
     ]);
     await user.click(within(workspaceNavigation).getByRole("button", { name: "Collapse workspace navigation" }));
     expect(workspaceNavigation).toHaveAttribute("data-collapsed", "true");
@@ -607,7 +607,6 @@ describe("Project overview", () => {
     expect(within(ledger).getByText("25 Objects")).toBeVisible();
     expect(within(ledger).getByText("18 results")).toBeVisible();
     expect(within(ledger).getByText("Results available")).toBeVisible();
-    expect(within(ledger).queryByText("Conceptual results unavailable")).not.toBeInTheDocument();
     expect(within(ledger).getByText("Logical results unavailable")).toBeVisible();
     expect(within(ledger).queryByText(/blocked/i)).not.toBeInTheDocument();
     expect(within(ledger).getByRole("link", { name: "Review Input Scope" })).toHaveAttribute(
@@ -926,7 +925,7 @@ const projectOverviewPayload = {
     },
     workflowOverviewItem("analysis", 0, "not_started"),
     workflowOverviewItem("context", 0, "not_started"),
-    workflowOverviewItem("conceptual", 0, "not_started"),
+    workflowOverviewItem("subject_area", 0, "not_started"),
     workflowOverviewItem("logical", 0, "not_started"),
     {
       ...workflowOverviewItem("dimensional", 0, "not_started"),

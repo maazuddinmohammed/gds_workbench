@@ -3448,7 +3448,7 @@ DECLARE
         'logical_attribute_source_mapping', 'logical_entity_source_mapping',
         'logical_entity_submodel', 'logical_relationship', 'logical_attribute',
         'dimensional_entity', 'logical_entity', 'dimensional_submodel', 'logical_submodel',
-        'conceptual_support', 'conceptual_relationship', 'conceptual_object'
+        'subject_area_table', 'subject_area'
     ];
 BEGIN
     SELECT * INTO v_decision FROM application.authorize_project_record_review(

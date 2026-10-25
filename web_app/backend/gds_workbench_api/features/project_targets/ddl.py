@@ -94,7 +94,6 @@ def build_project_ddl(
     entities: Sequence[Mapping[str, Any]],
     attributes: Sequence[Mapping[str, Any]],
     relationships: Sequence[Mapping[str, Any]] = (),
-    conceptual: bool = False,
 ) -> str:
     if not entities or len(entities) > 200 or len(attributes) > 5000:
         raise InvalidRequestError(
@@ -107,8 +106,6 @@ def build_project_ddl(
         "-- Databricks Delta DDL. Review before executing in the intended catalog.",
         "-- Primary and foreign keys are informational and require Unity Catalog.",
     ]
-    if conceptual:
-        lines.append("-- Conceptual skeleton: ConceptID is an artificial export-only column.")
     names: dict[object, str] = {}
     keys: dict[object, str] = {}
     types: dict[tuple[object, str], str] = {}
@@ -125,16 +122,6 @@ def build_project_ddl(
             (row for row in attributes if row["entity_id"] == entity_id),
             key=lambda row: (row["ordinal_position"], str(row["attribute_name"])),
         )
-        if conceptual:
-            columns = [
-                {
-                    "attribute_name": "ConceptID",
-                    "data_type": "BIGINT",
-                    "is_nullable": False,
-                    "is_surrogate_key": True,
-                    "definition": "Artificial Conceptual export key.",
-                }
-            ]
         if not columns:
             raise InvalidRequestError("Each exported Entity must have active columns.")
         own_keys = [row for row in columns if row["is_surrogate_key"]]

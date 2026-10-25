@@ -170,8 +170,8 @@ async def test_valid_startup_still_tracks_usage_and_dispatches_its_executor(
         assert await worker.run_once() is WorkerRunResult.COMPLETED
     finally:
         await database.close()
-    assert [name for name, executor in executors.items() if executor.calls] == ["conceptual"]
-    assert executors["conceptual"].calls[0]["workflow_run_id"] == run_id
+    assert [name for name, executor in executors.items() if executor.calls] == ["subject_area"]
+    assert executors["subject_area"].calls[0]["workflow_run_id"] == run_id
     with startup_postgres_database.connect_owner() as connection:
         usage = require_row(
             connection.execute(

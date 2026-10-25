@@ -82,7 +82,7 @@ class StaticWorkflowOverviewService:
                     quality_warning_codes=(),
                 ),
                 WorkflowLedgerEntry(
-                    workflow="conceptual",
+                    workflow="subject_area",
                     result_count=0,
                     locked_count=0,
                     latest_run_id=None,
@@ -185,7 +185,7 @@ class OverviewTransaction:
         assert "workflow.attribute_profile" in query
         assert "workflow.analysis_result" in query
         assert "project.context_record" in query
-        assert "workflow.conceptual_object" in query
+        assert "workflow.subject_area" in query
         assert "workflow.logical_entity" in query
         assert "workflow.dimensional_entity" in query
         assert "workflow.mapping_object" in query
@@ -225,7 +225,7 @@ class OverviewTransaction:
                 "latest_run_created_at": created,
             },
             {**base, "workflow": "context", "result_count": 6},
-            {**base, "workflow": "conceptual", "result_count": 0},
+            {**base, "workflow": "subject_area", "result_count": 0},
             {**base, "workflow": "logical", "result_count": 0},
             {**base, "workflow": "dimensional", "result_count": 0},
             {**base, "workflow": "metadata_enrichment", "result_count": 3},
@@ -275,7 +275,7 @@ async def test_overview_states_are_results_driven_and_prerequisites_only_warn() 
         "profiling",
         "analysis",
         "context",
-        "conceptual",
+        "subject_area",
         "logical",
         "dimensional",
     )
@@ -293,7 +293,7 @@ async def test_overview_states_are_results_driven_and_prerequisites_only_warn() 
         ("profiling", "results_available"),
         ("context", "results_available"),
         ("analysis", "results_available"),
-        ("conceptual", "not_run"),
+        ("subject-area", "not_run"),
         ("logical", "not_run"),
         ("dimensional", "not_run"),
         ("mapping", "results_available"),
@@ -308,7 +308,7 @@ async def test_overview_states_are_results_driven_and_prerequisites_only_warn() 
         "metadata_enrichment",
         "profiling",
         "analysis",
-        "conceptual",
+        "subject_area",
         "logical",
         "dimensional",
         "mapping",

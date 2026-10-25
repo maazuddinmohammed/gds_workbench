@@ -104,14 +104,6 @@ _ATTRIBUTE_QUERIES: dict[TargetLayer, LiteralString] = {
 }
 
 
-_CONCEPTUAL_DDL_SQL: LiteralString = """
-SELECT conceptual_object_id AS entity_id, conceptual_object_name AS entity_name,
-       'conceptual' AS entity_schema_name, conceptual_object_definition AS definition
-  FROM workflow.conceptual_object
- WHERE project_id = %s AND (%s::BIGINT[] IS NULL OR conceptual_object_id = ANY(%s::BIGINT[]))
-   AND conceptual_object_status = 'active'
- ORDER BY conceptual_object_id LIMIT 201
-"""
 _LOGICAL_DDL_RELATIONSHIPS: LiteralString = """
 SELECT relation.logical_relationship_from_entity_id AS from_entity_id,
        relation.logical_relationship_to_entity_id AS to_entity_id,
@@ -356,9 +348,7 @@ class DatabaseProjectTargetsService:
             if project.project_revision != command.expected_project_revision:
                 raise ProjectRevisionConflictError()
             entities = await transaction.fetch_all(
-                _CONCEPTUAL_DDL_SQL
-                if command.layer == "conceptual"
-                else _ENTITY_QUERIES[command.layer],
+                _ENTITY_QUERIES[command.layer],
                 (project_id, command.entity_ids, command.entity_ids),
             )
             if command.entity_ids is not None and {row["entity_id"] for row in entities} != set(
@@ -368,17 +358,11 @@ class DatabaseProjectTargetsService:
                     "Some selected Entities are no longer active or available."
                 )
             ids = [row["entity_id"] for row in entities]
-            attributes = (
-                await transaction.fetch_all(_ATTRIBUTE_QUERIES[command.layer], (project_id, ids))
-                if command.layer != "conceptual"
-                else []
+            attributes = await transaction.fetch_all(
+                _ATTRIBUTE_QUERIES[command.layer], (project_id, ids)
             )
-            relationships = (
-                await transaction.fetch_all(
-                    _DDL_RELATIONSHIPS[command.layer], (project_id, ids, ids)
-                )
-                if command.layer != "conceptual"
-                else []
+            relationships = await transaction.fetch_all(
+                _DDL_RELATIONSHIPS[command.layer], (project_id, ids, ids)
             )
             if len(relationships) > 5000:
                 raise InvalidRequestError(
@@ -388,5 +372,4 @@ class DatabaseProjectTargetsService:
             entities=entities,
             attributes=attributes,
             relationships=relationships,
-            conceptual=command.layer == "conceptual",
         )

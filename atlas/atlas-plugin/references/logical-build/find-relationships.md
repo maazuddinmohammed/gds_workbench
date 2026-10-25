@@ -47,7 +47,7 @@ When querying, prepare bounded self-contained aggregate queries and expected-out
 | Documented roles/grain specify one detail record per parent | Infer intended one-to-one from that context; do not require observed counts. |
 | Unique parent key; several distinct child occurrences reference a parent | Observed many-to-one. Its reverse is one-to-many. |
 | Unique parent key and unique child reference within the inspected population | Observed at-most-one in both directions. A sparse batch alone does not establish a permanent one-to-one business rule. |
-| Associative records identify multiple distinct partners on both sides, with meaningful endpoint keys | Evidence for a many-to-many business association. Represent actual bridge references in physical Analysis; conceptual/logical structure is decided later. |
+| Associative records identify multiple distinct partners on both sides, with meaningful endpoint keys | Evidence for a many-to-many business association. Represent actual bridge references in physical Analysis; Logical structure is decided later. |
 | Duplicate proposed parent keys | Ambiguous lookup, history, incomplete key or repeated data to investigate; not automatic many-to-many. |
 | Measurements are absent/empty, but metadata explains the relationship | Keep the supported inference; do not call it measured. |
 | Neither metadata nor available evidence explains the relationship adequately | Keep the uncertain aspect unresolved. |
@@ -87,7 +87,7 @@ These checks and the procedure are a design synthesis from the cited definitions
 
 ## Analysis to modeled relationships
 
-Analysis stores `inferred_cardinality` independently of validation, with its reasoning in `relationship_basis`. Leave unmeasured validation fields null. Later Conceptual/Logical records assess cardinality for their own modeled grains. A category label can be a valid reference key; use `relationship_kind="reference"` for ordinary lookups and describe its category/domain semantics. Matching low-cardinality strings alone do not establish shared meaning or uniqueness.
+Analysis stores `inferred_cardinality` independently of validation, with its reasoning in `relationship_basis`. Leave unmeasured validation fields null. Later Logical records assess cardinality for their own modeled grains. A category label can be a valid reference key; use `relationship_kind="reference"` for ordinary lookups and describe its category/domain semantics. Matching low-cardinality strings alone do not establish shared meaning or uniqueness.
 
 Analysis findings do not create Logical FKs. During Logical design, map relevant supported associations to the actual modeled grains and keys, then author explicit relationships under the [relationship and graph review](logical-design.md#relationship-and-graph-review). Do not mechanically copy every physical edge or infer a join from matching names alone. Review isolated Entities and disconnected components with the user before completing project work; intentional separation remains valid.
 

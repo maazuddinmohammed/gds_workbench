@@ -21,7 +21,6 @@ from gds_workbench_api.features.analysis import (
     DatabaseAnalysisValidationRepository,
 )
 from gds_workbench_api.features.code_generation import CodeGenerationWorkflow
-from gds_workbench_api.features.conceptual import ConceptualWorkflow
 from gds_workbench_api.features.dimensional import DimensionalWorkflow
 from gds_workbench_api.features.logical import LogicalWorkflow
 from gds_workbench_api.features.mapping import (
@@ -36,6 +35,7 @@ from gds_workbench_api.features.metadata_enrichment.service import (
 )
 from gds_workbench_api.features.profiling import DatabaseProfilingWorkflowRepository
 from gds_workbench_api.features.profiling.workflow import ProfilingWorkflowOrchestrator
+from gds_workbench_api.features.subject_areas import SubjectAreaWorkflow
 from gds_workbench_api.features.validation import ValidationWorkflow
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRouter,
@@ -85,7 +85,7 @@ class WorkflowRuntimeServices:
     profiling: ProfilingWorkflowOrchestrator
     analysis_inference: AnalysisInferenceWorkflow
     analysis_validation: AnalysisValidationWorkflow
-    conceptual: ConceptualWorkflow
+    subject_area: SubjectAreaWorkflow
     logical: LogicalWorkflow
     dimensional: DimensionalWorkflow
     mapping: MappingWorkflow
@@ -103,7 +103,7 @@ class WorkflowRuntimeServices:
             profiling=self.profiling,
             analysis_inference=self.analysis_inference,
             analysis_validation=self.analysis_validation,
-            conceptual=self.conceptual,
+            subject_area=self.subject_area,
             logical=self.logical,
             dimensional=self.dimensional,
             mapping=self.mapping,
@@ -152,7 +152,7 @@ def create_workflow_runtime_services(
         no_op=no_op,
         lifecycle=lifecycle,
     )
-    conceptual_workflow = ConceptualWorkflow(
+    subject_area_workflow = SubjectAreaWorkflow(
         database=database,
         authorizer=authorizer,
         agent_executor=agent_executor,
@@ -225,7 +225,7 @@ def create_workflow_runtime_services(
             ),
             executor=databricks_execution.analysis_validation,
         ),
-        conceptual=conceptual_workflow,
+        subject_area=subject_area_workflow,
         logical=logical_workflow,
         dimensional=dimensional_workflow,
         mapping=mapping_workflow,

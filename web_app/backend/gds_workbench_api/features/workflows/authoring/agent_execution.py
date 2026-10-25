@@ -29,7 +29,7 @@ from gds_workbench_api.features.workflows.usage.contracts import (
 
 type AgenticWorkflow = Literal[
     "analysis_inference",
-    "conceptual",
+    "subject_area",
     "logical",
     "dimensional",
     "mapping",
@@ -54,10 +54,9 @@ type AgentToolName = Literal[
     "get_object_relationships",
     "get_context_records",
     "get_selected_logical_entities",
-    "list_conceptual_objects",
-    "get_conceptual_objects",
-    "list_conceptual_relationships",
-    "get_conceptual_relationships",
+    "get_scope_tables",
+    "get_table_links",
+    "get_subject_areas",
     "list_logical_submodels",
     "get_logical_submodels",
     "list_logical_entities",

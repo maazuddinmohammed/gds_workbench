@@ -61,7 +61,7 @@ type ChangeSetValidator = Callable[
 _AUTHORING_WORKFLOWS = frozenset(
     {
         "analysis",
-        "conceptual",
+        "subject_area",
         "logical",
         "dimensional",
         "mapping",

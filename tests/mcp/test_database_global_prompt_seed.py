@@ -32,8 +32,8 @@ EXPECTED_AGENTIC_STAGES: frozenset[StageIdentity] = frozenset(
         ("metadata_enrichment_attribute", "one_shot", "candidate_authoring"),
         ("analysis", "one_shot", "relationship_inference"),
         ("analysis", "tool_assisted", "relationship_inference"),
-        ("conceptual", "one_shot", "candidate_authoring"),
-        ("conceptual", "tool_assisted", "candidate_authoring"),
+        ("subject_area", "one_shot", "candidate_authoring"),
+        ("subject_area", "tool_assisted", "candidate_authoring"),
         ("logical", "one_shot", "candidate_authoring"),
         ("logical", "tool_assisted", "candidate_authoring"),
         ("dimensional", "one_shot", "candidate_authoring"),
@@ -47,7 +47,7 @@ EXPECTED_AGENTIC_STAGES: frozenset[StageIdentity] = frozenset(
 TOOL_ASSISTED_STAGES: frozenset[StageIdentity] = frozenset(
     {
         ("analysis", "tool_assisted", "relationship_inference"),
-        ("conceptual", "tool_assisted", "candidate_authoring"),
+        ("subject_area", "tool_assisted", "candidate_authoring"),
         ("logical", "tool_assisted", "candidate_authoring"),
         ("dimensional", "tool_assisted", "candidate_authoring"),
         ("mapping", "tool_assisted", "mapping_authoring"),
@@ -91,20 +91,20 @@ def _apply_sql(postgres_database: DisposablePostgres, content: str) -> None:
         ("05_global_prompt_defaults.template.v2.sql", "$workflow_defaults$"),
     ],
 )
-def test_default_prompt_versions_keep_conceptual_out_of_downstream_inputs(
+def test_default_prompt_versions_keep_subject_areas_out_of_downstream_inputs(
     filename: str,
     payload_tag: str,
 ) -> None:
     defaults = json.loads((SEED_ROOT / filename).read_text().split(payload_tag)[1])
     for default in defaults:
         workflow = default["project_workflow"]
-        if workflow not in {"logical", "dimensional"}:
+        if workflow not in {"logical", "dimensional", "mapping"}:
             continue
         placeholders = set(PLACEHOLDER.findall(default["system_prompt"])) | set(
             PLACEHOLDER.findall(default["instruction_prompt"])
         )
         tools = set(default["agent_tool_names"] or [])
-        assert not any("conceptual" in name for name in placeholders | tools)
+        assert not any("subject_area" in name for name in placeholders | tools)
         if workflow == "dimensional":
             if default["workflow_execution_mode"] == "tool_assisted":
                 assert "get_selected_logical_entities" in tools
@@ -547,7 +547,11 @@ def test_v2_prompt_seed_switches_global_defaults_and_v1_switches_back(
         encoding="utf-8"
     )
     payload = {
-        (row["project_workflow"], row["workflow_execution_mode"], row["workflow_stage_code"]): row
+        (
+            row["project_workflow"],
+            row["workflow_execution_mode"],
+            row["workflow_stage_code"],
+        ): row
         for row in json.loads(v2_template.split("$workflow_defaults$")[1])
     }
 
@@ -604,6 +608,6 @@ def test_v2_prompt_seed_switches_global_defaults_and_v1_switches_back(
     # Running v1 again reuses its published versions instead of adding new ones.
     _apply_sql(postgres_database, _render_seed())
     assert counts() == (templates, versions + len(EXPECTED_AGENTIC_STAGES))
-    assert [row["prompt_template_version_id"] for row in _snapshot(postgres_database)] == [
-        row["prompt_template_version_id"] for row in v1
-    ]
+    assert [
+        row["prompt_template_version_id"] for row in _snapshot(postgres_database)
+    ] == [row["prompt_template_version_id"] for row in v1]

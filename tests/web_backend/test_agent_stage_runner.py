@@ -35,7 +35,7 @@ def _plan(*, execution_mode: WorkflowExecutionMode = "one_shot") -> AgentRunPlan
         project_id=18,
         correlation_id=UUID("33333333-3333-3333-3333-333333333333"),
         project_revision=7,
-        project_workflow="conceptual",
+        project_workflow="subject_area",
         workflow_execution_mode=execution_mode,
         modeled_entity_type=None,
         selected_scope_digest="a" * 64,
@@ -149,7 +149,7 @@ async def test_stage_runner_uses_frozen_prompt_and_allowlisted_variables() -> No
     )
 
     request = executor.requests[0]
-    assert request.workflow == "conceptual"
+    assert request.workflow == "subject_area"
     assert request.system_prompt == "Project Customer 360; preserve saved locks"
     assert request.instruction_prompt == 'Use {"scope_count":2}'
     assert outcome.warning_codes == ()
@@ -228,18 +228,18 @@ async def test_frozen_tool_selection_controls_discovery_variables_and_invocation
 
     class EvidenceCatalog:
         max_cumulative_result_bytes = 4096
-        definitions = registered_tool_definitions("conceptual", max_page_records=7)
+        definitions = registered_tool_definitions("subject_area", max_page_records=7)
 
         def invoke(
             self, tool_name: str, arguments: Mapping[str, JsonValue]
         ) -> JsonValue:
-            assert tool_name == "get_object_details"
+            assert tool_name == "get_scope_tables"
             return {"items": [], "next_offset": None}
 
     plan = _plan(execution_mode="tool_assisted")
     stage = plan.stages[0].model_copy(
         update={
-            "agent_tool_names": ("get_object_details",),
+            "agent_tool_names": ("get_scope_tables",),
             "templates": PromptComponentTemplates(
                 system="Use evidence.",
                 instruction="Author.",
@@ -277,13 +277,13 @@ async def test_frozen_tool_selection_controls_discovery_variables_and_invocation
     )
     request = executor.requests[0]
     assert outcome.attempt_count == 1
-    assert request.allowed_tool_names == ("get_object_details",)
+    assert request.allowed_tool_names == ("get_scope_tables",)
     assert request.tool_instruction is not None
     assert '"cursor"' in request.tool_instruction
     assert "get_source_context" not in request.tool_instruction
     assert request.local_tool_catalog is not None
     assert request.local_tool_catalog.max_cumulative_result_bytes == 4096
-    assert request.local_tool_catalog.invoke("get_object_details", {}) == {
+    assert request.local_tool_catalog.invoke("get_scope_tables", {}) == {
         "items": [],
         "next_offset": None,
     }

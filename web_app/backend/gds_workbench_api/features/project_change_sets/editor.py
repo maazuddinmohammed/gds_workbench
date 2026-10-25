@@ -14,10 +14,9 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from .review import review_lifecycle
 
+# Subject Areas are edited through their own save command, which also moves tables.
 type EditableDataset = Literal[
     "mapping_object",
-    "conceptual_object",
-    "conceptual_relationship",
     "logical_submodel",
     "logical_entity",
     "logical_attribute",
@@ -96,17 +95,12 @@ def project_record_editor(
         nullable = any(item.get("type") == "null" for item in variants)
         spec = next(item for item in variants if item.get("type") != "null")
         field_type = spec.get("type")
-        if (
-            field_type not in {"string", "integer", "boolean"}
-            and name != "conceptual_object_aliases"
-        ):
+        if field_type not in {"string", "integer", "boolean"}:
             continue
         label = name.removeprefix(command.dataset + "_").removeprefix("dimensional_")
         label = label.removeprefix("is_").replace("_", " ").capitalize()
         kind = (
-            "lines"
-            if name == "conceptual_object_aliases"
-            else "choice"
+            "choice"
             if "enum" in spec
             else "boolean"
             if field_type == "boolean"

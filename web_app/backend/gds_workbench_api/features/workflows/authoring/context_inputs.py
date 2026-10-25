@@ -14,6 +14,7 @@ from .audit_policy import effective_audit_template
 from .context_contracts import WORKFLOW_INPUTS
 from .gold_policy import effective_gold_templates
 from .naming import effective_naming_instructions
+from .subject_area_policy import load_subject_area_policy
 
 OBJECT_FIELDS = ("tenant_code", "system_code", "connection_code", "object_schema", "object_name")
 ATTRIBUTE_FIELDS = (
@@ -37,16 +38,6 @@ def natural_key(row: Mapping[str, Any], fields: tuple[str, ...] = OBJECT_FIELDS)
 
 
 def project_key_fields(family: str, kind: str) -> tuple[str, ...]:
-    if family == "conceptual":
-        return (
-            ("conceptual_object_name",)
-            if kind == "object"
-            else (
-                "from_conceptual_object_name",
-                "to_conceptual_object_name",
-                "conceptual_relationship_name",
-            )
-        )
     if kind == "submodel":
         return (f"{family}_submodel_name",)
     if kind == "entity":
@@ -176,18 +167,12 @@ def project_context_inputs(
         ],
     )
     families = {
-        "conceptual": ("conceptual",),
         "logical": ("logical",),
         "dimensional": ("logical", "dimensional"),
     }
     for family in families.get(workflow, ()):
         section = context["applied"].get(family)
-        kinds = (
-            ("object", "relationship")
-            if family == "conceptual"
-            else ("submodel", "entity", "attribute", "relationship")
-        )
-        for kind in kinds:
+        for kind in ("submodel", "entity", "attribute", "relationship"):
             plural = "entities" if kind == "entity" else kind + "s"
             rows = None if section is None else deepcopy(section[plural])
             values[f"{family}_{plural}"] = rows
@@ -195,19 +180,16 @@ def project_context_inputs(
             values[f"{family}_{kind}_list"] = (
                 None if rows is None else [{name: row[name] for name in fields} for row in rows]
             )
-    if workflow == "logical":
+    if workflow in {"logical", "subject_area"}:
         # Answers cite selected Objects by these short ids; the backend numbers them the same way.
         values["table_index"] = [
             {"table": f"t{position}", **{name: selected["object"][name] for name in OBJECT_FIELDS}}
             for position, selected in enumerate(context["selected_objects"], start=1)
         ]
+    if workflow == "subject_area":
+        values.update(_subject_area_inputs(context))
     details = context["project_details"]
-    if workflow == "conceptual":
-        # Conceptual follows the Silver override, as its stage resolver does.
-        values["naming_instructions"] = effective_naming_instructions(
-            "conceptual", details["silver_model_naming_instructions"]
-        )
-    if workflow in {"logical", "dimensional"}:
+    if workflow in ("logical", "dimensional"):
         layer = "silver" if workflow == "logical" else "gold"
         values["coverage_threshold_percent"] = details.get(
             f"{workflow}_coverage_threshold_percent", 70 if workflow == "logical" else 60
@@ -228,3 +210,100 @@ def project_context_inputs(
                 details["gold_model_audit_columns_template"],
             )
     return {name: values[name] for name in WORKFLOW_INPUTS[workflow]}
+
+
+# Strongest measured result first; null is unvalidated, not disproven.
+_VALIDATION_STRENGTH: dict[str | None, int] = {
+    "supported": 3,
+    "inconclusive": 2,
+    None: 1,
+    "unsupported": 0,
+}
+
+
+def _subject_area_inputs(context: Mapping[str, Any]) -> dict[str, Any]:
+    """Compact whole-Scope evidence for one Subject Area answer, by table_index id."""
+    selected = context["selected_objects"]
+    table_ids = {
+        natural_key(item["object"]): f"t{position}" for position, item in enumerate(selected, 1)
+    }
+    row_counts: dict[tuple[Any, ...], int] = {}
+    for profile in context["profiles"]:
+        key = natural_key(profile)
+        row_counts[key] = max(row_counts.get(key, 0), profile["row_count"])
+    links: dict[tuple[str, str], dict[str, Any]] = {}
+    for relationship in context["analysis_relationships"]:
+        if relationship["analysis_result_status"] != "active":
+            continue
+        source, target = (
+            table_ids.get(
+                natural_key({name: relationship[f"{side}_{name}"] for name in OBJECT_FIELDS})
+            )
+            for side in ("from", "to")
+        )
+        if source is None or target is None or source == target:
+            continue
+        result = relationship["validation_result"]
+        link = links.setdefault(
+            (source, target),
+            {"from": source, "to": target, "validation_result": result, "edge_count": 0},
+        )
+        link["edge_count"] += 1
+        if _VALIDATION_STRENGTH[result] > _VALIDATION_STRENGTH[link["validation_result"]]:
+            link["validation_result"] = result
+    applied: Mapping[str, list[Mapping[str, Any]]] = context["applied"].get("subject_area") or {
+        "areas": [],
+        "tables": [],
+    }
+    memberships: dict[str, list[Mapping[str, Any]]] = {}
+    for membership in applied["tables"]:
+        if natural_key(membership) in table_ids:
+            name = normalize_project_key_value(membership["subject_area_name"])
+            memberships.setdefault(name, []).append(membership)
+
+    def ordered(ids: list[str]) -> list[str]:
+        return sorted(ids, key=lambda table: int(table[1:]))
+
+    return {
+        "scope_tables": [
+            {
+                "table": table_ids[natural_key(item["object"])],
+                "description": item["object"]["object_description"],
+                "zone_code": item["object"]["zone_code"],
+                "row_count": row_counts.get(natural_key(item["object"])),
+                "column_count": len(item["attributes"]),
+                "column_names": [attribute["attribute_name"] for attribute in item["attributes"]],
+            }
+            for item in selected
+        ],
+        "table_links": sorted(
+            links.values(), key=lambda link: (int(link["from"][1:]), int(link["to"][1:]))
+        ),
+        "existing_subject_areas": [
+            {
+                "name": area["subject_area_name"],
+                "definition": area["subject_area_definition"],
+                "status": area["subject_area_status"],
+                "is_locked": area["subject_area_is_locked"],
+                "tables": ordered(
+                    [
+                        table_ids[natural_key(membership)]
+                        for membership in rows
+                        if membership["subject_area_table_status"] == "active"
+                    ]
+                ),
+                "locked_tables": ordered(
+                    [
+                        table_ids[natural_key(membership)]
+                        for membership in rows
+                        if membership["subject_area_table_is_locked"]
+                    ]
+                ),
+            }
+            for area in applied["areas"]
+            for rows in (
+                memberships.get(normalize_project_key_value(area["subject_area_name"]), []),
+            )
+        ],
+        "max_subject_area_columns": load_subject_area_policy().max_subject_area_columns,
+    }

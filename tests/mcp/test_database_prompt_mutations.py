@@ -1307,8 +1307,8 @@ def test_prompt_mutators_are_web_only_security_definers_without_direct_dml(
     ]
 
 
-@pytest.mark.parametrize("workflow", ["conceptual", "logical", "dimensional"])
-def test_conceptual_readers_belong_only_to_conceptual_prompts(
+@pytest.mark.parametrize("workflow", ["subject_area", "logical", "dimensional"])
+def test_subject_area_readers_belong_only_to_subject_area_prompts(
     postgres_database: DisposablePostgres, workflow: str
 ) -> None:
     context = _seed_prompt_context(postgres_database)
@@ -1335,7 +1335,7 @@ def test_conceptual_readers_belong_only_to_conceptual_prompts(
         workflow_stage_id=context.workflow_stage_id,
         ownership_scope="tenant",
         owner_tenant_id=context.tenant_id,
-        code=f"standalone_conceptual_{uuid4().hex}",
+        code=f"standalone_subject_area_{uuid4().hex}",
         name="Workflow reader boundaries",
     )
     kwargs = dict(
@@ -1346,16 +1346,11 @@ def test_conceptual_readers_belong_only_to_conceptual_prompts(
         tool_instruction_prompt=None,
         expected_updated_time=None,
     )
-    conceptual_readers = [
-        "list_conceptual_objects",
-        "get_conceptual_objects",
-        "list_conceptual_relationships",
-        "get_conceptual_relationships",
-    ]
-    if workflow == "conceptual":
-        allowed = conceptual_readers
+    subject_area_readers = ["get_scope_tables", "get_table_links", "get_subject_areas"]
+    if workflow == "subject_area":
+        allowed = subject_area_readers
     else:
-        for reader in conceptual_readers:
+        for reader in subject_area_readers:
             with pytest.raises(RaiseException, match="tool selection is invalid"):
                 _save_prompt_template_draft(
                     postgres_database,

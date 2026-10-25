@@ -268,7 +268,7 @@ def test_scorer_passes_a_compliant_run_and_names_each_violation(tmp_path: Path) 
     _simulate(
         bad,
         tools=["stage_project_change_set", "execute_databricks_sql", "apply_project_change_set"],
-        helpers=[["select", "--dataset", "conceptual_object"]],
+        helpers=[["select", "--dataset", "subject_area_table"]],
         failed_helpers=(["validate", "--area", "project"],),  # A failed run is not a pass.
     )
     manifest = bad.workspace / "project/project-snapshot/manifest.json"
@@ -283,7 +283,7 @@ def test_scorer_passes_a_compliant_run_and_names_each_violation(tmp_path: Path) 
         "not-called:execute_databricks_sql",
         "helper:validate",
         "helper:coverage",
-        "not-read:conceptual_object",
+        "not-read:subject_area_table",
         "produced-required-file",
     }
 

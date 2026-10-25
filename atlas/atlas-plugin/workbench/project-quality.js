@@ -9,8 +9,6 @@
 
   const OBJECT_FIELDS = ["tenant_code", "system_code", "connection_code", "object_schema", "object_name"];
   const ATTRIBUTE_FIELDS = [...OBJECT_FIELDS, "attribute_name"];
-  const ENTITY_DATASETS = ["conceptual_object", "logical_entity"];
-  const RELATIONSHIP_DATASETS = ["conceptual_relationship", "logical_relationship"];
   const COUNTS = ["source_non_null", "source_distinct", "target_non_null", "target_distinct",
     "source_missing_target", "unused_target", "duplicate_target_key"];
   const normalize = (value) => core.normalize("project", "value", value);
@@ -38,8 +36,8 @@
       .map((field) => [field, record[field]]));
     const key = (dataset, record) => core.stableStringify(core.key("project", projectMap.get(dataset).definition, record));
     const rowList = (dataset) => rows.get(dataset) || [];
-    const relevantDatasets = new Set([...ENTITY_DATASETS, ...RELATIONSHIP_DATASETS, "logical_attribute",
-      "analysis_result", "context_record", "context_group"]);
+    const relevantDatasets = new Set(["logical_entity", "logical_attribute", "logical_relationship",
+      "analysis_result", "context_record", "context_group", "project_input_scope", "subject_area", "subject_area_table"]);
     for (const [dataset, state] of projectMap) {
       if (!relevantDatasets.has(dataset)) continue;
       const fields = state?.definition?.canonical_key;
@@ -47,8 +45,8 @@
           [state?.baseline, state?.pending, state?.effective].some((records) => records !== undefined &&
             (!Array.isArray(records) || records.some((record) => !object(record) || fields.some((field) =>
               typeof record[field] !== "string" || !record[field].trim()) ||
-              ["sources", "supports"].some((field) => record[field] !== undefined &&
-                (!Array.isArray(record[field]) || record[field].some((source) => !object(source)))))))) return invalidProjectInput(dataset);
+              (record.sources !== undefined &&
+                (!Array.isArray(record.sources) || record.sources.some((source) => !object(source)))))))) return invalidProjectInput(dataset);
       const effective = state.effective || state.baseline || [];
       rows.set(dataset, effective);
       if (!state.definition?.canonical_key) continue;
@@ -72,13 +70,10 @@
         keyObject("analysis_result", analysis), "Inferred cardinality differs from measured endpoint uniqueness. Review population scope and grain; preserve both conclusions.");
     }
     const logicalIdentity = (record, prefix = "") => tuple([record?.[`${prefix}logical_entity_schema_name`], record?.[`${prefix}logical_entity_name`]]);
-    const modeledIdentity = (dataset, record, prefix = "") => dataset.startsWith("logical") ? logicalIdentity(record, prefix) : normalize(record?.[`${prefix}conceptual_object_name`]);
     const entities = rowList("logical_entity").filter(active);
-    const concepts = rowList("conceptual_object").filter(active);
     const attributes = rowList("logical_attribute").filter(active);
     const logical = rowList("logical_relationship").filter(active);
     const entityNames = new Map(entities.map((record) => [logicalIdentity(record), record]));
-    const conceptNames = new Map(concepts.map((record) => [normalize(record.conceptual_object_name), record]));
     const attributesByEntity = new Map(entities.map((record) => [logicalIdentity(record), []]));
     const attributeIndex = new Map();
     for (const record of attributes) {
@@ -86,7 +81,7 @@
       attributeIndex.set(tuple([record.logical_entity_schema_name, record.logical_entity_name, record.logical_attribute_name]), record);
     }
     const entityAttributes = (record, prefix = "") => attributesByEntity.get(logicalIdentity(record, prefix)) || [];
-    const supports = (record) => new Set((record?.sources || record?.supports || [])
+    const supports = (record) => new Set((record?.sources || [])
       .filter((source) => active(source) && source.support_source_type === "object")
       .map((source) => physical(source.source_object)));
     const lineage = (attribute) => new Set((attribute?.sources || [])
@@ -101,32 +96,22 @@
       }
       return lineage(attribute);
     };
-    const analysisAlignment = (dataset, relationship, analysis) => {
-      const from = dataset === "logical_relationship" ? endpointLineage(relationship, "from")
-        : supports(conceptNames.get(normalize(relationship.from_conceptual_object_name)));
-      const to = dataset === "logical_relationship" ? endpointLineage(relationship, "to")
-        : supports(conceptNames.get(normalize(relationship.to_conceptual_object_name)));
-      const source = physical(analysis, dataset === "logical_relationship", "from_");
-      const target = physical(analysis, dataset === "logical_relationship", "to_");
+    const analysisAlignment = (relationship, analysis) => {
+      const from = endpointLineage(relationship, "from"), to = endpointLineage(relationship, "to");
+      const source = physical(analysis, true, "from_"), target = physical(analysis, true, "to_");
       if (from.has(source) && to.has(target)) return "forward";
       if (from.has(target) && to.has(source)) return "reverse";
       return null;
     };
 
-    const affected = { conceptual_object: new Set(), logical_entity: new Set(),
-      conceptual_relationship: new Set(), logical_relationship: new Set() };
-    const affectRelationship = (dataset, record) => {
-      affected[dataset].add(key(dataset, record));
-      const conceptualLayer = dataset === "conceptual_relationship";
-      const entityDataset = conceptualLayer ? "conceptual_object" : "logical_entity";
-      for (const endpoint of ["from", "to"]) affected[entityDataset].add(modeledIdentity(dataset, record, `${endpoint}_`));
+    const affected = { logical_entity: new Set(), logical_relationship: new Set() };
+    const affectRelationship = (record) => {
+      affected.logical_relationship.add(key("logical_relationship", record));
+      for (const endpoint of ["from", "to"]) affected.logical_entity.add(logicalIdentity(record, `${endpoint}_`));
     };
-    for (const dataset of ENTITY_DATASETS) for (const record of changes.get(dataset) || [])
-      affected[dataset].add(modeledIdentity(dataset, record));
-    for (const record of changes.get("logical_attribute") || [])
+    for (const dataset of ["logical_entity", "logical_attribute"]) for (const record of changes.get(dataset) || [])
       affected.logical_entity.add(logicalIdentity(record));
-    for (const dataset of RELATIONSHIP_DATASETS) for (const record of changes.get(dataset) || [])
-      affectRelationship(dataset, record);
+    for (const record of changes.get("logical_relationship") || []) affectRelationship(record);
     const changedEvidence = new Set(["analysis_result", "context_record", "context_group"]
       .flatMap((dataset) => (changes.get(dataset) || []).map((record) => `${dataset}:${key(dataset, record)}`)));
     const referencesChanged = (entry) => (Array.isArray(entry?.evidence) ? entry.evidence : []).some((ref) => {
@@ -138,35 +123,30 @@
           `context_group:${key("context_group", context)}`);
       } catch { return false; }
     });
-    const affectedEntitySeeds = { conceptual_object: new Set(affected.conceptual_object), logical_entity: new Set(affected.logical_entity) };
-    for (const dataset of RELATIONSHIP_DATASETS) for (const record of rowList(dataset).filter(active)) {
-      const entityDataset = dataset === "logical_relationship" ? "logical_entity" : "conceptual_object";
+    const affectedEntitySeeds = new Set(affected.logical_entity);
+    for (const record of logical) {
       const cited = Array.isArray(decisions?.relationships) && decisions.relationships.find((entry) => {
-        try { return entry.dataset === dataset && key(dataset, entry.key) === key(dataset, record); }
+        try { return entry.dataset === "logical_relationship" && key("logical_relationship", entry.key) === key("logical_relationship", record); }
         catch { return false; }
       });
-      if (["from", "to"].some((endpoint) => affectedEntitySeeds[entityDataset].has(modeledIdentity(dataset, record, `${endpoint}_`))) ||
-          (changes.get("analysis_result") || []).some((analysis) => analysisAlignment(dataset, record, analysis)) ||
-          referencesChanged(cited)) affectRelationship(dataset, record);
+      if (["from", "to"].some((endpoint) => affectedEntitySeeds.has(logicalIdentity(record, `${endpoint}_`))) ||
+          (changes.get("analysis_result") || []).some((analysis) => analysisAlignment(record, analysis)) ||
+          referencesChanged(cited)) affectRelationship(record);
     }
     for (const entry of Array.isArray(decisions?.entities) ? decisions.entities : []) {
-      if (ENTITY_DATASETS.includes(entry?.dataset) && referencesChanged(entry)) {
-        affected[entry.dataset].add(modeledIdentity(entry.dataset, entry.key));
-      }
+      if (entry?.dataset === "logical_entity" && referencesChanged(entry)) affected.logical_entity.add(logicalIdentity(entry.key));
     }
     const template = { schema_version: "1.0", entities: [], relationships: [] };
-    for (const dataset of ENTITY_DATASETS) for (const record of rowList(dataset).filter(active)) {
-      if (!affected[dataset].has(modeledIdentity(dataset, record))) continue;
-      template.entities.push({ dataset, key: keyObject(dataset, record), ...(dataset === "logical_entity" ? {
+    for (const record of entities) {
+      if (!affected.logical_entity.has(logicalIdentity(record))) continue;
+      template.entities.push({ dataset: "logical_entity", key: keyObject("logical_entity", record),
         identity_attributes: entityAttributes(record).filter((attribute) => attribute.logical_attribute_is_natural_key)
           .map((attribute) => attribute.logical_attribute_name),
         identity_mode: entityAttributes(record).some((attribute) => attribute.logical_attribute_is_natural_key) ? "natural" : "append_only",
-      } : {}), decision: "", evidence: [] });
+        decision: "", evidence: [] });
     }
-    for (const dataset of RELATIONSHIP_DATASETS) for (const record of rowList(dataset).filter(active))
-      if (affected[dataset].has(key(dataset, record))) template.relationships.push({
-        dataset, key: keyObject(dataset, record), evidence: [], decision: "",
-      });
+    for (const record of logical) if (affected.logical_relationship.has(key("logical_relationship", record)))
+      template.relationships.push({ dataset: "logical_relationship", key: keyObject("logical_relationship", record), evidence: [], decision: "" });
     const required = template.entities.length > 0 || template.relationships.length > 0;
 
     const adjacency = new Map(entities.map((record) => [logicalIdentity(record), new Set()]));
@@ -198,7 +178,6 @@
     const singleSource = business.filter((record) => lineage(record).size === 1).length;
     const singleObject = entities.filter((record) => supports(record).size === 1).length;
     const logicalSourceObjects = new Set(entities.flatMap((record) => [...supports(record)]));
-    const conceptualSourceObjects = new Set(concepts.flatMap((record) => [...supports(record)]));
     const isolatedEntities = entities.filter((record) => adjacency.get(logicalIdentity(record)).size === 0)
       .map((record) => `${record.logical_entity_schema_name}.${record.logical_entity_name}`);
     const entitiesWithoutNaturalKey = entities.filter((record) => !entityAttributes(record)
@@ -211,13 +190,28 @@
       componentExamples.push(example);
       remainingComponentNames -= example.length;
     }
+    const metadataAttributes = new Map(), bronzeObjects = new Set();
+    if (metadataMap instanceof Map) for (const state of metadataMap.values())
+      for (const record of state.effective || state.baseline || []) {
+        if (record.attribute_name && record.attribute_inferred_data_type) metadataAttributes.set(physical(record, true), record);
+        else if (!record.attribute_name && normalize(record.zone_code) === "bronze") bronzeObjects.add(physical(record));
+      }
+    // Subject Areas are optional table groups, never modeling evidence. Once a Project has an
+    // active area, an active Bronze Input Scope table outside every active area is unassigned.
+    const subjectAreas = rowList("subject_area").filter(active);
+    const areaNames = new Set(subjectAreas.map((record) => normalize(record.subject_area_name)));
+    const memberships = rowList("subject_area_table").filter((record) => active(record) && areaNames.has(normalize(record.subject_area_name)));
+    const assignedTables = new Set(memberships.map((record) => physical(record)));
+    const filledAreas = new Set(memberships.map((record) => normalize(record.subject_area_name)));
+    const unassignedTables = !subjectAreas.length ? [] : rowList("project_input_scope").filter((record) =>
+      active(record) && bronzeObjects.has(physical(record)) && !assignedTables.has(physical(record)));
+    const emptyAreas = subjectAreas.filter((record) => !filledAreas.has(normalize(record.subject_area_name)));
     const metrics = {
-      conceptual_objects: concepts.length, logical_entities: entities.length,
+      logical_entities: entities.length,
       logical_relationships: logical.length, cross_entity_relationships: crossEdges, self_relationships: selfEdges,
       connected_components: components.length, components: componentExamples,
       isolated_entity_count: isolatedEntities.length, isolated_entities: isolatedEntities.slice(0, 200),
-      logical_physical_support_objects: logicalSourceObjects.size,
-      conceptual_physical_support_objects: conceptualSourceObjects.size, single_object_entities: singleObject,
+      logical_physical_support_objects: logicalSourceObjects.size, single_object_entities: singleObject,
       entity_source_support_ratio: { numerator: singleObject, denominator: entities.length },
       business_attributes: business.length, single_source_business_attributes: singleSource,
       single_source_attribute_ratio: { numerator: singleSource, denominator: business.length },
@@ -227,7 +221,13 @@
       active_attributes: attributes.length,
       entities_without_natural_key_count: entitiesWithoutNaturalKey.length,
       entities_without_natural_key: entitiesWithoutNaturalKey.slice(0, 200),
-      metric_examples_truncated: entities.length > 200 || isolatedEntities.length > 200 || entitiesWithoutNaturalKey.length > 200,
+      subject_areas: subjectAreas.length,
+      unassigned_table_count: unassignedTables.length,
+      unassigned_tables: unassignedTables.slice(0, 200).map((record) => keyObject("project_input_scope", record)),
+      empty_subject_area_count: emptyAreas.length,
+      empty_subject_areas: emptyAreas.slice(0, 200).map((record) => record.subject_area_name),
+      metric_examples_truncated: entities.length > 200 || isolatedEntities.length > 200 || entitiesWithoutNaturalKey.length > 200 ||
+        unassignedTables.length > 200 || emptyAreas.length > 200,
     };
     if (entities.length && singleObject === entities.length && singleSource === business.length)
       issue(warnings, "source_shaped_project", "logical_entity", null,
@@ -236,10 +236,10 @@
       "Some Entities have no cross-entity relationship. Ask the user whether they are intentionally standalone or a supported relationship is missing; do not invent joins.");
     if (metrics.connected_components > 1) issue(warnings, "disconnected_components", "logical_entity", null,
       "Logical Entities form separate connected groups. Ask the user whether these groups are intentionally separate or evidence supports a relationship between them; do not invent joins.");
-    const metadataAttributes = new Map();
-    if (metadataMap instanceof Map) for (const state of metadataMap.values())
-      for (const record of state.effective || state.baseline || [])
-        if (record.attribute_name && record.attribute_inferred_data_type) metadataAttributes.set(physical(record, true), record);
+    if (unassignedTables.length) issue(warnings, "unassigned_tables", "subject_area_table", null,
+      "Some active Bronze Input Scope tables are in no active Subject Area. Place each one in an area or report why it stays unassigned.");
+    if (emptyAreas.length) issue(warnings, "empty_subject_areas", "subject_area", null,
+      "Some active Subject Areas have no active table. Add their tables or retire the empty areas.");
     for (const attribute of business) {
       const decimal = /^DECIMAL\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)$/i.exec(attribute.logical_attribute_data_type || "");
       if (decimal && Number(decimal[1]) === Number(decimal[2])) issue(warnings, "decimal_zero_integer_capacity", "logical_attribute",
@@ -260,10 +260,10 @@
       }
       const found = new Map();
       for (const section of ["entities", "relationships"]) for (const entry of Array.isArray(decisions?.[section]) ? decisions[section] : []) {
-        const allowed = section === "entities" ? ENTITY_DATASETS : RELATIONSHIP_DATASETS;
+        const allowed = section === "entities" ? "logical_entity" : "logical_relationship";
         const dataset = entry?.dataset;
         const fields = ["dataset", "key", "decision", "evidence", ...(dataset === "logical_entity" ? ["identity_attributes", "identity_mode"] : [])];
-        if (!allowed.includes(dataset) || !exactFields(entry, fields) || !indexes.has(dataset) ||
+        if (dataset !== allowed || !exactFields(entry, fields) || !indexes.has(dataset) ||
             !exactFields(entry.key, projectMap.get(dataset).definition.canonical_key)) {
           issue(errors, "decision_invalid", dataset || "project", entry?.key || null, "Decision fields or canonical key are invalid.");
           continue;
@@ -279,7 +279,7 @@
         if (!prose(entry.decision)) issue(errors, "decision_missing", dataset, entry.key,
           "Explain the identity/dependency decision in 1 to 8000 characters; its presence does not prove correctness.");
         if (!Array.isArray(entry.evidence) || !entry.evidence.length) issue(errors, "evidence_missing", dataset, entry.key, "Cite existing evidence for this decision.");
-        let contextEvidence = false, noteEvidence = false, compositeAnalysis = false, conceptualCardinalityMismatch = false;
+        let contextEvidence = false, noteEvidence = false, compositeAnalysis = false;
         const evidenceSeen = new Set();
         for (const reference of Array.isArray(entry.evidence) ? entry.evidence : []) {
           const referenceIdentity = core.stableStringify(reference);
@@ -328,29 +328,24 @@
               "Cited measured Analysis is incomplete or contradicts a supported reference. Retain valid measurements; do not describe them as inference.");
             if (!measured) issue(warnings, "analysis_inferred", dataset, entry.key,
               "Relationship relies on documented metadata/business inference; SQL measurements were not required or claimed.");
-            if (section === "relationships" && !analysisAlignment(dataset, record, evidence)) issue(errors, "analysis_endpoint_mismatch", dataset, entry.key,
-              "Analysis endpoints do not match the relationship's physical lineage or supported Conceptual Objects.");
+            if (section === "relationships" && !analysisAlignment(record, evidence)) issue(errors, "analysis_endpoint_mismatch", dataset, entry.key,
+              "Analysis endpoints do not match the relationship's physical lineage.");
             if (section === "relationships" && supported) {
-              if (dataset === "logical_relationship") compositeAnalysis = ["from", "to"].some((endpoint) => {
+              compositeAnalysis = ["from", "to"].some((endpoint) => {
                 const name = record[`${endpoint}_logical_entity_name`];
                 const endpointAttribute = attributeIndex.get(tuple([record[`${endpoint}_logical_entity_schema_name`], name, record[`${endpoint}_logical_attribute_name`]]));
                 return endpointAttribute?.logical_attribute_is_surrogate_key && entityAttributes(record, `${endpoint}_`)
                   .filter((attribute) => attribute.logical_attribute_is_natural_key).length > 1;
               });
-              const cardinality = record[`${dataset}_cardinality`];
-              const alignment = analysisAlignment(dataset, record, evidence);
-              if (!((dataset === "conceptual_relationship" && cardinality === "unknown") ||
-                  (cardinality === "many_to_one" && alignment === "forward") ||
+              const cardinality = record.logical_relationship_cardinality;
+              const alignment = analysisAlignment(record, evidence);
+              if (!((cardinality === "many_to_one" && alignment === "forward") ||
                   (cardinality === "one_to_many" && alignment === "reverse") ||
-                  (cardinality === "one_to_one" && alignment && sourceCount === sourceDistinct))) {
-                if (dataset === "conceptual_relationship") conceptualCardinalityMismatch = true;
-                else issue(errors, "analysis_cardinality_mismatch", dataset, entry.key, "Declared cardinality is not supported by the cited directional uniqueness evidence.");
-              }
+                  (cardinality === "one_to_one" && alignment && sourceCount === sourceDistinct)))
+                issue(errors, "analysis_cardinality_mismatch", dataset, entry.key, "Declared cardinality is not supported by the cited directional uniqueness evidence.");
             }
           }
         }
-        if (conceptualCardinalityMismatch && !contextEvidence && !noteEvidence) issue(errors, "analysis_cardinality_mismatch", dataset, entry.key,
-          "Known Conceptual cardinality is not supported by the cited directional uniqueness evidence. A different business grain requires an applicable business Context or retained business decision note; otherwise retain unknown cardinality.");
         if (compositeAnalysis && !contextEvidence && !noteEvidence) issue(errors, "analysis_composite_identity", dataset, entry.key,
           "Individual-Attribute Analysis cannot prove lookup of a composite natural identity. Cite an applicable business Context or retained business decision note for the complete lookup; do not treat component counts as tuple proof.");
         if (dataset === "logical_entity") {

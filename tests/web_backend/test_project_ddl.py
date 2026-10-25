@@ -68,21 +68,29 @@ def test_delta_ddl_preserves_types_order_identity_comments_and_relationships() -
     assert len(parse(ddl, read="databricks")) == 4
 
 
-def test_conceptual_ddl_uses_export_only_artificial_key_and_quotes_names() -> None:
+def test_ddl_escapes_backticks_in_quoted_names() -> None:
     ddl = build_project_ddl(
         entities=[
             {
                 "entity_id": 1,
-                "entity_schema_name": "conceptual",
+                "entity_schema_name": "silver",
                 "entity_name": "Customer`Account",
             }
         ],
-        attributes=[],
-        conceptual=True,
+        attributes=[
+            {
+                "entity_id": 1,
+                "attribute_name": "Account`ID",
+                "data_type": "BIGINT",
+                "ordinal_position": 1,
+                "is_nullable": False,
+                "is_surrogate_key": True,
+            }
+        ],
     )
-    assert "`Customer``Account`" in ddl
-    assert "`ConceptID` BIGINT NOT NULL GENERATED ALWAYS AS IDENTITY" in ddl
-    assert "export-only" in ddl
+    assert "CREATE TABLE `silver`.`Customer``Account` (" in ddl
+    assert "`Account``ID` BIGINT NOT NULL GENERATED ALWAYS AS IDENTITY" in ddl
+    assert len(parse(ddl, read="databricks")) == 2
 
 
 @pytest.mark.parametrize(
@@ -141,10 +149,18 @@ def test_ddl_rejects_names_databricks_would_reject_even_when_quoted(name: str) -
             entities=[
                 {
                     "entity_id": 1,
-                    "entity_schema_name": "conceptual",
+                    "entity_schema_name": "silver",
                     "entity_name": name,
                 }
             ],
-            attributes=[],
-            conceptual=True,
+            attributes=[
+                {
+                    "entity_id": 1,
+                    "attribute_name": "CustomerID",
+                    "data_type": "BIGINT",
+                    "ordinal_position": 1,
+                    "is_nullable": False,
+                    "is_surrogate_key": False,
+                }
+            ],
         )

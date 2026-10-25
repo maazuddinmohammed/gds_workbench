@@ -23,8 +23,8 @@ from gds_etl_workbench.domain.snapshots.project import DATASETS_BY_NAME, Project
 
 type ProjectReviewDataset = Literal[
     "context_record",
-    "conceptual_object",
-    "conceptual_relationship",
+    "subject_area",
+    "subject_area_table",
     "logical_submodel",
     "logical_entity",
     "logical_attribute",
@@ -41,7 +41,7 @@ type ProjectReviewDataset = Literal[
     "validation_check",
 ]
 type RecordReviewAction = Literal["lock", "unlock", "deactivate", "reactivate"]
-type ProjectLayer = Literal["conceptual", "logical", "dimensional"]
+type ProjectLayer = Literal["subject_area", "logical", "dimensional"]
 type RecordIdentity = tuple[ProjectReviewDataset, int | str]
 
 # Dataset-specific lifecycle columns and snapshot collections. Table names remain
@@ -52,11 +52,11 @@ REVIEW_FIELDS: dict[ProjectReviewDataset, tuple[str, str, str]] = {
         "status",
         "records",
     ),
-    "conceptual_object": ("conceptual_object_is_locked", "conceptual_object_status", "objects"),
-    "conceptual_relationship": (
-        "conceptual_relationship_is_locked",
-        "conceptual_relationship_status",
-        "relationships",
+    "subject_area": ("subject_area_is_locked", "subject_area_status", "areas"),
+    "subject_area_table": (
+        "subject_area_table_is_locked",
+        "subject_area_table_status",
+        "tables",
     ),
     **{
         cast(ProjectReviewDataset, f"{layer}_{kind}"): (
@@ -141,11 +141,11 @@ def plan_project_record_review(
         if (
             action not in {"deactivate", "delete"}
             or record_ids
-            or dataset != ("conceptual_object" if layer == "conceptual" else f"{layer}_entity")
+            or dataset != ("subject_area" if layer == "subject_area" else f"{layer}_entity")
         ):
             raise WorkbenchError("invalid_request", "The layer review request is invalid.")
         required = {
-            identity: f"Clear the {layer.title()} layer."
+            identity: f"Clear the {layer.replace('_', ' ').title()} layer."
             for identity, row in records.items()
             if DATASETS_BY_NAME[identity[0]].section == layer
             and (action == "delete" or review_lifecycle(row, identity[0])[1] == "active")
@@ -164,19 +164,13 @@ def plan_project_record_review(
         for identity, record in records.items():
             name, _ = identity
             v = record.model_dump()
-            for support in v.get("supports", ()):
-                if support["support_source_type"] == "context_record" and (
-                    support["support_status"] == "active" or action == "delete"
-                ):
-                    link(identity, "context_record", support["context_record"]["context_record_id"])
             for source in v.get("sources", ()):
                 if source["support_source_type"] == "context_record" and (
                     source["status"] == "active" or action == "delete"
                 ):
                     link(identity, "context_record", source["context_record"]["context_record_id"])
-            if name == "conceptual_relationship":
-                for side in ("from", "to"):
-                    link(identity, "conceptual_object", v[f"{side}_conceptual_object_name"])
+            if name == "subject_area_table":
+                link(identity, "subject_area", v["subject_area_name"])
             elif name in {"logical_attribute", "dimensional_attribute"}:
                 record_layer = name.split("_")[0]
                 link(

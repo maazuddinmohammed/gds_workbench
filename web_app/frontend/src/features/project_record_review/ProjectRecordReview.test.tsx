@@ -11,11 +11,11 @@ const preview: ProjectReviewPreview = {
   project_id: 18, project_revision: 7, plan_digest: "a".repeat(64), can_apply: true,
   action_count: 2, additional_change_count: 1, total_record_count: 2,
   items: [
-    { dataset: "conceptual_object", record_id: 41, label: "Customer", selected: true,
+    { dataset: "subject_area", record_id: 41, label: "Customer", selected: true,
       reason: "Selected record.", is_locked: false, desired_locked: false,
       status: "active", desired_status: "inactive", changed: true },
-    { dataset: "conceptual_relationship", record_id: 51, label: "Customer places Order", selected: false,
-      reason: "An active Relationship requires both endpoint Objects to remain active.",
+    { dataset: "subject_area_table", record_id: 51, label: "Customer places Order", selected: false,
+      reason: "An inactive Subject Area keeps no active tables.",
       is_locked: false, desired_locked: false, status: "active", desired_status: "inactive", changed: true },
   ],
   issues: [], issue_count: 0, page: 1, next_page: null,
@@ -29,7 +29,7 @@ function fixture() {
     }),
   };
   const props = {
-    api, tenantId: 9, projectId: 18, projectRevision: 7, dataset: "conceptual_object" as const,
+    api, tenantId: 9, projectId: 18, projectRevision: 7, dataset: "subject_area" as const,
     selectedIds: new Set([41]), hasTenantLock: true, disabled: false,
     actions: ["lock", "unlock", "deactivate", "reactivate"] as ProjectReviewCommand["action"][],
     onApplied: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
@@ -98,7 +98,7 @@ describe("Project record review", () => {
     const client = new QueryClient();
     const applied = vi.fn().mockResolvedValue(undefined);
     render(<QueryClientProvider client={client}><ProjectRecordReview api={api}
-      tenantId={9} projectId={18} projectRevision={7} dataset="conceptual_object"
+      tenantId={9} projectId={18} projectRevision={7} dataset="subject_area"
       selectedIds={new Set([41])} hasTenantLock disabled={false} onApplied={applied} /></QueryClientProvider>);
     const user = userEvent.setup();
     expect(fetcher).not.toHaveBeenCalled();
@@ -117,7 +117,7 @@ describe("Project record review", () => {
     expect(previewCall?.[0]).toBe("/api/v1/tenants/9/projects/18/change-sets/review/preview?page=1");
     expect(applyCall?.[0]).toBe("/api/v1/tenants/9/projects/18/change-sets/review");
     expect(JSON.parse(String(applyCall?.[1]?.body))).toEqual({
-      dataset: "conceptual_object", record_ids: [41], action: "deactivate",
+      dataset: "subject_area", record_ids: [41], action: "deactivate",
       expected_project_revision: 7, expected_plan_digest: preview.plan_digest,
     });
     expect(applyCall?.[1]?.headers).toMatchObject({ "Idempotency-Key": expect.any(String) });
@@ -128,7 +128,7 @@ describe("Project record review", () => {
     render(renderReview({ selectedIds: new Set([52, 41]) }));
     await userEvent.setup().click(screen.getByRole("button", { name: `${label === "Deactivate" ? "Deactivate" : label === "Reactivate" ? "Activate" : label} selected` }));
     await waitFor(() => expect(api.previewProjectRecordReview).toHaveBeenCalledWith(9, 18, {
-      dataset: "conceptual_object", record_ids: [41, 52], action: label.toLowerCase(), expected_project_revision: 7,
+      dataset: "subject_area", record_ids: [41, 52], action: label.toLowerCase(), expected_project_revision: 7,
     }, 1));
     expect(api.applyProjectRecordReview).not.toHaveBeenCalled();
   });
@@ -137,7 +137,7 @@ describe("Project record review", () => {
     const { api, renderReview } = fixture();
     api.previewProjectRecordReview.mockResolvedValueOnce({
       ...preview, items: preview.items.slice(0, 1), next_page: 2, can_apply: false,
-      issues: [{ code: "record_locked", dataset: "conceptual_relationship", message: "A required Relationship is locked." }],
+      issues: [{ code: "record_locked", dataset: "subject_area_table", message: "A required table is locked." }],
       issue_count: 1,
     }).mockResolvedValueOnce({ ...preview, page: 2, can_apply: false,
       items: [{ ...preview.items[1]!, is_locked: true }],
@@ -145,7 +145,7 @@ describe("Project record review", () => {
     render(renderReview());
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Deactivate selected" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("A required Relationship is locked.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("A required table is locked.");
     expect(screen.getByRole("button", { name: "Apply these 2 changes" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Load more affected records" }));
     expect(await screen.findByText("Customer places Order")).toBeVisible();
@@ -212,7 +212,7 @@ describe("Project record review", () => {
 
   it("groups deletion counts and reveals paged records without change or reason clutter", async () => {
     const { api, renderReview } = fixture();
-    const deletion = { ...preview, changes_by_dataset: { conceptual_object: 1, conceptual_relationship: 1 },
+    const deletion = { ...preview, changes_by_dataset: { subject_area: 1, subject_area_table: 1 },
       items: preview.items.slice(0, 1).map((item) => ({ ...item, desired_status: "deleted" as const })), next_page: 2 };
     api.previewProjectRecordReview.mockResolvedValueOnce(deletion).mockResolvedValueOnce({
       ...deletion, page: 2, next_page: null,
@@ -224,7 +224,7 @@ describe("Project record review", () => {
     await user.click(trigger);
     const dialog = await screen.findByRole("dialog", { name: "Delete records permanently" });
     await within(dialog).findByText("2 records to delete");
-    expect(within(dialog).getByRole("table", { name: "Conceptual object affected records" })).not.toBeVisible();
+    expect(within(dialog).getByRole("table", { name: "Subject area affected records" })).not.toBeVisible();
     expect(within(dialog).queryByText("Selected record.")).not.toBeInTheDocument();
     const close = within(dialog).getByRole("button", { name: "Close review" });
     const apply = within(dialog).getByRole("button", { name: "Delete 2 records permanently" });
@@ -235,15 +235,15 @@ describe("Project record review", () => {
     expect(close).toHaveFocus();
     await user.tab();
     expect(document.activeElement?.tagName).toBe("SUMMARY");
-    expect(document.activeElement).toHaveTextContent("Conceptual");
-    await user.click(within(dialog).getByText("Conceptual", { exact: true }));
-    await user.click(within(dialog).getByText("Conceptual object", { exact: true }));
-    const objects = within(dialog).getByRole("table", { name: "Conceptual object affected records" });
+    expect(document.activeElement).toHaveTextContent("Subject areas");
+    await user.click(within(dialog).getByText("Subject areas", { exact: true }));
+    await user.click(within(dialog).getByText("Subject area", { exact: true }));
+    const objects = within(dialog).getByRole("table", { name: "Subject area affected records" });
     expect(within(objects).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Record", "Status", "Lock"]);
     expect(within(objects).getByText("Customer")).toBeVisible();
     await user.click(within(dialog).getByRole("button", { name: "Load more affected records" }));
     await within(dialog).findByText("Showing 2 of 2 affected records.");
-    await user.click(within(dialog).getByText("Conceptual relationship", { exact: true }));
+    await user.click(within(dialog).getByText("Subject area table", { exact: true }));
     expect(within(dialog).getByText("Customer places Order")).toBeVisible();
     expect(api.previewProjectRecordReview.mock.calls[1]?.[2].expected_plan_digest).toBe(preview.plan_digest);
     expect(api.previewProjectRecordReview.mock.calls[1]?.[3]).toBe(2);

@@ -23,8 +23,8 @@ from psycopg import Connection
 from tests.mcp.conftest import (
     bootstrap_postgres_database as bootstrap_postgres_database,
 )
-from tests.web_backend.test_database_seeded_analysis_conceptual import SeedStages
-from tests.web_backend.test_database_seeded_analysis_conceptual import (
+from tests.web_backend.test_database_seeded_defaults import SeedStages
+from tests.web_backend.test_database_seeded_defaults import (
     installed_stages as installed_stages,
 )
 
@@ -53,7 +53,7 @@ def _plan(*, project_id: int, project_revision: int, object_id: int) -> AgentRun
             "project_id": project_id,
             "correlation_id": uuid4(),
             "project_revision": project_revision,
-            "project_workflow": "conceptual",
+            "project_workflow": "subject_area",
             "workflow_execution_mode": "one_shot",
             "modeled_entity_type": None,
             "selected_scope_digest": "a" * 64,
@@ -87,7 +87,7 @@ def _plan(*, project_id: int, project_revision: int, object_id: int) -> AgentRun
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("workflow", ["analysis", "conceptual", "logical"])
+@pytest.mark.parametrize("workflow", ["analysis", "subject_area", "logical"])
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
 async def test_database_context_uses_object_source_tenant_under_web_role(
     web_postgres_database: DisposablePostgresFixture,
@@ -225,6 +225,26 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
             precomputed_values=catalog.prompt_values if catalog else None,
         )
         prefix = f"workflow.{workflow}.common.{stage.stage_code}.inputs."
+        rendered = render_prompt(
+            templates=stage.templates, variables=stage.variables, resolver_values=values
+        )
+        assert rendered.system and rendered.instruction
+        assert not rendered.warning_codes and not rendered.unknown_placeholders
+        assert values[prefix + "source_context"] and values[prefix + "gds_context"]
+        if workflow == "subject_area":
+            # Compact table evidence only; a self-reference is not a link between tables.
+            assert values[prefix + "scope_tables"] == [
+                {
+                    "table": "t1",
+                    "description": "Project object description",
+                    "zone_code": "bronze",
+                    "row_count": 2,
+                    "column_count": 2,
+                    "column_names": ["customer_id", "customer_name"],
+                }
+            ]
+            assert values[prefix + "table_links"] == []
+            continue
         groups = cast(
             list[dict[str, Any]], values[prefix + "object_relationship_context"]
         )
@@ -258,10 +278,4 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
             enriched[flag]
             for flag in ("is_natural_key", "is_primary_key", "is_nullable", "is_pii")
         ] == [True, True, False, None]
-        assert values[prefix + "source_context"] and values[prefix + "gds_context"]
         assert values[prefix + "ingestion_mapping"]
-        rendered = render_prompt(
-            templates=stage.templates, variables=stage.variables, resolver_values=values
-        )
-        assert rendered.system and rendered.instruction
-        assert not rendered.warning_codes and not rendered.unknown_placeholders

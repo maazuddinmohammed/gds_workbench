@@ -1,7 +1,7 @@
 /* Analysis and Modeling Context */
 .analysis-page,
 .context-page,
-.conceptual-page {
+.subject-areas-page {
   min-width: 0;
 }
 
@@ -193,7 +193,7 @@ fieldset.agent-run-grid {
   justify-self: end;
 }
 
-.conceptual-commandbar .workflow-tabs {
+.subject-areas-commandbar .workflow-tabs {
   min-width: 15rem;
 }
 
@@ -215,10 +215,6 @@ fieldset.agent-run-grid {
 .workflow-table-scroll .modeled-entity-ledger :is(th, td):last-child {
   text-align: right;
   white-space: nowrap;
-}
-
-.conceptual-filterbar {
-  grid-template-columns: minmax(13rem, 1.5fr) minmax(10rem, 0.75fr) minmax(9rem, 0.65fr) auto;
 }
 
 .logical-filterbar {
@@ -323,8 +319,7 @@ fieldset.agent-run-grid {
   margin-top: 1.2rem;
 }
 
-.detail-tag-group > small,
-.conceptual-endpoints small {
+.detail-tag-group > small {
   color: var(--muted);
   font-size: 0.6rem;
   font-weight: 820;
@@ -332,40 +327,6 @@ fieldset.agent-run-grid {
   text-transform: uppercase;
 }
 
-.conceptual-endpoints {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: 1rem;
-  margin-top: 1.2rem;
-}
-
-.conceptual-endpoints > section {
-  display: grid;
-  gap: 0.3rem;
-  padding: 0.9rem 0;
-  border-top: 1px solid var(--line-strong);
-  border-bottom: 1px solid var(--line);
-}
-
-.conceptual-endpoints > span {
-  color: var(--accent);
-  font-size: 1.25rem;
-}
-
-.conceptual-reasoning {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1.5rem;
-  margin: 0;
-}
-
-.conceptual-reasoning > div {
-  display: grid;
-  gap: 0.4rem;
-}
-
-.conceptual-reasoning dt,
 .support-facts dt {
   color: var(--muted);
   font-size: 0.6rem;
@@ -374,7 +335,6 @@ fieldset.agent-run-grid {
   text-transform: uppercase;
 }
 
-.conceptual-reasoning dd,
 .support-facts dd {
   margin: 0;
   color: var(--ink-2);
@@ -590,9 +550,7 @@ fieldset.agent-run-grid {
   .analysis-filterbar,
   .context-group-filterbar,
   .context-record-filterbar,
-  .conceptual-filterbar,
   .logical-filterbar,
-  .conceptual-reasoning,
   .support-facts,
   .detail-fact-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -631,10 +589,7 @@ fieldset.agent-run-grid {
   .analysis-filterbar,
   .context-group-filterbar,
   .context-record-filterbar,
-  .conceptual-filterbar,
   .logical-filterbar,
-  .conceptual-reasoning,
-  .conceptual-endpoints,
   .support-facts,
   .detail-fact-grid,
   .endpoint-comparison {
@@ -657,11 +612,6 @@ fieldset.agent-run-grid {
   .workflow-detail-header {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .conceptual-endpoints > span {
-    transform: rotate(90deg);
-    text-align: center;
   }
 
   .support-facts {
@@ -763,7 +713,7 @@ fieldset.agent-run-grid {
 .entity-detail-attributes td:not(:nth-child(5)) { white-space: nowrap; }
 .modeled-source-mappings .workflow-table-scroll > table { min-width: 40rem; }
 
-.conceptual-detail-page {
+.subject-area-detail-page {
   width: 100%;
   margin: 0;
 }
@@ -774,33 +724,6 @@ fieldset.agent-run-grid {
 @media (max-width: 42rem) {
   .mapping-detail-page .workflow-detail-header { align-items: flex-start; }
 }
-
-.conceptual-detail-title {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.75rem 1rem;
-}
-
-.conceptual-detail-title h1 { margin: 0; }
-.conceptual-detail-title .detail-badge-stack { justify-content: start; }
-.conceptual-detail-page .detail-primary .detail-fact-grid { max-width: none; }
-
-.conceptual-detail-page .detail-tag-group {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 0.65rem;
-}
-
-.conceptual-support { border-bottom: 0; }
-.conceptual-support .workflow-table-scroll { border: 1px solid var(--line); border-radius: var(--radius-medium); }
-.conceptual-support .workflow-table-scroll > table { min-width: 52rem; }
-.conceptual-support :is(th, td):last-child { text-align: right; }
-.conceptual-support .text-action { white-space: nowrap; }
-.conceptual-support .conceptual-support-detail > td { text-align: left; background: var(--soft); }
-.conceptual-support-detail .detail-fact-grid { margin: 0; }
-.conceptual-support-detail .detail-fact-grid dd { font-weight: 400; white-space: pre-wrap; }
 
 /* Project details follow the same bordered reading order as Mapping. */
 .workflow-detail-page.modeled-detail-page { width: 100%; margin: 0; }

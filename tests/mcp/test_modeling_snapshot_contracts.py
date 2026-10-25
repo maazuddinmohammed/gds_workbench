@@ -50,8 +50,8 @@ EXPECTED_DATASETS = (
     "context_type",
     "context_group",
     "context_record",
-    "conceptual_object",
-    "conceptual_relationship",
+    "subject_area",
+    "subject_area_table",
     "logical_submodel",
     "logical_entity",
     "logical_attribute",
@@ -79,7 +79,7 @@ def test_project_snapshot_has_exact_25_dataset_registry() -> None:
         "enrichment",
         "analysis",
         "context",
-        "conceptual",
+        "subject_area",
         "logical",
         "dimensional",
         "mapping",
@@ -240,7 +240,7 @@ def test_project_schema_accepts_every_decimal_representation_accepted_at_stage()
 
 def test_status_contract_has_only_applied_lifecycle_values() -> None:
     for dataset in (
-        "conceptual_object",
+        "subject_area",
         "logical_entity",
         "dimensional_entity",
         "mapping_object",
@@ -419,19 +419,20 @@ def test_snapshot_flattens_entity_mapping_code_and_validation_sections() -> None
 
 def test_snapshot_encoding_sorts_rows_and_rejects_duplicate_keys() -> None:
     graph = complete_project_graph()
-    graph["conceptual_object"].reverse()
+    graph["subject_area"].append({**graph["subject_area"][0], "subject_area_name": "Billing"})
+    graph["subject_area"].reverse()
     encoded = {
         item.definition.name: item for item in encode_project_snapshot(snapshot_from_graph(graph))
     }
-    rows = encoded["conceptual_object"].rows_jsonl.decode().splitlines()
-    assert [json.loads(row)["conceptual_object_name"] for row in rows] == [
-        "Customer",
-        "Order",
+    rows = encoded["subject_area"].rows_jsonl.decode().splitlines()
+    assert [json.loads(row)["subject_area_name"] for row in rows] == [
+        "Billing",
+        "Sales",
     ]
 
-    duplicate = deepcopy(graph["conceptual_object"][0])
-    duplicate["conceptual_object_name"] = f" {duplicate['conceptual_object_name'].upper()} "
-    graph["conceptual_object"].append(duplicate)
+    duplicate = deepcopy(graph["subject_area"][0])
+    duplicate["subject_area_name"] = f" {duplicate['subject_area_name'].upper()} "
+    graph["subject_area"].append(duplicate)
     with pytest.raises(SnapshotContractError, match="duplicate canonical key"):
         encode_project_snapshot(snapshot_from_graph(graph))
 

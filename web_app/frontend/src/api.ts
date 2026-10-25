@@ -15,9 +15,9 @@ import {
   type CodeGenerationTransport,
 } from "./features/code_generation/api";
 import {
-  createConceptualApi,
-  type ConceptualTransport,
-} from "./features/conceptual/api";
+  createSubjectAreaApi,
+  type SubjectAreaTransport,
+} from "./features/subject_areas/api";
 import {
   createDimensionalApi,
   type DimensionalTransport,
@@ -96,21 +96,14 @@ export type {
   StoredSqlArtifactSummary,
 } from "./features/code_generation/api";
 export type {
-  ConceptualContextReference,
-  ConceptualContextSupport,
-  ConceptualCardinality,
-  ConceptualFilters,
-  ConceptualObject,
-  ConceptualObjectDetail,
-  ConceptualObjectPage,
-  ConceptualPhysicalObjectReference,
-  ConceptualPhysicalSupport,
-  ConceptualRelationship,
-  ConceptualRelationshipDetail,
-  ConceptualRelationshipPage,
-  ConceptualStatus,
-  ConceptualSupport,
-} from "./features/conceptual/api";
+  SaveSubjectAreaCommand,
+  SaveSubjectAreaResult,
+  ScopeTable,
+  ScopeTablePage,
+  SubjectAreaDetail,
+  SubjectAreaPage,
+  SubjectAreaSummary,
+} from "./features/subject_areas/api";
 export type {
   DimensionalContextSource,
   DimensionalAttribute,
@@ -295,7 +288,7 @@ export interface WorkbenchApi
   PromptsApi,
   AnalysisTransport,
   ContextApi,
-  ConceptualTransport,
+  SubjectAreaTransport,
   LogicalTransport,
   DimensionalTransport,
   MappingTransport,
@@ -317,7 +310,7 @@ export function createApiClient(fetcher: typeof fetch = globalThis.fetch): Workb
     ...createPromptsApi(request),
     ...createAnalysisApi(request),
     ...createContextApi(request),
-    ...createConceptualApi(request),
+    ...createSubjectAreaApi(request),
     ...createLogicalApi(request),
     ...createProjectTargetsApi(request),
     ...createDimensionalApi(request),

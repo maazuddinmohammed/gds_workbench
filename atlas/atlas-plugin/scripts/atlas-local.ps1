@@ -1710,7 +1710,7 @@ function Test-RetainedProjectRecord($Previous, $Changed) {
             $after -is [bool] -and -not $after) { continue }
         if (($field -ceq 'status' -or $field.EndsWith('_status', [StringComparison]::Ordinal)) -and
             $before -is [string] -and $before -ceq 'active' -and $after -ceq 'inactive') { continue }
-        if (@('supports', 'sources', 'submodels') -ccontains $field -and
+        if (@('sources', 'submodels') -ccontains $field -and
             $before -is [Array] -and $after -is [Array] -and $before.Count -eq $after.Count) {
             for ($index = 0; $index -lt $before.Count; $index++) {
                 if (-not (Test-RetainedProjectRecord $before[$index] $after[$index])) { return $false }
@@ -1803,15 +1803,18 @@ function Add-ProjectPhysicalScopeIssues([object[]]$States, [object[]]$ReferenceS
                     & $requirePhysical $state $record ($prefix + '_attribute_name') (Get-NormalizedValidationKey 'project' $fields $record) $eligible 'Analysis Attribute is not in active Project Input Scope.'
                 }
             }
+            elseif ($type -ceq 'subject_area_table') {
+                $eligible = if ($retained) { ,$sets.objects } else { ,$sets.activeInputs }
+                & $requirePhysical $state $record 'object_name' (Get-NormalizedValidationKey 'project' $objectFields $record) $eligible 'Subject Area table is not in active Project Input Scope.'
+            }
         }
     }
     foreach ($state in $States) {
         $type = [string]$state.RecordType
-        if (@('conceptual_object', 'conceptual_relationship', 'logical_entity', 'logical_attribute') -cnotcontains $type) { continue }
+        if (@('logical_entity', 'logical_attribute') -cnotcontains $type) { continue }
         foreach ($record in @($state.Effective)) {
             $retained = $state.RetainedKeys.Contains((Get-NormalizedValidationKey 'project' @($state.Dataset.canonical_key) $record))
-            $field = if ($type.StartsWith('conceptual_', [StringComparison]::Ordinal)) { 'supports' } else { 'sources' }
-            $sources = Get-Property $record $field
+            $sources = Get-Property $record 'sources'
             foreach ($source in @($sources)) {
                 $sourceType = Get-Property $source 'support_source_type'
                 if (@('object', 'attribute') -cnotcontains $sourceType) { continue }
@@ -1871,6 +1874,7 @@ function Add-ProjectValidationIssues([object[]]$States, $Issues, [object[]]$Refe
     $contextGroups = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
     $contextRecords = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::Ordinal)
     $activeContextGroups = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    $subjectAreas = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
     $activeSystems = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
     foreach ($referenceState in $ReferenceStates) {
         if ([string]$referenceState.RecordType -ceq 'system') {
@@ -1889,6 +1893,7 @@ function Add-ProjectValidationIssues([object[]]$States, $Issues, [object[]]$Refe
                     if ($record.is_active -eq $true) { [void]$activeContextGroups.Add($groupKey) }
                 }
                 'context_record' { $contextRecords[(Normalize-Value 'project' 'value' $record.context_record_id)] = $record }
+                'subject_area' { [void]$subjectAreas.Add((Normalize-Value 'project' 'value' $record.subject_area_name)) }
             }
         }
     }
@@ -1906,27 +1911,27 @@ function Add-ProjectValidationIssues([object[]]$States, $Issues, [object[]]$Refe
             if ($dataset -ceq 'context_record' -and -not $contextGroups.Contains((Normalize-Value 'project' 'value' $record.context_group_name))) {
                 Add-LocalValidationIssue $Issues $dataset $null 'reference_not_found' 'Referenced Context group is not present in the future Project graph.' 'context_group_name'
             }
-            foreach ($collection in @('supports', 'sources')) {
-                # Get-Property returns arrays as one object; @(...) would wrap them.
-                foreach ($source in (Get-Property $record $collection)) {
-                    if ((Get-Property $source 'support_source_type') -cne 'context_record') { continue }
-                    $sourceKey = Normalize-Value 'project' 'value' (Get-Property (Get-Property $source 'context_record') 'context_record_id')
-                    if (-not $contextRecords.ContainsKey($sourceKey)) {
-                        Add-LocalValidationIssue $Issues $dataset $null 'reference_not_found' 'Referenced Context record is not present in the future Project graph.' $collection
-                        continue
-                    }
-                    $supportStatus = if ($collection -ceq 'supports') { Get-Property $source 'support_status' } else { Get-Property $source 'status' }
-                    $target = $contextRecords[$sourceKey]
-                    if ((Get-Property $record ($dataset + '_status')) -ceq 'active' -and $supportStatus -ceq 'active' -and
-                        ($target.status -cne 'active' -or -not $activeContextGroups.Contains((Normalize-Value 'project' 'value' $target.context_group_name)))) {
-                        Add-LocalValidationIssue $Issues $dataset $null 'active_dependency_invalid' 'Active support requires an active Context Record and group.' 'context_record_id'
-                    }
+            if ($dataset -ceq 'subject_area_table' -and -not $subjectAreas.Contains((Normalize-Value 'project' 'value' $record.subject_area_name))) {
+                Add-LocalValidationIssue $Issues $dataset $null 'reference_not_found' 'Referenced record is not present in the future Project graph.' 'subject_area_name'
+            }
+            # Get-Property returns arrays as one object; @(...) would wrap them.
+            foreach ($source in (Get-Property $record 'sources')) {
+                if ((Get-Property $source 'support_source_type') -cne 'context_record') { continue }
+                $sourceKey = Normalize-Value 'project' 'value' (Get-Property (Get-Property $source 'context_record') 'context_record_id')
+                if (-not $contextRecords.ContainsKey($sourceKey)) {
+                    Add-LocalValidationIssue $Issues $dataset $null 'reference_not_found' 'Referenced Context record is not present in the future Project graph.' 'sources'
+                    continue
+                }
+                $target = $contextRecords[$sourceKey]
+                if ((Get-Property $record ($dataset + '_status')) -ceq 'active' -and (Get-Property $source 'status') -ceq 'active' -and
+                    ($target.status -cne 'active' -or -not $activeContextGroups.Contains((Normalize-Value 'project' 'value' $target.context_group_name)))) {
+                    Add-LocalValidationIssue $Issues $dataset $null 'active_dependency_invalid' 'Active support requires an active Context Record and group.' 'context_record_id'
                 }
             }
         }
     }
     $activeKeys = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::Ordinal)
-    foreach ($type in @('conceptual_object', 'logical_entity', 'logical_attribute', 'dimensional_entity', 'dimensional_attribute')) {
+    foreach ($type in @('subject_area', 'logical_entity', 'logical_attribute', 'dimensional_entity', 'dimensional_attribute')) {
         $activeKeys[$type] = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
     }
     foreach ($state in @($States)) {
@@ -1937,7 +1942,7 @@ function Add-ProjectValidationIssues([object[]]$States, $Issues, [object[]]$Refe
             $layer = $type.Substring(0, $type.Length - '_attribute'.Length)
             $keyFields = @(($layer + '_entity_schema_name'), ($layer + '_entity_name'), ($type + '_name'))
         }
-        elseif ($type -cne 'conceptual_object') { $keyFields = @(($type + '_schema_name'), ($type + '_name')) }
+        elseif ($type -cne 'subject_area') { $keyFields = @(($type + '_schema_name'), ($type + '_name')) }
         foreach ($record in @($state.Effective)) {
             if ([string](Get-Property $record ($type + '_status')) -ceq 'active') {
                 [void]$activeKeys[$type].Add((Get-NormalizedValidationKey 'project' $keyFields $record))
@@ -1950,15 +1955,9 @@ function Add-ProjectValidationIssues([object[]]$States, $Issues, [object[]]$Refe
         foreach ($record in @($state.Effective)) {
             $recordNumber++
             if ([string](Get-Property $record ($type + '_status')) -cne 'active') { continue }
-            if ($type -ceq 'conceptual_relationship') {
-                $invalidEndpoint = $false
-                foreach ($prefix in @('from', 'to')) {
-                    $key = Get-NormalizedValidationKey 'project' @($prefix + '_conceptual_object_name') $record
-                    if (-not $activeKeys['conceptual_object'].Contains($key)) { $invalidEndpoint = $true }
-                }
-                if ($invalidEndpoint) {
-                    Add-LocalValidationIssue $Issues $state.Dataset.name $recordNumber 'active_dependency_invalid' 'Active Conceptual Relationship requires active endpoint Objects.' 'conceptual_object_name'
-                }
+            if ($type -ceq 'subject_area_table' -and
+                -not $activeKeys['subject_area'].Contains((Get-NormalizedValidationKey 'project' @('subject_area_name') $record))) {
+                Add-LocalValidationIssue $Issues $state.Dataset.name $null 'active_dependency_invalid' 'An active Subject Area table requires an active Subject Area.' 'subject_area_name'
             }
             foreach ($layer in @('logical', 'dimensional')) {
                 $label = if ($layer -ceq 'logical') { 'Logical' } else { 'Dimensional' }
@@ -2433,7 +2432,6 @@ function Test-AppliedRecordEqual($Local, $Server, $Schema, $Root = $null, [strin
         $left = if ($hasLocal) { Get-Property $Local $field } else { Get-Property $child 'default' }
         $right = if ($hasServer) { Get-Property $Server $field } else { Get-Property $child 'default' }
         $ownedCollection = if ([object]::ReferenceEquals($Schema, $Root) -and (
-            ($field -ceq 'supports' -and @('conceptual_object', 'conceptual_relationship') -ccontains $RecordType) -or
             ($field -ceq 'sources' -and @('logical_entity', 'logical_attribute', 'dimensional_entity', 'dimensional_attribute') -ccontains $RecordType) -or
             ($field -ceq 'submodels' -and @('logical_entity', 'dimensional_entity') -ccontains $RecordType))) { $field } else { '' }
         if (-not (Test-AppliedRecordEqual $left $right $child $Root $RecordType $ownedCollection)) { return $false }

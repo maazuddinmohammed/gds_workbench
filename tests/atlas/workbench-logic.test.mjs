@@ -216,13 +216,6 @@ test("portable Snapshot rules cover every backend record validator", () => {
       to_object_name: "object", to_attribute_name: "attribute",
     }],
     ["context_record", { source_reference: "é".repeat(32769) }],
-    ["conceptual_object", {
-      conceptual_object_aliases: ["Alias", " alias "], supports: [],
-    }],
-    ["conceptual_relationship", {
-      from_conceptual_object_name: "Concept", to_conceptual_object_name: " concept ",
-      supports: [],
-    }],
     ["logical_entity", {
       submodels: [{ submodel_name: "Core" }, { submodel_name: " core " }], sources: [],
     }],
@@ -777,8 +770,8 @@ test("Project physical-scope validation covers every backend rule family", () =>
     ["context_group", projectDataset("context_group", [{
       source_system_code: "MISSING",
     }])],
-    ["conceptual_object", projectDataset("conceptual_object", [{
-      supports: [{ support_source_type: "object", source_object: missingObject }],
+    ["subject_area_table", projectDataset("subject_area_table", [{
+      ...missingObject, subject_area_name: "Sales", subject_area_table_status: "active",
     }])],
     ["logical_entity", projectDataset("logical_entity", [{ sources: [{
       support_source_type: "object", source_object: missingObject,
@@ -819,7 +812,7 @@ test("Project physical-scope validation covers every backend rule family", () =>
   assert.ok(codes.has("validation_query_result_invalid"));
   for (const dataset of [
     "project_input_scope", "profiling_profile", "analysis_result",
-    "context_group", "conceptual_object", "logical_entity",
+    "context_group", "subject_area_table", "logical_entity",
     "logical_attribute", "mapping_object",
     "validation_group", "validation_check",
   ]) assert.ok(issues.some((item) => item.dataset === dataset), dataset);
@@ -836,13 +829,8 @@ test("Project future-graph references cover every backend relationship family", 
       context_group_name: "MissingDocument",
       context_record_id: "0fce27af-cdea-5936-8b21-dbc7856f3e3d",
     }])],
-    ["conceptual_object", projectDataset("conceptual_object", [{
-      conceptual_object_name: "Concept", supports: [contextSource],
-    }])],
-    ["conceptual_relationship", projectDataset("conceptual_relationship", [{
-      from_conceptual_object_name: "MissingA", to_conceptual_object_name: "MissingB",
-      supports: [],
-    }])],
+    ["subject_area", projectDataset("subject_area", [{ subject_area_name: "Sales" }])],
+    ["subject_area_table", projectDataset("subject_area_table", [{ subject_area_name: "MissingArea" }])],
     ["logical_submodel", projectDataset("logical_submodel", [])],
     ["logical_entity", projectDataset("logical_entity", [{
       logical_entity_schema_name: "silver", logical_entity_name: "Entity", submodels: [{ submodel_name: "Missing" }],
@@ -879,7 +867,7 @@ test("Project future-graph references cover every backend relationship family", 
 
   const issues = projectValidation.validateBackendReferences(graph);
   for (const dataset of [
-    "context_record", "conceptual_object", "conceptual_relationship",
+    "context_record", "subject_area_table",
     "logical_entity", "logical_attribute", "logical_relationship",
     "mapping_object",
     "mapping_attribute", "generated_code", "generated_code_source_system",
@@ -888,8 +876,12 @@ test("Project future-graph references cover every backend relationship family", 
   assert.ok(issues.some((item) => item.code === "context_layer_invalid") === false);
 });
 
-test("Project active dependencies cover Entity, Mapping, Code, and Validation", () => {
+test("Project active dependencies cover Subject Area, Entity, Mapping, Code, and Validation", () => {
   const graph = new Map([
+    ["subject_area", projectDataset("subject_area", [{ subject_area_name: "Sales", subject_area_status: "inactive" }])],
+    ["subject_area_table", projectDataset("subject_area_table", [{
+      subject_area_name: " sales ", subject_area_table_status: "active",
+    }])],
     ["logical_entity", projectDataset("logical_entity", [])],
     ["logical_attribute", projectDataset("logical_attribute", [])],
     ["mapping_object", projectDataset("mapping_object", [{
@@ -922,10 +914,10 @@ test("Project active dependencies cover Entity, Mapping, Code, and Validation", 
   ]);
 
   const issues = projectValidation.validateActiveDependencies(graph);
-  assert.ok(issues.length >= 6);
+  assert.ok(issues.length >= 7);
   assert.ok(issues.every((item) => item.code === "active_dependency_invalid"));
   for (const dataset of [
-    "mapping_object",
+    "subject_area_table", "mapping_object",
     "mapping_attribute", "generated_code", "generated_code_source_system",
     "validation_group", "validation_check",
   ]) assert.ok(issues.some((item) => item.dataset === dataset), dataset);
@@ -1024,7 +1016,7 @@ test('Context references resolve Snapshot types, groups and stable record UUIDs'
     ['context_type',projectDataset('context_type',[{context_type_name:'Business Requirement'}])],
     ['context_group',projectDataset('context_group',[group])],
     ['context_record',projectDataset('context_record',[record])],
-    ['conceptual_object',projectDataset('conceptual_object',[{conceptual_object_name:'Customer',supports:[source]}])],
+    ['logical_entity',projectDataset('logical_entity',[{logical_entity_schema_name:'silver',logical_entity_name:'Customer',sources:[source]}])],
   ]);
   assert.deepEqual(projectValidation.validateBackendReferences(graph),[]);
   group.context_type_name='Invented type';
@@ -1032,18 +1024,18 @@ test('Context references resolve Snapshot types, groups and stable record UUIDs'
   group.context_type_name='Business Requirement';record.context_group_name='Missing group';
   assert.ok(projectValidation.validateBackendReferences(graph).some(issue=>issue.field==='context_group_name'));
   record.context_group_name='Identity';source.context_record.context_record_id='87be585c-7b03-45d7-98e2-62745af055d1';
-  assert.ok(projectValidation.validateBackendReferences(graph).some(issue=>issue.dataset==='conceptual_object'));
+  assert.ok(projectValidation.validateBackendReferences(graph).some(issue=>issue.dataset==='logical_entity'));
 });
 
-test('locked Context records protect group changes and active supports require active evidence', () => {
+test('locked Context records protect group changes and active sources require active evidence', () => {
   const id='74acf19b-49ba-4a71-a21c-8b46238f3d96';
   const group={context_group_name:'Identity',context_type_name:'Business Requirement',is_active:true};
   const record={context_record_id:id,context_group_name:'Identity',status:'active',is_locked:true};
-  const source={support_source_type:'context_record',context_record:{context_record_id:id},support_status:'active'};
+  const source={support_source_type:'context_record',context_record:{context_record_id:id},status:'active'};
   const graph=new Map([
     ['context_group',projectDataset('context_group',[group],[group],[{...group,context_type_name:'Decision'}])],
     ['context_record',projectDataset('context_record',[record])],
-    ['conceptual_object',projectDataset('conceptual_object',[{conceptual_object_name:'Customer',conceptual_object_status:'active',supports:[source]}])],
+    ['logical_entity',projectDataset('logical_entity',[{logical_entity_schema_name:'silver',logical_entity_name:'Customer',logical_entity_status:'active',sources:[source]}])],
   ]);
   graph.get('context_group').definition.canonical_key=['context_group_name'];
   assert.ok(projectValidation.validateNestedLocks(graph).some(issue=>issue.code==='context_group_child_locked'));
@@ -1054,5 +1046,5 @@ test('locked Context records protect group changes and active supports require a
   }
   record.status='active';group.is_active=false;
   assert.ok(projectValidation.validateActiveDependencies(graph).some(issue=>issue.field==='context_record_id'));
-  source.support_status='inactive';assert.deepEqual(projectValidation.validateActiveDependencies(graph),[]);
+  source.status='inactive';assert.deepEqual(projectValidation.validateActiveDependencies(graph),[]);
 });

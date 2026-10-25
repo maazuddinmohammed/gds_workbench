@@ -47,9 +47,8 @@ WEB_PROVENANCE_COLUMNS = {
     ("workflow", "analysis_result", "validation_workflow_run_id"),
     ("workflow", "generated_code", "workflow_run_id"),
     ("workflow", "generated_code_source_system", "workflow_run_id"),
-    ("workflow", "conceptual_object", "workflow_run_id"),
-    ("workflow", "conceptual_relationship", "workflow_run_id"),
-    ("workflow", "conceptual_support", "workflow_run_id"),
+    ("workflow", "subject_area", "workflow_run_id"),
+    ("workflow", "subject_area_table", "workflow_run_id"),
     ("workflow", "logical_submodel", "workflow_run_id"),
     ("workflow", "logical_entity", "workflow_run_id"),
     ("workflow", "logical_entity_submodel", "workflow_run_id"),
@@ -342,9 +341,8 @@ def test_web_workflow_provenance_is_nullable_on_every_common_artifact(
                              ('workflow', 'analysis_result', 'validation_workflow_run_id'),
                              ('workflow', 'generated_code', 'workflow_run_id'),
                              ('workflow', 'generated_code_source_system', 'workflow_run_id'),
-                             ('workflow', 'conceptual_object', 'workflow_run_id'),
-                             ('workflow', 'conceptual_relationship', 'workflow_run_id'),
-                             ('workflow', 'conceptual_support', 'workflow_run_id'),
+                             ('workflow', 'subject_area', 'workflow_run_id'),
+                             ('workflow', 'subject_area_table', 'workflow_run_id'),
                              ('workflow', 'logical_submodel', 'workflow_run_id'),
                              ('workflow', 'logical_entity', 'workflow_run_id'),
                              ('workflow', 'logical_entity_submodel', 'workflow_run_id'),
@@ -554,7 +552,7 @@ def test_workflow_run_uses_one_forward_only_state_machine(
         postgres_database,
         project_id=project_id,
         principal_id=principal_id,
-        project_workflow="conceptual",
+        project_workflow="subject_area",
         workflow_execution_mode="one_shot",
     )
 
@@ -611,14 +609,14 @@ def test_project_change_set_workflow_provenance_is_nullable_unique_and_project_f
         postgres_database,
         project_id=project_id,
         principal_id=principal_id,
-        project_workflow="conceptual",
+        project_workflow="subject_area",
         workflow_execution_mode="one_shot",
     )
     other_workflow_run_id = _create_agentic_workflow_run(
         postgres_database,
         project_id=project_id,
         principal_id=principal_id,
-        project_workflow="conceptual",
+        project_workflow="subject_area",
         workflow_execution_mode="one_shot",
     )
     insert_change_set = """
@@ -909,7 +907,7 @@ def test_workflow_run_requires_only_agentic_runs_to_have_agent_configuration(
                 selected_scope_count,
                 correlation_id
             ) VALUES (
-                %s, %s, %s, 'conceptual', 'one_shot', %s,
+                %s, %s, %s, 'subject_area', 'one_shot', %s,
                 'openai_agents_sdk', 'microsoft_foundry', 'project-1',
                 'medium', 50, 5, %s, 1, %s
             )
@@ -989,7 +987,7 @@ def test_workflow_stage_has_bounded_modes_and_unique_order(
                 workflow_stage_order,
                 workflow_stage_is_agentic
             ) VALUES (
-                'conceptual', 'one_shot', 'application_contract_stage',
+                'subject_area', 'one_shot', 'application_contract_stage',
                 'Application contract stage', 910, TRUE
             )
             RETURNING workflow_stage_id
@@ -1034,7 +1032,7 @@ def test_workflow_stage_has_bounded_modes_and_unique_order(
                 workflow_stage_order,
                 workflow_stage_is_agentic
             ) VALUES (
-                'conceptual', 'one_shot', 'duplicate_order',
+                'subject_area', 'one_shot', 'duplicate_order',
                 'Duplicate order', 910, TRUE
             )
             """

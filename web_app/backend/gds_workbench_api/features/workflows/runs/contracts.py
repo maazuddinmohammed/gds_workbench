@@ -14,7 +14,7 @@ from gds_workbench_api.features.workflows.usage.read_service import WorkflowToke
 type ProjectWorkflow = Literal[
     "profiling",
     "analysis",
-    "conceptual",
+    "subject_area",
     "logical",
     "dimensional",
     "mapping",

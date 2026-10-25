@@ -106,8 +106,6 @@
     "profiling_profile",
     "analysis_result",
     "context_record",
-    "conceptual_object",
-    "conceptual_relationship",
     "logical_entity",
     "logical_attribute",
     "logical_relationship",
@@ -250,12 +248,6 @@
       if (sameNormalized(endpoint("from", true), endpoint("to", true))) add("Analysis endpoints must be different");
     } else if (rule === "context_record") {
       if (typeof value.source_reference === "string" && new TextEncoder().encode(value.source_reference).length > 65536) add("Context source reference is too large");
-    } else if (rule === "conceptual_object") {
-      if (!uniqueNormalized(value.conceptual_object_aliases)) add("Conceptual Object aliases must be unique");
-      if (!uniqueSources(value.supports)) add("Conceptual Object supports must be unique");
-    } else if (rule === "conceptual_relationship") {
-      if (sameNormalized([value.from_conceptual_object_name], [value.to_conceptual_object_name])) add("Conceptual Relationship endpoints must be different");
-      if (!uniqueSources(value.supports)) add("Conceptual Relationship supports must be unique");
     } else if (rule === "logical_entity") {
       if (!uniqueNormalized(value.submodels.map((item) => item.submodel_name))) add("Logical Entity Submodel memberships must be unique");
       if (!uniqueSources(value.sources)) add("Logical Entity sources must be unique");

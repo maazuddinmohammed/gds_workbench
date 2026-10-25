@@ -5,7 +5,7 @@ export type ProjectWorkflow =
   | "profiling"
   | "metadata_enrichment"
   | "analysis"
-  | "conceptual"
+  | "subject_area"
   | "logical"
   | "dimensional"
   | "mapping"
@@ -361,7 +361,7 @@ export interface WorkflowsApi {
     workflowRunId: number,
     expectedProjectRevision: number,
   ) => Promise<WorkflowRunStart>;
-  executeConceptualRun: (
+  executeSubjectAreaRun: (
     tenantId: number,
     projectId: number,
     workflowRunId: number,
@@ -519,14 +519,14 @@ export function createWorkflowsApi(request: HttpRequest): WorkflowsApi {
         body: JSON.stringify({ expected_project_revision: expectedProjectRevision }),
       },
     ),
-    executeConceptualRun: (
+    executeSubjectAreaRun: (
       tenantId,
       projectId,
       workflowRunId,
       executionMode,
       expectedProjectRevision,
     ) => request<WorkflowRunStart>(
-      `/api/v1/tenants/${tenantId}/projects/${projectId}/conceptual/runs/${workflowRunId}/execute`,
+      `/api/v1/tenants/${tenantId}/projects/${projectId}/subject-areas/runs/${workflowRunId}/execute`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },

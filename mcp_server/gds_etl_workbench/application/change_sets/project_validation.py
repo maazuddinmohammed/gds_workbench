@@ -482,7 +482,7 @@ def _retains_physical_history(existing: ModelingRecord, changed: ModelingRecord)
         ):
             continue
         if (
-            field in {"supports", "sources", "submodels"}
+            field in {"sources", "submodels"}
             and isinstance(previous, tuple)
             and isinstance(current, tuple)
         ):
@@ -639,18 +639,15 @@ def _validate_physical_scope(
         if record.source_system_code is not None:
             _require_active_system(record.source_system_code, "context_group", catalog, issues)
 
-    for dataset in ("conceptual_object", "conceptual_relationship"):
-        for record in future[dataset]:
-            for support in record.supports:
-                if support.support_source_type == "object":
-                    _require_object(
-                        support.source_object,
-                        dataset,
-                        "source_object",
-                        catalog.objects if retained(dataset, record) else input_objects,
-                        "Physical support is not in active Project Input Scope.",
-                        issues,
-                    )
+    for record in future["subject_area_table"]:
+        _require_object(
+            record,
+            "subject_area_table",
+            "object_name",
+            catalog.objects if retained("subject_area_table", record) else input_objects,
+            "Subject Area table is not in active Project Input Scope.",
+            issues,
+        )
     for dataset in ("logical_entity", "logical_attribute"):
         for record in future[dataset]:
             for source in record.sources:
@@ -745,8 +742,6 @@ def _validate_references(
             _missing(issues, "context_record", "context_group_name")
 
     for dataset in (
-        "conceptual_object",
-        "conceptual_relationship",
         "logical_entity",
         "logical_attribute",
         "dimensional_entity",
@@ -755,12 +750,8 @@ def _validate_references(
         for owner in future[dataset]:
             if getattr(owner, f"{dataset}_status") != "active":
                 continue
-            for support in getattr(owner, "supports", getattr(owner, "sources", ())):
-                if (
-                    support.support_source_type != "context_record"
-                    or getattr(support, "support_status", getattr(support, "status", None))
-                    != "active"
-                ):
+            for support in owner.sources:
+                if support.support_source_type != "context_record" or support.status != "active":
                     continue
                 target = context_records.get(support.context_record.context_record_id)
                 group = (
@@ -778,31 +769,12 @@ def _validate_references(
                         "Active support requires an active Context Record and group.",
                     )
 
-    conceptual_objects = {
-        normalize_project_key_value(record.conceptual_object_name)
-        for record in future["conceptual_object"]
+    subject_areas = {
+        normalize_project_key_value(record.subject_area_name) for record in future["subject_area"]
     }
-    for record in future["conceptual_object"]:
-        _validate_supports(
-            record.supports,
-            dataset="conceptual_object",
-            context_records=context_records,
-            issues=issues,
-        )
-    for record in future["conceptual_relationship"]:
-        if (
-            normalize_project_key_value(record.from_conceptual_object_name)
-            not in conceptual_objects
-            or normalize_project_key_value(record.to_conceptual_object_name)
-            not in conceptual_objects
-        ):
-            _missing(issues, "conceptual_relationship", "conceptual_object_name")
-        _validate_supports(
-            record.supports,
-            dataset="conceptual_relationship",
-            context_records=context_records,
-            issues=issues,
-        )
+    for record in future["subject_area_table"]:
+        if normalize_project_key_value(record.subject_area_name) not in subject_areas:
+            _missing(issues, "subject_area_table", "subject_area_name")
 
     _validate_modeled_layer(future, "logical", context_records, issues)
     _validate_modeled_layer(future, "dimensional", context_records, issues)
@@ -874,23 +846,21 @@ def _validate_active_dependencies(
     existing_mapping_objects: frozenset[tuple[str, str, str, str]],
     code_authoring_entities: frozenset[ModeledEntityKey],
 ) -> None:
-    active_conceptual_objects = {
-        normalize_project_key_value(record.conceptual_object_name)
-        for record in future["conceptual_object"]
-        if record.conceptual_object_status == "active"
+    active_subject_areas = {
+        normalize_project_key_value(record.subject_area_name)
+        for record in future["subject_area"]
+        if record.subject_area_status == "active"
     }
-    for record in future["conceptual_relationship"]:
-        if record.conceptual_relationship_status == "active" and (
-            normalize_project_key_value(record.from_conceptual_object_name)
-            not in active_conceptual_objects
-            or normalize_project_key_value(record.to_conceptual_object_name)
-            not in active_conceptual_objects
+    for record in future["subject_area_table"]:
+        if (
+            record.subject_area_table_status == "active"
+            and normalize_project_key_value(record.subject_area_name) not in active_subject_areas
         ):
             _active_invalid(
                 issues,
-                "conceptual_relationship",
-                "conceptual_object_name",
-                "Active Conceptual Relationship requires active endpoint Objects.",
+                "subject_area_table",
+                "subject_area_name",
+                "An active Subject Area table requires an active Subject Area.",
             )
     active_entities = {
         _entity_key(record)
@@ -1505,7 +1475,7 @@ def _validate_locked_nested_records(
     changed: ModelingRecord,
     issues: list[ProjectValidationIssue],
 ) -> None:
-    for field in ("supports", "submodels", "sources"):
+    for field in ("submodels", "sources"):
         changed_by_key = {_nested_record_key(item): item for item in getattr(changed, field, ())}
         for existing_item in getattr(existing, field, ()):
             changed_item = changed_by_key.get(_nested_record_key(existing_item))

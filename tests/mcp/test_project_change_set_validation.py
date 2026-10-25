@@ -129,11 +129,11 @@ def test_project_validation_outcome_groups_errors_and_bounds_agent_examples() ->
 
 
 def test_duplicate_natural_keys_are_case_and_space_insensitive() -> None:
-    first = complete_project_graph()["conceptual_object"][0]
-    duplicate = {**first, "conceptual_object_name": " order "}
+    first = complete_project_graph()["subject_area"][0]
+    duplicate = {**first, "subject_area_name": " sales "}
 
     records, issues = validate_staged_records(
-        "conceptual_object",
+        "subject_area",
         [first, duplicate],
     )
 
@@ -158,7 +158,7 @@ def test_project_input_scope_accepts_only_eligible_source_or_bronze_objects() ->
 
 @pytest.mark.parametrize(
     "dataset",
-    ["profiling_profile", "analysis_result", "conceptual_object", "logical_entity"],
+    ["profiling_profile", "analysis_result", "subject_area_table", "logical_entity"],
 )
 def test_source_work_uses_active_project_input_scope(
     dataset: ProjectChangeSetDataset,
@@ -182,12 +182,13 @@ def test_source_work_uses_active_project_input_scope(
 
 
 def _project_layer_graph(
-    layer: Literal["conceptual", "logical", "dimensional"],
+    layer: Literal["subject_area", "logical", "dimensional"],
 ) -> dict[ProjectChangeSetDataset, list[dict[str, object]]]:
     return {
         dataset: records
         for dataset, records in complete_project_graph().items()
-        if dataset.startswith(f"{layer}_")
+        if dataset == layer
+        or dataset.startswith(f"{layer}_")
         or dataset
         in {
             "project_details",
@@ -198,25 +199,17 @@ def _project_layer_graph(
     }
 
 
-@pytest.mark.parametrize("side", ["from", "to"])
 @pytest.mark.parametrize("action", ["deactivate_parent", "reactivate_child"])
-def test_active_conceptual_relationship_requires_both_active_objects(
-    side: str,
-    action: str,
-) -> None:
-    graph = _project_layer_graph("conceptual")
-    relationship = graph["conceptual_relationship"][0]
-    endpoint = str(relationship[f"{side}_conceptual_object_name"])
+def test_active_subject_area_table_requires_an_active_area(action: str) -> None:
+    graph = _project_layer_graph("subject_area")
+    area = graph["subject_area"][0]
+    membership = graph["subject_area_table"][0]
     # Canonical references are case/space insensitive, including lifecycle checks.
-    relationship[f"{side}_conceptual_object_name"] = f" {endpoint.upper()} "
-    parent = next(
-        record
-        for record in graph["conceptual_object"]
-        if record["conceptual_object_name"] == endpoint
-    )
+    membership["subject_area_name"] = f" {str(area['subject_area_name']).upper()} "
     if action == "reactivate_child":
-        parent["conceptual_object_status"] = "inactive"
-        relationship["conceptual_relationship_status"] = "inactive"
+        area["subject_area_status"] = "inactive"
+        for record in graph["subject_area_table"]:
+            record["subject_area_table_status"] = "inactive"
     snapshot = snapshot_from_graph(graph)
     baseline = validate_future_graph(
         snapshot=snapshot,
@@ -224,14 +217,11 @@ def test_active_conceptual_relationship_requires_both_active_objects(
         physical_scope=complete_physical_scope(),
     )
     assert baseline.valid
-    if action == "deactivate_parent":
-        changed = {**parent, "conceptual_object_status": "inactive"}
-        changes: dict[ProjectChangeSetDataset, list[dict[str, object]]] = {
-            "conceptual_object": [changed],
-        }
-    else:
-        changed = {**relationship, "conceptual_relationship_status": "active"}
-        changes = {"conceptual_relationship": [changed]}
+    changes: dict[ProjectChangeSetDataset, list[dict[str, object]]] = (
+        {"subject_area": [{**area, "subject_area_status": "inactive"}]}
+        if action == "deactivate_parent"
+        else {"subject_area_table": [{**membership, "subject_area_table_status": "active"}]}
+    )
 
     result = validate_future_graph(
         snapshot=snapshot,
@@ -243,8 +233,25 @@ def test_active_conceptual_relationship_requires_both_active_objects(
     assert result.phase == "references"
     assert any(
         issue.code == "active_dependency_invalid"
-        and issue.dataset == "conceptual_relationship"
-        and issue.fields == ("conceptual_object_name",)
+        and issue.dataset == "subject_area_table"
+        and issue.fields == ("subject_area_name",)
+        for issue in result.issues
+    )
+
+
+def test_subject_area_table_requires_a_saved_or_staged_area() -> None:
+    graph = _project_layer_graph("subject_area")
+    orphan = {**graph["subject_area_table"][0], "subject_area_name": "Unknown"}
+
+    result = validate_future_graph(
+        snapshot=snapshot_from_graph(graph),
+        staged_documents={"subject_area_table": [orphan]},
+        physical_scope=complete_physical_scope(),
+    )
+
+    assert result.valid is False
+    assert any(
+        issue.dataset == "subject_area_table" and issue.fields == ("subject_area_name",)
         for issue in result.issues
     )
 
@@ -384,17 +391,17 @@ def test_active_modeled_relationship_requires_active_attributes_and_entities(
     )
 
 
-@pytest.mark.parametrize("layer", ["conceptual", "logical", "dimensional"])
+@pytest.mark.parametrize("layer", ["subject_area", "logical", "dimensional"])
 @pytest.mark.parametrize("locked", [False, True])
 @pytest.mark.parametrize("status", ["active", "inactive"])
 def test_project_layer_activity_is_independent_of_locks(
-    layer: Literal["conceptual", "logical", "dimensional"],
+    layer: Literal["subject_area", "logical", "dimensional"],
     locked: bool,
     status: str,
 ) -> None:
     graph = _project_layer_graph(layer)
     for dataset, records in graph.items():
-        if dataset.startswith(f"{layer}_"):
+        if dataset == layer or dataset.startswith(f"{layer}_"):
             for record in records:
                 record[f"{dataset}_status"] = status
                 record[f"{dataset}_is_locked"] = locked
@@ -493,40 +500,36 @@ def test_lifecycle_review_preserves_inactive_physical_history(
     assert result.valid
 
 
-@pytest.mark.parametrize(
-    "change", ["definition", "new_inactive", "reactivate", "new_nested_source"]
-)
+@pytest.mark.parametrize("change", ["new_area", "new_inactive", "reactivate"])
 def test_authoring_cannot_claim_retained_physical_history(change: str) -> None:
-    graph = _project_layer_graph("conceptual")
-    existing = graph["conceptual_object"][0]
+    graph = _project_layer_graph("subject_area")
+    existing = next(
+        record
+        for record in graph["subject_area_table"]
+        if record["object_name"] == SOURCE_ORDERS[4]
+    )
     if change == "reactivate":
-        existing["conceptual_object_status"] = "inactive"
-        for relationship in graph["conceptual_relationship"]:
-            relationship["conceptual_relationship_status"] = "inactive"
-    changed = deepcopy(existing)
-    if change == "definition":
-        changed["conceptual_object_definition"] = "A newly authored definition."
-    elif change == "new_inactive":
-        changed["conceptual_object_name"] = "Another order concept"
-        changed["conceptual_object_status"] = "inactive"
-    elif change == "reactivate":
-        changed["conceptual_object_status"] = "active"
+        existing["subject_area_table_status"] = "inactive"
+    changes: dict[ProjectChangeSetDataset, list[dict[str, object]]]
+    if change == "reactivate":
+        changes = {"subject_area_table": [{**existing, "subject_area_table_status": "active"}]}
     else:
-        supports = changed["supports"]
-        assert isinstance(supports, list)
-        additional = deepcopy(graph["conceptual_object"][1]["supports"][0])
-        additional["support_status"] = "inactive"
-        supports.append(additional)
+        # The same retained table placed in another area is new authored evidence.
+        area = {**graph["subject_area"][0], "subject_area_name": "Billing"}
+        membership = {**existing, "subject_area_name": "Billing"}
+        if change == "new_inactive":
+            membership["subject_area_table_status"] = "inactive"
+        changes = {"subject_area": [area], "subject_area_table": [membership]}
 
     result = validate_future_graph(
         snapshot=snapshot_from_graph(graph),
-        staged_documents={"conceptual_object": [changed]},
+        staged_documents=changes,
         physical_scope=_with_inactive_physical_record(SOURCE_ORDERS),
     )
 
     assert result.valid is False
     assert result.phase == "project_input_scope"
-    assert any(issue.dataset == "conceptual_object" for issue in result.issues)
+    assert any(issue.dataset == "subject_area_table" for issue in result.issues)
 
 
 def test_new_inactive_scope_cannot_claim_existing_physical_history() -> None:
@@ -1105,14 +1108,14 @@ def test_storage_metadata_changes_validation_code_freshness(
 
 def test_locked_applied_record_cannot_change() -> None:
     graph = complete_project_graph()
-    graph["conceptual_object"][0]["conceptual_object_is_locked"] = True
+    graph["subject_area"][0]["subject_area_is_locked"] = True
     snapshot = snapshot_from_graph(graph)
-    changed = deepcopy(graph["conceptual_object"][0])
-    changed["conceptual_object_definition"] = "Changed definition."
+    changed = deepcopy(graph["subject_area"][0])
+    changed["subject_area_definition"] = "Changed definition."
 
     result = validate_future_graph(
         snapshot=snapshot,
-        staged_documents={"conceptual_object": [changed]},
+        staged_documents={"subject_area": [changed]},
         physical_scope=complete_physical_scope(),
     )
 

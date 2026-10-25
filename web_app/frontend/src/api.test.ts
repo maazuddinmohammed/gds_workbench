@@ -396,29 +396,29 @@ describe("Workbench API client", () => {
     }));
   });
 
-  it("uses normalized Conceptual Object and Relationship read routes", async () => {
+  it("uses Subject Area read and save routes", async () => {
     const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => jsonResponse({ items: [] }));
     const api = createApiClient(fetcher);
 
-    await api.listConceptualObjects(7, 18, {
-      status: "inactive",
-      locked: true,
-      namePrefix: " Customer ",
-    });
-    await api.readConceptualObject(7, 18, 41);
-    await api.listConceptualRelationships(7, 18, {
-      status: "active",
-      locked: false,
-      nameExact: " Places Order ",
-    });
-    await api.readConceptualRelationship(7, 18, 51);
+    await api.listSubjectAreas(7, 18);
+    await api.listSubjectAreaScopeTables(7, 18);
+    await api.readSubjectArea(7, 18, 41);
+    await api.saveSubjectArea(7, 18, {
+      expected_project_revision: 3, subject_area_id: 41, add_object_ids: [5, 6],
+    }, "key-1");
 
     expect(fetcher.mock.calls.map(([input]) => input)).toEqual([
-      "/api/v1/tenants/7/projects/18/conceptual/objects?status=inactive&locked=true&name_prefix=customer&page_size=200",
-      "/api/v1/tenants/7/projects/18/conceptual/objects/41",
-      "/api/v1/tenants/7/projects/18/conceptual/relationships?status=active&locked=false&name_exact=places+order&page_size=200",
-      "/api/v1/tenants/7/projects/18/conceptual/relationships/51",
+      "/api/v1/tenants/7/projects/18/subject-areas",
+      "/api/v1/tenants/7/projects/18/subject-areas/tables",
+      "/api/v1/tenants/7/projects/18/subject-areas/41",
+      "/api/v1/tenants/7/projects/18/change-sets/review/subject-area",
     ]);
+    const save = fetcher.mock.calls[3]?.[1];
+    expect(save?.method).toBe("POST");
+    expect(save?.headers).toMatchObject({ "Idempotency-Key": "key-1" });
+    expect(JSON.parse(String(save?.body))).toEqual({
+      expected_project_revision: 3, subject_area_id: 41, add_object_ids: [5, 6],
+    });
   });
 });
 

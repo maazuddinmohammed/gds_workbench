@@ -20,7 +20,7 @@ def _stage_row(
         "project_id": 18,
         "correlation_id": UUID("33333333-3333-3333-3333-333333333333"),
         "project_revision": 7,
-        "project_workflow": "conceptual",
+        "project_workflow": "subject_area",
         "workflow_execution_mode": "one_shot",
         "modeled_entity_type": None,
         "selected_scope_digest": "a" * 64,
@@ -224,7 +224,7 @@ async def test_plan_freezes_tool_permissions_and_rejects_inconsistent_rows() -> 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "workflow,count", [("conceptual", 50_001), ("validation", 1001)]
+    "workflow,count", [("subject_area", 50_001), ("validation", 1001)]
 )
 async def test_run_plan_keeps_complete_large_selection(
     workflow: str, count: int

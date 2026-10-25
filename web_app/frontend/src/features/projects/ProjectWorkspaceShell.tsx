@@ -8,7 +8,7 @@ import type { ProjectDetail, ProjectsApi, ProjectSectionState } from "./api";
 
 export type ProjectStage =
   | "overview" | "settings" | "settings-prompts" | "scope" | "metadata-enrichment"
-  | "profiling" | "context" | "analysis" | "conceptual" | "logical"
+  | "profiling" | "context" | "analysis" | "subject-area" | "logical"
   | "dimensional" | "mapping" | "code-generation" | "validation";
 
 const stages = [
@@ -19,7 +19,7 @@ const stages = [
   { id: "profiling", label: "Profiling", to: "/tenants/$tenantId/projects/$projectId/profiling" },
   { id: "metadata-enrichment", label: "Enrichment", to: "/tenants/$tenantId/projects/$projectId/metadata-enrichment", accessibleName: "Metadata enrichment" },
   { id: "analysis", label: "Analysis", to: "/tenants/$tenantId/projects/$projectId/analysis" },
-  { id: "conceptual", label: "Conceptual", to: "/tenants/$tenantId/projects/$projectId/conceptual" },
+  { id: "subject-area", label: "Subject areas", to: "/tenants/$tenantId/projects/$projectId/subject-areas" },
   { id: "logical", label: "Logical", to: "/tenants/$tenantId/projects/$projectId/logical" },
   { id: "dimensional", label: "Dimensional", to: "/tenants/$tenantId/projects/$projectId/dimensional" },
   { id: "mapping", label: "Mapping", to: "/tenants/$tenantId/mapping/projects/$projectId" },

@@ -3,7 +3,7 @@
 
 Before Dimensional Build, Target Registration, Mapping, Code Generation, Validation authoring or Process metadata, always inspect existing outputs and resolve what to create, reuse or update. Each workflow follows this shared rule; it does not assume entry means rebuild everything.
 
-Conceptual changes affect only the Conceptual deliverable. They do not trigger Logical, Dimensional or downstream rebuilds. Preserve actual Logical → Dimensional and modeled target → Mapping → Code/Validation dependencies.
+Subject Area changes regroup tables only. They do not trigger Logical, Dimensional or downstream rebuilds. Preserve actual Logical → Dimensional and modeled target → Mapping → Code/Validation dependencies.
 
 1. Read current Snapshot records, pending changes and relevant local files. Use task decisions, known Change Set results, retained input versions and authoritative freshness information where available. Establish what changed by identity/content and actual dependencies; conversation/history helps locate changes but does not replace current state. A Project revision change or file timestamp alone does not prove every output changed.
 2. Identify **new/missing**, **changed/affected**, **unchanged reusable**, and **unresolved/protected** items. Show a compact list of names and reasons, scoped to the current workflow/Project/layer. Trace relevant bindings, source references, target columns, Mapping branches, lookup dependencies and file/System assignments. Distinguish definite effects from possible effects needing review; missing history is unknown, not proof that everything is unchanged.

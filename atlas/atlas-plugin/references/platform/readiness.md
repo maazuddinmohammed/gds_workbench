@@ -13,9 +13,9 @@ For each requested artifact, distinguish missing, applicable applied work, pendi
 | Outcome | Required inputs | Evidence of requested completion |
 |---|---|---|
 | Source analysis | Authorized exact sources; Project Input Scope for Project work; known population/protection for execution | Selected-input coverage, supported key/grain/relationship findings, measured versus inferred claims and explicit gaps. |
-| Conceptual model | Scoped physical evidence and/or attributable requirements | Standalone concepts, real supports, relationships and conceptual quality review; no downstream model required. |
-| Logical model | Eligible physical/source evidence and business Context, actual naming/schema/key/audit policy; exclude Conceptual output | Supported grain/identity, normalized design, relationships/lineage/Submodels, whole-graph and coverage checks. |
-| Dimensional model | Active applied Logical Entities/Attributes; exclude Conceptual output; no compulsory physical Silver registration or Logical Mapping | Defensible analytical grain, conformance, measures/history and cross-process review. |
+| Subject Areas | Bronze Input Scope with descriptions, columns and Analysis links | Every table in an active area or knowingly unassigned; areas within the column limit; no downstream model required. |
+| Logical model | Eligible physical/source evidence and business Context, actual naming/schema/key/audit policy; Subject Areas only choose tables | Supported grain/identity, normalized design, relationships/lineage/Submodels, whole-graph and coverage checks. |
+| Dimensional model | Active applied Logical Entities/Attributes; Subject Areas are not inputs; no compulsory physical Silver registration or Logical Mapping | Defensible analytical grain, conformance, measures/history and cross-process review. |
 | Mapping | Active applied target Entities/Attributes and eligible inputs | Complete target/System coverage and independently usable transformation instructions; missing branches remain explicit. |
 | Code generation | Applied nonempty Mapping and applied target project; all five consumer-context components | Exact SQL/file/record content, valid System assignments and translation checks. Partial Mapping permits labeled incomplete drafts, not a claim of business correctness. |
 | SQL Validation definitions | Applied complete Mapping; actual relevant Code if implementation is tested | Purposeful checked definitions with independent expectations/populations. Definitions alone are not executed evidence. |

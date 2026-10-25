@@ -51,7 +51,7 @@ def _request(
 ) -> AgentExecutionRequest:
     return AgentExecutionRequest(
         workflow_run_id=1048,
-        workflow="conceptual",
+        workflow="subject_area",
         stage="candidate_authoring",
         execution_mode="one_shot",
         selection=AgentRunSelection(

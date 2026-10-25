@@ -187,7 +187,7 @@ class SupportingContextTransaction(DimensionalContextTransaction):
         if parameters and parameters[0] == [501] and len(parameters) >= 3:
             assert parameters[2] == "dimensional"
             rows = await ContextTransaction().fetch_all(
-                query, (*parameters[:2], "conceptual", *parameters[3:])
+                query, (*parameters[:2], "subject_area", *parameters[3:])
             )
             if "attribute_ordinal_position" in query:
                 rows.append(

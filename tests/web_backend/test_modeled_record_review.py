@@ -89,9 +89,7 @@ def test_context_retirement_includes_supported_records_and_respects_locks(
     dependent_locked: bool,
 ) -> None:
     graph = complete_project_graph()
-    graph["conceptual_relationship"][0]["conceptual_relationship_is_locked"] = (
-        dependent_locked
-    )
+    graph["dimensional_entity"][0]["dimensional_entity_is_locked"] = dependent_locked
     context_id = cast(str, graph["context_record"][0]["context_record_id"])
     prepared = prepare_project_record_review(
         review_graph(graph),
@@ -104,7 +102,6 @@ def test_context_retirement_includes_supported_records_and_respects_locks(
     assert prepared.decisions[0].selected
     assert {item.dataset for item in prepared.decisions} >= {
         "context_record",
-        "conceptual_relationship",
         "dimensional_entity",
         "dimensional_attribute",
     }
@@ -249,7 +246,7 @@ def test_partial_code_retirement_previews_the_bundle_and_reactivation_requires_c
     assert complete.validation.valid
 
 
-@pytest.mark.parametrize("layer", ["conceptual", "logical", "dimensional"])
+@pytest.mark.parametrize("layer", ["subject_area", "logical", "dimensional"])
 def test_clear_layer_selects_every_active_record_and_required_dependents(
     layer: ProjectLayer,
 ) -> None:
@@ -259,7 +256,7 @@ def test_clear_layer_selects_every_active_record_and_required_dependents(
         physical_scope=complete_physical_scope(),
         dataset=cast(
             ProjectReviewDataset,
-            "conceptual_object" if layer == "conceptual" else f"{layer}_entity",
+            "subject_area" if layer == "subject_area" else f"{layer}_entity",
         ),
         record_ids=[],
         action="deactivate",
@@ -272,10 +269,19 @@ def test_clear_layer_selects_every_active_record_and_required_dependents(
     assert selected == {
         (dataset, record_id)
         for dataset, records in review.records_by_id.items()
-        if dataset.startswith(layer + "_")
+        if dataset == layer or dataset.startswith(layer + "_")
         for record_id, row in records.items()
         if review_lifecycle(row, cast(ProjectReviewDataset, dataset))[1] == "active"
     }
+    assert {
+        item.reason for item in prepared.decisions if item.selected
+    } == {f"Clear the {'Subject Area' if layer == 'subject_area' else layer.title()} layer."}
+    if layer == "subject_area":
+        # Subject Areas are not modeling evidence; clearing them retires no model.
+        assert {item.dataset for item in prepared.decisions} == {
+            "subject_area",
+            "subject_area_table",
+        }
     for record_id, row in review.records_by_id["mapping_object"].items():
         if row.model_dump()["modeled_entity_type"] == f"{layer}_entity":
             assert any(
@@ -288,19 +294,18 @@ def test_clear_layer_includes_records_beyond_the_ledger_page_and_blocks_locked_c
     None
 ):
     graph = complete_project_graph()
-    template = graph["conceptual_object"][0]
-    graph["conceptual_object"].extend(
-        {**template, "conceptual_object_name": f"Extra {number}"}
-        for number in range(230)
+    template = graph["subject_area"][0]
+    graph["subject_area"].extend(
+        {**template, "subject_area_name": f"Extra {number}"} for number in range(230)
     )
-    graph["conceptual_relationship"][0]["conceptual_relationship_is_locked"] = True
+    graph["subject_area_table"][0]["subject_area_table_is_locked"] = True
     prepared = prepare_project_record_review(
         review_graph(graph),
         physical_scope=complete_physical_scope(),
-        dataset="conceptual_object",
+        dataset="subject_area",
         record_ids=[],
         action="deactivate",
-        layer="conceptual",
+        layer="subject_area",
     )
     assert len(prepared.decisions) > 230
     assert not prepared.validation.valid

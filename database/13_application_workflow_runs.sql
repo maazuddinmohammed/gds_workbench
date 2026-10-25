@@ -116,7 +116,7 @@ CREATE TABLE application.workflow_run (
     ),
     CONSTRAINT ck_workflow_run_workflow CHECK (
         project_workflow IN (
-            'profiling', 'analysis', 'conceptual', 'logical',
+            'profiling', 'analysis', 'subject_area', 'logical',
             'dimensional', 'mapping', 'code_generation', 'validation',
             'metadata_enrichment'
         )
@@ -140,7 +140,7 @@ CREATE TABLE application.workflow_run (
                 'one_shot', 'tool_assisted'
             )
             AND project_workflow IN (
-                'analysis', 'conceptual', 'logical',
+                'analysis', 'subject_area', 'logical',
                 'dimensional', 'mapping'
             )
         ) OR (
@@ -362,13 +362,13 @@ CREATE TABLE application.workflow_run (
             OR (
                 workflow_run_state IN ('completed', 'completed_with_repair')
                 AND project_workflow IN (
-                    'analysis', 'conceptual', 'logical', 'dimensional', 'mapping',
+                    'analysis', 'subject_area', 'logical', 'dimensional', 'mapping',
                     'code_generation', 'validation'
                 )
                 AND (
                     (
                         project_workflow IN (
-                            'analysis', 'conceptual', 'logical',
+                            'analysis', 'subject_area', 'logical',
                             'dimensional', 'mapping'
                         )
                         AND workflow_execution_mode IS NOT NULL
@@ -791,20 +791,14 @@ ALTER TABLE workflow.analysis_result
     REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
-ALTER TABLE workflow.conceptual_object
-    ADD CONSTRAINT fk_conceptual_object_workflow_run
+ALTER TABLE workflow.subject_area
+    ADD CONSTRAINT fk_subject_area_workflow_run
     FOREIGN KEY (workflow_run_id, project_id)
     REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
-ALTER TABLE workflow.conceptual_relationship
-    ADD CONSTRAINT fk_conceptual_relationship_workflow_run
-    FOREIGN KEY (workflow_run_id, project_id)
-    REFERENCES application.workflow_run (workflow_run_id, project_id)
-    ON DELETE NO ACTION;
-
-ALTER TABLE workflow.conceptual_support
-    ADD CONSTRAINT fk_conceptual_support_workflow_run
+ALTER TABLE workflow.subject_area_table
+    ADD CONSTRAINT fk_subject_area_table_workflow_run
     FOREIGN KEY (workflow_run_id, project_id)
     REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
@@ -1984,7 +1978,7 @@ BEGIN
          WHERE eligible.object_id = ANY(v_selected_object_ids)
            AND CASE
                    WHEN p_project_workflow IN (
-                       'profiling', 'analysis', 'conceptual', 'logical'
+                       'profiling', 'analysis', 'subject_area', 'logical'
                    ) THEN eligible.is_project_input_eligible
                    WHEN p_project_workflow = 'metadata_enrichment' THEN
                        eligible.is_project_input_eligible
@@ -2303,7 +2297,7 @@ AS $lock_authoring_workflow_run$
        AND (
            (
                run.project_workflow IN (
-                   'analysis', 'conceptual', 'logical', 'dimensional', 'mapping'
+                   'analysis', 'subject_area', 'logical', 'dimensional', 'mapping'
                )
                AND run.workflow_execution_mode IS NOT NULL
            ) OR (
@@ -3580,7 +3574,7 @@ BEGIN
         RAISE EXCEPTION 'Workflow Run no-op identity is invalid';
     END IF;
     IF p_expected_workflow IS NULL OR p_expected_workflow NOT IN (
-        'analysis', 'conceptual', 'logical', 'dimensional', 'mapping',
+        'analysis', 'subject_area', 'logical', 'dimensional', 'mapping',
         'code_generation', 'validation'
     ) THEN
         RAISE EXCEPTION 'Workflow Run no-op Workflow is invalid';

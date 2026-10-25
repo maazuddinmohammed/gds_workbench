@@ -273,7 +273,7 @@ async def test_worker_leaves_an_unexpected_failure_claimed_for_bounded_recovery(
     [
         "profiling",
         "analysis",
-        "conceptual",
+        "subject_area",
         "logical",
         "dimensional",
         "mapping",

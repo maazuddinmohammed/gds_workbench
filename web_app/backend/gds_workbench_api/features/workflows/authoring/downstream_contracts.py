@@ -352,7 +352,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             "modeled names to physical source Attributes "
             "or Context record IDs, with rationale and key "
             "roles; modeled_relationships describe "
-            "conceptual join intent, not physical join "
+            "intended join meaning, not physical join "
             "proof; source_relationships carry Analysis "
             "rationale and measured validation when "
             "available; profiles are saved aggregate "

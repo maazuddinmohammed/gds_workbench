@@ -4,11 +4,9 @@ from gds_workbench_api.features.workflows.authoring.naming import (
 
 
 def test_default_project_authoring_naming_is_pascal_case_with_layer_suffixes() -> None:
-    conceptual = effective_naming_instructions("conceptual", None)
     logical = effective_naming_instructions("logical", None)
     dimensional = effective_naming_instructions("dimensional", None)
 
-    assert "PascalCase" in conceptual
     assert "PascalCase" in logical
     assert "end with ID" in logical
     assert "PascalCase" in dimensional

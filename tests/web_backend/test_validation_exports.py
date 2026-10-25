@@ -141,5 +141,5 @@ def test_validation_export_http_contract_revision_and_strict_input() -> None:
         stale = client.post(path, json={**command, "expected_project_revision": 3})
         assert stale.status_code == 409
         assert stale.json()["error"]["code"] == "project_revision_conflict"
-        for invalid in ({}, {**command, "entity_type": "conceptual"}, {**command, "all": True}):
+        for invalid in ({}, {**command, "entity_type": "subject_area"}, {**command, "all": True}):
             assert client.post(path, json=invalid).status_code == 422

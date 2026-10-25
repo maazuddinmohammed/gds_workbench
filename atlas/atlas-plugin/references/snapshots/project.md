@@ -37,7 +37,7 @@ Current Project catalogs contain 25 datasets. Mapping contains Object and Attrib
 
 Logical and Dimensional datasets are distinct. Shared Mapping/Code datasets use modeled_entity_type=logical_entity or dimensional_entity; filter by that discriminator when relevant. Project details is a singleton with an empty canonical key, not a missing-key error. Follow the dataset schema in both cases.
 
-The full Snapshot preserves Conceptual for browsing and standalone Conceptual work. Exclude Conceptual datasets and decisions from Logical, Dimensional, Mapping, Code and SQL Validation task context. Local `select` requires an explicit dataset; choose only the current workflow's inputs and project only needed fields. Sharing a Snapshot or Project revision does not make Conceptual a prerequisite.
+Subject Area datasets choose tables; exclude them from the evidence of Logical, Dimensional, Mapping, Code and SQL Validation tasks. Local `select` requires an explicit dataset; choose only the current workflow's inputs and project only needed fields. Sharing a Snapshot or Project revision does not make Subject Areas a prerequisite.
 
 Use the bounded read/write [helper contracts](../project/change-sets.md#atlas-helpers). `select --view effective` includes pending records; `--view snapshot` reads baseline only. Both views page with `next_cursor`; follow it with unchanged arguments until it is null.
 

@@ -274,7 +274,7 @@ async def test_recovered_run_freezes_new_schedule_without_repricing_old_request(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("workflow", ["conceptual", "profiling"])
+@pytest.mark.parametrize("workflow", ["subject_area", "profiling"])
 async def test_tracking_returns_frozen_project_on_replay_and_optional_pricing_defaults_unknown(
     web_postgres_database: DisposablePostgres,
     workflow: str,
@@ -294,9 +294,9 @@ async def test_tracking_returns_frozen_project_on_replay_and_optional_pricing_de
                 ).fetchone()
             )
             assert row["project"] == (
-                "foundry-primary" if workflow == "conceptual" else None
+                "foundry-primary" if workflow == "subject_area" else None
             )
-        if workflow == "conceptual":
+        if workflow == "subject_area":
             # An old caller can omit the final optional pricing argument.
             connection.execute(
                 "SELECT application.begin_workflow_run_model_request("
@@ -312,5 +312,5 @@ async def test_tracking_returns_frozen_project_on_replay_and_optional_pricing_de
             )
     await runtime.close()
     rows = _pricing_rows(web_postgres_database, claim)
-    assert len(rows) == (1 if workflow == "conceptual" else 0)
+    assert len(rows) == (1 if workflow == "subject_area" else 0)
     assert all(row["pricing_basis"] is None for row in rows)

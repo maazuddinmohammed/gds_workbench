@@ -16,7 +16,7 @@ Goal: reviewable SQL artifacts and source-System assignments implementing applie
 ## What you need
 
 - [Working context](../../references/working-method.md) and its golden rules. Writing SQL never executes it.
-- Active applied Mapping and modeled Entities; a target/System pair is eligible once any Object or Attribute transformation is saved. Conceptual output is never Code input.
+- Active applied Mapping and modeled Entities; a target/System pair is eligible once any Object or Attribute transformation is saved.
 - Python generation is deferred: keep Python artifacts; never substitute SQL for a Python request.
 
 ## Steps

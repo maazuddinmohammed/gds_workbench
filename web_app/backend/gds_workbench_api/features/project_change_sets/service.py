@@ -7,7 +7,7 @@ from collections.abc import Iterable, Mapping
 from contextlib import AbstractAsyncContextManager
 from dataclasses import replace
 from datetime import datetime
-from typing import Any, Protocol, cast
+from typing import Any, LiteralString, Protocol, cast
 from uuid import UUID, uuid4
 
 from gds_etl_workbench.application.authorization import (
@@ -128,6 +128,7 @@ from .contracts import (
     PutProjectStageChunkResult,
     ReviewProjectRecordsRequest,
     ReviewProjectRecordsResult,
+    SaveSubjectAreaRequest,
     StageProjectChangeSetRequest,
     StageProjectChangeSetResult,
     ValidateProjectChangeSetResult,
@@ -147,6 +148,35 @@ from .review import (
     prepare_project_record_review,
     review_lifecycle,
 )
+from .subject_areas import prepare_subject_area_change
+
+# Active Input Scope tables a Subject Area change names, keyed like every physical reference.
+# Areas group the Bronze Input Scope that Logical runs model. A table can be removed
+# from an area after it leaves Scope, but only active eligible Bronze tables can be added.
+_SUBJECT_AREA_SCOPE_TABLES_SQL: LiteralString = """
+SELECT scope.object_id,
+       placement_tenant.tenant_code,
+       system.system_code,
+       connection.connection_code,
+       object_record.object_schema,
+       object_record.object_name,
+       scope.is_active AND eligible.object_id IS NOT NULL AS is_addable
+  FROM project.project_input_scope AS scope
+  JOIN core.object AS object_record
+    ON object_record.object_id = scope.object_id
+  JOIN core.connection AS connection
+    ON connection.connection_id = object_record.connection_id
+  JOIN core.tenant AS placement_tenant
+    ON placement_tenant.tenant_id = connection.tenant_id
+  JOIN core.system AS system
+    ON system.system_id = connection.system_id
+  LEFT JOIN workflow.list_project_object_eligibility(%s) AS eligible
+    ON eligible.object_id = scope.object_id
+   AND eligible.is_project_input_eligible
+   AND eligible.zone_code = 'bronze'
+ WHERE scope.project_id = %s
+   AND scope.object_id = ANY(%s::BIGINT[])
+"""
 
 
 class ProjectChangeSetDatabase(Protocol):
@@ -510,6 +540,89 @@ class DatabaseProjectChangeSetService:
                 request_digest=request_digest,
                 section=DATASETS_BY_NAME[command.dataset].section,
                 outcome="record_edited",
+            )
+
+    async def save_subject_area(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        project_id: int,
+        command: SaveSubjectAreaRequest,
+        idempotency_key: UUID,
+    ) -> ReviewProjectRecordsResult:
+        """Create, rename, define or regroup one Subject Area and apply it at once."""
+        request_digest = hashlib.sha256(
+            json.dumps(
+                {"operation": "save_subject_area", **command.model_dump()},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        async with self._database.write_transaction() as transaction:
+            repository, project, principal_id = await self._authorize_record_review(
+                transaction,
+                principal,
+                tenant_id=tenant_id,
+                project_id=project_id,
+            )
+            replay = await repository.replay_review(
+                project_id=project_id,
+                principal_id=principal_id,
+                correlation_id=idempotency_key,
+            )
+            if replay is not None:
+                metadata = replay["event_metadata"]
+                if metadata.get("request_digest") != request_digest:
+                    raise WorkbenchError("review_conflict", "This review key was already used.")
+                return ReviewProjectRecordsResult(
+                    project_id=project_id,
+                    project_change_set_id=replay["project_change_set_id"],
+                    project_revision=metadata["project_revision"],
+                    action_count=replay["action_count"],
+                )
+            if project["project_revision"] != command.expected_project_revision:
+                raise ProjectRevisionConflictError()
+            if await repository.has_running_tenant_workflow(tenant_id=tenant_id):
+                raise TenantWorkflowConflictError()
+            context = ProjectReadContext(
+                project_id=project_id,
+                tenant_id=tenant_id,
+                project_name=project["project_name"],
+                project_revision=project["project_revision"],
+                readable_source_tenant_ids=project["readable_source_tenant_ids"],
+            )
+            review = await read_project_review_snapshot(
+                transaction, context, enforce_row_limits=False
+            )
+            scope_rows = await transaction.fetch_all(
+                _SUBJECT_AREA_SCOPE_TABLES_SQL,
+                (project_id, project_id, [*command.add_object_ids, *command.remove_object_ids]),
+            )
+            validation = prepare_subject_area_change(
+                review,
+                command,
+                {row["object_id"]: row for row in scope_rows},
+                await load_project_physical_scope(transaction, context),
+            )
+            await self._authorizer.authorize_tenant(
+                transaction,
+                principal,
+                tenant_id=tenant_id,
+                policy=ToolPolicy.TENANT_PROJECT_WRITE,
+                project_id=project_id,
+            )
+            return await self._apply_validated_review(
+                transaction,
+                repository,
+                validation,
+                project_id=project_id,
+                principal_id=principal_id,
+                idempotency_key=idempotency_key,
+                expected_project_revision=command.expected_project_revision,
+                request_digest=request_digest,
+                section="subject_area",
+                outcome="subject_area_saved",
             )
 
     async def _apply_validated_review(
@@ -964,10 +1077,10 @@ class DatabaseProjectChangeSetService:
                 ),
                 warnings=(
                     (
-                        "Conceptual records have no stored ownership link to Logical or "
-                        "Dimensional entities; those layers remain unchanged.",
+                        "Subject Areas only group Input Scope tables; Logical and "
+                        "Dimensional records remain unchanged.",
                     )
-                    if command.dataset.startswith("conceptual_") and command.action == "deactivate"
+                    if command.dataset.startswith("subject_area") and command.action == "deactivate"
                     else (
                         "Physical tables and registered metadata remain unchanged.",
                         "Validation checks are grouped by System, without target-object links. "
@@ -1084,8 +1197,11 @@ class DatabaseProjectChangeSetService:
                         "Physical tables, registered metadata, context records, "
                         "and workflow history are retained.",
                         *(
-                            ("Conceptual deletion does not delete Logical or Dimensional records.",)
-                            if command.dataset.startswith("conceptual_")
+                            (
+                                "Deleting a Subject Area removes only its table memberships; "
+                                "Logical and Dimensional records remain.",
+                            )
+                            if command.dataset.startswith("subject_area")
                             else (
                                 "System-level validations are deleted only when their System loses "
                                 "its last Mapping. Review remaining checks manually.",

@@ -60,7 +60,7 @@ release_files=(
     03_security.sql
     04_project.sql
     05_workflow_analysis.sql
-    06_workflow_conceptual.sql
+    06_workflow_subject_area.sql
     07_workflow_logical.sql
     08_workflow_dimensional.sql
     09_workflow_mapping.sql

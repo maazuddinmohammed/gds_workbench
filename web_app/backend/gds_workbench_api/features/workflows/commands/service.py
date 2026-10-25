@@ -45,6 +45,21 @@ SELECT target_project.project_revision,
    AND target_project.is_active
 """
 
+# Subject Area runs group the Bronze Input Scope that Logical runs model.
+_SUBJECT_AREA_SCOPE_SQL = """
+SELECT coalesce(
+           array_agg(scope.object_id ORDER BY scope.object_id),
+           ARRAY[]::BIGINT[]
+       ) AS object_ids
+  FROM project.project_input_scope AS scope
+  JOIN workflow.list_project_object_eligibility(%s) AS eligible
+    ON eligible.object_id = scope.object_id
+   AND eligible.is_project_input_eligible
+   AND eligible.zone_code = 'bronze'
+ WHERE scope.project_id = %s
+   AND scope.is_active
+"""
+
 _CREATE_WORKFLOW_RUN_SQL = """
 SELECT created.created,
        created.workflow_run_id,
@@ -167,6 +182,18 @@ class DatabaseWorkflowCommandService:
                 )
                 if owner is None:
                     raise ProjectNotFoundError()
+                if command.project_workflow == "subject_area":
+                    # Subject Areas group the whole Input Scope; a partial selection would
+                    # leave the unselected tables unaccounted for.
+                    scope = await transaction.fetch_one(
+                        _SUBJECT_AREA_SCOPE_SQL, (project_id, project_id)
+                    )
+                    if scope is None or sorted(set(command.selected_object_ids)) != list(
+                        scope["object_ids"]
+                    ):
+                        raise InvalidRequestError(
+                            "Subject Area runs cover the whole Input Scope. Refresh and run again."
+                        )
                 agent = command.agent
                 if agent is None and agent_execution_mode is not None:
                     agent = self._agent_capability_registry.resolve_default_selection(

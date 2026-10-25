@@ -143,7 +143,7 @@ async def test_dimensional_requirements_follow_business_system_behind_silver(
     assert "context_source_scope" not in values
 
 
-@pytest.mark.parametrize("workflow", ["analysis", "conceptual", "logical"])
+@pytest.mark.parametrize("workflow", ["analysis", "subject_area", "logical"])
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
 async def test_all_modeling_workflows_receive_context_without_layer_selection(
     workflow: Any, mode: Any
@@ -177,7 +177,7 @@ async def test_all_modeling_workflows_receive_context_without_layer_selection(
             self, query: LiteralString, parameters: tuple[Any, ...] = ()
         ):
             if len(parameters) >= 3 and parameters[2] == workflow:
-                parameters = (*parameters[:2], "conceptual", *parameters[3:])
+                parameters = (*parameters[:2], "subject_area", *parameters[3:])
             return await super().fetch_all(query, parameters)
 
     result = await PostgresAgentContextRepository(

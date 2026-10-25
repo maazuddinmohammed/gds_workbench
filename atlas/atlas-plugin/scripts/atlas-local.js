@@ -779,7 +779,6 @@ function sameAppliedRecord(local, server, schema, root = schema, recordType = ""
     if ((!hasLocal || !hasServer) && (!child || !Object.hasOwn(child, "default") ||
         schema.required?.includes(field))) return false;
     const ownedCollection = schema === root && (
-      (field === "supports" && ["conceptual_object", "conceptual_relationship"].includes(recordType)) ||
       (field === "sources" && ["logical_entity", "logical_attribute", "dimensional_entity", "dimensional_attribute"].includes(recordType)) ||
       (field === "submodels" && ["logical_entity", "dimensional_entity"].includes(recordType))) ? field : "";
     if (!sameAppliedRecord(hasLocal ? local[field] : child.default,

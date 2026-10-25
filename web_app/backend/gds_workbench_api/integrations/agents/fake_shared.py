@@ -62,7 +62,7 @@ def code_generation_target_refs(context: JsonValue) -> tuple[str, ...]:
     return tuple(target_refs)
 
 
-def conceptual_source_objects(
+def selected_source_objects(
     context: JsonValue,
 ) -> tuple[dict[str, JsonValue], ...]:
     if not isinstance(context, dict) or set(context) != {
@@ -138,7 +138,7 @@ def named_tool_items(
         arguments = {"cursor": cursor}
 
 
-def tool_assisted_conceptual_sources(
+def tool_assisted_source_objects(
     request: AgentExecutionRequest,
 ) -> tuple[tuple[dict[str, JsonValue], ...], int]:
     catalog = request.local_tool_catalog
@@ -150,7 +150,7 @@ def tool_assisted_conceptual_sources(
             "original_context": {"selected_objects": [{"object": row} for row in rows]},
             "repair": None,
         }
-        return conceptual_source_objects(context), calls
+        return selected_source_objects(context), calls
     manifest_calls = int("get_agent_context_manifest" in request.allowed_tool_names)
     manifest = (
         catalog.invoke("get_agent_context_manifest", {})
@@ -231,7 +231,7 @@ def tool_assisted_conceptual_sources(
         for item in items:
             if not isinstance(item, dict):
                 raise InvalidRequestError("The local fake agent context is invalid.")
-            source = _conceptual_source_from_tool_item(item)
+            source = _source_from_tool_item(item)
             identity = tuple(
                 cast(str, source[name]).strip().casefold() for name in FAKE_SOURCE_FIELDS
             )
@@ -260,12 +260,12 @@ def tool_assisted_logical_sources(
     tuple[dict[str, JsonValue], ...],
     int,
 ]:
-    source_objects, tool_call_count = tool_assisted_conceptual_sources(request)
+    source_objects, tool_call_count = tool_assisted_source_objects(request)
     if "get_objects" in request.allowed_tool_names:
         groups, calls = named_tool_items(request, "get_object_details")
         selected: list[JsonValue] = []
         for group in groups:
-            source = _conceptual_source_from_tool_item(group)
+            source = _source_from_tool_item(group)
             attributes = group.get("attributes")
             if not isinstance(attributes, list) or any(
                 not isinstance(attribute, dict) for attribute in attributes
@@ -348,7 +348,7 @@ def tool_assisted_logical_sources(
         for item in items:
             if not isinstance(item, dict):
                 raise InvalidRequestError("The local fake agent context is invalid.")
-            source = _conceptual_source_from_tool_item(item)
+            source = _source_from_tool_item(item)
             attribute_name = item.get("attribute_name")
             if (
                 not isinstance(attribute_name, str)
@@ -377,7 +377,7 @@ def tool_assisted_logical_sources(
     return source_objects, tuple(source_attributes), tool_call_count + page_calls
 
 
-def _conceptual_source_from_tool_item(
+def _source_from_tool_item(
     item: dict[str, JsonValue],
 ) -> dict[str, JsonValue]:
     required = (

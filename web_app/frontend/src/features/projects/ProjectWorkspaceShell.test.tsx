@@ -34,7 +34,7 @@ const overview = {
     { section: "profiling", state: "queued" },
     { section: "context", state: "results_available" },
     { section: "analysis", state: "running" },
-    { section: "conceptual", state: "not_run" },
+    { section: "subject-area", state: "not_run" },
     { section: "logical", state: "failed" },
     { section: "dimensional", state: "failed" },
     { section: "mapping", state: "results_available" },
@@ -44,7 +44,7 @@ const overview = {
 } satisfies ProjectWorkflowOverview;
 const sectionNames = [
   "Overview", "Settings", "Project Input Scope", "Context", "Profiling", "Metadata enrichment",
-  "Analysis", "Conceptual", "Logical", "Dimensional", "Mapping", "Code generation", "Validation",
+  "Analysis", "Subject areas", "Logical", "Dimensional", "Mapping", "Code generation", "Validation",
 ];
 
 describe("Project workspace status ribbon", () => {
@@ -144,7 +144,7 @@ describe("Project workspace status ribbon", () => {
     await user.keyboard("{ArrowRight}");
     expect(sections.getByRole("link", { name: "Metadata enrichment" })).toHaveFocus();
     await user.keyboard("{ArrowRight}{ArrowRight}");
-    expect(sections.getByRole("link", { name: "Conceptual" })).toHaveFocus();
+    expect(sections.getByRole("link", { name: "Subject areas" })).toHaveFocus();
     await user.keyboard("{ArrowRight}{ArrowRight}{ArrowRight}");
     expect(sections.getByRole("link", { name: "Mapping" })).toHaveFocus();
     await user.keyboard("{End}{ArrowRight}");

@@ -27,9 +27,9 @@ EXPECTED_STAGES = {
     ("analysis", None, "relationship_validation", 10, False),
     ("analysis", "one_shot", "relationship_inference", 10, True),
     ("analysis", "tool_assisted", "relationship_inference", 10, True),
-    ("conceptual", None, "backend_validation", 100, False),
-    ("conceptual", "one_shot", "candidate_authoring", 10, True),
-    ("conceptual", "tool_assisted", "candidate_authoring", 10, True),
+    ("subject_area", None, "backend_validation", 100, False),
+    ("subject_area", "one_shot", "candidate_authoring", 10, True),
+    ("subject_area", "tool_assisted", "candidate_authoring", 10, True),
     ("logical", None, "policy_projection", 50, False),
     ("logical", None, "backend_validation", 100, False),
     ("logical", "one_shot", "candidate_authoring", 10, True),
@@ -86,12 +86,6 @@ FOUNDATIONAL_NAMES = {
     "object_relationship_context",
     "context_records",
 }
-CONCEPTUAL_NAMES = {
-    "conceptual_object_list",
-    "conceptual_objects",
-    "conceptual_relationship_list",
-    "conceptual_relationships",
-}
 LOGICAL_NAMES = {
     "logical_submodel_list",
     "logical_submodels",
@@ -109,7 +103,16 @@ EXPECTED_NAMES = {
     "metadata_enrichment_attribute": FOUNDATIONAL_NAMES
     - {"object_relationship_context", "context_records"},
     "analysis": FOUNDATIONAL_NAMES,
-    "conceptual": FOUNDATIONAL_NAMES | CONCEPTUAL_NAMES | {"naming_instructions"},
+    "subject_area": {
+        "source_context",
+        "gds_context",
+        "table_index",
+        "scope_tables",
+        "table_links",
+        "existing_subject_areas",
+        "context_records",
+        "max_subject_area_columns",
+    },
     "logical": FOUNDATIONAL_NAMES
     | (LOGICAL_NAMES - {"logical_submodel_list", "logical_submodels"})
     | {

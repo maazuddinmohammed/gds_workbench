@@ -122,49 +122,6 @@
     };
   }
 
-  function renderConceptual(loaded, project) {
-    const objects = rows(loaded, "conceptual_object")
-      .filter((record) => record.conceptual_object_status === "active")
-      .sort((left, right) => normalize(left.conceptual_object_name).localeCompare(normalize(right.conceptual_object_name)));
-    const byKey = uniqueBy(objects, "conceptual_object_name", "Conceptual Object");
-    const colors = colorMap(new Map(objects.map((record) => [normalize(record.conceptual_object_name), record.conceptual_object_type])));
-    const relationships = rows(loaded, "conceptual_relationship")
-      .filter((record) => record.conceptual_relationship_status === "active")
-      .sort((left, right) => [left.from_conceptual_object_name, left.to_conceptual_object_name, left.conceptual_relationship_name].map(normalize).join("\0").localeCompare([right.from_conceptual_object_name, right.to_conceptual_object_name, right.conceptual_relationship_name].map(normalize).join("\0")));
-    const lines = projectLines(project, "conceptual", "Complete conceptual model");
-    for (const record of objects) {
-      lines.push(
-        `Table ${identifier(record.conceptual_object_name)} [headercolor: ${colors.get(normalize(record.conceptual_object_name))}] {`,
-        "  \"__conceptual_key\" conceptual_key [pk, not null, note: 'Visualization-only endpoint; not a modeled Attribute.']",
-        ...noteLines([
-          ["Type", record.conceptual_object_type],
-          ["Grain", record.conceptual_object_grain],
-          ["Definition", record.conceptual_object_definition],
-          ["Aliases", record.conceptual_object_aliases],
-        ]),
-        "}",
-        "",
-      );
-    }
-    relationships.forEach((record, index) => {
-      const from = byKey.get(normalize(record.from_conceptual_object_name));
-      const to = byKey.get(normalize(record.to_conceptual_object_name));
-      if (!from || !to) throw new Error("An effective Conceptual Relationship has an inactive or missing endpoint.");
-      const operator = CARDINALITY[record.conceptual_relationship_cardinality];
-      lines.push(
-        comment([
-          ["Relationship", record.conceptual_relationship_name],
-          ["Type", record.conceptual_relationship_type],
-          ["Definition", record.conceptual_relationship_definition],
-          ["Basis", record.conceptual_relationship_basis],
-        ]),
-        ...(operator ? [`Ref conceptual_relationship_${index + 1}: ${identifier(from.conceptual_object_name)}."__conceptual_key" ${operator} ${identifier(to.conceptual_object_name)}."__conceptual_key"`] : [`// Cardinality unknown: ${oneLine(from.conceptual_object_name)} → ${oneLine(to.conceptual_object_name)}. Connector omitted.`]),
-        "",
-      );
-    });
-    return document("conceptual.dbml", "conceptual", "complete", null, lines, objects.length, relationships.length);
-  }
-
   function layerSpecification(layer) {
     if (layer === "logical") {
       return {
@@ -354,9 +311,8 @@
     }
     const modelType = options.modelType || "full";
     const includeSubmodels = options.includeSubmodels !== false;
-    if (!new Set(["full", "conceptual", "logical", "dimensional"]).has(modelType)) throw new Error("DBML model type is invalid.");
+    if (!new Set(["full", "logical", "dimensional"]).has(modelType)) throw new Error("DBML model type is invalid.");
     const documents = [];
-    if (modelType === "full" || modelType === "conceptual") documents.push(renderConceptual(loaded, project));
     if (modelType === "full" || modelType === "logical") documents.push(...modeledDocuments(loaded, project, "logical", includeSubmodels));
     if (modelType === "full" || modelType === "dimensional") documents.push(...modeledDocuments(loaded, project, "dimensional", includeSubmodels));
     documents.sort((left, right) => left.path.localeCompare(right.path));

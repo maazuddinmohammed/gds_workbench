@@ -149,29 +149,29 @@ def test_selection_cursor_rejects_changed_query_draft_and_baseline(
     assert draft.read_bytes() == saved
 
 
-def test_logical_projection_excludes_independent_conceptual_records(
+def test_logical_projection_excludes_subject_area_records(
     tmp_path: Path,
 ) -> None:
     root = workspace(tmp_path)
     snapshot = root / "project/project-snapshot"
     catalog = json.loads((snapshot / "catalog.json").read_text())
     dataset = {
-        "name": "conceptual_object",
+        "name": "subject_area",
         "row_count": 1,
-        "canonical_key": ["conceptual_object_name"],
-        "rows_file": "data/conceptual_object.jsonl",
-        "schema_file": "schemas/conceptual_object.schema.json",
+        "canonical_key": ["subject_area_name"],
+        "rows_file": "data/subject_area.jsonl",
+        "schema_file": "schemas/subject_area.schema.json",
     }
-    catalog["sections"].append({"name": "conceptual", "datasets": [dataset]})
+    catalog["sections"].append({"name": "subject_area", "datasets": [dataset]})
     (snapshot / "catalog.json").write_text(json.dumps(catalog))
-    concept = {"conceptual_object_name": "IndependentBusinessConcept"}
-    (snapshot / "data/conceptual_object.jsonl").write_text(json.dumps(concept) + "\n")
-    (snapshot / "schemas/conceptual_object.schema.json").write_text(
+    area = {"subject_area_name": "Sales"}
+    (snapshot / "data/subject_area.jsonl").write_text(json.dumps(area) + "\n")
+    (snapshot / "schemas/subject_area.schema.json").write_text(
         json.dumps(
             {
                 "type": "object",
-                "properties": {"conceptual_object_name": {"type": "string"}},
-                "required": ["conceptual_object_name"],
+                "properties": {"subject_area_name": {"type": "string"}},
+                "required": ["subject_area_name"],
                 "x-gds-change-set-eligible": True,
             }
         )
@@ -186,8 +186,8 @@ def test_logical_projection_excludes_independent_conceptual_records(
     )
     draft = root / "project-change-set"
     draft.mkdir(exist_ok=True)
-    (draft / "conceptual_object.json").write_text(
-        json.dumps([{**concept, "conceptual_object_definition": "Separate Conceptual edit"}])
+    (draft / "subject_area.json").write_text(
+        json.dumps([{**area, "subject_area_definition": "Separate grouping edit"}])
     )
     args = (
         "select",
@@ -969,6 +969,123 @@ def test_analysis_inferred_cardinality_uses_published_schema_and_preserves_measu
         result = run("validate", "--session", str(root), "--area", "project")
         assert not result["valid"]
         assert any(issue["code"] == "schema" for issue in result["issues"])
+
+
+def test_subject_area_tables_are_checked_locally(tmp_path: Path) -> None:
+    root = workspace(tmp_path)
+    metadata = root / "metadata/metadata-snapshot"
+    objects = [
+        {**json.loads(line), "zone_code": "bronze"}
+        for line in (metadata / "data/source_object.jsonl").read_text().splitlines()
+    ]
+    (metadata / "data/source_object.jsonl").write_text(
+        "".join(json.dumps(record) + "\n" for record in objects)
+    )
+    metadata_catalog = json.loads((metadata / "catalog.json").read_text())
+    metadata_catalog["sections"][0]["datasets"][0]["record_type"] = "object"
+    (metadata / "catalog.json").write_text(json.dumps(metadata_catalog))
+    fixtures.write_snapshot_manifest(metadata, kind="metadata", snapshot_id="metadata-areas")
+    customer, order = (
+        {field: record[field] for field in DATASETS_BY_NAME["project_input_scope"].canonical_key}
+        for record in objects
+    )
+    area = {
+        "subject_area_name": "Sales",
+        "subject_area_definition": "Customer orders.",
+        "subject_area_status": "active",
+        "subject_area_is_locked": False,
+    }
+
+    def member(table: dict[str, Any], name: str = "Sales") -> dict[str, Any]:
+        return {
+            "subject_area_name": name,
+            **table,
+            "subject_area_table_status": "active",
+            "subject_area_table_is_locked": False,
+        }
+
+    snapshot = root / "project/project-snapshot"
+    catalog = json.loads((snapshot / "catalog.json").read_text())
+    for name, rows in (
+        (
+            "project_input_scope",
+            [
+                {**table, "project_input_scope_is_locked": False, "is_active": True}
+                for table in (customer, order)
+            ],
+        ),
+        ("subject_area", [area]),
+        ("subject_area_table", [member(customer)]),
+    ):
+        definition = DATASETS_BY_NAME[name]
+        catalog["sections"].append(
+            {
+                "name": definition.section,
+                "datasets": [
+                    {
+                        "name": name,
+                        "canonical_key": list(definition.canonical_key),
+                        "row_count": len(rows),
+                        "rows_file": f"data/{name}.jsonl",
+                        "schema_file": f"schemas/{name}.schema.json",
+                    }
+                ],
+            }
+        )
+        (snapshot / f"data/{name}.jsonl").write_text(
+            "".join(json.dumps(record) + "\n" for record in rows)
+        )
+        (snapshot / f"schemas/{name}.schema.json").write_text(
+            json.dumps(build_project_dataset_schema(definition))
+        )
+    (snapshot / "catalog.json").write_text(json.dumps(catalog))
+    fixtures.write_snapshot_manifest(
+        snapshot, kind="project", snapshot_id="project-areas", project_revision=8
+    )
+    pending = root / "project-change-set"
+    pending.mkdir()
+
+    def validate(**drafts: list[dict[str, Any]]) -> dict[str, Any]:
+        for name in ("subject_area", "subject_area_table"):
+            (pending / f"{name}.json").unlink(missing_ok=True)
+        for name, rows in drafts.items():
+            (pending / f"{name}.json").write_text(json.dumps(rows))
+        return run("validate", "--session", str(root), "--area", "project")
+
+    def errors(result: dict[str, Any]) -> set[tuple[str, str, tuple[str, ...], str]]:
+        return {
+            (issue["dataset"], issue["code"], tuple(issue["fields"]), issue["message"])
+            for issue in result["issues"]
+            if issue["severity"] == "error"
+        }
+
+    # An unassigned Bronze table is a review finding, never a blocking error.
+    result = validate(subject_area=[{**area, "subject_area_definition": "Orders and customers."}])
+    assert result["valid"], result["issues"]
+    assert {issue["code"] for issue in result["issues"]} == {"unassigned_tables"}
+    assert result["quality"]["metrics"]["unassigned_tables"] == [order]
+    result = validate(subject_area_table=[member(order)])
+    assert result["valid"], result["issues"]
+    assert result["issues"] == []
+
+    missing = "Referenced record is not present in the future Project graph."
+    inactive = "An active Subject Area table requires an active Subject Area."
+    assert errors(validate(subject_area_table=[member(order, "Billing")])) == {
+        ("subject_area_table", "reference_not_found", ("subject_area_name",), missing),
+        ("subject_area_table", "active_dependency_invalid", ("subject_area_name",), inactive),
+    }
+    assert errors(validate(subject_area=[{**area, "subject_area_status": "inactive"}])) == {
+        ("subject_area_table", "active_dependency_invalid", ("subject_area_name",), inactive),
+    }
+    outside = member({**order, "object_name": "Invoice"})
+    assert errors(validate(subject_area_table=[member(order), outside])) == {
+        (
+            "subject_area_table",
+            "project_input_reference_invalid",
+            ("object_name",),
+            "Subject Area table is not in active Project Input Scope.",
+        ),
+    }
 
 
 def test_legacy_project_catalog_is_rejected_before_selection(tmp_path: Path) -> None:

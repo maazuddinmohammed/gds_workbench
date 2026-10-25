@@ -262,7 +262,7 @@ def seed_workflow_context(
             """
             SELECT workflow_stage_id
               FROM application.workflow_stage
-             WHERE project_workflow = 'conceptual'
+             WHERE project_workflow = 'subject_area'
                AND workflow_execution_mode = %s
                AND workflow_stage_is_agentic
                AND is_active
@@ -283,7 +283,7 @@ def seed_workflow_context(
                         workflow_stage_order,
                         workflow_stage_is_agentic
                     ) VALUES (
-                        'conceptual', %s, 'candidate_authoring',
+                        'subject_area', %s, 'candidate_authoring',
                         'Candidate Authoring', 10, TRUE
                     )
                     RETURNING workflow_stage_id
@@ -313,8 +313,8 @@ def seed_workflow_context(
                     (
                         workflow_stage_id,
                         tenant_id,
-                        f"conceptual_prompt_{prompt_number}_{suffix}",
-                        f"Conceptual Prompt {prompt_number} {suffix}",
+                        f"subject_area_prompt_{prompt_number}_{suffix}",
+                        f"Subject Area Prompt {prompt_number} {suffix}",
                         principal_id,
                         principal_id,
                     ),
@@ -412,7 +412,7 @@ def create_workflow_run_parameters(
         int | None,
         int | None,
     ] = (None, None, None, None, None, None),
-    workflow: str = "conceptual",
+    workflow: str = "subject_area",
     execution_mode: str | None = "one_shot",
 ) -> tuple[object, ...]:
     return (
@@ -1495,7 +1495,7 @@ def test_create_validation_run_rejects_system_without_applied_mapping_atomically
     (
         ("validation", [1], ["erp"], "no Object selection"),
         ("validation", [], [], "selected Systems"),
-        ("conceptual", [1], ["erp"], "only for Validation"),
+        ("subject_area", [1], ["erp"], "only for Validation"),
     ),
 )
 def test_workflow_run_rejects_invalid_system_selection_shape(
@@ -1890,7 +1890,7 @@ def test_create_workflow_run_rejects_workflow_incompatible_options(
             create_workflow_run_parameters(
                 context,
                 correlation_id=uuid4(),
-                workflow="conceptual",
+                workflow="subject_area",
                 requested_batch_id="10428",
             ),
             "batch ID",

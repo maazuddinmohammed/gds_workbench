@@ -26,7 +26,7 @@ Goal: route each request to the one workflow that produces it, reusing current s
 |---|---|
 | Explain Atlas, a project, lineage or why an entity exists | [Investigate](../atlas-investigate/SKILL.md) |
 | Profile, enrich or analyze sources, grain, keys or relationships | [Source analysis](../atlas-source-analysis/SKILL.md) |
-| Define business concepts and relationships | [Conceptual model](../atlas-conceptual-model/SKILL.md) |
+| Group scope tables by business capability | [Subject Areas](../atlas-subject-areas/SKILL.md) |
 | Build normalized Entities, Attributes and Submodels | [Logical model](../atlas-logical-model/SKILL.md) |
 | Design dimensions, facts, measures or history | [Dimensional model](../atlas-dimensional-model/SKILL.md) |
 | Map sources to an applied target | [Mapping](../atlas-mapping/SKILL.md) |

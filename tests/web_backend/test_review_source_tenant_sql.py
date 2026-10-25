@@ -5,10 +5,6 @@ from gds_workbench_api.features.code_generation.read_service import (
     _GENERATED_SQL_ARTIFACT_DETAIL_SQL,
     _GENERATED_SQL_DOWNLOAD_SQL,
 )
-from gds_workbench_api.features.conceptual import (
-    CONCEPTUAL_OBJECT_SUPPORT_SQL,
-    CONCEPTUAL_RELATIONSHIP_SUPPORT_SQL,
-)
 from gds_workbench_api.features.dimensional import (
     DIMENSIONAL_ATTRIBUTE_SOURCES_SQL,
     DIMENSIONAL_OBJECT_SOURCES_SQL,
@@ -23,22 +19,19 @@ from gds_workbench_api.features.mapping import (
     MAPPING_OBJECT_DETAIL_SQL,
     MAPPING_OBJECTS_SQL,
 )
+from gds_workbench_api.features.subject_areas.read_service import _SCOPE_TABLES_SQL
 
 
 def _compact(sql: str) -> str:
     return " ".join(sql.split())
 
 
-def test_conceptual_support_uses_physical_connection_tenant() -> None:
-    for sql in (CONCEPTUAL_OBJECT_SUPPORT_SQL, CONCEPTUAL_RELATIONSHIP_SUPPORT_SQL):
-        compact = _compact(sql)
-        assert "workflow.list_project_object_eligibility(" in compact
-        assert "source_eligibility.is_project_input_eligible" in compact
-        assert (
-            "source_placement_tenant.tenant_id = source_connection.tenant_id" in compact
-        )
-        assert "source_eligibility.object_id IS NOT NULL" in compact
-        assert "source_eligibility.object_tenant_id" not in compact
+def test_subject_area_tables_use_physical_connection_tenant() -> None:
+    compact = _compact(_SCOPE_TABLES_SQL)
+    assert "workflow.list_project_object_eligibility(" in compact
+    assert "eligible_object.is_project_input_eligible" in compact
+    assert "placement_tenant.tenant_id = connection.tenant_id" in compact
+    assert "object_tenant_id" not in compact
 
 
 def test_logical_source_keys_use_physical_connection_tenant() -> None:

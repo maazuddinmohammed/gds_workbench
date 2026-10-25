@@ -43,9 +43,7 @@ DECLARE
     v_document_id BIGINT;
     v_customer_context_id UUID;
     v_order_context_id UUID;
-    v_conceptual_customer_id BIGINT;
-    v_conceptual_order_id BIGINT;
-    v_conceptual_relationship_id BIGINT;
+    v_subject_area_id BIGINT;
     v_logical_submodel_id BIGINT;
     v_logical_customer_id BIGINT;
     v_logical_order_id BIGINT;
@@ -347,49 +345,17 @@ BEGIN
         'Every submitted Order belongs to exactly one Customer.')
     RETURNING context_record_id INTO v_order_context_id;
 
-    INSERT INTO workflow.conceptual_object (
-        project_id, conceptual_object_name, conceptual_object_definition,
-        conceptual_object_type, conceptual_object_grain,
-        conceptual_object_aliases) VALUES (
-        v_project_id, 'Customer', 'A person or organization that places Orders.',
-        'business_entity', 'One durable customer identity', ARRAY['Client']) RETURNING conceptual_object_id INTO v_conceptual_customer_id;
+    INSERT INTO workflow.subject_area (
+        project_id, subject_area_name, subject_area_definition
+    ) VALUES (
+        v_project_id, 'Customer Orders',
+        'Customers and the orders they submit, from order capture to customer ownership.'
+    ) RETURNING subject_area_id INTO v_subject_area_id;
 
-    INSERT INTO workflow.conceptual_object (
-        project_id, conceptual_object_name, conceptual_object_definition,
-        conceptual_object_type, conceptual_object_grain,
-        conceptual_object_aliases) VALUES (
-        v_project_id, 'Order', 'A commercial request submitted by a Customer.',
-        'business_event', 'One submitted order', ARRAY['Purchase']) RETURNING conceptual_object_id INTO v_conceptual_order_id;
-
-    INSERT INTO workflow.conceptual_relationship (
-        project_id, from_conceptual_object_id, to_conceptual_object_id,
-        conceptual_relationship_name, conceptual_relationship_type,
-        conceptual_relationship_definition, conceptual_relationship_cardinality,
-        conceptual_relationship_basis, conceptual_relationship_cardinality_basis) VALUES (
-        v_project_id, v_conceptual_order_id, v_conceptual_customer_id,
-        'Order belongs to Customer', 'ownership',
-        'Each Order is placed by one Customer.', 'many_to_one',
-        'Supported by the Customer identifier relationship and business rule.',
-        'Many Orders may share one Customer identifier.') RETURNING conceptual_relationship_id INTO v_conceptual_relationship_id;
-
-    INSERT INTO workflow.conceptual_support (
-        project_id, supported_artifact_type, conceptual_object_id,
-        support_source_type, source_object_id, conceptual_support_role,
-        conceptual_support_reason) VALUES
-        (v_project_id, 'conceptual_object', v_conceptual_customer_id,
-         'object', v_bronze_customer_id, 'primary evidence',
-         'Customer records demonstrate the governed identity.'),
-        (v_project_id, 'conceptual_object', v_conceptual_order_id,
-         'object', v_bronze_order_id, 'primary evidence',
-         'Order records demonstrate the transaction grain.');
-
-    INSERT INTO workflow.conceptual_support (
-        project_id, supported_artifact_type, conceptual_relationship_id,
-        support_source_type, context_record_id,
-        conceptual_support_role, conceptual_support_reason) VALUES (
-        v_project_id, 'conceptual_relationship', v_conceptual_relationship_id,
-        'context_record', v_order_context_id, 'business rule',
-        'The approved rule defines the Customer ownership relationship.');
+    INSERT INTO workflow.subject_area_table (project_id, subject_area_id, object_id)
+    VALUES
+        (v_project_id, v_subject_area_id, v_bronze_customer_id),
+        (v_project_id, v_subject_area_id, v_bronze_order_id);
 
     INSERT INTO workflow.logical_submodel (
         project_id, logical_submodel_name, logical_submodel_definition

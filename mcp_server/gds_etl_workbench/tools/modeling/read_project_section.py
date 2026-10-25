@@ -17,10 +17,6 @@ from gds_etl_workbench.adapters.auth.identity import AuthenticationError, Identi
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.application.cursor import CursorCodec
-from gds_etl_workbench.application.modeling.conceptual import (
-    CONCEPTUAL_OBJECTS_SQL,
-    CONCEPTUAL_RELATIONSHIPS_SQL,
-)
 from gds_etl_workbench.application.modeling.context import GROUPS_SQL, RECORDS_SQL, TYPES_SQL
 from gds_etl_workbench.application.modeling.enrichment import (
     ATTRIBUTE_ENRICHMENT_SQL,
@@ -37,6 +33,10 @@ from gds_etl_workbench.application.modeling.modeled_layer import (
 from gds_etl_workbench.application.modeling.profiling_analysis import (
     ANALYSIS_SQL,
     PROFILING_SQL,
+)
+from gds_etl_workbench.application.modeling.subject_area import (
+    CURRENT_SUBJECT_AREA_TABLES_SQL,
+    SUBJECT_AREAS_SQL,
 )
 from gds_etl_workbench.application.project_read import POLICY, authorize_project_read
 from gds_etl_workbench.application.project_snapshot import (
@@ -56,8 +56,8 @@ type ReadableProjectDataset = Literal[
     "context_type",
     "context_group",
     "context_record",
-    "conceptual_object",
-    "conceptual_relationship",
+    "subject_area",
+    "subject_area_table",
     "logical_submodel",
     "logical_entity",
     "logical_attribute",
@@ -110,7 +110,7 @@ def register_read_project_section_tool(
         description=(
             "Read one bounded applied Project dataset from Profiling, Enrichment, Analysis, "
             "Context, "
-            "Conceptual, Logical, Dimensional, or Mapping. Generated Code and "
+            "Subject Areas, Logical, Dimensional, or Mapping. Generated Code and "
             "Validation are Snapshot-only; use a Project Snapshot when either is needed."
         ),
         annotations=ToolAnnotations(
@@ -217,15 +217,12 @@ async def _read_dataset(
         return await transaction.fetch_all(GROUPS_SQL, (project_id, limit, offset))
     if dataset == "context_record":
         return await transaction.fetch_all(RECORDS_SQL, (project_id, [], [], limit, offset))
-    if dataset == "conceptual_object":
+    if dataset == "subject_area":
+        return await transaction.fetch_all(SUBJECT_AREAS_SQL, (project_id, limit, offset))
+    if dataset == "subject_area_table":
         return await transaction.fetch_all(
-            CONCEPTUAL_OBJECTS_SQL,
-            (project_id, [], [], limit, offset),
-        )
-    if dataset == "conceptual_relationship":
-        return await transaction.fetch_all(
-            CONCEPTUAL_RELATIONSHIPS_SQL,
-            (project_id, [], [], [], limit, offset),
+            CURRENT_SUBJECT_AREA_TABLES_SQL,
+            (project_id, project_id, project_id, list(readable_source_tenant_ids), limit, offset),
         )
     layer, kind = dataset.split("_", 1)
     if layer in {"logical", "dimensional"}:

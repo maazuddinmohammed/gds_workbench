@@ -113,7 +113,7 @@ Each source has exactly one source field plus the shared fields below. All field
 
 Physical Object key fields: `tenant_code`, `system_code`, `connection_code` (nonblank strings ≤100), `object_schema`, `object_name` (nonblank strings ≤400). Physical Attribute key adds `attribute_name` (nonblank string ≤400). Context identity is a stable lowercase UUID; see [Context records](context.md).
 
-Copy actual physical placement keys using [Object ownership](../metadata/tables/object.md#ownership-and-physical-identity). Do not substitute the Project Tenant/source owner. No Conceptual, modeled Entity or modeled Attribute source variant exists. Physical and Context sources express supported lineage; Conceptual output does not inform Logical design.
+Copy actual physical placement keys using [Object ownership](../metadata/tables/object.md#ownership-and-physical-identity). Do not substitute the Project Tenant/source owner. No Subject Area, modeled Entity or modeled Attribute source variant exists. Physical and Context sources express supported lineage; Subject Areas only choose tables.
 
 Within one parent, each source type + normalized physical/Context key is unique, regardless `source_order`. An Entity can consolidate multiple Objects, and an Attribute can combine multiple physical Attributes. Source arrays describe provenance, not executable transformations.
 
@@ -125,7 +125,7 @@ Within one parent, each source type + normalized physical/Context key is unique,
 - Source-less Entity/Attribute records are schema-valid. Use them when the design is generated, constant or otherwise has no physical source, with clear supported definitions/evidence. A real applicable Context may explain a calendar or approved rule; do not fabricate a source or create a Context for every technical choice.
 - `submodels:[]` is schema-valid; no minimum membership exists. Membership references must resolve. Preserve valid active memberships; current reference checks alone do not ensure an active membership points to an active Submodel.
 - Attributes require existing parents. Active Attributes require active Entities; active relationships require active endpoint Attributes and Entities. Follow shared lock/history rules for retained records and nested members.
-- Conceptual is neither an input nor an applied prerequisite for Logical. Author Logical from eligible physical evidence and business Context only; never infer dependency or lineage from Conceptual records.
+- Subject Areas are neither evidence nor an applied prerequisite for Logical. Author Logical from eligible physical evidence and business Context only; never infer dependency or lineage from Subject Area records.
 - Server Apply retains omitted nested sources/memberships. Preserve complete nested arrays locally so the effective draft accurately represents the retained graph.
 
 ## Complete synthetic records

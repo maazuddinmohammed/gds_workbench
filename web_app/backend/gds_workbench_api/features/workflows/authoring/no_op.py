@@ -27,7 +27,7 @@ from .plan import AgentRunPlan, ProjectWorkflow, WorkflowExecutionMode
 _AUTHORING_WORKFLOWS = frozenset(
     {
         "analysis",
-        "conceptual",
+        "subject_area",
         "logical",
         "dimensional",
         "mapping",

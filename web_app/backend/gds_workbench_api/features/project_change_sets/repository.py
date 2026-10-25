@@ -60,20 +60,20 @@ UPDATE workflow.analysis_result
 RETURNING analysis_result_id
 """
 
-_APPLY_CONCEPTUAL_OBJECT_REVIEW_SQL: LiteralString = """
-UPDATE workflow.conceptual_object
-   SET conceptual_object_is_locked = %s, conceptual_object_status = %s,
+_APPLY_SUBJECT_AREA_REVIEW_SQL: LiteralString = """
+UPDATE workflow.subject_area
+   SET subject_area_is_locked = %s, subject_area_status = %s,
        updated_time = CURRENT_TIMESTAMP, updated_by = %s
- WHERE project_id = %s AND conceptual_object_id = %s
-RETURNING conceptual_object_id
+ WHERE project_id = %s AND subject_area_id = %s
+RETURNING subject_area_id
 """
 
-_APPLY_CONCEPTUAL_RELATIONSHIP_REVIEW_SQL: LiteralString = """
-UPDATE workflow.conceptual_relationship
-   SET conceptual_relationship_is_locked = %s, conceptual_relationship_status = %s,
+_APPLY_SUBJECT_AREA_TABLE_REVIEW_SQL: LiteralString = """
+UPDATE workflow.subject_area_table
+   SET subject_area_table_is_locked = %s, subject_area_table_status = %s,
        updated_time = CURRENT_TIMESTAMP, updated_by = %s
- WHERE project_id = %s AND conceptual_relationship_id = %s
-RETURNING conceptual_relationship_id
+ WHERE project_id = %s AND subject_area_table_id = %s
+RETURNING subject_area_table_id
 """
 
 _APPLY_OTHER_REVIEWS_SQL: dict[str, LiteralString] = {
@@ -212,7 +212,7 @@ SELECT change_set.project_change_set_id, event.action_count, event.event_metadat
    AND event.event_type = 'applied'
    AND event.outcome IN (
        'review_applied', 'scope_added', 'dependency_saved',
-       'context_saved', 'record_edited', 'records_deleted'
+       'context_saved', 'record_edited', 'records_deleted', 'subject_area_saved'
    )
  WHERE change_set.project_id = %s
    AND change_set.created_by_principal_id = %s
@@ -396,7 +396,7 @@ UPDATE mcp.project_change_set
        enrichment_document = %s,
        analysis_document = %s,
        context_document = %s,
-       conceptual_document = %s,
+       subject_area_document = %s,
        logical_document = %s,
        dimensional_document = %s,
        mapping_document = %s,
@@ -656,8 +656,8 @@ class PostgresProjectChangeSetRepository:
         queries: dict[str, LiteralString] = {
             **_APPLY_OTHER_REVIEWS_SQL,
             "analysis_result": _APPLY_ANALYSIS_REVIEW_SQL,
-            "conceptual_object": _APPLY_CONCEPTUAL_OBJECT_REVIEW_SQL,
-            "conceptual_relationship": _APPLY_CONCEPTUAL_RELATIONSHIP_REVIEW_SQL,
+            "subject_area": _APPLY_SUBJECT_AREA_REVIEW_SQL,
+            "subject_area_table": _APPLY_SUBJECT_AREA_TABLE_REVIEW_SQL,
         }
         return await self._transaction.fetch_one(
             queries[dataset],

@@ -14,7 +14,7 @@ Goal: per branch (one schema-qualified target Entity and source System), a trans
 
 ## What you need
 
-- [Working context](../../references/working-method.md) and its golden rules. Conceptual output is never a Mapping input.
+- [Working context](../../references/working-method.md) and its golden rules.
 - Active applied target Entities and Attributes in current Project and Metadata Snapshots; upstream design changes finish first.
 - The [Mapping record contract](../../references/project/mapping.md) and the [transformation documents guide](../../references/project/mapping-documents.md), including its exact existing templates.
 

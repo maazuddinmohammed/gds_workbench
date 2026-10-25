@@ -45,7 +45,7 @@ Systems are independent. Internal numeric IDs are not business identifiers.
 | Context Type | Global read-only classification shared across Projects; defined by name and description. |
 | Context Group | Project-owned collection of related knowledge with one Context Type, optional description and source System. |
 | Context Record | Reusable requirement, source information, convention, decision or other knowledge. Contains a stable UUID, text, optional plain-text source reference, status and lock. Requirements are not proof that data exists. |
-| Conceptual Model | Standalone business concepts and relationships supported by physical evidence or Context records; never an input or prerequisite for Logical or Dimensional modeling. |
+| Subject Area | Named business capability, such as Sales or Billing, over active Bronze Input Scope tables; a table may belong to several. It chooses the tables a Logical Build works on and is never modeling evidence. Unassigned tables have no active membership and are not stored. |
 | Logical Model | Schema-qualified normalized Entities, Attributes and relationships supported by physical inputs or Context records. |
 | Dimensional Model | Schema-qualified dimensions, facts and bridges supported by applied Logical Entities/Attributes or Context records. |
 | Source Context | Business/physical source dictionary used to interpret evidence. Exact fields come from workflow input contracts. |
@@ -74,8 +74,8 @@ projects these columns; agents cannot omit them. Settings display effective defa
 and allow per-Project overrides or reset; an explicit empty audit column list disables common audit fields.
 Existing saved Projects change only through reviewed authoring, never a backfill.
 
-Conceptual is an independent deliverable in both web and Atlas workflows. Its
-records never feed Logical or Dimensional authoring. Logical uses selected physical
+Subject Areas only choose tables, in both web and Atlas workflows. Their records
+never feed Logical or Dimensional authoring as evidence. Logical uses selected physical
 metadata, enrichment, Profiles, Analysis, Context records and applicable Logical history.
 Dimensional uses selected Logical Entities/Attributes and their supporting evidence.
 Logical coverage defaults to 70% of distinct physical Objects selected for the run;
@@ -137,7 +137,7 @@ and external orchestration, requiring separate authorization.
 
 Analysis Excel export includes all findings matching the active filters, fenced to
 the current Project revision. Databricks DDL downloads use applied active Logical or
-Dimensional fields; Conceptual downloads use one export-only ConceptID per concept.
+Dimensional fields.
 Downloads do not execute SQL or change physical metadata. Agent call/transport
 timeout defaults to 120 minutes; an explicit configured override wins. This limits
 each model call, not total Workflow Run duration. Provider credentials refresh

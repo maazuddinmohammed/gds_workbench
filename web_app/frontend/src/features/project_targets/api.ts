@@ -8,7 +8,7 @@ export interface TargetOptions {
   placement: { tenant_code: string; system_code: string; connection_code: string; source_tenant_code: string } | null;
 }
 export interface ProjectTargetsTransport {
-  exportProjectDdl: (tenantId: number, projectId: number, command: { layer: TargetLayer | "conceptual"; entity_ids?: number[]; expected_project_revision: number }) => Promise<{ blob: Blob; filename: string }>;
+  exportProjectDdl: (tenantId: number, projectId: number, command: { layer: TargetLayer; entity_ids?: number[]; expected_project_revision: number }) => Promise<{ blob: Blob; filename: string }>;
   readTargetOptions: (tenantId: number, projectId: number) => Promise<TargetOptions>;
   exportProjectTargets: (tenantId: number, projectId: number, command: { layer: TargetLayer; entity_ids?: number[]; expected_project_revision: number; object_type_code?: string }) => Promise<{ blob: Blob; filename: string }>;
 }

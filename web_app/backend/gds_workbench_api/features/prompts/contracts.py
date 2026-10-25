@@ -19,7 +19,7 @@ from gds_workbench_api.features.workflows.authoring.tool_configuration import Ag
 type ProjectWorkflow = Literal[
     "profiling",
     "analysis",
-    "conceptual",
+    "subject_area",
     "logical",
     "dimensional",
     "mapping",

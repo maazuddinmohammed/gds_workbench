@@ -48,7 +48,7 @@ class TargetPlacement(TargetContract):
 
 
 class ExportProjectDdlRequest(TargetContract):
-    layer: Literal["conceptual", "logical", "dimensional"]
+    layer: Literal["logical", "dimensional"]
     expected_project_revision: int = Field(gt=0)
     entity_ids: list[Annotated[int, Field(gt=0)]] | None = Field(
         default=None, min_length=1, max_length=200

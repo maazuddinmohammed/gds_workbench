@@ -4,13 +4,9 @@ from __future__ import annotations
 
 from typing import Literal
 
-type NamingWorkflow = Literal["conceptual", "logical", "dimensional"]
+type NamingWorkflow = Literal["logical", "dimensional"]
 
 _DEFAULT_NAMING_INSTRUCTIONS: dict[NamingWorkflow, str] = {
-    "conceptual": (
-        "Use PascalCase for Conceptual concept and relationship names. "
-        "Keep names business-facing and independent of physical table names."
-    ),
     "logical": (
         "Use PascalCase for Logical entity, attribute, and relationship names. "
         "Identifier Attribute names end with ID, with both I and D uppercase."

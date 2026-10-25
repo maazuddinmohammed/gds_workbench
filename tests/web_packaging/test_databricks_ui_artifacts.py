@@ -394,7 +394,7 @@ def test_extracted_app_workflow_runtime_assembles_from_source(
                 "databricks_execution=create_databricks_execution_adapters('fake')); "
                 "execution = services.execution_services(); "
                 "assert all(getattr(execution, name) is getattr(services, name) for name in ("
-                "'profiling', 'analysis_inference', 'analysis_validation', 'conceptual', "
+                "'profiling', 'analysis_inference', 'analysis_validation', 'subject_area', "
                 "'logical', 'dimensional', 'mapping', 'code_generation')); "
                 "asyncio.run(services.close())"
             ),

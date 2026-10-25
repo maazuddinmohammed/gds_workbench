@@ -34,7 +34,7 @@ from gds_workbench_api.features.workflows.runs import WorkflowRunNotFoundError
 _EXPLICIT_APPLY_WORKFLOWS = frozenset(
     {
         "analysis",
-        "conceptual",
+        "subject_area",
         "logical",
         "dimensional",
         "mapping",
@@ -129,7 +129,7 @@ class DatabaseWorkflowDraftApplyService:
                 (project_workflow in _MODELESS_APPLY_WORKFLOWS) != (execution_mode is None)
             ):
                 raise InvalidRequestError(
-                    "Only a completed Analysis, Conceptual, Logical, Dimensional, "
+                    "Only a completed Analysis, Subject Area, Logical, Dimensional, "
                     "Mapping, Code Generation, or Validation authoring run with its expected "
                     "execution-mode shape can use this apply path."
                 )

@@ -65,27 +65,27 @@ async def test_progress_allocates_contiguous_events_and_reserves_the_final_event
 
     await progress.append(
         attempt=1,
-        stage="conceptual.object_contribution",
+        stage="subject_area.candidate_authoring",
         status="running",
-        message="Candidate authoring started for 80 selected Objects.",
+        message="Subject Area authoring started for 80 Input Scope tables.",
         current=0,
         total=80,
         finding_count=0,
     )
     await progress.append(
         attempt=1,
-        stage="conceptual.object_contribution",
+        stage="subject_area.candidate_authoring",
         status="running",
-        message="Object contribution coverage processed 10 of 80 selected Objects.",
+        message="Subject Area authoring processed 10 of 80 Input Scope tables.",
         current=10,
         total=80,
         finding_count=0,
     )
     final_event = progress.event(
         attempt=1,
-        stage="conceptual.backend_validation",
+        stage="subject_area.backend_validation",
         status="running",
-        message="Conceptual candidate is ready in a validated draft.",
+        message="Subject Areas are ready in a validated draft.",
         current=1,
         total=1,
         finding_count=4,

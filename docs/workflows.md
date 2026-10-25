@@ -29,8 +29,8 @@ not silently change installed or already-running prompts.
 | Profiling | Exact selected physical Attributes and row scope → deterministic current measurements with provenance. |
 | Object/Attribute Enrichment | Source context, selected physical metadata, ingestion lineage and current Profiles → Project-owned descriptions, inferred types and natural/primary key, nullability and PII findings. Human edits and locks stay Project-specific. |
 | Analysis | Physical Objects/Attributes with available Project-owned enrichment, Profiles, lineage and relevant context → supported relationship inference; measured validation remains separate. |
-| Conceptual | Source context, physical evidence, Analysis and applicable Context records → standalone business concepts and relationships. Its output does not feed Logical or Dimensional. |
-| Logical | Physical metadata with available Project-owned enrichment, Profiles, Analysis, Context records and project naming/key/audit policy → normalized Entity/Attribute/relationship design. Excludes Conceptual records and uses the Project coverage setting (default 70%) for distinct selected Objects. After retries, below-target candidates fail when Logical enforcement is on; otherwise valid partial coverage returns with a warning when off (default). Attribute selection follows the design. |
+| Subject Areas | The whole active Bronze Input Scope: table descriptions, column names and counts, table-level Analysis links, saved areas and Context records → named business capabilities with their tables and an unassigned list. Each area stays within the column limit (default 300) so one Logical Build fits one answer. Areas choose tables and never feed Logical or Dimensional as evidence. |
+| Logical | Physical metadata with available Project-owned enrichment, Profiles, Analysis, Context records and project naming/key/audit policy → normalized Entity/Attribute/relationship design. Uses the Project coverage setting (default 70%) for distinct selected Objects. After retries, below-target candidates fail when Logical enforcement is on; otherwise valid partial coverage returns with a warning when off (default). Attribute selection follows the design. |
 | Dimensional | Selected applied Logical Entities/Attributes, their authorized physical support, Profiles, Analysis, Context records and Gold policy → dimensions, facts, bridges, grains and measures. Use the Project coverage setting (default 60%) for distinct selected Logical Entities. After retries, below-target candidates fail when Dimensional enforcement is on; otherwise valid partial coverage returns with a warning when off (default). |
 | Mapping | Modeled target/Attributes, eligible physical or modeled sources, support evidence, Context records, existing protected Mapping and selected templates → Object/Attribute transformation documents per Entity/System pair. |
 | Code | Applied transformation documents, their exact saved template definitions, modeled target shape, eligible sources and frozen artifact requirements → SQL artifacts with exact source-System assignment. Partial Mapping requires explicit gaps and placeholders. |
@@ -77,9 +77,9 @@ at the agent's own answer paths (`entities[2].attributes[5].from`). Logical runs
 longer author or read Submodels; saved memberships stay unchanged.
 
 Profiling precedes Project-owned Enrichment. The plugin prefers Profiling → Enrichment
-→ Analysis, then the requested independent design: Conceptual or Logical. Dimensional
-consumes Logical. Conceptual is never a prerequisite, source, or design constraint
-for Logical or Dimensional, including pending local records. Shared physical evidence,
+→ Analysis, then Subject Areas when the scope is large, then Logical. Dimensional
+consumes Logical. Subject Areas only choose tables; they are never a source or design
+constraint for Logical or Dimensional, including pending local records. Shared physical evidence,
 Analysis and Context records remain reusable by each design.
 Refresh the Snapshot after backend Profiling; related authored phases can remain in
 one local draft until reviewed submission. Actual applied downstream prerequisites

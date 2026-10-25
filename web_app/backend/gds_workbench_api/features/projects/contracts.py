@@ -13,7 +13,7 @@ type ProjectStatus = Literal["active", "archived"]
 type ProjectWorkflow = Literal[
     "profiling",
     "analysis",
-    "conceptual",
+    "subject_area",
     "logical",
     "dimensional",
     "mapping",

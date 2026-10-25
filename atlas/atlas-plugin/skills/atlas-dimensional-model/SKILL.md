@@ -15,7 +15,7 @@ Goal: a Gold design with defensible grain, measures, conformance and history, tr
 ## What you need
 
 - [Working context](../../references/working-method.md) and its golden rules.
-- Active applied Logical Entities and Attributes; Conceptual output is never an input. [Dimensional context](../../references/dimensional-build/context.md) lists what to read, including history rules.
+- Active applied Logical Entities and Attributes; Subject Areas are never an input. [Dimensional context](../../references/dimensional-build/context.md) lists what to read, including history rules.
 - The business process and questions the design must answer. A department name or report layout is not a fact grain.
 
 ## Steps

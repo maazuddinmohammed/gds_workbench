@@ -43,18 +43,16 @@ def workflow_reader_specs(workflow: str) -> ReaderSpecs:
             "logical_entity_keys",
             project_key_fields("logical", "entity"),
         )
-    if workflow == "conceptual":
-        for kind in ("object", "relationship"):
-            specs[f"list_conceptual_{kind}s"] = (
-                f"conceptual_{kind}_list",
-                "object_keys",
-                OBJECT_FIELDS,
-            )
-            specs[f"get_conceptual_{kind}s"] = (
-                f"conceptual_{kind}s",
-                "conceptual_object_names" if kind == "object" else "relationship_keys",
-                project_key_fields("conceptual", kind),
-            )
+    if workflow == "subject_area":
+        # Subject Area runs read the compact whole-Scope inputs by table_index id.
+        return {
+            "get_source_context": specs["get_source_context"],
+            "get_gds_context": specs["get_gds_context"],
+            "get_scope_tables": ("scope_tables", "tables", ("table",)),
+            "get_table_links": ("table_links", None, ()),
+            "get_subject_areas": ("existing_subject_areas", "subject_area_names", ("name",)),
+            "get_context_records": specs["get_context_records"],
+        }
     for family in (
         ("logical",)
         if workflow == "logical"
@@ -167,15 +165,11 @@ def reader_definitions(
                 " Physical lineage is supporting evidence only; "
                 "it does not expand selected Logical authoring sources."
             )
-        if (
-            name.startswith("list_conceptual_")
-            or name.endswith("_entities")
-            and name.startswith("list_")
-        ):
+        if name.endswith("_entities") and name.startswith("list_"):
             description += (
                 " Entity filters use the complete schema-qualified Entity key."
                 if workflow == "dimensional"
-                else " Physical filters match own direct supports/sources only."
+                else " Physical filters match own direct sources only."
             )
         contract = contracts.get(variable, {})
         schema: dict[str, Any] = contract.get("schema", {})
@@ -452,11 +446,10 @@ class FrozenContextReaders:
                 full_rows = self._values[full_name]
                 matched: list[dict[str, Any]] = []
                 for compact, full in zip(rows, full_rows, strict=True):
-                    supports = full.get("supports", full.get("sources", []))
                     if any(
                         isinstance(s.get("source_object"), dict)
                         and natural_key(s["source_object"]) in wanted
-                        for s in supports
+                        for s in full.get("sources", [])
                     ):
                         matched.append(compact)
                 return matched

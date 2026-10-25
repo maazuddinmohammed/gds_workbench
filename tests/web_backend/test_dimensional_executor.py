@@ -409,7 +409,7 @@ def _context_bundle(
                 ],
             },
             "applied": {
-                "conceptual": None,
+                "subject_area": None,
                 "logical": None,
                 "dimensional": None,
                 "mapping": None,

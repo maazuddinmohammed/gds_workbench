@@ -4,9 +4,9 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+// Pending changes to these datasets bind the optional decision file.
 const modelingDatasets = new Set([
-  "conceptual_object", "conceptual_relationship", "logical_entity", "logical_attribute",
-  "logical_relationship", "analysis_result", "context_group", "context_record",
+  "logical_entity", "logical_attribute", "logical_relationship", "analysis_result", "context_group", "context_record",
 ]);
 const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 

@@ -16,7 +16,7 @@ Goal: a normalized Silver design with explicit grain, complete identity and trac
 
 - [Working context](../../references/working-method.md) and its golden rules.
 - Installed Metadata and Project Snapshots and active applied Input Scope; [Logical context](../../references/logical-build/context.md) lists what to read.
-- Profiles, Project enrichment and Analysis from the effective local view; pending results count without Apply. Never Conceptual records.
+- Profiles, Project enrichment and Analysis from the effective local view; pending results count without Apply. Subject Areas only choose tables.
 
 ## Steps
 

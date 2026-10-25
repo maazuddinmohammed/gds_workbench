@@ -20,7 +20,7 @@ from .agent_execution import AgentToolName
 
 type ProjectWorkflow = Literal[
     "analysis",
-    "conceptual",
+    "subject_area",
     "logical",
     "dimensional",
     "mapping",

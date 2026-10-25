@@ -7,7 +7,8 @@ const {connect,validateSession} = require('../../atlas/atlas-plugin/workbench/wo
 const dbml = require('../../atlas/atlas-plugin/workbench/dbml.js');
 const common = require('../../atlas/atlas-plugin/workbench/validation/common.js');
 const source = dataset('source_object',['tenant_code','object_name'],[{tenant_code:'T',object_name:'Customer',description:'Before',is_active:true}]);
-const projectFixture = root => { state(root,{project:{id:7,name:'Sales'}}); return snapshot(root,'project',[dataset('conceptual_object',['conceptual_object_name'],[{conceptual_object_name:'Customer',conceptual_object_status:'active',conceptual_object_type:'party'}])]); };
+const entity = name => ({logical_entity_schema_name:'silver',logical_entity_name:name,logical_entity_status:'active',submodels:[]});
+const projectFixture = root => { state(root,{project:{id:7,name:'Sales'}}); return snapshot(root,'project',[dataset('logical_entity',['logical_entity_schema_name','logical_entity_name'],[entity('Customer')])]); };
 
 test('opening Atlas is read-only and missing optional areas are valid',async()=>{
  const root=workspace(), file=root.entries.get('.atlas').entries.get('session.json'), before=file.text;
@@ -65,32 +66,27 @@ test('a concurrently changed draft cannot be stamped by a validation report',asy
  const root=workspace();snapshot(root,'metadata',[source]);const ws=await connect(root),binding=await ws.captureInputs('metadata');root.directory('metadata-change-set').file('source_object.json','[]');
  await assert.rejects(ws.saveValidationReport('metadata',{binding,digest:binding.inputs[0].draft_digest,valid:true,issues:[],issueCount:0,truncated:false}),/changed during/);
 });
-test('effective DBML contains unchanged snapshot concepts and newly proposed concepts',async()=>{
- const root=workspace();projectFixture(root);root.directory('project-change-set').file('conceptual_object.json',JSON.stringify([{conceptual_object_name:'Order',conceptual_object_status:'active',conceptual_object_type:'event'}]));
- const ws=await connect(root),binding=await ws.captureInputs('project'),loaded=await ws.loadArea('project');const docs=dbml.render(loaded,ws.area('project').catalog.project);const concept=docs.find(doc=>doc.path==='conceptual.dbml');
- assert.match(concept.content,/Customer/);assert.match(concept.content,/Order/);const result=await ws.saveDbmlDocuments(docs,{binding});assert.equal(result.draft_digest,binding.inputs[0].draft_digest);
+test('effective DBML contains unchanged snapshot Entities and newly proposed Entities',async()=>{
+ const root=workspace();projectFixture(root);root.directory('project-change-set').file('logical_entity.json',JSON.stringify([entity('Order')]));
+ const ws=await connect(root),binding=await ws.captureInputs('project'),loaded=await ws.loadArea('project');const docs=dbml.render(loaded,ws.area('project').catalog.project);const logical=docs.find(doc=>doc.path==='logical_complete.dbml');
+ assert.match(logical.content,/Customer/);assert.match(logical.content,/Order/);const result=await ws.saveDbmlDocuments(docs,{binding});assert.equal(result.draft_digest,binding.inputs[0].draft_digest);
 });
 test('duplicate pending keys are blocking structural findings before DBML',async()=>{
- const root=workspace();projectFixture(root);const row={conceptual_object_name:'Order',conceptual_object_status:'active'};root.directory('project-change-set').file('conceptual_object.json',JSON.stringify([row,row]));
+ const root=workspace();projectFixture(root);const row=entity('Order');root.directory('project-change-set').file('logical_entity.json',JSON.stringify([row,row]));
  const ws=await connect(root);assert.ok(common.validateLoaded('project',await ws.loadArea('project')).some(issue=>issue.code==='duplicate_canonical_key'));
 });
 test('DBML refuses changed saved inputs and missing input binding',async()=>{
  const root=workspace();projectFixture(root);const ws=await connect(root),binding=await ws.captureInputs('project');const docs=dbml.render(await ws.loadArea('project'),ws.area('project').catalog.project);
- await assert.rejects(ws.saveDbmlDocuments(docs),/captured/);root.directory('project-change-set').file('conceptual_object.json','[]');await assert.rejects(ws.saveDbmlDocuments(docs,{binding}),/changed during/);assert.equal(root.entries.has('project-dbml'),false);
+ await assert.rejects(ws.saveDbmlDocuments(docs),/captured/);root.directory('project-change-set').file('logical_entity.json','[]');await assert.rejects(ws.saveDbmlDocuments(docs,{binding}),/changed during/);assert.equal(root.entries.has('project-dbml'),false);
 });
 test('DBML restores the previous export when inputs change during publication',async()=>{
  const root=workspace();projectFixture(root);const ws=await connect(root),binding=await ws.captureInputs('project');
  const docs=dbml.render(await ws.loadArea('project'),ws.area('project').catalog.project);await ws.saveDbmlDocuments(docs,{binding});
- const output=root.entries.get('project-dbml'),manifest=output.entries.get('manifest.json').text,old=output.entries.get('conceptual.dbml'),oldText=old.text;
+ const output=root.entries.get('project-dbml'),manifest=output.entries.get('manifest.json').text,old=output.entries.get('logical_complete.dbml'),oldText=old.text;
  const writable=old.createWritable.bind(old);let changed=false;
- old.createWritable=async()=>{const stream=await writable(),close=stream.close;stream.close=async()=>{await close();if(!changed){changed=true;root.directory('project-change-set').file('conceptual_object.json','[]');}};return stream;};
+ old.createWritable=async()=>{const stream=await writable(),close=stream.close;stream.close=async()=>{await close();if(!changed){changed=true;root.directory('project-change-set').file('logical_entity.json','[]');}};return stream;};
  await assert.rejects(ws.saveDbmlDocuments(docs.map(doc=>({...doc,content:doc.content+'\n// changed export'})),{binding}),/changed during/);
  assert.equal(old.text,oldText);assert.equal(output.entries.get('manifest.json').text,manifest);
-});
-test('unknown conceptual cardinality has an annotation, never a false one-to-one connector',()=>{
- const row=name=>({conceptual_object_name:name,conceptual_object_status:'active'});
- const docs=dbml.render(new Map([['conceptual_object',{effective:[row('Customer'),row('Order')]}],['conceptual_relationship',{effective:[{from_conceptual_object_name:'Customer',to_conceptual_object_name:'Order',conceptual_relationship_name:'Places',conceptual_relationship_status:'active',conceptual_relationship_cardinality:'unknown'}]}]]),{project_id:7,project_name:'Sales',project_revision:1});
- assert.match(docs[0].content,/Connector omitted/);assert.doesNotMatch(docs[0].content,/Ref conceptual_relationship/);
 });
 
 test('Project context aggregates all owners and never uses their pending Metadata',async()=>{

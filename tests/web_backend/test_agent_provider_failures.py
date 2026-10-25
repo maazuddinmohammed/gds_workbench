@@ -28,9 +28,6 @@ from tests.web_backend import (
     test_code_generation_executor as code_generation,
 )
 from tests.web_backend import (
-    test_conceptual_executor as conceptual,
-)
-from tests.web_backend import (
     test_dimensional_executor as dimensional,
 )
 from tests.web_backend import (
@@ -38,6 +35,9 @@ from tests.web_backend import (
 )
 from tests.web_backend import (
     test_mapping_executor as mapping,
+)
+from tests.web_backend import (
+    test_subject_area_executor as subject_area,
 )
 from tests.web_backend import (
     test_validation_executor as validation,
@@ -409,7 +409,13 @@ def test_unlimited_catalog_is_not_wrapped_and_prompts_have_no_character_ceiling(
     "workflow, mode",
     [
         (workflow, mode)
-        for workflow in ("analysis", "conceptual", "logical", "dimensional", "mapping")
+        for workflow in (
+            "analysis",
+            "subject_area",
+            "logical",
+            "dimensional",
+            "mapping",
+        )
         for mode in ("one_shot", "tool_assisted")
     ]
     + [("code_generation", None), ("validation", None)],
@@ -456,7 +462,7 @@ async def test_every_authoring_workflow_persists_safe_stage_failure_without_hand
     else:
         fixture: Any = {
             "analysis": analysis,
-            "conceptual": conceptual,
+            "subject_area": subject_area,
             "logical": logical,
             "dimensional": dimensional,
         }[workflow]

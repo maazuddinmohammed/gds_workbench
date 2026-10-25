@@ -149,7 +149,7 @@ def test_enrichment_inputs_carry_registered_descriptions_as_own_fields(
     assert "registered_object_description" not in json.dumps(shared)
 
 
-@pytest.mark.parametrize("workflow", ("analysis", "conceptual", "logical", "dimensional"))
+@pytest.mark.parametrize("workflow", ("analysis", "subject_area", "logical", "dimensional"))
 def test_context_records_description_names_the_delivered_fields(workflow: str) -> None:
     contract = workflow_input_contracts(workflow)["context_records"]
     fields = contract["schema"]["$defs"]["context_records_entry"]["properties"]

@@ -28,12 +28,9 @@ import {
   ContextRecordDetailPage,
 } from "./features/context/ContextDetail";
 import { ContextScreen } from "./features/context/ContextScreen";
-import {
-  ConceptualObjectDetailPage,
-  ConceptualRelationshipDetailPage,
-} from "./features/conceptual/ConceptualDetail";
 import { MetadataEnrichmentScreen } from "./features/metadata_enrichment/MetadataEnrichmentScreen";
-import { ConceptualScreen } from "./features/conceptual/ConceptualScreen";
+import { SubjectAreaDetailPage } from "./features/subject_areas/SubjectAreaDetail";
+import { SubjectAreasScreen } from "./features/subject_areas/SubjectAreasScreen";
 import {
   LogicalAttributeDetailPage,
   LogicalEntityDetailPage,
@@ -310,25 +307,18 @@ const tenantProjectMetadataEnrichmentRoute = createRoute({
   component: ProjectMetadataEnrichment,
 });
 
-const tenantProjectConceptualRoute = createRoute({
+const tenantProjectSubjectAreasRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/projects/$projectId/conceptual",
+  path: "/tenants/$tenantId/projects/$projectId/subject-areas",
   validateSearch: projectLayerSearch,
-  component: ProjectConceptual,
+  component: ProjectSubjectAreas,
 });
 
-const tenantProjectConceptualObjectRoute = createRoute({
+const tenantProjectSubjectAreaRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/projects/$projectId/conceptual/objects/$objectId",
+  path: "/tenants/$tenantId/projects/$projectId/subject-areas/$subjectAreaId",
   validateSearch: projectLayerSearch,
-  component: ProjectConceptualObject,
-});
-
-const tenantProjectConceptualRelationshipRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/projects/$projectId/conceptual/relationships/$relationshipId",
-  validateSearch: projectLayerSearch,
-  component: ProjectConceptualRelationship,
+  component: ProjectSubjectArea,
 });
 
 const tenantProjectLogicalRoute = createRoute({
@@ -425,9 +415,8 @@ const routeTree = rootRoute.addChildren([
   tenantProjectContextGroupRoute,
   tenantProjectContextRecordRoute,
   tenantProjectMetadataEnrichmentRoute,
-  tenantProjectConceptualRoute,
-  tenantProjectConceptualObjectRoute,
-  tenantProjectConceptualRelationshipRoute,
+  tenantProjectSubjectAreasRoute,
+  tenantProjectSubjectAreaRoute,
   tenantProjectLogicalRoute,
   tenantProjectLogicalEntityRoute,
   tenantProjectLogicalAttributeRoute,
@@ -1043,9 +1032,9 @@ function ProjectMetadataEnrichment() {
   );
 }
 
-function ProjectConceptual() {
+function ProjectSubjectAreas() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, projectId } = tenantProjectConceptualRoute.useParams();
+  const { tenantId, projectId } = tenantProjectSubjectAreasRoute.useParams();
   const numericTenantId = Number(tenantId);
   const numericProjectId = Number(projectId);
   return (
@@ -1054,11 +1043,11 @@ function ProjectConceptual() {
       api={api}
       tenantId={numericTenantId}
       projectId={numericProjectId}
-      activeStage="conceptual"
-      loadingLabel="Loading Conceptual"
+      activeStage="subject-area"
+      loadingLabel="Loading Subject Areas"
     >
       {({ home, project }) => (
-        <ConceptualScreen
+        <SubjectAreasScreen
           api={api}
           tenantId={numericTenantId}
           project={project}
@@ -1070,80 +1059,33 @@ function ProjectConceptual() {
   );
 }
 
-function ProjectConceptualObject() {
+function ProjectSubjectArea() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, projectId, objectId } = tenantProjectConceptualObjectRoute.useParams();
-  return (
-    <ConceptualDetailRoute
-      api={api}
-      tenantId={Number(tenantId)}
-      projectId={Number(projectId)}
-      detailId={Number(objectId)}
-      kind="object"
-    />
-  );
-}
-
-function ProjectConceptualRelationship() {
-  const { api } = rootRoute.useRouteContext();
-  const { tenantId, projectId, relationshipId } = tenantProjectConceptualRelationshipRoute.useParams();
-  return (
-    <ConceptualDetailRoute
-      api={api}
-      tenantId={Number(tenantId)}
-      projectId={Number(projectId)}
-      detailId={Number(relationshipId)}
-      kind="relationship"
-    />
-  );
-}
-
-function ConceptualDetailRoute({
-  api,
-  tenantId,
-  projectId,
-  detailId,
-  kind,
-}: {
-  api: WorkbenchApi;
-  tenantId: number;
-  projectId: number;
-  detailId: number;
-  kind: "object" | "relationship";
-}) {
-  if (!Number.isSafeInteger(detailId) || detailId <= 0) return <ErrorPage />;
+  const { tenantId, projectId, subjectAreaId } = tenantProjectSubjectAreaRoute.useParams();
+  const numericTenantId = Number(tenantId);
+  const numericProjectId = Number(projectId);
+  const numericSubjectAreaId = Number(subjectAreaId);
+  if (!Number.isSafeInteger(numericSubjectAreaId) || numericSubjectAreaId <= 0) return <ErrorPage />;
   return (
     <ProjectRouteFrame
       tenantLockApi={api}
       api={api}
-      tenantId={tenantId}
-      projectId={projectId}
-      activeStage="conceptual"
-      loadingLabel="Loading Conceptual"
+      tenantId={numericTenantId}
+      projectId={numericProjectId}
+      activeStage="subject-area"
+      loadingLabel="Loading Subject Area"
     >
-      {({ home, project }) => {
-        const actions = <ProjectRecordTools canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"} api={api} tenantId={tenantId} projectId={projectId} projectRevision={project.project_revision}
-          hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true} dataset={`conceptual_${kind}`} recordId={detailId} />;
-        return (
-          kind === "object" ? (
-            <ConceptualObjectDetailPage
-              actions={actions}
-              api={api}
-              tenantId={tenantId}
-              projectId={projectId}
-              objectId={detailId}
-            />
-          ) : (
-            <ConceptualRelationshipDetailPage
-              actions={actions}
-              api={api}
-              tenantId={tenantId}
-              projectId={projectId}
-              relationshipId={detailId}
-            />
-          )
-        );
-      }}
+      {({ home, project }) => (
+        <SubjectAreaDetailPage
+          key={numericSubjectAreaId}
+          api={api}
+          tenantId={numericTenantId}
+          project={project}
+          subjectAreaId={numericSubjectAreaId}
+          canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"}
+          hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true}
+        />
+      )}
     </ProjectRouteFrame>
   );
 }

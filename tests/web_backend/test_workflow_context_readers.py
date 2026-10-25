@@ -62,7 +62,7 @@ def physical_key(row: dict[str, Any]) -> dict[str, Any]:
     return {field: row[field] for field in OBJECT_FIELDS}
 
 
-@pytest.mark.parametrize("workflow", ["analysis", "conceptual", "logical"])
+@pytest.mark.parametrize("workflow", ["analysis", "logical"])
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
 @pytest.mark.parametrize("locked", [False, True])
 @pytest.mark.parametrize("validation_result", [None, "supported", "unsupported", "inconclusive"])
@@ -152,7 +152,7 @@ def test_existing_relationships_preserve_locks_and_recorded_validation(
         assert result["items"] == groups
 
 
-@pytest.mark.parametrize("workflow", ["analysis", "conceptual", "logical"])
+@pytest.mark.parametrize("workflow", ["analysis", "logical"])
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
 @pytest.mark.parametrize(
     "from_selected,to_selected",
@@ -219,11 +219,65 @@ def test_relationship_context_does_not_widen_selected_objects(
                     readers.invoke("get_object_details", {"object_keys": [outside_key]})
 
 
+@pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
+@pytest.mark.parametrize(
+    "from_selected,to_selected",
+    [(True, True), (True, False), (False, True), (False, False)],
+)
+def test_subject_area_table_links_do_not_widen_selected_tables(
+    mode: str, from_selected: bool, to_selected: bool
+) -> None:
+    record = cast(dict[str, Any], _candidate())["relationships"][0]
+    if not from_selected:
+        record["from_object_name"] = "unselected_orders"
+    if not to_selected:
+        record["to_object_name"] = "unselected_customers"
+    relationship = AnalysisResultRecord.model_validate(
+        {
+            **record,
+            "analysis_result_status": "active",
+            "analysis_result_is_locked": False,
+        }
+    )
+    context = _context_bundle().context.model_copy(
+        update={
+            "project_workflow": "subject_area",
+            "workflow_execution_mode": mode,
+            "analysis_relationships": (relationship,),
+        }
+    )
+    values = project_context_inputs(context.model_dump(mode="json"))
+    # Links join selected tables only, by their table_index ids.
+    assert values["table_links"] == (
+        [{"from": "t1", "to": "t2", "validation_result": None, "edge_count": 1}]
+        if from_selected and to_selected
+        else []
+    )
+    assert [item["object_name"] for item in values["table_index"]] == [
+        "order_raw",
+        "customer_raw",
+    ]
+    assert [item["table"] for item in values["scope_tables"]] == ["t1", "t2"]
+    if mode == "tool_assisted":
+        readers = InMemoryAgentContextToolCatalog(
+            context=context,
+            max_result_bytes=128 * 1024,
+            max_catalog_bytes=256 * 1024,
+            max_page_records=20,
+        )
+        links = cast(dict[str, Any], readers.invoke("get_table_links", {}))
+        assert links["items"] == values["table_links"]
+        tables = cast(dict[str, Any], readers.invoke("get_scope_tables", {}))
+        assert tables["items"] == values["scope_tables"]
+        with pytest.raises(AgentContextToolRequestError):
+            readers.invoke("get_scope_tables", {"tables": [{"table": "t3"}]})
+
+
 @pytest.mark.parametrize(
     ("workflow", "count"),
     [
         ("analysis", 6),
-        ("conceptual", 10),
+        ("subject_area", 6),
         # Logical reads no Submodels; Dimensional still reads both Submodel families.
         ("logical", 12),
         ("dimensional", 23),
