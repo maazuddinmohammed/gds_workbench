@@ -21,3 +21,6 @@ web_app/frontend/dist/
 .pytest_cache/
 .ruff_cache/
 *.tsbuildinfo
+
+# Local planning notes and issues; never published.
+.scratch/
