@@ -24,14 +24,14 @@ Use these terms consistently. Load the affected [metadata table reference](metad
 | Metadata Change Set | Tenant-owned pending physical metadata and Copy/Process configuration. It contains no Project records. |
 | Project | Tenant-owned governed aggregate containing scope, modeling sections, and revision. |
 | Project Change Set | Pending Project records; it cannot change physical metadata. |
-| Subject Area | Named business capability, such as Sales or Billing, over Bronze Input Scope tables; a table may belong to several. It chooses the tables a Logical Build works on and is never modeling evidence. See [Subject Areas](project/subject-areas.md). |
-| Unassigned table | Active Bronze Input Scope table with no active membership in an active Subject Area. It is worked out, not stored. |
+| Subject Area | Named business capability, such as Sales or Billing, over Bronze Input Scope Objects; an Object may belong to several. A focus window: it chooses the Objects a Logical or Dimensional Build works on and is never modeling evidence. See [Subject Areas](project/subject-areas.md). |
+| Unassigned Object | Active Bronze Input Scope Object with no active membership in an active Subject Area. It is worked out, not stored. |
+| Build / Optimize | The two ways of modeling one Logical or Dimensional model. Build works one Subject Area at a time; Optimize improves existing Entities across the model without an area. |
 | Logical Entity / Attribute | A modeled business occurrence and its fields. Physical lineage uses typed sources; see [Logical records](project/logical.md). |
 | Dimensional Entity / Attribute | An analytical fact, dimension or bridge and its fields, with eligible Silver lineage or justified generation. [Dimensional records](project/dimensional.md) has distinct roles, grain, measure and history fields. |
 | Conformed dimension | Shared analytical context whose meaning, identity and relevant values/history agree across processes; matching names alone is insufficient. |
 | Role-playing dimension | One dimension used in distinct roles, such as OrderDate and ShipDate, through separate keys/relationships rather than copied definitions. |
 | Type 1 / Type 2 | Overwriting changing values versus retaining row versions. The framework supports both and populates Type 2 fields using natural keys; [history rules](dimensional-build/history.md) define analytical choice, lookup time and SQL omissions. |
-| Submodel | Business grouping/view of shared Entities through memberships. It does not create separate copies or isolate cross-group relationships. |
 | Context | Durable user-supplied/documented rule or evidence in a Context Group/Record. Used when useful; not a mandatory substitute for absent physical lineage. See [Context records](project/context.md). |
 | Surrogate key | Generated target identity, separate from business identity. Atlas defaults to a first-column BIGINT own surrogate; FKs are mapped values. See [keys/audit](project/keys-and-audit.md). |
 | Business-key tuple | Complete set of facts identifying an occurrence, including source namespace or time when required; components need not be individually unique. |

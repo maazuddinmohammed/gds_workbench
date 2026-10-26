@@ -12,12 +12,12 @@
     "#4E79A7", "#F28E2B", "#59A14F", "#E15759", "#B07AA1",
     "#76B7B2", "#EDC948", "#FF9DA7", "#9C755F", "#BAB0AC",
   ];
+  // Model relationships point child -> parent, so only these two remain.
   const CARDINALITY = {
-    one_to_one: "-",
-    one_to_many: "<",
     many_to_one: ">",
-    many_to_many: "<>",
+    one_to_one: "-",
   };
+  const OBJECT_FIELDS = ["tenant_code", "system_code", "connection_code", "object_schema", "object_name"];
   const SAFE_TYPE = /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*(?:\((?:[A-Za-z_][A-Za-z0-9_]*|[0-9]+(?:\.[0-9]+)?)(?: *, *(?:[A-Za-z_][A-Za-z0-9_]*|[0-9]+(?:\.[0-9]+)?))*\))?$/;
   const MAX_FILE_BYTES = 12 * 1024 * 1024;
   const MAX_TOTAL_BYTES = 16 * 1024 * 1024;
@@ -110,66 +110,84 @@
     return new Map([...groups].map(([key, group]) => [key, colors.get(normalize(group))]));
   }
 
-  function document(path, layer, view, submodelName, lines, tableCount, relationshipCount) {
+  function document(path, layer, view, subjectAreaName, lines, tableCount, relationshipCount) {
     return {
       path,
       layer,
       view,
-      submodel_name: submodelName,
+      subject_area_name: subjectAreaName,
       content: `${lines.join("\n").trimEnd()}\n`,
       table_count: tableCount,
       relationship_count: relationshipCount,
     };
   }
 
-  function layerSpecification(layer) {
-    if (layer === "logical") {
-      return {
-        submodelDataset: "logical_submodel", submodelName: "logical_submodel_name", submodelDefinition: "logical_submodel_definition", submodelStatus: "logical_submodel_status",
-        entityDataset: "logical_entity", entityName: "logical_entity_name", entityStatus: "logical_entity_status", entityOrder: "logical_entity_dependency_order", entityColor: "logical_entity_dependency_order",
-        entityNotes: [["Type", "logical_entity_type"], ["Type detail", "logical_entity_type_detail"], ["Grain", "logical_entity_grain"], ["Dependency order", "logical_entity_dependency_order"], ["Definition", "logical_entity_definition"]],
-        attributeDataset: "logical_attribute", attributeEntity: "logical_entity_name", attributeName: "logical_attribute_name", attributeStatus: "logical_attribute_status", attributeType: "logical_attribute_data_type", attributeOrdinal: "logical_attribute_ordinal_position", attributeNullable: "logical_attribute_is_nullable",
-        relationshipDataset: "logical_relationship", relationshipStatus: "logical_relationship_status", relationshipName: "logical_relationship_name", relationshipDefinition: "logical_relationship_definition", fromEntity: "from_logical_entity_name", fromAttribute: "from_logical_attribute_name", toEntity: "to_logical_entity_name", toAttribute: "to_logical_attribute_name", relationshipCardinality: "logical_relationship_cardinality",
-      };
-    }
-    return {
-      submodelDataset: "dimensional_submodel", submodelName: "dimensional_submodel_name", submodelDefinition: "dimensional_submodel_definition", submodelStatus: "dimensional_submodel_status",
-      entityDataset: "dimensional_entity", entityName: "dimensional_entity_name", entityStatus: "dimensional_entity_status", entityOrder: "dimensional_entity_dependency_order", entityColor: "dimensional_entity_type",
-      entityNotes: [["Type", "dimensional_entity_type"], ["Fact type", "dimensional_fact_type"], ["Grain", "dimensional_entity_grain_definition"], ["Dependency order", "dimensional_entity_dependency_order"], ["Definition", "dimensional_entity_definition"]],
-      attributeDataset: "dimensional_attribute", attributeEntity: "dimensional_entity_name", attributeName: "dimensional_attribute_name", attributeStatus: "dimensional_attribute_status", attributeType: "dimensional_attribute_data_type", attributeOrdinal: "dimensional_attribute_ordinal_position", attributeNullable: "dimensional_attribute_is_nullable",
-      relationshipDataset: "dimensional_relationship", relationshipStatus: "dimensional_relationship_status", relationshipName: "dimensional_relationship_name", relationshipDefinition: "dimensional_relationship_definition", fromEntity: "from_dimensional_entity_name", fromAttribute: "from_dimensional_attribute_name", toEntity: "to_dimensional_entity_name", toAttribute: "to_dimensional_attribute_name", relationshipCardinality: "dimensional_relationship_cardinality",
-    };
+  function entityKey(record, layer, prefix = "") {
+    return JSON.stringify([normalize(record?.[`${prefix}${layer}_entity_schema_name`]), normalize(record?.[`${prefix}${layer}_entity_name`])]);
   }
 
-  function prepareLayer(loaded, layer) {
-    const spec = layerSpecification(layer);
+  function objectKey(record) {
+    return JSON.stringify(OBJECT_FIELDS.map((field) => normalize(record?.[field])));
+  }
+
+  // Subject Areas are focus windows over Input Scope Objects. A Logical Entity belongs to the
+  // areas of its active Object sources; a Dimensional Entity to the areas of its Logical sources.
+  function subjectAreaIndex(loaded) {
+    const areas = rows(loaded, "subject_area")
+      .filter((record) => record.subject_area_is_active === true)
+      .map((record) => ({ key: normalize(record.subject_area_name), name: record.subject_area_name, definition: record.subject_area_definition }))
+      .sort((left, right) => core.compareCodePoints(left.key, right.key));
+    uniqueBy(areas, "name", "Subject Area");
+    const names = new Map(areas.map((area) => [area.key, area.name]));
+    const byObject = new Map();
+    for (const member of rows(loaded, "subject_area_table")) {
+      const area = normalize(member.subject_area_name);
+      if (member.subject_area_table_is_active !== true || !names.has(area)) continue;
+      const object = objectKey(member);
+      if (!byObject.has(object)) byObject.set(object, new Set());
+      byObject.get(object).add(area);
+    }
+    const objectAreas = (record) => new Set((Array.isArray(record.sources) ? record.sources : [])
+      .filter((source) => source?.support_source_type === "object" && source.is_active === true)
+      .flatMap((source) => [...(byObject.get(objectKey(source.source_object)) || [])]));
+    const logical = new Map(rows(loaded, "logical_entity")
+      .filter((record) => record.logical_entity_is_active === true)
+      .map((record) => [entityKey(record, "logical"), objectAreas(record)]));
+    const logicalAreas = (record) => new Set((Array.isArray(record.sources) ? record.sources : [])
+      .filter((source) => source?.support_source_type === "logical_entity" && source.is_active === true)
+      .flatMap((source) => [...(logical.get(entityKey(source.source_logical_entity, "logical")) || [])]));
+    return { areas, names, entityAreas: (layer, record) => layer === "logical" ? objectAreas(record) : logicalAreas(record) };
+  }
+
+  // Worked out for display only; Dimensional Relationships store no kind or optionality.
+  function dimensionalKind(fromType, toType) {
+    if (toType !== "dimension") return "reference";
+    if (fromType === "fact") return "fact_dimension";
+    if (fromType === "bridge") return "bridge_dimension";
+    return fromType === "dimension" ? "dimension_outrigger" : "reference";
+  }
+
+  function prepareLayer(loaded, layer, areaIndex) {
     const history = rows(loaded, "project_details")
       .some((record) => record[`${layer}_entity_scd_type`] === "type_2");
-    const submodels = rows(loaded, spec.submodelDataset)
-      .filter((record) => record[spec.submodelStatus] === "active")
-      .map((record) => ({ name: record[spec.submodelName], definition: record[spec.submodelDefinition] }))
-      .sort((left, right) => normalize(left.name).localeCompare(normalize(right.name)));
-    uniqueBy(submodels, "name", `${layer} Submodel`);
-    const activeSubmodels = new Set(submodels.map((item) => normalize(item.name)));
-    const entities = rows(loaded, spec.entityDataset)
-      .filter((record) => record[spec.entityStatus] === "active")
+    const notes = layer === "logical"
+      ? [["Type", "logical_entity_type"], ["Grain", "logical_entity_grain"], ["Dependency order", "logical_entity_dependency_order"], ["Definition", "logical_entity_definition"]]
+      : [["Type", "dimensional_entity_type"], ["Fact type", "dimensional_fact_type"], ["Grain", "dimensional_entity_grain_definition"], ["Dependency order", "dimensional_entity_dependency_order"], ["Definition", "dimensional_entity_definition"]];
+    const entities = rows(loaded, `${layer}_entity`)
+      .filter((record) => record[`${layer}_entity_is_active`] === true)
       .map((record) => {
-        const memberships = new Set();
-        for (const membership of Array.isArray(record.submodels) ? record.submodels : []) {
-          if (membership?.membership_status !== "active") continue;
-          const key = normalize(membership.submodel_name);
-          if (!activeSubmodels.has(key)) throw new Error(`An effective ${layer} Entity membership has an inactive or missing Submodel.`);
-          memberships.add(key);
-        }
+        const areas = areaIndex.entityAreas(layer, record);
+        const areaNames = [...areas].sort(core.compareCodePoints).map((area) => areaIndex.names.get(area));
         return {
           schema: record[`${layer}_entity_schema_name`],
-          key: JSON.stringify([normalize(record[`${layer}_entity_schema_name`]), normalize(record[spec.entityName])]),
-          name: record[spec.entityName],
-          order: record[spec.entityOrder],
+          key: entityKey(record, layer),
+          name: record[`${layer}_entity_name`],
+          type: record.dimensional_entity_type ?? null,
+          order: record[`${layer}_entity_dependency_order`],
           historized: history && (layer === "logical" || record.dimensional_entity_type === "dimension"),
-          colorGroup: String(record[spec.entityColor] ?? "unspecified"),
-          notes: spec.entityNotes.map(([label, field]) => [label, record[field]]),
-          submodels: memberships,
+          colorGroup: String(record[layer === "logical" ? "logical_entity_dependency_order" : "dimensional_entity_type"] ?? "unspecified"),
+          notes: [...notes.map(([label, field]) => [label, record[field]]), ["Subject Areas", areaNames.length ? areaNames : null]],
+          areas,
         };
       })
       .sort((left, right) => (left.order ?? 0) - (right.order ?? 0) || normalize(left.name).localeCompare(normalize(right.name)));
@@ -181,10 +199,10 @@
     }
     const attributesByEntity = new Map();
     const attributeKeys = new Set();
-    for (const record of rows(loaded, spec.attributeDataset).filter((item) => item[spec.attributeStatus] === "active")) {
-      const entityKey = JSON.stringify([normalize(record[`${layer}_entity_schema_name`]), normalize(record[spec.attributeEntity])]);
-      if (!entityByKey.has(entityKey)) throw new Error(`An effective ${layer} Attribute has an inactive or missing Entity.`);
-      const key = `${entityKey}\0${normalize(record[spec.attributeName])}`;
+    for (const record of rows(loaded, `${layer}_attribute`).filter((item) => item[`${layer}_attribute_is_active`] === true)) {
+      const parent = entityKey(record, layer);
+      if (!entityByKey.has(parent)) throw new Error(`An effective ${layer} Attribute has an inactive or missing Entity.`);
+      const key = `${parent}\0${normalize(record[`${layer}_attribute_name`])}`;
       if (attributeKeys.has(key)) throw new Error(`Effective ${layer} Attribute names are not unique.`);
       attributeKeys.add(key);
       const notes = [record[`${layer}_attribute_definition`]];
@@ -192,28 +210,29 @@
       else if (record[`${layer}_attribute_is_natural_key`]) notes.push("Natural key.");
       if (record[`${layer}_attribute_is_audit_column`]) notes.push("Audit Attribute.");
       const attribute = {
-        name: record[spec.attributeName], type: record[spec.attributeType], ordinal: record[spec.attributeOrdinal], nullable: record[spec.attributeNullable],
+        name: record[`${layer}_attribute_name`], type: record[`${layer}_attribute_data_type`],
+        ordinal: record[`${layer}_attribute_ordinal_position`], nullable: record[`${layer}_attribute_is_nullable`],
         natural: record[`${layer}_attribute_is_natural_key`],
         surrogate: record[`${layer}_attribute_is_surrogate_key`],
-        historized: entityByKey.get(entityKey).historized,
+        historized: entityByKey.get(parent).historized,
         notes: notes.filter((value) => value !== null && value !== undefined && oneLine(value)),
       };
-      if (!attributesByEntity.has(entityKey)) attributesByEntity.set(entityKey, []);
-      attributesByEntity.get(entityKey).push(attribute);
+      if (!attributesByEntity.has(parent)) attributesByEntity.set(parent, []);
+      attributesByEntity.get(parent).push(attribute);
     }
     for (const attributes of attributesByEntity.values()) attributes.sort((left, right) => (left.ordinal ?? 0) - (right.ordinal ?? 0) || normalize(left.name).localeCompare(normalize(right.name)));
-    const relationships = rows(loaded, spec.relationshipDataset)
-      .filter((record) => record[spec.relationshipStatus] === "active")
+    // Child -> parent: from is the child's foreign key, to is the parent's key.
+    const relationships = rows(loaded, `${layer}_relationship`)
+      .filter((record) => record[`${layer}_relationship_is_active`] === true)
       .map((record) => ({
-        name: record[spec.relationshipName], definition: record[spec.relationshipDefinition],
-        fromEntity: JSON.stringify([normalize(record[`from_${layer}_entity_schema_name`]), normalize(record[spec.fromEntity])]), fromAttribute: normalize(record[spec.fromAttribute]),
-        toEntity: JSON.stringify([normalize(record[`to_${layer}_entity_schema_name`]), normalize(record[spec.toEntity])]), toAttribute: normalize(record[spec.toAttribute]),
-        cardinality: record[spec.relationshipCardinality],
-        notes: layer === "logical"
-          ? [["Basis", record.logical_relationship_basis]]
-          : [["Kind", record.dimensional_relationship_kind], ["Role", record.dimensional_relationship_role_name], ["Optional", record.dimensional_relationship_is_optional ? "yes" : "no"], ["Basis", record.dimensional_relationship_basis]],
+        fromEntity: entityKey(record, layer, "from_"), fromAttribute: normalize(record[`from_${layer}_attribute_name`]),
+        toEntity: entityKey(record, layer, "to_"), toAttribute: normalize(record[`to_${layer}_attribute_name`]),
+        cardinality: layer === "logical" ? record.logical_relationship_cardinality : "many_to_one",
+        role: record.dimensional_relationship_role_name ?? null,
+        basis: record[`${layer}_relationship_basis`] ?? null,
       }))
-      .sort((left, right) => `${left.fromEntity}\0${left.toEntity}\0${normalize(left.name)}`.localeCompare(`${right.fromEntity}\0${right.toEntity}\0${normalize(right.name)}`));
+      .sort((left, right) => core.compareCodePoints(`${left.fromEntity}\0${left.fromAttribute}\0${left.toEntity}\0${left.toAttribute}`,
+        `${right.fromEntity}\0${right.fromAttribute}\0${right.toEntity}\0${right.toAttribute}`));
     for (const relationship of relationships) {
       if (
         !entityByKey.has(relationship.fromEntity) ||
@@ -222,8 +241,13 @@
         !attributeKeys.has(`${relationship.toEntity}\0${relationship.toAttribute}`)
       ) throw new Error(`An effective ${layer} Relationship has an inactive or missing endpoint.`);
       if (!CARDINALITY[relationship.cardinality]) throw new Error(`An effective ${layer} Relationship has invalid cardinality.`);
+      const foreignKey = attributesByEntity.get(relationship.fromEntity).find((item) => normalize(item.name) === relationship.fromAttribute);
+      relationship.notes = layer === "logical"
+        ? [["Basis", relationship.basis]]
+        : [["Kind", dimensionalKind(entityByKey.get(relationship.fromEntity).type, entityByKey.get(relationship.toEntity).type)],
+          ["Role", relationship.role], ["Optional", foreignKey.nullable ? "yes" : "no"], ["Basis", relationship.basis]];
     }
-    return { layer, submodels, entities, entityByKey, attributesByEntity, relationships };
+    return { layer, entities, entityByKey, attributesByEntity, relationships };
   }
 
   function keySettings(attributes) {
@@ -240,7 +264,7 @@
     return { inline, indexes };
   }
 
-  function renderModeled(project, data, included, path, view, submodelName, description) {
+  function renderModeled(project, data, included, path, view, subjectAreaName, description) {
     const include = included || new Set(data.entities.map((entity) => entity.key));
     const colors = colorMap(new Map(data.entities.map((entity) => [entity.key, entity.colorGroup])));
     const lines = projectLines(project, token(description), description);
@@ -274,33 +298,31 @@
       const fromAttribute = data.attributesByEntity.get(relationship.fromEntity).find((item) => normalize(item.name) === relationship.fromAttribute);
       const toAttribute = data.attributesByEntity.get(relationship.toEntity).find((item) => normalize(item.name) === relationship.toAttribute);
       lines.push(
-        comment([["Relationship", relationship.name], ["Definition", relationship.definition], ...relationship.notes]),
+        comment([["Relationship", `${from.name}.${fromAttribute.name} -> ${to.name}.${toAttribute.name}`], ...relationship.notes]),
         `Ref ${data.layer}_relationship_${relationshipCount}: ${identifier(from.schema)}.${identifier(from.name)}.${identifier(fromAttribute.name)} ${CARDINALITY[relationship.cardinality]} ${identifier(to.schema)}.${identifier(to.name)}.${identifier(toAttribute.name)}`,
         "",
       );
     }
-    return document(path, data.layer, view, submodelName, lines, tableCount, relationshipCount);
+    return document(path, data.layer, view, subjectAreaName, lines, tableCount, relationshipCount);
   }
 
-  function modeledDocuments(loaded, project, layer, includeSubmodels) {
-    const data = prepareLayer(loaded, layer);
+  // One file for the whole layer plus one per active Subject Area that has modeled Entities.
+  function modeledDocuments(loaded, project, layer, includeSubjectAreas, areaIndex) {
+    const data = prepareLayer(loaded, layer, areaIndex);
+    const title = `${layer[0].toUpperCase()}${layer.slice(1)}`;
     const documents = [renderModeled(project, data, null, `${layer}_complete.dbml`, "complete", null, `Complete ${layer} model`)];
-    if (!includeSubmodels) return documents;
-    const usedNames = new Set([`${layer}_complete.dbml`, `${layer}_default.dbml`]);
-    const assigned = new Set();
-    for (const submodel of data.submodels) {
-      const key = normalize(submodel.name);
-      const members = new Set(data.entities.filter((entity) => entity.submodels.has(key)).map((entity) => entity.key));
-      members.forEach((member) => assigned.add(member));
-      const base = `${layer}_${token(submodel.name, "submodel", 220).toLowerCase()}`;
+    if (!includeSubjectAreas) return documents;
+    const usedNames = new Set([`${layer}_complete.dbml`]);
+    for (const area of areaIndex.areas) {
+      const members = new Set(data.entities.filter((entity) => entity.areas.has(area.key)).map((entity) => entity.key));
+      if (!members.size) continue;
+      const base = `${layer}_${token(area.name, "subject_area", 220).toLowerCase()}`;
       let path = `${base}.dbml`;
       let suffix = 2;
       while (usedNames.has(path.toLowerCase())) path = `${base}_${suffix++}.dbml`;
       usedNames.add(path.toLowerCase());
-      documents.push(renderModeled(project, data, members, path, "submodel", submodel.name, `${layer[0].toUpperCase()}${layer.slice(1)} Submodel: ${submodel.name}. ${submodel.definition || ""}`));
+      documents.push(renderModeled(project, data, members, path, "subject_area", area.name, `${title} Subject Area: ${area.name}. ${area.definition || ""}`));
     }
-    const unassigned = new Set(data.entities.map((entity) => entity.key).filter((key) => !assigned.has(key)));
-    if (unassigned.size) documents.push(renderModeled(project, data, unassigned, `${layer}_default.dbml`, "default", null, `${layer[0].toUpperCase()}${layer.slice(1)} Entities without an active Submodel membership`));
     return documents;
   }
 
@@ -310,11 +332,12 @@
       throw new Error("Project identity is required for DBML generation.");
     }
     const modelType = options.modelType || "full";
-    const includeSubmodels = options.includeSubmodels !== false;
+    const includeSubjectAreas = options.includeSubjectAreas !== false;
     if (!new Set(["full", "logical", "dimensional"]).has(modelType)) throw new Error("DBML model type is invalid.");
+    const areaIndex = subjectAreaIndex(loaded);
     const documents = [];
-    if (modelType === "full" || modelType === "logical") documents.push(...modeledDocuments(loaded, project, "logical", includeSubmodels));
-    if (modelType === "full" || modelType === "dimensional") documents.push(...modeledDocuments(loaded, project, "dimensional", includeSubmodels));
+    if (modelType === "full" || modelType === "logical") documents.push(...modeledDocuments(loaded, project, "logical", includeSubjectAreas, areaIndex));
+    if (modelType === "full" || modelType === "dimensional") documents.push(...modeledDocuments(loaded, project, "dimensional", includeSubjectAreas, areaIndex));
     documents.sort((left, right) => left.path.localeCompare(right.path));
     const paths = documents.map((item) => item.path.toLowerCase());
     const sizes = documents.map((item) => encoder.encode(item.content).length);

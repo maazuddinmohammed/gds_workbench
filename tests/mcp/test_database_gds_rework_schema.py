@@ -564,15 +564,28 @@ def test_needs_review_is_rejected_by_an_applied_table(
             (tenant["tenant_id"],),
         ).fetchone()
         assert project is not None
+        # Model tables use an is_active flag; status-bearing tables keep the applied values.
+        entity = connection.execute(
+            """
+            INSERT INTO workflow.logical_entity (
+                project_id, logical_entity_schema_name, logical_entity_name,
+                logical_entity_definition, logical_entity_type, logical_entity_grain
+            ) VALUES (%s, 'silver', 'Customer', 'Customer', 'core', 'One')
+            RETURNING logical_entity_id
+            """,
+            (project["project_id"],),
+        ).fetchone()
+        assert entity is not None
         with pytest.raises(CheckViolation), connection.transaction():
             connection.execute(
                 """
-                INSERT INTO workflow.logical_entity (
-                    project_id, logical_entity_schema_name, logical_entity_name,
-                logical_entity_definition,
-                    logical_entity_type, logical_entity_grain,
-                    logical_entity_status
-                ) VALUES (%s, 'silver', 'Customer', 'Customer', 'core', 'One', 'needs_review')
+                INSERT INTO workflow.mapping_object (
+                    project_id, modeled_entity_type, logical_entity_id, source_system_id,
+                    object_mapping_status
+                )
+                SELECT %s, 'logical_entity', %s, system_id, 'needs_review'
+                  FROM core.system
+                 WHERE system_code = 'DEMO_CUSTOMER_SYSTEM'
                 """,
-                (project["project_id"],),
+                (project["project_id"], entity["logical_entity_id"]),
             )

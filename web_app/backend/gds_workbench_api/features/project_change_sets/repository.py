@@ -60,21 +60,74 @@ UPDATE workflow.analysis_result
 RETURNING analysis_result_id
 """
 
-_APPLY_SUBJECT_AREA_REVIEW_SQL: LiteralString = """
-UPDATE workflow.subject_area
-   SET subject_area_is_locked = %s, subject_area_status = %s,
-       updated_time = CURRENT_TIMESTAMP, updated_by = %s
- WHERE project_id = %s AND subject_area_id = %s
-RETURNING subject_area_id
-"""
-
-_APPLY_SUBJECT_AREA_TABLE_REVIEW_SQL: LiteralString = """
-UPDATE workflow.subject_area_table
-   SET subject_area_table_is_locked = %s, subject_area_table_status = %s,
-       updated_time = CURRENT_TIMESTAMP, updated_by = %s
- WHERE project_id = %s AND subject_area_table_id = %s
-RETURNING subject_area_table_id
-"""
+# Subject Area, Logical and Dimensional records keep a boolean lifecycle and no updated_by.
+_APPLY_MODEL_REVIEWS_SQL: dict[str, LiteralString] = {
+    "subject_area": """
+UPDATE workflow.subject_area AS target
+   SET subject_area_is_locked = %s, subject_area_is_active = (%s::TEXT = 'active'),
+       updated_time = CURRENT_TIMESTAMP
+ WHERE target.project_id = %s AND target.subject_area_id = %s
+RETURNING target.subject_area_id
+""",
+    "subject_area_table": """
+UPDATE workflow.subject_area_table AS target
+   SET subject_area_table_is_locked = %s, subject_area_table_is_active = (%s::TEXT = 'active'),
+       updated_time = CURRENT_TIMESTAMP
+ WHERE target.project_id = %s
+   AND target.subject_area_table_id = %s
+RETURNING target.subject_area_table_id
+""",
+    "logical_entity": """
+UPDATE workflow.logical_entity AS target
+   SET logical_entity_is_locked = %s, logical_entity_is_active = (%s::TEXT = 'active'),
+       updated_time = CURRENT_TIMESTAMP
+ WHERE target.project_id = %s AND target.logical_entity_id = %s
+RETURNING target.logical_entity_id
+""",
+    "logical_attribute": """
+UPDATE workflow.logical_attribute AS target
+   SET logical_attribute_is_locked = %s, logical_attribute_is_active = (%s::TEXT = 'active'),
+       updated_time = CURRENT_TIMESTAMP
+ WHERE target.project_id = %s
+   AND target.logical_attribute_id = %s
+RETURNING target.logical_attribute_id
+""",
+    "logical_relationship": """
+UPDATE workflow.logical_relationship AS target
+   SET logical_relationship_is_locked = %s,
+       logical_relationship_is_active = (%s::TEXT = 'active'),
+       updated_time = CURRENT_TIMESTAMP
+ WHERE target.project_id = %s
+   AND target.logical_relationship_id = %s
+RETURNING target.logical_relationship_id
+""",
+    "dimensional_entity": """
+UPDATE workflow.dimensional_entity AS target
+   SET dimensional_entity_is_locked = %s, dimensional_entity_is_active = (%s::TEXT = 'active'),
+       updated_time = CURRENT_TIMESTAMP
+ WHERE target.project_id = %s
+   AND target.dimensional_entity_id = %s
+RETURNING target.dimensional_entity_id
+""",
+    "dimensional_attribute": """
+UPDATE workflow.dimensional_attribute AS target
+   SET dimensional_attribute_is_locked = %s,
+       dimensional_attribute_is_active = (%s::TEXT = 'active'),
+       updated_time = CURRENT_TIMESTAMP
+ WHERE target.project_id = %s
+   AND target.dimensional_attribute_id = %s
+RETURNING target.dimensional_attribute_id
+""",
+    "dimensional_relationship": """
+UPDATE workflow.dimensional_relationship AS target
+   SET dimensional_relationship_is_locked = %s,
+       dimensional_relationship_is_active = (%s::TEXT = 'active'),
+       updated_time = CURRENT_TIMESTAMP
+ WHERE target.project_id = %s
+   AND target.dimensional_relationship_id = %s
+RETURNING target.dimensional_relationship_id
+""",
+}
 
 _APPLY_OTHER_REVIEWS_SQL: dict[str, LiteralString] = {
     "context_record": """
@@ -83,70 +136,6 @@ UPDATE project.context_record
        updated_time = CURRENT_TIMESTAMP, updated_by = %s
  WHERE project_id = %s AND context_record_id = %s::UUID
 RETURNING context_record_id
-""",
-    "logical_submodel": """
-UPDATE workflow.logical_submodel AS target
-   SET logical_submodel_is_locked = %s, logical_submodel_status = %s,
-       updated_time = CURRENT_TIMESTAMP, updated_by = %s
- WHERE target.project_id = %s
-   AND target.logical_submodel_id = %s
-RETURNING target.logical_submodel_id
-""",
-    "logical_entity": """
-UPDATE workflow.logical_entity AS target
-   SET logical_entity_is_locked = %s, logical_entity_status = %s,
-       updated_time = CURRENT_TIMESTAMP, updated_by = %s
- WHERE target.project_id = %s
-   AND target.logical_entity_id = %s
-RETURNING target.logical_entity_id
-""",
-    "logical_attribute": """
-UPDATE workflow.logical_attribute AS target
-   SET logical_attribute_is_locked = %s, logical_attribute_status = %s,
-       updated_time = CURRENT_TIMESTAMP, updated_by = %s
- WHERE target.project_id = %s
-   AND target.logical_attribute_id = %s
-RETURNING target.logical_attribute_id
-""",
-    "logical_relationship": """
-UPDATE workflow.logical_relationship AS target
-   SET logical_relationship_is_locked = %s, logical_relationship_status = %s,
-       updated_time = CURRENT_TIMESTAMP, updated_by = %s
- WHERE target.project_id = %s
-   AND target.logical_relationship_id = %s
-RETURNING target.logical_relationship_id
-""",
-    "dimensional_submodel": """
-UPDATE workflow.dimensional_submodel AS target
-   SET dimensional_submodel_is_locked = %s, dimensional_submodel_status = %s,
-       updated_time = CURRENT_TIMESTAMP, updated_by = %s
- WHERE target.project_id = %s
-   AND target.dimensional_submodel_id = %s
-RETURNING target.dimensional_submodel_id
-""",
-    "dimensional_entity": """
-UPDATE workflow.dimensional_entity AS target
-   SET dimensional_entity_is_locked = %s, dimensional_entity_status = %s,
-       updated_time = CURRENT_TIMESTAMP, updated_by = %s
- WHERE target.project_id = %s
-   AND target.dimensional_entity_id = %s
-RETURNING target.dimensional_entity_id
-""",
-    "dimensional_attribute": """
-UPDATE workflow.dimensional_attribute AS target
-   SET dimensional_attribute_is_locked = %s, dimensional_attribute_status = %s,
-       updated_time = CURRENT_TIMESTAMP, updated_by = %s
- WHERE target.project_id = %s
-   AND target.dimensional_attribute_id = %s
-RETURNING target.dimensional_attribute_id
-""",
-    "dimensional_relationship": """
-UPDATE workflow.dimensional_relationship AS target
-   SET dimensional_relationship_is_locked = %s, dimensional_relationship_status = %s,
-       updated_time = CURRENT_TIMESTAMP, updated_by = %s
- WHERE target.project_id = %s
-   AND target.dimensional_relationship_id = %s
-RETURNING target.dimensional_relationship_id
 """,
     "mapping_object": """
 UPDATE workflow.mapping_object AS target
@@ -186,7 +175,7 @@ RETURNING target.generated_code_source_system_id
 """,
     "validation_group": """
 UPDATE workflow.validation_group AS target
-   SET is_locked = %s, is_active = %s,
+   SET is_locked = %s, is_active = (%s::TEXT = 'active'),
        updated_time = CURRENT_TIMESTAMP, updated_by = %s
  WHERE target.project_id = %s
    AND target.validation_group_id = %s
@@ -194,7 +183,7 @@ RETURNING target.validation_group_id
 """,
     "validation_check": """
 UPDATE workflow.validation_check AS target
-   SET is_locked = %s, is_active = %s,
+   SET is_locked = %s, is_active = (%s::TEXT = 'active'),
        updated_time = CURRENT_TIMESTAMP, updated_by = %s
  WHERE EXISTS (SELECT 1 FROM workflow.validation_group g
        WHERE g.validation_group_id = target.validation_group_id
@@ -653,23 +642,17 @@ class PostgresProjectChangeSetRepository:
         status: str,
         actor: str,
     ) -> dict[str, Any] | None:
+        """Set one record's lock and display status; boolean lifecycles store 'active'."""
+        if dataset in _APPLY_MODEL_REVIEWS_SQL:
+            return await self._transaction.fetch_one(
+                _APPLY_MODEL_REVIEWS_SQL[dataset], (locked, status, project_id, record_id)
+            )
         queries: dict[str, LiteralString] = {
             **_APPLY_OTHER_REVIEWS_SQL,
             "analysis_result": _APPLY_ANALYSIS_REVIEW_SQL,
-            "subject_area": _APPLY_SUBJECT_AREA_REVIEW_SQL,
-            "subject_area_table": _APPLY_SUBJECT_AREA_TABLE_REVIEW_SQL,
         }
         return await self._transaction.fetch_one(
-            queries[dataset],
-            (
-                locked,
-                status == "active"
-                if dataset in {"validation_group", "validation_check"}
-                else status,
-                actor,
-                project_id,
-                record_id,
-            ),
+            queries[dataset], (locked, status, actor, project_id, record_id)
         )
 
     async def replay_review(

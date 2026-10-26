@@ -1,5 +1,6 @@
 import { WorkflowFilters } from "../workflows/WorkflowCommandCenter";
 import { reviewSelectionColumn } from "../project_record_review/selection";
+import type { SubjectAreaSummary } from "../subject_areas/api";
 import { useMemo, type ReactNode } from "react";
 import { useForm } from "@tanstack/react-form";
 import { Link } from "@tanstack/react-router";
@@ -13,10 +14,8 @@ import {
 import type {
   LogicalEntity,
   LogicalEntityFilters,
-  LogicalFilters,
   LogicalRelationship,
   LogicalRelationshipFilters,
-  LogicalSubmodel,
 } from "./api";
 import { formatRequiredDateTime as formatDateTime } from "../../shared/presentation";
 
@@ -33,8 +32,8 @@ export function LogicalEntitiesLedger({
   projectId,
   items,
   filters,
-  submodels,
-  submodelsState,
+  subjectAreas,
+  subjectAreasState,
   state,
   selectedIds, onSelectionChange,
   onApplyFilters,
@@ -44,8 +43,8 @@ export function LogicalEntitiesLedger({
   projectId: number;
   items: LogicalEntity[];
   filters: LogicalEntityFilters;
-  submodels: LogicalSubmodel[];
-  submodelsState: "loading" | "error" | "revision_mismatch" | "ready";
+  subjectAreas: SubjectAreaSummary[];
+  subjectAreasState: "loading" | "error" | "revision_mismatch" | "ready";
   state: LedgerState;
   selectedIds: Set<number>;
   onSelectionChange: (ids: Set<number>) => void;
@@ -67,9 +66,9 @@ export function LogicalEntitiesLedger({
     },
     { accessorKey: "logical_entity_dependency_order", header: "Order" },
     {
-      accessorKey: "logical_entity_status",
+      accessorKey: "logical_entity_is_active",
       header: "Status",
-      cell: ({ getValue }) => humanize(getValue<string>()),
+      cell: ({ getValue }) => getValue<boolean>() ? "Active" : "Inactive",
     },
     {
       accessorKey: "logical_entity_is_locked",
@@ -106,8 +105,8 @@ export function LogicalEntitiesLedger({
     <section className="workflow-surface" aria-label="Logical Entities">
       <LogicalEntityFilterBar
         filters={filters}
-        submodels={submodels}
-        submodelsState={submodelsState}
+        subjectAreas={subjectAreas}
+        subjectAreasState={subjectAreasState}
         onApplyFilters={onApplyFilters}
       />
       {state.isLoading ? (
@@ -168,33 +167,33 @@ export function LogicalEntitiesLedger({
 
 function LogicalEntityFilterBar({
   filters,
-  submodels,
-  submodelsState,
+  subjectAreas,
+  subjectAreasState,
   onApplyFilters,
 }: {
   filters: LogicalEntityFilters;
-  submodels: LogicalSubmodel[];
-  submodelsState: "loading" | "error" | "revision_mismatch" | "ready";
+  subjectAreas: SubjectAreaSummary[];
+  subjectAreasState: "loading" | "error" | "revision_mismatch" | "ready";
   onApplyFilters: (filters: LogicalEntityFilters) => void;
 }) {
   const form = useForm({
     defaultValues: {
       namePrefix: filters.namePrefix ?? "",
-      logicalSubmodelId: filters.logicalSubmodelId
-        ? String(filters.logicalSubmodelId)
-        : "",
-      status: filters.status ?? "",
+      subjectAreaId: filters.subjectAreaId ? String(filters.subjectAreaId) : "",
+      active: filters.active === undefined ? "" : String(filters.active),
       locked: filters.locked === undefined ? "" : String(filters.locked),
     },
     onSubmit: ({ value }) => onApplyFilters({
       ...(value.namePrefix ? { namePrefix: value.namePrefix } : {}),
-      ...(value.logicalSubmodelId
-        ? { logicalSubmodelId: Number(value.logicalSubmodelId) }
-        : {}),
-      ...(value.status ? { status: value.status as NonNullable<LogicalFilters["status"]> } : {}),
+      ...(value.subjectAreaId ? { subjectAreaId: Number(value.subjectAreaId) } : {}),
+      ...(value.active ? { active: value.active === "true" } : {}),
       ...(value.locked ? { locked: value.locked === "true" } : {}),
     }),
   });
+  // Only active areas have active Objects to filter by; the list is short, so sort by name.
+  const areaOptions = subjectAreas
+    .filter((area) => area.subject_area_is_active)
+    .sort((left, right) => left.subject_area_name.localeCompare(right.subject_area_name));
   return (
     <WorkflowFilters><form
       className="workflow-filterbar logical-filterbar logical-entity-filterbar"
@@ -218,38 +217,35 @@ function LogicalEntityFilterBar({
           </label>
         )}
       </form.Field>
-      <form.Field name="logicalSubmodelId">
+      <form.Field name="subjectAreaId">
         {(field) => (
           <label>
-            <span>Entity Submodel</span>
+            <span>Subject Area</span>
             <select
-              aria-label="Entity Submodel"
+              aria-label="Subject Area"
               value={field.state.value}
-              disabled={submodelsState !== "ready"}
+              disabled={subjectAreasState !== "ready"}
               onChange={(event) => field.handleChange(event.target.value)}
             >
               <option value="">
-                {submodelsState === "loading"
-                  ? "Loading Submodels…"
-                  : submodelsState === "error"
-                    ? "Submodels unavailable"
-                    : submodelsState === "revision_mismatch"
-                      ? "Refresh Submodels"
-                      : "All Submodels"}
+                {subjectAreasState === "loading"
+                  ? "Loading Subject Areas…"
+                  : subjectAreasState === "error"
+                    ? "Subject Areas unavailable"
+                    : subjectAreasState === "revision_mismatch"
+                      ? "Refresh Subject Areas"
+                      : "All Subject Areas"}
               </option>
-              {submodels.map((submodel) => (
-                <option
-                  key={submodel.logical_submodel_id}
-                  value={String(submodel.logical_submodel_id)}
-                >
-                  {submodel.logical_submodel_name}
+              {areaOptions.map((area) => (
+                <option key={area.subject_area_id} value={String(area.subject_area_id)}>
+                  {area.subject_area_name}
                 </option>
               ))}
             </select>
           </label>
         )}
       </form.Field>
-      <form.Field name="status">
+      <form.Field name="active">
         {(field) => (
           <label>
             <span>Entity status</span>
@@ -259,9 +255,8 @@ function LogicalEntityFilterBar({
               onChange={(event) => field.handleChange(event.target.value)}
             >
               <option value="">All statuses</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="deprecated">Deprecated</option>
+              <option value="true">Active</option>
+              <option value="false">Inactive</option>
             </select>
           </label>
         )}
@@ -287,8 +282,8 @@ function LogicalEntityFilterBar({
           className="button button-secondary button-small"
           type="button"
           onClick={() => {
-            form.reset({ namePrefix: "", logicalSubmodelId: "", status: "active", locked: "" });
-            onApplyFilters({ status: "active" });
+            form.reset({ namePrefix: "", subjectAreaId: "", active: "true", locked: "" });
+            onApplyFilters({ active: true });
           }}
         >
           Clear
@@ -321,9 +316,9 @@ export function LogicalRelationshipsLedger({
   onApplyFilters: (filters: LogicalRelationshipFilters) => void;
   onLoadMore: () => void;
 }) {
+  // Relationships point from the child Entity's foreign key to the parent Entity's key.
   const columns = useMemo<ColumnDef<LogicalRelationship>[]>(() => [
     reviewSelectionColumn(items, { selectedIds, onSelectionChange }, (item) => item.logical_relationship_id, "Logical Relationships"),
-    { accessorKey: "logical_relationship_name", header: "Relationship" },
     {
       id: "from",
       header: "From",
@@ -350,9 +345,19 @@ export function LogicalRelationshipsLedger({
       cell: ({ getValue }) => humanize(getValue<string>()),
     },
     {
-      accessorKey: "logical_relationship_status",
+      accessorKey: "logical_relationship_is_active",
       header: "Status",
-      cell: ({ getValue }) => humanize(getValue<string>()),
+      cell: ({ getValue }) => getValue<boolean>() ? "Active" : "Inactive",
+    },
+    {
+      accessorKey: "logical_relationship_is_locked",
+      header: "Lock",
+      cell: ({ getValue }) => getValue<boolean>() ? "Locked" : "Open",
+    },
+    {
+      accessorKey: "updated_at",
+      header: "Updated",
+      cell: ({ getValue }) => formatDateTime(getValue<string>()),
     },
     {
       id: "action",
@@ -380,140 +385,49 @@ export function LogicalRelationshipsLedger({
       columns={columns}
       state={state}
       onLoadMore={onLoadMore}
-      filters={(
-        <LogicalCollectionFilterBar
-          kind="Relationship"
-          filters={filters}
-          includeEntity
-          onApplyFilters={onApplyFilters}
-        />
-      )}
+      filters={<LogicalRelationshipFilterBar filters={filters} onApplyFilters={onApplyFilters} />}
     />
   );
 }
 
-export function LogicalSubmodelsLedger({
-  tenantId,
-  projectId,
-  items,
+function LogicalRelationshipFilterBar({
   filters,
-  state,
-  selectedIds, onSelectionChange,
-  onApplyFilters,
-  onLoadMore,
-}: {
-  tenantId: number;
-  projectId: number;
-  items: LogicalSubmodel[];
-  filters: LogicalFilters;
-  state: LedgerState;
-  selectedIds: Set<number>;
-  onSelectionChange: (ids: Set<number>) => void;
-  onApplyFilters: (filters: LogicalFilters) => void;
-  onLoadMore: () => void;
-}) {
-  const columns = useMemo<ColumnDef<LogicalSubmodel>[]>(() => [
-    reviewSelectionColumn(items, { selectedIds, onSelectionChange }, (item) => item.logical_submodel_id, "Logical Submodels"),
-    { accessorKey: "logical_submodel_name", header: "Logical Submodel" },
-    { accessorKey: "entity_count", header: "Entities" },
-    {
-      accessorKey: "logical_submodel_status",
-      header: "Status",
-      cell: ({ getValue }) => humanize(getValue<string>()),
-    },
-    {
-      accessorKey: "logical_submodel_is_locked",
-      header: "Lock",
-      cell: ({ getValue }) => getValue<boolean>() ? "Locked" : "Open",
-    },
-    {
-      accessorKey: "updated_at",
-      header: "Updated",
-      cell: ({ getValue }) => formatDateTime(getValue<string>()),
-    },
-    {
-      id: "action",
-      header: "",
-      cell: ({ row }) => (
-        <Link
-          className="text-action"
-          aria-label={`Open Logical Submodel ${row.original.logical_submodel_id}`}
-          to="/tenants/$tenantId/projects/$projectId/logical/submodels/$submodelId"
-          params={{
-            tenantId: String(tenantId),
-            projectId: String(projectId),
-            submodelId: String(row.original.logical_submodel_id),
-          }}
-        >
-          Show details
-        </Link>
-      ),
-    },
-  ], [items, selectedIds, onSelectionChange, projectId, tenantId]);
-  return (
-    <LogicalLedgerSurface
-      tableLabel="Logical Submodels"
-      items={items}
-      columns={columns}
-      state={state}
-      onLoadMore={onLoadMore}
-      filters={(
-        <LogicalCollectionFilterBar
-          kind="Submodel"
-          filters={filters}
-          onApplyFilters={onApplyFilters}
-        />
-      )}
-    />
-  );
-}
-
-function LogicalCollectionFilterBar<T extends LogicalFilters>({
-  kind,
-  filters,
-  includeEntity = false,
   onApplyFilters,
 }: {
-  kind: "Relationship" | "Submodel";
-  filters: T;
-  includeEntity?: boolean;
-  onApplyFilters: (filters: T) => void;
+  filters: LogicalRelationshipFilters;
+  onApplyFilters: (filters: LogicalRelationshipFilters) => void;
 }) {
-  const filterWithEntity = filters as LogicalRelationshipFilters;
   const form = useForm({
     defaultValues: {
-      namePrefix: filters.namePrefix ?? "",
-      status: filters.status ?? "",
+      logicalEntityId: filters.logicalEntityId ? String(filters.logicalEntityId) : "",
+      active: filters.active === undefined ? "" : String(filters.active),
       locked: filters.locked === undefined ? "" : String(filters.locked),
-      logicalEntityId: filterWithEntity.logicalEntityId
-        ? String(filterWithEntity.logicalEntityId)
-        : "",
     },
     onSubmit: ({ value }) => onApplyFilters({
-      ...(value.namePrefix ? { namePrefix: value.namePrefix } : {}),
-      ...(value.status ? { status: value.status as NonNullable<LogicalFilters["status"]> } : {}),
+      ...(value.logicalEntityId ? { logicalEntityId: Number(value.logicalEntityId) } : {}),
+      ...(value.active ? { active: value.active === "true" } : {}),
       ...(value.locked ? { locked: value.locked === "true" } : {}),
-      ...(includeEntity && value.logicalEntityId
-        ? { logicalEntityId: Number(value.logicalEntityId) }
-        : {}),
-    } as T),
+    }),
   });
   return (
     <WorkflowFilters><form
-      className={`workflow-filterbar logical-filterbar${includeEntity ? " has-entity-filter" : ""}`}
-      aria-label={`Filter Logical ${kind}s`}
+      className="workflow-filterbar logical-filterbar"
+      aria-label="Filter Logical Relationships"
       onSubmit={(event) => {
         event.preventDefault();
         event.stopPropagation();
         void form.handleSubmit();
       }}
     >
-      <form.Field name="namePrefix">
+      <form.Field name="logicalEntityId">
         {(field) => (
           <label>
-            <span>{kind} name prefix</span>
+            <span>Entity ID</span>
             <input
-              aria-label={`${kind} name prefix`}
+              aria-label="Relationship Entity ID"
+              type="number"
+              min="1"
+              step="1"
               value={field.state.value}
               onBlur={field.handleBlur}
               onChange={(event) => field.handleChange(event.target.value)}
@@ -521,37 +435,18 @@ function LogicalCollectionFilterBar<T extends LogicalFilters>({
           </label>
         )}
       </form.Field>
-      {includeEntity ? (
-        <form.Field name="logicalEntityId">
-          {(field) => (
-            <label>
-              <span>Entity ID</span>
-              <input
-                aria-label={`${kind} Entity ID`}
-                type="number"
-                min="1"
-                step="1"
-                value={field.state.value}
-                onBlur={field.handleBlur}
-                onChange={(event) => field.handleChange(event.target.value)}
-              />
-            </label>
-          )}
-        </form.Field>
-      ) : null}
-      <form.Field name="status">
+      <form.Field name="active">
         {(field) => (
           <label>
-            <span>{kind} status</span>
+            <span>Relationship status</span>
             <select
-              aria-label={`${kind} status`}
+              aria-label="Relationship status"
               value={field.state.value}
               onChange={(event) => field.handleChange(event.target.value)}
             >
               <option value="">All statuses</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="deprecated">Deprecated</option>
+              <option value="true">Active</option>
+              <option value="false">Inactive</option>
             </select>
           </label>
         )}
@@ -559,9 +454,9 @@ function LogicalCollectionFilterBar<T extends LogicalFilters>({
       <form.Field name="locked">
         {(field) => (
           <label>
-            <span>{kind} lock</span>
+            <span>Relationship lock</span>
             <select
-              aria-label={`${kind} lock`}
+              aria-label="Relationship lock"
               value={field.state.value}
               onChange={(event) => field.handleChange(event.target.value)}
             >
@@ -577,14 +472,14 @@ function LogicalCollectionFilterBar<T extends LogicalFilters>({
           className="button button-secondary button-small"
           type="button"
           onClick={() => {
-            form.reset({ namePrefix: "", logicalEntityId: "", status: "active", locked: "" });
-            onApplyFilters({ status: "active" } as T);
+            form.reset({ logicalEntityId: "", active: "true", locked: "" });
+            onApplyFilters({ active: true });
           }}
         >
           Clear
         </button>
         <button className="button button-secondary button-small" type="submit">
-          Apply {kind} filters
+          Apply Relationship filters
         </button>
       </div>
     </form></WorkflowFilters>

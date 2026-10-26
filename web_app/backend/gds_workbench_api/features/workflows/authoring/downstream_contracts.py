@@ -64,7 +64,6 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             "example": [
                 {
                     "is_locked": False,
-                    "mapping_order": 1,
                     "object": {
                         "attributes": [
                             {
@@ -702,13 +701,6 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                         "properties": {
                             "role": {"title": "Role", "type": "string"},
                             "rationale": {"title": "Rationale", "type": "string"},
-                            "mapping_order": {
-                                "anyOf": [
-                                    {"exclusiveMinimum": 0, "type": "integer"},
-                                    {"type": "null"},
-                                ],
-                                "title": "Mapping Order",
-                            },
                             "is_locked": {"title": "Is Locked", "type": "boolean"},
                             "object": {"$ref": "#/$defs/SqlSourceObject"},
                             "source_system_code": {"type": "string", "minLength": 1},
@@ -716,7 +708,6 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                         "required": [
                             "role",
                             "rationale",
-                            "mapping_order",
                             "is_locked",
                             "object",
                             "source_system_code",
@@ -845,7 +836,6 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                 {
                     "role": "primary",
                     "rationale": "Recorded customer source.",
-                    "mapping_order": 1,
                     "is_locked": False,
                     "object": {
                         "tenant_code": "NWA",
@@ -1547,13 +1537,6 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                         "properties": {
                             "role": {"title": "Role", "type": "string"},
                             "rationale": {"title": "Rationale", "type": "string"},
-                            "mapping_order": {
-                                "anyOf": [
-                                    {"exclusiveMinimum": 0, "type": "integer"},
-                                    {"type": "null"},
-                                ],
-                                "title": "Mapping Order",
-                            },
                             "is_locked": {"title": "Is Locked", "type": "boolean"},
                             "object": {"$ref": "#/$defs/source_metadata_SqlSourceObject"},
                             "source_system_code": {"type": "string", "minLength": 1},
@@ -1561,7 +1544,6 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                         "required": [
                             "role",
                             "rationale",
-                            "mapping_order",
                             "is_locked",
                             "object",
                             "source_system_code",
@@ -1902,7 +1884,6 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             {
                                 "role": "primary",
                                 "rationale": "Recorded customer source.",
-                                "mapping_order": 1,
                                 "is_locked": False,
                                 "object": {
                                     "tenant_code": "NWA",

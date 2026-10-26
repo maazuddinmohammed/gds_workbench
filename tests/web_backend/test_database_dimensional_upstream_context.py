@@ -9,19 +9,21 @@ from uuid import uuid4
 
 import pytest
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.workflows.authoring.context import (
-    _SUPPORTING_OBJECT_IDS_SQL,
-    PostgresAgentContextRepository,
-)
-from gds_workbench_api.features.workflows.authoring.context_inputs import OBJECT_FIELDS
 from psycopg.types.json import Jsonb
-
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.enrichment_test_support import seed_project_enrichment
 from tests.web_backend.test_database_mapping_source_context import _seed_mapping_scope
 from tests.web_backend.test_database_project_change_sets import _required_id
 from tests.web_backend.test_dimensional_executor import _plan
+
+from gds_workbench_api.database import WebPostgresDatabase
+from gds_workbench_api.features.workflows.authoring.context import (
+    _SUPPORTING_OBJECT_IDS_SQL,
+    PostgresAgentContextRepository,
+    focus_subject_area,
+)
+from gds_workbench_api.features.workflows.authoring.context_inputs import OBJECT_FIELDS
+from gds_workbench_api.features.workflows.authoring.plan import PlannedSubjectArea
 
 
 @pytest.mark.asyncio
@@ -63,34 +65,34 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
                 ).fetchone(),
                 "logical_entity_id",
             )
-        for name, project_id, entity_id, physical_active, support_status in (
+        for name, project_id, entity_id, physical_active, support_active in (
             (
                 "inactive_support",
                 scope.plan.project_id,
                 scope.logical_entity_id,
                 True,
-                "inactive",
+                False,
             ),
             (
                 "inactive_object",
                 scope.plan.project_id,
                 scope.logical_entity_id,
                 False,
-                "active",
+                True,
             ),
             (
                 "unselected_entity",
                 scope.plan.project_id,
                 extra_entity_ids["Unselected"],
                 True,
-                "active",
+                True,
             ),
             (
                 "other_project",
                 other_project_id,
                 extra_entity_ids["OtherProject"],
                 True,
-                "active",
+                True,
             ),
         ):
             object_id = _required_id(
@@ -118,10 +120,10 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
             )
             connection.execute(
                 """INSERT INTO workflow.logical_entity_source_mapping (
-                    project_id,logical_entity_id,support_source_type,source_object_id,
-                    logical_entity_source_mapping_rationale,logical_entity_source_mapping_status)
-                    VALUES (%s,%s,'object',%s,'Excluded support fixture.',%s)""",
-                (project_id, entity_id, object_id, support_status),
+                    project_id,logical_entity_id,source_object_id,
+                    logical_entity_source_mapping_rationale,logical_entity_source_mapping_is_active)
+                    VALUES (%s,%s,%s,'Excluded support fixture.',%s)""",
+                (project_id, entity_id, object_id, support_active),
             )
         connection.execute(
             """UPDATE core.object SET object_description='Enriched supported order source.'
@@ -153,6 +155,26 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
                  WHERE source.object_id=%s AND target.object_id=%s""",
             (scope.plan.project_id, scope.source_object_id, scope.bronze_object_id),
         )
+        # The Build works on the Subject Area holding the Bronze table the Logical Entity
+        # is built from.
+        area = PlannedSubjectArea(
+            subject_area_id=_required_id(
+                connection.execute(
+                    """INSERT INTO workflow.subject_area (
+                    project_id,subject_area_name,subject_area_definition)
+                    VALUES (%s,'Orders','Customer orders.') RETURNING subject_area_id""",
+                    (scope.plan.project_id,),
+                ).fetchone(),
+                "subject_area_id",
+            ),
+            subject_area_name="Orders",
+            subject_area_definition="Customer orders.",
+        )
+        connection.execute(
+            "INSERT INTO workflow.subject_area_table (project_id,subject_area_id,object_id) "
+            "VALUES (%s,%s,%s)",
+            (scope.plan.project_id, area.subject_area_id, scope.bronze_object_id),
+        )
         project_row = connection.execute(
             "SELECT project_revision FROM project.project WHERE project_id=%s",
             (scope.plan.project_id,),
@@ -172,17 +194,24 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
                 actor_principal_id,actor_entra_principal_identity_id,
                 agent_sdk_code,agent_provider_code,agent_model_code,reasoning_effort_code,
                 max_turns,validation_retry_count,selected_scope_digest,selected_scope_count,
-                workflow_run_state,correlation_id,started_time,modeled_entity_type)
+                workflow_run_state,correlation_id,started_time,modeled_entity_type,
+                workflow_operation)
                 SELECT tenant_id,project_id,%s,'dimensional',%s,
                        actor_principal_id,actor_entra_principal_identity_id,
                        agent_sdk_code,agent_provider_code,agent_model_code,reasoning_effort_code,
                        max_turns,validation_retry_count,selected_scope_digest,1,
-                       'running',%s,CURRENT_TIMESTAMP,'logical_entity'
+                       'running',%s,CURRENT_TIMESTAMP,'logical_entity','build'
                   FROM application.workflow_run WHERE workflow_run_id=%s
                 RETURNING workflow_run_id""",
                 (revision, mode, uuid4(), scope.plan.workflow_run_id),
             ).fetchone(),
             "workflow_run_id",
+        )
+        connection.execute(
+            """INSERT INTO application.workflow_run_subject_area_selection (
+                workflow_run_id,project_id,subject_area_id,selection_order)
+                VALUES (%s,%s,%s,1)""",
+            (run_id, scope.plan.project_id, area.subject_area_id),
         )
         connection.execute(
             """INSERT INTO application.workflow_run_entity_selection (
@@ -216,18 +245,11 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
     )
     await runtime.open()
     try:
-        async with runtime.read_transaction(
-            isolation=ReadIsolation.REPEATABLE_READ
-        ) as transaction:
+        async with runtime.read_transaction(isolation=ReadIsolation.REPEATABLE_READ) as transaction:
             probe = await transaction.fetch_all(
                 _SUPPORTING_OBJECT_IDS_SQL,
                 (
-                    Jsonb(
-                        [
-                            {field: row[field] for field in OBJECT_FIELDS}
-                            for row in probe_rows
-                        ]
-                    ),
+                    Jsonb([{field: row[field] for field in OBJECT_FIELDS} for row in probe_rows]),
                     scope.tenant_id,
                 ),
             )
@@ -235,20 +257,32 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
                 scope.bronze_object_id,
                 scope.source_object_id,
             }
+            plan = _plan(mode=mode, subject_areas=(area,)).model_copy(
+                update={
+                    "project_id": scope.plan.project_id,
+                    "project_revision": revision,
+                    "workflow_run_id": run_id,
+                    "selected_entity_ids": (scope.logical_entity_id,),
+                }
+            )
             result = await PostgresAgentContextRepository().load(
-                transaction,
-                tenant_id=scope.tenant_id,
-                plan=_plan(mode=mode).model_copy(
-                    update={
-                        "project_id": scope.plan.project_id,
-                        "project_revision": revision,
-                        "workflow_run_id": run_id,
-                        "selected_entity_ids": (scope.logical_entity_id,),
-                    }
-                ),
+                transaction, tenant_id=scope.tenant_id, plan=plan
             )
     finally:
         await runtime.close()
+    # A Build is packaged per Subject Area, not as a whole.
+    assert result.embedded_context == {} and result.tool_catalog is None
+    assert result.snapshot is not None
+    focused = focus_subject_area(
+        result,
+        plan=plan,
+        subject_area=area,
+        logical=result.snapshot.logical,
+        dimensional=result.snapshot.dimensional,
+    )
+    assert focused is not None
+    assert len(focused.context.selected_logical_entities) == 1
+    assert focused.context.supporting_objects == result.context.supporting_objects
     assert result.context.project_details.logical_entity_scd_type == "type_1"
     assert result.context.project_details.dimensional_entity_scd_type == "type_2"
     assert result.context.selected_objects == ()
@@ -264,9 +298,7 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
         if row["object_id"] != foreign.bronze_object_id
     }
     assert actual_keys == expected_keys
-    assert {
-        group.object.object_schema for group in result.context.supporting_objects
-    } == {
+    assert {group.object.object_schema for group in result.context.supporting_objects} == {
         "sales",
         "source",
     }
@@ -276,10 +308,15 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
         for group in result.context.supporting_objects
     )
     values = (
-        result.tool_catalog.prompt_values
-        if result.tool_catalog
-        else cast(dict[str, Any], result.embedded_context)["prompt_inputs"]
+        focused.tool_catalog.prompt_values
+        if focused.tool_catalog
+        else cast(dict[str, Any], focused.embedded_context)["prompt_inputs"]
     )
+    assert values["subject_area_context"] == {
+        "name": "Orders",
+        "definition": "Customer orders.",
+        "input_count": 1,
+    }
     assert values["dimensional_entity_scd_type"] == "type_2"
     assert len(values["object_context"]) == len(values["object_attribute_context"]) == 2
     assert len(values["source_context"]) == len(values["ingestion_mapping"]) == 1
@@ -293,26 +330,16 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
         for attribute in attributes
     )
     profiles = [
-        attribute["profile"]
-        for attribute in attributes
-        if attribute["profile"] is not None
+        attribute["profile"] for attribute in attributes if attribute["profile"] is not None
     ]
     assert len(profiles) == 1 and profiles[0]["distinct_count"] == 8
     assert profiles[0]["profiled_at"] is not None
     assert profiles[0]["row_scope"] is None
     assert (
-        sum(
-            len(group["outgoing_relationships"])
-            for group in values["object_relationship_context"]
-        )
+        sum(len(group["outgoing_relationships"]) for group in values["object_relationship_context"])
         == 1
     )
-    if result.tool_catalog:
+    if focused.tool_catalog:
         assert (
-            len(
-                cast(dict[str, Any], result.tool_catalog.invoke("get_objects", {}))[
-                    "items"
-                ]
-            )
-            == 2
+            len(cast(dict[str, Any], focused.tool_catalog.invoke("get_objects", {}))["items"]) == 2
         )

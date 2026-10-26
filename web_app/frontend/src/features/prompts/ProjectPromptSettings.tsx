@@ -8,7 +8,7 @@ import {
   type ColumnDef,
 } from "@tanstack/react-table";
 
-import { WorkspaceToolbar } from "../../shared/ui";
+import { RefreshButton, WorkspaceToolbar } from "../../shared/ui";
 import { ApiError } from "../../core/http";
 import { ProjectSettingsTabs } from "../projects/ProjectSettingsScreen";
 import type { ProjectDetail } from "../projects/api";
@@ -131,17 +131,13 @@ export function ProjectPromptSettings({
     <section className="project-prompt-settings page-enter" aria-labelledby="project-prompts-heading">
       <h1 className="project-section-title sr-only" id="project-prompts-heading">Prompts</h1>
       <WorkspaceToolbar actions={
-          <button
-            className="button button-secondary button-small"
-            type="button"
-            disabled={query.isFetching}
+          <RefreshButton
+            refreshing={query.isFetching}
             onClick={() => void Promise.all([
               query.refetch(),
               queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
             ])}
-          >
-            {query.isFetching ? "Refreshing…" : "Refresh"}
-          </button>
+          />
       }>
         <ProjectSettingsTabs project={project} active="prompts" />
         <span className={canAssign ? "lock-context is-held" : "lock-context"}>{permissionLabel}</span>

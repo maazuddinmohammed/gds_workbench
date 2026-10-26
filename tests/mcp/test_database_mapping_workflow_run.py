@@ -459,7 +459,7 @@ def test_mapping_run_rejects_invalid_entity_atomically(
             connection.execute(
                 """
                 UPDATE workflow.logical_entity
-                   SET logical_entity_status = 'inactive'
+                   SET logical_entity_is_active = FALSE
                  WHERE logical_entity_id = %s
                 """,
                 (context.modeled_entity_id,),

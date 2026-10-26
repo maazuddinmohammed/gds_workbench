@@ -64,9 +64,7 @@ def project_dimensional_gold_policy(
         raise InvalidRequestError("The Gold policy template group is incomplete.")
     technical = _parse_technical_policy(raw_technical_template)
     audit = _parse_audit_policy(raw_audit_template)
-    baseline = applied or DimensionalSection(
-        submodels=(), entities=(), attributes=(), relationships=()
-    )
+    baseline = applied or DimensionalSection(entities=(), attributes=(), relationships=())
     changes_by_dataset = {change.dataset: change for change in changes}
     if len(changes_by_dataset) != len(changes) or any(
         not change.dataset.startswith("dimensional_") for change in changes
@@ -111,7 +109,7 @@ def project_dimensional_gold_policy(
 
     projected: list[DimensionalAttributeRecord] = []
     for entity_key, entity in sorted(entities.items()):
-        if entity.dimensional_entity_status != "active":
+        if not entity.dimensional_entity_is_active:
             continue
         entity_attributes = [record for key, record in attributes.items() if key[:2] == entity_key]
         is_new_entity = entity_key not in {_entity_key(row) for row in baseline.entities}
@@ -147,8 +145,7 @@ def project_dimensional_gold_policy(
         policy_ordinal_base = business_ordinal
         if entity.dimensional_entity_type in ("fact", "bridge"):
             policy_ordinal_base += sum(
-                _attribute_key(record) in foreign_keys
-                and record.dimensional_attribute_status == "active"
+                _attribute_key(record) in foreign_keys and record.dimensional_attribute_is_active
                 for record in entity_attributes
             )
         specifications: list[tuple[GoldPolicyColumn, Literal["technical", "audit"], str]] = []
@@ -245,12 +242,7 @@ def project_dimensional_gold_policy(
     }
 
     output: list[StageProjectChange] = []
-    for dataset in (
-        "dimensional_submodel",
-        "dimensional_entity",
-        "dimensional_attribute",
-        "dimensional_relationship",
-    ):
+    for dataset in ("dimensional_entity", "dimensional_attribute", "dimensional_relationship"):
         if dataset == "dimensional_attribute":
             records = [
                 record.model_dump(mode="json")
@@ -282,9 +274,7 @@ def project_dimensional_foreign_key_policy(
     if raw_technical_template is None:
         return changes
     technical = _parse_technical_policy(raw_technical_template)
-    baseline = applied or DimensionalSection(
-        submodels=(), entities=(), attributes=(), relationships=()
-    )
+    baseline = applied or DimensionalSection(entities=(), attributes=(), relationships=())
     changes_by_dataset = {change.dataset: change for change in changes}
     if len(changes_by_dataset) != len(changes) or any(
         not change.dataset.startswith("dimensional_") for change in changes
@@ -339,7 +329,7 @@ def project_dimensional_foreign_key_policy(
     projected_fk_keys: set[tuple[str, str, str]] = set()
     affected_entity_keys: set[tuple[str, str]] = set()
     for relationship in changed_relationships:
-        if relationship.dimensional_relationship_status != "active":
+        if not relationship.dimensional_relationship_is_active:
             projected_relationships.append(relationship)
             continue
         from_key = (
@@ -367,7 +357,7 @@ def project_dimensional_foreign_key_policy(
                 for attribute in attributes.values()
                 if _entity_key_from_attribute(attribute) == to_key
                 and attribute.dimensional_attribute_is_surrogate_key
-                and attribute.dimensional_attribute_status == "active"
+                and attribute.dimensional_attribute_is_active
             ]
             if len(surrogate_candidates) != 1:
                 raise DimensionalProjectionConflictError(
@@ -375,6 +365,14 @@ def project_dimensional_foreign_key_policy(
                 )
             surrogate = surrogate_candidates[0]
             role_name = relationship.dimensional_relationship_role_name
+            # A reference is optional when its business foreign-key column may be null.
+            business_key = attributes.get(
+                (
+                    *from_key,
+                    normalize_project_key_value(relationship.from_dimensional_attribute_name),
+                )
+            )
+            optional = business_key is None or business_key.dimensional_attribute_is_nullable
             try:
                 semantic_name = (
                     technical.fact_bridge_foreign_key.with_role_semantic_name_template.format(
@@ -394,7 +392,7 @@ def project_dimensional_foreign_key_policy(
                 column = GoldPolicyColumn(
                     semantic_name=semantic_name,
                     data_type=surrogate.dimensional_attribute_data_type,
-                    nullable=relationship.dimensional_relationship_is_optional,
+                    nullable=optional,
                     definition=definition,
                 )
             except KeyError, ValidationError:
@@ -518,12 +516,7 @@ def project_dimensional_foreign_key_policy(
     changed_attribute_by_key = {_attribute_key(record): record for record in changed_attributes}
     changed_attribute_by_key.update(projected_attributes)
     output: list[StageProjectChange] = []
-    for dataset in (
-        "dimensional_submodel",
-        "dimensional_entity",
-        "dimensional_attribute",
-        "dimensional_relationship",
-    ):
+    for dataset in ("dimensional_entity", "dimensional_attribute", "dimensional_relationship"):
         if dataset == "dimensional_attribute":
             records = [
                 record.model_dump(mode="json")
@@ -547,7 +540,7 @@ def project_dimensional_foreign_key_policy(
 
 
 def dimensional_relationship_key(record: DimensionalRelationshipRecord) -> tuple[str, ...]:
-    """Use the canonical endpoint/kind/role identity; display names may repeat."""
+    """A Relationship is its child foreign-key Attribute."""
     return tuple(
         normalize_project_key_value(str(getattr(record, field) or ""))
         for field in CHANGE_SET_DATASETS_BY_NAME["dimensional_relationship"].canonical_key
@@ -591,7 +584,7 @@ def dimensional_policy_attribute_keys(
         *((record, False) for record in relationships),
         *((record, True) for record in (applied.relationships if applied else ())),
     ):
-        if not existing and relationship.dimensional_relationship_status != "active":
+        if not existing and not relationship.dimensional_relationship_is_active:
             continue
         from_key = (
             normalize_project_key_value(relationship.from_dimensional_entity_schema_name),
@@ -705,7 +698,7 @@ def _policy_attribute(
         dimensional_attribute_is_natural_key=False,
         dimensional_attribute_is_surrogate_key=key_role == "surrogate",
         dimensional_attribute_is_audit_column=role == "audit",
-        dimensional_attribute_status="active",
+        dimensional_attribute_is_active=True,
         dimensional_attribute_is_locked=(
             existing.dimensional_attribute_is_locked if existing is not None else False
         ),

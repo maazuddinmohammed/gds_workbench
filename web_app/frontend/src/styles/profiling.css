@@ -732,12 +732,12 @@
     grid-template-columns: repeat(2, minmax(8rem, 1fr));
   }
 
-  .dimensional-filterbar.has-entity-filter {
+  .dimensional-entity-filterbar {
     grid-template-columns: repeat(2, minmax(8rem, 1fr));
   }
 
   .logical-entity-filterbar .workflow-filter-actions,
-  .dimensional-filterbar.has-entity-filter .workflow-filter-actions {
+  .dimensional-entity-filterbar .workflow-filter-actions {
     grid-column: 2;
   }
 
@@ -779,7 +779,7 @@
   }
 
   .logical-entity-filterbar .workflow-filter-actions,
-  .dimensional-filterbar.has-entity-filter .workflow-filter-actions {
+  .dimensional-entity-filterbar .workflow-filter-actions {
     grid-column: auto;
   }
 

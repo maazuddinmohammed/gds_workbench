@@ -63,8 +63,9 @@
   function records(datasets, name, source = "records") {
     return datasets?.get(name)?.[source] || [];
   }
+  // Model records carry `<prefix>_is_active`; Mapping and Code records keep a named status.
   function active(record, field = null) {
-    return field ? record?.[field] === "active" : core.active(record) !== false;
+    return field ? record?.[field] === true || record?.[field] === "active" : core.active(record) !== false;
   }
   function hasTransformationContent(value) {
     if (value && typeof value === "object") return Object.values(value).some(hasTransformationContent);
@@ -140,7 +141,6 @@
   }
 
   function nestedKey(record) {
-    if (record?.submodel_name !== undefined) return tuple(["submodel", record.submodel_name]);
     if (record?.support_source_type === "context_record") {
       return tuple(["context_record", record.context_record?.context_record_id]);
     }
@@ -177,15 +177,13 @@
           issue(issues, "context_group_child_locked", name, "context_group_name",
             "A locked Context Record protects its group metadata and scope.");
         }
-        for (const field of ["submodels", "sources"]) {
-          const changedItems = new Map((changed[field] || []).map((item) => [nestedKey(item), item]));
-          for (const item of existing[field] || []) {
-            const replacement = changedItems.get(nestedKey(item));
-            if (replacement && locked(item) &&
-                core.stableStringify(item) !== core.stableStringify(replacement)) {
-              issue(issues, "record_locked", name, field,
-                `A locked applied nested ${field} record cannot be changed.`);
-            }
+        const changedSources = new Map((changed.sources || []).map((item) => [nestedKey(item), item]));
+        for (const item of existing.sources || []) {
+          const replacement = changedSources.get(nestedKey(item));
+          if (replacement && locked(item) &&
+              core.stableStringify(item) !== core.stableStringify(replacement)) {
+            issue(issues, "record_locked", name, "sources",
+              "A locked applied nested sources record cannot be changed.");
           }
         }
       }
@@ -209,10 +207,10 @@
       if (core.stableStringify(before) === core.stableStringify(after)) return true;
       if ((field === "is_locked" || field.endsWith("_is_locked")) &&
           typeof before === "boolean" && typeof after === "boolean") return true;
-      if (field === "is_active" && before === true && after === false) return true;
+      if ((field === "is_active" || field.endsWith("_is_active")) && before === true && after === false) return true;
       if ((field === "status" || field.endsWith("_status")) &&
           before === "active" && after === "inactive") return true;
-      return ["sources", "submodels"].includes(field) &&
+      return field === "sources" &&
         Array.isArray(before) && Array.isArray(after) && before.length === after.length &&
         before.every((item, index) => retainsPhysicalReferences(item, after[index]));
     });
@@ -343,7 +341,7 @@
     for (const record of records(project, "subject_area_table"))
       if (!(retained("subject_area_table", record) ? catalog.objects : activeInputs).has(physicalKey(record)))
         scopeIssue(issues, "subject_area_table", "object_name",
-          "Subject Area table is not in active Project Input Scope.");
+          "Subject Area Object is not in active Project Input Scope.");
     for (const name of ["logical_entity", "logical_attribute"])
       for (const record of records(project, name))
         for (const source of record.sources || []) requireSource(source, name,
@@ -414,17 +412,26 @@
       if (!subjectAreas.has(normalized(record.subject_area_name))) issue(issues,
         "reference_not_found", "subject_area_table", "subject_area_name",
         "Referenced record is not present in the future Project graph.");
+    // Type codes come from the read-only lists (MCP reference_code_invalid). New or changed
+    // records need an active code; retained applied records may keep a code retired later.
+    const historical = historicalRecords(project);
+    for (const [dataset, field] of [["logical_entity", "logical_entity_type"], ["dimensional_entity", "dimensional_fact_type"]]) {
+      if (!project.has(field)) continue;
+      const codeIsActive = new Map(records(project, field).map((record) => [record[`${field}_code`], record[`${field}_is_active`]]));
+      for (const record of records(project, dataset)) {
+        const code = record[field];
+        if (code === null || code === undefined || codeIsActive.get(code) === true ||
+            (historical.get(dataset)?.has(record) && codeIsActive.has(code))) continue;
+        issue(issues, "reference_code_invalid", dataset, field,
+          `Use an active code from the read-only ${field} list.`);
+      }
+    }
     for (const layer of ["logical", "dimensional"]) {
-      const submodels = new Set(records(project, `${layer}_submodel`)
-        .map((record) => normalized(record[`${layer}_submodel_name`])));
       const entities = new Set(records(project, `${layer}_entity`)
         .map((record) => tuple([record[`${layer}_entity_schema_name`], record[`${layer}_entity_name`]])));
-      const attributes = new Set(records(project, `${layer}_attribute`).map((record) =>
-        tuple([record[`${layer}_entity_schema_name`], record[`${layer}_entity_name`], record[`${layer}_attribute_name`]])));
+      const attributes = new Map(records(project, `${layer}_attribute`).map((record) =>
+        [tuple([record[`${layer}_entity_schema_name`], record[`${layer}_entity_name`], record[`${layer}_attribute_name`]]), record]));
       for (const record of records(project, `${layer}_entity`)) {
-        if ((record.submodels || []).some((item) => !submodels.has(normalized(item.submodel_name))))
-          issue(issues, "reference_not_found", `${layer}_entity`, "submodel_name",
-            "Referenced record is not present in the future Project graph.");
         for (const source of record.sources || []) validateContextSource(source,
           `${layer}_entity`, contexts, issues);
       }
@@ -435,13 +442,19 @@
         for (const source of record.sources || []) validateContextSource(source,
           `${layer}_attribute`, contexts, issues);
       }
+      // Child -> parent (MCP relationship_target_not_key): an active link points at a natural
+      // or surrogate key Attribute of the parent Entity.
       for (const record of records(project, `${layer}_relationship`)) {
-        const endpoints = ["from", "to"].map((prefix) => tuple([
+        const [child, parent] = ["from", "to"].map((prefix) => attributes.get(tuple([
           record[`${prefix}_${layer}_entity_schema_name`], record[`${prefix}_${layer}_entity_name`], record[`${prefix}_${layer}_attribute_name`],
-        ]));
-        if (endpoints.some((endpoint) => !attributes.has(endpoint))) issue(issues,
+        ])));
+        if (!child || !parent) issue(issues,
           "reference_not_found", `${layer}_relationship`, `${layer}_attribute_name`,
           "Referenced record is not present in the future Project graph.");
+        else if (record[`${layer}_relationship_is_active`] === true &&
+            !parent[`${layer}_attribute_is_natural_key`] && !parent[`${layer}_attribute_is_surrogate_key`]) issue(issues,
+          "relationship_target_not_key", `${layer}_relationship`, `to_${layer}_attribute_name`,
+          "Point the relationship at a natural or surrogate key Attribute of the parent.");
       }
     }
     const entities = new Set([
@@ -486,8 +499,8 @@
         const field = isAttribute ? "logical_attribute" : "logical_entity";
         if (!found) issue(issues, "reference_not_found", `dimensional_${layer}`, field,
           "Referenced Logical design is not present in the future Project graph.");
-        else if (active(record, `dimensional_${layer}_status`) && active(source) &&
-            (!active(found, `${field}_status`) || !active(logicalEntities.get(entityKey(target)), "logical_entity_status")))
+        else if (active(record, `dimensional_${layer}_is_active`) && active(source) &&
+            (!active(found, `${field}_is_active`) || !active(logicalEntities.get(entityKey(target)), "logical_entity_is_active")))
           issue(issues, "active_dependency_invalid", `dimensional_${layer}`, field,
             "Active Dimensional support requires active Logical Entity and Attribute definitions.");
       }
@@ -508,9 +521,9 @@
     const contextRecords = new Map(records(project, "context_record").map(record => [record.context_record_id, record]));
     for (const dataset of ["logical_entity", "logical_attribute", "dimensional_entity", "dimensional_attribute"]) {
       for (const owner of records(project, dataset)) {
-        if (!active(owner, `${dataset}_status`)) continue;
+        if (!active(owner, `${dataset}_is_active`)) continue;
         for (const support of owner.sources || []) {
-          if (support.support_source_type !== "context_record" || support.status !== "active") continue;
+          if (support.support_source_type !== "context_record" || support.is_active !== true) continue;
           const target = contextRecords.get(support.context_record?.context_record_id);
           const group = target && contextGroups.get(normalized(target.context_group_name));
           if (target && (target.status !== "active" || group?.is_active !== true)) invalid(dataset,
@@ -535,35 +548,35 @@
     }
     const activeEntities = new Set([
       ...records(project, "logical_entity").filter((record) =>
-        active(record, "logical_entity_status")).map(entityKey),
+        active(record, "logical_entity_is_active")).map(entityKey),
       ...records(project, "dimensional_entity").filter((record) =>
-        active(record, "dimensional_entity_status")).map(entityKey),
+        active(record, "dimensional_entity_is_active")).map(entityKey),
     ]);
     const activeAttributes = new Set([
       ...records(project, "logical_attribute").filter((record) =>
-        active(record, "logical_attribute_status")).map(attributeKey),
+        active(record, "logical_attribute_is_active")).map(attributeKey),
       ...records(project, "dimensional_attribute").filter((record) =>
-        active(record, "dimensional_attribute_status")).map(attributeKey),
+        active(record, "dimensional_attribute_is_active")).map(attributeKey),
     ]);
     const activeSubjectAreas = new Set(records(project, "subject_area")
-      .filter((record) => active(record, "subject_area_status"))
+      .filter((record) => active(record, "subject_area_is_active"))
       .map((record) => normalized(record.subject_area_name)));
     for (const record of records(project, "subject_area_table")) {
-      if (active(record, "subject_area_table_status") &&
+      if (active(record, "subject_area_table_is_active") &&
           !activeSubjectAreas.has(normalized(record.subject_area_name))) invalid(
         "subject_area_table", "subject_area_name",
-        "An active Subject Area table requires an active Subject Area.");
+        "An active Subject Area Object requires an active Subject Area.");
     }
     for (const layer of ["logical", "dimensional"]) {
       const label = layer === "logical" ? "Logical" : "Dimensional";
       for (const record of records(project, `${layer}_attribute`)) {
-        if (active(record, `${layer}_attribute_status`) &&
+        if (active(record, `${layer}_attribute_is_active`) &&
             !activeEntities.has(entityKey(record))) invalid(
           `${layer}_attribute`, `${layer}_entity_name`,
           `Active ${label} Attribute requires an active parent Entity.`);
       }
       for (const record of records(project, `${layer}_relationship`)) {
-        if (!active(record, `${layer}_relationship_status`)) continue;
+        if (!active(record, `${layer}_relationship_is_active`)) continue;
         if (["from", "to"].some((prefix) => {
           const entity = record[`${prefix}_${layer}_entity_name`];
           const schema = record[`${prefix}_${layer}_entity_schema_name`];

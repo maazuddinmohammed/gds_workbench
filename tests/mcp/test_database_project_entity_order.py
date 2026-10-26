@@ -47,10 +47,8 @@ def entity_layer_graph(
     complete = complete_project_graph()
     datasets: tuple[ProjectChangeSetDataset, ...] = (
         "project_input_scope",
-        "logical_submodel",
         "logical_entity",
         "logical_attribute",
-        "dimensional_submodel",
         "dimensional_entity",
         "dimensional_attribute",
         "mapping_object",
@@ -69,9 +67,8 @@ def entity_layer_graph(
                 "logical_entity_schema_name": "silver",
                 "logical_entity_name": "Order",
             },
-            "source_order": 1,
             "rationale": "Logical source.",
-            "status": "active",
+            "is_active": True,
             "is_locked": False,
         }
     ]
@@ -86,9 +83,8 @@ def entity_layer_graph(
                     "logical_entity_name": "Order",
                     "logical_attribute_name": attribute_name,
                 },
-                "source_order": 1,
                 "rationale": "Logical Attribute.",
-                "status": "active",
+                "is_active": True,
                 "is_locked": False,
             }
         ]

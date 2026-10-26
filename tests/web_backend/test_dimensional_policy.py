@@ -13,6 +13,7 @@ from gds_etl_workbench.domain.modeling_records import (
     DimensionalRelationshipRecord,
 )
 from gds_etl_workbench.domain.snapshots.project import DimensionalSection
+
 from gds_workbench_api.features.dimensional.policy import (
     DimensionalProjectionConflictError,
     project_dimensional_foreign_key_policy,
@@ -30,9 +31,8 @@ def _entity(name: str = "Customer Dimension") -> DimensionalEntityRecord:
         dimensional_fact_type=None,
         dimensional_entity_grain_definition=None,
         dimensional_entity_dependency_order=0,
-        dimensional_entity_status="active",
+        dimensional_entity_is_active=True,
         dimensional_entity_is_locked=False,
-        submodels=(),
         sources=(),
     )
 
@@ -51,7 +51,7 @@ def _business_attribute(
         dimensional_attribute_is_natural_key=False,
         dimensional_attribute_is_surrogate_key=False,
         dimensional_attribute_is_audit_column=False,
-        dimensional_attribute_status="active",
+        dimensional_attribute_is_active=True,
         dimensional_attribute_is_locked=False,
         sources=(),
     )
@@ -66,46 +66,36 @@ def _fact(name: str = "Sales Fact") -> DimensionalEntityRecord:
         dimensional_fact_type="transaction",
         dimensional_entity_grain_definition="One row per sale and customer.",
         dimensional_entity_dependency_order=1,
-        dimensional_entity_status="active",
+        dimensional_entity_is_active=True,
         dimensional_entity_is_locked=False,
-        submodels=(),
         sources=(),
     )
 
 
-def _fact_business_attribute() -> DimensionalAttributeRecord:
+def _fact_business_attribute(*, nullable: bool = False) -> DimensionalAttributeRecord:
+    """The Fact's business customer reference; a nullable one is not a natural key."""
     return _business_attribute("Sales Fact").model_copy(
         update={
             "dimensional_attribute_name": "Source Customer ID",
             "dimensional_attribute_definition": "Source customer identifier.",
-            "dimensional_attribute_is_natural_key": True,
+            "dimensional_attribute_is_natural_key": not nullable,
             "dimensional_attribute_is_surrogate_key": False,
-            "dimensional_attribute_is_nullable": False,
+            "dimensional_attribute_is_nullable": nullable,
         }
     )
 
 
-def _relationship(
-    *,
-    is_optional: bool = True,
-    role_name: str | None = "Bill To Customer",
-) -> DimensionalRelationshipRecord:
+def _relationship(*, role_name: str | None = "Bill To Customer") -> DimensionalRelationshipRecord:
     return DimensionalRelationshipRecord(
-        dimensional_relationship_name="Sales to customer",
-        dimensional_relationship_definition="Each sale references its customer.",
         from_dimensional_entity_schema_name="gold",
         from_dimensional_entity_name="Sales Fact",
         from_dimensional_attribute_name="Source Customer ID",
         to_dimensional_entity_schema_name="gold",
         to_dimensional_entity_name="Customer Dimension",
         to_dimensional_attribute_name="Customer Name",
-        dimensional_relationship_kind="foreign_key",
-        dimensional_relationship_cardinality="many_to_one",
-        dimensional_relationship_is_optional=is_optional,
         dimensional_relationship_role_name=role_name,
         dimensional_relationship_basis="Sales customer evidence.",
-        dimensional_relationship_cardinality_basis="Many sales reference one customer.",
-        dimensional_relationship_status="active",
+        dimensional_relationship_is_active=True,
         dimensional_relationship_is_locked=False,
     )
 
@@ -164,11 +154,7 @@ def _audit_template() -> dict[str, object]:
 def _attribute_records(
     changes: tuple[StageProjectChange, ...],
 ) -> list[dict[str, object]]:
-    return next(
-        change.records
-        for change in changes
-        if change.dataset == "dimensional_attribute"
-    )
+    return next(change.records for change in changes if change.dataset == "dimensional_attribute")
 
 
 def test_projection_adds_dimension_surrogate_before_business_and_audit() -> None:
@@ -247,7 +233,7 @@ def test_projection_adds_type_2_columns_from_project_policy() -> None:
 def test_projection_covers_applied_active_and_new_active_entities() -> None:
     applied_entity = _entity("Account Dimension")
     inactive_entity = _entity("Inactive Dimension").model_copy(
-        update={"dimensional_entity_status": "inactive"}
+        update={"dimensional_entity_is_active": False}
     )
     fact = DimensionalEntityRecord(
         dimensional_entity_schema_name="gold",
@@ -257,13 +243,11 @@ def test_projection_covers_applied_active_and_new_active_entities() -> None:
         dimensional_fact_type="transaction",
         dimensional_entity_grain_definition="One row per sale.",
         dimensional_entity_dependency_order=1,
-        dimensional_entity_status="active",
+        dimensional_entity_is_active=True,
         dimensional_entity_is_locked=False,
-        submodels=(),
         sources=(),
     )
     applied = DimensionalSection(
-        submodels=(),
         entities=(applied_entity, inactive_entity),
         attributes=(),
         relationships=(),
@@ -283,8 +267,7 @@ def test_projection_covers_applied_active_and_new_active_entities() -> None:
     attributes = _attribute_records(projected)
 
     assert {
-        (item["dimensional_entity_name"], item["dimensional_attribute_name"])
-        for item in attributes
+        (item["dimensional_entity_name"], item["dimensional_attribute_name"]) for item in attributes
     } == {
         ("Account Dimension", "Account Dimension key"),
         ("Account Dimension", "Loaded At"),
@@ -347,7 +330,6 @@ def test_projection_rejects_business_name_collision() -> None:
         update={"dimensional_attribute_name": "Customer Dimension key"}
     )
     applied = DimensionalSection(
-        submodels=(),
         entities=(entity,),
         attributes=(collision,),
         relationships=(),
@@ -375,12 +357,11 @@ def test_projection_rejects_locked_policy_rewrite() -> None:
         dimensional_attribute_is_natural_key=False,
         dimensional_attribute_is_surrogate_key=True,
         dimensional_attribute_is_audit_column=False,
-        dimensional_attribute_status="active",
+        dimensional_attribute_is_active=True,
         dimensional_attribute_is_locked=True,
         sources=(),
     )
     applied = DimensionalSection(
-        submodels=(),
         entities=(entity,),
         attributes=(locked_surrogate,),
         relationships=(),
@@ -408,12 +389,11 @@ def test_projection_rejects_incompatible_existing_policy_attribute() -> None:
         dimensional_attribute_is_natural_key=False,
         dimensional_attribute_is_surrogate_key=False,
         dimensional_attribute_is_audit_column=True,
-        dimensional_attribute_status="active",
+        dimensional_attribute_is_active=True,
         dimensional_attribute_is_locked=False,
         sources=(),
     )
     applied = DimensionalSection(
-        submodels=(),
         entities=(entity,),
         attributes=(incompatible,),
         relationships=(),
@@ -458,11 +438,15 @@ def test_projection_rejects_partial_or_invalid_v1_policy_group() -> None:
         )
 
 
-def test_foreign_key_projection_binds_role_aware_endpoints_and_nullability() -> None:
+@pytest.mark.parametrize("nullable", [False, True])
+def test_foreign_key_projection_binds_role_aware_endpoints_and_nullability(
+    nullable: bool,
+) -> None:
     dimension = _entity()
     fact = _fact()
     dimension_attribute = _business_attribute()
-    fact_attribute = _fact_business_attribute()
+    # The foreign key may be null exactly when the business customer reference may be.
+    fact_attribute = _fact_business_attribute(nullable=nullable)
     first = project_dimensional_gold_policy(
         changes=(
             StageProjectChange(
@@ -498,20 +482,17 @@ def test_foreign_key_projection_binds_role_aware_endpoints_and_nullability() -> 
     foreign_key = next(
         item
         for item in attributes
-        if item["dimensional_attribute_name"]
-        in {"Bill To Customer key", "Customer Dimension key"}
+        if item["dimensional_attribute_name"] in {"Bill To Customer key", "Customer Dimension key"}
         and not item["dimensional_attribute_is_surrogate_key"]
     )
     relationship = next(
-        change.records[0]
-        for change in projected
-        if change.dataset == "dimensional_relationship"
+        change.records[0] for change in projected if change.dataset == "dimensional_relationship"
     )
 
     assert foreign_key["dimensional_entity_name"] == "Sales Fact"
     assert foreign_key["dimensional_attribute_name"] == "Bill To Customer key"
     assert foreign_key["dimensional_attribute_data_type"] == "bigint"
-    assert foreign_key["dimensional_attribute_is_nullable"] is True
+    assert foreign_key["dimensional_attribute_is_nullable"] is nullable
     assert not foreign_key["dimensional_attribute_is_natural_key"]
     assert not foreign_key["dimensional_attribute_is_surrogate_key"]
     assert foreign_key["sources"] == []
@@ -524,9 +505,7 @@ def test_foreign_key_projection_binds_role_aware_endpoints_and_nullability() -> 
         "Bill To Customer key",
         "Loaded At",
     ]
-    assert [
-        item["dimensional_attribute_ordinal_position"] for item in fact_attributes
-    ] == [
+    assert [item["dimensional_attribute_ordinal_position"] for item in fact_attributes] == [
         1,
         2,
         3,
@@ -534,12 +513,10 @@ def test_foreign_key_projection_binds_role_aware_endpoints_and_nullability() -> 
     ]
     assert relationship["from_dimensional_attribute_name"] == "Bill To Customer key"
     assert relationship["to_dimensional_attribute_name"] == "Customer Dimension key"
-    assert relationship["dimensional_relationship_is_optional"] is True
+    assert relationship["dimensional_relationship_role_name"] == "Bill To Customer"
 
 
-def test_complete_gold_projection_is_idempotent_with_existing_fact_foreign_key() -> (
-    None
-):
+def test_complete_gold_projection_is_idempotent_with_existing_fact_foreign_key() -> None:
     first = project_dimensional_gold_policy(
         changes=(
             StageProjectChange(
@@ -573,7 +550,6 @@ def test_complete_gold_projection_is_idempotent_with_existing_fact_foreign_key()
     by_dataset = {change.dataset: tuple(change.records) for change in first}
     applied = DimensionalSection.model_validate(
         {
-            "submodels": (),
             "entities": by_dataset["dimensional_entity"],
             "attributes": by_dataset["dimensional_attribute"],
             "relationships": by_dataset["dimensional_relationship"],
@@ -615,11 +591,7 @@ def test_foreign_key_projection_uses_dimension_name_without_role() -> None:
             ),
             StageProjectChange(
                 dataset="dimensional_relationship",
-                records=[
-                    _relationship(is_optional=False, role_name=None).model_dump(
-                        mode="json"
-                    )
-                ],
+                records=[_relationship(role_name=None).model_dump(mode="json")],
             ),
         ),
         applied=None,
@@ -635,8 +607,7 @@ def test_foreign_key_projection_uses_dimension_name_without_role() -> None:
     foreign_key = next(
         item
         for item in _attribute_records(projected)
-        if item["dimensional_attribute_name"]
-        in {"Bill To Customer key", "Customer Dimension key"}
+        if item["dimensional_attribute_name"] in {"Bill To Customer key", "Customer Dimension key"}
         and not item["dimensional_attribute_is_surrogate_key"]
     )
 
@@ -711,17 +682,11 @@ def test_dimension_scd_policy_preserves_business_columns_and_excludes_fact_histo
         scd_type=scd_type,
     )
     rows = _attribute_records(projected)
-    business = next(
-        row for row in rows if row["dimensional_attribute_name"] == "Customer Name"
-    )
+    business = next(row for row in rows if row["dimensional_attribute_name"] == "Customer Name")
     assert not business["dimensional_attribute_is_surrogate_key"]
-    history = [
-        row for row in rows if row["dimensional_attribute_name"] == "Effective From"
-    ]
+    history = [row for row in rows if row["dimensional_attribute_name"] == "Effective From"]
     assert len(history) == (1 if scd_type == "type_2" else 0)
-    assert all(
-        row["dimensional_entity_name"] == "Customer Dimension" for row in history
-    )
+    assert all(row["dimensional_entity_name"] == "Customer Dimension" for row in history)
 
 
 def test_combined_audit_template_projects_history_in_audit_order() -> None:
@@ -785,14 +750,11 @@ def test_existing_non_audit_column_cannot_be_reclassified_as_history(
                 "dimensional_attribute_is_locked": locked,
             }
         )
-        if row.dimensional_attribute_name
-        in {"Is Current", "Effective From", "Effective To"}
+        if row.dimensional_attribute_name in {"Is Current", "Effective From", "Effective To"}
         else row
         for row in attributes
     )
-    baseline = DimensionalSection(
-        submodels=(), entities=(entity,), attributes=old, relationships=()
-    )
+    baseline = DimensionalSection(entities=(entity,), attributes=old, relationships=())
     with pytest.raises(DimensionalProjectionConflictError):
         project_dimensional_gold_policy(
             changes=(),
@@ -844,7 +806,6 @@ def _projected_baseline(*, with_relationship: bool = True) -> DimensionalSection
         raw_technical_template=_technical_template(),
     )
     return DimensionalSection(
-        submodels=(),
         entities=(_entity(), _fact()),
         attributes=tuple(
             DimensionalAttributeRecord.model_validate_json(json.dumps(row))
@@ -859,9 +820,7 @@ def _projected_baseline(*, with_relationship: bool = True) -> DimensionalSection
     )
 
 
-def test_foreign_key_projection_preserves_same_name_relationships_by_endpoint_identity() -> (
-    None
-):
+def test_foreign_key_projection_keeps_each_role_playing_edge_on_its_own_key() -> None:
     baseline = _projected_baseline()
     added = _relationship(role_name="Alpha Customer")
     changes = project_dimensional_gold_policy(
@@ -887,9 +846,7 @@ def test_foreign_key_projection_preserves_same_name_relationships_by_endpoint_id
     }
     fact_columns.update(
         {
-            str(row["dimensional_attribute_name"]): row[
-                "dimensional_attribute_ordinal_position"
-            ]
+            str(row["dimensional_attribute_name"]): row["dimensional_attribute_ordinal_position"]
             for row in _attribute_records(projected)
             if row["dimensional_entity_name"] == "Sales Fact"
         }
@@ -910,12 +867,8 @@ def test_foreign_key_projection_cannot_take_over_a_business_column() -> None:
             "dimensional_attribute_definition": "An independently maintained business value.",
         }
     )
-    baseline = baseline.model_copy(
-        update={"attributes": (*baseline.attributes, collision)}
-    )
-    with pytest.raises(
-        DimensionalProjectionConflictError, match="existing business Attribute"
-    ):
+    baseline = baseline.model_copy(update={"attributes": (*baseline.attributes, collision)})
+    with pytest.raises(DimensionalProjectionConflictError, match="existing business Attribute"):
         project_dimensional_foreign_key_policy(
             changes=(
                 StageProjectChange(
@@ -930,9 +883,7 @@ def test_foreign_key_projection_cannot_take_over_a_business_column() -> None:
 
 def test_inactive_relationship_does_not_create_an_active_foreign_key() -> None:
     baseline = _projected_baseline(with_relationship=False)
-    inactive = _relationship().model_copy(
-        update={"dimensional_relationship_status": "inactive"}
-    )
+    inactive = _relationship().model_copy(update={"dimensional_relationship_is_active": False})
     changes = (
         StageProjectChange(
             dataset="dimensional_relationship",
@@ -947,9 +898,7 @@ def test_inactive_relationship_does_not_create_an_active_foreign_key() -> None:
     assert projected == changes
 
 
-def test_inactive_proposal_does_not_reclassify_business_attribute_during_gold_projection() -> (
-    None
-):
+def test_inactive_proposal_does_not_reclassify_business_attribute_during_gold_projection() -> None:
     baseline = _projected_baseline(with_relationship=False)
     baseline = baseline.model_copy(
         update={
@@ -970,7 +919,7 @@ def test_inactive_proposal_does_not_reclassify_business_attribute_during_gold_pr
     inactive = _relationship().model_copy(
         update={
             "from_dimensional_attribute_name": "Bill To Customer key",
-            "dimensional_relationship_status": "inactive",
+            "dimensional_relationship_is_active": False,
         }
     )
     changes = project_dimensional_gold_policy(
@@ -1004,8 +953,7 @@ def test_inactive_proposal_does_not_reclassify_business_attribute_during_gold_pr
         }
     )
     assert {
-        name: row["dimensional_attribute_ordinal_position"]
-        for name, row in effective.items()
+        name: row["dimensional_attribute_ordinal_position"] for name, row in effective.items()
     } == {
         "Sales Fact key": 1,
         "Bill To Customer key": 2,

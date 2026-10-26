@@ -83,7 +83,6 @@
       {
         "role": "primary",
         "rationale": "Recorded customer source.",
-        "mapping_order": 1,
         "is_locked": false,
         "object": {
           "tenant_code": "NWA",

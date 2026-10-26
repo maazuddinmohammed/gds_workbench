@@ -88,7 +88,7 @@ test('Mapping sheets expose System first and filter complete Entity/System branc
  dom.window.close();
 });
 test('DBML displays the complete effective Project despite record view filters',async()=>{
- const entity=name=>({logical_entity_schema_name:'silver',logical_entity_name:name,logical_entity_status:'active',submodels:[]});
+ const entity=name=>({logical_entity_schema_name:'silver',logical_entity_name:name,logical_entity_is_active:true,sources:[]});
  const root=workspace();state(root,{project:{id:7,name:'Sales'}});snapshot(root,'metadata',[]);snapshot(root,'project',[dataset('logical_entity',['logical_entity_schema_name','logical_entity_name'],[entity('Customer'),entity('Order')])]);
  root.directory('project-change-set').file('logical_entity.json',JSON.stringify([{...entity('Order'),logical_entity_definition:'Orders placed by customers'}]));
  const {api,document,dom}=await app(root);api.state.filters['project:logical_entity:logical_entity_name']=['Customer'];await api.generateDbml();
@@ -97,7 +97,7 @@ test('DBML displays the complete effective Project despite record view filters',
  assert.ok(document.getElementById('copy-dbml'));assert.ok(document.getElementById('download-dbml'));dom.window.close();
 });
 test('DBML duplicate and locked edit findings stop export and open validation',async()=>{
- const root=workspace();state(root,{project:{id:7,name:'Sales'}});const row={subject_area_name:'Sales',subject_area_definition:'Customer orders.',subject_area_status:'active',subject_area_is_locked:true};snapshot(root,'project',[dataset('subject_area',['subject_area_name'],[row])]);
+ const root=workspace();state(root,{project:{id:7,name:'Sales'}});const row={subject_area_name:'Sales',subject_area_definition:'Customer orders.',subject_area_is_active:true,subject_area_is_locked:true};snapshot(root,'project',[dataset('subject_area',['subject_area_name'],[row])]);
  root.directory('project-change-set').file('subject_area.json',JSON.stringify([{...row,subject_area_definition:'Orders.'},{...row,subject_area_definition:'Orders.'}]));
  const {api,document,dom}=await app(root);await api.generateDbml();assert.equal(api.state.screen,'validation');assert.match(document.querySelector('.issue-table').textContent,/duplicates a canonical key/);assert.equal(root.entries.has('project-dbml'),false);dom.window.close();
 });

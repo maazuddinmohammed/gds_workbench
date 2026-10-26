@@ -9,7 +9,11 @@
       .replaceAll("'", "&#039;");
   }
 
+  // Subject Area members are Objects on every screen; the stored dataset name stays.
+  const LABELS = { subject_area_table: "Subject Area Objects" };
+
   function label(value) {
+    if (Object.hasOwn(LABELS, value)) return LABELS[value];
     return String(value || "")
       .split("_")
       .filter(Boolean)

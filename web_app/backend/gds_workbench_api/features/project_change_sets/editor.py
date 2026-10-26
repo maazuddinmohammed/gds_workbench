@@ -17,11 +17,9 @@ from .review import review_lifecycle
 # Subject Areas are edited through their own save command, which also moves tables.
 type EditableDataset = Literal[
     "mapping_object",
-    "logical_submodel",
     "logical_entity",
     "logical_attribute",
     "logical_relationship",
-    "dimensional_submodel",
     "dimensional_entity",
     "dimensional_attribute",
     "dimensional_relationship",
@@ -83,11 +81,26 @@ def project_record_editor(
         raise WorkbenchError("project_record_not_found", "This record is unavailable.")
     definition = DATASETS_BY_NAME[command.dataset]
     values = record.model_dump(mode="json")
+    # Type labels are codes from reference lists; offer only the active codes.
+    label_choices = {
+        "logical_entity_type": [
+            row.logical_entity_type_code
+            for row in review.snapshot.logical.entity_types
+            if row.logical_entity_type_is_active
+        ],
+        "dimensional_fact_type": [
+            row.dimensional_fact_type_code
+            for row in review.snapshot.dimensional.fact_types
+            if row.dimensional_fact_type_is_active
+        ],
+    }
     fields: list[EditorField] = []
     # Only fields owned by this modeled record; canonical references, evidence,
-    # membership, and lifecycle are managed by their existing governed operations.
+    # and lifecycle are managed by their existing governed operations.
     for name, schema in definition.row_model.model_json_schema()["properties"].items():
-        if name in definition.canonical_key or name.endswith(("_status", "_is_locked")):
+        if name in definition.canonical_key or name.endswith(
+            ("_status", "_is_active", "_is_locked")
+        ):
             continue
         if not name.startswith(command.dataset + "_") and name != "dimensional_fact_type":
             continue
@@ -99,15 +112,16 @@ def project_record_editor(
             continue
         label = name.removeprefix(command.dataset + "_").removeprefix("dimensional_")
         label = label.removeprefix("is_").replace("_", " ").capitalize()
+        options = label_choices.get(name) or spec.get("enum", [])
         kind = (
             "choice"
-            if "enum" in spec
+            if options
             else "boolean"
             if field_type == "boolean"
             else "number"
             if field_type == "integer"
             else "multiline"
-            if any(part in name for part in ("definition", "basis", "grain", "detail"))
+            if any(part in name for part in ("definition", "basis", "grain"))
             else "text"
         )
         fields.append(
@@ -117,7 +131,7 @@ def project_record_editor(
                 kind=kind,
                 value=values[name],
                 required=not nullable,
-                options=spec.get("enum", []),
+                options=options,
                 maximum_length=spec.get("maxLength"),
                 minimum=spec.get("minimum", spec.get("exclusiveMinimum", -1) + 1)
                 if field_type == "integer"

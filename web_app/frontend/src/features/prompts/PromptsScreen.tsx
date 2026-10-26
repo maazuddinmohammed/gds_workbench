@@ -23,6 +23,7 @@ import {
   modeLabel,
   type PromptVisibilityFilter,
 } from "./PromptsLedger";
+import { RefreshButton } from "../../shared/ui";
 
 const WORKFLOWS: PromptWorkflow[] = [
   "profiling",
@@ -136,14 +137,10 @@ export function PromptsScreen({
           <span className={hasTenantLock || isSuperAdmin ? "lock-context is-held" : "lock-context"}>
             {hasTenantLock ? "Lock held" : isSuperAdmin ? "Global authoring" : "Read-only"}
           </span>
-          <button
-            className="button button-secondary button-small"
-            type="button"
-            disabled={stagesQuery.isFetching || templatesQuery.isFetching}
+          <RefreshButton
+            refreshing={stagesQuery.isFetching || templatesQuery.isFetching}
             onClick={() => void refresh()}
-          >
-            {stagesQuery.isFetching || templatesQuery.isFetching ? "Refreshing…" : "Refresh"}
-          </button>
+          />
           <button
             className="button button-primary button-small"
             type="button"

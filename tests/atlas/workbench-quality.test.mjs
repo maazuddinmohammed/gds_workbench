@@ -12,7 +12,7 @@ const keys = {
   subject_area_table: ["subject_area_name", ...physicalFields],
   logical_entity: ["logical_entity_schema_name", "logical_entity_name"],
   logical_attribute: ["logical_entity_schema_name", "logical_entity_name", "logical_attribute_name"],
-  logical_relationship: ["from_logical_entity_schema_name", "from_logical_entity_name", "from_logical_attribute_name", "to_logical_entity_schema_name", "to_logical_entity_name", "to_logical_attribute_name", "logical_relationship_name"],
+  logical_relationship: ["from_logical_entity_schema_name", "from_logical_entity_name", "from_logical_attribute_name"],
   analysis_result: [...["from", "to"].flatMap((prefix) => [...physicalFields, "attribute_name"].map((field) => `${prefix}_${field}`)), "relationship_kind"],
   context_group: ["context_group_name"],
   context_record: ["context_record_id"],
@@ -22,17 +22,17 @@ const keys = {
 const physical = (name, attribute) => ({ tenant_code: "Tenant", system_code: "System", connection_code: "Connection",
   object_schema: "bronze", object_name: name, ...(attribute ? { attribute_name: attribute } : {}) });
 const source = (name, attribute) => ({ support_source_type: attribute ? "attribute" : "object",
-  [attribute ? "source_attribute" : "source_object"]: physical(name, attribute), status: "active" });
-const entity = (name) => ({ logical_entity_schema_name: "silver", logical_entity_name: name, logical_entity_status: "active", sources: [source(name)] });
+  [attribute ? "source_attribute" : "source_object"]: physical(name, attribute), is_active: true });
+const entity = (name) => ({ logical_entity_schema_name: "silver", logical_entity_name: name, logical_entity_is_active: true, sources: [source(name)] });
 const attr = (entityName, name, natural = false, surrogate = false) => ({ logical_entity_schema_name: "silver", logical_entity_name: entityName,
-  logical_attribute_name: name, logical_attribute_status: "active", logical_attribute_is_natural_key: natural,
+  logical_attribute_name: name, logical_attribute_is_active: true, logical_attribute_is_natural_key: natural,
   logical_attribute_is_surrogate_key: surrogate, logical_attribute_is_audit_column: false,
   logical_attribute_data_type: "BIGINT", sources: surrogate ? [] : [source(entityName, name)] });
 const scope = (name) => ({ ...physical(name), project_input_scope_is_locked: false, is_active: true });
-const area = (name, status = "active") => ({ subject_area_name: name, subject_area_definition: `${name} capability.`,
-  subject_area_status: status, subject_area_is_locked: false });
-const member = (areaName, table, status = "active") => ({ subject_area_name: areaName, ...physical(table),
-  subject_area_table_status: status, subject_area_table_is_locked: false });
+const area = (name, isActive = true) => ({ subject_area_name: name, subject_area_definition: `${name} capability.`,
+  subject_area_is_active: isActive, subject_area_is_locked: false });
+const member = (areaName, table, isActive = true) => ({ subject_area_name: areaName, ...physical(table),
+  subject_area_table_is_active: isActive, subject_area_table_is_locked: false });
 const bronze = (...names) => ({ metadataMap: new Map([["bronze_object", {
   baseline: names.map((name) => ({ ...physical(name), zone_code: "bronze", is_active: true })) }]]) });
 function project(effective, pending = effective, baseline = {}) {
@@ -63,7 +63,7 @@ function sales() {
     validation_source_missing_target_count: 0, validation_unused_target_count: 1,
     validation_duplicate_target_key_count: 0,
   };
-  const relationship = { logical_relationship_name: "OrderCustomer", logical_relationship_status: "active",
+  const relationship = { logical_relationship_is_active: true,
     from_logical_entity_schema_name: "silver", from_logical_entity_name: "Order", from_logical_attribute_name: "CustomerCode",
     to_logical_entity_schema_name: "silver", to_logical_entity_name: "Customer", to_logical_attribute_name: "CustomerID", logical_relationship_cardinality: "many_to_one" };
   const records = { logical_entity: [entity("Order"), entity("Customer")], logical_attribute: [attr("Order", "OrderCode", true),
@@ -232,8 +232,8 @@ test("changed natural-key lineage or Analysis rechecks an otherwise unchanged re
 
 test("Subject Area findings list unassigned Bronze tables and empty areas once the Project has an area", () => {
   const records = { project_input_scope: ["Order", "Customer", "Invoice", "Landing"].map(scope),
-    subject_area: [area("Sales"), area("Billing"), area("Retired", "inactive")],
-    subject_area_table: [member(" sales ", "Order"), member("Sales", "Customer", "inactive"), member("Retired", "Invoice")] };
+    subject_area: [area("Sales"), area("Billing"), area("Retired", false)],
+    subject_area_table: [member(" sales ", "Order"), member("Sales", "Customer", false), member("Retired", "Invoice")] };
   const metadata = bronze("Order", "Customer", "Invoice");
   metadata.metadataMap.set("source_object", { baseline: [{ ...physical("Landing"), zone_code: "source", is_active: true }] });
   const result = evaluateQuality(project(records), null, metadata);
@@ -247,11 +247,15 @@ test("Subject Area findings list unassigned Bronze tables and empty areas once t
   assert.deepEqual(result.metrics.unassigned_tables, [physical("Customer"), physical("Invoice")]);
   assert.equal(result.metrics.empty_subject_area_count, 1);
   assert.deepEqual(result.metrics.empty_subject_areas, ["Billing"]);
+  assert.deepEqual(result.metrics.subject_area_summaries, [
+    { subject_area_name: "Sales", object_count: 1, shared_object_count: 0, modeled_object_count: 0 },
+    { subject_area_name: "Billing", object_count: 0, shared_object_count: 0, modeled_object_count: 0 },
+  ]);
   assert.equal(result.metrics.logical_physical_support_objects, 0);
 
   // Only Metadata proves a Bronze table; without an active area nothing is unassigned.
   assert.deepEqual(evaluateQuality(project(records), null).warnings.map((warning) => warning.code), ["empty_subject_areas"]);
-  const ungrouped = { ...records, subject_area: [area("Sales", "inactive")], subject_area_table: [] };
+  const ungrouped = { ...records, subject_area: [area("Sales", false)], subject_area_table: [] };
   const none = evaluateQuality(project(ungrouped), null, metadata);
   assert.deepEqual(none.warnings, []);
   assert.equal(none.metrics.unassigned_table_count, 0);
@@ -276,13 +280,28 @@ test("Subject Areas cannot change Logical quality findings or decisions", () => 
   assert.equal(withAreas.metrics.logical_physical_support_objects, 2);
   assert.equal(withAreas.metrics.subject_areas, 1);
   assert.equal(withAreas.metrics.unassigned_table_count, 0);
+  assert.deepEqual(withAreas.metrics.subject_area_summaries,
+    [{ subject_area_name: "Sales", object_count: 2, shared_object_count: 0, modeled_object_count: 2 }]);
+});
+
+test("Subject Area summaries follow the web Build order and count Objects already modeled", () => {
+  const records = { logical_entity: [entity("Customer"), entity("Order"), { ...entity("Product"), logical_entity_is_active: false }],
+    subject_area: [area("Billing"), area("Sales"), area("Catalog"), area("Zeta"), area("alpha"), area("Retired", false)],
+    subject_area_table: [member("Billing", "Invoice"), member("Billing", "Customer"), member("Sales", "Order"),
+      member("Sales", "Customer"), member("Sales", "Product"), member("Catalog", "Product"), member("Retired", "Order")] };
+  const result = evaluateQuality(project(records, {}, records), null);
+  assert.deepEqual(result.metrics.subject_area_summaries.map((item) => [item.subject_area_name, item.object_count,
+    item.shared_object_count, item.modeled_object_count]), [
+    ["Sales", 3, 2, 2], ["Billing", 2, 1, 1], ["Catalog", 1, 1, 0], ["alpha", 0, 0, 0], ["Zeta", 0, 0, 0],
+  ]);
+  assert.deepEqual(result.metrics.empty_subject_areas, ["Zeta", "alpha"]);
 });
 
 test("topology excludes self edges from connectivity and reports framework expansion and unsafe capacity", () => {
   const one = entity("One"), two = entity("Two");
   const audit = { ...attr("One", "CreatedDate"), logical_attribute_is_audit_column: true };
   const money = { ...attr("One", "Cost"), logical_attribute_data_type: "DECIMAL(5,5)" };
-  const relationship = { logical_relationship_name: "Parent", logical_relationship_status: "active",
+  const relationship = { logical_relationship_is_active: true,
     from_logical_entity_schema_name: "silver", from_logical_entity_name: "One", from_logical_attribute_name: "ParentID",
     to_logical_entity_schema_name: "silver", to_logical_entity_name: "One", to_logical_attribute_name: "OneID", logical_relationship_cardinality: "many_to_one" };
   const records = { logical_entity: [one, two], logical_attribute: [attr("One", "OneID", false, true), audit, money], logical_relationship: [relationship] };
@@ -313,16 +332,26 @@ test("template is directly usable and root's hashed note-file object is supporte
   assert.equal(evaluateQuality(graph, decisions, { noteFiles: { [note]: { sha256: "a".repeat(64) } } }).status, "evidence_present");
 });
 
-test("inverse one-to-many direction uses the same proven foreign-key lookup", () => {
+test("child -> parent cardinality needs Analysis measured from the foreign key to the parent key", () => {
   const { records, analysis, relationship } = sales();
-  Object.assign(relationship, { from_logical_entity_schema_name: "silver", from_logical_entity_name: "Customer", from_logical_attribute_name: "CustomerID",
-    to_logical_entity_schema_name: "silver", to_logical_entity_name: "Order", to_logical_attribute_name: "CustomerCode", logical_relationship_cardinality: "one_to_many" });
-  const graph = project(records);
-  const decisions = decisionsFor(graph);
-  decisions.relationships[0].evidence = [{ dataset: "analysis_result", key: recordKey("analysis_result", analysis) }];
-  assert.equal(evaluateQuality(graph, decisions, options).status, "evidence_present");
-  relationship.logical_relationship_cardinality = "many_to_one";
-  assert.ok(codes(evaluateQuality(graph, decisions, options)).includes("analysis_cardinality_mismatch"));
+  const check = () => {
+    const graph = project(records);
+    const decisions = decisionsFor(graph);
+    decisions.relationships[0].evidence = [{ dataset: "analysis_result", key: recordKey("analysis_result", analysis) }];
+    return evaluateQuality(graph, decisions, options);
+  };
+  assert.equal(check().status, "evidence_present");
+  // Many Orders share a Customer, so one_to_one contradicts the measured source repeats.
+  relationship.logical_relationship_cardinality = "one_to_one";
+  assert.ok(codes(check()).includes("analysis_cardinality_mismatch"));
+  Object.assign(analysis, { validation_source_non_null_count: 3, inferred_cardinality: "one_to_one" });
+  assert.equal(check().status, "evidence_present");
+  // Parent -> child is the old inverse direction; the same Analysis no longer supports it.
+  for (const cardinality of ["one_to_one", "many_to_one"]) {
+    Object.assign(relationship, { from_logical_entity_name: "Customer", from_logical_attribute_name: "CustomerID",
+      to_logical_entity_name: "Order", to_logical_attribute_name: "CustomerCode", logical_relationship_cardinality: cardinality });
+    assert.ok(codes(check()).includes("analysis_cardinality_mismatch"), cardinality);
+  }
 });
 
 test("supported counts must reconcile distinct source values with unused target values", () => {
@@ -376,9 +405,9 @@ test("incomplete or malformed modeling records return actionable diagnostics ins
 test("large graph metrics retain full counts while limiting all name examples", () => {
   const names = Array.from({ length: 650 }, (_, index) => `Entity${String(index).padStart(3, "0")}`);
   const records = { logical_entity: names.map(entity), logical_relationship: names.slice(1, 250).map((name, index) => ({
-    logical_relationship_name: `Edge${index}`, logical_relationship_status: "active",
-    from_logical_entity_schema_name: "silver", from_logical_entity_name: names[index], from_logical_attribute_name: "ID",
-    to_logical_entity_schema_name: "silver", to_logical_entity_name: name, to_logical_attribute_name: "ParentID", logical_relationship_cardinality: "one_to_many",
+    logical_relationship_is_active: true,
+    from_logical_entity_schema_name: "silver", from_logical_entity_name: name, from_logical_attribute_name: "ParentID",
+    to_logical_entity_schema_name: "silver", to_logical_entity_name: names[index], to_logical_attribute_name: "ID", logical_relationship_cardinality: "many_to_one",
   })) };
   const result = evaluateQuality(project(records), {schema_version: "1.0", entities: [], relationships: [], pass: true});
   assert.equal(result.metrics.logical_entities, 650);
@@ -458,13 +487,14 @@ test("shared validation checks Analysis counts and applied scope without a decis
 
 test("disconnected connected pairs prompt review even without isolated Entities", () => {
   const names = ["Customer", "Order", "Product", "Category"];
-  const edge = (from, to, status = "active") => ({
-    logical_relationship_name: `${from}${to}`, logical_relationship_status: status,
-    from_logical_entity_schema_name: "silver", from_logical_entity_name: from, from_logical_attribute_name: `${from}ID`,
+  // Child -> parent: each foreign key names its parent, so each edge has its own from Attribute.
+  const edge = (from, to, isActive = true) => ({
+    logical_relationship_is_active: isActive,
+    from_logical_entity_schema_name: "silver", from_logical_entity_name: from, from_logical_attribute_name: `${to}ID`,
     to_logical_entity_schema_name: "silver", to_logical_entity_name: to, to_logical_attribute_name: `${to}ID`,
     logical_relationship_cardinality: "many_to_one",
   });
-  const bridge = edge("Order", "Product", "inactive");
+  const bridge = edge("Order", "Product", false);
   const records = { logical_entity: names.map(entity),
     logical_attribute: names.map(name => attr(name, `${name}ID`, true)),
     logical_relationship: [edge("Order", "Customer"), edge("Product", "Category"), bridge] };
@@ -479,7 +509,7 @@ test("disconnected connected pairs prompt review even without isolated Entities"
   assert.ok(!disconnected.warnings.some(warning => warning.code === "isolated_entities"));
   assert.equal(core.stableStringify([...graph]), before);
 
-  bridge.logical_relationship_status = "active";
+  bridge.logical_relationship_is_active = true;
   const connected = evaluateQuality(graph, null);
   assert.equal(connected.metrics.connected_components, 1);
   assert.ok(!connected.warnings.some(warning => warning.code === "disconnected_components"));

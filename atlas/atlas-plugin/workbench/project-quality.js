@@ -196,16 +196,29 @@
         if (record.attribute_name && record.attribute_inferred_data_type) metadataAttributes.set(physical(record, true), record);
         else if (!record.attribute_name && normalize(record.zone_code) === "bronze") bronzeObjects.add(physical(record));
       }
-    // Subject Areas are optional table groups, never modeling evidence. Once a Project has an
-    // active area, an active Bronze Input Scope table outside every active area is unassigned.
+    // Subject Areas are optional focus windows over Input Scope Objects, never modeling evidence.
+    // Once a Project has an active area, an active Bronze Input Scope Object outside every active
+    // area is unassigned. Builds work one area at a time, so each area also reports how many of its
+    // Objects are shared with another area and already support an active Logical Entity.
     const subjectAreas = rowList("subject_area").filter(active);
     const areaNames = new Set(subjectAreas.map((record) => normalize(record.subject_area_name)));
     const memberships = rowList("subject_area_table").filter((record) => active(record) && areaNames.has(normalize(record.subject_area_name)));
     const assignedTables = new Set(memberships.map((record) => physical(record)));
-    const filledAreas = new Set(memberships.map((record) => normalize(record.subject_area_name)));
+    const areaObjects = new Map(subjectAreas.map((record) => [normalize(record.subject_area_name), new Set()]));
+    for (const record of memberships) areaObjects.get(normalize(record.subject_area_name)).add(physical(record));
+    const objectAreas = new Map();
+    for (const objects of areaObjects.values()) for (const object of objects) objectAreas.set(object, (objectAreas.get(object) || 0) + 1);
     const unassignedTables = !subjectAreas.length ? [] : rowList("project_input_scope").filter((record) =>
       active(record) && bronzeObjects.has(physical(record)) && !assignedTables.has(physical(record)));
-    const emptyAreas = subjectAreas.filter((record) => !filledAreas.has(normalize(record.subject_area_name)));
+    const emptyAreas = subjectAreas.filter((record) => !areaObjects.get(normalize(record.subject_area_name)).size);
+    // Same default order as the web Build dialog: most shared Objects first, then larger areas, then name.
+    const areaSummaries = subjectAreas.map((record) => {
+      const objects = [...areaObjects.get(normalize(record.subject_area_name))];
+      return { subject_area_name: record.subject_area_name, object_count: objects.length,
+        shared_object_count: objects.filter((object) => objectAreas.get(object) > 1).length,
+        modeled_object_count: objects.filter((object) => logicalSourceObjects.has(object)).length };
+    }).sort((left, right) => right.shared_object_count - left.shared_object_count || right.object_count - left.object_count ||
+      core.compareCodePoints(normalize(left.subject_area_name), normalize(right.subject_area_name)));
     const metrics = {
       logical_entities: entities.length,
       logical_relationships: logical.length, cross_entity_relationships: crossEdges, self_relationships: selfEdges,
@@ -226,8 +239,9 @@
       unassigned_tables: unassignedTables.slice(0, 200).map((record) => keyObject("project_input_scope", record)),
       empty_subject_area_count: emptyAreas.length,
       empty_subject_areas: emptyAreas.slice(0, 200).map((record) => record.subject_area_name),
+      subject_area_summaries: areaSummaries.slice(0, 200),
       metric_examples_truncated: entities.length > 200 || isolatedEntities.length > 200 || entitiesWithoutNaturalKey.length > 200 ||
-        unassignedTables.length > 200 || emptyAreas.length > 200,
+        unassignedTables.length > 200 || emptyAreas.length > 200 || areaSummaries.length > 200,
     };
     if (entities.length && singleObject === entities.length && singleSource === business.length)
       issue(warnings, "source_shaped_project", "logical_entity", null,
@@ -237,9 +251,9 @@
     if (metrics.connected_components > 1) issue(warnings, "disconnected_components", "logical_entity", null,
       "Logical Entities form separate connected groups. Ask the user whether these groups are intentionally separate or evidence supports a relationship between them; do not invent joins.");
     if (unassignedTables.length) issue(warnings, "unassigned_tables", "subject_area_table", null,
-      "Some active Bronze Input Scope tables are in no active Subject Area. Place each one in an area or report why it stays unassigned.");
+      "Some active Bronze Input Scope Objects are in no active Subject Area. Place each one in an area or report why it stays unassigned.");
     if (emptyAreas.length) issue(warnings, "empty_subject_areas", "subject_area", null,
-      "Some active Subject Areas have no active table. Add their tables or retire the empty areas.");
+      "Some active Subject Areas have no active Object. Add their Objects or retire the empty areas.");
     for (const attribute of business) {
       const decimal = /^DECIMAL\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)$/i.exec(attribute.logical_attribute_data_type || "");
       if (decimal && Number(decimal[1]) === Number(decimal[2])) issue(warnings, "decimal_zero_integer_capacity", "logical_attribute",
@@ -337,11 +351,10 @@
                 return endpointAttribute?.logical_attribute_is_surrogate_key && entityAttributes(record, `${endpoint}_`)
                   .filter((attribute) => attribute.logical_attribute_is_natural_key).length > 1;
               });
+              // Child -> parent: the Analysis must run from the child's foreign key to the parent's key.
               const cardinality = record.logical_relationship_cardinality;
-              const alignment = analysisAlignment(record, evidence);
-              if (!((cardinality === "many_to_one" && alignment === "forward") ||
-                  (cardinality === "one_to_many" && alignment === "reverse") ||
-                  (cardinality === "one_to_one" && alignment && sourceCount === sourceDistinct)))
+              const forward = analysisAlignment(record, evidence) === "forward";
+              if (!(forward && (cardinality === "many_to_one" || (cardinality === "one_to_one" && sourceCount === sourceDistinct))))
                 issue(errors, "analysis_cardinality_mismatch", dataset, entry.key, "Declared cardinality is not supported by the cited directional uniqueness evidence.");
             }
           }

@@ -9,6 +9,19 @@ import pytest
 from gds_etl_workbench.application.change_sets.project_validation import (
     validate_future_graph,
 )
+from pydantic import ValidationError
+from tests.mcp.project_test_fixtures import (
+    complete_physical_scope,
+    project_details,
+    snapshot_from_graph,
+)
+from tests.web_backend.mapping_fixtures import mapping_preparation
+from tests.web_backend.test_dimensional_executor import (
+    _context_bundle as dimensional_context_bundle,
+)
+from tests.web_backend.test_dimensional_executor import _plan as dimensional_plan
+from tests.web_backend.test_logical_executor import _context_bundle, _plan
+
 from gds_workbench_api.features.mapping.execution_context import (
     build_mapping_execution_context,
 )
@@ -22,30 +35,18 @@ from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
     project_prompt_input_values,
 )
 from gds_workbench_api.prompt_rendering import PromptVariableDefinition
-from pydantic import ValidationError
-
-from tests.mcp.project_test_fixtures import (
-    complete_physical_scope,
-    project_details,
-    snapshot_from_graph,
-)
-from tests.web_backend.mapping_fixtures import mapping_preparation
-from tests.web_backend.test_dimensional_executor import (
-    _context_bundle as dimensional_context_bundle,
-)
-from tests.web_backend.test_dimensional_executor import _plan as dimensional_plan
-from tests.web_backend.test_logical_executor import _context_bundle, _plan
 
 
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
 @pytest.mark.parametrize("scd_type", [None, "type_1", "type_2"])
+@pytest.mark.parametrize("operation", ["build", "optimize"])
 def test_logical_prompt_uses_frozen_project_scd_choice(
-    mode: Literal["one_shot", "tool_assisted"], scd_type: str | None
+    mode: Literal["one_shot", "tool_assisted"],
+    scd_type: str | None,
+    operation: Literal["build", "optimize"],
 ) -> None:
-    context = _context_bundle(mode=mode).context
-    details = context.project_details.model_copy(
-        update={"logical_entity_scd_type": scd_type}
-    )
+    context = _context_bundle(mode=mode, operation=operation).context
+    details = context.project_details.model_copy(update={"logical_entity_scd_type": scd_type})
     context = context.model_copy(update={"project_details": details})
     readers = (
         InMemoryAgentContextToolCatalog(
@@ -57,8 +58,8 @@ def test_logical_prompt_uses_frozen_project_scd_choice(
         if mode == "tool_assisted"
         else None
     )
-    plan = _plan(mode=mode)
-    key = "workflow.logical.common.candidate_authoring.inputs.logical_entity_scd_type"
+    plan = _plan(mode=mode, operation=operation)
+    key = f"workflow.logical.common.{operation}_authoring.inputs.logical_entity_scd_type"
     stage = plan.stages[0].model_copy(
         update={
             "variables": (
@@ -88,9 +89,7 @@ def test_logical_prompt_uses_frozen_project_scd_choice(
 def test_mapping_prompt_retains_project_history_guidance_for_both_layers(
     mode: Any, scd_type: str | None, entity_type: Any
 ) -> None:
-    preparation = mapping_preparation(
-        execution_mode=mode, modeled_entity_type=entity_type
-    )
+    preparation = mapping_preparation(execution_mode=mode, modeled_entity_type=entity_type)
     policy = preparation.context.authoring.model_copy(
         update={
             "logical_entity_scd_type": scd_type,
@@ -100,9 +99,7 @@ def test_mapping_prompt_retains_project_history_guidance_for_both_layers(
     preparation = preparation.model_copy(
         update={"context": preparation.context.model_copy(update={"authoring": policy})}
     )
-    execution = build_mapping_execution_context(
-        preparation=preparation, execution_mode=mode
-    )
+    execution = build_mapping_execution_context(preparation=preparation, execution_mode=mode)
     plan = preparation.plan.agent_plan
     key = "workflow.mapping.common.mapping_authoring.inputs.authoring_policy"
     stage = plan.stages[0].model_copy(
@@ -141,9 +138,7 @@ def test_mapping_policy_rejects_unknown_scd_guidance(value: object) -> None:
         )
 
 
-@pytest.mark.parametrize(
-    "field", ["logical_entity_scd_type", "dimensional_entity_scd_type"]
-)
+@pytest.mark.parametrize("field", ["logical_entity_scd_type", "dimensional_entity_scd_type"])
 @pytest.mark.parametrize("original", [None, "type_1", "type_2"])
 @pytest.mark.parametrize("proposed", [None, "type_1", "type_2"])
 def test_staged_project_details_can_propose_governed_history_setting(
@@ -164,13 +159,14 @@ def test_staged_project_details_can_propose_governed_history_setting(
 
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
 @pytest.mark.parametrize("scd_type", [None, "type_1", "type_2"])
+@pytest.mark.parametrize("operation", ["build", "optimize"])
 def test_dimensional_prompt_uses_frozen_project_scd_choice(
-    mode: Literal["one_shot", "tool_assisted"], scd_type: str | None
+    mode: Literal["one_shot", "tool_assisted"],
+    scd_type: str | None,
+    operation: Literal["build", "optimize"],
 ) -> None:
-    context = dimensional_context_bundle(mode=mode).context
-    details = context.project_details.model_copy(
-        update={"dimensional_entity_scd_type": scd_type}
-    )
+    context = dimensional_context_bundle(mode=mode, operation=operation).context
+    details = context.project_details.model_copy(update={"dimensional_entity_scd_type": scd_type})
     context = context.model_copy(update={"project_details": details})
     readers = (
         InMemoryAgentContextToolCatalog(
@@ -182,8 +178,8 @@ def test_dimensional_prompt_uses_frozen_project_scd_choice(
         if mode == "tool_assisted"
         else None
     )
-    plan = dimensional_plan(mode=mode)
-    key = "workflow.dimensional.common.candidate_authoring.inputs.dimensional_entity_scd_type"
+    plan = dimensional_plan(mode=mode, operation=operation)
+    key = f"workflow.dimensional.common.{operation}_authoring.inputs.dimensional_entity_scd_type"
     stage = plan.stages[0].model_copy(
         update={
             "variables": (

@@ -829,7 +829,7 @@
           path: document.path,
           layer: document.layer,
           view: document.view,
-          submodel_name: document.submodel_name,
+          subject_area_name: document.subject_area_name,
           table_count: document.table_count,
           relationship_count: document.relationship_count,
           size_bytes: bytes.length,
@@ -842,7 +842,7 @@
       }
       await this.assertInputsUnchanged(options.binding);
       const manifest = {
-        schema_version: "2.0",
+        schema_version: "3.0",
         snapshot_kind: "dbml",
         source: "local_effective_project",
         generated_by: "workbench",
@@ -854,7 +854,7 @@
         draft_digest: options.binding.inputs.find(item => item.area === "project").draft_digest,
         inputs: options.binding.inputs,
         model_type: options.modelType || "full",
-        include_submodels: options.includeSubmodels !== false,
+        include_subject_areas: options.includeSubjectAreas !== false,
         files,
       };
       await writeText(

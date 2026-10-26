@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from copy import deepcopy
-from typing import cast
+from typing import Any, cast
 
 from gds_etl_workbench.application.change_sets.project import StageProjectChange
 from gds_etl_workbench.application.change_sets.project_validation import (
@@ -20,11 +20,9 @@ from gds_etl_workbench.domain.modeling_records import (
     DimensionalEntityRecord,
     DimensionalLogicalEntitySourceRecord,
     DimensionalRelationshipRecord,
-    DimensionalSubmodelRecord,
     LogicalAttributeKey,
     LogicalContextSourceRecord,
     LogicalEntityKey,
-    SubmodelMembershipRecord,
     normalize_project_key_value,
 )
 from gds_etl_workbench.domain.snapshots.project import DimensionalSection
@@ -52,28 +50,22 @@ type _AttributeSource = AttributeLogicalSourceRecord | AttributeContextSourceRec
 class _DimensionalCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    submodels: list[DimensionalSubmodelRecord] = Field(max_length=20_000)
     entities: list[DimensionalEntityRecord] = Field(max_length=20_000)
     attributes: list[DimensionalAttributeRecord] = Field(max_length=20_000)
     relationships: list[DimensionalRelationshipRecord] = Field(max_length=20_000)
 
     @model_validator(mode="after")
     def validate_size(self) -> _DimensionalCandidate:
-        count = (
-            len(self.submodels)
-            + len(self.entities)
-            + len(self.attributes)
-            + len(self.relationships)
-        )
-        if not 1 <= count <= 20_000:
-            raise ValueError("Dimensional candidates must be bounded and nonempty")
+        # Every call returns only changes; empty arrays mean no change.
+        count = len(self.entities) + len(self.attributes) + len(self.relationships)
+        if count > 20_000:
+            raise ValueError("Dimensional candidates must be bounded")
         return self
 
 
 class _NormalizedCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    submodels: tuple[DimensionalSubmodelRecord, ...]
     entities: tuple[DimensionalEntityRecord, ...]
     attributes: tuple[DimensionalAttributeRecord, ...]
     relationships: tuple[DimensionalRelationshipRecord, ...]
@@ -90,6 +82,7 @@ class DimensionalCandidateValidator:
         selected_attribute_keys: tuple[LogicalAttributeKey, ...],
         context_record_ids: tuple[str, ...],
         applied: DimensionalSection | None,
+        fact_types: tuple[str, ...] = (),
         coverage_threshold_percent: int = 60,
         raw_technical_template: dict[str, object] | None = None,
         raw_audit_template: dict[str, object] | None = None,
@@ -130,12 +123,9 @@ class DimensionalCandidateValidator:
         ):
             raise ValueError("Dimensional candidate evidence keys must be unique")
 
-        self._applied = applied or DimensionalSection(
-            submodels=(), entities=(), attributes=(), relationships=()
-        )
-        self._applied_submodels = {
-            _submodel_key(record): record for record in self._applied.submodels
-        }
+        self._applied = applied or DimensionalSection(entities=(), attributes=(), relationships=())
+        # Active codes of reference.dimensional_fact_type, as frozen in the run's snapshot.
+        self._fact_types = tuple(dict.fromkeys(fact_types))
         self._applied_entities = {_entity_key(record): record for record in self._applied.entities}
         self._applied_attributes = {
             _attribute_key(record): record for record in self._applied.attributes
@@ -146,7 +136,6 @@ class DimensionalCandidateValidator:
         if any(
             actual != expected
             for actual, expected in (
-                (len(self._applied_submodels), len(self._applied.submodels)),
                 (len(self._applied_entities), len(self._applied.entities)),
                 (len(self._applied_attributes), len(self._applied.attributes)),
                 (len(self._applied_relationships), len(self._applied.relationships)),
@@ -182,8 +171,8 @@ class DimensionalCandidateValidator:
             "3. Where the evidence supports an existing or proposed dimension, fact or "
             "bridge's analytical role and grain, add or correct its entities[].sources "
             "entry with support_source_type 'logical_entity', the exact "
-            "source_logical_entity identity and status 'active'; its parent "
-            "dimensional_entity_status must also be 'active'. Otherwise create a separate "
+            "source_logical_entity identity and is_active true; its parent "
+            "dimensional_entity_is_active must also be true. Otherwise create a separate "
             "well-supported Entity with its required Attributes and valid references. "
             "Preserve locks and deliberate inactive records; never reactivate them, merge "
             "incompatible grains or invent links merely to increase coverage.\n"
@@ -201,6 +190,13 @@ class DimensionalCandidateValidator:
         )
         _set_lock_fields_false(schema)
         enrich_agent_output_project_definitions(schema)
+        entity_schema = cast(
+            dict[str, Any], cast(dict[str, JsonValue], schema["$defs"])["DimensionalEntityRecord"]
+        )
+        entity_schema["properties"]["dimensional_fact_type"] = {
+            "anyOf": [{"enum": list(self._fact_types)}, {"type": "null"}],
+            "description": "An active fact type code for facts; null for dimensions and bridges.",
+        }
         # The shared Change Set rule asks for technical and audit Attributes; this
         # workflow projects them.
         attribute_schema = cast(
@@ -227,13 +223,18 @@ class DimensionalCandidateValidator:
             **self._applied_entities,
             **{_entity_key(record): record for record in normalized.entities},
         }
+        return self.coverage_of(entities.values())
+
+    def coverage_of(
+        self, entities: Iterable[DimensionalEntityRecord]
+    ) -> tuple[AgentValidationIssue, ...]:
+        """Distinct selected Logical Entities with active support on active Entities."""
         covered = {
             _logical_entity_key(source.source_logical_entity)
-            for record in entities.values()
-            if record.dimensional_entity_status == "active"
+            for record in entities
+            if record.dimensional_entity_is_active
             for source in record.sources
-            if isinstance(source, DimensionalLogicalEntitySourceRecord)
-            and source.status == "active"
+            if isinstance(source, DimensionalLogicalEntitySourceRecord) and source.is_active
         }
         missing = self._selected_entity_keys.keys() - covered
         total = len(self._selected_entity_keys)
@@ -263,31 +264,75 @@ class DimensionalCandidateValidator:
         if normalized.issues:
             raise InvalidRequestError("The Dimensional candidate is invalid.")
 
+        entities = {_entity_key(record): record for record in normalized.entities}
+        attributes = {_attribute_key(record): record for record in normalized.attributes}
+        relationships = {_relationship_key(record): record for record in normalized.relationships}
+        # Retiring a saved Entity retires its unlocked saved Attributes, and retiring an
+        # Attribute retires the saved Relationships that use it, as Logical retire does.
+        retired_entities = {
+            key for key, record in entities.items() if not record.dimensional_entity_is_active
+        }
+        for key, record in self._applied_attributes.items():
+            if (
+                key[:2] in retired_entities
+                and key not in attributes
+                and record.dimensional_attribute_is_active
+                and not record.dimensional_attribute_is_locked
+            ):
+                attributes[key] = record.model_copy(
+                    update={"dimensional_attribute_is_active": False}
+                )
+        retired_attributes = {
+            key for key, record in attributes.items() if not record.dimensional_attribute_is_active
+        }
+        for key, record in self._applied_relationships.items():
+            if (
+                key not in relationships
+                and record.dimensional_relationship_is_active
+                and not record.dimensional_relationship_is_locked
+                and {_endpoint(record, "from"), _endpoint(record, "to")} & retired_attributes
+            ):
+                relationships[key] = record.model_copy(
+                    update={"dimensional_relationship_is_active": False}
+                )
+        # A saved Fact or Bridge edge starts at its projected foreign key; retiring the edge
+        # retires that key too.
+        effective_entities = {**self._applied_entities, **entities}
+        for key, record in relationships.items():
+            saved = self._applied_relationships.get(key)
+            from_key = _endpoint(record, "from")
+            child = effective_entities.get(from_key[:2])
+            foreign_key = attributes.get(from_key) or self._applied_attributes.get(from_key)
+            if (
+                saved is not None
+                and saved.dimensional_relationship_is_active
+                and not record.dimensional_relationship_is_active
+                and child is not None
+                and child.dimensional_entity_type in ("fact", "bridge")
+                and foreign_key is not None
+                and foreign_key.dimensional_attribute_is_active
+                and not foreign_key.dimensional_attribute_is_locked
+            ):
+                attributes[from_key] = foreign_key.model_copy(
+                    update={"dimensional_attribute_is_active": False}
+                )
+
         changes: list[StageProjectChange] = []
-        changed_submodels = [
-            record.model_dump(mode="json")
-            for record in normalized.submodels
-            if self._applied_submodels.get(_submodel_key(record)) != record
-        ]
         changed_entities = [
             record.model_dump(mode="json")
-            for record in normalized.entities
+            for record in entities.values()
             if self._applied_entities.get(_entity_key(record)) != record
         ]
         changed_attributes = [
             record.model_dump(mode="json")
-            for record in normalized.attributes
+            for record in attributes.values()
             if self._applied_attributes.get(_attribute_key(record)) != record
         ]
         changed_relationships = [
             record.model_dump(mode="json")
-            for record in normalized.relationships
+            for record in relationships.values()
             if self._applied_relationships.get(_relationship_key(record)) != record
         ]
-        if changed_submodels:
-            changes.append(
-                StageProjectChange(dataset="dimensional_submodel", records=changed_submodels)
-            )
         if changed_entities:
             changes.append(
                 StageProjectChange(dataset="dimensional_entity", records=changed_entities)
@@ -309,7 +354,6 @@ class DimensionalCandidateValidator:
         parsed, parse_issues = parse_pydantic_candidate(_DimensionalCandidate, candidate)
         if parsed is None:
             return _NormalizedCandidate(
-                submodels=(),
                 entities=(),
                 attributes=(),
                 relationships=(),
@@ -317,9 +361,6 @@ class DimensionalCandidateValidator:
             )
 
         issues: list[AgentValidationIssue] = []
-        for index, submodel in enumerate(parsed.submodels):
-            if submodel.dimensional_submodel_is_locked:
-                _lock_forbidden(("submodels", index), issues)
         raw_entities: list[dict[str, object]] = []
         for index, entity in enumerate(parsed.entities):
             existing = self._applied_entities.get(_entity_key(entity))
@@ -328,9 +369,17 @@ class DimensionalCandidateValidator:
             raw_entities.append(merged)
             if entity.dimensional_entity_is_locked:
                 _lock_forbidden(("entities", index), issues)
-            for nested_index, membership in enumerate(entity.submodels):
-                if membership.membership_is_locked:
-                    _lock_forbidden(("entities", index, "submodels", nested_index), issues)
+            if (
+                entity.dimensional_fact_type is not None
+                and entity.dimensional_fact_type not in self._fact_types
+            ):
+                issues.append(
+                    AgentValidationIssue(
+                        code="candidate.fact_type_unknown",
+                        path=("entities", index, "dimensional_fact_type"),
+                        message="Use an active code from dimensional_fact_types.",
+                    )
+                )
             for source_index, source in enumerate(entity.sources):
                 if source.is_locked:
                     _lock_forbidden(("entities", index, "sources", source_index), issues)
@@ -432,13 +481,6 @@ class DimensionalCandidateValidator:
             if relationship.dimensional_relationship_is_locked:
                 _lock_forbidden(("relationships", index), issues)
 
-        submodels, submodel_issues = validate_staged_records(
-            "dimensional_submodel",
-            [
-                _merge_submodel(record, self._applied_submodels.get(_submodel_key(record)))
-                for record in parsed.submodels
-            ],
-        )
         entities, entity_issues = validate_staged_records(
             "dimensional_entity",
             raw_entities,
@@ -457,24 +499,12 @@ class DimensionalCandidateValidator:
                 for record in parsed.relationships
             ],
         )
-        typed_submodels = cast(tuple[DimensionalSubmodelRecord, ...], submodels)
         typed_entities = cast(tuple[DimensionalEntityRecord, ...], entities)
         typed_attributes = cast(tuple[DimensionalAttributeRecord, ...], attributes)
         typed_relationships = cast(tuple[DimensionalRelationshipRecord, ...], relationships)
         issues.extend(
-            project_validation_issues(
-                submodel_issues + entity_issues + attribute_issues + relationship_issues
-            )
+            project_validation_issues(entity_issues + attribute_issues + relationship_issues)
         )
-        for index, record in enumerate(typed_submodels):
-            existing = self._applied_submodels.get(_submodel_key(record))
-            if existing is not None:
-                _append_locked_change_issues(
-                    existing,
-                    record,
-                    path=("submodels", index),
-                    issues=issues,
-                )
         for index, record in enumerate(typed_entities):
             existing = self._applied_entities.get(_entity_key(record))
             if existing is not None:
@@ -503,24 +533,10 @@ class DimensionalCandidateValidator:
                     issues=issues,
                 )
 
-        submodel_keys = set(self._applied_submodels)
-        submodel_keys.update(_submodel_key(record) for record in typed_submodels)
         entity_keys = set(self._applied_entities)
         entity_keys.update(_entity_key(record) for record in typed_entities)
         attribute_keys = set(self._applied_attributes)
         attribute_keys.update(_attribute_key(record) for record in typed_attributes)
-        for index, entity in enumerate(typed_entities):
-            if any(
-                normalize_project_key_value(membership.submodel_name) not in submodel_keys
-                for membership in entity.submodels
-            ):
-                issues.append(
-                    AgentValidationIssue(
-                        code="candidate.submodel_missing",
-                        path=("entities", index, "submodels"),
-                        message="Every Dimensional Entity Submodel must exist.",
-                    )
-                )
         for index, attribute in enumerate(typed_attributes):
             if (
                 normalize_project_key_value(attribute.dimensional_entity_schema_name),
@@ -534,18 +550,7 @@ class DimensionalCandidateValidator:
                     )
                 )
         for index, relationship in enumerate(typed_relationships):
-            endpoints = (
-                (
-                    normalize_project_key_value(relationship.from_dimensional_entity_schema_name),
-                    normalize_project_key_value(relationship.from_dimensional_entity_name),
-                    normalize_project_key_value(relationship.from_dimensional_attribute_name),
-                ),
-                (
-                    normalize_project_key_value(relationship.to_dimensional_entity_schema_name),
-                    normalize_project_key_value(relationship.to_dimensional_entity_name),
-                    normalize_project_key_value(relationship.to_dimensional_attribute_name),
-                ),
-            )
+            endpoints = (_endpoint(relationship, "from"), _endpoint(relationship, "to"))
             if any(endpoint not in attribute_keys for endpoint in endpoints):
                 issues.append(
                     AgentValidationIssue(
@@ -555,23 +560,11 @@ class DimensionalCandidateValidator:
                     )
                 )
         return _NormalizedCandidate(
-            submodels=typed_submodels,
             entities=typed_entities,
             attributes=typed_attributes,
             relationships=typed_relationships,
             issues=tuple(issues),
         )
-
-
-def _merge_submodel(
-    record: DimensionalSubmodelRecord,
-    existing: DimensionalSubmodelRecord | None,
-) -> dict[str, object]:
-    value = cast(dict[str, object], record.model_dump(mode="json"))
-    value["dimensional_submodel_is_locked"] = (
-        existing.dimensional_submodel_is_locked if existing is not None else False
-    )
-    return value
 
 
 def _merge_entity(
@@ -581,12 +574,6 @@ def _merge_entity(
     value = cast(dict[str, object], record.model_dump(mode="json"))
     value["dimensional_entity_is_locked"] = (
         existing.dimensional_entity_is_locked if existing is not None else False
-    )
-    value["submodels"] = _merge_nested(
-        record.submodels,
-        () if existing is None else existing.submodels,
-        key=_membership_key,
-        lock_field="membership_is_locked",
     )
     value["sources"] = _merge_nested(
         record.sources,
@@ -675,10 +662,7 @@ def _append_locked_change_issues(
     if _top_lock(existing) and existing != changed:
         _record_locked(path, issues)
         return
-    for field_name, key_function, lock_field in (
-        ("submodels", _membership_key, "membership_is_locked"),
-        ("sources", _nested_source_key, "is_locked"),
-    ):
+    for field_name, key_function, lock_field in (("sources", _nested_source_key, "is_locked"),):
         applied_nested = getattr(existing, field_name, ())
         changed_nested = {key_function(item): item for item in getattr(changed, field_name, ())}
         for index, applied_record in enumerate(applied_nested):
@@ -705,8 +689,6 @@ def _record_locked(
 
 
 def _top_lock(record: object) -> bool:
-    if isinstance(record, DimensionalSubmodelRecord):
-        return record.dimensional_submodel_is_locked
     if isinstance(record, DimensionalEntityRecord):
         return record.dimensional_entity_is_locked
     if isinstance(record, DimensionalAttributeRecord):
@@ -734,10 +716,6 @@ def _set_lock_fields_false(value: JsonValue) -> None:
         _set_lock_fields_false(child)
 
 
-def _submodel_key(record: DimensionalSubmodelRecord) -> str:
-    return normalize_project_key_value(record.dimensional_submodel_name)
-
-
 def _entity_key(record: DimensionalEntityRecord) -> tuple[str, str]:
     return (
         normalize_project_key_value(record.dimensional_entity_schema_name),
@@ -753,8 +731,12 @@ def _attribute_key(record: DimensionalAttributeRecord) -> tuple[str, str, str]:
     )
 
 
-def _membership_key(record: SubmodelMembershipRecord) -> tuple[str, ...]:
-    return (normalize_project_key_value(record.submodel_name),)
+def _endpoint(record: DimensionalRelationshipRecord, side: str) -> tuple[str, str, str]:
+    return (
+        normalize_project_key_value(getattr(record, f"{side}_dimensional_entity_schema_name")),
+        normalize_project_key_value(getattr(record, f"{side}_dimensional_entity_name")),
+        normalize_project_key_value(getattr(record, f"{side}_dimensional_attribute_name")),
+    )
 
 
 def _entity_source_key(record: _EntitySource) -> tuple[str, ...]:

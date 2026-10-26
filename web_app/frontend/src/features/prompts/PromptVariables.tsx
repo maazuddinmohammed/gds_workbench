@@ -17,7 +17,7 @@ export function PromptVariables({
   const [search, setSearch] = useState("");
   const [group, setGroup] = useState("");
   const groupOf = (variable: PromptStageVariable) => variable.group
-    || (["scope_tables", "table_links", "existing_subject_areas", "max_subject_area_columns"].includes(variable.name) ? "Subject Area inputs"
+    || (["scope_tables", "table_links", "existing_subject_areas"].includes(variable.name) ? "Subject Area inputs"
       : variable.name.startsWith("logical_") ? "Logical results"
         : variable.name.startsWith("dimensional_") ? "Dimensional results"
           : ["naming_instructions", "audit_columns", "technical_columns"].includes(variable.name) ? "Project settings"

@@ -11,59 +11,32 @@
 
 .subject-area-overview strong { color: var(--ink); }
 
-.subject-area-meter {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
-  min-width: 0;
-  white-space: nowrap;
-}
-
-.subject-area-meter-track {
-  position: relative;
-  flex: 0 0 5.5rem;
-  height: 0.4rem;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--line);
-}
-
-.subject-area-meter-track > span {
-  position: absolute;
-  inset: 0 auto 0 0;
-  border-radius: inherit;
-  background: var(--accent);
-  transition: width 160ms var(--ease-fluid);
-}
-
-.subject-area-meter.is-near .subject-area-meter-track > span { background: var(--amber); }
-.subject-area-meter.is-over .subject-area-meter-track > span { background: var(--red); }
-.subject-area-meter-label { color: var(--ink-2); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
-.subject-area-meter.is-near .subject-area-meter-label { color: var(--amber); }
-.subject-area-meter.is-over .subject-area-meter-label { color: var(--red); }
-
+/* Wide ledgers scroll inside their container instead of breaking values mid-word. */
+.subject-area-ledger > table { min-width: 56rem; }
+.subject-area-ledger td:not(.subject-area-description) { white-space: nowrap; }
 .subject-area-ledger :is(th, td).is-numeric { text-align: right; font-variant-numeric: tabular-nums; }
 .subject-area-ledger tbody th { font-size: inherit; text-transform: none; letter-spacing: normal; background: transparent; }
 
-.subject-area-name-cell,
-.subject-area-table-name {
+.subject-area-name-cell {
   display: grid;
   gap: 0.15rem;
   min-width: 0;
 }
 
 .subject-area-name-cell { max-width: 34rem; }
-.subject-area-name-cell > a { font-weight: 600; }
+.subject-area-name-cell > strong { color: var(--ink); }
 
 .subject-area-name-cell > small,
-.subject-area-table-name > small,
 .subject-area-muted {
   color: var(--muted);
   font-size: 0.75rem;
 }
 
+.subject-area-description { min-width: 16rem; }
+
+/* Clamp the text, never the table cell itself. */
 .subject-area-name-cell > small,
-.subject-area-description {
+.subject-area-description > span:not(.subject-area-muted) {
   display: -webkit-box;
   max-width: 30rem;
   overflow: hidden;
@@ -80,15 +53,6 @@
 }
 
 .subject-area-empty p { margin: 0; }
-
-.subject-area-warning {
-  margin: 0.6rem 0 0;
-  padding: 0.55rem 0.75rem;
-  border-radius: var(--radius-small);
-  color: var(--amber);
-  background: var(--amber-soft);
-  font-size: 0.8rem;
-}
 
 .subject-area-filterbar {
   grid-template-columns: minmax(13rem, 1.5fr) minmax(10rem, 0.75fr) auto;
@@ -154,6 +118,9 @@
   border-top: 1px solid var(--line);
 }
 
+/* The dialog header already draws a rule above the first section. */
+.subject-area-form > .subject-area-picker-section:first-child { padding-top: 0; border-top: 0; }
+
 .subject-area-picker-section > header {
   display: flex;
   flex-wrap: wrap;
@@ -207,7 +174,7 @@
 .subject-area-picker-scroll table { min-width: 40rem; }
 .subject-area-picker-scroll th:first-child { width: 2.75rem; }
 .subject-area-picker-scroll thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); }
-.subject-area-picker-scroll tbody th { font-weight: 400; font-size: inherit; text-transform: none; letter-spacing: normal; background: transparent; }
+.subject-area-picker-scroll tbody th { font-weight: 400; font-size: 0.78rem; text-transform: none; letter-spacing: normal; background: transparent; }
 .subject-area-picker-scroll :is(th, td).is-numeric { text-align: right; font-variant-numeric: tabular-nums; }
 .subject-area-picker-scroll tr.is-fixed td,
 .subject-area-picker-scroll tr.is-fixed th { color: var(--muted); background: var(--soft); }
@@ -223,16 +190,6 @@
 }
 
 .subject-area-dialog-actions > span { color: var(--muted); font-size: 0.8rem; }
-
-.subject-area-assign-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem 1rem;
-  color: var(--muted);
-  font-size: 0.8rem;
-}
 
 .subject-area-assign-list {
   display: grid;
@@ -265,9 +222,4 @@
   .subject-area-picker-tools { grid-template-columns: minmax(0, 1fr); }
   .subject-area-segments { width: 100%; }
   .subject-area-picker-tools .subject-area-segments label { flex: 1; justify-content: center; }
-  .subject-area-meter-track { flex-basis: 3.5rem; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .subject-area-meter-track > span { transition: none; }
 }

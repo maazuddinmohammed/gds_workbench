@@ -7,7 +7,7 @@ const {connect,validateSession} = require('../../atlas/atlas-plugin/workbench/wo
 const dbml = require('../../atlas/atlas-plugin/workbench/dbml.js');
 const common = require('../../atlas/atlas-plugin/workbench/validation/common.js');
 const source = dataset('source_object',['tenant_code','object_name'],[{tenant_code:'T',object_name:'Customer',description:'Before',is_active:true}]);
-const entity = name => ({logical_entity_schema_name:'silver',logical_entity_name:name,logical_entity_status:'active',submodels:[]});
+const entity = name => ({logical_entity_schema_name:'silver',logical_entity_name:name,logical_entity_is_active:true,sources:[]});
 const projectFixture = root => { state(root,{project:{id:7,name:'Sales'}}); return snapshot(root,'project',[dataset('logical_entity',['logical_entity_schema_name','logical_entity_name'],[entity('Customer')])]); };
 
 test('opening Atlas is read-only and missing optional areas are valid',async()=>{
@@ -70,6 +70,9 @@ test('effective DBML contains unchanged snapshot Entities and newly proposed Ent
  const root=workspace();projectFixture(root);root.directory('project-change-set').file('logical_entity.json',JSON.stringify([entity('Order')]));
  const ws=await connect(root),binding=await ws.captureInputs('project'),loaded=await ws.loadArea('project');const docs=dbml.render(loaded,ws.area('project').catalog.project);const logical=docs.find(doc=>doc.path==='logical_complete.dbml');
  assert.match(logical.content,/Customer/);assert.match(logical.content,/Order/);const result=await ws.saveDbmlDocuments(docs,{binding});assert.equal(result.draft_digest,binding.inputs[0].draft_digest);
+ const manifest=JSON.parse(root.entries.get('project-dbml').entries.get('manifest.json').text);
+ assert.equal(manifest.schema_version,'3.0');assert.equal(manifest.include_subject_areas,true);
+ assert.deepEqual(manifest.files.map(file=>[file.path,file.view,file.subject_area_name]),[['dimensional_complete.dbml','complete',null],['logical_complete.dbml','complete',null]]);
 });
 test('duplicate pending keys are blocking structural findings before DBML',async()=>{
  const root=workspace();projectFixture(root);const row=entity('Order');root.directory('project-change-set').file('logical_entity.json',JSON.stringify([row,row]));

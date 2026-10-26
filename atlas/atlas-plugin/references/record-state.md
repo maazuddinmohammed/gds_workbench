@@ -12,7 +12,7 @@ Shared rules for every workflow. Apply them when reading inputs, authoring compl
 | No lock field | Do not invent one or assume that another record's lock applies without a documented rule. Profiling Profiles have no independent lock field. |
 
 - A **Metadata Object lock** protects the Object and all its Attributes, including proposed Attribute additions. An Attribute's own lock protects that Attribute. Omit unchanged locked Metadata records from pending changes; current validation rejects their submission even when unchanged.
-- A **Project record lock** protects that complete record, including nested supports, sources and submodel memberships. Preserve independently locked nested members when editing an unlocked parent. Carry complete nested arrays; omission does not delete or retire applied members.
+- A **Project record lock** protects that complete record, including nested supports and sources. Preserve independently locked nested members when editing an unlocked parent. Carry complete nested arrays; omission does not delete or retire applied members.
 - Logical and Dimensional Entities and their separately stored Attributes/Relationships have their own locks. The current generic Project validator does not propagate an Entity lock to those separate records. Do not claim that additional protection is implemented.
 - Do not clear flags locally to satisfy validation. A separately governed human lifecycle action is distinct from workflow authoring; resume from refreshed/reconciled state after such a change.
 - Schema is part of Entity identity. Changing a schema/name changes the key; preserve locked Entity-owned Mapping, Code and nested sources rather than silently redirecting them.
@@ -23,7 +23,7 @@ Shared rules for every workflow. Apply them when reading inputs, authoring compl
 - Do not silently reactivate records or their parents. An intentional supported lifecycle change needs its dependent changes and validation; a lock still blocks it.
 - Use eligible active inputs for profiling/modeling and enforce each dataset's active-dependency rules. Metadata references do not all require active parents: an active Copy may remain under an inactive Copy Group and be skipped at runtime. Inactive records may explain history; visibility alone does not make them current modeling evidence.
 - Preserve valid retained history when upstream physical metadata or scope becomes inactive. Historical retention does not authorize new out-of-scope content. Follow the dataset's retained-history rules during validation.
-- Activation fields vary: some datasets use `is_active`, others a named status such as `active`, `inactive` or `deprecated`; some have neither. Use the published schema and agreed defaults. Unknown, false and zero are distinct values.
+- Activation fields vary: Subject Area, Logical and Dimensional records use a boolean `<prefix>_is_active` and their nested sources `is_active`; other datasets use `is_active` or a named status such as `active`, `inactive` or `deprecated`; some have neither. Retire by setting the field to `false` or `inactive`, never by deleting. Use the published schema and agreed defaults. Unknown, false and zero are distinct values.
 
 ## Three different locks
 

@@ -11,6 +11,34 @@
   font-size: 0.74rem;
 }
 
+/* Icon-only Refresh: the project header's arrows, sized like a small button. */
+.button.button-small.refresh-button {
+  display: inline-grid;
+  place-items: center;
+  min-width: 2.15rem;
+  padding: 0.5rem;
+}
+
+.refresh-button svg {
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.refresh-button[aria-busy="true"] svg {
+  animation: spin 750ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .refresh-button[aria-busy="true"] svg {
+    animation: none;
+  }
+}
+
 .workspace-ledger {
   padding-top: 0;
 }

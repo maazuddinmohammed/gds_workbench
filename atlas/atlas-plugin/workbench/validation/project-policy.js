@@ -41,7 +41,8 @@
         if (dataset === "attribute_enrichment" && parentLocks.has(physical(record))) add("enrichment_parent_locked", dataset, "object_name", "A locked Object enrichment also protects its Attribute findings.");
       }
     }
-    for (const dataset of ["logical_submodel", "logical_entity", "logical_attribute", "logical_relationship", "dimensional_submodel", "dimensional_entity", "dimensional_attribute", "dimensional_relationship"]) {
+    // Relationships have no name: the child's foreign-key Attribute identifies them.
+    for (const dataset of ["logical_entity", "logical_attribute", "dimensional_entity", "dimensional_attribute"]) {
       const override = dataset.startsWith("dimensional") ? details.gold_model_naming_instructions : details.silver_model_naming_instructions;
       for (const record of added.get(dataset) || []) {
         const field = `${dataset}_name`, name = record[field];
@@ -51,7 +52,7 @@
     }
 
     for (const layer of ["logical", "dimensional"]) {
-      const entityDataset = `${layer}_entity`, attributeDataset = `${layer}_attribute`, submodelDataset = `${layer}_submodel`;
+      const entityDataset = `${layer}_entity`, attributeDataset = `${layer}_attribute`;
       const entityField = `${layer}_entity_name`, schemaField = `${layer}_entity_schema_name`, attributeField = `${layer}_attribute_name`;
       const entityKey = record => tuple([record[schemaField], record[entityField]]);
       const configuredSchemas = details[`${layer}_schemas`] ?? (loaded.has("project_details") ? [] : undefined);
@@ -61,12 +62,8 @@
       }
       const entities = rows(loaded, entityDataset).filter(active), attributes = rows(loaded, attributeDataset).filter(active);
       const byEntity = new Map(entities.map(entity => [entityKey(entity), entity]));
-      const submodels = new Map(rows(loaded, submodelDataset).map(record => [norm(record[`${layer}_submodel_name`]), record]));
       const newEntities = new Set((added.get(entityDataset) || []).filter(active).map(record => entityKey(record)));
       const touchedEntities = new Set([...(changed.get(entityDataset) || []).map(record => entityKey(record)), ...(changed.get(attributeDataset) || []).map(record => entityKey(record))]);
-      for (const entity of changed.get(entityDataset) || []) {
-        for (const membership of entity.submodels || []) if (membership.membership_status === "active" && (!active(entity) || !active(submodels.get(norm(membership.submodel_name)) || {}))) add("project.membership-state", entityDataset, "submodels", "Active membership needs an active Entity and Submodel.");
-      }
       for (const attribute of rows(loaded, attributeDataset).filter(active)) {
         const parent = byEntity.get(entityKey(attribute));
         if (!parent) continue;
@@ -108,7 +105,7 @@
       for (const relation of changed.get(`${layer}_relationship`) || []) {
         if (!active(relation)) continue;
         const endpoints = ["from", "to"].map(prefix => byAttribute.get(tuple([relation[`${prefix}_${schemaField}`], relation[`${prefix}_${entityField}`], relation[`${prefix}_${attributeField}`]])));
-        if (endpoints.every(Boolean) && norm(endpoints[0][`${layer}_attribute_data_type`]) !== norm(endpoints[1][`${layer}_attribute_data_type`])) add("project.relationship-type", `${layer}_relationship`, `${layer}_relationship_name`, "Relationship endpoint types differ; resolve an explicit compatible representation before defining the FK.");
+        if (endpoints.every(Boolean) && norm(endpoints[0][`${layer}_attribute_data_type`]) !== norm(endpoints[1][`${layer}_attribute_data_type`])) add("project.relationship-type", `${layer}_relationship`, `from_${layer}_attribute_name`, "Relationship endpoint types differ; resolve an explicit compatible representation before defining the FK.");
       }
     }
 

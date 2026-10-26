@@ -10,8 +10,8 @@ from gds_workbench_api.features.context.contracts import ContextRecordReference
 
 MAX_DETAIL_ROWS = 2000
 
-type ModeledStatus = Literal["active", "inactive", "deprecated"]
-type Cardinality = Literal["one_to_one", "one_to_many", "many_to_one", "many_to_many"]
+# Model relationships point child -> parent, so only these two remain.
+type ModelCardinality = Literal["many_to_one", "one_to_one"]
 
 
 class ContractModel(BaseModel):
@@ -19,12 +19,12 @@ class ContractModel(BaseModel):
 
 
 class ModeledFilters(ContractModel):
-    status: ModeledStatus | None = None
+    active: bool | None = None
     locked: bool | None = None
     name_exact: str | None = Field(default=None, min_length=1, max_length=255)
     name_prefix: str | None = Field(default=None, min_length=1, max_length=255)
 
-    @field_validator("status", "name_exact", "name_prefix", mode="before")
+    @field_validator("name_exact", "name_prefix", mode="before")
     @classmethod
     def normalize_text(cls, value: object, info: ValidationInfo) -> object:
         if not isinstance(value, str):
@@ -42,7 +42,8 @@ class ModeledFilters(ContractModel):
 
 
 class LogicalEntityFilters(ModeledFilters):
-    logical_submodel_id: int | None = Field(default=None, gt=0)
+    # Entities with an active Object source among the area's active member Objects.
+    subject_area_id: int | None = Field(default=None, gt=0)
 
 
 # Layer-specific public name retained for callers using the earlier name.
@@ -54,20 +55,10 @@ class LogicalEntitySummary(ContractModel):
     workflow_run_id: int | None = Field(default=None, gt=0)
     logical_entity_schema_name: str = Field(min_length=1, max_length=400)
     logical_entity_name: str = Field(min_length=1, max_length=255)
-    logical_entity_type: Literal[
-        "core",
-        "reference",
-        "transaction",
-        "event",
-        "bridge",
-        "history",
-        "snapshot",
-        "association",
-        "aggregate",
-        "other",
-    ]
+    # A code from reference.logical_entity_type; the list can grow without a release.
+    logical_entity_type: str = Field(min_length=1, max_length=50)
     logical_entity_dependency_order: int = Field(ge=0)
-    logical_entity_status: ModeledStatus
+    logical_entity_is_active: bool
     logical_entity_is_locked: bool
     updated_at: datetime
 
@@ -88,23 +79,34 @@ class PhysicalObjectReference(ContractModel):
     object_name: str = Field(min_length=1, max_length=400)
 
 
-class LogicalSubmodelMembership(ContractModel):
-    logical_entity_submodel_id: int = Field(gt=0)
-    workflow_run_id: int | None = Field(default=None, gt=0)
-    logical_submodel_id: int = Field(gt=0)
-    logical_submodel_name: str = Field(min_length=1, max_length=255)
-    membership_status: ModeledStatus
-    membership_is_locked: bool
-    created_at: datetime
-    updated_at: datetime
+class EntitySubjectArea(ContractModel):
+    """An active Subject Area reached through the Entity's active Object sources."""
+
+    subject_area_id: int = Field(gt=0)
+    subject_area_name: str = Field(min_length=1, max_length=255)
+
+
+class ModelSubjectArea(ContractModel):
+    """An active Subject Area with how many active Entities of one layer it reaches."""
+
+    subject_area_id: int = Field(gt=0)
+    subject_area_name: str = Field(min_length=1, max_length=255)
+    subject_area_definition: str = Field(min_length=1)
+    table_count: int = Field(ge=0)
+    entity_count: int = Field(ge=0)
+
+
+class ModelSubjectAreaPage(ContractModel):
+    project_id: int = Field(gt=0)
+    project_revision: int = Field(gt=0)
+    items: tuple[ModelSubjectArea, ...] = Field(max_length=1_000)
 
 
 class LogicalEntitySourceBase(ContractModel):
     logical_entity_source_mapping_id: int = Field(gt=0)
     workflow_run_id: int | None = Field(default=None, gt=0)
-    source_order: int | None = Field(default=None, gt=0)
-    rationale: str = Field(min_length=1)
-    status: ModeledStatus
+    rationale: str | None = Field(default=None, min_length=1)
+    is_active: bool
     is_locked: bool
     created_at: datetime
     updated_at: datetime
@@ -128,10 +130,9 @@ type LogicalEntitySource = Annotated[
 
 class LogicalEntityDetail(LogicalEntitySummary):
     logical_entity_definition: str = Field(min_length=1)
-    logical_entity_type_detail: str | None = Field(default=None, min_length=1)
     logical_entity_grain: str = Field(min_length=1)
     created_at: datetime
-    submodels: tuple[LogicalSubmodelMembership, ...] = Field(max_length=MAX_DETAIL_ROWS)
+    subject_areas: tuple[EntitySubjectArea, ...] = Field(max_length=MAX_DETAIL_ROWS)
     sources: tuple[LogicalEntitySource, ...] = Field(max_length=MAX_DETAIL_ROWS)
 
 
@@ -157,7 +158,7 @@ class LogicalAttributeSummary(ContractModel):
     logical_attribute_is_surrogate_key: bool
     logical_attribute_ordinal_position: int = Field(gt=0)
     logical_attribute_is_audit_column: bool
-    logical_attribute_status: ModeledStatus
+    logical_attribute_is_active: bool
     logical_attribute_is_locked: bool
     updated_at: datetime
 
@@ -172,9 +173,8 @@ class LogicalAttributePage(ContractModel):
 class LogicalAttributeSourceBase(ContractModel):
     logical_attribute_source_mapping_id: int = Field(gt=0)
     workflow_run_id: int | None = Field(default=None, gt=0)
-    source_order: int | None = Field(default=None, gt=0)
-    rationale: str = Field(min_length=1)
-    status: ModeledStatus
+    rationale: str | None = Field(default=None, min_length=1)
+    is_active: bool
     is_locked: bool
     created_at: datetime
     updated_at: datetime
@@ -208,6 +208,11 @@ class LogicalRelationshipFilters(ModeledFilters):
 
 
 class LogicalRelationshipSummary(ContractModel):
+    """Child -> parent: the from Attribute is the foreign key, to is the parent's key.
+
+    Relationships have no name; name filters match the from (foreign-key) Attribute.
+    """
+
     logical_relationship_id: int = Field(gt=0)
     workflow_run_id: int | None = Field(default=None, gt=0)
     from_logical_entity_id: int = Field(gt=0)
@@ -220,9 +225,8 @@ class LogicalRelationshipSummary(ContractModel):
     to_logical_entity_name: str = Field(min_length=1, max_length=255)
     to_logical_attribute_id: int = Field(gt=0)
     to_logical_attribute_name: str = Field(min_length=1, max_length=255)
-    logical_relationship_name: str = Field(min_length=1, max_length=255)
-    logical_relationship_cardinality: Cardinality
-    logical_relationship_status: ModeledStatus
+    logical_relationship_cardinality: ModelCardinality
+    logical_relationship_is_active: bool
     logical_relationship_is_locked: bool
     updated_at: datetime
 
@@ -235,58 +239,8 @@ class LogicalRelationshipPage(ContractModel):
 
 
 class LogicalRelationshipDetail(LogicalRelationshipSummary):
-    logical_relationship_definition: str = Field(min_length=1)
     logical_relationship_basis: str = Field(min_length=1)
-    logical_relationship_cardinality_basis: str = Field(min_length=1)
     created_at: datetime
-
-
-class LogicalSubmodelSummary(ContractModel):
-    logical_submodel_id: int = Field(gt=0)
-    workflow_run_id: int | None = Field(default=None, gt=0)
-    logical_submodel_name: str = Field(min_length=1, max_length=255)
-    logical_submodel_status: ModeledStatus
-    logical_submodel_is_locked: bool
-    entity_count: int = Field(ge=0)
-    updated_at: datetime
-
-
-class LogicalSubmodelPage(ContractModel):
-    project_id: int = Field(gt=0)
-    project_revision: int = Field(gt=0)
-    items: tuple[LogicalSubmodelSummary, ...] = Field(max_length=200)
-    next_cursor: str | None = Field(default=None, max_length=2048)
-
-
-class LogicalSubmodelEntityMembership(ContractModel):
-    logical_entity_submodel_id: int = Field(gt=0)
-    workflow_run_id: int | None = Field(default=None, gt=0)
-    logical_entity_id: int = Field(gt=0)
-    logical_entity_schema_name: str = Field(min_length=1, max_length=400)
-    logical_entity_name: str = Field(min_length=1, max_length=255)
-    logical_entity_type: Literal[
-        "core",
-        "reference",
-        "transaction",
-        "event",
-        "bridge",
-        "history",
-        "snapshot",
-        "association",
-        "aggregate",
-        "other",
-    ]
-    logical_entity_status: ModeledStatus
-    membership_status: ModeledStatus
-    membership_is_locked: bool
-    created_at: datetime
-    updated_at: datetime
-
-
-class LogicalSubmodelDetail(LogicalSubmodelSummary):
-    logical_submodel_definition: str = Field(min_length=1)
-    created_at: datetime
-    entities: tuple[LogicalSubmodelEntityMembership, ...] = Field(max_length=MAX_DETAIL_ROWS)
 
 
 class LogicalEntityNotFoundError(WorkbenchError):
@@ -313,14 +267,6 @@ class LogicalRelationshipNotFoundError(WorkbenchError):
         )
 
 
-class LogicalSubmodelNotFoundError(WorkbenchError):
-    def __init__(self) -> None:
-        super().__init__(
-            code="logical_submodel_not_found",
-            message="The requested Logical Submodel was not found.",
-        )
-
-
 class LogicalDetailLimitExceededError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(
@@ -332,14 +278,14 @@ class LogicalDetailLimitExceededError(WorkbenchError):
 class ModeledListQuery(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    status: ModeledStatus | None = None
+    active: bool | None = None
     locked: bool | None = None
     name_exact: str | None = Field(default=None, max_length=255)
     name_prefix: str | None = Field(default=None, max_length=255)
     page_size: int = Field(default=50, ge=1, le=200)
     cursor: str | None = Field(default=None, max_length=2048)
 
-    @field_validator("status", "name_exact", "name_prefix", mode="before")
+    @field_validator("name_exact", "name_prefix", mode="before")
     @classmethod
     def normalize_text(cls, value: object, info: ValidationInfo) -> object:
         if not isinstance(value, str):
@@ -361,7 +307,7 @@ class LogicalAttributeListQuery(ModeledListQuery):
 
 
 class LogicalEntityListQuery(ModeledListQuery):
-    logical_submodel_id: int | None = Field(default=None, gt=0)
+    subject_area_id: int | None = Field(default=None, gt=0)
 
 
 class LogicalRelationshipListQuery(ModeledListQuery):

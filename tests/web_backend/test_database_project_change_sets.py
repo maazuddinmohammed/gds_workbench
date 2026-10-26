@@ -19,6 +19,9 @@ from gds_etl_workbench.domain.errors import (
     InvalidRequestError,
     TenantLockRequiredError,
 )
+from psycopg import Connection
+from psycopg.types.json import Jsonb
+
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.analysis.service import AnalysisInferenceWorkflow
 from gds_workbench_api.features.dimensional import DimensionalWorkflow
@@ -53,6 +56,7 @@ from gds_workbench_api.features.workflows.authoring.lifecycle import (
     DatabaseAgentWorkflowLifecycle,
 )
 from gds_workbench_api.features.workflows.authoring.no_op import (
+    AuthoringNoOpReceipt,
     DatabaseAuthoringNoOpService,
 )
 from gds_workbench_api.features.workflows.execution.repository import (
@@ -60,8 +64,6 @@ from gds_workbench_api.features.workflows.execution.repository import (
 )
 from gds_workbench_api.features.workflows.runs import DatabaseWorkflowRunService
 from gds_workbench_api.integrations.agents import LocalFakeAgentAdapter
-from psycopg import Connection
-from psycopg.types.json import Jsonb
 
 
 class RecordingFakeAgentAdapter(LocalFakeAgentAdapter):
@@ -94,16 +96,12 @@ _MATERIALIZED_TABLES = (
     "workflow.dimensional_attribute_source_mapping",
     "workflow.dimensional_entity",
     "workflow.dimensional_entity_source_mapping",
-    "workflow.dimensional_entity_submodel",
     "workflow.dimensional_relationship",
-    "workflow.dimensional_submodel",
     "workflow.logical_attribute",
     "workflow.logical_attribute_source_mapping",
     "workflow.logical_entity",
     "workflow.logical_entity_source_mapping",
-    "workflow.logical_entity_submodel",
     "workflow.logical_relationship",
-    "workflow.logical_submodel",
     "workflow.mapping_object",
 )
 
@@ -512,8 +510,10 @@ def _make_scope_object_dimensional_eligible(
             (connection_id, source_tenant_id),
         )
         connection.execute(
-            'UPDATE project.project SET logical_schemas = \'[{"schema_name":"silver","description":null}]\', '
-            'dimensional_schemas = \'[{"schema_name":"gold","description":null}]\' WHERE project_id = %s',
+            "UPDATE project.project "
+            'SET logical_schemas = \'[{"schema_name":"silver","description":null}]\', '
+            'dimensional_schemas = \'[{"schema_name":"gold","description":null}]\' '
+            "WHERE project_id = %s",
             (project_id,),
         )
         logical_entity_id = _required_id(
@@ -525,14 +525,14 @@ def _make_scope_object_dimensional_eligible(
                     logical_entity_definition,
                     logical_entity_type,
                     logical_entity_grain,
-                    logical_entity_status, logical_entity_schema_name
+                    logical_entity_schema_name
                 ) VALUES (
                     %s,
                     'order',
                     'One source order.',
                     'transaction',
                     'One row per source order.',
-                    'active', 'silver'
+                    'silver'
                 )
                 RETURNING logical_entity_id
                 """,
@@ -551,8 +551,7 @@ def _make_scope_object_dimensional_eligible(
                     logical_attribute_data_type,
                     logical_attribute_is_nullable,
                     logical_attribute_is_natural_key,
-                    logical_attribute_ordinal_position,
-                    logical_attribute_status
+                    logical_attribute_ordinal_position
                 ) VALUES (
                     %s,
                     %s,
@@ -561,8 +560,7 @@ def _make_scope_object_dimensional_eligible(
                     'bigint',
                     FALSE,
                     TRUE,
-                    1,
-                    'active'
+                    1
                 )
                 RETURNING logical_attribute_id
                 """,
@@ -709,12 +707,23 @@ def _create_queued_authoring_run_with_prompt(
     execution_mode: Literal["one_shot", "tool_assisted"] = "one_shot",
     workflow: Literal["subject_area", "logical", "dimensional"],
     selected_object_id: int | None = None,
+    operation: Literal["build", "optimize"] = "build",
 ) -> int:
+    """Queue one run with a published tenant Prompt for its single authoring stage.
+
+    Logical and Dimensional runs Build one new Subject Area holding the first Scope table;
+    for Dimensional, ``selected_object_id`` is a Logical Entity that the Build makes built
+    from that table. An Optimize run selects from the applied model instead.
+    """
     suffix = uuid4().hex
+    stage_code = "candidate_authoring" if workflow == "subject_area" else f"{operation}_authoring"
+    building = workflow != "subject_area" and operation == "build"
     with database.connect_owner() as connection:
         connection.execute(
-            'UPDATE project.project SET logical_schemas = \'[{"schema_name":"silver","description":null}]\', '
-            'dimensional_schemas = \'[{"schema_name":"gold","description":null}]\' WHERE project_id = %s',
+            "UPDATE project.project "
+            'SET logical_schemas = \'[{"schema_name":"silver","description":null}]\', '
+            'dimensional_schemas = \'[{"schema_name":"gold","description":null}]\' '
+            "WHERE project_id = %s",
             (project_id,),
         )
         actor = connection.execute(
@@ -726,43 +735,58 @@ def _create_queued_authoring_run_with_prompt(
             """,
             (entra_tenant_id, entra_object_id),
         ).fetchone()
-        if selected_object_id is None:
-            selected = connection.execute(
-                """
-                SELECT scope.object_id
-                  FROM project.project_input_scope AS scope
-                 WHERE scope.project_id = %s
-                   AND scope.is_active
-                 ORDER BY scope.object_id
-                 LIMIT 1
-                """,
-                (project_id,),
-            ).fetchone()
-        elif workflow == "dimensional":
-            selected = connection.execute(
-                """
-                SELECT logical_entity_id AS object_id
-                  FROM workflow.logical_entity
-                 WHERE project_id = %s AND logical_entity_id = %s
-                   AND logical_entity_status = 'active'
-                """,
-                (project_id, selected_object_id),
-            ).fetchone()
-        else:
-            selected = connection.execute(
-                """
-                SELECT scope.object_id
-                  FROM project.project_input_scope AS scope
-                 WHERE scope.project_id = %s
-                   AND scope.object_id = %s
-                   AND scope.is_active
-                """,
-                (project_id, selected_object_id),
-            ).fetchone()
+        selected = connection.execute(
+            """
+            SELECT scope.object_id
+              FROM project.project_input_scope AS scope
+             WHERE scope.project_id = %s
+               AND scope.is_active
+               AND (%s::BIGINT IS NULL OR scope.object_id = %s)
+             ORDER BY scope.object_id
+             LIMIT 1
+            """,
+            (
+                project_id,
+                None if workflow == "dimensional" else selected_object_id,
+                None if workflow == "dimensional" else selected_object_id,
+            ),
+        ).fetchone()
         if actor is None or selected is None:
             raise AssertionError("expected seeded authoring run inputs")
         principal_id = _required_id(actor, "principal_id")
         object_id = _required_id(selected, "object_id")
+        subject_area_ids: list[int] | None = None
+        if building:
+            area_id = _required_id(
+                connection.execute(
+                    """
+                    INSERT INTO workflow.subject_area (
+                        project_id, subject_area_name, subject_area_definition
+                    ) VALUES (%s, %s, 'Orders and the customers who place them.')
+                    RETURNING subject_area_id
+                    """,
+                    (project_id, f"Sales {suffix}"),
+                ).fetchone(),
+                "subject_area_id",
+            )
+            connection.execute(
+                "INSERT INTO workflow.subject_area_table (project_id, subject_area_id, object_id) "
+                "VALUES (%s, %s, %s)",
+                (project_id, area_id, object_id),
+            )
+            subject_area_ids = [area_id]
+        if building and workflow == "dimensional":
+            if selected_object_id is None:
+                raise AssertionError("expected the Logical Entity a Dimensional Build models")
+            connection.execute(
+                """
+                INSERT INTO workflow.logical_entity_source_mapping (
+                    project_id, logical_entity_id, source_object_id
+                ) VALUES (%s, %s, %s)
+                ON CONFLICT (project_id, logical_entity_id, source_object_id) DO NOTHING
+                """,
+                (project_id, selected_object_id, object_id),
+            )
 
         stage = connection.execute(
             """
@@ -770,9 +794,9 @@ def _create_queued_authoring_run_with_prompt(
               FROM application.workflow_stage
              WHERE project_workflow = %s
                AND workflow_execution_mode = %s
-               AND workflow_stage_code = 'candidate_authoring'
+               AND workflow_stage_code = %s
             """,
-            (workflow, execution_mode),
+            (workflow, execution_mode, stage_code),
         ).fetchone()
         if stage is None:
             stage = connection.execute(
@@ -784,14 +808,12 @@ def _create_queued_authoring_run_with_prompt(
                     workflow_stage_name,
                     workflow_stage_order,
                     workflow_stage_is_agentic
-                ) VALUES (
-                    %s, %s, 'candidate_authoring',
-                    'Candidate authoring', 10, TRUE
-                )
+                ) VALUES (%s, %s, %s, 'Candidate authoring', %s, TRUE)
                 RETURNING workflow_stage_id
                 """,
-                (workflow, execution_mode),
+                (workflow, execution_mode, stage_code, 20 if operation == "optimize" else 10),
             ).fetchone()
+        workflow_stage_id = _required_id(stage, "workflow_stage_id")
         system_prompt = f"Author one complete {workflow.title()} candidate."
         instruction_prompt = "Use the immutable context: {{stage_context}}."
         digest_row = connection.execute(
@@ -815,135 +837,117 @@ def _create_queued_authoring_run_with_prompt(
         if digest_row is None or not isinstance(digest_row.get("prompt_digest"), str):
             raise AssertionError("expected Prompt digest")
         prompt_digest = digest_row["prompt_digest"]
-        stages = connection.execute(
-            """
-            SELECT workflow_stage_id, workflow_stage_code
-              FROM application.workflow_stage
-             WHERE project_workflow = %s
-               AND workflow_execution_mode = %s
-               AND workflow_stage_is_agentic
-               AND is_active
-             ORDER BY workflow_stage_order, workflow_stage_id
-            """,
-            (workflow, execution_mode),
-        ).fetchall()
-        prompt_overrides: dict[str, int] = {}
-        for prompt_number, prompt_stage in enumerate(stages, start=1):
-            workflow_stage_id = _required_id(prompt_stage, "workflow_stage_id")
-            workflow_stage_code = prompt_stage.get("workflow_stage_code")
-            if not isinstance(workflow_stage_code, str):
-                raise AssertionError("expected Workflow Stage code")
-            variables = (
-                (
-                    "stage_context",
-                    f"workflow.{workflow}.{execution_mode}.{workflow_stage_code}.context",
-                    "json",
-                    True,
-                    "Immutable bounded context for this authoring run.",
-                    10,
-                ),
-                (
-                    "naming_instructions",
-                    "project.naming_instructions",
-                    "text",
-                    False,
-                    "Optional Project naming instructions.",
-                    20,
-                ),
-                (
-                    "validation_failures",
-                    "workflow.validation_failures",
-                    "json",
-                    False,
-                    "Bounded validation failures for a repair attempt.",
-                    30,
-                ),
-            )
-            for variable in variables:
-                connection.execute(
-                    """
-                    INSERT INTO application.workflow_stage_variable (
-                        workflow_stage_id,
-                        workflow_stage_variable_name,
-                        workflow_stage_variable_resolver_key,
-                        workflow_stage_variable_data_type,
-                        workflow_stage_variable_is_required,
-                        workflow_stage_variable_description,
-                        workflow_stage_variable_order
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (
-                        workflow_stage_id,
-                        workflow_stage_variable_name
-                    ) DO NOTHING
-                    """,
-                    (workflow_stage_id,) + variable,
-                )
-            prompt_template_id = _required_id(
-                connection.execute(
-                    """
-                    INSERT INTO application.prompt_template (
-                        workflow_stage_id,
-                        prompt_template_ownership_scope,
-                        owner_tenant_id,
-                        prompt_template_code,
-                        prompt_template_name,
-                        created_by_principal_id,
-                        updated_by_principal_id
-                    ) VALUES (%s, 'tenant', %s, %s, %s, %s, %s)
-                    RETURNING prompt_template_id
-                    """,
-                    (
-                        workflow_stage_id,
-                        tenant_id,
-                        f"{workflow}_execution_{prompt_number}_{suffix}",
-                        f"{workflow.title()} Execution {prompt_number} {suffix}",
-                        principal_id,
-                        principal_id,
-                    ),
-                ).fetchone(),
-                "prompt_template_id",
-            )
-            prompt_version_id = _required_id(
-                connection.execute(
-                    """
-                    INSERT INTO application.prompt_template_version (
-                        prompt_template_id,
-                        workflow_stage_id,
-                        prompt_template_version_number,
-                        system_prompt_template,
-                        instruction_prompt_template,
-                        prompt_template_digest,
-                        created_by_principal_id,
-                        updated_by_principal_id
-                    ) VALUES (%s, %s, 1, %s, %s, %s, %s, %s)
-                    RETURNING prompt_template_version_id
-                    """,
-                    (
-                        prompt_template_id,
-                        workflow_stage_id,
-                        system_prompt,
-                        instruction_prompt,
-                        prompt_digest,
-                        principal_id,
-                        principal_id,
-                    ),
-                ).fetchone(),
-                "prompt_template_version_id",
-            )
+        variables = (
+            (
+                "stage_context",
+                f"workflow.{workflow}.{execution_mode}.{stage_code}.context",
+                "json",
+                True,
+                "Immutable bounded context for this authoring run.",
+                10,
+            ),
+            (
+                "naming_instructions",
+                "project.naming_instructions",
+                "text",
+                False,
+                "Optional Project naming instructions.",
+                20,
+            ),
+            (
+                "validation_failures",
+                "workflow.validation_failures",
+                "json",
+                False,
+                "Bounded validation failures for a repair attempt.",
+                30,
+            ),
+        )
+        for variable in variables:
             connection.execute(
                 """
-                UPDATE application.prompt_template_version
-                   SET prompt_template_version_status = 'published',
-                       published_time = CURRENT_TIMESTAMP,
-                       published_by_principal_id = %s,
-                       updated_by_principal_id = %s,
-                       updated_time = CURRENT_TIMESTAMP
-                 WHERE prompt_template_version_id = %s
+                INSERT INTO application.workflow_stage_variable (
+                    workflow_stage_id,
+                    workflow_stage_variable_name,
+                    workflow_stage_variable_resolver_key,
+                    workflow_stage_variable_data_type,
+                    workflow_stage_variable_is_required,
+                    workflow_stage_variable_description,
+                    workflow_stage_variable_order
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (
+                    workflow_stage_id,
+                    workflow_stage_variable_name
+                ) DO NOTHING
                 """,
-                (principal_id, principal_id, prompt_version_id),
+                (workflow_stage_id,) + variable,
             )
-            prompt_overrides[str(workflow_stage_id)] = prompt_version_id
+        prompt_template_id = _required_id(
+            connection.execute(
+                """
+                INSERT INTO application.prompt_template (
+                    workflow_stage_id,
+                    prompt_template_ownership_scope,
+                    owner_tenant_id,
+                    prompt_template_code,
+                    prompt_template_name,
+                    created_by_principal_id,
+                    updated_by_principal_id
+                ) VALUES (%s, 'tenant', %s, %s, %s, %s, %s)
+                RETURNING prompt_template_id
+                """,
+                (
+                    workflow_stage_id,
+                    tenant_id,
+                    f"{workflow}_execution_{suffix}",
+                    f"{workflow.title()} Execution {suffix}",
+                    principal_id,
+                    principal_id,
+                ),
+            ).fetchone(),
+            "prompt_template_id",
+        )
+        prompt_version_id = _required_id(
+            connection.execute(
+                """
+                INSERT INTO application.prompt_template_version (
+                    prompt_template_id,
+                    workflow_stage_id,
+                    prompt_template_version_number,
+                    system_prompt_template,
+                    instruction_prompt_template,
+                    prompt_template_digest,
+                    created_by_principal_id,
+                    updated_by_principal_id
+                ) VALUES (%s, %s, 1, %s, %s, %s, %s, %s)
+                RETURNING prompt_template_version_id
+                """,
+                (
+                    prompt_template_id,
+                    workflow_stage_id,
+                    system_prompt,
+                    instruction_prompt,
+                    prompt_digest,
+                    principal_id,
+                    principal_id,
+                ),
+            ).fetchone(),
+            "prompt_template_version_id",
+        )
+        connection.execute(
+            """
+            UPDATE application.prompt_template_version
+               SET prompt_template_version_status = 'published',
+                   published_time = CURRENT_TIMESTAMP,
+                   published_by_principal_id = %s,
+                   updated_by_principal_id = %s,
+                   updated_time = CURRENT_TIMESTAMP
+             WHERE prompt_template_version_id = %s
+            """,
+            (principal_id, principal_id, prompt_version_id),
+        )
 
+        # Build and Optimize derive their own Objects or Logical Entities.
         created = connection.execute(
             """
             SELECT *
@@ -967,7 +971,8 @@ def _create_queued_authoring_run_with_prompt(
                   NULL::VARCHAR,
                   %s::UUID,
                   %s::JSONB,
-                  p_selected_entity_ids => %s::BIGINT[]
+                  p_workflow_operation => %s::VARCHAR,
+                  p_subject_area_ids => %s::BIGINT[]
               )
             """,
             (
@@ -976,22 +981,46 @@ def _create_queued_authoring_run_with_prompt(
                 project_id,
                 workflow,
                 execution_mode,
-                [] if workflow == "dimensional" else [object_id],
+                [object_id] if workflow == "subject_area" else [],
                 "logical_entity" if workflow == "dimensional" else None,
                 uuid4(),
-                Jsonb(prompt_overrides),
-                [object_id] if workflow == "dimensional" else None,
+                Jsonb({str(workflow_stage_id): prompt_version_id}),
+                None if workflow == "subject_area" else operation,
+                subject_area_ids,
             ),
         ).fetchone()
         if (
             created is None
             or created.get("created") is not True
             or created.get("workflow_run_state") != "queued"
-            or created.get("prompt_snapshot_count") != len(prompt_overrides)
+            or created.get("prompt_snapshot_count") != 1
         ):
             raise AssertionError("expected governed queued authoring run")
         workflow_run_id = _required_id(created, "workflow_run_id")
     return workflow_run_id
+
+
+def _build_identity(
+    connection: Connection[dict[str, object]], workflow_run_id: int
+) -> list[tuple[object, bool]]:
+    """The run's operation and whether each frozen Subject Area is the helper's Sales area."""
+    rows = connection.execute(
+        """
+        SELECT run.workflow_operation, area.subject_area_name
+          FROM application.workflow_run AS run
+          JOIN application.workflow_run_subject_area_selection AS selection
+            ON selection.workflow_run_id = run.workflow_run_id
+          JOIN workflow.subject_area AS area
+            ON area.subject_area_id = selection.subject_area_id
+         WHERE run.workflow_run_id = %s
+         ORDER BY selection.selection_order
+        """,
+        (workflow_run_id,),
+    ).fetchall()
+    return [
+        (row["workflow_operation"], str(row["subject_area_name"]).startswith("Sales "))
+        for row in rows
+    ]
 
 
 def _create_queued_subject_area_run_with_prompt(
@@ -1369,11 +1398,7 @@ async def test_web_change_set_requires_lock_and_applies_with_null_provenance(
                 change_set_id=created.project_change_set_id,
                 command=StageProjectChangeSetRequest(
                     expected_draft_revision=1,
-                    changes=[
-                        StageProjectChange(
-                            dataset="profiling_profile", records=[profile]
-                        )
-                    ],
+                    changes=[StageProjectChange(dataset="profiling_profile", records=[profile])],
                 ),
                 idempotency_key=uuid4(),
             )
@@ -1382,7 +1407,7 @@ async def test_web_change_set_requires_lock_and_applies_with_null_provenance(
             {
                 "subject_area_name": name,
                 "subject_area_definition": f"Tables that describe {name.lower()}.",
-                "subject_area_status": "active",
+                "subject_area_is_active": True,
                 "subject_area_is_locked": False,
             }
             for name in ("Customer", "Order")
@@ -1474,9 +1499,7 @@ async def test_web_change_set_requires_lock_and_applies_with_null_provenance(
             tenant_id=tenant_id,
             project_id=project_id,
             change_set_id=created.project_change_set_id,
-            command=ExpectedDraftRevisionRequest(
-                expected_draft_revision=committed.draft_revision
-            ),
+            command=ExpectedDraftRevisionRequest(expected_draft_revision=committed.draft_revision),
             idempotency_key=uuid4(),
         )
         assert validated.valid is True
@@ -1487,9 +1510,7 @@ async def test_web_change_set_requires_lock_and_applies_with_null_provenance(
             tenant_id=tenant_id,
             project_id=project_id,
             change_set_id=created.project_change_set_id,
-            command=ExpectedDraftRevisionRequest(
-                expected_draft_revision=committed.draft_revision
-            ),
+            command=ExpectedDraftRevisionRequest(expected_draft_revision=committed.draft_revision),
             idempotency_key=uuid4(),
         )
 
@@ -1588,7 +1609,7 @@ async def test_web_change_set_requires_lock_and_applies_with_null_provenance(
     with web_postgres_database.connect_owner() as connection:
         stored = connection.execute(
             """
-            SELECT agent_run_id, workflow_run_id, subject_area_name
+            SELECT workflow_run_id, subject_area_name
               FROM workflow.subject_area
              WHERE project_id = %s
              ORDER BY subject_area_name
@@ -1602,16 +1623,8 @@ async def test_web_change_set_requires_lock_and_applies_with_null_provenance(
 
     assert applied.action_count == 2
     assert stored == [
-        {
-            "agent_run_id": None,
-            "workflow_run_id": None,
-            "subject_area_name": "Customer",
-        },
-        {
-            "agent_run_id": None,
-            "workflow_run_id": None,
-            "subject_area_name": "Order",
-        },
+        {"workflow_run_id": None, "subject_area_name": "Customer"},
+        {"workflow_run_id": None, "subject_area_name": "Order"},
     ]
     assert project == {"project_revision": 2}
 
@@ -1676,7 +1689,7 @@ async def test_workflow_handoff_rolls_back_invalid_output_then_replays_one_bound
                 "connection_code": "MISSING",
                 "object_schema": "missing",
                 "object_name": "Missing",
-                "subject_area_table_status": "active",
+                "subject_area_table_is_active": True,
                 "subject_area_table_is_locked": False,
             }
         ],
@@ -1687,7 +1700,7 @@ async def test_workflow_handoff_rolls_back_invalid_output_then_replays_one_bound
             {
                 "subject_area_name": "Customer",
                 "subject_area_definition": "Tables that describe customers.",
-                "subject_area_status": "active",
+                "subject_area_is_active": True,
                 "subject_area_is_locked": False,
             }
         ],
@@ -1883,7 +1896,7 @@ async def test_workflow_finalization_is_atomic_and_rejects_completed_claim_reuse
             {
                 "subject_area_name": "Customer",
                 "subject_area_definition": "Tables that describe customers.",
-                "subject_area_status": "active",
+                "subject_area_is_active": True,
                 "subject_area_is_locked": False,
             }
         ],
@@ -2356,9 +2369,7 @@ async def test_completed_subject_area_draft_applies_once_with_run_provenance(
                 tenant_id=tenant_id,
                 project_id=project_id,
                 workflow_run_id=workflow_run_id,
-                command=command.model_copy(
-                    update={"expected_candidate_digest": "e" * 64}
-                ),
+                command=command.model_copy(update={"expected_candidate_digest": "e" * 64}),
                 idempotency_key=uuid4(),
             )
         with pytest.raises(ProjectRevisionConflictError):
@@ -2464,7 +2475,7 @@ async def test_completed_subject_area_draft_applies_once_with_run_provenance(
         ).fetchall()
         memberships = connection.execute(
             """
-            SELECT workflow_run_id, subject_area_table_status
+            SELECT workflow_run_id, subject_area_table_is_active
               FROM workflow.subject_area_table
              WHERE project_id = %s
              ORDER BY subject_area_table_id
@@ -2492,11 +2503,9 @@ async def test_completed_subject_area_draft_applies_once_with_run_provenance(
     assert change_set is not None
     assert change_set["project_change_set_status"] == "applied"
     assert change_set["applied_time"] == applied.applied_at
-    assert areas == [
-        {"workflow_run_id": workflow_run_id, "subject_area_name": "Business Area 1"}
-    ]
+    assert areas == [{"workflow_run_id": workflow_run_id, "subject_area_name": "Business Area 1"}]
     assert memberships == [
-        {"workflow_run_id": workflow_run_id, "subject_area_table_status": "active"}
+        {"workflow_run_id": workflow_run_id, "subject_area_table_is_active": True}
     ]
     assert applied_events == [{"correlation_id": idempotency_key}]
 
@@ -2670,6 +2679,7 @@ async def test_completed_logical_draft_applies_once_with_run_provenance(
                 workflow_run_id,
             ),
         ).fetchone()
+        build = _build_identity(connection, workflow_run_id)
 
     assert started.changed is True
     assert started.workflow_run_state == "running"
@@ -2700,6 +2710,8 @@ async def test_completed_logical_draft_applies_once_with_run_provenance(
         "attribute_count": 12,
         "attribute_source_count": 1,
     }
+    # The run Built its one Subject Area.
+    assert build == [("build", True)]
 
 
 @pytest.mark.asyncio
@@ -2876,6 +2888,12 @@ async def test_completed_dimensional_draft_applies_once_with_run_provenance(
                 workflow_run_id,
             ),
         ).fetchone()
+        build = _build_identity(connection, workflow_run_id)
+        entity_selection = connection.execute(
+            "SELECT modeled_entity_id FROM application.workflow_run_entity_selection "
+            "WHERE workflow_run_id = %s ORDER BY selection_order",
+            (workflow_run_id,),
+        ).fetchall()
 
     assert started.changed is True
     assert started.workflow_run_state == "running"
@@ -2905,6 +2923,160 @@ async def test_completed_dimensional_draft_applies_once_with_run_provenance(
         "entity_source_count": 1,
         "attribute_count": 3,
         "attribute_source_count": 1,
+    }
+    # The Build selected the Logical Entity built from its Subject Area's table.
+    assert build == [("build", True)]
+    assert entity_selection == [{"modeled_entity_id": silver_object_id}]
+
+
+@pytest.mark.asyncio
+async def test_dimensional_optimize_reviews_the_applied_model_without_a_draft(
+    web_postgres_database: DisposablePostgresFixture,
+) -> None:
+    (
+        project_id,
+        tenant_id,
+        _attribute_id,
+        entra_tenant_id,
+        entra_object_id,
+        _profile,
+    ) = _seed_profile_project(web_postgres_database)
+    logical_entity_id = _make_scope_object_dimensional_eligible(
+        web_postgres_database,
+        project_id=project_id,
+    )
+    with web_postgres_database.connect_owner() as connection:
+        # Optimize reviews the Logical Entities that feed the applied Dimensional model.
+        dimensional_entity_id = _required_id(
+            connection.execute(
+                """
+                INSERT INTO workflow.dimensional_entity (
+                    project_id, dimensional_entity_schema_name, dimensional_entity_name,
+                    dimensional_entity_definition, dimensional_entity_type
+                ) VALUES (%s, 'gold', 'Order Dimension', 'One source order.', 'dimension')
+                RETURNING dimensional_entity_id
+                """,
+                (project_id,),
+            ).fetchone(),
+            "dimensional_entity_id",
+        )
+        connection.execute(
+            """
+            INSERT INTO workflow.dimensional_entity_source_mapping (
+                project_id, dimensional_entity_id, source_logical_entity_id
+            ) VALUES (%s, %s, %s)
+            """,
+            (project_id, dimensional_entity_id, logical_entity_id),
+        )
+        # The saved Dimension already has the Project's surrogate key and audit column.
+        connection.execute(
+            """
+            INSERT INTO workflow.dimensional_attribute (
+                project_id, dimensional_entity_id, dimensional_attribute_name,
+                dimensional_attribute_definition, dimensional_attribute_data_type,
+                dimensional_attribute_is_nullable, dimensional_attribute_is_surrogate_key,
+                dimensional_attribute_is_audit_column, dimensional_attribute_ordinal_position
+            ) VALUES (%s, %s, 'Order Dimension key', 'Surrogate key for Order Dimension.',
+                      'bigint', FALSE, TRUE, FALSE, 1),
+                     (%s, %s, 'Loaded At', 'Warehouse load time.',
+                      'TIMESTAMPTZ', FALSE, FALSE, TRUE, 2)
+            """,
+            (project_id, dimensional_entity_id, project_id, dimensional_entity_id),
+        )
+        acquired = connection.execute(
+            """
+            SELECT acquired
+              FROM security.acquire_tenant_lock(
+                  %s, %s, 'user', %s, 60, 'Dimensional Optimize test'
+              )
+            """,
+            (entra_tenant_id, entra_object_id, tenant_id),
+        ).fetchone()
+    assert acquired == {"acquired": True}
+    workflow_run_id = _create_queued_authoring_run_with_prompt(
+        web_postgres_database,
+        project_id=project_id,
+        tenant_id=tenant_id,
+        entra_tenant_id=entra_tenant_id,
+        entra_object_id=entra_object_id,
+        workflow="dimensional",
+        operation="optimize",
+    )
+    principal = RequestPrincipal(
+        actor_kind=ActorKind.HUMAN,
+        entra_tenant_id=entra_tenant_id,
+        entra_object_id=entra_object_id,
+    )
+    database = WebPostgresDatabase(
+        dsn=web_postgres_database.web_runtime_dsn(),
+        pool_min=1,
+        pool_max=1,
+        pool_timeout_seconds=5,
+    )
+    agent = RecordingFakeAgentAdapter()
+    authorizer = AuthorizationService()
+    workflow = DimensionalWorkflow(
+        database=database,
+        authorizer=authorizer,
+        agent_executor=agent,
+        handoff=WorkflowChangeSetHandoff(database=database, authorizer=authorizer),
+        no_op=DatabaseAuthoringNoOpService(database=database),
+        lifecycle=DatabaseAgentWorkflowLifecycle(database=database),
+    )
+
+    await database.open()
+    try:
+        await workflow.start(
+            principal,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            workflow_run_id=workflow_run_id,
+            expected_execution_mode="one_shot",
+            expected_project_revision=1,
+        )
+        claim = await DatabaseWorkflowClaimRepository(database=database).claim_next(
+            lease_duration_seconds=300
+        )
+        assert claim is not None and claim.workflow_run_id == workflow_run_id
+        result = await workflow.execute_started(
+            principal,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            workflow_run_id=workflow_run_id,
+            expected_project_revision=1,
+            workflow_run_claim_token=claim.workflow_run_claim_token,
+        )
+    finally:
+        await database.close()
+
+    # The local fake proposes no change, so the Run completes without a draft.
+    assert isinstance(result, AuthoringNoOpReceipt)
+    assert result.workflow_run_state == "completed"
+    assert result.final_event.message == "Dimensional optimize produced no effective change."
+    with web_postgres_database.connect_owner() as connection:
+        run = connection.execute(
+            """
+            SELECT run.workflow_operation, run.workflow_run_state,
+                   (SELECT array_agg(selection.modeled_entity_id)
+                      FROM application.workflow_run_entity_selection AS selection
+                     WHERE selection.workflow_run_id = run.workflow_run_id) AS entity_ids,
+                   (SELECT count(*)
+                      FROM application.workflow_run_subject_area_selection AS area
+                     WHERE area.workflow_run_id = run.workflow_run_id) AS area_count,
+                   (SELECT count(*)
+                      FROM mcp.project_change_set AS draft
+                     WHERE draft.workflow_run_id = run.workflow_run_id) AS draft_count
+              FROM application.workflow_run AS run
+             WHERE run.workflow_run_id = %s
+            """,
+            (workflow_run_id,),
+        ).fetchone()
+    assert run == {
+        "workflow_operation": "optimize",
+        "workflow_run_state": "completed",
+        "entity_ids": [logical_entity_id],
+        "area_count": 0,
+        "draft_count": 0,
     }
 
 

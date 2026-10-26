@@ -8,27 +8,7 @@ from dataclasses import replace
 from typing import Any, cast
 
 import pytest
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
-    agent_input_payload,
-)
-from gds_workbench_api.features.workflows.authoring.context import (
-    AgentAuthoringContext,
-    InMemoryAgentContextToolCatalog,
-)
-from gds_workbench_api.features.workflows.authoring.no_op import AuthoringNoOpReceipt
-from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
-    list_prompt_input_contracts,
-)
-from gds_workbench_api.features.workflows.authoring.repair import (
-    AgentCandidateValidationError,
-    AgentContextPolicy,
-)
-from gds_workbench_api.prompt_rendering import (
-    PromptComponentTemplates,
-    PromptVariableDefinition,
-)
 from pydantic import JsonValue
-
 from tests.mcp.project_test_fixtures import complete_project_graph
 from tests.web_backend.test_default_prompt_contracts import DEFAULTS
 from tests.web_backend.test_logical_executor import (
@@ -43,14 +23,31 @@ from tests.web_backend.test_logical_executor import (
     _service,
 )
 
+from gds_workbench_api.features.workflows.authoring.agent_execution import (
+    agent_input_payload,
+)
+from gds_workbench_api.features.workflows.authoring.context import (
+    AgentAuthoringContext,
+)
+from gds_workbench_api.features.workflows.authoring.no_op import AuthoringNoOpReceipt
+from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
+    list_prompt_input_contracts,
+)
+from gds_workbench_api.features.workflows.authoring.repair import (
+    AgentCandidateValidationError,
+    AgentContextPolicy,
+)
+from gds_workbench_api.prompt_rendering import (
+    PromptComponentTemplates,
+    PromptVariableDefinition,
+)
+
 
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
 @pytest.mark.parametrize("repair_succeeds", [True, False])
 async def test_27_objects_883_attributes_require_object_coverage_with_selected_attributes(
     mode: str, repair_succeeds: bool
 ) -> None:
-    bundle = _context_bundle(mode=mode)
-    raw = bundle.context.model_dump(mode="json")
     selected: list[dict[str, Any]] = []
     complete = cast(dict[str, Any], _candidate())
     entity_template = deepcopy(complete["entities"][0])
@@ -98,6 +95,10 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
                     }
                 )
         selected.append(item)
+    # One Subject Area holds all 27 Objects, so a single Build call sees them all.
+    bundle = _context_bundle(mode=mode, selected_objects=selected)
+    raw = bundle.context.model_dump(mode="json")
+    selected = raw["selected_objects"]
     selected[0]["object"]["object_description"] = "Enriched customer business meaning."
     selected[0]["attributes"][0].update(
         attribute_description="Enriched customer business identifier.",
@@ -134,35 +135,14 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
     ]
     relationship = {
         **evidence["analysis_result"][0],
-        **{
-            f"{side}_{key}": value
-            for side in ("from", "to")
-            for key, value in source_key.items()
-        },
+        **{f"{side}_{key}": value for side in ("from", "to") for key, value in source_key.items()},
         "to_object_name": "source_1",
         "validation_result": "unsupported",
         "validation_target_non_null_count": 6,
         "validation_duplicate_target_key_count": 1,
     }
     raw["analysis_relationships"] = [relationship]
-    raw["selected_objects"] = selected
-    context = AgentAuthoringContext.model_validate(raw, strict=False)
-    catalog = (
-        InMemoryAgentContextToolCatalog(
-            context=context,
-            max_result_bytes=2_000_000,
-            max_catalog_bytes=2_000_000,
-            max_page_records=20,
-        )
-        if mode == "tool_assisted"
-        else None
-    )
-    bundle = replace(
-        bundle,
-        context=context,
-        tool_catalog=catalog,
-        embedded_context=catalog.manifest if catalog else cast(JsonValue, raw),
-    )
+    bundle = replace(bundle, context=AgentAuthoringContext.model_validate(raw, strict=False))
     # Reach the 70% threshold on the second attempt, or use all three attempts.
     complete["entities"] = complete["entities"][:19]
     agent = _AgentExecutor(
@@ -178,11 +158,12 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
         for row in DEFAULTS
         if row["project_workflow"] == "logical"
         and row["workflow_execution_mode"] == mode
+        and row["workflow_stage_code"] == "build_authoring"
     )
     contracts = list_prompt_input_contracts(
         project_workflow="logical",
         workflow_execution_mode=mode,
-        stage_code="candidate_authoring",
+        stage_code="build_authoring",
     )
     stage = plan.stages[0].model_copy(
         update={
@@ -211,9 +192,7 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
         agent=agent,
         plan=plan,
         context_bundle=bundle,
-        context_policy=AgentContextPolicy(
-            max_candidate_bytes=2_000_000, max_validation_issues=20
-        ),
+        context_policy=AgentContextPolicy(max_candidate_bytes=2_000_000, max_validation_issues=20),
     )
     execution = service.execute_started(
         _principal(),
@@ -257,6 +236,8 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
         assert len(supplied) == 27
         assert sum(len(item["attributes"]) for item in supplied) == 883
     else:
+        # The call's catalog holds the focused area: all 27 Objects here.
+        catalog = agent.requests[0].local_tool_catalog
         assert catalog is not None
         cursor = None
         attribute_count = object_count = 0
@@ -277,15 +258,9 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
                 break
         assert (object_count, attribute_count) == (27, 883)
         objects = cast(dict[str, Any], catalog.invoke("get_objects", {}))
-        assert (
-            objects["items"][0]["object_description"]
-            == "Enriched customer business meaning."
-        )
+        assert objects["items"][0]["object_description"] == "Enriched customer business meaning."
         attribute = supplied_details[0]["attributes"][0]
-        assert (
-            attribute["attribute_description"]
-            == "Enriched customer business identifier."
-        )
+        assert attribute["attribute_description"] == "Enriched customer business identifier."
         assert attribute["attribute_inferred_data_type"] == "STRING"
         assert attribute["is_primary_key"] is True and attribute["is_pii"] is None
         assert attribute["profile"]["row_count"] == 10
@@ -294,15 +269,11 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
         assert attribute["profile"]["percent_duplicates"] == 44.4444
         assert attribute["profile"]["row_scope"] == "batch"
         assert attribute["profile"]["profiled_at"] == "2026-10-06T00:00:00Z"
-        relationships = cast(
-            dict[str, Any], catalog.invoke("get_object_relationships", {})
-        )
+        relationships = cast(dict[str, Any], catalog.invoke("get_object_relationships", {}))
         assert relationships["items"][0]["outgoing_relationships"] == [relationship]
     assert handoff.retained == []
     assert len(handoff.calls) == 1 and lifecycle.failed is None
-    entities = next(
-        change for change in handoff.calls[0] if change.dataset == "logical_entity"
-    )
+    entities = next(change for change in handoff.calls[0] if change.dataset == "logical_entity")
     attributes = next(
         change for change in handoff.calls[0] if change.dataset == "logical_attribute"
     )
@@ -313,13 +284,10 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
     assert handoff.final_events[0].attempt == (2 if repair_succeeds else 3)
     if not repair_succeeds:
         assert handoff.final_events[0].status == "warning"
-        assert "1/27" in handoff.final_events[0].message
-        assert "final attempt" in handoff.final_events[0].message
+        assert "Customers: Coverage 1/27 is below 70%" in handoff.final_events[0].message
 
 
-async def test_empty_final_candidate_reports_zero_coverage_without_creating_a_draft() -> (
-    None
-):
+async def test_empty_final_candidate_reports_zero_coverage_without_creating_a_draft() -> None:
     agent = _AgentExecutor(responses=[_empty_candidate(), _empty_candidate()])
     service, _, _, handoff, lifecycle = _service(agent=agent)
     result = await service.execute_started(
@@ -348,31 +316,17 @@ async def test_coverage_enforcement_rejects_after_retries_without_handoff(
     enforce: bool,
     final_invalid: bool,
 ) -> None:
-    bundle = _context_bundle(mode=mode)
-    raw = bundle.context.model_dump(mode="json")
-    raw["project_details"]["logical_enforce_coverage_threshold"] = enforce
-    second = deepcopy(raw["selected_objects"][0])
-    second["selection_order"] = 2
-    second["object"]["object_name"] = "other_customer"
-    second["attributes"] = []
-    raw["selected_objects"].append(second)
-    context = AgentAuthoringContext.model_validate(raw, strict=False)
-    catalog = (
-        InMemoryAgentContextToolCatalog(
-            context=context,
-            max_result_bytes=128 * 1024,
-            max_catalog_bytes=128 * 1024,
-            max_page_records=20,
-        )
-        if mode == "tool_assisted"
-        else None
+    bundle = _context_bundle(
+        mode=mode,
+        selected_objects=(
+            _selected_object(),
+            _selected_object(selection_order=2, object_name="other_customer"),
+        ),
     )
-    bundle = replace(
-        bundle,
-        context=context,
-        tool_catalog=catalog,
-        embedded_context=catalog.manifest if catalog else cast(JsonValue, raw),
+    details = bundle.context.project_details.model_copy(
+        update={"logical_enforce_coverage_threshold": enforce}
     )
+    bundle = replace(bundle, context=bundle.context.model_copy(update={"project_details": details}))
     candidates: list[JsonValue | Exception] = [_candidate() for _ in range(retries + 1)]
     if final_invalid:
         candidates[-1] = _candidate(table_id="t9")
@@ -395,6 +349,8 @@ async def test_coverage_enforcement_rejects_after_retries_without_handoff(
             await execution
         assert handoff.calls == []
         if enforce and not final_invalid:
+            # Coverage is not authoritative graph validation: a draft that only falls short
+            # of coverage would pass it, so there is no rejected draft to retain.
             assert handoff.retained == []
             assert lifecycle.failed is not None
             assert lifecycle.failed[0] == "agent_candidate_validation_failed"
@@ -404,3 +360,47 @@ async def test_coverage_enforcement_rejects_after_retries_without_handoff(
         assert handoff.final_events[-1].status == "warning"
         assert "1/2" in handoff.final_events[-1].message
     assert len(agent.requests) == retries + 1
+
+
+async def test_areas_that_each_meet_coverage_can_leave_the_run_selection_short() -> None:
+    # Each area covers half its Objects through the shared customer_raw, which is enough at
+    # 50%, but only one of the run's three Objects is covered.
+    bundle = _context_bundle(
+        selected_objects=(
+            _selected_object(),
+            _selected_object(selection_order=2, object_name="contact_raw", key_name="contact_id"),
+            _selected_object(selection_order=3, object_name="order_raw", key_name="order_id"),
+        ),
+        subject_areas={
+            "Customers": ("customer_raw", "contact_raw"),
+            "Orders": ("customer_raw", "order_raw"),
+        },
+    )
+    details = bundle.context.project_details.model_copy(
+        update={"logical_coverage_threshold_percent": 50}
+    )
+    bundle = replace(bundle, context=bundle.context.model_copy(update={"project_details": details}))
+    agent = _AgentExecutor(responses=[_candidate(), _empty_candidate()])
+    service, _, _, handoff, lifecycle = _service(
+        agent=agent, plan=_plan(subject_areas=("Customers", "Orders")), context_bundle=bundle
+    )
+
+    await service.execute_started(
+        _principal(),
+        tenant_id=7,
+        project_id=18,
+        workflow_run_id=1048,
+        expected_project_revision=7,
+        workflow_run_claim_token=_CLAIM_TOKEN,
+    )
+
+    # Neither area needed a repair; the shortfall is reported once, for the whole run.
+    assert len(agent.requests) == 2
+    assert len(handoff.calls) == 1 and lifecycle.failed is None
+    final = handoff.final_events[-1]
+    assert final.status == "warning"
+    assert final.message == (
+        "Logical build completed with notes. Run selection: Coverage 1/3 is below 50%; at "
+        "least 2 distinct selected Objects are required (1 more). 2 of 3 selected Objects "
+        "lack active support."
+    )

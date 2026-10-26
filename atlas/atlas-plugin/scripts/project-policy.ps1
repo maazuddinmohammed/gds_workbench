@@ -45,7 +45,8 @@ function Get-AtlasProjectPolicy($States, $MetadataStates, $Project) {
             if ($dataset -ceq 'attribute_enrichment' -and $parentLocks.ContainsKey((Get-PolicyPhysical $record))) { Add-PolicyIssue $issues 'enrichment_parent_locked' $dataset 'object_name' 'A locked Object enrichment also protects its Attribute findings.' }
         }
     }
-    foreach ($dataset in @('logical_submodel', 'logical_entity', 'logical_attribute', 'logical_relationship', 'dimensional_submodel', 'dimensional_entity', 'dimensional_attribute', 'dimensional_relationship')) {
+    # Relationships have no name: the child's foreign-key Attribute identifies them.
+    foreach ($dataset in @('logical_entity', 'logical_attribute', 'dimensional_entity', 'dimensional_attribute')) {
         $override = Get-Property $details $(if ($dataset.StartsWith('dimensional')) {'gold_model_naming_instructions'} else {'silver_model_naming_instructions'})
         foreach ($record in @($added[$dataset])) {
             if ($null -eq $record) { continue }
@@ -66,19 +67,10 @@ function Get-AtlasProjectPolicy($States, $MetadataStates, $Project) {
         }
         $entities = @($rows[$entityDataset] | Where-Object { $null -ne $_ -and (Get-Active $_) -eq $true })
         $attributes = @($rows[$attributeDataset] | Where-Object { $null -ne $_ -and (Get-Active $_) -eq $true })
-        $byEntity = @{}; $submodels = @{}; $newEntities = @{}; $touched = @{}
+        $byEntity = @{}; $newEntities = @{}; $touched = @{}
         foreach ($entity in $entities) { $byEntity[(Get-PolicyTuple @((Get-Property $entity $schemaField), (Get-Property $entity $entityField)))] = $entity }
-        foreach ($record in @($rows[$layer + '_submodel'])) { if ($null -ne $record) { $submodels[(Normalize-Value 'project' 'value' (Get-Property $record ($layer + '_submodel_name')))] = $record } }
         foreach ($record in @($added[$entityDataset])) { if ($null -ne $record -and (Get-Active $record) -eq $true) { $newEntities[(Get-PolicyTuple @((Get-Property $record $schemaField), (Get-Property $record $entityField)))] = $true } }
         foreach ($record in @($changed[$entityDataset]) + @($changed[$attributeDataset])) { if ($null -ne $record) { $touched[(Get-PolicyTuple @((Get-Property $record $schemaField), (Get-Property $record $entityField)))] = $true } }
-        foreach ($entity in @($changed[$entityDataset])) {
-            if ($null -eq $entity) { continue }
-            foreach ($membership in (Get-Property $entity 'submodels')) {
-                if ($null -eq $membership) { continue }
-                $submodel = $submodels[(Normalize-Value 'project' 'value' (Get-Property $membership 'submodel_name'))]
-                if ((Get-Property $membership 'membership_status') -ceq 'active' -and ((Get-Active $entity) -ne $true -or (Get-Active $submodel) -ne $true)) { Add-PolicyIssue $issues 'project.membership-state' $entityDataset 'submodels' 'Active membership needs an active Entity and Submodel.' }
-            }
-        }
         foreach ($attribute in $attributes) {
             $parent = $byEntity[(Get-PolicyTuple @((Get-Property $attribute $schemaField), (Get-Property $attribute $entityField)))]
             if ($null -eq $parent) { continue }
@@ -139,7 +131,7 @@ function Get-AtlasProjectPolicy($States, $MetadataStates, $Project) {
             if ($null -eq $relation -or (Get-Active $relation) -ne $true) { continue }
             $endpoints = @(@('from', 'to') | ForEach-Object { $byAttribute[(Get-PolicyTuple @((Get-Property $relation ($_ + '_' + $schemaField)), (Get-Property $relation ($_ + '_' + $entityField)), (Get-Property $relation ($_ + '_' + $attributeField))))] })
             if ($endpoints.Count -eq 2 -and $null -ne $endpoints[0] -and $null -ne $endpoints[1] -and
-                (Normalize-Value 'project' 'value' (Get-Property $endpoints[0] ($attributeDataset + '_data_type'))) -cne (Normalize-Value 'project' 'value' (Get-Property $endpoints[1] ($attributeDataset + '_data_type')))) { Add-PolicyIssue $issues 'project.relationship-type' ($layer + '_relationship') ($layer + '_relationship_name') 'Relationship endpoint types differ; resolve an explicit compatible representation before defining the FK.' }
+                (Normalize-Value 'project' 'value' (Get-Property $endpoints[0] ($attributeDataset + '_data_type'))) -cne (Normalize-Value 'project' 'value' (Get-Property $endpoints[1] ($attributeDataset + '_data_type')))) { Add-PolicyIssue $issues 'project.relationship-type' ($layer + '_relationship') ('from_' + $attributeField) 'Relationship endpoint types differ; resolve an explicit compatible representation before defining the FK.' }
         }
     }
     $physicalObjects = @{}; $physicalAttributes = @{}; $mappingObjects = @{}

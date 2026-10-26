@@ -3,25 +3,26 @@ import { WorkflowCommandCenter, WorkflowCommandTools, WorkflowMenu } from "../wo
 import { ProjectLayerActions } from "../project_record_review/ProjectLayerActions";
 import { TargetExportButton } from "../project_targets/TargetExportDialog";
 import { ProjectRecordReview } from "../project_record_review/ProjectRecordReview";
+import { subjectAreaQueryKeys } from "../subject_areas/api";
 import { useState } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type {
   LogicalEntityFilters,
-  LogicalFilters,
   LogicalRelationshipFilters,
 } from "./api";
 import type { ProjectDetail } from "../projects/api";
-import { loadAllLogicalSubmodels, logicalQueryKeys, type LogicalApi } from "./api";
+import { logicalQueryKeys, type LogicalApi } from "./api";
 import {
   LogicalEntitiesLedger,
   LogicalRelationshipsLedger,
-  LogicalSubmodelsLedger,
 } from "./LogicalLedgers";
 import { WorkflowRunDialog } from "../workflows/WorkflowRunDialog";
 import { WorkflowRunMonitor } from "../workflows/WorkflowRunMonitor";
+import { RefreshButton } from "../../shared/ui";
+import { ModelSubjectAreasLedger } from "../projects/ModelSubjectAreas";
 
-type LogicalView = "entities" | "relationships" | "submodels";
+type LogicalView = "subject_areas" | "entities" | "relationships";
 
 export function LogicalScreen({
   api,
@@ -29,21 +30,22 @@ export function LogicalScreen({
   project,
   hasTenantLock,
   canDelete = false,
+  initialView,
 }: {
   api: LogicalApi;
   tenantId: number;
   project: ProjectDetail;
   hasTenantLock: boolean;
   canDelete?: boolean;
+  initialView?: LogicalView | undefined;
 }) {
   const queryClient = useQueryClient();
-  const [view, setView] = useState<LogicalView>("entities");
+  const [view, setView] = useState<LogicalView>(initialView ?? "entities");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [runDialogOpen, setRunDialogOpen] = useState(false);
+  const [runOperation, setRunOperation] = useState<"build" | "optimize" | null>(null);
   const [recentRunId, setRecentRunId] = useState<number | null>(null);
-  const [entityFilters, setEntityFilters] = useState<LogicalEntityFilters>({ status: "active" });
-  const [relationshipFilters, setRelationshipFilters] = useState<LogicalRelationshipFilters>({ status: "active" });
-  const [submodelFilters, setSubmodelFilters] = useState<LogicalFilters>({ status: "active" });
+  const [entityFilters, setEntityFilters] = useState<LogicalEntityFilters>({ active: true });
+  const [relationshipFilters, setRelationshipFilters] = useState<LogicalRelationshipFilters>({ active: true });
   const entitiesQuery = useInfiniteQuery({
     queryKey: logicalQueryKeys.entities(tenantId, project.project_id, entityFilters),
     queryFn: ({ pageParam }) => api.listLogicalEntities(
@@ -57,9 +59,10 @@ export function LogicalScreen({
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     enabled: view === "entities",
   });
-  const entitySubmodelsQuery = useQuery({
-    queryKey: logicalQueryKeys.submodelOptions(tenantId, project.project_id),
-    queryFn: () => loadAllLogicalSubmodels(api, tenantId, project.project_id),
+  // Same cache entry as the Subject Areas screen, so changes there refresh this filter.
+  const subjectAreasQuery = useQuery({
+    queryKey: subjectAreaQueryKeys.areas(tenantId, project.project_id),
+    queryFn: () => api.listSubjectAreas(tenantId, project.project_id),
     enabled: view === "entities",
   });
   const relationshipsQuery = useInfiniteQuery({
@@ -75,30 +78,21 @@ export function LogicalScreen({
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     enabled: view === "relationships",
   });
-  const submodelsQuery = useInfiniteQuery({
-    queryKey: logicalQueryKeys.submodels(tenantId, project.project_id, submodelFilters),
-    queryFn: ({ pageParam }) => api.listLogicalSubmodels(
-      tenantId,
-      project.project_id,
-      submodelFilters,
-      200,
-      pageParam,
-    ),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
-    enabled: view === "submodels",
+  // The Subject Areas tab: each active area with this layer's Entities from it.
+  const modelAreasQuery = useQuery({
+    queryKey: logicalQueryKeys.subjectAreas(tenantId, project.project_id),
+    queryFn: () => api.listLogicalSubjectAreas(tenantId, project.project_id),
+    enabled: view === "subject_areas",
   });
 
-  const activeReviewQuery = view === "entities" ? entitiesQuery : view === "relationships" ? relationshipsQuery : submodelsQuery;
+  const activeReviewQuery = view === "entities" ? entitiesQuery : relationshipsQuery;
+  const activeFilters = view === "entities" ? entityFilters : view === "relationships" ? relationshipFilters : {};
   const refresh = async () => {
     setSelectedIds(new Set());
     await Promise.all([
-      view === "entities"
-        ? entitiesQuery.refetch()
-        : view === "relationships"
-            ? relationshipsQuery.refetch()
-            : submodelsQuery.refetch(),
-      view === "entities" ? entitySubmodelsQuery.refetch() : Promise.resolve(),
+      view === "subject_areas" ? modelAreasQuery.refetch()
+        : view === "entities" ? entitiesQuery.refetch() : relationshipsQuery.refetch(),
+      view === "entities" ? subjectAreasQuery.refetch() : Promise.resolve(),
       queryClient.invalidateQueries({ queryKey: ["project", tenantId, project.project_id] }),
       queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
     ]);
@@ -108,24 +102,20 @@ export function LogicalScreen({
       queryClient.invalidateQueries({ queryKey: ["logical-entities", tenantId, project.project_id] }),
       queryClient.invalidateQueries({ queryKey: ["logical-attributes", tenantId, project.project_id] }),
       queryClient.invalidateQueries({ queryKey: ["logical-relationships", tenantId, project.project_id] }),
-      queryClient.invalidateQueries({ queryKey: ["logical-submodels", tenantId, project.project_id] }),
-      queryClient.invalidateQueries({
-        queryKey: logicalQueryKeys.submodelOptions(tenantId, project.project_id),
-      }),
     ]);
   };
 
   return (
-    <WorkflowCommandCenter filterCount={Object.values(view === "entities" ? entityFilters : view === "relationships" ? relationshipFilters : submodelFilters).filter(Boolean).length} className="logical-page page-enter">
+    <WorkflowCommandCenter filterCount={Object.values(activeFilters).filter((value) => value !== undefined).length} className="logical-page page-enter">
       <header className="workflow-commandbar project-section-toolbar logical-commandbar">
         <h1 className="project-section-title sr-only">Logical</h1>
         <div className="workflow-command-context">
           <nav className="workflow-tabs" aria-label="Logical views">
             {([
-              ["entities", "Entities", entitiesQuery],
-              ["relationships", "Relationships", relationshipsQuery],
-              ["submodels", "Submodels", submodelsQuery],
-            ] as const).map(([nextView, label, query]) => (
+              ["subject_areas", "Subject Areas", modelAreasQuery.data ? String(modelAreasQuery.data.items.length) : null],
+              ["entities", "Entities", loadedCount(entitiesQuery)],
+              ["relationships", "Relationships", loadedCount(relationshipsQuery)],
+            ] as const).map(([nextView, label, count]) => (
               <button
                 key={nextView}
                 className={view === nextView ? "is-active" : ""}
@@ -134,8 +124,8 @@ export function LogicalScreen({
                 onClick={() => { setSelectedIds(new Set()); setView(nextView); }}
               >
                 {label}
-                {query?.data ? <span className="command-count" aria-hidden="true" title="Loaded records matching the filters">
-                  {query.data.pages.reduce((total, page) => total + page.items.length, 0)}{query.hasNextPage ? "+" : ""}
+                {count !== null ? <span className="command-count" aria-hidden="true" title="Loaded records matching the filters">
+                  {count}
                 </span> : null}
               </button>
             ))}
@@ -149,18 +139,28 @@ export function LogicalScreen({
           <TargetExportButton api={api} tenantId={tenantId} projectId={project.project_id} projectRevision={project.project_revision} layer="logical" entityIds={view === "entities" && selectedIds.size ? [...selectedIds] : undefined} />
           <DdlExportButton api={api} tenantId={tenantId} projectId={project.project_id} projectRevision={project.project_revision} layer="logical" entityIds={view === "entities" && selectedIds.size ? [...selectedIds] : undefined} />
           </WorkflowMenu>
-          <button className="button button-secondary button-small" type="button" disabled={activeReviewQuery.isFetching} onClick={() => void refresh()}>
-            {activeReviewQuery.isFetching ? "Refreshing…" : "Refresh"}
-          </button>
-          <button
-            className="button button-primary button-small"
-            type="button"
-            disabled={!hasTenantLock}
-            title={hasTenantLock ? undefined : "Tenant Lock required"}
-            onClick={() => setRunDialogOpen(true)}
-          >
-            Run Logical
-          </button>
+          <RefreshButton refreshing={view === "subject_areas" ? modelAreasQuery.isFetching : activeReviewQuery.isFetching}
+            onClick={() => void refresh()} />
+          <WorkflowMenu label="Run Logical" primary>
+            <button
+              className="button button-secondary button-small"
+              type="button"
+              disabled={!hasTenantLock}
+              title={hasTenantLock ? "Model the chosen Subject Areas, one after another" : "Tenant Lock required"}
+              onClick={() => setRunOperation("build")}
+            >
+              Build
+            </button>
+            <button
+              className="button button-secondary button-small"
+              type="button"
+              disabled={!hasTenantLock}
+              title={hasTenantLock ? "Review the whole model across Subject Areas" : "Tenant Lock required"}
+              onClick={() => setRunOperation("optimize")}
+            >
+              Optimize
+            </button>
+          </WorkflowMenu>
         </div>
       </header>
       <WorkflowRunMonitor
@@ -173,36 +173,45 @@ export function LogicalScreen({
         focusRunId={recentRunId}
         onApplied={invalidateLedgers}
       />
-      <ProjectRecordReview
-        actions={canDelete ? ["lock", "unlock", "deactivate", "reactivate", "delete"] : ["lock", "unlock", "deactivate", "reactivate"]}
-        api={api} tenantId={tenantId} projectId={project.project_id} projectRevision={project.project_revision}
-        dataset={view === "entities" ? "logical_entity" : view === "relationships" ? "logical_relationship" : "logical_submodel"} selectedIds={selectedIds} hasTenantLock={hasTenantLock}
-        disabled={activeReviewQuery.isPending || activeReviewQuery.isError || activeReviewQuery.data?.pages.some((page) => page.project_revision !== project.project_revision) === true}
-        onApplied={async () => {
-          setSelectedIds(new Set());
-          await queryClient.invalidateQueries({ predicate: (query) => query.queryKey[1] === tenantId });
-        }}
-      />
-      {view === "entities" ? (
+      {view !== "subject_areas" ? <ProjectRecordReview
+          actions={canDelete ? ["lock", "unlock", "deactivate", "reactivate", "delete"] : ["lock", "unlock", "deactivate", "reactivate"]}
+          api={api} tenantId={tenantId} projectId={project.project_id} projectRevision={project.project_revision}
+          dataset={view === "entities" ? "logical_entity" : "logical_relationship"} selectedIds={selectedIds} hasTenantLock={hasTenantLock}
+          disabled={activeReviewQuery.isPending || activeReviewQuery.isError || activeReviewQuery.data?.pages.some((page) => page.project_revision !== project.project_revision) === true}
+          onApplied={async () => {
+            setSelectedIds(new Set());
+            await queryClient.invalidateQueries({ predicate: (query) => query.queryKey[1] === tenantId });
+          }}
+        /> : null}
+      {view === "subject_areas" ? (
+        <ModelSubjectAreasLedger layer="logical" tenantId={tenantId} projectId={project.project_id}
+          areas={modelAreasQuery.data?.items ?? []}
+          state={{
+            isLoading: modelAreasQuery.isPending,
+            isError: modelAreasQuery.isError,
+            revisionMismatch: modelAreasQuery.data !== undefined
+              && modelAreasQuery.data.project_revision !== project.project_revision,
+          }} />
+      ) : view === "entities" ? (
         <LogicalEntitiesLedger
           selectedIds={selectedIds} onSelectionChange={setSelectedIds}
           tenantId={tenantId}
           projectId={project.project_id}
           items={entitiesQuery.data?.pages.flatMap((page) => page.items) ?? []}
           filters={entityFilters}
-          submodels={entitySubmodelsQuery.data?.items ?? []}
-          submodelsState={entitySubmodelsQuery.isPending
+          subjectAreas={subjectAreasQuery.data?.items ?? []}
+          subjectAreasState={subjectAreasQuery.isPending
             ? "loading"
-            : entitySubmodelsQuery.isError
+            : subjectAreasQuery.isError
               ? "error"
-              : entitySubmodelsQuery.data.projectRevision !== project.project_revision
+              : subjectAreasQuery.data.project_revision !== project.project_revision
                 ? "revision_mismatch"
                 : "ready"}
           state={queryState(entitiesQuery, project.project_revision)}
           onApplyFilters={(next) => { setSelectedIds(new Set()); setEntityFilters(next); }}
           onLoadMore={() => void entitiesQuery.fetchNextPage()}
         />
-      ) : view === "relationships" ? (
+      ) : (
         <LogicalRelationshipsLedger
           selectedIds={selectedIds} onSelectionChange={setSelectedIds}
           tenantId={tenantId}
@@ -213,25 +222,16 @@ export function LogicalScreen({
           onApplyFilters={(next) => { setSelectedIds(new Set()); setRelationshipFilters(next); }}
           onLoadMore={() => void relationshipsQuery.fetchNextPage()}
         />
-      ) : (
-        <LogicalSubmodelsLedger
-          selectedIds={selectedIds} onSelectionChange={setSelectedIds}
-          tenantId={tenantId}
-          projectId={project.project_id}
-          items={submodelsQuery.data?.pages.flatMap((page) => page.items) ?? []}
-          filters={submodelFilters}
-          state={queryState(submodelsQuery, project.project_revision)}
-          onApplyFilters={(next) => { setSelectedIds(new Set()); setSubmodelFilters(next); }}
-          onLoadMore={() => void submodelsQuery.fetchNextPage()}
-        />
       )}
-      {runDialogOpen ? (
+      {runOperation ? (
         <WorkflowRunDialog
           api={api}
           tenantId={tenantId}
           project={project}
           kind="inference"
           workflow="logical"
+          workflowOperation={runOperation}
+          subjectAreaSource={api}
           executeCreated={(workflowRunId, executionMode, expectedProjectRevision) => api.executeLogicalRun(
             tenantId,
             project.project_id,
@@ -239,7 +239,7 @@ export function LogicalScreen({
             executionMode,
             expectedProjectRevision,
           ).then(() => undefined)}
-          onClose={() => setRunDialogOpen(false)}
+          onClose={() => setRunOperation(null)}
           onCreated={async (workflowRunId) => {
             setRecentRunId(workflowRunId);
             await Promise.all([
@@ -251,6 +251,15 @@ export function LogicalScreen({
       ) : null}
     </WorkflowCommandCenter>
   );
+}
+
+function loadedCount(query: {
+  data: { pages: { items: unknown[] }[] } | undefined;
+  hasNextPage: boolean;
+}): string | null {
+  if (!query.data) return null;
+  const total = query.data.pages.reduce((sum, page) => sum + page.items.length, 0);
+  return `${total}${query.hasNextPage ? "+" : ""}`;
 }
 
 function queryState(

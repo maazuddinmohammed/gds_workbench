@@ -59,7 +59,7 @@ Local `select` supports digest-bound continuation and field projection with cano
 
 Code owns exact fields, limits and behavior. Distributed skills and references are runtime instructions; retain their links when changing the package.
 
-Each skill uses one short template (When to use, What you need, Steps, Done when, Ask the user when, Next) with at most 450 words and five reference links; shared rules live once in the [golden rules](atlas-plugin/references/working-method.md#golden-rules). Submission runs through `atlas-local next`, which returns one action at a time and one recovery action for a failed MCP call. `policy-apply` and `coverage` reuse the web workflow's policy columns and coverage rule. `tests/atlas/test_instructions.py` enforces the template and command flags; the [evaluation harness](../tests/atlas/eval/README.md) scores agent runs against a replayed MCP server.
+Each skill uses one short template (When to use, What you need, Steps, Done when, Ask the user when, Next) with at most 450 words and five reference links; shared rules live once in the [golden rules](atlas-plugin/references/working-method.md#golden-rules). Submission runs through `atlas-local next`, which returns one action at a time and one recovery action for a failed MCP call. `policy-apply` and `coverage` reuse the web workflow's policy columns and coverage rule; `coverage --subject-area` selects inputs like a web Build of one Subject Area. `tests/atlas/test_instructions.py` enforces the template and command flags; the [evaluation harness](../tests/atlas/eval/README.md) scores agent runs against a replayed MCP server.
 
 | Source | Responsibility |
 |---|---|
@@ -67,7 +67,7 @@ Each skill uses one short template (When to use, What you need, Steps, Done when
 | `workbench/workspace.js` | Snapshot integrity, local persistence, conflicts and exports. |
 | `workbench/core.js` | Shared identity, overlay and Python-compatible serialization. |
 | `workbench/validation/`, `project-quality.js` | Shared browser/helper checks; server remains authoritative. |
-| `workbench/dbml.js` | Pure effective-Project rendering; export is a user-only Atlas Local Workbench action. |
+| `workbench/dbml.js` | Pure effective-Project rendering: the whole model plus one file per Subject Area; export is a user-only Atlas Local Workbench action. |
 | `scripts/atlas-local.js`, `scripts/*.ps1` | Local command execution and Windows fallback. Exact flags live in `contracts/local-helper.json`. |
 | `atlas-vs-code/src/stage-runner.ts`, `stage-request.ts`, `stage-transport.ts` | Approval/input binding, revision checks, transport and uncertain-write recovery. |
 

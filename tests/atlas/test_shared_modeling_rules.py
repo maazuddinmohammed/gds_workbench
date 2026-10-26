@@ -73,11 +73,12 @@ SHARED_RULES = [
         r"`null` means unknown, not false",
     ),
     (
-        "Subject Areas choose tables and are never modeling evidence",
+        "Subject Areas choose Objects and are never modeling evidence",
         ("subject_area",),
-        r"Areas only choose tables; they are not a model",
+        r"Areas only choose (?:tables|Objects); they are not a model",
         "references/working-method.md",
-        r"Subject areas decide which tables a Logical Build works on; they are not modeling evidence",
+        r"Subject Areas decide which Objects a Logical or Dimensional Build works on; they are not "
+        r"modeling evidence",
     ),
     (
         "no invented row choice",

@@ -174,13 +174,12 @@ def _seed_mapping_scope(
         connection.execute(
             """
             INSERT INTO workflow.logical_entity_source_mapping (
-                project_id, logical_entity_id, support_source_type, source_object_id,
-                logical_entity_source_mapping_order, logical_entity_source_mapping_rationale
-            ) SELECT %s, entity.logical_entity_id, 'object', source.object_id,
-                     source.mapping_order, 'Registered source fixture.'
+                project_id, logical_entity_id, source_object_id,
+                logical_entity_source_mapping_rationale
+            ) SELECT %s, entity.logical_entity_id, source.object_id,
+                     'Registered source fixture.'
                 FROM workflow.logical_entity AS entity
-                CROSS JOIN (VALUES (%s::BIGINT, 2), (%s::BIGINT, 1))
-                    AS source(object_id, mapping_order)
+                CROSS JOIN (VALUES (%s::BIGINT), (%s::BIGINT)) AS source(object_id)
                WHERE entity.project_id = %s AND entity.logical_entity_id = %s
             """,
             (
@@ -224,10 +223,9 @@ def _seed_mapping_scope(
             connection.execute(
                 """
                 INSERT INTO workflow.dimensional_entity_source_mapping (
-                    project_id, dimensional_entity_id, support_source_type, source_logical_entity_id,
-                    dimensional_entity_source_mapping_order,
+                    project_id, dimensional_entity_id, source_logical_entity_id,
                     dimensional_entity_source_mapping_rationale
-                ) VALUES (%s, %s, 'logical_entity', %s, 1, 'Applied Logical source.')
+                ) VALUES (%s, %s, %s, 'Applied Logical source.')
                 """,
                 (project_id, entity_id, logical_entity_id),
             )
@@ -424,9 +422,8 @@ def _seed_context_mapping_target(
         )
         connection.execute(
             sql.SQL(
-                "INSERT INTO workflow.{} (project_id, {}, support_source_type, "
-                "context_record_id, {}) "
-                "VALUES (%s,%s,'context_record',%s,'Explicit generated reference rule.')"
+                "INSERT INTO workflow.{} (project_id, {}, context_record_id, {}) "
+                "VALUES (%s,%s,%s,'Explicit generated reference rule.')"
             ).format(
                 sql.Identifier(f"{layer}_entity_source_mapping"),
                 sql.Identifier(f"{layer}_entity_id"),
@@ -575,7 +572,7 @@ async def test_dimensional_mapping_uses_logical_entities_without_registered_targ
     assert assess_mapping_readiness(plan=scope.plan, context=context).ready
 
 
-async def test_logical_mapping_keeps_ordered_source_and_ingested_bronze_inputs(
+async def test_logical_mapping_keeps_source_and_ingested_bronze_inputs(
     web_postgres_database: DisposablePostgres,
 ) -> None:
     scope = _seed_mapping_scope(web_postgres_database, dimensional=False)

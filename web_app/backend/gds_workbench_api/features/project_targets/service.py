@@ -49,7 +49,7 @@ SELECT logical_entity_id AS entity_id, logical_entity_name AS entity_name,
        logical_entity_definition AS definition
   FROM workflow.logical_entity
  WHERE project_id = %s AND (%s::BIGINT[] IS NULL OR logical_entity_id = ANY(%s::BIGINT[]))
-   AND logical_entity_status = 'active'
+   AND logical_entity_is_active
  ORDER BY logical_entity_dependency_order, logical_entity_id LIMIT 201
 """,
     "dimensional": """
@@ -58,7 +58,7 @@ SELECT dimensional_entity_id AS entity_id, dimensional_entity_name AS entity_nam
        dimensional_entity_definition AS definition
   FROM workflow.dimensional_entity
  WHERE project_id = %s AND (%s::BIGINT[] IS NULL OR dimensional_entity_id = ANY(%s::BIGINT[]))
-   AND dimensional_entity_status = 'active'
+   AND dimensional_entity_is_active
  ORDER BY dimensional_entity_dependency_order, dimensional_entity_id LIMIT 201
 """,
 }
@@ -77,12 +77,12 @@ SELECT attribute.logical_entity_id AS entity_id,
            JOIN core.attribute AS physical ON physical.attribute_id = source.source_attribute_id
             WHERE source.project_id = attribute.project_id
               AND source.logical_attribute_id = attribute.logical_attribute_id
-              AND source.logical_attribute_source_mapping_status = 'active'
+              AND source.logical_attribute_source_mapping_is_active
               AND physical.is_masking_required
        ) AS is_masking_required
   FROM workflow.logical_attribute AS attribute
  WHERE attribute.project_id = %s AND attribute.logical_entity_id = ANY(%s::BIGINT[])
-   AND attribute.logical_attribute_status = 'active'
+   AND attribute.logical_attribute_is_active
  ORDER BY attribute.logical_entity_id, attribute.logical_attribute_ordinal_position,
           attribute.logical_attribute_id
  LIMIT 5001
@@ -96,7 +96,7 @@ _ATTRIBUTE_QUERIES: dict[TargetLayer, LiteralString] = {
             "JOIN workflow.logical_attribute_source_mapping AS logical_source "
             "ON logical_source.project_id = source.project_id "
             "AND logical_source.logical_attribute_id = source.source_logical_attribute_id "
-            "AND logical_source.logical_attribute_source_mapping_status = 'active' "
+            "AND logical_source.logical_attribute_source_mapping_is_active "
             "JOIN core.attribute AS physical "
             "ON physical.attribute_id = logical_source.source_attribute_id",
         )
@@ -104,6 +104,7 @@ _ATTRIBUTE_QUERIES: dict[TargetLayer, LiteralString] = {
 }
 
 
+# Child -> parent: the from Attribute is the foreign key, the to Attribute the parent's key.
 _LOGICAL_DDL_RELATIONSHIPS: LiteralString = """
 SELECT relation.logical_relationship_from_entity_id AS from_entity_id,
        relation.logical_relationship_to_entity_id AS to_entity_id,
@@ -112,11 +113,11 @@ SELECT relation.logical_relationship_from_entity_id AS from_entity_id,
   FROM workflow.logical_relationship AS relation
   JOIN workflow.logical_attribute AS source ON source.project_id = relation.project_id
    AND source.logical_attribute_id = relation.logical_relationship_from_attribute_id
-   AND source.logical_attribute_status = 'active'
+   AND source.logical_attribute_is_active
   JOIN workflow.logical_attribute AS target ON target.project_id = relation.project_id
    AND target.logical_attribute_id = relation.logical_relationship_to_attribute_id
-   AND target.logical_attribute_status = 'active'
- WHERE relation.project_id = %s AND relation.logical_relationship_status = 'active'
+   AND target.logical_attribute_is_active
+ WHERE relation.project_id = %s AND relation.logical_relationship_is_active
    AND (relation.logical_relationship_from_entity_id = ANY(%s::BIGINT[])
         OR relation.logical_relationship_to_entity_id = ANY(%s::BIGINT[]))
  ORDER BY relation.logical_relationship_id LIMIT 5001

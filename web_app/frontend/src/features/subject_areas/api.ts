@@ -1,5 +1,4 @@
 import type { HttpRequest } from "../../core/http";
-import type { ReviewStatus } from "../../shared/contracts";
 import type { ProjectInputScopeApi } from "../project_input_scope/api";
 import type { ProjectRecordReviewApi } from "../project_record_review/api";
 import type { WorkflowsApi } from "../workflows/api";
@@ -9,9 +8,11 @@ export interface SubjectAreaSummary {
   workflow_run_id: number | null;
   subject_area_name: string;
   subject_area_definition: string;
-  subject_area_status: ReviewStatus;
+  subject_area_is_active: boolean;
   subject_area_is_locked: boolean;
   table_count: number;
+  /** Active member Objects that are also in another active area. */
+  shared_table_count: number;
   column_count: number;
   updated_at: string;
 }
@@ -19,7 +20,6 @@ export interface SubjectAreaSummary {
 export interface SubjectAreaPage {
   project_id: number;
   project_revision: number;
-  max_subject_area_columns: number;
   scope_table_count: number;
   unassigned_table_count: number;
   items: SubjectAreaSummary[];
@@ -32,7 +32,7 @@ export interface SubjectAreaMembership {
   subject_area_table_is_locked: boolean;
 }
 
-/** One active Bronze Input Scope table with the active areas it belongs to. */
+/** One active Bronze Input Scope Object with the active areas it belongs to. */
 export interface ScopeTable {
   object_id: number;
   tenant_code: string;
@@ -55,11 +55,10 @@ export interface ScopeTablePage {
 export interface SubjectAreaDetail extends SubjectAreaSummary {
   project_id: number;
   project_revision: number;
-  max_subject_area_columns: number;
   tables: ScopeTable[];
 }
 
-/** One human change: create (name + definition), rename, define, add or remove tables. */
+/** One human change: create (name + definition), rename, define, add or remove Objects. */
 export interface SaveSubjectAreaCommand {
   expected_project_revision: number;
   subject_area_id?: number;

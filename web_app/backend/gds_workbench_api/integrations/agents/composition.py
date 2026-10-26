@@ -277,7 +277,17 @@ class LocalFakeAgentAdapter:
                     }
                 )
             candidate = cast(JsonValue, {"relationships": relationships})
-        elif request.workflow == "dimensional" and request.stage == "candidate_authoring":
+        elif request.workflow in {"logical", "dimensional"} and (
+            request.stage == "optimize_authoring"
+        ):
+            # The fake has no cross-area judgment to add; an empty answer is a no-op.
+            candidate = cast(
+                JsonValue,
+                {"entities": [], "relationships": [], "retire": []}
+                if request.workflow == "logical"
+                else {"entities": [], "attributes": [], "relationships": []},
+            )
+        elif request.workflow == "dimensional" and request.stage == "build_authoring":
             if request.execution_mode == "tool_assisted":
                 selected_entities, tool_call_count = named_tool_items(
                     request, "get_selected_logical_entities"
@@ -298,7 +308,7 @@ class LocalFakeAgentAdapter:
                 source_entities=source_entities,
                 source_attributes=source_attributes,
             )
-        elif request.workflow == "logical" and request.stage == "candidate_authoring":
+        elif request.workflow == "logical" and request.stage == "build_authoring":
             if request.execution_mode == "tool_assisted":
                 source_objects, source_attributes, tool_call_count = tool_assisted_logical_sources(
                     request
@@ -319,7 +329,6 @@ class LocalFakeAgentAdapter:
         elif request.workflow == "subject_area" and request.stage == "candidate_authoring":
             if request.execution_mode == "tool_assisted":
                 scope_tables, tool_call_count = named_tool_items(request, "get_scope_tables")
-                values = getattr(request.local_tool_catalog, "prompt_values", None)
             else:
                 values = original_context(request.context).get("prompt_inputs")
                 scope_tables = (
@@ -327,16 +336,7 @@ class LocalFakeAgentAdapter:
                     if isinstance(values, dict)
                     else []
                 )
-            limit = (
-                cast(dict[str, object], values).get("max_subject_area_columns")
-                if isinstance(values, dict)
-                else None
-            )
-            if not isinstance(limit, int) or isinstance(limit, bool):
-                raise InvalidRequestError("The local fake agent context is invalid.")
-            candidate = fake_subject_area_candidate(
-                scope_tables=tuple(scope_tables), max_columns=limit
-            )
+            candidate = fake_subject_area_candidate(scope_tables=tuple(scope_tables))
         else:
             raise InvalidRequestError("The local fake does not support this agent execution path.")
         return AgentExecutionResult(

@@ -621,7 +621,7 @@ def test_missing_metadata_owner_blocks_project_edits_but_not_independent_metadat
                 {
                     "logical_entity_schema_name": "silver",
                     "logical_entity_name": "Customer",
-                    "logical_entity_status": "inactive",
+                    "logical_entity_is_active": False,
                 }
             ]
         )
@@ -810,7 +810,7 @@ def test_schema_qualified_entities_remain_distinct_in_overlay(tmp_path: Path) ->
         {
             "logical_entity_schema_name": schema,
             "logical_entity_name": "Customer",
-            "logical_entity_status": "active",
+            "logical_entity_is_active": True,
         }
         for schema in ("silver_a", "silver_b")
     ]
@@ -825,7 +825,7 @@ def test_schema_qualified_entities_remain_distinct_in_overlay(tmp_path: Path) ->
     pending = root / "project-change-set"
     pending.mkdir()
     (pending / "logical_entity.json").write_text(
-        json.dumps([{**records[0], "logical_entity_status": "inactive"}])
+        json.dumps([{**records[0], "logical_entity_is_active": False}])
     )
     selected = run(
         "select",
@@ -839,9 +839,9 @@ def test_schema_qualified_entities_remain_distinct_in_overlay(tmp_path: Path) ->
         "effective",
     )
     assert {
-        (item["logical_entity_schema_name"], item["logical_entity_status"])
+        (item["logical_entity_schema_name"], item["logical_entity_is_active"])
         for item in selected["records"]
-    } == {("silver_a", "inactive"), ("silver_b", "active")}
+    } == {("silver_a", False), ("silver_b", True)}
 
 
 def test_analysis_inferred_cardinality_uses_published_schema_and_preserves_measurements(
@@ -992,7 +992,7 @@ def test_subject_area_tables_are_checked_locally(tmp_path: Path) -> None:
     area = {
         "subject_area_name": "Sales",
         "subject_area_definition": "Customer orders.",
-        "subject_area_status": "active",
+        "subject_area_is_active": True,
         "subject_area_is_locked": False,
     }
 
@@ -1000,7 +1000,7 @@ def test_subject_area_tables_are_checked_locally(tmp_path: Path) -> None:
         return {
             "subject_area_name": name,
             **table,
-            "subject_area_table_status": "active",
+            "subject_area_table_is_active": True,
             "subject_area_table_is_locked": False,
         }
 
@@ -1069,12 +1069,12 @@ def test_subject_area_tables_are_checked_locally(tmp_path: Path) -> None:
     assert result["issues"] == []
 
     missing = "Referenced record is not present in the future Project graph."
-    inactive = "An active Subject Area table requires an active Subject Area."
+    inactive = "An active Subject Area Object requires an active Subject Area."
     assert errors(validate(subject_area_table=[member(order, "Billing")])) == {
         ("subject_area_table", "reference_not_found", ("subject_area_name",), missing),
         ("subject_area_table", "active_dependency_invalid", ("subject_area_name",), inactive),
     }
-    assert errors(validate(subject_area=[{**area, "subject_area_status": "inactive"}])) == {
+    assert errors(validate(subject_area=[{**area, "subject_area_is_active": False}])) == {
         ("subject_area_table", "active_dependency_invalid", ("subject_area_name",), inactive),
     }
     outside = member({**order, "object_name": "Invoice"})
@@ -1083,9 +1083,119 @@ def test_subject_area_tables_are_checked_locally(tmp_path: Path) -> None:
             "subject_area_table",
             "project_input_reference_invalid",
             ("object_name",),
-            "Subject Area table is not in active Project Input Scope.",
+            "Subject Area Object is not in active Project Input Scope.",
         ),
     }
+
+
+def test_reference_codes_and_relationship_keys_are_checked_locally(tmp_path: Path) -> None:
+    """Mirrors the MCP reference_code_invalid and relationship_target_not_key rules."""
+    root = workspace(tmp_path)
+    snapshot = root / "project/project-snapshot"
+    catalog = json.loads((snapshot / "catalog.json").read_text())
+    types = [
+        {
+            "logical_entity_type_code": code,
+            "logical_entity_type_description": f"{code} label.",
+            "logical_entity_type_is_active": code != "history",
+        }
+        for code in ("core", "history")
+    ]
+    for name, rows in (
+        ("project_input_scope", []),
+        ("logical_entity_type", types),
+        ("logical_relationship", []),
+    ):
+        definition = DATASETS_BY_NAME[name]
+        catalog["sections"].append(
+            {
+                "name": definition.section,
+                "datasets": [
+                    {
+                        "name": name,
+                        "canonical_key": list(definition.canonical_key),
+                        "row_count": len(rows),
+                        "rows_file": f"data/{name}.jsonl",
+                        "schema_file": f"schemas/{name}.schema.json",
+                    }
+                ],
+            }
+        )
+        (snapshot / f"data/{name}.jsonl").write_text(
+            "".join(json.dumps(record) + "\n" for record in rows)
+        )
+        (snapshot / f"schemas/{name}.schema.json").write_text(
+            json.dumps(build_project_dataset_schema(definition))
+        )
+    (snapshot / "catalog.json").write_text(json.dumps(catalog))
+    fixtures.write_snapshot_manifest(
+        snapshot, kind="project", snapshot_id="project-codes", project_revision=8
+    )
+
+    def entity(name: str, entity_type: str) -> dict[str, Any]:
+        return {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": name,
+            "logical_entity_type": entity_type,
+            "logical_entity_is_active": True,
+            "sources": [],
+        }
+
+    def attribute(entity_name: str, name: str, *, surrogate: bool = False) -> dict[str, Any]:
+        return {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": entity_name,
+            "logical_attribute_name": name,
+            "logical_attribute_is_nullable": not surrogate,
+            "logical_attribute_is_natural_key": False,
+            "logical_attribute_is_surrogate_key": surrogate,
+            "logical_attribute_is_active": True,
+            "sources": [],
+        }
+
+    relationship = {
+        "from_logical_entity_schema_name": "silver",
+        "from_logical_entity_name": "Order",
+        "from_logical_attribute_name": "CustomerID",
+        "to_logical_entity_schema_name": "silver",
+        "to_logical_entity_name": "Customer",
+        "to_logical_attribute_name": "CustomerName",
+        "logical_relationship_cardinality": "many_to_one",
+        "logical_relationship_basis": "Each Order names its Customer.",
+        "logical_relationship_is_active": True,
+        "logical_relationship_is_locked": False,
+    }
+    pending = root / "project-change-set"
+    pending.mkdir()
+    (pending / "logical_attribute.json").write_text(
+        json.dumps(
+            [
+                attribute("Customer", "CustomerID", surrogate=True),
+                attribute("Customer", "CustomerName"),
+                attribute("Order", "CustomerID"),
+            ]
+        )
+    )
+
+    def codes(entity_types: tuple[str, str], parent_key: str) -> set[tuple[str, str]]:
+        (pending / "logical_entity.json").write_text(
+            json.dumps([entity("Customer", entity_types[0]), entity("Order", entity_types[1])])
+        )
+        (pending / "logical_relationship.json").write_text(
+            json.dumps([{**relationship, "to_logical_attribute_name": parent_key}])
+        )
+        result = run("validate", "--session", str(root), "--area", "project")
+        return {
+            (issue["dataset"], issue["code"])
+            for issue in result["issues"]
+            if issue["code"] in {"reference_code_invalid", "relationship_target_not_key"}
+        }
+
+    assert codes(("bridge", "history"), "CustomerName") == {
+        ("logical_entity", "reference_code_invalid"),
+        ("logical_relationship", "relationship_target_not_key"),
+    }
+    assert codes(("core", "core"), "CustomerID") == set()
 
 
 def test_legacy_project_catalog_is_rejected_before_selection(tmp_path: Path) -> None:
@@ -1120,33 +1230,31 @@ def test_retired_mapping_dependency_catalog_is_rejected_before_selection(
     root = workspace(tmp_path)
     snapshot = root / "project/project-snapshot"
     catalog_path = snapshot / "catalog.json"
-    catalog = json.loads(catalog_path.read_text())
-    catalog["sections"].append(
-        {
-            "name": "mapping",
-            "datasets": [
-                {
-                    "name": "mapping_dependency",
-                    "canonical_key": ["modeled_entity_type", "source_system_code"],
-                }
-            ],
-        }
-    )
-    catalog_path.write_text(json.dumps(catalog))
-    fixtures.write_snapshot_manifest(
-        snapshot, kind="project", snapshot_id="project-snapshot-01", project_revision=8
-    )
-    result = run(
-        "select",
-        "--session",
-        str(root),
-        "--area",
-        "project",
-        "--dataset",
-        "logical_entity",
-        success=False,
-    )
-    assert "Legacy Project Snapshot" in result["error"]
+    original = json.loads(catalog_path.read_text())
+    for section, name, canonical_key in (
+        ("mapping", "mapping_dependency", ["modeled_entity_type", "source_system_code"]),
+        ("logical", "logical_submodel", ["logical_submodel_name"]),
+        ("dimensional", "dimensional_submodel", ["dimensional_submodel_name"]),
+    ):
+        catalog = json.loads(json.dumps(original))
+        catalog["sections"].append(
+            {"name": section, "datasets": [{"name": name, "canonical_key": canonical_key}]}
+        )
+        catalog_path.write_text(json.dumps(catalog))
+        fixtures.write_snapshot_manifest(
+            snapshot, kind="project", snapshot_id="project-snapshot-01", project_revision=8
+        )
+        result = run(
+            "select",
+            "--session",
+            str(root),
+            "--area",
+            "project",
+            "--dataset",
+            "logical_entity",
+            success=False,
+        )
+        assert "Legacy Project Snapshot" in result["error"], name
 
 
 def test_context_uuid_is_created_once_and_published_schema_rejects_legacy_fields(
@@ -1702,9 +1810,8 @@ def test_policy_apply_adds_the_web_workflow_technical_columns(tmp_path: Path) ->
             "object_schema": "bronze_demo",
             "object_name": "customer",
         },
-        "source_order": 1,
         "rationale": "Customer rows carry their postal address.",
-        "status": "active",
+        "is_active": True,
         "is_locked": False,
     }
     entity = {
@@ -1712,12 +1819,10 @@ def test_policy_apply_adds_the_web_workflow_technical_columns(tmp_path: Path) ->
         "logical_entity_name": "CustomerAddress",
         "logical_entity_definition": "A postal address used by a Customer.",
         "logical_entity_type": "core",
-        "logical_entity_type_detail": None,
         "logical_entity_grain": "One address per Customer",
         "logical_entity_dependency_order": 1,
-        "logical_entity_status": "active",
+        "logical_entity_is_active": True,
         "logical_entity_is_locked": False,
-        "submodels": [],
         "sources": [source],
     }
 
@@ -1733,7 +1838,7 @@ def test_policy_apply_adds_the_web_workflow_technical_columns(tmp_path: Path) ->
             "logical_attribute_is_surrogate_key": False,
             "logical_attribute_ordinal_position": ordinal,
             "logical_attribute_is_audit_column": False,
-            "logical_attribute_status": "active",
+            "logical_attribute_is_active": True,
             "logical_attribute_is_locked": False,
             "sources": [],
         }
@@ -1836,6 +1941,35 @@ def test_coverage_uses_the_web_workflow_rule_on_the_effective_project(tmp_path: 
     assert "outside" in outside["error"]
     dimensional = run("coverage", "--session", str(root), "--layer", "dimensional")
     assert (dimensional["threshold_percent"], dimensional["meets_target"]) == (60, True)
+
+    # A Subject Area selects like a web Build: its active member Objects, or for Dimensional
+    # the applied Logical Entities with an active Object source among them.
+    area = run(*logical, "--subject-area", " customer orders ")
+    assert (area["subject_area"], area["total"], area["covered"]) == ("Customer Orders", 2, 1)
+    assert area["missing"] == ["DEMO_GDS_TENANT.DEMO_CUSTOMER_SYSTEM.DEMO_GDS.bronze_demo.customer"]
+    assert "subject_area" not in run(*logical)
+    unknown = run(*logical, "--subject-area", "Billing", success=False)
+    assert "no active applied Subject Area" in unknown["error"]
+    both = run(
+        *logical,
+        "--subject-area",
+        "Customer Orders",
+        "--select",
+        json.dumps([order]),
+        success=False,
+    )
+    assert "not both" in both["error"]
+    dimensional_area = run(
+        "coverage",
+        "--session",
+        str(root),
+        "--layer",
+        "dimensional",
+        "--subject-area",
+        "Customer Orders",
+    )
+    assert (dimensional_area["total"], dimensional_area["covered"]) == (2, 2)
+    assert dimensional_area["missing"] == []
 
 
 def test_web_managed_project_datasets_stay_read_only_in_atlas(tmp_path: Path) -> None:

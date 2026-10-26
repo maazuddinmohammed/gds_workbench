@@ -4,7 +4,7 @@ Use for requested Atlas Grill Me discussion or consequential unresolved modeling
 
 ## Understand before asking
 
-1. Resolve the requested outcome and starting business area from the user's message. Read the selected workflow's eligible inputs: active applied Project Input Scope for Logical work, or eligible Silver Logical contributions for Dimensional work. Read selected Objects/Attributes, eligible existing Project records, relevant Context records and pending decisions through the shared Snapshot guides. A Subject Area may narrow which tables to read; its records are never modeling evidence.
+1. Resolve the requested outcome and starting business area from the user's message. Read the selected workflow's eligible inputs: active applied Project Input Scope for Logical work, or eligible Silver Logical contributions for Dimensional work. Read selected Objects/Attributes, eligible existing Project records, relevant Context records and pending decisions through the shared Snapshot guides. A Subject Area may narrow which Objects to read; its records are never modeling evidence.
 2. Read relevant definitions and [Atlas terminology](terminology.md). Compare actual meanings, not just names. Inspect neighboring scoped records when they may explain an identifier, shared concept or cross-group relationship. Preserve the user's scope; reading context does not authorize unrelated changes.
 3. Establish what is known, what is inferred and what would change the design. Do not ask the user to recite names, types or saved choices already available in metadata. If metadata and the user's stated behavior conflict, show the concrete difference and resolve it before relying on the disputed fact.
 

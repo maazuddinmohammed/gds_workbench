@@ -32,13 +32,17 @@ EXPECTED_STAGES = {
     ("subject_area", "tool_assisted", "candidate_authoring", 10, True),
     ("logical", None, "policy_projection", 50, False),
     ("logical", None, "backend_validation", 100, False),
-    ("logical", "one_shot", "candidate_authoring", 10, True),
-    ("logical", "tool_assisted", "candidate_authoring", 10, True),
+    ("logical", "one_shot", "build_authoring", 10, True),
+    ("logical", "tool_assisted", "build_authoring", 10, True),
+    ("logical", "one_shot", "optimize_authoring", 20, True),
+    ("logical", "tool_assisted", "optimize_authoring", 20, True),
     ("dimensional", None, "gold_policy_projection", 50, False),
     ("dimensional", None, "foreign_key_projection", 80, False),
     ("dimensional", None, "backend_validation", 100, False),
-    ("dimensional", "one_shot", "candidate_authoring", 10, True),
-    ("dimensional", "tool_assisted", "candidate_authoring", 10, True),
+    ("dimensional", "one_shot", "build_authoring", 10, True),
+    ("dimensional", "tool_assisted", "build_authoring", 10, True),
+    ("dimensional", "one_shot", "optimize_authoring", 20, True),
+    ("dimensional", "tool_assisted", "optimize_authoring", 20, True),
     ("mapping", None, "dependency_validation", 80, False),
     ("mapping", None, "backend_validation", 100, False),
     ("mapping", "one_shot", "mapping_authoring", 10, True),
@@ -61,6 +65,7 @@ NON_REFERENCE_APPLICATION_TABLES = (
     "workflow_run_mapping_target_selection",
     "workflow_run_object_selection",
     "workflow_run_prompt_snapshot",
+    "workflow_run_subject_area_selection",
     "workflow_run_system_selection",
 )
 
@@ -86,18 +91,27 @@ FOUNDATIONAL_NAMES = {
     "object_relationship_context",
     "context_records",
 }
-LOGICAL_NAMES = {
-    "logical_submodel_list",
-    "logical_submodels",
-    "logical_entity_list",
-    "logical_entities",
-    "logical_attribute_list",
-    "logical_attributes",
-    "logical_relationship_list",
-    "logical_relationships",
+LOGICAL_RECORDS = {"logical_entities", "logical_attributes", "logical_relationships"}
+DIMENSIONAL_RECORDS = {name.replace("logical", "dimensional") for name in LOGICAL_RECORDS}
+LOGICAL_SETTINGS = {
+    "naming_instructions",
+    "audit_columns",
+    "schemas",
+    "logical_entity_scd_type",
+    "logical_entity_types",
 }
-DIMENSIONAL_NAMES = {name.replace("logical", "dimensional") for name in LOGICAL_NAMES}
-EXPECTED_NAMES = {
+DIMENSIONAL_SETTINGS = {
+    "schemas",
+    "naming_instructions",
+    "audit_columns",
+    "technical_columns",
+    "dimensional_entity_scd_type",
+    "dimensional_fact_types",
+}
+# Build works on one Subject Area per call; Optimize reviews the whole model.
+AREA_SLICE = {"subject_area_context", "existing_entities", "neighbor_entities", "entity_directory"}
+FINDINGS = {"model_summary", "type_conflicts", "name_variants", "entity_details"}
+EXPECTED_NAMES: dict[str, set[str]] = {
     "metadata_enrichment_object": FOUNDATIONAL_NAMES
     - {"object_relationship_context", "context_records"},
     "metadata_enrichment_attribute": FOUNDATIONAL_NAMES
@@ -111,32 +125,29 @@ EXPECTED_NAMES = {
         "table_links",
         "existing_subject_areas",
         "context_records",
-        "max_subject_area_columns",
     },
-    "logical": FOUNDATIONAL_NAMES
-    | (LOGICAL_NAMES - {"logical_submodel_list", "logical_submodels"})
-    | {
-        "naming_instructions",
-        "audit_columns",
-        "schemas",
-        "logical_entity_scd_type",
-        "coverage_threshold_percent",
-        "table_index",
-    },
-    "dimensional": LOGICAL_NAMES
-    | DIMENSIONAL_NAMES
-    | (FOUNDATIONAL_NAMES - {"gds_context", "context_records"})
-    | {
-        "gds_context",
-        "context_records",
-        "selected_logical_entities",
-        "schemas",
-        "naming_instructions",
-        "audit_columns",
-        "technical_columns",
-        "dimensional_entity_scd_type",
-        "coverage_threshold_percent",
-    },
+    "logical.build_authoring": FOUNDATIONAL_NAMES
+    | LOGICAL_RECORDS
+    | LOGICAL_SETTINGS
+    | AREA_SLICE
+    | {"coverage_threshold_percent", "table_index"},
+    "logical.optimize_authoring": FOUNDATIONAL_NAMES
+    | LOGICAL_RECORDS
+    | LOGICAL_SETTINGS
+    | FINDINGS
+    | {"unlinked_analysis_edges", "table_index"},
+    "dimensional.build_authoring": FOUNDATIONAL_NAMES
+    | LOGICAL_RECORDS
+    | DIMENSIONAL_RECORDS
+    | DIMENSIONAL_SETTINGS
+    | AREA_SLICE
+    | {"coverage_threshold_percent", "selected_logical_entities", "logical_links"},
+    "dimensional.optimize_authoring": FOUNDATIONAL_NAMES
+    | LOGICAL_RECORDS
+    | DIMENSIONAL_RECORDS
+    | DIMENSIONAL_SETTINGS
+    | FINDINGS
+    | {"conformance_candidates", "selected_logical_entities"},
     "mapping": {
         "mapping_support",
         "mapping_support_records",
@@ -189,7 +200,8 @@ def _expected_variables() -> set[VariableIdentity]:
             workflow_execution_mode=mode,
             stage_code=stage,
         )
-        assert {contract.name for contract in contracts} == EXPECTED_NAMES[workflow]
+        names = EXPECTED_NAMES.get(f"{workflow}.{stage}") or EXPECTED_NAMES[workflow]
+        assert {contract.name for contract in contracts} == names
         for index, contract in enumerate(contracts, 1):
             assert (
                 contract.resolver_key
@@ -288,7 +300,7 @@ def test_application_reference_seed_allowlists_exact_prompt_variables(
         ).fetchall()
 
     assert all(row["workflow_stage_variable_description"].strip() for row in rows)
-    assert sum(stage[4] for stage in EXPECTED_STAGES) == 14
+    assert sum(stage[4] for stage in EXPECTED_STAGES) == 18
     assert all(not row["workflow_stage_variable_is_required"] for row in rows)
     assert not {"stage_context", "read_only_dependencies", "available_tools"} & {
         row["workflow_stage_variable_name"] for row in rows

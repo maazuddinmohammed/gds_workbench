@@ -143,38 +143,38 @@ AS $is_context_only_mapping_target$
     WITH target AS MATERIALIZED (
         SELECT * FROM workflow.modeled_entity AS entity
          WHERE entity.project_id = p_project_id AND entity.modeled_entity_id = p_target_entity_id
-           AND entity.modeled_entity_type = p_modeled_entity_type AND entity.status = 'active'
+           AND entity.modeled_entity_type = p_modeled_entity_type AND entity.is_active
     ), support AS (
-        SELECT source.support_source_type, source.context_record_id
+        SELECT source.context_record_id
           FROM target JOIN workflow.logical_entity_source_mapping AS source
             ON target.modeled_entity_type = 'logical_entity' AND source.project_id = target.project_id
            AND source.logical_entity_id = target.modeled_entity_id
-         WHERE source.logical_entity_source_mapping_status = 'active'
+         WHERE source.logical_entity_source_mapping_is_active
         UNION ALL
-        SELECT source.support_source_type, source.context_record_id
+        SELECT source.context_record_id
           FROM target JOIN workflow.logical_attribute_source_mapping AS source
             ON target.modeled_entity_type = 'logical_entity' AND source.project_id = target.project_id
            AND source.logical_entity_id = target.modeled_entity_id
           JOIN workflow.logical_attribute AS attribute
             ON attribute.logical_attribute_id = source.logical_attribute_id
-           AND attribute.project_id = target.project_id AND attribute.logical_attribute_status = 'active'
-         WHERE source.logical_attribute_source_mapping_status = 'active'
+           AND attribute.project_id = target.project_id AND attribute.logical_attribute_is_active
+         WHERE source.logical_attribute_source_mapping_is_active
         UNION ALL
-        SELECT source.support_source_type, source.context_record_id
+        SELECT source.context_record_id
           FROM target JOIN workflow.dimensional_entity_source_mapping AS source
             ON target.modeled_entity_type = 'dimensional_entity' AND source.project_id = target.project_id
            AND source.dimensional_entity_id = target.modeled_entity_id
-         WHERE source.dimensional_entity_source_mapping_status = 'active'
+         WHERE source.dimensional_entity_source_mapping_is_active
         UNION ALL
-        SELECT source.support_source_type, source.context_record_id
+        SELECT source.context_record_id
           FROM target JOIN workflow.dimensional_attribute_source_mapping AS source
             ON target.modeled_entity_type = 'dimensional_entity' AND source.project_id = target.project_id
            AND source.dimensional_entity_id = target.modeled_entity_id
           JOIN workflow.dimensional_attribute AS attribute
             ON attribute.dimensional_attribute_id = source.dimensional_attribute_id
            AND attribute.project_id = target.project_id
-           AND attribute.dimensional_attribute_status = 'active'
-         WHERE source.dimensional_attribute_source_mapping_status = 'active'
+           AND attribute.dimensional_attribute_is_active
+         WHERE source.dimensional_attribute_source_mapping_is_active
     ), context_records AS (
         SELECT (document.source_system_id IS NULL OR document.source_system_id =
                 target_project.default_mapping_source_system_id) AS matches_default
@@ -187,11 +187,11 @@ AS $is_context_only_mapping_target$
             ON document.context_group_id = context_record.context_group_id
            AND document.is_active
           JOIN project.project AS target_project ON target_project.project_id = p_project_id
-         WHERE support.support_source_type = 'context_record'
+         WHERE support.context_record_id IS NOT NULL
     )
     SELECT EXISTS (SELECT 1 FROM context_records WHERE matches_default)
        AND NOT EXISTS (SELECT 1 FROM context_records WHERE matches_default IS NOT TRUE)
-       AND NOT EXISTS (SELECT 1 FROM support WHERE support_source_type <> 'context_record');
+       AND NOT EXISTS (SELECT 1 FROM support WHERE context_record_id IS NULL);
 $is_context_only_mapping_target$;
 REVOKE ALL ON FUNCTION workflow.is_context_only_mapping_target(BIGINT, BIGINT, VARCHAR) FROM PUBLIC;
 
@@ -201,7 +201,7 @@ CREATE FUNCTION workflow.list_mapping_source_objects(
 )
 RETURNS TABLE (
     source_mapping_id BIGINT, modeled_entity_id BIGINT, role TEXT, rationale TEXT,
-    mapping_order INTEGER, is_locked BOOLEAN, source_object_id BIGINT,
+    is_locked BOOLEAN, source_object_id BIGINT,
     source_logical_entity_id BIGINT, source_dimensional_entity_id BIGINT,
     scope_is_locked BOOLEAN, scope_is_active BOOLEAN
 )
@@ -211,7 +211,7 @@ AS $list_mapping_source_objects$
         SELECT * FROM workflow.modeled_entity AS entity
          WHERE entity.project_id = p_project_id
            AND entity.modeled_entity_type = p_modeled_entity_type
-           AND entity.modeled_entity_id = p_target_entity_id AND entity.status = 'active'
+           AND entity.modeled_entity_id = p_target_entity_id AND entity.is_active
            AND NOT EXISTS (
                SELECT 1 FROM project.project AS target_project
                 WHERE target_project.project_id = p_project_id
@@ -224,7 +224,6 @@ AS $list_mapping_source_objects$
            CASE WHEN support.logical_entity_source_mapping_id IS NULL THEN 'candidate' ELSE 'support' END,
            coalesce(support.logical_entity_source_mapping_rationale,
                     'Available source candidate; relevance must be established from evidence.'),
-           support.logical_entity_source_mapping_order,
            coalesce(support.logical_entity_source_mapping_is_locked, FALSE),
            input.object_id, NULL::BIGINT, NULL::BIGINT, scope.project_input_scope_is_locked, scope.is_active
       FROM target
@@ -233,8 +232,8 @@ AS $list_mapping_source_objects$
       JOIN project.project_input_scope AS scope ON scope.project_id = p_project_id AND scope.object_id = input.object_id
       LEFT JOIN workflow.logical_entity_source_mapping AS support
         ON support.project_id = p_project_id AND support.logical_entity_id = target.modeled_entity_id
-       AND support.source_object_id = input.object_id AND support.support_source_type = 'object'
-       AND support.logical_entity_source_mapping_status = 'active'
+       AND support.source_object_id = input.object_id
+       AND support.logical_entity_source_mapping_is_active
     UNION ALL
     SELECT support.dimensional_entity_source_mapping_id, target.modeled_entity_id,
            CASE WHEN target.modeled_entity_type = 'logical_entity' THEN 'lookup'
@@ -244,20 +243,18 @@ AS $list_mapping_source_objects$
                 THEN 'Available peer Logical lookup with applied Mapping for the selected source System.'
                 ELSE coalesce(support.dimensional_entity_source_mapping_rationale,
                     'Available Logical source candidate; relevance must be established from evidence.') END,
-           support.dimensional_entity_source_mapping_order,
            coalesce(support.dimensional_entity_source_mapping_is_locked, FALSE),
            NULL::BIGINT, source.logical_entity_id, NULL::BIGINT, source.logical_entity_is_locked, TRUE
       FROM target
       JOIN workflow.logical_entity AS source ON source.project_id = p_project_id
-       AND source.logical_entity_status = 'active'
+       AND source.logical_entity_is_active
        AND (target.modeled_entity_type = 'dimensional_entity'
             OR source.logical_entity_id <> target.modeled_entity_id)
       LEFT JOIN workflow.dimensional_entity_source_mapping AS support
         ON target.modeled_entity_type = 'dimensional_entity'
        AND support.project_id = p_project_id AND support.dimensional_entity_id = target.modeled_entity_id
        AND support.source_logical_entity_id = source.logical_entity_id
-       AND support.support_source_type = 'logical_entity'
-       AND support.dimensional_entity_source_mapping_status = 'active'
+       AND support.dimensional_entity_source_mapping_is_active
      WHERE EXISTS (
          SELECT 1 FROM workflow.mapping_object AS mapping
          JOIN core.system AS system ON system.system_id = mapping.source_system_id AND system.is_active
@@ -268,7 +265,7 @@ AS $list_mapping_source_objects$
                 SELECT 1 FROM workflow.logical_attribute AS attribute
                  WHERE attribute.project_id = p_project_id
                    AND attribute.logical_entity_id = source.logical_entity_id
-                   AND attribute.logical_attribute_status = 'active'
+                   AND attribute.logical_attribute_is_active
                    AND NOT EXISTS (
                        SELECT 1 FROM workflow.mapping_attribute AS mapped
                         WHERE mapped.mapping_object_id = mapping.mapping_object_id
@@ -281,11 +278,11 @@ AS $list_mapping_source_objects$
     UNION ALL
     SELECT NULL::BIGINT, target.modeled_entity_id, 'lookup'::TEXT,
            'Available peer Dimensional lookup with applied Mapping for the selected source System.'::TEXT,
-           NULL::INTEGER, FALSE, NULL::BIGINT, NULL::BIGINT,
+           FALSE, NULL::BIGINT, NULL::BIGINT,
            source.dimensional_entity_id, source.dimensional_entity_is_locked, TRUE
       FROM target
       JOIN workflow.dimensional_entity AS source ON source.project_id = p_project_id
-       AND source.dimensional_entity_status = 'active'
+       AND source.dimensional_entity_is_active
        AND target.modeled_entity_type = 'dimensional_entity'
        AND source.dimensional_entity_id <> target.modeled_entity_id
      WHERE EXISTS (
@@ -298,7 +295,7 @@ AS $list_mapping_source_objects$
                 SELECT 1 FROM workflow.dimensional_attribute AS attribute
                  WHERE attribute.project_id = p_project_id
                    AND attribute.dimensional_entity_id = source.dimensional_entity_id
-                   AND attribute.dimensional_attribute_status = 'active'
+                   AND attribute.dimensional_attribute_is_active
                    AND NOT EXISTS (
                        SELECT 1 FROM workflow.mapping_attribute AS mapped
                         WHERE mapped.mapping_object_id = mapping.mapping_object_id

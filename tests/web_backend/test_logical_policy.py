@@ -8,6 +8,7 @@ from gds_etl_workbench.domain.modeling_records import (
     LogicalEntityRecord,
 )
 from gds_etl_workbench.domain.snapshots.project import LogicalSection
+
 from gds_workbench_api.features.logical.policy import project_logical_audit_policy
 
 
@@ -17,12 +18,10 @@ def _entity(name: str) -> LogicalEntityRecord:
         logical_entity_name=name,
         logical_entity_definition=f"One {name}.",
         logical_entity_type="core",
-        logical_entity_type_detail=None,
         logical_entity_grain=f"One row per {name}.",
         logical_entity_dependency_order=0,
-        logical_entity_status="active",
+        logical_entity_is_active=True,
         logical_entity_is_locked=False,
-        submodels=(),
         sources=(),
     )
 
@@ -39,7 +38,7 @@ def _business_attribute(entity: str) -> LogicalAttributeRecord:
         logical_attribute_is_surrogate_key=False,
         logical_attribute_ordinal_position=1,
         logical_attribute_is_audit_column=False,
-        logical_attribute_status="active",
+        logical_attribute_is_active=True,
         logical_attribute_is_locked=False,
         sources=(),
     )
@@ -78,7 +77,6 @@ def test_projection_adds_policy_columns_to_new_and_applied_active_entities() -> 
     new_entity = _entity("Customer")
     new_attribute = _business_attribute("Customer")
     applied = LogicalSection(
-        submodels=(),
         entities=(applied_entity,),
         attributes=(applied_attribute,),
         relationships=(),
@@ -103,9 +101,7 @@ def test_projection_adds_policy_columns_to_new_and_applied_active_entities() -> 
 
     assert len(attributes) == 6
     audit = [item for item in attributes if item["logical_attribute_is_audit_column"]]
-    assert {
-        (item["logical_entity_name"], item["logical_attribute_name"]) for item in audit
-    } == {
+    assert {(item["logical_entity_name"], item["logical_attribute_name"]) for item in audit} == {
         ("Account", "Created At"),
         ("Account", "Updated At"),
         ("Customer", "Created At"),
@@ -122,9 +118,7 @@ def test_missing_policy_adds_default_audit_columns_and_generated_key() -> None:
             records=[_entity("Customer").model_dump(mode="json")],
         ),
     )
-    projected = project_logical_audit_policy(
-        changes=changes, applied=None, raw_template=None
-    )
+    projected = project_logical_audit_policy(changes=changes, applied=None, raw_template=None)
     attributes = sorted(
         _attribute_records(projected),
         key=lambda row: int(str(row["logical_attribute_ordinal_position"])),
@@ -152,7 +146,6 @@ def test_projection_rejects_non_audit_name_collision() -> None:
         update={"logical_attribute_name": "Created At"}
     )
     applied = LogicalSection(
-        submodels=(),
         entities=(entity,),
         attributes=(collision,),
         relationships=(),
@@ -166,9 +159,7 @@ def test_projection_rejects_non_audit_name_collision() -> None:
         )
 
 
-def test_default_generated_key_never_overwrites_a_same_named_business_attribute() -> (
-    None
-):
+def test_default_generated_key_never_overwrites_a_same_named_business_attribute() -> None:
     business = _business_attribute("Customer").model_copy(
         update={"logical_attribute_name": "CustomerID"}
     )
@@ -219,9 +210,8 @@ def test_source_system_provenance_retains_sources_and_natural_key_membership() -
                         object_name="Customer",
                         attribute_name="SourceSystemID",
                     ),
-                    source_order=1,
                     rationale="Registered originating System.",
-                    status="active",
+                    is_active=True,
                     is_locked=False,
                 ),
             ),
@@ -235,7 +225,6 @@ def test_source_system_provenance_retains_sources_and_natural_key_membership() -
             ),
         ),
         applied=LogicalSection(
-            submodels=(),
             entities=(_entity("Customer"),),
             attributes=(),
             relationships=(),

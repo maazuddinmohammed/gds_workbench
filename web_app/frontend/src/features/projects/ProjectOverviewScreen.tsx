@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 
 import { TenantWorkspace } from "../../app/TenantWorkspace";
 import { formatDateTime } from "../../shared/presentation";
-import { ErrorPage, LoadingPage, WorkspaceToolbar } from "../../shared/ui";
+import { ErrorPage, LoadingPage, RefreshButton, WorkspaceToolbar } from "../../shared/ui";
 import type { TenantsApi } from "../tenants/api";
 import { validTenantProjectIds } from "./ProjectRouteFrame";
 import { ProjectWorkspaceShell } from "./ProjectWorkspaceShell";
@@ -80,9 +80,7 @@ function ProjectOverviewView({
   return (
     <div className="project-overview page-enter">
       <h1 className="project-section-title sr-only">Overview</h1>
-      <WorkspaceToolbar actions={<button className="button button-secondary button-small" type="button" disabled={refreshing} onClick={onRefresh}>
-        {refreshing ? "Refreshing…" : "Refresh"}
-      </button>}><span>Workflow coverage</span></WorkspaceToolbar>
+      <WorkspaceToolbar actions={<RefreshButton refreshing={refreshing} onClick={onRefresh} />}><span>Workflow coverage</span></WorkspaceToolbar>
       <header className="project-overview-header" aria-label="Project summary">
         <dl className="project-overview-schemas">
           {[
@@ -239,7 +237,7 @@ function WorkflowStateBadge({ state }: { state: WorkflowLedgerEntry["state"] }) 
 }
 
 function ledgerWorkflowLabel(workflow: WorkflowLedgerEntry["workflow"]): string {
-  if (workflow === "subject_area") return "Subject areas";
+  if (workflow === "subject_area") return "Subject Areas";
   return workflow[0]?.toLocaleUpperCase() + workflow.slice(1);
 }
 

@@ -12,13 +12,14 @@ from gds_etl_workbench.domain.snapshots.project import (
     CHANGE_SET_DATASETS,
     ModelingDatasetDefinition,
 )
+from pydantic import BaseModel, JsonValue
+
 from gds_workbench_api.features.dimensional.candidate import _DimensionalCandidate
 from gds_workbench_api.features.logical.candidate import _CompactLogicalCandidate
 from gds_workbench_api.features.subject_areas.candidate import _SubjectAreaAnswer
 from gds_workbench_api.features.workflows.authoring.repair import (
     enrich_agent_output_project_definitions,
 )
-from pydantic import BaseModel, JsonValue
 
 
 @pytest.mark.parametrize(
@@ -27,7 +28,6 @@ from pydantic import BaseModel, JsonValue
         (
             _DimensionalCandidate,
             {
-                "DimensionalSubmodelRecord",
                 "DimensionalEntityRecord",
                 "DimensionalAttributeRecord",
                 "DimensionalRelationshipRecord",
@@ -47,6 +47,7 @@ def test_authorable_project_records_and_nested_fields_have_semantic_guidance(
     assert _without_semantic_guidance(schema) == constraints_before
     definitions = cast(dict[str, dict[str, object]], schema["$defs"])
     assert record_definitions <= definitions.keys()
+    assert not any("Submodel" in name for name in definitions)
     for name in record_definitions:
         definition = definitions[name]
         assert _nonblank(definition.get("description")), name
@@ -78,9 +79,7 @@ def test_compact_answer_describes_every_field(answer: type[BaseModel]) -> None:
         ("answer", cast(dict[str, object], schema)),
         *definitions.items(),
     ):
-        properties = cast(
-            dict[str, dict[str, object]], definition.get("properties", {})
-        )
+        properties = cast(dict[str, dict[str, object]], definition.get("properties", {}))
         for field, property_schema in properties.items():
             assert _nonblank(property_schema.get("description")), (name, field)
 
@@ -134,12 +133,7 @@ def _without_semantic_guidance(value: object) -> object:
             "examples",
         ):
             typed_document.pop(key, None)
-        return {
-            key: _without_semantic_guidance(item)
-            for key, item in typed_document.items()
-        }
+        return {key: _without_semantic_guidance(item) for key, item in typed_document.items()}
     if isinstance(document, list):
-        return [
-            _without_semantic_guidance(item) for item in cast(list[object], document)
-        ]
+        return [_without_semantic_guidance(item) for item in cast(list[object], document)]
     return document

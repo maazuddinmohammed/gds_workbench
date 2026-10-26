@@ -1,19 +1,22 @@
-import type { LogicalTransport } from "../logical/api";
 import type { ProjectTargetsTransport } from "../project_targets/api";
-import type { ProjectRecordHistoryApi } from "../project_record_review/api";
+import type { ProjectRecordReviewApi } from "../project_record_review/api";
 import type { HttpRequest } from "../../core/http";
-import type {
-  ModelingCardinality,
-  ReviewStatus,
-} from "../../shared/contracts";
+import type { ReviewStatus } from "../../shared/contracts";
 import type { ProjectInputScopeApi } from "../project_input_scope/api";
+import type { SubjectAreaTransport } from "../subject_areas/api";
 import type { WorkflowsApi } from "../workflows/api";
+import type { ModelSubjectAreaPage } from "../../shared/contracts";
 
 export interface DimensionalFilters {
-  status?: ReviewStatus;
+  active?: boolean;
   locked?: boolean;
   nameExact?: string;
   namePrefix?: string;
+}
+
+export interface DimensionalObjectFilters extends DimensionalFilters {
+  /** Entities whose Logical sources have an active Object among the area's active Objects. */
+  subjectAreaId?: number;
 }
 
 export interface DimensionalObject {
@@ -22,14 +25,10 @@ export interface DimensionalObject {
   dimensional_entity_schema_name: string;
   dimensional_entity_name: string;
   dimensional_entity_type: "fact" | "dimension" | "bridge";
-  dimensional_fact_type:
-    | "transaction"
-    | "periodic_snapshot"
-    | "accumulating_snapshot"
-    | "factless"
-    | null;
+  /** Reference code such as transaction or periodic_snapshot; only facts have one. */
+  dimensional_fact_type: string | null;
   dimensional_entity_dependency_order: number;
-  dimensional_entity_status: ReviewStatus;
+  dimensional_entity_is_active: boolean;
   dimensional_entity_is_locked: boolean;
   updated_at: string;
 }
@@ -39,17 +38,6 @@ export interface DimensionalObjectPage {
   project_revision: number;
   items: DimensionalObject[];
   next_cursor: string | null;
-}
-
-export interface DimensionalSubmodelMembership {
-  dimensional_entity_submodel_id: number;
-  workflow_run_id: number | null;
-  dimensional_submodel_id: number;
-  dimensional_submodel_name: string;
-  membership_status: ReviewStatus;
-  membership_is_locked: boolean;
-  created_at: string;
-  updated_at: string;
 }
 
 export interface DimensionalLogicalEntityReference {
@@ -70,9 +58,8 @@ export interface DimensionalContextReference {
 interface DimensionalObjectSourceBase {
   dimensional_entity_source_mapping_id: number;
   workflow_run_id: number | null;
-  source_order: number | null;
-  rationale: string;
-  status: ReviewStatus;
+  rationale: string | null;
+  is_active: boolean;
   is_locked: boolean;
   created_at: string;
   updated_at: string;
@@ -94,7 +81,8 @@ export interface DimensionalObjectDetail extends DimensionalObject {
   dimensional_entity_definition: string;
   dimensional_entity_grain_definition: string | null;
   created_at: string;
-  submodels: DimensionalSubmodelMembership[];
+  /** Read-only: the active Subject Areas reached through the Entity's Logical sources. */
+  subject_areas: { subject_area_id: number; subject_area_name: string }[];
   sources: DimensionalObjectSource[];
 }
 
@@ -115,7 +103,7 @@ export interface DimensionalAttribute {
   dimensional_attribute_is_natural_key: boolean;
   dimensional_attribute_is_surrogate_key: boolean;
   dimensional_attribute_is_audit_column: boolean;
-  dimensional_attribute_status: ReviewStatus;
+  dimensional_attribute_is_active: boolean;
   dimensional_attribute_is_locked: boolean;
   updated_at: string;
 }
@@ -135,9 +123,8 @@ export interface DimensionalLogicalAttributeReference extends DimensionalLogical
 interface DimensionalAttributeSourceBase {
   dimensional_attribute_source_mapping_id: number;
   workflow_run_id: number | null;
-  source_order: number | null;
-  rationale: string;
-  status: ReviewStatus;
+  rationale: string | null;
+  is_active: boolean;
   is_locked: boolean;
   created_at: string;
   updated_at: string;
@@ -168,6 +155,7 @@ export interface DimensionalRelationshipFilters extends DimensionalFilters {
   dimensionalEntityId?: number;
 }
 
+/** Child to parent, such as a fact's foreign key pointing at a dimension's key. */
 export interface DimensionalRelationship {
   dimensional_relationship_id: number;
   workflow_run_id: number | null;
@@ -181,12 +169,9 @@ export interface DimensionalRelationship {
   to_dimensional_entity_name: string;
   to_dimensional_attribute_id: number;
   to_dimensional_attribute_name: string;
-  dimensional_relationship_name: string;
-  dimensional_relationship_kind: string;
-  dimensional_relationship_cardinality: ModelingCardinality;
-  dimensional_relationship_is_optional: boolean;
+  /** Set only for role-playing references, such as order_date for a date dimension. */
   dimensional_relationship_role_name: string | null;
-  dimensional_relationship_status: ReviewStatus;
+  dimensional_relationship_is_active: boolean;
   dimensional_relationship_is_locked: boolean;
   updated_at: string;
 }
@@ -199,17 +184,16 @@ export interface DimensionalRelationshipPage {
 }
 
 export interface DimensionalRelationshipDetail extends DimensionalRelationship {
-  dimensional_relationship_definition: string;
-  dimensional_relationship_basis: string;
-  dimensional_relationship_cardinality_basis: string;
+  dimensional_relationship_basis: string | null;
   created_at: string;
 }
 
 export interface DimensionalTransport {
+  listDimensionalSubjectAreas: (tenantId: number, projectId: number) => Promise<ModelSubjectAreaPage>;
   listDimensionalObjects: (
     tenantId: number,
     projectId: number,
-    filters?: DimensionalFilters,
+    filters?: DimensionalObjectFilters,
     pageSize?: number,
     cursor?: string,
   ) => Promise<DimensionalObjectPage>;
@@ -244,11 +228,12 @@ export interface DimensionalTransport {
   ) => Promise<DimensionalRelationshipDetail>;
 }
 
-export type DimensionalApi = Pick<LogicalTransport, "listLogicalEntities"> & DimensionalTransport & Pick<ProjectTargetsTransport, "readTargetOptions" | "exportProjectTargets" | "exportProjectDdl"> & ProjectRecordHistoryApi
+export type DimensionalApi = DimensionalTransport & Pick<ProjectTargetsTransport, "readTargetOptions" | "exportProjectTargets" | "exportProjectDdl"> & ProjectRecordReviewApi
+  & Pick<SubjectAreaTransport, "listSubjectAreas">
   & Pick<
     WorkflowsApi,
     | "applyWorkflowDraft"
-  | "cancelWorkflowRun"
+    | "cancelWorkflowRun"
     | "createWorkflowRun"
     | "executeDimensionalRun"
     | "listWorkflowRunEvents"
@@ -261,6 +246,9 @@ export type DimensionalApi = Pick<LogicalTransport, "listLogicalEntities"> & Dim
 
 export function createDimensionalApi(request: HttpRequest): DimensionalTransport {
   return {
+    listDimensionalSubjectAreas: (tenantId, projectId) => request<ModelSubjectAreaPage>(
+      `/api/v1/tenants/${tenantId}/projects/${projectId}/dimensional/subject-areas`,
+    ),
     listDimensionalObjects: (tenantId, projectId, filters = {}, pageSize = 200, cursor) =>
       request<DimensionalObjectPage>(
         dimensionalCollectionPath(tenantId, projectId, "objects", filters, pageSize, cursor),
@@ -289,6 +277,9 @@ export function createDimensionalApi(request: HttpRequest): DimensionalTransport
 }
 
 export const dimensionalQueryKeys = {
+  subjectAreas: (tenantId: number, projectId: number) => (
+    ["dimensional-subject-areas", tenantId, projectId] as const
+  ),
   objects: (tenantId: number, projectId: number, filters: unknown) => (
     ["dimensional-objects", tenantId, projectId, filters] as const
   ),
@@ -313,12 +304,12 @@ function dimensionalCollectionPath(
   tenantId: number,
   projectId: number,
   collection: "objects" | "attributes" | "relationships",
-  filters: DimensionalFilters | DimensionalAttributeFilters | DimensionalRelationshipFilters,
+  filters: DimensionalObjectFilters | DimensionalAttributeFilters | DimensionalRelationshipFilters,
   pageSize: number,
   cursor: string | undefined,
 ): string {
   const query = new URLSearchParams();
-  if (filters.status) query.set("status", filters.status);
+  if (filters.active !== undefined) query.set("active", String(filters.active));
   if (filters.locked !== undefined) query.set("locked", String(filters.locked));
   const nameExact = normalizeNaturalKeyFilter(filters.nameExact);
   const namePrefix = normalizeNaturalKeyFilter(filters.namePrefix);
@@ -326,6 +317,9 @@ function dimensionalCollectionPath(
   if (namePrefix) query.set("name_prefix", namePrefix);
   if ("dimensionalEntityId" in filters && filters.dimensionalEntityId) {
     query.set("dimensional_entity_id", String(filters.dimensionalEntityId));
+  }
+  if ("subjectAreaId" in filters && filters.subjectAreaId) {
+    query.set("subject_area_id", String(filters.subjectAreaId));
   }
   query.set("page_size", String(pageSize));
   if (cursor) query.set("cursor", cursor);

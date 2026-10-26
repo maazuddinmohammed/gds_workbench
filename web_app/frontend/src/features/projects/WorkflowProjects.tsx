@@ -11,6 +11,7 @@ import {
 import { ApiError } from "../../core/http";
 import { formatRequiredDateTime as formatDateTime } from "../../shared/presentation";
 import type { ProjectLedgerRecord, ProjectsApi } from "./api";
+import { RefreshButton } from "../../shared/ui";
 
 const workflowViews = {
   mapping: {
@@ -114,14 +115,7 @@ export function WorkflowProjects({
           <h1>{view.title}</h1>
         </div>
         <div className="mapping-project-actions">
-          <button
-            className="button button-secondary button-small"
-            type="button"
-            disabled={workflow !== "mapping" && query.isFetching}
-            onClick={() => void query.refetch()}
-          >
-            {workflow !== "mapping" && query.isFetching ? "Refreshing…" : "Refresh"}
-          </button>
+          <RefreshButton refreshing={workflow !== "mapping" && query.isFetching} onClick={() => void query.refetch()} />
         </div>
       </header>
       {query.isPending ? (

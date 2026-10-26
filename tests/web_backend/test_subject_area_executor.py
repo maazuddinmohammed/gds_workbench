@@ -113,8 +113,8 @@ def _plan(*, mode: str = "one_shot", retry_count: int = 1) -> AgentRunPlan:
                     templates=PromptComponentTemplates(
                         system="Group the Input Scope into Subject Areas.",
                         instruction=(
-                            "Use {{stage_context}}. Keep each area at or below "
-                            "{{max_subject_area_columns}} columns. Repair {{validation_failures}}."
+                            "Use {{stage_context}} and {{table_index}}. "
+                            "Repair {{validation_failures}}."
                         ),
                     ),
                     variables=(
@@ -125,10 +125,10 @@ def _plan(*, mode: str = "one_shot", retry_count: int = 1) -> AgentRunPlan:
                             is_required=True,
                         ),
                         PromptVariableDefinition(
-                            name="max_subject_area_columns",
+                            name="table_index",
                             resolver_key=(
                                 "workflow.subject_area.common.candidate_authoring.inputs."
-                                "max_subject_area_columns"
+                                "table_index"
                             ),
                             data_type="json",
                             is_required=True,
@@ -651,7 +651,7 @@ async def test_executor_authors_validated_draft_without_applying_project() -> No
     )
     assert request.allowed_tool_names == ()
     # The registered compact input resolves from the frozen context and packaged policy.
-    assert "at or below 300 columns" in request.instruction_prompt
+    assert '"table":"t2"' in request.instruction_prompt
     assert request.context == {
         "original_context": _context_bundle().embedded_context,
         "repair": None,
@@ -817,7 +817,7 @@ async def test_executor_tool_assisted_uses_local_catalog_and_same_handoff() -> N
             "get_context_records",
         )
     )
-    assert "at or below 300 columns" in request.instruction_prompt
+    assert '"table":"t2"' in request.instruction_prompt
     assert request.context == {"original_context": catalog.manifest, "repair": None}
     assert len(handoff.calls) == 1
     assert lifecycle.failed is None

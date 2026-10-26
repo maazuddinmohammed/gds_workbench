@@ -1967,7 +1967,7 @@ async def test_all_project_datasets_materialize_and_round_trip_as_one_snapshot(
             assert active_scope.is_error is False
             assert active_scope.structured_content["object_count"] == 3
             renamed_relationship = deepcopy(staged["dimensional_relationship"][0])
-            renamed_relationship["dimensional_relationship_name"] = "sale customer role"
+            renamed_relationship["dimensional_relationship_role_name"] = "sale customer role"
             updated_code = {
                 **staged["generated_code"][0],
                 "code_commit_path": "new reference",
@@ -2124,13 +2124,7 @@ async def test_all_project_datasets_materialize_and_round_trip_as_one_snapshot(
             SELECT sum(non_null_count)::BIGINT AS non_null_count
               FROM (
                     SELECT count(*) AS non_null_count
-                      FROM workflow.logical_submodel
-                     WHERE project_id = %s AND workflow_run_id IS NOT NULL
-                    UNION ALL
-                    SELECT count(*) FROM workflow.logical_entity
-                     WHERE project_id = %s AND workflow_run_id IS NOT NULL
-                    UNION ALL
-                    SELECT count(*) FROM workflow.logical_entity_submodel
+                      FROM workflow.logical_entity
                      WHERE project_id = %s AND workflow_run_id IS NOT NULL
                     UNION ALL
                     SELECT count(*) FROM workflow.logical_entity_source_mapping
@@ -2145,13 +2139,7 @@ async def test_all_project_datasets_materialize_and_round_trip_as_one_snapshot(
                     SELECT count(*) FROM workflow.logical_relationship
                      WHERE project_id = %s AND workflow_run_id IS NOT NULL
                     UNION ALL
-                    SELECT count(*) FROM workflow.dimensional_submodel
-                     WHERE project_id = %s AND workflow_run_id IS NOT NULL
-                    UNION ALL
                     SELECT count(*) FROM workflow.dimensional_entity
-                     WHERE project_id = %s AND workflow_run_id IS NOT NULL
-                    UNION ALL
-                    SELECT count(*) FROM workflow.dimensional_entity_submodel
                      WHERE project_id = %s AND workflow_run_id IS NOT NULL
                     UNION ALL
                     SELECT count(*) FROM workflow.dimensional_entity_source_mapping
@@ -2167,16 +2155,20 @@ async def test_all_project_datasets_materialize_and_round_trip_as_one_snapshot(
                      WHERE project_id = %s AND workflow_run_id IS NOT NULL
               ) AS counts
             """,
-            (project_id,) * 14,
+            (project_id,) * 10,
         ).fetchone()
+        # Optionality is not stored; it is the foreign-key Attribute's nullability.
         dimensional_relationship = connection.execute(
             """
             SELECT count(*) AS relationship_count,
-                   min(dimensional_relationship_name) AS relationship_name,
-                   bool_and(NOT dimensional_relationship_is_optional)
+                   min(relationship.dimensional_relationship_role_name) AS role_name,
+                   bool_and(NOT from_attribute.dimensional_attribute_is_nullable)
                        AS relationship_is_required
-              FROM workflow.dimensional_relationship
-             WHERE project_id = %s
+              FROM workflow.dimensional_relationship AS relationship
+              JOIN workflow.dimensional_attribute AS from_attribute
+                ON from_attribute.dimensional_attribute_id
+                       = relationship.dimensional_relationship_from_attribute_id
+             WHERE relationship.project_id = %s
             """,
             (project_id,),
         ).fetchone()
@@ -2186,7 +2178,7 @@ async def test_all_project_datasets_materialize_and_round_trip_as_one_snapshot(
     assert modeled_layer_provenance == {"non_null_count": 0}
     assert dimensional_relationship == {
         "relationship_count": 1,
-        "relationship_name": "sale customer role",
+        "role_name": "sale customer role",
         "relationship_is_required": True,
     }
     assert action_count > 0
@@ -2202,11 +2194,11 @@ async def test_all_project_datasets_materialize_and_round_trip_as_one_snapshot(
         "context_record": 1,
         "subject_area": 1,
         "subject_area_table": 2,
-        "logical_submodel": 1,
+        "logical_entity_type": 7,
         "logical_entity": 2,
         "logical_attribute": 3,
         "logical_relationship": 1,
-        "dimensional_submodel": 1,
+        "dimensional_fact_type": 4,
         "dimensional_entity": 2,
         "dimensional_attribute": 3,
         "dimensional_relationship": 1,
@@ -2253,7 +2245,18 @@ async def test_all_project_datasets_materialize_and_round_trip_as_one_snapshot(
     assert '"mapping_transformation_document":{' in serialized
     assert '"mapping_context_digest"' not in serialized
     assert '"source_context_digest"' not in serialized
-    assert '"dimensional_relationship_is_optional":false' in serialized
+    assert '"dimensional_relationship_role_name":null' in serialized
+    assert '"logical_entity_type_code":"association"' in serialized
+    assert '"dimensional_fact_type_code":"factless"' in serialized
+    for removed in (
+        "submodel",
+        "source_order",
+        "logical_relationship_name",
+        "dimensional_relationship_kind",
+        "dimensional_relationship_is_optional",
+        "logical_entity_type_detail",
+    ):
+        assert removed not in serialized
 
 
 def _seed_project_foundation(
@@ -2766,11 +2769,11 @@ async def _assert_focused_reads(client: Client, project_id: int) -> None:
         "context_record": 1,
         "subject_area": 1,
         "subject_area_table": 2,
-        "logical_submodel": 1,
+        "logical_entity_type": 7,
         "logical_entity": 2,
         "logical_attribute": 3,
         "logical_relationship": 1,
-        "dimensional_submodel": 1,
+        "dimensional_fact_type": 4,
         "dimensional_entity": 2,
         "dimensional_attribute": 3,
         "dimensional_relationship": 1,

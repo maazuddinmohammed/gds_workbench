@@ -1,10 +1,11 @@
 """Expand one Subject Area agent answer into canonical non-deleting changes.
 
-The agent groups the whole Input Scope into named areas, citing tables by table_index id.
-A listed area's tables replace its saved unlocked memberships; unlisted saved areas stay
-as they are; retire marks saved areas inactive. The backend checks every table id, keeps
-locks, accounts for every Scope table, caps each area's column count, and reports issues
-at the agent's own answer paths.
+The agent groups the run's Objects (all or some of the Bronze Input Scope) into named
+areas, citing tables by table_index id. A listed area's tables replace its saved unlocked
+memberships among those Objects; memberships of other Objects stay; unlisted saved areas
+stay as they are; retire marks saved areas inactive. The backend checks every table id,
+keeps locks, accounts for every table in the run, and reports issues at the agent's own
+answer paths.
 """
 
 from __future__ import annotations
@@ -96,24 +97,17 @@ class _Draft:
 
 
 class SubjectAreaCandidateValidator:
-    """Check and expand a Subject Area answer over the run's whole Input Scope."""
+    """Check and expand a Subject Area answer over the run's Objects."""
 
     def __init__(
         self,
         *,
         selected_object_keys: tuple[PhysicalObjectKey, ...],
-        column_counts: tuple[int, ...],
         applied: SubjectAreaSection | None,
-        max_subject_area_columns: int,
+        scope_object_keys: frozenset[_Key] = frozenset(),
     ) -> None:
         if not selected_object_keys or len(selected_object_keys) > 50_000:
             raise ValueError("Subject Area selection must be bounded and nonempty")
-        if len(column_counts) != len(selected_object_keys) or any(
-            count < 0 for count in column_counts
-        ):
-            raise ValueError("Each selected table needs one column count")
-        if max_subject_area_columns < 1:
-            raise ValueError("The Subject Area column cap must be positive")
         # table_index numbers the frozen selection in its order: t1, t2, ...
         self._tables = {
             f"t{position}": key for position, key in enumerate(selected_object_keys, start=1)
@@ -121,10 +115,9 @@ class SubjectAreaCandidateValidator:
         self._table_ids = {_object_key(key): table for table, key in self._tables.items()}
         if len(self._table_ids) != len(self._tables):
             raise ValueError("Subject Area selection keys must be unique")
-        self._columns = {
-            f"t{position}": count for position, count in enumerate(column_counts, start=1)
-        }
-        self._max_columns = max_subject_area_columns
+        # Active Input Scope Objects this run leaves out; an area holding any of them
+        # cannot be retired here, because the answer cannot see them.
+        self._other_scope_keys = {key for key in scope_object_keys if key not in self._table_ids}
         self._applied = applied or SubjectAreaSection(areas=(), tables=())
         self._applied_areas = {
             normalize_project_key_value(record.subject_area_name): record
@@ -139,13 +132,13 @@ class SubjectAreaCandidateValidator:
     def output_schema(self) -> dict[str, JsonValue]:
         schema = cast(dict[str, JsonValue], deepcopy(_SubjectAreaAnswer.model_json_schema()))
         schema["description"] = (
-            "Group every Input Scope table into Subject Areas: business capabilities that each "
-            "Logical Build call can model on its own. Cite tables by table_index id. Return "
-            "new areas and saved areas you change; a listed area's tables replace its saved "
-            "unlocked tables. Put each remaining table in unassigned. Retire saved areas by "
-            f"name; nothing is deleted. Keep each area at or below {self._max_columns} "
-            "columns in total. On repair, fix every context.repair.validation_issues entry "
-            "and return the complete corrected answer, not a patch."
+            "Group every table in table_index into Subject Areas: business capabilities that "
+            "each Logical Build call can model on its own. Cite tables by table_index id. "
+            "Return new areas and saved areas you change; a listed area's tables replace its "
+            "saved unlocked tables from table_index, and its other tables stay. Put each "
+            "remaining table in unassigned. Retire saved areas by name; nothing is deleted. On "
+            "repair, fix every context.repair.validation_issues entry and return the complete "
+            "corrected answer, not a patch."
         )
         return schema
 
@@ -275,7 +268,7 @@ class SubjectAreaCandidateValidator:
             elif (
                 previous is not None
                 and previous.subject_area_table_is_locked
-                and previous.subject_area_table_status != "active"
+                and not previous.subject_area_table_is_active
             ):
                 draft.problem(
                     "candidate.record_locked",
@@ -289,7 +282,7 @@ class SubjectAreaCandidateValidator:
             "subject_area_name": area_name,
             "subject_area_definition": area.definition
             or (saved.subject_area_definition if saved is not None else ""),
-            "subject_area_status": "active",
+            "subject_area_is_active": True,
             "subject_area_is_locked": saved.subject_area_is_locked if saved is not None else False,
         }
         draft.areas[(name,)] = record
@@ -311,12 +304,12 @@ class SubjectAreaCandidateValidator:
                 continue
             if membership.subject_area_table_is_locked:
                 # Locked tables stay, whatever the answer lists.
-                if membership.subject_area_table_status == "active":
+                if membership.subject_area_table_is_active:
                     listed.append(self._table_ids[key[1:]])
                 continue
             members[key] = {
                 **membership.model_dump(mode="json"),
-                "subject_area_table_status": "inactive",
+                "subject_area_table_is_active": False,
             }
         if (
             saved is not None
@@ -336,14 +329,6 @@ class SubjectAreaCandidateValidator:
                 "A locked area cannot change; leave it out of the answer.",
             )
             return
-        columns = sum(self._columns[table] for table in set(listed))
-        if columns > self._max_columns:
-            draft.problem(
-                "candidate.subject_area_too_large",
-                (*path, "tables"),
-                f"This area holds {columns} columns; the limit is {self._max_columns}. "
-                "Split it into narrower areas.",
-            )
         for key, member in members.items():
             draft.tables[key] = member
             draft.paths[("subject_area_table", key)] = path
@@ -360,8 +345,7 @@ class SubjectAreaCandidateValidator:
             if member_key[0] == key
         }
         if saved.subject_area_is_locked or any(
-            membership.subject_area_table_is_locked
-            and membership.subject_area_table_status == "active"
+            membership.subject_area_table_is_locked and membership.subject_area_table_is_active
             for membership in members.values()
         ):
             draft.problem(
@@ -370,38 +354,45 @@ class SubjectAreaCandidateValidator:
                 "A locked area, or one with locked tables, cannot be retired.",
             )
             return
-        draft.areas[(key,)] = {
-            **saved.model_dump(mode="json"),
-            "subject_area_status": "inactive",
-        }
+        outside = sum(
+            membership.subject_area_table_is_active and member_key[1:] in self._other_scope_keys
+            for member_key, membership in members.items()
+        )
+        if outside:
+            draft.problem(
+                "candidate.retire_outside_run",
+                path,
+                f"This area also holds {outside} Objects outside this run; keep it, or retire "
+                "it in a run over all Objects.",
+            )
+            return
+        draft.areas[(key,)] = {**saved.model_dump(mode="json"), "subject_area_is_active": False}
         draft.paths[("subject_area", (key,))] = path
         for member_key, membership in members.items():
-            if membership.subject_area_table_status == "active":
+            if membership.subject_area_table_is_active:
                 draft.tables[member_key] = {
                     **membership.model_dump(mode="json"),
-                    "subject_area_table_status": "inactive",
+                    "subject_area_table_is_active": False,
                 }
                 draft.paths[("subject_area_table", member_key)] = path
 
     def _check_accounting(self, draft: _Draft, parsed: _SubjectAreaAnswer) -> None:
         """Every Scope table sits in an active area or is explicitly unassigned."""
         active_areas = {
-            name
-            for name, area in self._applied_areas.items()
-            if area.subject_area_status == "active"
+            name for name, area in self._applied_areas.items() if area.subject_area_is_active
         }
         for (name,), area in draft.areas.items():
-            if area["subject_area_status"] == "active":
+            if area["subject_area_is_active"]:
                 active_areas.add(name)
             else:
                 active_areas.discard(name)
         memberships = {
-            key: membership.subject_area_table_status == "active"
+            key: membership.subject_area_table_is_active
             for key, membership in self._applied_tables.items()
         }
         memberships.update(
             {
-                key: record["subject_area_table_status"] == "active"
+                key: record["subject_area_table_is_active"] is True
                 for key, record in draft.tables.items()
             }
         )
@@ -450,7 +441,7 @@ def _membership(
     return {
         "subject_area_name": area_name,
         **key.model_dump(mode="json"),
-        "subject_area_table_status": "active" if active else "inactive",
+        "subject_area_table_is_active": active,
         "subject_area_table_is_locked": locked,
     }
 

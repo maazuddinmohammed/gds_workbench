@@ -20,37 +20,9 @@ from gds_workbench_api.features.logical.read_contracts import (
     LogicalRelationshipFilters,
     LogicalRelationshipListQuery,
     LogicalRelationshipPage,
-    LogicalSubmodelDetail,
-    LogicalSubmodelPage,
-    ModeledFilters,
-    ModeledListQuery,
+    ModelSubjectAreaPage,
 )
 from gds_workbench_api.features.logical.read_service import LogicalService
-
-
-def _filters_from_query(query: ModeledListQuery) -> ModeledFilters:
-    return ModeledFilters.model_validate(
-        {
-            "status": query.status,
-            "locked": query.locked,
-            "name_exact": query.name_exact,
-            "name_prefix": query.name_prefix,
-        },
-        strict=True,
-    )
-
-
-def _entity_filters_from_query(query: LogicalEntityListQuery) -> LogicalEntityFilters:
-    return LogicalEntityFilters.model_validate(
-        {
-            "status": query.status,
-            "locked": query.locked,
-            "name_exact": query.name_exact,
-            "name_prefix": query.name_prefix,
-            "logical_submodel_id": query.logical_submodel_id,
-        },
-        strict=True,
-    )
 
 
 def create_logical_router(
@@ -65,6 +37,23 @@ def create_logical_router(
         tags=["logical"],
     )
 
+    async def list_subject_areas(
+        tenant_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
+    ) -> ModelSubjectAreaPage:
+        return await service.list_subject_areas(
+            principal, tenant_id=tenant_id, project_id=project_id
+        )
+
+    router.add_api_route(
+        "/subject-areas",
+        list_subject_areas,
+        methods=["GET"],
+        response_model=ModelSubjectAreaPage,
+    )
+
     async def list_entities(
         tenant_id: Annotated[int, Path(gt=0)],
         project_id: Annotated[int, Path(gt=0)],
@@ -72,11 +61,21 @@ def create_logical_router(
         *,
         principal: RequestPrincipal = Depends(authenticate),
     ) -> LogicalEntityPage:
+        filters = LogicalEntityFilters.model_validate(
+            {
+                "active": query.active,
+                "locked": query.locked,
+                "name_exact": query.name_exact,
+                "name_prefix": query.name_prefix,
+                "subject_area_id": query.subject_area_id,
+            },
+            strict=True,
+        )
         return await service.list_entities(
             principal,
             tenant_id=tenant_id,
             project_id=project_id,
-            filters=_entity_filters_from_query(query),
+            filters=filters,
             page_size=query.page_size,
             cursor=query.cursor,
         )
@@ -118,7 +117,7 @@ def create_logical_router(
     ) -> LogicalAttributePage:
         filters = LogicalAttributeFilters.model_validate(
             {
-                "status": query.status,
+                "active": query.active,
                 "locked": query.locked,
                 "name_exact": query.name_exact,
                 "name_prefix": query.name_prefix,
@@ -172,7 +171,7 @@ def create_logical_router(
     ) -> LogicalRelationshipPage:
         filters = LogicalRelationshipFilters.model_validate(
             {
-                "status": query.status,
+                "active": query.active,
                 "locked": query.locked,
                 "name_exact": query.name_exact,
                 "name_prefix": query.name_prefix,
@@ -215,49 +214,5 @@ def create_logical_router(
         read_relationship,
         methods=["GET"],
         response_model=LogicalRelationshipDetail,
-    )
-
-    async def list_submodels(
-        tenant_id: Annotated[int, Path(gt=0)],
-        project_id: Annotated[int, Path(gt=0)],
-        query: Annotated[ModeledListQuery, Query()],
-        *,
-        principal: RequestPrincipal = Depends(authenticate),
-    ) -> LogicalSubmodelPage:
-        return await service.list_submodels(
-            principal,
-            tenant_id=tenant_id,
-            project_id=project_id,
-            filters=_filters_from_query(query),
-            page_size=query.page_size,
-            cursor=query.cursor,
-        )
-
-    router.add_api_route(
-        "/submodels",
-        list_submodels,
-        methods=["GET"],
-        response_model=LogicalSubmodelPage,
-    )
-
-    async def read_submodel(
-        tenant_id: Annotated[int, Path(gt=0)],
-        project_id: Annotated[int, Path(gt=0)],
-        logical_submodel_id: Annotated[int, Path(gt=0)],
-        *,
-        principal: RequestPrincipal = Depends(authenticate),
-    ) -> LogicalSubmodelDetail:
-        return await service.read_submodel(
-            principal,
-            tenant_id=tenant_id,
-            project_id=project_id,
-            logical_submodel_id=logical_submodel_id,
-        )
-
-    router.add_api_route(
-        "/submodels/{logical_submodel_id}",
-        read_submodel,
-        methods=["GET"],
-        response_model=LogicalSubmodelDetail,
     )
     return router

@@ -6,8 +6,8 @@ const graph = require('../../atlas/atlas-plugin/workbench/validation/project.js'
 const policy = require('../../atlas/atlas-plugin/workbench/validation/project-policy.js');
 const dbml = require('../../atlas/atlas-plugin/workbench/dbml.js');
 const state = (records, pending = []) => ({ records, effective: records, baseline: records.filter(record => !pending.includes(record)), pending, definition: {name: 'fixture', canonical_key: []} });
-const entity = schema => ({logical_entity_schema_name: schema, logical_entity_name: 'Customer', logical_entity_status: 'active', logical_entity_dependency_order: 1, submodels: []});
-const attribute = schema => ({logical_entity_schema_name: schema, logical_entity_name: 'Customer', logical_attribute_name: 'CustomerID', logical_attribute_status: 'active', logical_attribute_data_type: 'BIGINT', logical_attribute_ordinal_position: 1, logical_attribute_is_nullable: false});
+const entity = schema => ({logical_entity_schema_name: schema, logical_entity_name: 'Customer', logical_entity_is_active: true, logical_entity_dependency_order: 1});
+const attribute = schema => ({logical_entity_schema_name: schema, logical_entity_name: 'Customer', logical_attribute_name: 'CustomerID', logical_attribute_is_active: true, logical_attribute_data_type: 'BIGINT', logical_attribute_ordinal_position: 1, logical_attribute_is_nullable: false});
 const mapping = schema => ({modeled_entity_type: 'logical_entity', modeled_entity_schema_name: schema, modeled_entity_name: 'Customer', source_system_code: 'CRM', object_mapping_status: 'active', mapping_transformation_document: {source_objects: [], steps: ['Use generated values.']}});
 
 test('Mapping coverage and Code assignment cannot borrow a same-name Entity in another schema', () => {
@@ -65,7 +65,7 @@ test('DBML renders same-name Entities with independent columns and qualified rel
   const loaded = new Map([
     ['logical_entity', state([entity('silver_a'), entity('silver_b')])],
     ['logical_attribute', state([attribute('silver_a'), {...attribute('silver_b'), logical_attribute_name: 'ExternalID'}])],
-    ['logical_relationship', state([{logical_relationship_name: 'ExternalCustomer', logical_relationship_status: 'active', logical_relationship_cardinality: 'many_to_one', from_logical_entity_schema_name: 'silver_b', from_logical_entity_name: 'Customer', from_logical_attribute_name: 'ExternalID', to_logical_entity_schema_name: 'silver_a', to_logical_entity_name: 'Customer', to_logical_attribute_name: 'CustomerID'}])],
+    ['logical_relationship', state([{logical_relationship_is_active: true, logical_relationship_cardinality: 'many_to_one', from_logical_entity_schema_name: 'silver_b', from_logical_entity_name: 'Customer', from_logical_attribute_name: 'ExternalID', to_logical_entity_schema_name: 'silver_a', to_logical_entity_name: 'Customer', to_logical_attribute_name: 'CustomerID'}])],
   ]);
   const doc = dbml.render(loaded, {project_id: 42, project_revision: 1, project_name: 'Customers'}).find(doc => doc.path === 'logical_complete.dbml');
   assert.equal(doc.table_count, 2);
@@ -146,16 +146,18 @@ test('legacy Project catalogs are rejected despite the retained archive envelope
   const {isEntityOwnedProjectCatalog} = require('../../atlas/atlas-plugin/workbench/core.js');
   const catalog = datasets => ({schema_version: '3.0', sections: [{name: 'project', datasets}]});
   assert.equal(isEntityOwnedProjectCatalog(catalog([{name: 'logical_entity', canonical_key: ['logical_entity_schema_name', 'logical_entity_name']}])) , true);
+  // Child -> parent: the child's foreign-key Attribute alone identifies a Relationship.
+  for (const layer of ['logical', 'dimensional']) assert.equal(isEntityOwnedProjectCatalog(catalog([{name: `${layer}_relationship`, canonical_key: [`from_${layer}_entity_schema_name`, `from_${layer}_entity_name`, `from_${layer}_attribute_name`]}])), true);
   for (const layer of ['logical', 'dimensional']) {
     for (const suffix of ['entity', 'attribute', 'relationship']) assert.equal(isEntityOwnedProjectCatalog(catalog([{name: `${layer}_${suffix}`, canonical_key: [`${layer}_entity_name`]}])), false);
   }
   for (const name of ['mapping_object', 'mapping_attribute', 'generated_code', 'generated_code_source_system']) assert.equal(isEntityOwnedProjectCatalog(catalog([{name, canonical_key: ['modeled_entity_type', 'modeled_entity_name']}])), false);
-  for (const name of ['project_object_binding', 'project_attribute_binding']) assert.equal(isEntityOwnedProjectCatalog(catalog([{name, canonical_key: []}])), false);
+  for (const name of ['project_object_binding', 'project_attribute_binding', 'logical_submodel', 'dimensional_submodel']) assert.equal(isEntityOwnedProjectCatalog(catalog([{name, canonical_key: []}])), false);
   assert.equal(isEntityOwnedProjectCatalog({sections: [{name: 'project_binding', datasets: []}]}), false);
 });
 
 test('inactive Entities reserve their schema and absent schema configuration defaults empty', () => {
-  const retired = {...entity('silver_a'), logical_entity_status: 'inactive'};
+  const retired = {...entity('silver_a'), logical_entity_is_active: false};
   const loaded = new Map([['logical_entity', state([retired])], ['project_details', state([{logical_schemas: [], dimensional_schemas: []}])]]);
   assert.ok(policy.validate(loaded).some(issue => issue.code === 'project.entity-schema'));
   delete loaded.get('project_details').effective[0].logical_schemas;
@@ -164,8 +166,8 @@ test('inactive Entities reserve their schema and absent schema configuration def
 
 test('source support retirement rechecks unchanged Dimensional Attributes', () => {
   const key = {logical_entity_schema_name: 'silver_a', logical_entity_name: 'Customer'};
-  const dim = {dimensional_entity_schema_name: 'gold', dimensional_entity_name: 'Customer', dimensional_entity_status: 'active', sources: [{support_source_type: 'logical_entity', source_logical_entity: key, status: 'inactive'}]};
-  const col = {dimensional_entity_schema_name: 'gold', dimensional_entity_name: 'Customer', dimensional_attribute_name: 'CustomerKey', dimensional_attribute_status: 'active', sources: [{support_source_type: 'logical_attribute', source_logical_attribute: {...key, logical_attribute_name: 'CustomerID'}, status: 'active'}]};
+  const dim = {dimensional_entity_schema_name: 'gold', dimensional_entity_name: 'Customer', dimensional_entity_is_active: true, sources: [{support_source_type: 'logical_entity', source_logical_entity: key, is_active: false}]};
+  const col = {dimensional_entity_schema_name: 'gold', dimensional_entity_name: 'Customer', dimensional_attribute_name: 'CustomerKey', dimensional_attribute_is_active: true, sources: [{support_source_type: 'logical_attribute', source_logical_attribute: {...key, logical_attribute_name: 'CustomerID'}, is_active: true}]};
   const loaded = new Map([['dimensional_entity', state([dim], [dim])], ['dimensional_attribute', state([col])]]);
   assert.ok(policy.validate(loaded).some(issue => issue.code === 'project.parent-source'));
 });

@@ -83,8 +83,8 @@ async def test_partial_mapping_reads_preserve_missing_attributes_and_empty_pair_
         connection.execute(
             sql.SQL("""
             INSERT INTO workflow.{} (project_id, {}, {}, {}, {}, {}, {}, {})
-            VALUES (%s,%s,'postal_code','Postal code','string',2,'active',TRUE),
-                   (%s,%s,'retired','Retired field','string',3,'inactive',FALSE)
+            VALUES (%s,%s,'postal_code','Postal code','string',2,TRUE,TRUE),
+                   (%s,%s,'retired','Retired field','string',3,FALSE,FALSE)
         """).format(
                 *(
                     sql.Identifier(value)
@@ -95,7 +95,7 @@ async def test_partial_mapping_reads_preserve_missing_attributes_and_empty_pair_
                         f"{layer}_attribute_definition",
                         f"{layer}_attribute_data_type",
                         f"{layer}_attribute_ordinal_position",
-                        f"{layer}_attribute_status",
+                        f"{layer}_attribute_is_active",
                         f"{layer}_attribute_is_locked",
                     )
                 ),

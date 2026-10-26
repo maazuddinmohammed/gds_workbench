@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { Link } from "@tanstack/react-router";
 
 import atlasMarkUrl from "../../public/assets/atlas.svg?no-inline";
@@ -109,6 +109,30 @@ export function SelectField({
       </select>
     </label>
   );
+}
+
+export function RefreshIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M20 7v5h-5M4 17v-5h5M5.5 8a7 7 0 0 1 11.7-3L20 8M4 16l2.8 3A7 7 0 0 0 18.5 16" />
+    </svg>
+  );
+}
+
+// Icon-only Refresh for command bars. Its name stays "Refresh" (or "Refreshing…") for screen
+// readers and tooltips; the arrows spin while a refresh is running.
+export function RefreshButton({ refreshing, disabled = refreshing, onClick, label = "Refresh", ref }: {
+  refreshing: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  label?: string;
+  ref?: Ref<HTMLButtonElement>;
+}) {
+  const name = refreshing ? "Refreshing…" : label;
+  return <button ref={ref} className="button button-secondary button-small refresh-button" type="button"
+    aria-label={name} title={name} aria-busy={refreshing} disabled={disabled} onClick={onClick}>
+    <RefreshIcon />
+  </button>;
 }
 
 export function SearchIcon() {

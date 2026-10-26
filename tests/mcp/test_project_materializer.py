@@ -11,6 +11,8 @@ from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     GeneratedCodeRecord,
     GeneratedCodeSourceSystemRecord,
+    LogicalEntityRecord,
+    LogicalRelationshipRecord,
     MappingAttributeRecord,
     MappingObjectRecord,
     PhysicalAttributeKey,
@@ -18,6 +20,8 @@ from gds_etl_workbench.domain.modeling_records import (
     ValidationGroupRecord,
 )
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
+
+from tests.mcp.project_test_fixtures import complete_project_graph
 
 
 @dataclass(frozen=True)
@@ -500,5 +504,119 @@ async def test_project_settings_apply_resolves_system_and_preserves_identity() -
         5,
         7,
         record.project_name,
+    )
+    transaction.assert_complete()
+
+
+@pytest.mark.asyncio
+async def test_entity_sources_are_matched_by_their_filled_source_id() -> None:
+    transaction = ScriptedTransaction(
+        [
+            ExpectedCall("one", "FROM workflow.logical_entity", None),
+            ExpectedCall(
+                "one", "INSERT INTO workflow.logical_entity", {"logical_entity_id": 5}
+            ),
+            ExpectedCall(
+                "one", "SELECT object.object_id", {"object_id": 40, "system_id": 3}
+            ),
+            ExpectedCall("one", "AND source_object_id = %s", None),
+            ExpectedCall(
+                "one",
+                "INSERT INTO workflow.logical_entity_source_mapping",
+                {"logical_entity_source_mapping_id": 50},
+            ),
+            ExpectedCall(
+                "one",
+                "SELECT context_record_id::TEXT",
+                {"context_record_id": "00000000-0000-4000-8000-000000000001"},
+            ),
+            ExpectedCall(
+                "one",
+                "AND context_record_id = %s",
+                {"logical_entity_source_mapping_id": 51},
+            ),
+            ExpectedCall(
+                "one",
+                "UPDATE workflow.logical_entity_source_mapping",
+                {"logical_entity_source_mapping_id": 51},
+            ),
+        ]
+    )
+    entity = complete_project_graph()["logical_entity"][0]
+    entity["sources"] = [
+        {**entity["sources"][0], "rationale": None},
+        {
+            "support_source_type": "context_record",
+            "context_record": {
+                "context_record_id": "00000000-0000-4000-8000-000000000001"
+            },
+            "rationale": "Business rule.",
+            "is_active": False,
+            "is_locked": True,
+        },
+    ]
+    record = LogicalEntityRecord.model_validate_json(json.dumps(entity))
+
+    assert await _materializer(transaction).apply({"logical_entity": (record,)}) == 3
+
+    # Source rows store no type or order; the filled id says what the source is.
+    for _, query, _ in transaction.calls:
+        assert "support_source_type" not in query
+        assert "source_mapping_order" not in query
+        assert "updated_by" not in query
+    assert transaction.calls[3][2] == (7, 5, 40)
+    assert transaction.calls[4][2] == (7, None, 5, 40, None, None, True, False)
+    assert transaction.calls[6][2] == (7, 5, "00000000-0000-4000-8000-000000000001")
+    assert transaction.calls[7][2] == (None, "Business rule.", False, True, 51)
+    transaction.assert_complete()
+
+
+@pytest.mark.asyncio
+async def test_relationship_apply_matches_one_row_per_foreign_key_attribute() -> None:
+    transaction = ScriptedTransaction(
+        [
+            ExpectedCall(
+                "one",
+                "WHERE project_id = %s\n   AND logical_relationship_from_attribute_id = %s",
+                {"logical_relationship_id": 99},
+            ),
+            ExpectedCall(
+                "one",
+                "UPDATE workflow.logical_relationship",
+                {"logical_relationship_id": 99},
+            ),
+        ]
+    )
+    materializer = _materializer(transaction)
+    materializer._logical_entity_ids[("silver", "order")] = 1
+    materializer._logical_entity_ids[("silver", "customer")] = 2
+    materializer._logical_attribute_ids[("silver", "order", "customerid")] = 11
+    materializer._logical_attribute_ids[("silver", "customer", "customerid")] = 21
+    record = LogicalRelationshipRecord.model_validate_json(
+        json.dumps(
+            {
+                **complete_project_graph()["logical_relationship"][0],
+                "logical_relationship_cardinality": "one_to_one",
+            }
+        )
+    )
+
+    assert await materializer.apply({"logical_relationship": (record,)}) == 1
+
+    find, update = transaction.calls
+    assert find[2] == (7, 11)
+    assert "to_entity_id" not in find[1]
+    assert "updated_by" not in update[1]
+    assert update[2] == (
+        None,
+        "one_to_one",
+        "Many Orders per Customer.",
+        True,
+        False,
+        1,
+        11,
+        2,
+        21,
+        99,
     )
     transaction.assert_complete()

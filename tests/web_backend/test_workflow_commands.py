@@ -12,6 +12,8 @@ from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
+from pydantic import ValidationError
+
 from gds_workbench_api.capabilities import (
     AgentCapabilityRegistry,
     AgentModelExecutionProfile,
@@ -27,7 +29,6 @@ from gds_workbench_api.features.workflows.commands.contracts import (
     WorkflowRunCancellationResult,
 )
 from gds_workbench_api.main import create_app
-from pydantic import ValidationError
 
 
 @pytest.mark.parametrize("mode", [None, "tool_assisted"])
@@ -44,14 +45,10 @@ def test_metadata_enrichment_request_requires_one_shot(mode: str | None) -> None
         )
 
 
-@pytest.mark.parametrize(
-    "workflow", ["metadata_enrichment", "subject_area", "validation"]
-)
+@pytest.mark.parametrize("workflow", ["metadata_enrichment", "subject_area", "validation"])
 def test_workflow_request_preserves_large_explicit_selection(workflow: str) -> None:
     objects = list(range(1, 50_002)) if workflow != "validation" else []
-    systems = (
-        [f"system_{index}" for index in range(1001)] if workflow == "validation" else []
-    )
+    systems = [f"system_{index}" for index in range(1001)] if workflow == "validation" else []
     request = CreateWorkflowRunRequest.model_validate(
         {
             "expected_project_revision": 4,
@@ -278,6 +275,76 @@ def test_validation_rejects_ambiguous_scope_or_execution_mode(
         )
 
 
+def _modeling_request(workflow: str, **fields: object) -> CreateWorkflowRunRequest:
+    return CreateWorkflowRunRequest.model_validate(
+        {
+            "expected_project_revision": 4,
+            "project_workflow": workflow,
+            "workflow_execution_mode": "one_shot",
+            "modeled_entity_type": "logical_entity" if workflow == "dimensional" else None,
+            "prompt_overrides": {},
+            **fields,
+        },
+        strict=True,
+    )
+
+
+@pytest.mark.parametrize("workflow", ["logical", "dimensional"])
+def test_modeling_runs_build_ordered_subject_areas_or_optimize_the_whole_model(
+    workflow: str,
+) -> None:
+    # The backend derives the Objects or Entities; the request names only areas.
+    build = _modeling_request(workflow, workflow_operation="build", subject_area_ids=[3, 1, 2])
+    optimize = _modeling_request(workflow, workflow_operation="optimize")
+
+    assert (build.workflow_operation, build.subject_area_ids) == ("build", [3, 1, 2])
+    assert (optimize.workflow_operation, optimize.subject_area_ids) == ("optimize", [])
+    for command in (build, optimize):
+        assert command.selected_object_ids == command.selected_entity_ids == []
+
+
+@pytest.mark.parametrize("workflow", ["logical", "dimensional"])
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"subject_area_ids": [1]},
+        {"workflow_operation": "build"},
+        {"workflow_operation": "build", "subject_area_ids": [1, 1]},
+        {"workflow_operation": "optimize", "subject_area_ids": [1]},
+        {"workflow_operation": "build", "subject_area_ids": [1], "selected_object_ids": [101]},
+        {"workflow_operation": "build", "subject_area_ids": [1], "selected_entity_ids": [101]},
+    ],
+    ids=[
+        "no-operation",
+        "build-without-areas",
+        "duplicate-areas",
+        "optimize-with-areas",
+        "explicit-objects",
+        "explicit-entities",
+    ],
+)
+def test_modeling_runs_reject_selections_the_backend_derives(
+    workflow: str, fields: dict[str, object]
+) -> None:
+    with pytest.raises(ValidationError, match="Build needs unique selected Subject Areas"):
+        _modeling_request(workflow, **fields)
+
+
+@pytest.mark.parametrize("fields", [{"workflow_operation": "build"}, {"subject_area_ids": [1]}])
+def test_other_workflows_reject_build_and_optimize_inputs(fields: dict[str, object]) -> None:
+    with pytest.raises(ValidationError, match="only for Logical and Dimensional"):
+        CreateWorkflowRunRequest.model_validate(
+            {
+                "expected_project_revision": 4,
+                "project_workflow": "subject_area",
+                "workflow_execution_mode": "one_shot",
+                "selected_object_ids": [101],
+                **fields,
+            },
+            strict=True,
+        )
+
+
 def test_mapping_request_selects_one_pair_without_choosing_the_route() -> None:
     command = CreateWorkflowRunRequest.model_validate(
         {
@@ -465,13 +532,15 @@ class WorkflowCommandTransaction:
             assert parameters == (18, 18)
             return {"object_ids": [101, 102]}
         assert "application.create_workflow_run" in query
-        assert len(parameters) == 29
+        assert len(parameters) == 31
         assert parameters[3:7] == (18, 4, "profiling", None)
         assert parameters[13] == [101, 102]
         assert parameters[14] == []
         assert parameters[16] == "10428"
         assert parameters[19:28] == (None,) * 9
         assert parameters[28] == []
+        # Only Logical and Dimensional runs Build Subject Areas or Optimize.
+        assert parameters[29:] == (None, None)
         return {
             "created": True,
             "workflow_run_id": 1048,
@@ -495,9 +564,7 @@ class WorkflowCommandDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_command_derives_actor_and_calls_only_governed_function() -> (
-    None
-):
+async def test_database_command_derives_actor_and_calls_only_governed_function() -> None:
     service = DatabaseWorkflowCommandService(
         database=WorkflowCommandDatabase(),
         authorizer=AuthorizationService(),
@@ -533,13 +600,9 @@ async def test_database_command_derives_actor_and_calls_only_governed_function()
 
 
 @pytest.mark.asyncio
-async def test_database_command_validates_agent_against_the_requested_execution_mode() -> (
-    None
-):
+async def test_database_command_validates_agent_against_the_requested_execution_mode() -> None:
     registry = load_default_agent_capabilities()
-    primary_model = next(
-        model for model in registry.models if model.code == "foundry-primary"
-    )
+    primary_model = next(model for model in registry.models if model.code == "foundry-primary")
     restricted = primary_model.model_copy(
         update={
             "execution_profiles": (
@@ -554,8 +617,7 @@ async def test_database_command_validates_agent_against_the_requested_execution_
     registry = registry.model_copy(
         update={
             "models": tuple(
-                restricted if model.code == restricted.code else model
-                for model in registry.models
+                restricted if model.code == restricted.code else model for model in registry.models
             )
         }
     )
@@ -603,9 +665,7 @@ class _RecordingCapabilityRegistry:
         self.selections: list[AgentRunSelection] = []
 
     def resolve_default_selection(self, **values: Any) -> AgentRunSelection:
-        selection = load_default_agent_capabilities().resolve_default_selection(
-            **values
-        )
+        selection = load_default_agent_capabilities().resolve_default_selection(**values)
         self.validate_selection(selection, execution_mode=values["execution_mode"])
         return selection
 
@@ -667,9 +727,7 @@ async def test_database_command_validates_code_generation_against_internal_tool_
 
 
 @pytest.mark.asyncio
-async def test_database_command_validates_validation_against_internal_tool_assisted_mode() -> (
-    None
-):
+async def test_database_command_validates_validation_against_internal_tool_assisted_mode() -> None:
     registry = _RecordingCapabilityRegistry()
     service = DatabaseWorkflowCommandService(
         database=WorkflowCommandDatabase(),
@@ -783,9 +841,7 @@ class _SuccessfulImplicitDefaultWorkflowCommandDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_command_passes_validated_defaults_to_governed_creation() -> (
-    None
-):
+async def test_database_command_passes_validated_defaults_to_governed_creation() -> None:
     transaction = _SuccessfulImplicitDefaultWorkflowCommandTransaction()
     service = DatabaseWorkflowCommandService(
         database=_SuccessfulImplicitDefaultWorkflowCommandDatabase(transaction),
@@ -895,9 +951,7 @@ async def test_database_command_validates_implicit_project_agent_default(
 
 
 @pytest.mark.asyncio
-async def test_database_command_recovers_retired_implicit_project_agent_default() -> (
-    None
-):
+async def test_database_command_recovers_retired_implicit_project_agent_default() -> None:
     class RetiredDefaults(_SuccessfulImplicitDefaultWorkflowCommandTransaction):
         async def fetch_one(
             self,
@@ -949,11 +1003,15 @@ async def test_database_command_recovers_retired_implicit_project_agent_default(
     )
 
 
-@pytest.mark.parametrize("selected_object_ids", ([101], [101, 102, 103]))
+@pytest.mark.parametrize(
+    ("selected_object_ids", "accepted"),
+    (([101], True), ([101, 102], True), ([101, 102, 103], False), ([103], False)),
+)
 @pytest.mark.asyncio
-async def test_database_command_requires_subject_areas_to_cover_the_whole_scope(
-    selected_object_ids: list[int],
+async def test_database_command_runs_subject_areas_on_all_or_selected_scope_objects(
+    selected_object_ids: list[int], accepted: bool
 ) -> None:
+    # The active eligible Bronze Input Scope is Objects 101 and 102.
     transaction = _SuccessfulImplicitDefaultWorkflowCommandTransaction()
     service = DatabaseWorkflowCommandService(
         database=_SuccessfulImplicitDefaultWorkflowCommandDatabase(transaction),
@@ -969,8 +1027,96 @@ async def test_database_command_requires_subject_areas_to_cover_the_whole_scope(
         },
         strict=True,
     )
+    principal = RequestPrincipal(
+        actor_kind=ActorKind.HUMAN,
+        entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+        entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
+    )
 
-    with pytest.raises(InvalidRequestError, match="whole Input Scope"):
+    if accepted:
+        await service.create_run(
+            principal,
+            tenant_id=7,
+            project_id=18,
+            correlation_id=UUID("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+            command=command,
+        )
+        assert transaction.create_parameters is not None
+        return
+    with pytest.raises(InvalidRequestError, match="active Bronze Input Scope Objects"):
+        await service.create_run(
+            principal,
+            tenant_id=7,
+            project_id=18,
+            correlation_id=UUID("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+            command=command,
+        )
+    assert transaction.create_parameters is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("workflow", ["logical", "dimensional"])
+@pytest.mark.parametrize("operation", ["build", "optimize"])
+async def test_database_command_forwards_the_operation_and_ordered_subject_areas(
+    workflow: str, operation: str
+) -> None:
+    transaction = _SuccessfulImplicitDefaultWorkflowCommandTransaction()
+    service = DatabaseWorkflowCommandService(
+        database=_SuccessfulImplicitDefaultWorkflowCommandDatabase(transaction),
+        authorizer=AuthorizationService(),
+        agent_capability_registry=load_default_agent_capabilities(),
+    )
+
+    await service.create_run(
+        RequestPrincipal(
+            actor_kind=ActorKind.HUMAN,
+            entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+            entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
+        ),
+        tenant_id=7,
+        project_id=18,
+        correlation_id=UUID("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+        command=_modeling_request(
+            workflow,
+            workflow_operation=operation,
+            subject_area_ids=[3, 1] if operation == "build" else [],
+        ),
+    )
+
+    parameters = transaction.create_parameters
+    assert parameters is not None and len(parameters) == 31
+    assert parameters[3:7] == (18, 4, workflow, "one_shot")
+    # The governed function derives the selection, so none is sent.
+    assert (parameters[13], parameters[28]) == ([], None)
+    assert parameters[29:] == (operation, [3, 1] if operation == "build" else None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "database_message", "expected_code"),
+    [
+        ("build", "Selected Subject Areas are unavailable", "subject_areas_unavailable"),
+        ("build", "The selected Subject Areas have nothing to build from", "subject_areas_empty"),
+        ("optimize", "Optimize requires an applied model", "optimize_model_empty"),
+    ],
+)
+async def test_build_and_optimize_creation_failures_are_actionable(
+    operation: str, database_message: str, expected_code: str
+) -> None:
+    class RejectingTransaction(_SuccessfulImplicitDefaultWorkflowCommandTransaction):
+        async def fetch_one(
+            self, query: LiteralString, parameters: tuple[Any, ...] = ()
+        ) -> dict[str, Any] | None:
+            if "application.create_workflow_run" in query:
+                raise RuntimeError(database_message)
+            return await super().fetch_one(query, parameters)
+
+    service = DatabaseWorkflowCommandService(
+        database=_SuccessfulImplicitDefaultWorkflowCommandDatabase(RejectingTransaction()),
+        authorizer=AuthorizationService(),
+        agent_capability_registry=load_default_agent_capabilities(),
+    )
+    with pytest.raises(WorkbenchError) as caught:
         await service.create_run(
             RequestPrincipal(
                 actor_kind=ActorKind.HUMAN,
@@ -980,10 +1126,14 @@ async def test_database_command_requires_subject_areas_to_cover_the_whole_scope(
             tenant_id=7,
             project_id=18,
             correlation_id=UUID("cccccccc-cccc-cccc-cccc-cccccccccccc"),
-            command=command,
+            command=_modeling_request(
+                "logical",
+                workflow_operation=operation,
+                subject_area_ids=[1] if operation == "build" else [],
+            ),
         )
-
-    assert transaction.create_parameters is None
+    assert caught.value.code == expected_code
+    assert database_message not in caught.value.message
 
 
 class MappingWorkflowCommandTransaction(WorkflowCommandTransaction):
@@ -998,7 +1148,7 @@ class MappingWorkflowCommandTransaction(WorkflowCommandTransaction):
             return {"assert_writable": None}
         if "application.create_workflow_run" not in query:
             return await super().fetch_one(query, parameters)
-        assert len(parameters) == 29
+        assert len(parameters) == 31
         self.create_parameters = parameters
         assert parameters[3:6] == (18, 4, "mapping")
         assert parameters[6] in {"one_shot", "tool_assisted"}
@@ -1012,6 +1162,7 @@ class MappingWorkflowCommandTransaction(WorkflowCommandTransaction):
             77,
         )
         assert parameters[24:28] == (None,) * 4
+        assert parameters[29:] == (None, None)
         return {
             "created": True,
             "workflow_run_id": 1049,
@@ -1145,9 +1296,7 @@ async def test_missing_mapping_default_returns_a_clear_controlled_error(
                 mapping_source_system_id=77,
             ),
         )
-    assert (
-        caught.value.message == "The global Mapping output templates are unavailable."
-    )
+    assert caught.value.message == "The global Mapping output templates are unavailable."
 
 
 @pytest.mark.parametrize(
@@ -1196,9 +1345,7 @@ async def test_incomplete_mapping_prerequisite_returns_an_actionable_controlled_
         authorizer=AuthorizationService(),
         agent_capability_registry=load_default_agent_capabilities(),
     )
-    no_eligible_targets = (
-        database_message == "Code Generation has no eligible target set"
-    )
+    no_eligible_targets = database_message == "Code Generation has no eligible target set"
     command = CreateWorkflowRunRequest.model_validate(
         {
             "expected_project_revision": 4,
@@ -1208,9 +1355,7 @@ async def test_incomplete_mapping_prerequisite_returns_an_actionable_controlled_
                     "selected_entity_ids": [] if no_eligible_targets else [101],
                     "modeled_entity_type": "logical_entity",
                     "code_generation_coverage_mode": (
-                        "all_eligible_targets"
-                        if no_eligible_targets
-                        else "selected_targets"
+                        "all_eligible_targets" if no_eligible_targets else "selected_targets"
                     ),
                 }
                 if workflow == "code_generation"
@@ -1239,10 +1384,7 @@ def test_cancel_workflow_http_contract() -> None:
         response = client.post("/api/v1/tenants/7/projects/18/runs/1048/cancel")
         assert response.status_code == 200
         assert response.json()["workflow_run_state"] == "cancelled"
-        assert (
-            client.post("/api/v1/tenants/7/projects/18/runs/0/cancel").status_code
-            == 422
-        )
+        assert client.post("/api/v1/tenants/7/projects/18/runs/0/cancel").status_code == 422
 
 
 @pytest.mark.parametrize(

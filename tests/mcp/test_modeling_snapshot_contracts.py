@@ -52,11 +52,11 @@ EXPECTED_DATASETS = (
     "context_record",
     "subject_area",
     "subject_area_table",
-    "logical_submodel",
+    "logical_entity_type",
     "logical_entity",
     "logical_attribute",
     "logical_relationship",
-    "dimensional_submodel",
+    "dimensional_fact_type",
     "dimensional_entity",
     "dimensional_attribute",
     "dimensional_relationship",
@@ -67,12 +67,24 @@ EXPECTED_DATASETS = (
     "validation_group",
     "validation_check",
 )
+READ_ONLY_DATASETS = {"context_type", "logical_entity_type", "dimensional_fact_type"}
+MODEL_DATASETS = (
+    "subject_area",
+    "subject_area_table",
+    "logical_entity",
+    "logical_attribute",
+    "logical_relationship",
+    "dimensional_entity",
+    "dimensional_attribute",
+    "dimensional_relationship",
+)
 
 
 def test_project_snapshot_has_exact_25_dataset_registry() -> None:
     assert tuple(definition.name for definition in DATASETS) == EXPECTED_DATASETS
     assert len(DATASETS_BY_NAME) == 25
-    assert CHANGE_SET_DATASETS == tuple(d for d in DATASETS if d.name != "context_type")
+    assert CHANGE_SET_DATASETS == tuple(d for d in DATASETS if d.name not in READ_ONLY_DATASETS)
+    assert len(CHANGE_SET_DATASETS) == 22
     assert PROJECT_SECTIONS == (
         "project_input_scope",
         "profiling",
@@ -95,7 +107,7 @@ def test_every_dataset_is_id_free_and_uses_real_canonical_key_fields() -> None:
             {"context_record_id"} if definition.name == "context_record" else set()
         )
         assert set(definition.canonical_key) <= fields
-        assert definition.change_set_eligible is (definition.name != "context_type")
+        assert definition.change_set_eligible is (definition.name not in READ_ONLY_DATASETS)
         assert definition.rows_path.startswith(f"data/{definition.section}/")
         assert definition.schema_path == f"schemas/project/{definition.name}.schema.json"
 
@@ -122,7 +134,7 @@ def test_project_schemas_forbid_removed_authoring_metadata() -> None:
         assert schema["x-gds-portable-identity-fields"] == (
             ["context_record_id"] if definition.name == "context_record" else []
         )
-        assert schema["x-gds-change-set-eligible"] is (definition.name != "context_type")
+        assert schema["x-gds-change-set-eligible"] is (definition.name not in READ_ONLY_DATASETS)
         assert forbidden.isdisjoint(schema["properties"])
 
 
@@ -239,13 +251,7 @@ def test_project_schema_accepts_every_decimal_representation_accepted_at_stage()
 
 
 def test_status_contract_has_only_applied_lifecycle_values() -> None:
-    for dataset in (
-        "subject_area",
-        "logical_entity",
-        "dimensional_entity",
-        "mapping_object",
-        "generated_code",
-    ):
+    for dataset in ("mapping_object", "generated_code"):
         schema = build_project_dataset_schema(DATASETS_BY_NAME[dataset])
         status_property = next(
             value for name, value in schema["properties"].items() if name.endswith("_status")
@@ -253,19 +259,114 @@ def test_status_contract_has_only_applied_lifecycle_values() -> None:
         assert status_property["enum"] == ["active", "inactive", "deprecated"]
 
 
-def test_logical_entity_schema_exports_server_type_detail_rule() -> None:
-    schema = build_project_dataset_schema(DATASETS_BY_NAME["logical_entity"])
+@pytest.mark.parametrize("dataset", MODEL_DATASETS)
+def test_model_records_use_an_is_active_boolean_instead_of_status(dataset: str) -> None:
+    schema = build_project_dataset_schema(DATASETS_BY_NAME[dataset])
 
-    assert schema["allOf"] == [
-        {
-            "if": {
-                "properties": {"logical_entity_type": {"const": "other"}},
-                "required": ["logical_entity_type"],
-            },
-            "then": {"properties": {"logical_entity_type_detail": {"type": "string"}}},
-            "else": {"properties": {"logical_entity_type_detail": {"type": "null"}}},
+    assert schema["properties"][f"{dataset}_is_active"]["type"] == "boolean"
+    assert f"{dataset}_is_active" in schema["required"]
+    assert not any(name.endswith("_status") for name in schema["properties"])
+    nested = schema["$defs"]
+    assert not any(
+        name in {"status", "source_order"}
+        for definition in nested.values()
+        for name in definition.get("properties", {})
+    )
+
+
+def test_type_codes_come_from_read_only_reference_lists() -> None:
+    entity = build_project_dataset_schema(DATASETS_BY_NAME["logical_entity"])
+    dimensional = build_project_dataset_schema(DATASETS_BY_NAME["dimensional_entity"])
+
+    assert "allOf" not in entity
+    assert "logical_entity_type_detail" not in entity["properties"]
+    assert entity["properties"]["logical_entity_type"]["pattern"] == r"^[a-z][a-z0-9_]{0,49}$"
+    assert "enum" not in entity["properties"]["logical_entity_type"]
+    assert {"type": "string", "pattern": r"^[a-z][a-z0-9_]{0,49}$"} in dimensional["properties"][
+        "dimensional_fact_type"
+    ]["anyOf"]
+    for name, code_field in (
+        ("logical_entity_type", "logical_entity_type_code"),
+        ("dimensional_fact_type", "dimensional_fact_type_code"),
+    ):
+        definition = DATASETS_BY_NAME[name]
+        assert definition.change_set_eligible is False
+        assert definition.canonical_key == (code_field,)
+        assert set(definition.row_model.model_fields) == {
+            code_field,
+            f"{name}_description",
+            f"{name}_is_active",
         }
+
+
+def test_snapshot_exposes_the_read_only_type_lists() -> None:
+    records = project_snapshot_records(snapshot_from_graph(complete_project_graph()))
+
+    assert [record.logical_entity_type_code for record in records["logical_entity_type"]] == [
+        "association",
+        "core",
+        "event",
+        "history",
+        "reference",
+        "snapshot",
+        "transaction",
     ]
+    assert [record.dimensional_fact_type_code for record in records["dimensional_fact_type"]] == [
+        "accumulating_snapshot",
+        "factless",
+        "periodic_snapshot",
+        "transaction",
+    ]
+    encoded = {
+        item.definition.name: item
+        for item in encode_project_snapshot(snapshot_from_graph(complete_project_graph()))
+    }
+    assert json.loads(encoded["dimensional_fact_type"].rows_jsonl.decode().splitlines()[0]) == {
+        "dimensional_fact_type_code": "accumulating_snapshot",
+        "dimensional_fact_type_description": "The accumulating_snapshot fact type.",
+        "dimensional_fact_type_is_active": True,
+    }
+
+
+@pytest.mark.parametrize(
+    "dataset,removed",
+    [
+        ("logical_relationship", "logical_relationship_name"),
+        ("logical_relationship", "logical_relationship_definition"),
+        ("logical_relationship", "logical_relationship_cardinality_basis"),
+        ("dimensional_relationship", "dimensional_relationship_name"),
+        ("dimensional_relationship", "dimensional_relationship_kind"),
+        ("dimensional_relationship", "dimensional_relationship_cardinality"),
+        ("dimensional_relationship", "dimensional_relationship_is_optional"),
+        ("logical_entity", "submodels"),
+        ("dimensional_entity", "submodels"),
+    ],
+)
+def test_model_records_reject_removed_fields(
+    dataset: ProjectChangeSetDataset, removed: str
+) -> None:
+    record = complete_project_graph()[dataset][0]
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        DATASETS_BY_NAME[dataset].row_model.model_validate({**record, removed: "x"}, strict=False)
+
+
+def test_relationships_are_keyed_by_their_foreign_key_attribute() -> None:
+    for layer in ("logical", "dimensional"):
+        assert DATASETS_BY_NAME[f"{layer}_relationship"].canonical_key == (
+            f"from_{layer}_entity_schema_name",
+            f"from_{layer}_entity_name",
+            f"from_{layer}_attribute_name",
+        )
+    record = complete_project_graph()["logical_relationship"][0]
+    for cardinality in ("many_to_one", "one_to_one"):
+        assert DATASETS_BY_NAME["logical_relationship"].row_model.model_validate(
+            {**record, "logical_relationship_cardinality": cardinality}
+        )
+    for cardinality in ("one_to_many", "many_to_many"):
+        with pytest.raises(ValidationError):
+            DATASETS_BY_NAME["logical_relationship"].row_model.model_validate(
+                {**record, "logical_relationship_cardinality": cardinality}
+            )
 
 
 def test_generated_code_and_validation_public_shapes_are_minimal() -> None:

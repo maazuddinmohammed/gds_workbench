@@ -26,7 +26,7 @@ Atlas preserves the verified Project Snapshot format and uses the shared [runtim
 
 Read records with `select --view effective` (pending drafts included) or `--view snapshot` (applied baseline), never by opening rows files; the helper follows catalog rows_file/schema_file paths. Archive format version 3.0, Snapshot ID, Project revision and server Change Set draft revision identify different things: file format, export, applied Project state and pending server edits. Project ID/revision belong to the Snapshot context; do not invent project_id fields on records whose schema omits them.
 
-Current Project catalogs contain 25 datasets. Mapping contains Object and Attribute records. Atlas rejects retired Binding or Mapping System-dependency datasets; refresh the Snapshot before authoring against this fresh-install release.
+Current Project catalogs contain 25 datasets. Mapping contains Object and Attribute records. The read-only `context_type`, `logical_entity_type` and `dimensional_fact_type` lists supply allowed codes and are never staged. Atlas rejects Snapshots that still carry retired datasets, such as Bindings, Mapping System dependencies or the former Entity grouping datasets; refresh the Snapshot before authoring against this fresh-install release.
 
 ## Targeted reading and local changes
 
@@ -37,7 +37,7 @@ Current Project catalogs contain 25 datasets. Mapping contains Object and Attrib
 
 Logical and Dimensional datasets are distinct. Shared Mapping/Code datasets use modeled_entity_type=logical_entity or dimensional_entity; filter by that discriminator when relevant. Project details is a singleton with an empty canonical key, not a missing-key error. Follow the dataset schema in both cases.
 
-Subject Area datasets choose tables; exclude them from the evidence of Logical, Dimensional, Mapping, Code and SQL Validation tasks. Local `select` requires an explicit dataset; choose only the current workflow's inputs and project only needed fields. Sharing a Snapshot or Project revision does not make Subject Areas a prerequisite.
+Subject Area datasets choose which Objects a Logical or Dimensional Build works on; exclude them from the evidence of Logical, Dimensional, Mapping, Code and SQL Validation tasks. Local `select` requires an explicit dataset; choose only the current workflow's inputs and project only needed fields. Sharing a Snapshot or Project revision does not make Subject Areas a prerequisite.
 
 Use the bounded read/write [helper contracts](../project/change-sets.md#atlas-helpers). `select --view effective` includes pending records; `--view snapshot` reads baseline only. Both views page with `next_cursor`; follow it with unchanged arguments until it is null.
 

@@ -14,6 +14,9 @@ from typing import Any, cast
 
 import pytest
 from gds_etl_workbench.domain.snapshots.project import DimensionalSection
+from tests.web_backend import test_analysis_candidate as analysis
+from tests.web_backend import test_dimensional_candidate as dimensional
+
 from gds_workbench_api.features.analysis.candidate import (
     AnalysisInferenceCandidateValidator,
 )
@@ -21,17 +24,12 @@ from gds_workbench_api.features.dimensional.candidate import (
     DimensionalCandidateValidator,
 )
 
-from tests.web_backend import test_analysis_candidate as analysis
-from tests.web_backend import test_dimensional_candidate as dimensional
-
 FAMILIES = ("analysis", "dimensional")
 CODES = {
     "analysis": "candidate.endpoint_outside_selection",
     "dimensional": "candidate.source_outside_selection",
 }
-type CandidateValidator = (
-    AnalysisInferenceCandidateValidator | DimensionalCandidateValidator
-)
+type CandidateValidator = AnalysisInferenceCandidateValidator | DimensionalCandidateValidator
 
 
 def _lock_history(value: Any) -> None:
@@ -51,24 +49,14 @@ def _case(
 ) -> tuple[CandidateValidator, dict[str, Any]]:
     if family == "analysis":
         history = analysis._applied(locked=locked)
-        candidate = {
-            "relationships": [analysis._candidate(basis=history.relationship_basis)]
-        }
+        candidate = {"relationships": [analysis._candidate(basis=history.relationship_basis)]}
         keys = (
             (
-                analysis._attribute(
-                    object_name="order_raw", attribute_name="customer_id"
-                ),
-                analysis._attribute(
-                    object_name="customer_raw", attribute_name="customer_id"
-                ),
+                analysis._attribute(object_name="order_raw", attribute_name="customer_id"),
+                analysis._attribute(object_name="customer_raw", attribute_name="customer_id"),
             )
             if selected
-            else (
-                analysis._attribute(
-                    object_name="new_selected_raw", attribute_name="id"
-                ),
-            )
+            else (analysis._attribute(object_name="new_selected_raw", attribute_name="id"),)
         )
         return AnalysisInferenceCandidateValidator(
             selected_attribute_keys=keys, applied=(history,) if applied else ()
@@ -80,19 +68,13 @@ def _case(
     entity_key = dimensional._object()
     attribute_key = dimensional._attribute()
     if not selected:
-        entity_key = entity_key.model_copy(
-            update={"logical_entity_name": "new_selected_raw"}
-        )
-        attribute_key = attribute_key.model_copy(
-            update={"logical_entity_name": "new_selected_raw"}
-        )
+        entity_key = entity_key.model_copy(update={"logical_entity_name": "new_selected_raw"})
+        attribute_key = attribute_key.model_copy(update={"logical_entity_name": "new_selected_raw"})
     return DimensionalCandidateValidator(
         selected_entity_keys=(entity_key,),
         selected_attribute_keys=(attribute_key,),
         context_record_ids=(),
-        applied=DimensionalSection.model_validate_json(
-            json.dumps(history_doc), strict=True
-        )
+        applied=DimensionalSection.model_validate_json(json.dumps(history_doc), strict=True)
         if applied
         else None,
     ), candidate
@@ -126,11 +108,8 @@ async def test_omitting_history_outside_current_selection_preserves_it(
     family: str, locked: bool
 ) -> None:
     validator, candidate = _case(family, locked=locked)
+    # Empty arrays propose no change, so saved history outside the selection stays.
     empty: dict[str, Any] = {key: [] for key in candidate}
-    if family == "dimensional":
-        # Dimensional requires a nonempty candidate. Echo the unchanged submodel
-        # (which has no physical evidence) while omitting historical sources.
-        empty["submodels"] = candidate["submodels"]
     assert (await validator.validate(empty)).issues == ()
     assert validator.parse_validated(empty) == ()
 
@@ -140,9 +119,7 @@ async def test_genuine_new_outside_selection_evidence_remains_rejected(
     family: str,
 ) -> None:
     validator, candidate = _case(family, applied=False)
-    assert {issue.code for issue in (await validator.validate(candidate)).issues} == {
-        CODES[family]
-    }
+    assert {issue.code for issue in (await validator.validate(candidate)).issues} == {CODES[family]}
 
 
 @pytest.mark.parametrize("family", FAMILIES)
@@ -155,9 +132,7 @@ async def test_historical_evidence_copied_to_a_new_owner_still_rejected(
     else:
         candidate["entities"][0][f"{family}_entity_name"] = "New entity"
         candidate["attributes"][0][f"{family}_entity_name"] = "New entity"
-    assert CODES[family] in {
-        issue.code for issue in (await validator.validate(candidate)).issues
-    }
+    assert CODES[family] in {issue.code for issue in (await validator.validate(candidate)).issues}
 
 
 @pytest.mark.parametrize("family", FAMILIES)
@@ -169,26 +144,20 @@ async def test_editing_history_content_still_requires_selected_evidence(
         candidate["relationships"][0]["relationship_basis"] = "Changed evidence."
     else:
         candidate["entities"][0][f"{family}_entity_definition"] = "Changed definition."
-        candidate["attributes"][0][f"{family}_attribute_definition"] = (
-            "Changed definition."
-        )
-    assert CODES[family] in {
-        issue.code for issue in (await validator.validate(candidate)).issues
-    }
+        candidate["attributes"][0][f"{family}_attribute_definition"] = "Changed definition."
+    assert CODES[family] in {issue.code for issue in (await validator.validate(candidate)).issues}
 
 
-@pytest.mark.parametrize("edit", ("rationale", "status", "source"))
+@pytest.mark.parametrize("edit", ("rationale", "is_active", "source"))
 async def test_changed_nested_history_is_not_an_echo(edit: str) -> None:
     validator, candidate = _case("dimensional")
     source = candidate["entities"][0]["sources"][0]
     if edit == "source":
-        source["source_logical_entity"]["logical_entity_name"] = (
-            "another_outside_object"
-        )
+        source["source_logical_entity"]["logical_entity_name"] = "another_outside_object"
     elif edit == "rationale":
         source["rationale"] = "Changed evidence."
     else:
-        source["status"] = "inactive"
+        source["is_active"] = False
     assert CODES["dimensional"] in {
         issue.code for issue in (await validator.validate(candidate)).issues
     }
@@ -216,11 +185,7 @@ async def test_duplicate_historical_owner_is_still_rejected() -> None:
 async def test_historical_echo_does_not_grant_agent_lock_authority(family: str) -> None:
     validator, candidate = _case(family)
     section = "relationships" if family == "analysis" else "entities"
-    field = (
-        "analysis_result_is_locked"
-        if family == "analysis"
-        else f"{family}_entity_is_locked"
-    )
+    field = "analysis_result_is_locked" if family == "analysis" else f"{family}_entity_is_locked"
     candidate[section][0][field] = True
     assert (await validator.validate(candidate)).issues
 
@@ -231,9 +196,7 @@ async def test_historical_echo_can_accompany_new_selected_output(family: str) ->
     if family == "analysis":
         validator = AnalysisInferenceCandidateValidator(
             selected_attribute_keys=(
-                analysis._attribute(
-                    object_name="new_orders", attribute_name="customer_id"
-                ),
+                analysis._attribute(object_name="new_orders", attribute_name="customer_id"),
                 analysis._attribute(object_name="new_customers", attribute_name="id"),
             ),
             applied=(analysis._applied(),),
@@ -246,17 +209,11 @@ async def test_historical_echo_can_accompany_new_selected_output(family: str) ->
     else:
         new_entity = deepcopy(candidate["entities"][0])
         new_entity[f"{family}_entity_name"] = "New customer"
-        entity_source = (
-            "source_logical_entity" if family == "dimensional" else "source_object"
-        )
+        entity_source = "source_logical_entity" if family == "dimensional" else "source_object"
         attribute_source = (
-            "source_logical_attribute"
-            if family == "dimensional"
-            else "source_attribute"
+            "source_logical_attribute" if family == "dimensional" else "source_attribute"
         )
-        source_name = (
-            "logical_entity_name" if family == "dimensional" else "object_name"
-        )
+        source_name = "logical_entity_name" if family == "dimensional" else "object_name"
         new_entity["sources"][0][entity_source][source_name] = "new_selected_raw"
         new_attribute = deepcopy(candidate["attributes"][0])
         new_attribute[f"{family}_entity_name"] = "New customer"
@@ -266,15 +223,11 @@ async def test_historical_echo_can_accompany_new_selected_output(family: str) ->
     original = deepcopy(candidate)
     assert (await validator.validate(candidate)).issues == ()
     changes = validator.parse_validated(candidate)
-    assert sum(len(change.records) for change in changes) == (
-        2 if family == "dimensional" else 1
-    )
+    assert sum(len(change.records) for change in changes) == (2 if family == "dimensional" else 1)
     assert candidate == original
 
 
-async def test_exact_duplicate_analysis_history_collapses_to_one_unchanged_record() -> (
-    None
-):
+async def test_exact_duplicate_analysis_history_collapses_to_one_unchanged_record() -> None:
     validator, candidate = _case("analysis")
     candidate["relationships"].append(deepcopy(candidate["relationships"][0]))
     assert (await validator.validate(candidate)).issues == ()

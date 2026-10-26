@@ -74,7 +74,7 @@ SELECT created.created,
   FROM application.create_workflow_run(
        %s, %s, %s, %s, %s, %s, %s, %s, %s,
        %s, %s, %s, %s, %s, %s, %s, %s, %s,
-       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
   ) AS created
 """
 
@@ -183,16 +183,17 @@ class DatabaseWorkflowCommandService:
                 if owner is None:
                     raise ProjectNotFoundError()
                 if command.project_workflow == "subject_area":
-                    # Subject Areas group the whole Input Scope; a partial selection would
-                    # leave the unselected tables unaccounted for.
+                    # Subject Areas group all or some active Bronze Input Scope Objects; the
+                    # Objects left out keep their saved areas.
                     scope = await transaction.fetch_one(
                         _SUBJECT_AREA_SCOPE_SQL, (project_id, project_id)
                     )
-                    if scope is None or sorted(set(command.selected_object_ids)) != list(
+                    if scope is None or not set(command.selected_object_ids) <= set(
                         scope["object_ids"]
                     ):
                         raise InvalidRequestError(
-                            "Subject Area runs cover the whole Input Scope. Refresh and run again."
+                            "Subject Area runs use active Bronze Input Scope Objects. "
+                            "Refresh and run again."
                         )
                 agent = command.agent
                 if agent is None and agent_execution_mode is not None:
@@ -244,7 +245,11 @@ class DatabaseWorkflowCommandService:
                         if command.mapping_targets is not None
                         else None,
                         command.code_generation_file_layout,
-                        command.selected_entity_ids,
+                        None
+                        if command.project_workflow in {"logical", "dimensional"}
+                        else command.selected_entity_ids,
+                        command.workflow_operation,
+                        command.subject_area_ids if command.workflow_operation == "build" else None,
                     ),
                 )
         except Exception as error:
@@ -302,6 +307,23 @@ def _raise_safe_workflow_error(error: Exception) -> Never:
             code="code_mapping_incomplete",
             message="Save an Object or Attribute transformation for the selected Entities "
             "before generating Code.",
+        ) from error
+    if message == "Selected Subject Areas are unavailable":
+        raise WorkbenchError(
+            code="subject_areas_unavailable",
+            message="A selected Subject Area is no longer active. Refresh and choose again.",
+        ) from error
+    if message == "The selected Subject Areas have nothing to build from":
+        raise WorkbenchError(
+            code="subject_areas_empty",
+            message="The selected Subject Areas have no eligible Objects to build from. "
+            "Add Objects to them or choose other areas.",
+        ) from error
+    if message == "Optimize requires an applied model":
+        raise WorkbenchError(
+            code="optimize_model_empty",
+            message="Optimize needs an applied model. Build and apply at least one Subject "
+            "Area first.",
         ) from error
     if message == "Code Generation has no eligible target set":
         raise WorkbenchError(

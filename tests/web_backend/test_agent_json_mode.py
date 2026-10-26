@@ -10,6 +10,16 @@ from uuid import UUID
 import httpx2
 import pytest
 from gds_etl_workbench.domain.modeling_records import PhysicalObjectKey
+from mapping_fixtures import mapping_candidate, mapping_preparation
+from pydantic import JsonValue
+from tests.web_backend.test_agent_usage import (
+    MemoryRecorder,
+    _request,
+    _response,
+    _responses_response,
+    _router,
+)
+
 from gds_workbench_api.features.mapping.complete_candidate import (
     CompleteMappingCandidateValidator,
 )
@@ -17,16 +27,6 @@ from gds_workbench_api.features.subject_areas import SubjectAreaCandidateValidat
 from gds_workbench_api.features.workflows.authoring.repair import (
     ValidationRepairRunner,
     load_default_agent_context_policy,
-)
-from mapping_fixtures import mapping_candidate, mapping_preparation
-from pydantic import JsonValue
-
-from tests.web_backend.test_agent_usage import (
-    MemoryRecorder,
-    _request,
-    _response,
-    _responses_response,
-    _router,
 )
 
 
@@ -54,9 +54,7 @@ async def test_json_mode_preserves_actual_candidate_schema_tools_repairs_and_usa
     stage = "mapping_authoring" if workflow == "mapping" else "candidate_authoring"
     validator = (
         CompleteMappingCandidateValidator(
-            preparation=mapping_preparation(
-                execution_mode="tool_assisted" if tools else "one_shot"
-            )
+            preparation=mapping_preparation(execution_mode="tool_assisted" if tools else "one_shot")
         )
         if workflow == "mapping"
         else SubjectAreaCandidateValidator(
@@ -69,26 +67,20 @@ async def test_json_mode_preserves_actual_candidate_schema_tools_repairs_and_usa
                     object_name="customer",
                 ),
             ),
-            column_counts=(3,),
             applied=None,
-            max_subject_area_columns=300,
         )
     )
     candidate: dict[str, JsonValue] = (
         mapping_candidate()
         if workflow == "mapping"
         else {
-            "areas": [
-                {"name": "Sales", "definition": "Customers who buy.", "tables": ["t1"]}
-            ],
+            "areas": [{"name": "Sales", "definition": "Customers who buy.", "tables": ["t1"]}],
             "unassigned": [],
             "retire": [],
         }
     )
     wrong_type = deepcopy(candidate)
-    wrong_type["attribute_mappings" if workflow == "mapping" else "areas"] = (
-        "invalid type"
-    )
+    wrong_type["attribute_mappings" if workflow == "mapping" else "areas"] = "invalid type"
     responses = iter(
         (
             '{"incomplete":' if invalid == "malformed" else json.dumps(wrong_type),
@@ -126,18 +118,14 @@ async def test_json_mode_preserves_actual_candidate_schema_tools_repairs_and_usa
                 assert body["reasoning"] == {"effort": effort}
             assert "reasoning_effort" not in body and "response_format" not in body
             formats.append(body["text"]["format"])
-            user_message = next(
-                item for item in body["input"] if item.get("role") == "user"
-            )
+            user_message = next(item for item in body["input"] if item.get("role") == "user")
         else:
             if effort == "default":
                 assert "reasoning_effort" not in body
             else:
                 assert body["reasoning_effort"] == effort
             formats.append(body.get("response_format"))
-            user_message = next(
-                item for item in body["messages"] if item["role"] == "user"
-            )
+            user_message = next(item for item in body["messages"] if item["role"] == "user")
         # Providers reject JSON mode unless input messages say "JSON"; Responses
         # ignores instructions, and the fixture prompt and schema never say it.
         assert re.search(r"\bjson\b", user_message["content"], re.IGNORECASE)
@@ -145,9 +133,7 @@ async def test_json_mode_preserves_actual_candidate_schema_tools_repairs_and_usa
         schema_preserved.append(payload["required_output_schema"] == schema)
         repair = payload["context"]["repair"]
         repair_issue_codes.append(
-            []
-            if repair is None
-            else [item["code"] for item in repair["validation_issues"]]
+            [] if repair is None else [item["code"] for item in repair["validation_issues"]]
         )
         tool_response = tools and len(formats) == 1
         response_factory = _responses_response if tools else _response
@@ -176,11 +162,7 @@ async def test_json_mode_preserves_actual_candidate_schema_tools_repairs_and_usa
         }
     )
     request = request.model_copy(
-        update={
-            "selection": request.selection.model_copy(
-                update={"reasoning_effort_code": effort}
-            )
-        }
+        update={"selection": request.selection.model_copy(update={"reasoning_effort_code": effort})}
     )
     router = _router(monkeypatch, recorder, handler)
     try:

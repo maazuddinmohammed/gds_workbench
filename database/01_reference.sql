@@ -37,6 +37,51 @@ INSERT INTO reference.context_type (name, description) VALUES
     ('Operational Guidance', 'Instructions for execution, monitoring, support, and recovery.'),
     ('Code Context', 'Implementation knowledge, code behavior, dependencies, and coding guidance.');
 
+-- Label lists the backend never branches on. Adding a value is one INSERT: prompts,
+-- validation and screens read the active rows. Retire a value with is_active = FALSE.
+CREATE TABLE reference.logical_entity_type (
+    logical_entity_type_code VARCHAR(50) PRIMARY KEY,
+    logical_entity_type_description TEXT NOT NULL,
+    logical_entity_type_is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    CONSTRAINT ck_logical_entity_type_code CHECK (
+        logical_entity_type_code ~ '^[a-z][a-z0-9_]{0,49}$'
+    ),
+    CONSTRAINT ck_logical_entity_type_description CHECK (
+        reference.is_nonblank(logical_entity_type_description)
+    )
+);
+
+INSERT INTO reference.logical_entity_type (
+    logical_entity_type_code, logical_entity_type_description
+) VALUES
+    ('core', 'A main business thing with its own identity, such as Customer or Product.'),
+    ('reference', 'A short list of codes and their meanings, such as Country or OrderStatus.'),
+    ('transaction', 'A business document or exchange, such as SalesOrder or Invoice, often with lines.'),
+    ('event', 'Something that happened at a point in time, such as a login or a shipment scan.'),
+    ('association', 'Links entities many-to-many, such as ProductCategory.'),
+    ('history', 'Past versions of another entity''s values over time.'),
+    ('snapshot', 'The state of something at regular points in time, such as month-end balances.');
+
+CREATE TABLE reference.dimensional_fact_type (
+    dimensional_fact_type_code VARCHAR(50) PRIMARY KEY,
+    dimensional_fact_type_description TEXT NOT NULL,
+    dimensional_fact_type_is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    CONSTRAINT ck_dimensional_fact_type_code CHECK (
+        dimensional_fact_type_code ~ '^[a-z][a-z0-9_]{0,49}$'
+    ),
+    CONSTRAINT ck_dimensional_fact_type_description CHECK (
+        reference.is_nonblank(dimensional_fact_type_description)
+    )
+);
+
+INSERT INTO reference.dimensional_fact_type (
+    dimensional_fact_type_code, dimensional_fact_type_description
+) VALUES
+    ('transaction', 'One row per business event at its lowest detail.'),
+    ('periodic_snapshot', 'One row per thing per period, such as daily stock levels.'),
+    ('accumulating_snapshot', 'One row per process instance, updated as it moves through its steps, such as order fulfilment.'),
+    ('factless', 'Records that something happened or applies, with no measures, such as attendance.');
+
 CREATE TABLE reference.environment (
     environment_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     environment_code VARCHAR(100) NOT NULL,

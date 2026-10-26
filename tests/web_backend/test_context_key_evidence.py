@@ -8,6 +8,9 @@ from copy import deepcopy
 from typing import Any, cast
 
 import pytest
+from jsonschema import Draft202012Validator
+from tests.web_backend.test_logical_executor import _context_bundle
+
 from gds_workbench_api.features.workflows.authoring.context_contracts import (
     INPUT_EXAMPLES,
     WORKFLOW_INPUTS,
@@ -19,34 +22,35 @@ from gds_workbench_api.features.workflows.authoring.context_inputs import (
 from gds_workbench_api.features.workflows.authoring.context_readers import (
     FrozenContextReaders,
 )
-from jsonschema import Draft202012Validator
-
-from tests.web_backend.test_logical_executor import _context_bundle
 
 
 @pytest.mark.parametrize(
-    "workflow",
+    "input_set",
     [
         name
         for name, inputs in WORKFLOW_INPUTS.items()
         # Enrichment inputs come from the SQL execution context, not this projection.
-        if "object_attribute_context" in inputs
-        and not name.startswith("metadata_enrichment")
+        if "object_attribute_context" in inputs and not name.startswith("metadata_enrichment")
     ],
 )
 @pytest.mark.parametrize("registered", [True, False])
 @pytest.mark.parametrize("enriched", ["absent", None, False, True])
 @pytest.mark.parametrize("mode", ["inline", "reader"])
 def test_registered_and_enriched_natural_keys_remain_distinct(
-    workflow: str, registered: bool, enriched: str | bool | None, mode: str
+    input_set: str, registered: bool, enriched: str | bool | None, mode: str
 ) -> None:
+    # Logical and Dimensional Optimize calls read their own "<workflow>_optimize" inputs.
+    workflow = input_set.removesuffix("_optimize")
     context = deepcopy(_context_bundle().context.model_dump(mode="json"))
     context["project_workflow"] = workflow
+    context["workflow_operation"] = (
+        ("optimize" if input_set != workflow else "build")
+        if workflow in {"logical", "dimensional"}
+        else None
+    )
     attribute = context["selected_objects"][0]["attributes"][0]
     attribute["is_natural_key"] = registered
-    attribute["enrichment"] = (
-        {} if enriched == "absent" else {"is_natural_key": enriched}
-    )
+    attribute["enrichment"] = {} if enriched == "absent" else {"is_natural_key": enriched}
     if workflow == "dimensional":
         context["supporting_objects"] = context["selected_objects"]
         context["selected_objects"] = []
@@ -66,32 +70,25 @@ def test_registered_and_enriched_natural_keys_remain_distinct(
     projected = groups[0]["attributes"][0]
     assert projected["registered_is_natural_key"] is registered
     assert projected["is_natural_key"] is (None if enriched == "absent" else enriched)
-    schema = workflow_input_contracts(workflow)["object_attribute_context"]["schema"]
+    schema = workflow_input_contracts(input_set)["object_attribute_context"]["schema"]
     assert cast(Any, Draft202012Validator(schema)).is_valid(groups)
     assert context == original
 
 
 @pytest.mark.parametrize(
-    "workflow",
-    [
-        name
-        for name, inputs in WORKFLOW_INPUTS.items()
-        if "object_attribute_context" in inputs
-    ],
+    "input_set",
+    [name for name, inputs in WORKFLOW_INPUTS.items() if "object_attribute_context" in inputs],
 )
-def test_older_frozen_attribute_context_remains_readable(workflow: str) -> None:
-    values = deepcopy(INPUT_EXAMPLES[workflow])
+def test_older_frozen_attribute_context_remains_readable(input_set: str) -> None:
+    values = deepcopy(INPUT_EXAMPLES[input_set])
     for group in values["object_attribute_context"]:
         for attribute in group["attributes"]:
             attribute.pop("registered_is_natural_key")
     reader = FrozenContextReaders(
-        workflow=workflow,
+        workflow=input_set.removesuffix("_optimize"),
         values=values,
         max_result_bytes=None,
         max_page_records=20,
         max_cumulative_result_bytes=None,
     )
-    assert (
-        reader.invoke("get_object_details", {})["items"]
-        == values["object_attribute_context"]
-    )
+    assert reader.invoke("get_object_details", {})["items"] == values["object_attribute_context"]

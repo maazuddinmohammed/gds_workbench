@@ -54,7 +54,6 @@ from tests.mcp.test_database_project_change_set_round_trip import (
         ("subject_area", "table"),
         ("logical", "entity"),
         ("logical", "attribute"),
-        ("logical", "submodel"),
         ("dimensional", "entity"),
     ],
 )
@@ -78,7 +77,7 @@ async def test_permanent_clear_includes_supports_and_replays_without_restoring_r
         async with runtime.write_transaction() as transaction:
             graph = complete_project_graph()
             # Inactive records must be deleted too, not left to block parent FKs.
-            graph["subject_area_table"][0]["subject_area_table_status"] = "inactive"
+            graph["subject_area_table"][0]["subject_area_table_is_active"] = False
             validation = validate_future_graph(
                 snapshot=await build_project_snapshot(transaction, project),
                 physical_scope=await load_project_physical_scope(transaction, project),
@@ -196,10 +195,10 @@ async def test_permanent_clear_includes_supports_and_replays_without_restoring_r
         assert preview.can_apply and preview.action_count > 0
         assert all(item.desired_status == "deleted" for item in preview.items)
         assert any(
-            name.endswith(("_source_mapping", "_entity_submodel", "subject_area_table"))
+            name.endswith(("_source_mapping", "subject_area_table"))
             for name in preview.changes_by_dataset
         )
-        if layer == "logical" and selection != "submodel":
+        if layer == "logical":
             assert all(
                 preview.changes_by_dataset.get(kind, 0) > 0
                 for kind in (
@@ -212,9 +211,7 @@ async def test_permanent_clear_includes_supports_and_replays_without_restoring_r
         support = next(
             item
             for item in preview.items
-            if item.dataset.endswith(
-                ("_source_mapping", "_entity_submodel", "subject_area_table")
-            )
+            if item.dataset.endswith(("_source_mapping", "subject_area_table"))
         )
         with fixture.connect_owner() as connection:
             connection.execute(
@@ -318,10 +315,6 @@ async def test_permanent_clear_includes_supports_and_replays_without_restoring_r
             assert set(before.records_by_id[dataset]) - {selected_id} == set(
                 remaining.records_by_id.get(dataset, {})
             )
-        if selection == "submodel":
-            assert remaining.snapshot.logical.entities
-            assert remaining.snapshot.mapping.objects
-            assert remaining.snapshot.code_generation.artifacts
         assert remaining.snapshot.context.records
         if layer == "subject_area":
             assert (

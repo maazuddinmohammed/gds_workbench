@@ -177,12 +177,13 @@ during preparation. An incompatible installation stops the supervised app with
 does not update installed SQL; do not replay the fresh-install files on existing data.
 
 After schema compatibility is established, refresh reference seed 04 and publish the
-updated Logical defaults through the documented seed 05 replay or the Prompts UI.
+updated Logical and Dimensional Build/Optimize defaults through the documented seed 05
+replay or the Prompts UI.
 Seed replay preserves custom defaults; explicitly select a new published version
 when the Project uses a custom assignment. Start a new Run to use the new version.
 Set each layer's Enforce coverage threshold switch in Project Settings as required;
-both default off. Verify rejection below target and review supported Submodels and
-relationships on a representative selection before expanding scope.
+both default off. Verify rejection below target and review a Build of one representative
+Subject Area, then Optimize, before building the remaining areas.
 
 ## Acceptance and rollback
 

@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
+
 from gds_workbench_api.features.workflows.runs import (
     ProjectWorkflow,
     RunEventCollection,
@@ -76,8 +77,9 @@ class StaticWorkflowRunService:
         assert (tenant_id, project_id, workflow_run_id) == (7, 18, 1048)
         return WorkflowRunDetail(
             workflow_run_id=1048,
-            project_workflow="profiling",
-            workflow_execution_mode=None,
+            project_workflow="logical",
+            workflow_execution_mode="one_shot",
+            workflow_operation="build",
             modeled_entity_type=None,
             selected_scope_count=8,
             requested_batch_id="10428",
@@ -155,12 +157,12 @@ def _app(state: RunState = "completed") -> TestClient:
 
 def test_run_ledger_is_filtered_by_workflow() -> None:
     with _app() as client:
-        response = client.get(
-            "/api/v1/tenants/7/projects/18/runs?workflow=profiling&page_size=25"
-        )
+        response = client.get("/api/v1/tenants/7/projects/18/runs?workflow=profiling&page_size=25")
 
     assert response.status_code == 200
     assert response.json()["items"][0]["workflow_run_id"] == 1048
+    # Only Logical and Dimensional runs Build or Optimize.
+    assert response.json()["items"][0]["workflow_operation"] is None
     assert "correlation_id" not in response.json()["items"][0]
 
 
@@ -172,15 +174,12 @@ def test_run_detail_and_incremental_events_are_separate_bounded_reads() -> None:
         )
 
     assert detail.status_code == 200
+    assert detail.json()["workflow_operation"] == "build"
     assert detail.json()["correlation_id"] == "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-    assert detail.json()["project_change_set_id"] == (
-        "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
-    )
+    assert detail.json()["project_change_set_id"] == ("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
     assert detail.json()["project_change_set_status"] == "validated"
     assert detail.json()["draft_revision"] == 2
-    assert detail.json()["token_usage"] == WorkflowTokenUsageSummary().model_dump(
-        mode="json"
-    )
+    assert detail.json()["token_usage"] == WorkflowTokenUsageSummary().model_dump(mode="json")
     assert events.status_code == 200
     assert events.json() == {
         "items": [

@@ -1,6 +1,6 @@
 # Logical records
 
-Owns the four Logical dataset contracts and their nested membership/source fields. Use [logical design](../logical-build/logical-design.md) for modeling decisions, [normalization](../logical-build/normalization.md) for splits/consolidation, [naming](naming.md) and [keys and audit columns](keys-and-audit.md) for policy. [Project Change Set authoring](change-sets.md), [record state](../record-state.md) and [local validation](../local-validation.md) own the shared mechanics.
+Owns the three Logical dataset contracts, the read-only Entity type list and their nested source fields. Use [logical design](../logical-build/logical-design.md) for modeling decisions, [normalization](../logical-build/normalization.md) for splits/consolidation, [naming](naming.md) and [keys and audit columns](keys-and-audit.md) for policy. [Project Change Set authoring](change-sets.md), [record state](../record-state.md) and [local validation](../local-validation.md) own the shared mechanics.
 
 ## Files, identity and common values
 
@@ -8,21 +8,16 @@ Write complete changed records as JSON arrays under `project-change-set/<dataset
 
 | Dataset | Natural key within the Project |
 |---|---|
-| `logical_submodel` | `logical_submodel_name` |
+| `logical_entity_type` | `logical_entity_type_code`; read-only list, never in a Change Set |
 | `logical_entity` | `logical_entity_schema_name` + `logical_entity_name` |
 | `logical_attribute` | `logical_entity_schema_name` + `logical_entity_name` + `logical_attribute_name` |
-| `logical_relationship` | Both schema-qualified Entity/Attribute endpoints + `logical_relationship_name` |
+| `logical_relationship` | The child's foreign key: `from_logical_entity_schema_name` + `from_logical_entity_name` + `from_logical_attribute_name` |
 
-Use shared key normalization; preserve existing spelling. Below, **name** means nonblank string ≤255 characters, **text** means nonblank string, **status** means `active`, `inactive` or `deprecated`. All dataset fields are required, even when nullable.
+Use shared key normalization; preserve existing spelling. Below, **name** means nonblank string ≤255 characters and **text** means nonblank string. Lifecycle is a boolean `*_is_active`: retire a record by setting it to `false`, never by deleting or omitting it. All dataset fields are required, even when nullable.
 
-## Logical Submodel fields
+## Entity type list
 
-| Field | Accepted value / meaning |
-|---|---|
-| `logical_submodel_name` | Name; business grouping identity. |
-| `logical_submodel_definition` | Text defining the business grouping. |
-| `logical_submodel_status` | Status. |
-| `logical_submodel_is_locked` | Boolean; shared record-state rules apply. |
+`logical_entity_type` holds `logical_entity_type_code`, `logical_entity_type_description` and `logical_entity_type_is_active`. It is a read-only reference list: read it from the Project Snapshot and choose an active code; never author or stage it. Current codes are `core`, `reference`, `transaction`, `event`, `association`, `history` and `snapshot`, but the installed list decides. A retired code stays valid on unchanged records; new or changed records need an active one.
 
 ## Logical Entity fields
 
@@ -39,13 +34,11 @@ does not rewrite existing Entities or migrate data.
 | `logical_entity_schema_name` | Required configured Logical schema name; part of Entity identity. |
 | `logical_entity_name` | Name; Entity identity. |
 | `logical_entity_definition` | Text defining the business meaning. |
-| `logical_entity_type` | `core`, `reference`, `transaction`, `event`, `bridge`, `history`, `snapshot`, `association`, `aggregate` or `other`. |
-| `logical_entity_type_detail` | Text only when type is `other`; otherwise null. |
+| `logical_entity_type` | An active `logical_entity_type_code`. There is no free-text type detail; a many-to-many link is an `association` Entity. |
 | `logical_entity_grain` | Text explaining one row's business occurrence. |
 | `logical_entity_dependency_order` | Integer ≥0; modeled Entity dependency order, not Process Group scheduling. |
-| `logical_entity_status` | Status. |
+| `logical_entity_is_active` | Boolean; `false` retires the Entity. |
 | `logical_entity_is_locked` | Boolean. |
-| `submodels` | Array of membership records below; `[]` is schema-valid. |
 | `sources` | Array of Object or Context sources below; `[]` is schema-valid. |
 
 ## Logical Attribute fields
@@ -62,7 +55,7 @@ does not rewrite existing Entities or migrate data.
 | `logical_attribute_is_surrogate_key` | Boolean; marks this Entity's surrogate, not every foreign-key Attribute. |
 | `logical_attribute_ordinal_position` | Integer >0; column position. |
 | `logical_attribute_is_audit_column` | Boolean; classification under the approved audit policy. |
-| `logical_attribute_status` | Status. |
+| `logical_attribute_is_active` | Boolean; `false` retires the Attribute. |
 | `logical_attribute_is_locked` | Boolean. |
 | `sources` | Array of physical Attribute or Context sources below; `[]` is schema-valid. |
 
@@ -70,52 +63,42 @@ An Attribute cannot be both natural and surrogate key. Any natural/surrogate fla
 
 ## Logical Relationship fields
 
+A Relationship points child -> parent: from the child Entity's foreign-key Attribute to the parent's key, normally its own surrogate. One foreign-key Attribute has one parent, so the from endpoint alone identifies the record; there is no name or definition.
+
 | Field | Accepted value / meaning |
 |---|---|
-| `logical_relationship_name` | Name; association identity together with the endpoints. |
-| `logical_relationship_definition` | Text describing the association. |
-| `from_logical_entity_schema_name` | Required configured Logical schema name; part of Entity identity. |
-| `from_logical_entity_name` | Name of the from Entity. |
-| `from_logical_attribute_name` | Name of the from Attribute in that Entity. |
-| `to_logical_entity_schema_name` | Required configured Logical schema name; part of Entity identity. |
-| `to_logical_entity_name` | Name of the to Entity. |
-| `to_logical_attribute_name` | Name of the to Attribute in that Entity. |
-| `logical_relationship_cardinality` | `one_to_one`, `one_to_many`, `many_to_one` or `many_to_many`, interpreted from → to. |
-| `logical_relationship_basis` | Text explaining evidence and meaning; distinguish inference from measurements. |
-| `logical_relationship_cardinality_basis` | Text explaining the specified multiplicity. |
-| `logical_relationship_status` | Status. |
+| `from_logical_entity_schema_name` | Child Entity's configured Logical schema. |
+| `from_logical_entity_name` | Child Entity. |
+| `from_logical_attribute_name` | The child's foreign-key Attribute. |
+| `to_logical_entity_schema_name` | Parent Entity's configured Logical schema. |
+| `to_logical_entity_name` | Parent Entity. |
+| `to_logical_attribute_name` | The parent's key Attribute, normally its surrogate. |
+| `logical_relationship_cardinality` | `many_to_one`, or `one_to_one` when each parent row has at most one child. |
+| `logical_relationship_basis` | Text explaining evidence, meaning and multiplicity, including optional participation; distinguish inference from measurements. |
+| `logical_relationship_is_active` | Boolean; `false` retires the Relationship. |
 | `logical_relationship_is_locked` | Boolean. |
 
-There is no `unknown` cardinality, explicit optionality, composite endpoint array or nested sources field. Keep unresolved multiplicity in analysis/task evidence instead of inventing a value. A same-Entity relationship is allowed when the Attributes differ; identical normalized Entity/Attribute endpoints are not. SQL is not required for a well-supported inference.
+There is no `unknown`, `one_to_many` or `many_to_many` cardinality, no optionality field, composite endpoint array or nested sources field. Model many-to-many as an `association` Entity with one Relationship from each of its foreign keys. Keep unresolved multiplicity in analysis/task evidence instead of inventing a value. A self-reference is allowed when the Attributes differ; identical normalized endpoints are not. Pointing an existing foreign key at a different parent updates its record; a different foreign-key Attribute is a new record, so retire the old one. SQL is not required for a well-supported inference.
 
-## Nested memberships and sources
+## Nested sources
 
-Membership contains exactly these three required fields. One Entity may belong to multiple Submodels; repeat each normalized Submodel name only once.
-
-| Field | Accepted value / meaning |
-|---|---|
-| `submodel_name` | Name of a real effective Logical Submodel. |
-| `membership_status` | Status. |
-| `membership_is_locked` | Boolean; independent nested lock. |
-
-Each source has exactly one source field plus the shared fields below. All fields are required except `source_order`, which defaults to null; include it explicitly in complete authored records.
+Each source has exactly one source field plus the shared fields below. `rationale` defaults to null; include it explicitly in complete authored records. Every other field is required.
 
 | Field | Accepted value / meaning |
 |---|---|
-| `support_source_type` | Entity: `object` or `context_record`. Attribute: `attribute` or `context_record`. |
+| `support_source_type` | Entity: `object` or `context_record`. Attribute: `attribute` or `context_record`. Names the source field that follows. |
 | `source_object` | Only Entity/Object variant: complete physical Object key below. |
 | `source_attribute` | Only Attribute/Attribute variant: complete physical Attribute key below. |
 | `context_record` | Only Context variant: object containing `context_record_id`. |
-| `source_order` | Positive integer or null; source ordering. Uniqueness is not required. |
-| `rationale` | Text explaining this source's contribution. |
-| `status` | Status. |
+| `rationale` | Text explaining this source's contribution, or null when the source needs no explanation. |
+| `is_active` | Boolean; `false` retires the source. |
 | `is_locked` | Boolean; independent source lock. |
 
 Physical Object key fields: `tenant_code`, `system_code`, `connection_code` (nonblank strings ≤100), `object_schema`, `object_name` (nonblank strings ≤400). Physical Attribute key adds `attribute_name` (nonblank string ≤400). Context identity is a stable lowercase UUID; see [Context records](context.md).
 
-Copy actual physical placement keys using [Object ownership](../metadata/tables/object.md#ownership-and-physical-identity). Do not substitute the Project Tenant/source owner. No Subject Area, modeled Entity or modeled Attribute source variant exists. Physical and Context sources express supported lineage; Subject Areas only choose tables.
+Copy actual physical placement keys using [Object ownership](../metadata/tables/object.md#ownership-and-physical-identity). Do not substitute the Project Tenant/source owner. No Subject Area, modeled Entity or modeled Attribute source variant exists. Physical and Context sources express supported lineage; Subject Areas only choose Objects.
 
-Within one parent, each source type + normalized physical/Context key is unique, regardless `source_order`. An Entity can consolidate multiple Objects, and an Attribute can combine multiple physical Attributes. Source arrays describe provenance, not executable transformations.
+Within one parent, each source type + normalized physical/Context key is unique. An Entity can consolidate multiple Objects, and an Attribute can combine multiple physical Attributes. Source arrays describe provenance, not executable transformations or an order of precedence.
 
 ## Scope, validation and limitations
 
@@ -123,20 +106,14 @@ Within one parent, each source type + normalized physical/Context key is unique,
 - **Every physical Attribute source requires the corresponding Object source on its parent Logical Entity.** Current Apply checks this; the shared graph validator does not fully check it before Apply. Atlas local validation must catch it first.
 - Context sources must exist and be relevant to the logical design; active evidence is checked under the shared workflow rules. An Attribute's Context does not require a duplicate Context source on its parent.
 - Source-less Entity/Attribute records are schema-valid. Use them when the design is generated, constant or otherwise has no physical source, with clear supported definitions/evidence. A real applicable Context may explain a calendar or approved rule; do not fabricate a source or create a Context for every technical choice.
-- `submodels:[]` is schema-valid; no minimum membership exists. Membership references must resolve. Preserve valid active memberships; current reference checks alone do not ensure an active membership points to an active Submodel.
-- Attributes require existing parents. Active Attributes require active Entities; active relationships require active endpoint Attributes and Entities. Follow shared lock/history rules for retained records and nested members.
-- Subject Areas are neither evidence nor an applied prerequisite for Logical. Author Logical from eligible physical evidence and business Context only; never infer dependency or lineage from Subject Area records.
-- Server Apply retains omitted nested sources/memberships. Preserve complete nested arrays locally so the effective draft accurately represents the retained graph.
+- A new or changed `logical_entity_type` must be an active code; validation reports `reference_code_invalid` otherwise. An active Relationship's to Attribute must be a natural or surrogate key of the parent; validation reports `relationship_target_not_key` otherwise.
+- Attributes require existing parents. Active Attributes require active Entities; active relationships require active endpoint Attributes and Entities. Retiring an Entity therefore retires its active Attributes and the Relationships that use them in the same batch, as the web workflow's retirement does. Follow shared lock/history rules for retained records and nested sources.
+- An Entity belongs to the Subject Areas of its active Object sources. Areas are a focus window, never evidence or an applied prerequisite: author Logical from eligible physical evidence and business Context only, and never infer dependency or lineage from Subject Area records.
+- Server Apply retains omitted nested sources. Preserve complete nested arrays locally so the effective draft accurately represents the retained graph.
 
 ## Complete synthetic records
 
 These small examples illustrate record shape, not a complete table build. Assume the complete Customer/Order graphs, approved audit columns and physical metadata already exist unless supplied here. New full tables must follow [keys and audit columns](keys-and-audit.md).
-
-`project-change-set/logical_submodel.json`:
-
-```json
-[{"logical_submodel_name":"Sales","logical_submodel_definition":"Customer purchase management.","logical_submodel_status":"active","logical_submodel_is_locked":false}]
-```
 
 `project-change-set/logical_entity.json`:
 
@@ -146,13 +123,11 @@ These small examples illustrate record shape, not a complete table build. Assume
     "logical_entity_schema_name": "silver", "logical_entity_name": "Customer",
     "logical_entity_definition": "A person or organization purchasing goods from the business.",
     "logical_entity_type": "core",
-    "logical_entity_type_detail": null,
     "logical_entity_grain": "One purchasing person or organization in the governed business identity domain.",
     "logical_entity_dependency_order": 0,
-    "logical_entity_status": "active",
+    "logical_entity_is_active": true,
     "logical_entity_is_locked": false,
-    "submodels": [{"submodel_name":"Sales","membership_status":"active","membership_is_locked":false}],
-    "sources": [{"support_source_type":"object","source_object":{"tenant_code":"demo_store","system_code":"gds","connection_code":"lakehouse","object_schema":"bronze","object_name":"customer"},"source_order":1,"rationale":"Synthetic customer master identifies the purchasing party.","status":"active","is_locked":false}]
+    "sources": [{"support_source_type":"object","source_object":{"tenant_code":"demo_store","system_code":"gds","connection_code":"lakehouse","object_schema":"bronze","object_name":"customer"},"rationale":"Synthetic customer master identifies the purchasing party.","is_active":true,"is_locked":false}]
   }
 ]
 ```
@@ -171,28 +146,25 @@ These small examples illustrate record shape, not a complete table build. Assume
     "logical_attribute_is_surrogate_key": false,
     "logical_attribute_ordinal_position": 2,
     "logical_attribute_is_audit_column": false,
-    "logical_attribute_status": "active",
+    "logical_attribute_is_active": true,
     "logical_attribute_is_locked": false,
-    "sources": [{"support_source_type":"attribute","source_attribute":{"tenant_code":"demo_store","system_code":"gds","connection_code":"lakehouse","object_schema":"bronze","object_name":"customer","attribute_name":"customer_number"},"source_order":1,"rationale":"Preserves the synthetic source's business identifier.","status":"active","is_locked":false}]
+    "sources": [{"support_source_type":"attribute","source_attribute":{"tenant_code":"demo_store","system_code":"gds","connection_code":"lakehouse","object_schema":"bronze","object_name":"customer","attribute_name":"customer_number"},"rationale":null,"is_active":true,"is_locked":false}]
   }
 ]
 ```
 
-`project-change-set/logical_relationship.json`; assumes active `Order.CustomerID` and `Customer.CustomerID` already exist:
+`project-change-set/logical_relationship.json`; assumes active `Order.CustomerID` (the child's foreign key) and `Customer.CustomerID` (the parent's surrogate) already exist:
 
 ```json
 [
   {
-    "logical_relationship_name": "PlacedByCustomer",
-    "logical_relationship_definition": "An Order is placed by a Customer.",
     "from_logical_entity_schema_name": "silver", "from_logical_entity_name": "Order",
     "from_logical_attribute_name": "CustomerID",
     "to_logical_entity_schema_name": "silver", "to_logical_entity_name": "Customer",
     "to_logical_attribute_name": "CustomerID",
     "logical_relationship_cardinality": "many_to_one",
-    "logical_relationship_basis": "Synthetic metadata identifies one purchasing Customer reference on each Order; the logical foreign key resolves that Customer's surrogate.",
-    "logical_relationship_cardinality_basis": "Infer many Orders to one Customer from these business roles. SQL was not run.",
-    "logical_relationship_status": "active",
+    "logical_relationship_basis": "Synthetic metadata identifies one purchasing Customer on each Order; the foreign key resolves that Customer's surrogate. Many Orders per Customer is inferred from these business roles; SQL was not run.",
+    "logical_relationship_is_active": true,
     "logical_relationship_is_locked": false
   }
 ]

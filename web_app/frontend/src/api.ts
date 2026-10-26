@@ -123,7 +123,6 @@ export type {
   DimensionalRelationshipDetail,
   DimensionalRelationshipFilters,
   DimensionalRelationshipPage,
-  DimensionalSubmodelMembership,
 } from "./features/dimensional/api";
 export type {
   LogicalContextReference,
@@ -148,11 +147,6 @@ export type {
   LogicalRelationshipDetail,
   LogicalRelationshipFilters,
   LogicalRelationshipPage,
-  LogicalSubmodel,
-  LogicalSubmodelDetail,
-  LogicalSubmodelEntityMembership,
-  LogicalSubmodelMembership,
-  LogicalSubmodelPage,
 } from "./features/logical/api";
 export type {
   MappingAttribute,

@@ -1,5 +1,6 @@
 import { WorkflowFilters } from "../workflows/WorkflowCommandCenter";
 import { reviewSelectionColumn } from "../project_record_review/selection";
+import type { SubjectAreaSummary } from "../subject_areas/api";
 import { useMemo, type ReactNode } from "react";
 import { useForm } from "@tanstack/react-form";
 import { Link } from "@tanstack/react-router";
@@ -11,8 +12,8 @@ import {
 } from "@tanstack/react-table";
 
 import type {
-  DimensionalFilters,
   DimensionalObject,
+  DimensionalObjectFilters,
   DimensionalRelationship,
   DimensionalRelationshipFilters,
 } from "./api";
@@ -32,6 +33,8 @@ export function DimensionalEntitiesLedger({
   projectId,
   items,
   filters,
+  subjectAreas,
+  subjectAreasState,
   state,
   selectedIds, onSelectionChange,
   onApplyFilters,
@@ -40,11 +43,13 @@ export function DimensionalEntitiesLedger({
   tenantId: number;
   projectId: number;
   items: DimensionalObject[];
-  filters: DimensionalFilters;
+  filters: DimensionalObjectFilters;
+  subjectAreas: SubjectAreaSummary[];
+  subjectAreasState: "loading" | "error" | "revision_mismatch" | "ready";
   state: DimensionalLedgerState;
   selectedIds: Set<number>;
   onSelectionChange: (ids: Set<number>) => void;
-  onApplyFilters: (filters: DimensionalFilters) => void;
+  onApplyFilters: (filters: DimensionalObjectFilters) => void;
   onLoadMore: () => void;
 }) {
   const columns = useMemo<ColumnDef<DimensionalObject>[]>(() => [
@@ -70,9 +75,9 @@ export function DimensionalEntitiesLedger({
     },
     { accessorKey: "dimensional_entity_dependency_order", header: "Order" },
     {
-      accessorKey: "dimensional_entity_status",
+      accessorKey: "dimensional_entity_is_active",
       header: "Status",
-      cell: ({ getValue }) => humanize(getValue<string>()),
+      cell: ({ getValue }) => getValue<boolean>() ? "Active" : "Inactive",
     },
     {
       accessorKey: "dimensional_entity_is_locked",
@@ -107,7 +112,12 @@ export function DimensionalEntitiesLedger({
 
   return (
     <section className="workflow-surface" aria-label="Dimensional Entities">
-      <DimensionalFilterBar filters={filters} onApplyFilters={onApplyFilters} />
+      <DimensionalEntityFilterBar
+        filters={filters}
+        subjectAreas={subjectAreas}
+        subjectAreasState={subjectAreasState}
+        onApplyFilters={onApplyFilters}
+      />
       {state.isLoading ? (
         <div className="surface-state" aria-busy="true">Loading Dimensional Entities…</div>
       ) : state.isDenied ? (
@@ -168,28 +178,38 @@ export function DimensionalEntitiesLedger({
   );
 }
 
-function DimensionalFilterBar({
+function DimensionalEntityFilterBar({
   filters,
+  subjectAreas,
+  subjectAreasState,
   onApplyFilters,
 }: {
-  filters: DimensionalFilters;
-  onApplyFilters: (filters: DimensionalFilters) => void;
+  filters: DimensionalObjectFilters;
+  subjectAreas: SubjectAreaSummary[];
+  subjectAreasState: "loading" | "error" | "revision_mismatch" | "ready";
+  onApplyFilters: (filters: DimensionalObjectFilters) => void;
 }) {
   const form = useForm({
     defaultValues: {
       namePrefix: filters.namePrefix ?? "",
-      status: filters.status ?? "",
+      subjectAreaId: filters.subjectAreaId ? String(filters.subjectAreaId) : "",
+      active: filters.active === undefined ? "" : String(filters.active),
       locked: filters.locked === undefined ? "" : String(filters.locked),
     },
     onSubmit: ({ value }) => onApplyFilters({
       ...(value.namePrefix ? { namePrefix: value.namePrefix } : {}),
-      ...(value.status ? { status: value.status as NonNullable<DimensionalFilters["status"]> } : {}),
+      ...(value.subjectAreaId ? { subjectAreaId: Number(value.subjectAreaId) } : {}),
+      ...(value.active ? { active: value.active === "true" } : {}),
       ...(value.locked ? { locked: value.locked === "true" } : {}),
     }),
   });
+  // Only active areas have active Objects to filter by; the list is short, so sort by name.
+  const areaOptions = subjectAreas
+    .filter((area) => area.subject_area_is_active)
+    .sort((left, right) => left.subject_area_name.localeCompare(right.subject_area_name));
   return (
     <WorkflowFilters><form
-      className="workflow-filterbar dimensional-filterbar"
+      className="workflow-filterbar dimensional-filterbar dimensional-entity-filterbar"
       aria-label="Filter Dimensional Entities"
       onSubmit={(event) => {
         event.preventDefault();
@@ -210,7 +230,35 @@ function DimensionalFilterBar({
           </label>
         )}
       </form.Field>
-      <form.Field name="status">
+      <form.Field name="subjectAreaId">
+        {(field) => (
+          <label>
+            <span>Subject Area</span>
+            <select
+              aria-label="Subject Area"
+              value={field.state.value}
+              disabled={subjectAreasState !== "ready"}
+              onChange={(event) => field.handleChange(event.target.value)}
+            >
+              <option value="">
+                {subjectAreasState === "loading"
+                  ? "Loading Subject Areas…"
+                  : subjectAreasState === "error"
+                    ? "Subject Areas unavailable"
+                    : subjectAreasState === "revision_mismatch"
+                      ? "Refresh Subject Areas"
+                      : "All Subject Areas"}
+              </option>
+              {areaOptions.map((area) => (
+                <option key={area.subject_area_id} value={String(area.subject_area_id)}>
+                  {area.subject_area_name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </form.Field>
+      <form.Field name="active">
         {(field) => (
           <label>
             <span>Entity status</span>
@@ -220,9 +268,8 @@ function DimensionalFilterBar({
               onChange={(event) => field.handleChange(event.target.value)}
             >
               <option value="">All statuses</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="deprecated">Deprecated</option>
+              <option value="true">Active</option>
+              <option value="false">Inactive</option>
             </select>
           </label>
         )}
@@ -248,8 +295,8 @@ function DimensionalFilterBar({
           className="button button-secondary button-small"
           type="button"
           onClick={() => {
-            form.reset({ namePrefix: "", status: "active", locked: "" });
-            onApplyFilters({ status: "active" });
+            form.reset({ namePrefix: "", subjectAreaId: "", active: "true", locked: "" });
+            onApplyFilters({ active: true });
           }}
         >
           Clear
@@ -282,9 +329,9 @@ export function DimensionalRelationshipsLedger({
   onApplyFilters: (filters: DimensionalRelationshipFilters) => void;
   onLoadMore: () => void;
 }) {
+  // Relationships point from the child Entity's foreign key to the parent Entity's key.
   const columns = useMemo<ColumnDef<DimensionalRelationship>[]>(() => [
     reviewSelectionColumn(items, { selectedIds, onSelectionChange }, (item) => item.dimensional_relationship_id, "Dimensional Relationships"),
-    { accessorKey: "dimensional_relationship_name", header: "Relationship" },
     {
       id: "from",
       header: "From",
@@ -306,19 +353,24 @@ export function DimensionalRelationshipsLedger({
       ),
     },
     {
-      accessorKey: "dimensional_relationship_kind",
-      header: "Kind",
-      cell: ({ getValue }) => humanize(getValue<string>()),
+      accessorKey: "dimensional_relationship_role_name",
+      header: "Role",
+      cell: ({ getValue }) => getValue<string | null>() ?? "—",
     },
     {
-      accessorKey: "dimensional_relationship_cardinality",
-      header: "Cardinality",
-      cell: ({ getValue }) => humanize(getValue<string>()),
-    },
-    {
-      accessorKey: "dimensional_relationship_status",
+      accessorKey: "dimensional_relationship_is_active",
       header: "Status",
-      cell: ({ getValue }) => humanize(getValue<string>()),
+      cell: ({ getValue }) => getValue<boolean>() ? "Active" : "Inactive",
+    },
+    {
+      accessorKey: "dimensional_relationship_is_locked",
+      header: "Lock",
+      cell: ({ getValue }) => getValue<boolean>() ? "Locked" : "Open",
+    },
+    {
+      accessorKey: "updated_at",
+      header: "Updated",
+      cell: ({ getValue }) => formatDateTime(getValue<string>()),
     },
     {
       id: "action",
@@ -363,25 +415,23 @@ function DimensionalRelationshipFilterBar({
 }) {
   const form = useForm({
     defaultValues: {
-      namePrefix: filters.namePrefix ?? "",
       dimensionalEntityId: filters.dimensionalEntityId
         ? String(filters.dimensionalEntityId)
         : "",
-      status: filters.status ?? "",
+      active: filters.active === undefined ? "" : String(filters.active),
       locked: filters.locked === undefined ? "" : String(filters.locked),
     },
     onSubmit: ({ value }) => onApplyFilters({
-      ...(value.namePrefix ? { namePrefix: value.namePrefix } : {}),
       ...(value.dimensionalEntityId
         ? { dimensionalEntityId: Number(value.dimensionalEntityId) }
         : {}),
-      ...(value.status ? { status: value.status as NonNullable<DimensionalFilters["status"]> } : {}),
+      ...(value.active ? { active: value.active === "true" } : {}),
       ...(value.locked ? { locked: value.locked === "true" } : {}),
     }),
   });
   return (
     <WorkflowFilters><form
-      className="workflow-filterbar dimensional-filterbar has-entity-filter"
+      className="workflow-filterbar dimensional-filterbar"
       aria-label="Filter Dimensional Relationships"
       onSubmit={(event) => {
         event.preventDefault();
@@ -389,19 +439,6 @@ function DimensionalRelationshipFilterBar({
         void form.handleSubmit();
       }}
     >
-      <form.Field name="namePrefix">
-        {(field) => (
-          <label>
-            <span>Relationship name prefix</span>
-            <input
-              aria-label="Relationship name prefix"
-              value={field.state.value}
-              onBlur={field.handleBlur}
-              onChange={(event) => field.handleChange(event.target.value)}
-            />
-          </label>
-        )}
-      </form.Field>
       <form.Field name="dimensionalEntityId">
         {(field) => (
           <label>
@@ -418,7 +455,7 @@ function DimensionalRelationshipFilterBar({
           </label>
         )}
       </form.Field>
-      <form.Field name="status">
+      <form.Field name="active">
         {(field) => (
           <label>
             <span>Relationship status</span>
@@ -428,9 +465,8 @@ function DimensionalRelationshipFilterBar({
               onChange={(event) => field.handleChange(event.target.value)}
             >
               <option value="">All statuses</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="deprecated">Deprecated</option>
+              <option value="true">Active</option>
+              <option value="false">Inactive</option>
             </select>
           </label>
         )}
@@ -456,8 +492,8 @@ function DimensionalRelationshipFilterBar({
           className="button button-secondary button-small"
           type="button"
           onClick={() => {
-            form.reset({ namePrefix: "", dimensionalEntityId: "", status: "active", locked: "" });
-            onApplyFilters({ status: "active" });
+            form.reset({ dimensionalEntityId: "", active: "true", locked: "" });
+            onApplyFilters({ active: true });
           }}
         >
           Clear

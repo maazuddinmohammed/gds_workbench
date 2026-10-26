@@ -13,6 +13,8 @@ from gds_workbench_api.features.dimensional.read_contracts import (
     DimensionalAttributeListQuery,
     DimensionalAttributePage,
     DimensionalObjectDetail,
+    DimensionalObjectFilters,
+    DimensionalObjectListQuery,
     DimensionalObjectPage,
     DimensionalRelationshipDetail,
     DimensionalRelationshipFilters,
@@ -20,19 +22,7 @@ from gds_workbench_api.features.dimensional.read_contracts import (
     DimensionalRelationshipPage,
 )
 from gds_workbench_api.features.dimensional.read_service import DimensionalService
-from gds_workbench_api.features.logical import ModeledFilters, ModeledListQuery
-
-
-def _filters_from_query(query: ModeledListQuery) -> ModeledFilters:
-    return ModeledFilters.model_validate(
-        {
-            "status": query.status,
-            "locked": query.locked,
-            "name_exact": query.name_exact,
-            "name_prefix": query.name_prefix,
-        },
-        strict=True,
-    )
+from gds_workbench_api.features.logical import ModelSubjectAreaPage
 
 
 def create_dimensional_router(
@@ -47,18 +37,45 @@ def create_dimensional_router(
         tags=["dimensional"],
     )
 
+    async def list_subject_areas(
+        tenant_id: Annotated[int, Path(gt=0)],
+        project_id: Annotated[int, Path(gt=0)],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
+    ) -> ModelSubjectAreaPage:
+        return await service.list_subject_areas(
+            principal, tenant_id=tenant_id, project_id=project_id
+        )
+
+    router.add_api_route(
+        "/subject-areas",
+        list_subject_areas,
+        methods=["GET"],
+        response_model=ModelSubjectAreaPage,
+    )
+
     async def list_objects(
         tenant_id: Annotated[int, Path(gt=0)],
         project_id: Annotated[int, Path(gt=0)],
-        query: Annotated[ModeledListQuery, Query()],
+        query: Annotated[DimensionalObjectListQuery, Query()],
         *,
         principal: RequestPrincipal = Depends(authenticate),
     ) -> DimensionalObjectPage:
+        filters = DimensionalObjectFilters.model_validate(
+            {
+                "active": query.active,
+                "locked": query.locked,
+                "name_exact": query.name_exact,
+                "name_prefix": query.name_prefix,
+                "subject_area_id": query.subject_area_id,
+            },
+            strict=True,
+        )
         return await service.list_objects(
             principal,
             tenant_id=tenant_id,
             project_id=project_id,
-            filters=_filters_from_query(query),
+            filters=filters,
             page_size=query.page_size,
             cursor=query.cursor,
         )
@@ -100,7 +117,7 @@ def create_dimensional_router(
     ) -> DimensionalAttributePage:
         filters = DimensionalAttributeFilters.model_validate(
             {
-                "status": query.status,
+                "active": query.active,
                 "locked": query.locked,
                 "name_exact": query.name_exact,
                 "name_prefix": query.name_prefix,
@@ -154,7 +171,7 @@ def create_dimensional_router(
     ) -> DimensionalRelationshipPage:
         filters = DimensionalRelationshipFilters.model_validate(
             {
-                "status": query.status,
+                "active": query.active,
                 "locked": query.locked,
                 "name_exact": query.name_exact,
                 "name_prefix": query.name_prefix,

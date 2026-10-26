@@ -59,9 +59,8 @@ A complete Logical source for that record:
 {
   "support_source_type": "context_record",
   "context_record": {"context_record_id": "74acf19b-49ba-4a71-a21c-8b46238f3d96"},
-  "source_order": null,
   "rationale": "The confirmed rule defines customer identity and preserves its formatting.",
-  "status": "active",
+  "is_active": true,
   "is_locked": false
 }
 ```

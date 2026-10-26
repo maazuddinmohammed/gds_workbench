@@ -2401,46 +2401,68 @@ def test_create_workflow_run_validates_agent_overrides_and_snapshots_atomically(
 
     missing_prompt_correlation = uuid4()
     with postgres_database.connect_owner() as connection:
-        logical_stage_count = require_row(
-            connection.execute(
-                """
-            SELECT count(*) AS count
-              FROM application.workflow_stage
-             WHERE project_workflow = 'logical'
-               AND workflow_execution_mode = 'one_shot'
-               AND workflow_stage_is_agentic
-               AND is_active
+        # A Logical Build freezes only its build_authoring stage, which has no prompt here.
+        connection.execute(
             """
-            ).fetchone()
-        )["count"]
-        if logical_stage_count == 0:
+            INSERT INTO application.workflow_stage (
+                project_workflow,
+                workflow_execution_mode,
+                workflow_stage_code,
+                workflow_stage_name,
+                workflow_stage_order,
+                workflow_stage_is_agentic
+            ) VALUES (
+                'logical', 'one_shot', 'build_authoring',
+                'Logical Build authoring', 1000, TRUE
+            )
+            ON CONFLICT DO NOTHING
+            """
+        )
+        subject_area_id = require_row(
             connection.execute(
                 """
-                INSERT INTO application.workflow_stage (
-                    project_workflow,
-                    workflow_execution_mode,
-                    workflow_stage_code,
-                    workflow_stage_name,
-                    workflow_stage_order,
-                    workflow_stage_is_agentic
-                ) VALUES (
-                    'logical', 'one_shot', %s,
-                    'Logical authoring', 1000, TRUE
-                )
-                """,
-                (f"logical_authoring_{uuid4().hex}",),
-            )
+            INSERT INTO workflow.subject_area (
+                project_id, subject_area_name, subject_area_definition
+            ) VALUES (%s, 'Orders', 'Objects the Logical Build reads.')
+            RETURNING subject_area_id
+            """,
+                (context.project_id,),
+            ).fetchone()
+        )["subject_area_id"]
+        connection.execute(
+            """
+            INSERT INTO workflow.subject_area_table (project_id, subject_area_id, object_id)
+            SELECT %s, %s, object_id
+              FROM unnest(%s::BIGINT[]) AS selected(object_id)
+            """,
+            (context.project_id, subject_area_id, list(context.selected_object_ids)),
+        )
 
     with (
         postgres_database.connect_owner() as connection,
         pytest.raises(RaiseException, match="prompt|Prompt"),
     ):
         connection.execute(
-            CREATE_WORKFLOW_RUN_SQL,
-            create_workflow_run_parameters(
-                context,
-                correlation_id=missing_prompt_correlation,
-                workflow="logical",
+            """
+            SELECT *
+              FROM application.create_workflow_run(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT, %s::BIGINT,
+                  'logical'::VARCHAR, 'one_shot'::VARCHAR,
+                  NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR,
+                  NULL::INTEGER, NULL::INTEGER,
+                  ARRAY[]::BIGINT[], ARRAY[]::VARCHAR[], NULL::VARCHAR, NULL::VARCHAR,
+                  %s::UUID, '{}'::JSONB,
+                  p_workflow_operation => 'build',
+                  p_subject_area_ids => ARRAY[%s]::BIGINT[]
+              )
+            """,
+            (
+                context.entra_tenant_id,
+                context.entra_object_id,
+                context.project_id,
+                context.project_revision,
+                missing_prompt_correlation,
+                subject_area_id,
             ),
         )
 

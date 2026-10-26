@@ -46,7 +46,7 @@ SELECT mapping.mapping_object_id, entity.modeled_entity_id, entity.modeled_entit
     ON template.output_template_id = mapping.output_template_id
  WHERE project.tenant_id = %s AND project.project_id = %s AND project.is_active
    AND entity.modeled_entity_type = %s AND lower(btrim(system.system_code)) = %s
-   AND entity.status = 'active' AND mapping.object_mapping_status = 'active'
+   AND entity.is_active AND mapping.object_mapping_status = 'active'
    AND (mapping.mapping_transformation_document IS NOT NULL OR EXISTS (
        SELECT 1 FROM workflow.mapping_attribute AS child
         WHERE child.mapping_object_id = mapping.mapping_object_id
@@ -62,7 +62,7 @@ _ATTRIBUTES_FROM: LiteralString = """
    AND attribute.modeled_entity_type = mapping.modeled_entity_type
    AND attribute.modeled_entity_id = coalesce(
        mapping.logical_entity_id, mapping.dimensional_entity_id)
-   AND attribute.status = 'active'
+   AND attribute.is_active
   LEFT JOIN workflow.mapping_attribute AS child
     ON child.mapping_object_id = mapping.mapping_object_id
    AND coalesce(child.logical_attribute_id, child.dimensional_attribute_id) =

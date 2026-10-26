@@ -249,7 +249,6 @@
     } else if (rule === "context_record") {
       if (typeof value.source_reference === "string" && new TextEncoder().encode(value.source_reference).length > 65536) add("Context source reference is too large");
     } else if (rule === "logical_entity") {
-      if (!uniqueNormalized(value.submodels.map((item) => item.submodel_name))) add("Logical Entity Submodel memberships must be unique");
       if (!uniqueSources(value.sources)) add("Logical Entity sources must be unique");
     } else if (rule === "logical_attribute") {
       if (value.logical_attribute_is_natural_key && value.logical_attribute_is_surrogate_key) add("A Logical Attribute cannot be both natural and surrogate key");
@@ -260,7 +259,6 @@
     } else if (rule === "dimensional_entity") {
       if ((value.dimensional_entity_type === "fact") !== (value.dimensional_fact_type !== null)) add("Dimensional fact type is required only for facts");
       if (["fact", "bridge"].includes(value.dimensional_entity_type) && value.dimensional_entity_grain_definition === null) add("Fact and bridge Entities require a grain definition");
-      if (!uniqueNormalized(value.submodels.map((item) => item.submodel_name))) add("Dimensional Entity Submodel memberships must be unique");
       if (!uniqueSources(value.sources)) add("Dimensional Entity sources must be unique");
     } else if (rule === "dimensional_attribute") {
       if (value.dimensional_attribute_is_natural_key && value.dimensional_attribute_is_surrogate_key) add("A Dimensional Attribute cannot be both natural and surrogate key");

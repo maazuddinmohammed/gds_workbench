@@ -33,6 +33,11 @@ class CreateWorkflowRunRequest(BaseModel):
         Annotated[str, Field(min_length=1, max_length=100, strict=True)]
     ] = Field(default_factory=list)
     modeled_entity_type: ModeledEntityType | None = None
+    # Logical and Dimensional: Build the ordered Subject Areas, or Optimize the whole model.
+    workflow_operation: Literal["build", "optimize"] | None = None
+    subject_area_ids: list[Annotated[int, Field(gt=0, strict=True)]] = Field(
+        default_factory=list[int], max_length=1_000
+    )
     requested_batch_id: str | None = Field(default=None, min_length=1, max_length=500)
     mapping_operation: Literal["build", "extend", "generate"] | None = None
     mapping_targets: list[MappingTargetSelection] | None = Field(default=None, min_length=1)
@@ -98,6 +103,19 @@ class CreateWorkflowRunRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_workflow_shape(self) -> Self:
+        modeling = self.project_workflow in {"logical", "dimensional"}
+        if modeling:
+            # The backend derives the selection from the areas or the applied model.
+            if (
+                self.workflow_operation is None
+                or self.selected_object_ids
+                or self.selected_entity_ids
+                or (self.workflow_operation == "build") != bool(self.subject_area_ids)
+                or len(self.subject_area_ids) != len(set(self.subject_area_ids))
+            ):
+                raise ValueError("Build needs unique selected Subject Areas; Optimize takes none")
+        elif self.workflow_operation is not None or self.subject_area_ids:
+            raise ValueError("Build and Optimize are available only for Logical and Dimensional")
         entity_workflow = self.project_workflow in {"dimensional", "mapping", "code_generation"}
         selected_ids = self.selected_entity_ids if entity_workflow else self.selected_object_ids
         if (entity_workflow and self.selected_object_ids) or (
@@ -146,7 +164,7 @@ class CreateWorkflowRunRequest(BaseModel):
                 raise ValueError(
                     "System selection is available only for Validation or Code Generation"
                 )
-            if not selected_ids:
+            if not selected_ids and not modeling:
                 raise ValueError("Selected Object IDs are required")
             if self.code_generation_coverage_mode is not None:
                 raise ValueError("Code Generation inputs are unavailable for this workflow")

@@ -1,12 +1,11 @@
 """Dimensional review reads and authoring workflow support."""
 
 from gds_workbench_api.features.logical import (
-    Cardinality,
     ContextRecordReference,
     ContractModel,
+    EntitySubjectArea,
     ModeledFilters,
     ModeledListQuery,
-    ModeledStatus,
     PhysicalAttributeReference,
     PhysicalObjectReference,
 )
@@ -28,6 +27,8 @@ from .read_contracts import (
     DimensionalFilters,
     DimensionalLogicalEntitySource,
     DimensionalObjectDetail,
+    DimensionalObjectFilters,
+    DimensionalObjectListQuery,
     DimensionalObjectNotFoundError,
     DimensionalObjectPage,
     DimensionalObjectSource,
@@ -39,7 +40,6 @@ from .read_contracts import (
     DimensionalRelationshipNotFoundError,
     DimensionalRelationshipPage,
     DimensionalRelationshipSummary,
-    DimensionalSubmodelMembership,
 )
 from .read_router import create_dimensional_router
 from .read_service import (
@@ -54,8 +54,8 @@ from .service import DimensionalExecutionFailedError, DimensionalWorkflow
 
 __all__ = [
     "ContextRecordReference",
-    "Cardinality",
     "ContractModel",
+    "EntitySubjectArea",
     "DimensionalWorkflow",
     "DatabaseDimensionalService",
     "DIMENSIONAL_ATTRIBUTE_SOURCES_SQL",
@@ -76,6 +76,8 @@ __all__ = [
     "DimensionalExecutionFailedError",
     "DimensionalFilters",
     "DimensionalObjectDetail",
+    "DimensionalObjectFilters",
+    "DimensionalObjectListQuery",
     "DimensionalObjectNotFoundError",
     "DimensionalObjectPage",
     "DimensionalObjectSource",
@@ -90,11 +92,9 @@ __all__ = [
     "DimensionalRelationshipPage",
     "DimensionalRelationshipSummary",
     "DimensionalService",
-    "DimensionalSubmodelMembership",
     "DimensionalWorkflowService",
     "ModeledFilters",
     "ModeledListQuery",
-    "ModeledStatus",
     "PhysicalAttributeReference",
     "PhysicalObjectReference",
     "create_dimensional_router",

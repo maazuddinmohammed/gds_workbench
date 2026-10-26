@@ -470,14 +470,12 @@ def test_logical_entity_source_accepts_a_context_record(
             INSERT INTO workflow.logical_entity_source_mapping (
                 project_id,
                 logical_entity_id,
-                support_source_type,
                 context_record_id,
                 logical_entity_source_mapping_rationale
             )
-            VALUES (%s, %s, 'context_record', %s,
+            VALUES (%s, %s, %s,
                     'The Context Record establishes the entity boundary.')
-            RETURNING support_source_type,
-                      source_object_id,
+            RETURNING source_object_id,
                       context_record_id
             """,
             (
@@ -488,7 +486,6 @@ def test_logical_entity_source_accepts_a_context_record(
         ).fetchone()
 
     assert source == {
-        "support_source_type": "context_record",
         "source_object_id": None,
         "context_record_id": context_record_id,
     }
@@ -544,14 +541,12 @@ def test_logical_attribute_source_accepts_a_context_record(
                 project_id,
                 logical_entity_id,
                 logical_attribute_id,
-                support_source_type,
                 context_record_id,
                 logical_attribute_source_mapping_rationale
             )
-            VALUES (%s, %s, %s, 'context_record', %s,
+            VALUES (%s, %s, %s, %s,
                     'The Context Record establishes the business Attribute.')
-            RETURNING support_source_type,
-                      logical_entity_source_mapping_id,
+            RETURNING logical_entity_source_mapping_id,
                       source_object_id,
                       source_attribute_id,
                       context_record_id
@@ -565,7 +560,6 @@ def test_logical_attribute_source_accepts_a_context_record(
         ).fetchone()
 
     assert source == {
-        "support_source_type": "context_record",
         "logical_entity_source_mapping_id": None,
         "source_object_id": None,
         "source_attribute_id": None,
@@ -604,14 +598,12 @@ def test_dimensional_entity_source_accepts_a_context_record(
             INSERT INTO workflow.dimensional_entity_source_mapping (
                 project_id,
                 dimensional_entity_id,
-                support_source_type,
                 context_record_id,
                 dimensional_entity_source_mapping_rationale
             )
-            VALUES (%s, %s, 'context_record', %s,
+            VALUES (%s, %s, %s,
                     'The Context Record establishes the reusable Dimension.')
-            RETURNING support_source_type,
-                      source_logical_entity_id,
+            RETURNING source_logical_entity_id,
                       context_record_id
             """,
             (
@@ -622,7 +614,6 @@ def test_dimensional_entity_source_accepts_a_context_record(
         ).fetchone()
 
     assert source == {
-        "support_source_type": "context_record",
         "source_logical_entity_id": None,
         "context_record_id": context_record_id,
     }
@@ -677,14 +668,12 @@ def test_dimensional_attribute_source_accepts_a_context_record(
                 project_id,
                 dimensional_entity_id,
                 dimensional_attribute_id,
-                support_source_type,
                 context_record_id,
                 dimensional_attribute_source_mapping_rationale
             )
-            VALUES (%s, %s, %s, 'context_record', %s,
+            VALUES (%s, %s, %s, %s,
                     'The Context Record establishes the analytical Attribute.')
-            RETURNING support_source_type,
-                      dimensional_entity_source_mapping_id,
+            RETURNING dimensional_entity_source_mapping_id,
                       source_logical_entity_id,
                       source_logical_attribute_id,
                       context_record_id
@@ -698,7 +687,6 @@ def test_dimensional_attribute_source_accepts_a_context_record(
         ).fetchone()
 
     assert source == {
-        "support_source_type": "context_record",
         "dimensional_entity_source_mapping_id": None,
         "source_logical_entity_id": None,
         "source_logical_attribute_id": None,

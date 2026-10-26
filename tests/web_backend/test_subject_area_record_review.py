@@ -31,7 +31,7 @@ def _review(
 
 def test_area_retirement_preserves_content_and_retires_only_its_active_tables() -> None:
     graph = complete_project_graph()
-    graph["subject_area_table"][1]["subject_area_table_status"] = "inactive"
+    graph["subject_area_table"][1]["subject_area_table_is_active"] = False
     review = _review(graph)
     before = deepcopy(review)
 
@@ -46,8 +46,8 @@ def test_area_retirement_preserves_content_and_retires_only_its_active_tables() 
     for item in decisions:
         old = item.original.model_dump(mode="json")
         new = item.reviewed.model_dump(mode="json")
-        assert {key for key in old if old[key] != new[key]} == {f"{item.dataset}_status"}
-        assert new[f"{item.dataset}_status"] == "inactive"
+        assert {key for key in old if old[key] != new[key]} == {f"{item.dataset}_is_active"}
+        assert new[f"{item.dataset}_is_active"] is False
     assert review == before
     for action in ("lock", "unlock"):
         result = plan_project_record_review(
@@ -67,9 +67,9 @@ def test_area_retirement_preserves_content_and_retires_only_its_active_tables() 
 
 def test_membership_reactivation_also_reactivates_its_inactive_area() -> None:
     graph = complete_project_graph()
-    graph["subject_area"][0]["subject_area_status"] = "inactive"
+    graph["subject_area"][0]["subject_area_is_active"] = False
     for membership in graph["subject_area_table"]:
-        membership["subject_area_table_status"] = "inactive"
+        membership["subject_area_table_is_active"] = False
     review = _review(graph)
 
     decisions = plan_project_record_review(
@@ -80,9 +80,7 @@ def test_membership_reactivation_also_reactivates_its_inactive_area() -> None:
         ("subject_area_table", 91, True),
         ("subject_area", 1, False),
     ]
-    assert all(
-        item.reviewed.model_dump()[f"{item.dataset}_status"] == "active" for item in decisions
-    )
+    assert all(item.reviewed.model_dump()[f"{item.dataset}_is_active"] for item in decisions)
     # Reopening an area alone never reopens its historical memberships.
     assert [
         (item.dataset, item.record_id)
@@ -102,7 +100,7 @@ def test_layer_clear_covers_every_area_and_membership() -> None:
         {
             "subject_area_name": "Billing",
             "subject_area_definition": "Invoices for orders.",
-            "subject_area_status": "inactive",
+            "subject_area_is_active": False,
             "subject_area_is_locked": False,
         }
     )

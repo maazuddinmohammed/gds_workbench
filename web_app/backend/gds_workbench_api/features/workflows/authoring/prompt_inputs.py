@@ -11,13 +11,9 @@ from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     AnalysisResultRecord,
     ProfilingProfileRecord,
-    ProjectSchemaDefinition,
 )
 from gds_etl_workbench.domain.snapshots.project import (
     ContextSection,
-    DimensionalSection,
-    LogicalSection,
-    MappingSection,
 )
 from pydantic import (
     BaseModel,
@@ -31,10 +27,9 @@ from pydantic import (
 )
 
 from gds_workbench_api.features.metadata_enrichment.contracts import EvidenceMethod
-from gds_workbench_api.features.workflows.authoring.gold_policy import effective_gold_templates
 
 from .agent_execution import LocalAgentToolDefinition
-from .context import SelectedLogicalEntityContext, SelectedObjectContext
+from .context import SelectedObjectContext
 from .context_contracts import workflow_input_contracts
 from .plan import AgentRunPlan, FrozenAgentStage
 from .tool_configuration import registered_tool_definitions
@@ -57,7 +52,7 @@ class _ProjectBrief(_PromptInput):
 class _AuthoringProjectIdentity(_PromptInput):
     project_name: str = Field(min_length=1, max_length=255, pattern=r"\S", repr=False)
     project_revision: int = Field(gt=0)
-    project_workflow: Literal["analysis", "logical", "dimensional"]
+    project_workflow: Literal["analysis"]
     workflow_execution_mode: Literal["tool_assisted"]
     selected_scope_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
@@ -74,11 +69,9 @@ type _ContextDataset = Literal[
     "context_record",
     "subject_area",
     "subject_area_table",
-    "logical_submodel",
     "logical_entity",
     "logical_attribute",
     "logical_relationship",
-    "dimensional_submodel",
     "dimensional_entity",
     "dimensional_attribute",
     "dimensional_relationship",
@@ -127,33 +120,12 @@ class _EvidenceManifest(_PromptInput):
 _AUTHORING_ADAPTERS: dict[str, TypeAdapter[Any]] = {
     "project_brief": TypeAdapter(_ProjectBrief),
     "selected_metadata": TypeAdapter(list[SelectedObjectContext]),
-    "selected_logical_entities": TypeAdapter(list[SelectedLogicalEntityContext]),
-    "logical_schemas": TypeAdapter(list[ProjectSchemaDefinition]),
-    "dimensional_schemas": TypeAdapter(list[ProjectSchemaDefinition]),
     "profile_evidence": TypeAdapter(list[ProfilingProfileRecord]),
     "applied_relationships": TypeAdapter(list[AnalysisResultRecord]),
     "context_records": TypeAdapter(ContextSection),
     "project_identity": TypeAdapter(_AuthoringProjectIdentity),
     "evidence_datasets": TypeAdapter(list[_EvidenceDataset]),
-    "analysis_evidence": TypeAdapter(list[AnalysisResultRecord]),
-    "applied_logical": TypeAdapter(LogicalSection | None),
-    "applied_dimensional": TypeAdapter(DimensionalSection | None),
-    "applied_mapping": TypeAdapter(MappingSection | None),
 }
-
-
-@cache
-def _authoring_input_adapter(name: str) -> TypeAdapter[Any]:
-    if name in _AUTHORING_ADAPTERS:
-        return _AUTHORING_ADAPTERS[name]
-    # Gold policy initialization imports the workflow runner; load its real
-    # schemas only when a registered policy input is needed.
-    from gds_workbench_api.features.dimensional.policy import GoldAuditPolicy, GoldTechnicalPolicy
-
-    return {
-        "gold_technical_policy": TypeAdapter(GoldTechnicalPolicy),
-        "gold_audit_policy": TypeAdapter(GoldAuditPolicy),
-    }[name]
 
 
 _ANALYSIS_INPUTS: dict[str, tuple[str, str, str, JsonValue]] = {
@@ -268,171 +240,25 @@ _ANALYSIS_INPUTS: dict[str, tuple[str, str, str, JsonValue]] = {
 }
 
 
-_LOGICAL_INPUTS: dict[str, tuple[str, str, str, JsonValue]] = {
-    name: _ANALYSIS_INPUTS[name]
-    for name in (
-        "project_brief",
-        "selected_metadata",
-        "profile_evidence",
-        "context_records",
-        "project_identity",
-        "evidence_datasets",
+# Authoring stages per workflow. Logical and Dimensional Build and Optimize share one
+# workflow; each stage reads its own input set.
+_AUTHORING_STAGES: dict[str, tuple[str, ...]] = {
+    "analysis": ("relationship_inference",),
+    "subject_area": ("candidate_authoring",),
+    "logical": ("build_authoring", "optimize_authoring"),
+    "dimensional": ("build_authoring", "optimize_authoring"),
+    "metadata_enrichment_object": ("candidate_authoring",),
+    "metadata_enrichment_attribute": ("candidate_authoring",),
+}
+# Earlier mode-specific Analysis inputs; every other workflow uses only its input set.
+_AUTHORING_INPUTS = {"analysis": _ANALYSIS_INPUTS}
+
+
+def stage_input_set(project_workflow: str, stage_code: str) -> str:
+    """The workflow_input_contracts key for one authoring stage."""
+    return (
+        f"{project_workflow}_optimize" if stage_code == "optimize_authoring" else project_workflow
     )
-}
-_LOGICAL_INPUTS["analysis_evidence"] = _ANALYSIS_INPUTS["applied_relationships"]
-_LOGICAL_INPUTS["project_identity"] = (
-    "tool_assisted",
-    "",
-    _ANALYSIS_INPUTS["project_identity"][2],
-    {
-        **cast(dict[str, JsonValue], _ANALYSIS_INPUTS["project_identity"][3]),
-        "project_workflow": "logical",
-    },
-)
-_LOGICAL_INPUTS["applied_logical"] = (
-    "one_shot",
-    "applied.logical",
-    "Applied Logical Submodels, Entities, Attributes and Relationships, including nested source "
-    "mappings, memberships, lifecycle state and locks. Preserve compatible history and explicit "
-    "audit columns. read_only_dependencies separately constrains their existing downstream "
-    "Mapping and Code outputs; this stage cannot modify those records. Null means no applied "
-    "Logical section is available.",
-    {"submodels": [], "entities": [], "attributes": [], "relationships": []},
-)
-_LOGICAL_INPUTS["logical_schemas"] = (
-    "one_shot",
-    "project_details.logical_schemas",
-    "Allowed Logical schema names with placement descriptions. Every Entity must use one.",
-    [{"schema_name": "silver", "description": "Operational entities."}],
-)
-_DIMENSIONAL_INPUTS = dict(_LOGICAL_INPUTS)
-_DIMENSIONAL_INPUTS.pop("logical_schemas", None)
-_DIMENSIONAL_INPUTS["dimensional_schemas"] = (
-    "one_shot",
-    "project_details.dimensional_schemas",
-    "Allowed Dimensional schema names with placement descriptions. Every Entity must use one.",
-    [{"schema_name": "gold", "description": "Analytical entities."}],
-)
-_DIMENSIONAL_INPUTS.pop("selected_metadata", None)
-_DIMENSIONAL_INPUTS["selected_logical_entities"] = (
-    "one_shot",
-    "selected_logical_entities",
-    "Frozen selected Logical Entities and active Attributes, including schema, data types, "
-    "grain, source lineage and lifecycle. Reference these exact schema-qualified identities "
-    "when generating Dimensional sources.",
-    cast(
-        JsonValue, workflow_input_contracts("dimensional")["selected_logical_entities"]["example"]
-    ),
-)
-_DIMENSIONAL_INPUTS["project_identity"] = (
-    "tool_assisted",
-    "",
-    _ANALYSIS_INPUTS["project_identity"][2],
-    {
-        **cast(dict[str, JsonValue], _ANALYSIS_INPUTS["project_identity"][3]),
-        "project_workflow": "dimensional",
-    },
-)
-_DIMENSIONAL_INPUTS["applied_logical"] = (
-    "one_shot",
-    "applied.logical",
-    "Applied upstream Logical Entities, Attributes, Relationships and source supports. "
-    "Use them to understand selected Logical meaning and grain. This stage cannot alter the "
-    "Logical layer or infer that every Logical Entity is eligible for this selection.",
-    _LOGICAL_INPUTS["applied_logical"][3],
-)
-_DIMENSIONAL_INPUTS["applied_dimensional"] = (
-    "one_shot",
-    "applied.dimensional",
-    "Applied Dimensional Submodels, Entities, Attributes and Relationships with exact sources, "
-    "lifecycle and locks. Preserve compatible history; read_only_dependencies constrains "
-    "current downstream Mapping and Code. The candidate cannot change those dependencies.",
-    {"submodels": [], "entities": [], "attributes": [], "relationships": []},
-)
-_DIMENSIONAL_INPUTS["applied_mapping"] = (
-    "one_shot",
-    "applied.mapping",
-    "Applied Mapping Object and Attribute transformations. Inspect the "
-    "modeled_entity_type before interpreting upstream Logical versus downstream Dimensional "
-    "records. Mapping gives lineage and transformation meaning, not newly measured values. "
-    "It is evidence only; this workflow does not author Mapping.",
-    {"objects": [], "attributes": []},
-)
-_DIMENSIONAL_INPUTS["gold_technical_policy"] = (
-    "one_shot",
-    "project_details.gold_model_technical_columns_template",
-    "Frozen required Gold technical policy: dimension surrogate-key naming/type, role-aware "
-    "fact/bridge foreign-key names, and Type2 validity columns. Follow these exact templates "
-    "and nullability rules. Required columns must remain compatible with saved Entities and "
-    "their Mapping and Code outputs.",
-    {
-        "schema_version": "1.0",
-        "dimension_surrogate_key": {
-            "semantic_name_template": "{entity_name} key",
-            "data_type": "BIGINT",
-            "nullable": False,
-            "definition_template": "Surrogate key for {entity_name}.",
-        },
-        "fact_bridge_foreign_key": {
-            "with_role_semantic_name_template": "{role_name} key",
-            "without_role_semantic_name_template": "{entity_name} key",
-            "definition_template": "Foreign key to {entity_name}.",
-        },
-        "type_2": {
-            "effective_from": {
-                "semantic_name": "Effective From",
-                "data_type": "TIMESTAMP",
-                "nullable": False,
-                "definition": "Type2 validity start.",
-            },
-            "effective_to": {
-                "semantic_name": "Effective To",
-                "data_type": "TIMESTAMP",
-                "nullable": True,
-                "definition": "Type2 validity end; null for current row.",
-            },
-            "is_current": {
-                "semantic_name": "Is Current",
-                "data_type": "BOOLEAN",
-                "nullable": False,
-                "definition": "Current Type2 row.",
-            },
-        },
-    },
-)
-_DIMENSIONAL_INPUTS["gold_audit_policy"] = (
-    "one_shot",
-    "project_details.gold_model_audit_columns_template",
-    "Frozen required audit columns with exact semantic names, types, nullability and "
-    "definitions. Keep these distinct from source business Attributes and represent them "
-    "explicitly. This policy does not establish source mappings or measured source values.",
-    {
-        "schema_version": "1.0",
-        "columns": [
-            {
-                "semantic_name": "Loaded At",
-                "data_type": "TIMESTAMP",
-                "nullable": False,
-                "definition": "Warehouse load time.",
-            }
-        ],
-    },
-)
-_AUTHORING_STAGES = {
-    "analysis": "relationship_inference",
-    "subject_area": "candidate_authoring",
-    "logical": "candidate_authoring",
-    "dimensional": "candidate_authoring",
-    "metadata_enrichment_object": "candidate_authoring",
-    "metadata_enrichment_attribute": "candidate_authoring",
-}
-_AUTHORING_INPUTS = {
-    "analysis": _ANALYSIS_INPUTS,
-    # Subject Area prompts use only the compact workflow inputs.
-    "subject_area": {},
-    "logical": _LOGICAL_INPUTS,
-    "dimensional": _DIMENSIONAL_INPUTS,
-}
 
 
 class _DescriptionAttributeEvidence(_PromptInput):
@@ -669,7 +495,6 @@ def _mapping_inputs(
         "source_evidence": [
             {
                 "is_locked": False,
-                "mapping_order": 1,
                 "modeled_entity_id": 201,
                 "object": {
                     "attributes": [
@@ -878,9 +703,11 @@ def get_prompt_input_contract(
                 delivery="inline_value",
                 context_path=None,
             )
-    if stage_code == _AUTHORING_STAGES.get(project_workflow) and resolver_key.startswith(prefix):
+    if stage_code in _AUTHORING_STAGES.get(project_workflow, ()) and resolver_key.startswith(
+        prefix
+    ):
         name = resolver_key.removeprefix(prefix)
-        spec = workflow_input_contracts(project_workflow).get(name)
+        spec = workflow_input_contracts(stage_input_set(project_workflow, stage_code)).get(name)
         if spec is not None:
             return PromptInputContract(
                 name=name,
@@ -899,7 +726,7 @@ def get_prompt_input_contract(
         resolver_key == "workflow.tools.available"
         and workflow_execution_mode == "tool_assisted"
         and (
-            stage_code == _AUTHORING_STAGES.get(project_workflow)
+            stage_code in _AUTHORING_STAGES.get(project_workflow, ())
             or (project_workflow == "mapping" and stage_code == "mapping_authoring")
         )
     ):
@@ -946,13 +773,13 @@ def get_prompt_input_contract(
             )
         return None
 
-    if project_workflow in _AUTHORING_STAGES and stage_code == _AUTHORING_STAGES[project_workflow]:
+    if project_workflow in _AUTHORING_INPUTS and stage_code in _AUTHORING_STAGES[project_workflow]:
         for name, (mode, path, description, example) in _AUTHORING_INPUTS[project_workflow].items():
             if mode != workflow_execution_mode or resolver_key != (
                 f"workflow.{project_workflow}.{mode}.{stage_code}.inputs.{name}"
             ):
                 continue
-            value_schema = _authoring_input_adapter(name).json_schema()
+            value_schema = _AUTHORING_ADAPTERS[name].json_schema()
             if name == "project_identity":
                 value_schema["properties"]["project_workflow"] = {
                     "type": "string",
@@ -1096,7 +923,7 @@ def project_prompt_input_values(
         values["workflow.tools.available"] = tools_value
         requested.remove("workflow.tools.available")
     prefix = f"workflow.{prompt_workflow}.common.{stage.stage_code}.inputs."
-    new_inputs = workflow_input_contracts(prompt_workflow)
+    new_inputs = workflow_input_contracts(stage_input_set(prompt_workflow, stage.stage_code))
     if prompt_workflow in {"mapping", "code_generation", "validation"}:
         from .downstream_inputs import downstream_input_contracts, project_downstream_inputs
 
@@ -1168,7 +995,7 @@ def project_prompt_input_values(
         except KeyError, TypeError, ValueError:
             raise InvalidRequestError("The Mapping Prompt inputs are inconsistent.") from None
 
-    if plan.project_workflow in _AUTHORING_STAGES:
+    if plan.project_workflow in _AUTHORING_INPUTS:
         try:
             if not isinstance(context, dict):
                 raise ValueError
@@ -1218,39 +1045,11 @@ def project_prompt_input_values(
                         }
                         for dataset in sorted(names)
                     ]
-                elif name in {
-                    "applied_logical",
-                    "applied_dimensional",
-                    "applied_mapping",
-                }:
-                    applied = context["applied"]
-                    if not isinstance(applied, dict):
-                        raise ValueError
-                    value = applied[path.removeprefix("applied.")]
-                elif name in {
-                    "gold_technical_policy",
-                    "gold_audit_policy",
-                    "logical_schemas",
-                    "dimensional_schemas",
-                }:
-                    project_details = context["project_details"]
-                    if not isinstance(project_details, dict):
-                        raise ValueError
-                    value = project_details[path.removeprefix("project_details.")]
-                    if name in {"gold_technical_policy", "gold_audit_policy"}:
-                        raw_technical = project_details["gold_model_technical_columns_template"]
-                        raw_audit = project_details["gold_model_audit_columns_template"]
-                        if (raw_technical is not None and not isinstance(raw_technical, dict)) or (
-                            raw_audit is not None and not isinstance(raw_audit, dict)
-                        ):
-                            raise ValueError
-                        technical, audit = effective_gold_templates(raw_technical, raw_audit)
-                        value = technical if name == "gold_technical_policy" else audit
                 else:
                     value = context[path]
                 # Existing canonical Pydantic models contain tuples and Decimal values whose
                 # strict wire representation is JSON, as supplied to the provider.
-                _authoring_input_adapter(name).validate_json(
+                _AUTHORING_ADAPTERS[name].validate_json(
                     json.dumps(value, ensure_ascii=False, allow_nan=False), strict=True
                 )
                 projected[key] = value
@@ -1294,7 +1093,7 @@ def list_prompt_input_contracts(
     stage_code: str,
 ) -> tuple[PromptInputContract, ...]:
     """Canonical workflow-local author choices; compatibility aliases are not advertised."""
-    names = tuple(workflow_input_contracts(project_workflow))
+    names = tuple(workflow_input_contracts(stage_input_set(project_workflow, stage_code)))
     if project_workflow in {"mapping", "code_generation", "validation"}:
         from .downstream_inputs import downstream_input_contracts
 

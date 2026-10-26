@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, cast
+from typing import cast
 
 import pytest
 from gds_etl_workbench.application.change_sets.project import StageProjectChange
@@ -37,7 +37,6 @@ from gds_workbench_api.features.workflows.authoring.repair import (
 
 # table_index numbers the selection in order: t1, t2, t3.
 TABLES = ("customer_raw", "order_raw", "invoice_raw")
-type Status = Literal["active", "inactive"]
 
 
 def _key(name: str) -> dict[str, str]:
@@ -54,25 +53,25 @@ def _area(
     name: str = "Sales",
     *,
     definition: str = "Customer orders.",
-    status: Status = "active",
+    is_active: bool = True,
     locked: bool = False,
 ) -> SubjectAreaRecord:
     return SubjectAreaRecord(
         subject_area_name=name,
         subject_area_definition=definition,
-        subject_area_status=status,
+        subject_area_is_active=is_active,
         subject_area_is_locked=locked,
     )
 
 
 def _member(
-    table: str, *, area: str = "Sales", status: Status = "active", locked: bool = False
+    table: str, *, area: str = "Sales", is_active: bool = True, locked: bool = False
 ) -> SubjectAreaTableRecord:
     return SubjectAreaTableRecord.model_validate(
         {
             "subject_area_name": area,
             **_key(table),
-            "subject_area_table_status": status,
+            "subject_area_table_is_active": is_active,
             "subject_area_table_is_locked": locked,
         }
     )
@@ -81,16 +80,12 @@ def _member(
 def _validator(
     *,
     names: tuple[str, ...] = TABLES,
-    column_counts: tuple[int, ...] | None = None,
     areas: tuple[SubjectAreaRecord, ...] = (),
     members: tuple[SubjectAreaTableRecord, ...] = (),
-    max_columns: int = 300,
 ) -> SubjectAreaCandidateValidator:
     return SubjectAreaCandidateValidator(
         selected_object_keys=tuple(PhysicalObjectKey.model_validate(_key(name)) for name in names),
-        column_counts=column_counts or (10,) * len(names),
         applied=SubjectAreaSection(areas=areas, tables=members),
-        max_subject_area_columns=max_columns,
     )
 
 
@@ -161,7 +156,7 @@ async def test_listed_saved_area_replaces_its_unlocked_tables_and_keeps_locked_o
     assert validator.parse_validated(narrowed) == (
         StageProjectChange(
             dataset="subject_area_table",
-            records=[_member("invoice_raw", status="inactive").model_dump(mode="json")],
+            records=[_member("invoice_raw", is_active=False).model_dump(mode="json")],
         ),
     )
     assert validator.parse_validated(redefined) == (
@@ -171,7 +166,7 @@ async def test_listed_saved_area_replaces_its_unlocked_tables_and_keeps_locked_o
         ),
         StageProjectChange(
             dataset="subject_area_table",
-            records=[_member("invoice_raw", status="inactive").model_dump(mode="json")],
+            records=[_member("invoice_raw", is_active=False).model_dump(mode="json")],
         ),
     )
 
@@ -196,7 +191,7 @@ async def test_a_locked_out_table_cannot_be_listed_again() -> None:
     # A reviewer kept invoice_raw (t3) out of Sales and locked that decision.
     validator = _validator(
         areas=(_area(),),
-        members=(_member("customer_raw"), _member("invoice_raw", status="inactive", locked=True)),
+        members=(_member("customer_raw"), _member("invoice_raw", is_active=False, locked=True)),
     )
     relisted = _answer([{"name": "Sales", "tables": ["t1", "t3"]}], unassigned=["t2"])
     kept_out = _answer([{"name": "Sales", "tables": ["t1"]}], unassigned=["t2", "t3"])
@@ -215,7 +210,7 @@ async def test_retire_marks_the_area_and_its_active_tables_inactive() -> None:
         areas=(_area(), _area("Billing", definition="Invoices for orders.")),
         members=(
             _member("customer_raw"),
-            _member("order_raw", status="inactive"),
+            _member("order_raw", is_active=False),
             _member("order_raw", area="Billing"),
             _member("invoice_raw", area="Billing"),
         ),
@@ -226,12 +221,66 @@ async def test_retire_marks_the_area_and_its_active_tables_inactive() -> None:
     # Nothing is deleted; already inactive tables and other areas stay as saved.
     assert validator.parse_validated(answer) == (
         StageProjectChange(
-            dataset="subject_area", records=[_area(status="inactive").model_dump(mode="json")]
+            dataset="subject_area", records=[_area(is_active=False).model_dump(mode="json")]
         ),
         StageProjectChange(
             dataset="subject_area_table",
-            records=[_member("customer_raw", status="inactive").model_dump(mode="json")],
+            records=[_member("customer_raw", is_active=False).model_dump(mode="json")],
         ),
+    )
+
+
+async def test_a_run_over_selected_tables_keeps_other_members_of_the_areas_it_changes() -> None:
+    # This run selected customer_raw and order_raw; crm_customer is in Sales but not in the run.
+    validator = _validator(
+        names=("customer_raw", "order_raw"),
+        areas=(_area(),),
+        members=(_member("customer_raw"), _member("crm_customer")),
+    )
+    answer = _answer([{"name": "Sales", "tables": ["t2"]}], unassigned=["t1"])
+
+    assert await _issues(validator, answer) == []
+    # Only this run's tables change: customer_raw leaves Sales, order_raw joins, and the
+    # member outside the run is not touched.
+    assert validator.parse_validated(answer) == (
+        StageProjectChange(
+            dataset="subject_area_table",
+            records=[
+                _member("order_raw").model_dump(mode="json"),
+                _member("customer_raw", is_active=False).model_dump(mode="json"),
+            ],
+        ),
+    )
+
+
+@pytest.mark.parametrize(("still_in_scope", "accepted"), [(True, False), (False, True)])
+async def test_a_partial_run_cannot_retire_an_area_with_scope_tables_outside_it(
+    still_in_scope: bool, accepted: bool
+) -> None:
+    # crm_customer is an active Sales member outside this run; it may have left the scope.
+    scope = {
+        tuple(value.casefold() for value in _key(name).values())
+        for name in ("customer_raw", "order_raw", *(("crm_customer",) if still_in_scope else ()))
+    }
+    validator = SubjectAreaCandidateValidator(
+        selected_object_keys=tuple(
+            PhysicalObjectKey.model_validate(_key(name)) for name in ("customer_raw", "order_raw")
+        ),
+        applied=SubjectAreaSection(
+            areas=(_area(),), tables=(_member("customer_raw"), _member("crm_customer"))
+        ),
+        scope_object_keys=frozenset(scope),
+    )
+    answer = _answer([], unassigned=["t1", "t2"], retire=["Sales"])
+
+    # A refused retire keeps Sales active, so t1 is still in it and cannot be unassigned.
+    assert await _issues(validator, answer) == (
+        []
+        if accepted
+        else [
+            ("candidate.retire_outside_run", ("retire", 0)),
+            ("candidate.unassigned_conflict", ("unassigned", 0)),
+        ]
     )
 
 
@@ -350,35 +399,17 @@ async def test_answer_mistakes_are_reported_at_the_agents_own_paths(
     assert await _issues(_validator(), answer) == expected
 
 
-async def test_area_column_total_is_capped_including_locked_tables() -> None:
-    validator = _validator(column_counts=(200, 150, 50))
-    too_large = await validator.validate(
-        _answer(
-            [{"name": "Sales", "definition": "Orders.", "tables": ["t1", "t2"]}],
-            unassigned=["t3"],
-        )
-    )
-    split = _answer(
-        [
-            {"name": "Sales", "definition": "Orders.", "tables": ["t1", "t3"]},
-            {"name": "Billing", "definition": "Invoices.", "tables": ["t2"]},
-        ]
-    )
-    # A locked saved table stays in its area, so it still counts toward the cap.
-    locked = _validator(
-        column_counts=(200, 150, 50),
-        areas=(_area(),),
-        members=(_member("order_raw", locked=True),),
-    )
+async def test_area_size_is_not_limited() -> None:
+    names = tuple(f"table_{position}" for position in range(1, 61))
+    every_table: list[JsonValue] = [f"t{position}" for position in range(1, 61)]
 
-    assert [(issue.code, issue.path) for issue in too_large.issues] == [
-        ("candidate.subject_area_too_large", ("areas", 0, "tables"))
-    ]
-    assert "350 columns; the limit is 300" in too_large.issues[0].message
-    assert await _issues(validator, split) == []
-    assert await _issues(
-        locked, _answer([{"name": "Sales", "tables": ["t1"]}], unassigned=["t3"])
-    ) == [("candidate.subject_area_too_large", ("areas", 0, "tables"))]
+    assert (
+        await _issues(
+            _validator(names=names),
+            _answer([{"name": "Sales", "definition": "Orders.", "tables": every_table}]),
+        )
+        == []
+    )
 
 
 async def test_every_table_ends_in_an_active_area_or_unassigned() -> None:
@@ -387,7 +418,7 @@ async def test_every_table_ends_in_an_active_area_or_unassigned() -> None:
     # Unlisted saved areas stay as saved, so their active tables are placed.
     saved = _validator(areas=(_area(),), members=(_member("customer_raw"),))
     retired = _validator(
-        areas=(_area(status="inactive"),), members=(_member("customer_raw", status="inactive"),)
+        areas=(_area(is_active=False),), members=(_member("customer_raw", is_active=False),)
     )
     remaining = _answer([], unassigned=["t2", "t3"])
 
@@ -469,15 +500,15 @@ async def test_agent_issues_map_staged_records_back_to_answer_paths() -> None:
     ]
 
 
-def test_output_schema_states_the_column_cap() -> None:
-    schema = _validator(max_columns=120).output_schema()
+def test_output_schema_has_no_column_cap() -> None:
+    schema = _validator().output_schema()
 
     assert set(cast(dict[str, JsonValue], schema["properties"])) == {
         "areas",
         "unassigned",
         "retire",
     }
-    assert "at or below 120 columns" in cast(str, schema["description"])
+    assert "column" not in cast(str, schema["description"])
 
 
 async def test_large_answer_repairs_every_area_after_bounded_feedback() -> None:

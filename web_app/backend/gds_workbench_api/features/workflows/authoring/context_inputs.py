@@ -14,7 +14,6 @@ from .audit_policy import effective_audit_template
 from .context_contracts import WORKFLOW_INPUTS
 from .gold_policy import effective_gold_templates
 from .naming import effective_naming_instructions
-from .subject_area_policy import load_subject_area_policy
 
 OBJECT_FIELDS = ("tenant_code", "system_code", "connection_code", "object_schema", "object_name")
 ATTRIBUTE_FIELDS = (
@@ -38,24 +37,15 @@ def natural_key(row: Mapping[str, Any], fields: tuple[str, ...] = OBJECT_FIELDS)
 
 
 def project_key_fields(family: str, kind: str) -> tuple[str, ...]:
-    if kind == "submodel":
-        return (f"{family}_submodel_name",)
     if kind == "entity":
         return (f"{family}_entity_schema_name", f"{family}_entity_name")
     if kind == "attribute":
         return (f"{family}_entity_schema_name", f"{family}_entity_name", f"{family}_attribute_name")
-    fields = (
+    # A Relationship is identified by its child foreign-key Attribute.
+    return (
         f"from_{family}_entity_schema_name",
         f"from_{family}_entity_name",
         f"from_{family}_attribute_name",
-        f"to_{family}_entity_schema_name",
-        f"to_{family}_entity_name",
-        f"to_{family}_attribute_name",
-    )
-    return (
-        (*fields, f"{family}_relationship_name")
-        if family == "logical"
-        else (*fields, "dimensional_relationship_kind", "dimensional_relationship_role_name")
     )
 
 
@@ -64,6 +54,10 @@ def project_context_inputs(
 ) -> dict[str, Any]:
     """Selection and applicable sections are already authorized by the context repository."""
     workflow = context["project_workflow"]
+    # Logical and Dimensional Optimize calls have their own input set.
+    input_set = (
+        f"{workflow}_optimize" if context.get("workflow_operation") == "optimize" else workflow
+    )
     values: dict[str, Any] = {
         "source_context": deepcopy(context.get("source_context", [])),
         "gds_context": deepcopy(context.get("gds_context", [])),
@@ -166,20 +160,10 @@ def project_context_inputs(
             *(item["object"] for item in physical_objects),
         ],
     )
-    families = {
-        "logical": ("logical",),
-        "dimensional": ("logical", "dimensional"),
-    }
-    for family in families.get(workflow, ()):
+    for family in ("logical", "dimensional") if workflow == "dimensional" else ("logical",):
         section = context["applied"].get(family)
-        for kind in ("submodel", "entity", "attribute", "relationship"):
-            plural = "entities" if kind == "entity" else kind + "s"
-            rows = None if section is None else deepcopy(section[plural])
-            values[f"{family}_{plural}"] = rows
-            fields = project_key_fields(family, kind)
-            values[f"{family}_{kind}_list"] = (
-                None if rows is None else [{name: row[name] for name in fields} for row in rows]
-            )
+        for plural in ("entities", "attributes", "relationships"):
+            values[f"{family}_{plural}"] = None if section is None else deepcopy(section[plural])
     if workflow in {"logical", "subject_area"}:
         # Answers cite selected Objects by these short ids; the backend numbers them the same way.
         values["table_index"] = [
@@ -188,6 +172,20 @@ def project_context_inputs(
         ]
     if workflow == "subject_area":
         values.update(_subject_area_inputs(context))
+    if workflow == "logical":
+        table_ids = {
+            natural_key(selected["object"]): f"t{position}"
+            for position, selected in enumerate(context["selected_objects"], start=1)
+        }
+        if input_set == "logical_optimize":
+            values.update(_logical_optimize_inputs(context, table_ids))
+        else:
+            values.update(_logical_build_inputs(context, table_ids, values["context_records"]))
+    if workflow == "dimensional":
+        if input_set == "dimensional_optimize":
+            values.update(_dimensional_optimize_inputs(context))
+        else:
+            values.update(_dimensional_build_inputs(context))
     details = context["project_details"]
     if workflow in ("logical", "dimensional"):
         layer = "silver" if workflow == "logical" else "gold"
@@ -209,7 +207,7 @@ def project_context_inputs(
                 details["gold_model_technical_columns_template"],
                 details["gold_model_audit_columns_template"],
             )
-    return {name: values[name] for name in WORKFLOW_INPUTS[workflow]}
+    return {name: values[name] for name in WORKFLOW_INPUTS[input_set]}
 
 
 # Strongest measured result first; null is unvalidated, not disproven.
@@ -222,7 +220,7 @@ _VALIDATION_STRENGTH: dict[str | None, int] = {
 
 
 def _subject_area_inputs(context: Mapping[str, Any]) -> dict[str, Any]:
-    """Compact whole-Scope evidence for one Subject Area answer, by table_index id."""
+    """Compact evidence for the run's Objects, cited by table_index id."""
     selected = context["selected_objects"]
     table_ids = {
         natural_key(item["object"]): f"t{position}" for position, item in enumerate(selected, 1)
@@ -256,10 +254,14 @@ def _subject_area_inputs(context: Mapping[str, Any]) -> dict[str, Any]:
         "tables": [],
     }
     memberships: dict[str, list[Mapping[str, Any]]] = {}
+    # Active members this run leaves out; they keep their membership.
+    other_counts: dict[str, int] = {}
     for membership in applied["tables"]:
+        name = normalize_project_key_value(membership["subject_area_name"])
         if natural_key(membership) in table_ids:
-            name = normalize_project_key_value(membership["subject_area_name"])
             memberships.setdefault(name, []).append(membership)
+        elif membership["subject_area_table_is_active"]:
+            other_counts[name] = other_counts.get(name, 0) + 1
 
     def ordered(ids: list[str]) -> list[str]:
         return sorted(ids, key=lambda table: int(table[1:]))
@@ -283,13 +285,13 @@ def _subject_area_inputs(context: Mapping[str, Any]) -> dict[str, Any]:
             {
                 "name": area["subject_area_name"],
                 "definition": area["subject_area_definition"],
-                "status": area["subject_area_status"],
+                "is_active": area["subject_area_is_active"],
                 "is_locked": area["subject_area_is_locked"],
                 "tables": ordered(
                     [
                         table_ids[natural_key(membership)]
                         for membership in rows
-                        if membership["subject_area_table_status"] == "active"
+                        if membership["subject_area_table_is_active"]
                     ]
                 ),
                 "locked_tables": ordered(
@@ -299,11 +301,717 @@ def _subject_area_inputs(context: Mapping[str, Any]) -> dict[str, Any]:
                         if membership["subject_area_table_is_locked"]
                     ]
                 ),
+                "other_table_count": other_counts.get(
+                    normalize_project_key_value(area["subject_area_name"]), 0
+                ),
             }
             for area in applied["areas"]
             for rows in (
                 memberships.get(normalize_project_key_value(area["subject_area_name"]), []),
             )
         ],
-        "max_subject_area_columns": load_subject_area_policy().max_subject_area_columns,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Logical and Dimensional Build slices and Optimize findings.
+# A Build call sees its Subject Area's Objects, the Entities already built from them in
+# full, their neighbours in short form and a one-line directory of everything else, so
+# the input stops growing with the model. Optimize sees the whole model in short form
+# plus deterministic findings, and full records only for the Entities they name.
+# ---------------------------------------------------------------------------
+type _Key = tuple[str, ...]
+
+
+def _entity_key(record: Mapping[str, Any], family: str, prefix: str = "") -> _Key:
+    return (
+        normalize_project_key_value(record[f"{prefix}{family}_entity_schema_name"]),
+        normalize_project_key_value(record[f"{prefix}{family}_entity_name"]),
+    )
+
+
+def _label(record: Mapping[str, Any], family: str, prefix: str = "") -> str:
+    schema = record[f"{prefix}{family}_entity_schema_name"]
+    return f"{schema}.{record[f'{prefix}{family}_entity_name']}"
+
+
+def _first_sentence(text: str) -> str:
+    sentence = text.strip().split(". ", 1)[0].rstrip(".")
+    return (sentence[:197] + "...") if len(sentence) > 200 else sentence + "."
+
+
+def _active_section(context: Mapping[str, Any], family: str) -> dict[str, list[dict[str, Any]]]:
+    section: Mapping[str, Any] = context["applied"].get(family) or {}
+    flag = {"entities": "entity", "attributes": "attribute", "relationships": "relationship"}
+    return {
+        plural: [row for row in section.get(plural, []) if row[f"{family}_{kind}_is_active"]]
+        for plural, kind in flag.items()
+    }
+
+
+def _attributes_by_entity(
+    attributes: Sequence[Mapping[str, Any]], family: str
+) -> dict[_Key, list[Mapping[str, Any]]]:
+    grouped: dict[_Key, list[Mapping[str, Any]]] = {}
+    for attribute in attributes:
+        grouped.setdefault(_entity_key(attribute, family), []).append(attribute)
+    for rows in grouped.values():
+        rows.sort(key=lambda row: row[f"{family}_attribute_ordinal_position"])
+    return grouped
+
+
+def _natural_keys(attributes: Sequence[Mapping[str, Any]], family: str) -> list[dict[str, Any]]:
+    return [
+        {"name": row[f"{family}_attribute_name"], "type": row[f"{family}_attribute_data_type"]}
+        for row in attributes
+        if row[f"{family}_attribute_is_natural_key"]
+    ]
+
+
+def _entity_areas(context: Mapping[str, Any]) -> dict[_Key, set[str]]:
+    """Subject Area names by physical Object key, from active memberships."""
+    applied: Mapping[str, Any] = context["applied"].get("subject_area") or {
+        "areas": [],
+        "tables": [],
+    }
+    active = {
+        normalize_project_key_value(area["subject_area_name"]): area["subject_area_name"]
+        for area in applied["areas"]
+        if area["subject_area_is_active"]
+    }
+    areas: dict[_Key, set[str]] = {}
+    for member in applied["tables"]:
+        name = active.get(normalize_project_key_value(member["subject_area_name"]))
+        if name is not None and member["subject_area_table_is_active"]:
+            areas.setdefault(natural_key(member), set()).add(name)
+    return areas
+
+
+def _object_sources(entity: Mapping[str, Any]) -> list[_Key]:
+    return [
+        natural_key(source["source_object"])
+        for source in entity["sources"]
+        if source["support_source_type"] == "object" and source["is_active"]
+    ]
+
+
+def _compact_logical(
+    entities: Sequence[Mapping[str, Any]],
+    attributes: Mapping[_Key, list[Mapping[str, Any]]],
+    relationships: Sequence[Mapping[str, Any]],
+    table_ids: Mapping[_Key, str],
+) -> dict[str, Any]:
+    """Saved Entities in the answer's own language: t-ids, t1.column, {"context": id}."""
+    compact: list[dict[str, Any]] = []
+    for entity in entities:
+        sources: list[Any] = []
+        other = 0
+        for source in entity["sources"]:
+            if not source["is_active"]:
+                continue
+            if source["support_source_type"] == "context_record":
+                sources.append({"context": source["context_record"]["context_record_id"]})
+            elif natural_key(source["source_object"]) in table_ids:
+                sources.append(table_ids[natural_key(source["source_object"])])
+            else:
+                other += 1
+        compact_attributes: list[dict[str, Any]] = []
+        for attribute in attributes.get(_entity_key(entity, "logical"), []):
+            # The backend owns generated keys and audit columns.
+            if (
+                attribute["logical_attribute_is_surrogate_key"]
+                or attribute["logical_attribute_is_audit_column"]
+            ):
+                continue
+            refs: list[Any] = []
+            for source in attribute["sources"]:
+                if not source["is_active"]:
+                    continue
+                if source["support_source_type"] == "context_record":
+                    refs.append({"context": source["context_record"]["context_record_id"]})
+                elif natural_key(source["source_attribute"]) in table_ids:
+                    table = table_ids[natural_key(source["source_attribute"])]
+                    refs.append(f"{table}.{source['source_attribute']['attribute_name']}")
+            compact_attributes.append(
+                {
+                    "name": attribute["logical_attribute_name"],
+                    "type": attribute["logical_attribute_data_type"],
+                    "nullable": attribute["logical_attribute_is_nullable"],
+                    "natural_key": attribute["logical_attribute_is_natural_key"],
+                    "from": refs,
+                    "definition": attribute["logical_attribute_definition"],
+                    "is_locked": attribute["logical_attribute_is_locked"],
+                }
+            )
+        compact.append(
+            {
+                "schema": entity["logical_entity_schema_name"],
+                "name": entity["logical_entity_name"],
+                "type": entity["logical_entity_type"],
+                "definition": entity["logical_entity_definition"],
+                "grain": entity["logical_entity_grain"],
+                "is_locked": entity["logical_entity_is_locked"],
+                "sources": sources,
+                "other_source_count": other,
+                "attributes": compact_attributes,
+            }
+        )
+    return {
+        "entities": compact,
+        "relationships": [
+            {
+                "from": {
+                    "schema": row["from_logical_entity_schema_name"],
+                    "entity": row["from_logical_entity_name"],
+                    "attribute": row["from_logical_attribute_name"],
+                },
+                "to": {
+                    "schema": row["to_logical_entity_schema_name"],
+                    "entity": row["to_logical_entity_name"],
+                },
+                "cardinality": row["logical_relationship_cardinality"],
+                "basis": row["logical_relationship_basis"],
+                "is_locked": row["logical_relationship_is_locked"],
+            }
+            for row in relationships
+        ],
+    }
+
+
+def _neighbors_and_directory(
+    entities: Sequence[Mapping[str, Any]],
+    attributes: Mapping[_Key, list[Mapping[str, Any]]],
+    *,
+    family: str,
+    focus: set[_Key],
+    linked: Mapping[_Key, set[str]],
+    grain_field: str,
+    type_field: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    neighbors: list[dict[str, Any]] = []
+    directory: list[dict[str, Any]] = []
+    for entity in entities:
+        key = _entity_key(entity, family)
+        if key in focus:
+            continue
+        if key in linked:
+            neighbors.append(
+                {
+                    "schema": entity[f"{family}_entity_schema_name"],
+                    "name": entity[f"{family}_entity_name"],
+                    "type": entity[type_field],
+                    "grain": entity[grain_field],
+                    "natural_keys": _natural_keys(attributes.get(key, []), family),
+                    "linked_via": sorted(linked[key]),
+                }
+            )
+        else:
+            directory.append(
+                {
+                    "schema": entity[f"{family}_entity_schema_name"],
+                    "name": entity[f"{family}_entity_name"],
+                    "type": entity[type_field],
+                    "summary": _first_sentence(entity[f"{family}_entity_definition"]),
+                }
+            )
+    return neighbors, directory
+
+
+def _with_cited_context(
+    context: Mapping[str, Any], records: list[dict[str, Any]], cited: set[str]
+) -> list[dict[str, Any]]:
+    """Add Context records the shown Entities cite, even outside this area's Systems."""
+    present = {normalize_project_key_value(record["context_record_id"]) for record in records}
+    groups = {
+        normalize_project_key_value(group["context_group_name"]): group
+        for group in context["context"]["groups"]
+        if group["is_active"]
+    }
+    extra: list[dict[str, Any]] = []
+    for record in context["context"]["records"]:
+        record_id = normalize_project_key_value(record["context_record_id"])
+        group = groups.get(normalize_project_key_value(record["context_group_name"]))
+        if (
+            record_id in cited
+            and record_id not in present
+            and group
+            and record["status"] == "active"
+        ):
+            extra.append(
+                {
+                    "context_record_id": record["context_record_id"],
+                    "context_group_name": group["context_group_name"],
+                    "context_type_name": group["context_type_name"],
+                    "context_text": record["context_text"],
+                    "source_reference": record["source_reference"],
+                }
+            )
+    return [*records, *extra]
+
+
+def _logical_build_inputs(
+    context: Mapping[str, Any],
+    table_ids: Mapping[_Key, str],
+    context_records: list[dict[str, Any]],
+) -> dict[str, Any]:
+    model = _active_section(context, "logical")
+    attributes = _attributes_by_entity(model["attributes"], "logical")
+    existing = [
+        entity
+        for entity in model["entities"]
+        if any(key in table_ids for key in _object_sources(entity))
+    ]
+    focus = {_entity_key(entity, "logical") for entity in existing}
+    touching = [
+        row
+        for row in model["relationships"]
+        if _entity_key(row, "logical", "from_") in focus
+        or _entity_key(row, "logical", "to_") in focus
+    ]
+    linked: dict[_Key, set[str]] = {}
+    for row in touching:
+        for side in ("from_", "to_"):
+            linked.setdefault(_entity_key(row, "logical", side), set()).add("relationship")
+    # Tables that Analysis links to this area's tables, outside the area.
+    linked_tables: set[_Key] = set()
+    for relationship in context["analysis_relationships"]:
+        if relationship["analysis_result_status"] != "active":
+            continue
+        ends = [
+            natural_key({name: relationship[f"{side}_{name}"] for name in OBJECT_FIELDS})
+            for side in ("from", "to")
+        ]
+        if any(end in table_ids for end in ends):
+            linked_tables.update(end for end in ends if end not in table_ids)
+    for entity in model["entities"]:
+        if any(key in linked_tables for key in _object_sources(entity)):
+            linked.setdefault(_entity_key(entity, "logical"), set()).add("analysis")
+    neighbors, directory = _neighbors_and_directory(
+        model["entities"],
+        attributes,
+        family="logical",
+        focus=focus,
+        linked=linked,
+        grain_field="logical_entity_grain",
+        type_field="logical_entity_type",
+    )
+    cited = {
+        normalize_project_key_value(source["context_record"]["context_record_id"])
+        for entity in existing
+        for source in (
+            *entity["sources"],
+            *(
+                source
+                for attribute in attributes.get(_entity_key(entity, "logical"), [])
+                for source in attribute["sources"]
+            ),
+        )
+        if source["support_source_type"] == "context_record" and source["is_active"]
+    }
+    area: Mapping[str, Any] = context.get("build_subject_area") or {}
+    return {
+        "subject_area_context": {
+            "name": area.get("name", ""),
+            "definition": area.get("definition", ""),
+            "input_count": len(table_ids),
+        },
+        "existing_entities": _compact_logical(existing, attributes, touching, table_ids),
+        "neighbor_entities": neighbors,
+        "entity_directory": directory,
+        "logical_entity_types": _active_types(context, "logical", "logical_entity_type"),
+        "context_records": _with_cited_context(context, context_records, cited),
+    }
+
+
+def _active_types(context: Mapping[str, Any], family: str, prefix: str) -> list[dict[str, Any]]:
+    section: Mapping[str, Any] = context["applied"].get(family) or {}
+    rows = section.get("entity_types" if family == "logical" else "fact_types", [])
+    return [
+        {"code": row[f"{prefix}_code"], "description": row[f"{prefix}_description"]}
+        for row in rows
+        if row[f"{prefix}_is_active"]
+    ]
+
+
+def _normalized_name(name: str) -> str:
+    folded = "".join(character for character in name.casefold() if character.isalnum())
+    return folded[:-1] if folded.endswith("s") and len(folded) > 3 else folded
+
+
+def _name_variants(labels: Sequence[tuple[str, str]], kind: str) -> list[dict[str, Any]]:
+    """Group labels whose last name part differs only by case, separators or a plural s."""
+    groups: dict[str, set[str]] = {}
+    for label, name in labels:
+        groups.setdefault(_normalized_name(name), set()).add(label)
+    return [
+        {"kind": kind, "names": sorted(names)}
+        for names in groups.values()
+        if len({name.rsplit(".", 1)[-1] for name in names}) > 1
+    ]
+
+
+def _type_conflicts(
+    entities_attributes: Mapping[_Key, list[Mapping[str, Any]]],
+    labels: Mapping[_Key, str],
+    relationships: Sequence[Mapping[str, Any]],
+    family: str,
+) -> list[dict[str, Any]]:
+    by_attribute = {
+        (*key, normalize_project_key_value(row[f"{family}_attribute_name"])): row
+        for key, rows in entities_attributes.items()
+        for row in rows
+    }
+    conflicts: list[dict[str, Any]] = []
+    for row in relationships:
+        child = by_attribute.get(
+            (
+                *_entity_key(row, family, "from_"),
+                normalize_project_key_value(row[f"from_{family}_attribute_name"]),
+            )
+        )
+        parent = by_attribute.get(
+            (
+                *_entity_key(row, family, "to_"),
+                normalize_project_key_value(row[f"to_{family}_attribute_name"]),
+            )
+        )
+        if (
+            child
+            and parent
+            and child[f"{family}_attribute_data_type"].casefold()
+            != parent[f"{family}_attribute_data_type"].casefold()
+        ):
+            conflicts.append(
+                {
+                    "kind": "relationship_key",
+                    "attribute": row[f"from_{family}_attribute_name"],
+                    "values": [
+                        {
+                            "entity": _label(row, family, side),
+                            "attribute": row[f"{side}{family}_attribute_name"],
+                            "type": end[f"{family}_attribute_data_type"],
+                        }
+                        for side, end in (("from_", child), ("to_", parent))
+                    ],
+                }
+            )
+    shared: dict[str, list[dict[str, Any]]] = {}
+    for key, rows in entities_attributes.items():
+        for row in rows:
+            if (
+                row[f"{family}_attribute_is_surrogate_key"]
+                or row[f"{family}_attribute_is_audit_column"]
+            ):
+                continue
+            shared.setdefault(
+                normalize_project_key_value(row[f"{family}_attribute_name"]), []
+            ).append(
+                {
+                    "entity": labels[key],
+                    "attribute": row[f"{family}_attribute_name"],
+                    "type": row[f"{family}_attribute_data_type"],
+                }
+            )
+    conflicts.extend(
+        {"kind": "shared_name", "attribute": values[0]["attribute"], "values": values}
+        for values in shared.values()
+        if len({value["type"].casefold() for value in values}) > 1
+    )
+    return conflicts
+
+
+def _logical_optimize_inputs(
+    context: Mapping[str, Any], table_ids: Mapping[_Key, str]
+) -> dict[str, Any]:
+    model = _active_section(context, "logical")
+    attributes = _attributes_by_entity(model["attributes"], "logical")
+    entities = {_entity_key(entity, "logical"): entity for entity in model["entities"]}
+    labels = {key: _label(entity, "logical") for key, entity in entities.items()}
+    object_areas = _entity_areas(context)
+    tables_of = {key: set(_object_sources(entity)) for key, entity in entities.items()}
+    related = {
+        frozenset((_entity_key(row, "logical", "from_"), _entity_key(row, "logical", "to_")))
+        for row in model["relationships"]
+    }
+    unlinked: list[dict[str, Any]] = []
+    for relationship in context["analysis_relationships"]:
+        if relationship["analysis_result_status"] != "active" or relationship[
+            "validation_result"
+        ] not in {"supported", "inconclusive", None}:
+            continue
+        ends = {
+            side: natural_key({name: relationship[f"{side}_{name}"] for name in OBJECT_FIELDS})
+            for side in ("from", "to")
+        }
+        if not all(end in table_ids for end in ends.values()):
+            continue
+        sides = {
+            side: sorted(key for key, tables in tables_of.items() if end in tables)
+            for side, end in ends.items()
+        }
+        if (
+            not sides["from"]
+            or not sides["to"]
+            or any(
+                frozenset((source, target)) in related or source == target
+                for source in sides["from"]
+                for target in sides["to"]
+            )
+        ):
+            continue
+        unlinked.append(
+            {
+                "from": f"{table_ids[ends['from']]}.{relationship['from_attribute_name']}",
+                "to": f"{table_ids[ends['to']]}.{relationship['to_attribute_name']}",
+                "validation_result": relationship["validation_result"],
+                "from_entities": [labels[key] for key in sides["from"]],
+                "to_entities": [labels[key] for key in sides["to"]],
+            }
+        )
+    type_conflicts = _type_conflicts(attributes, labels, model["relationships"], "logical")
+    name_variants = _name_variants(
+        [(label, entities[key]["logical_entity_name"]) for key, label in labels.items()], "entity"
+    ) + _name_variants(
+        [
+            (f"{labels[key]}.{row['logical_attribute_name']}", row["logical_attribute_name"])
+            for key, rows in attributes.items()
+            for row in rows
+            if not row["logical_attribute_is_surrogate_key"]
+            and not row["logical_attribute_is_audit_column"]
+        ],
+        "attribute",
+    )
+    named = (
+        {name for item in (*unlinked,) for name in (*item["from_entities"], *item["to_entities"])}
+        | {value["entity"] for item in type_conflicts for value in item["values"]}
+        | {
+            name.rsplit(".", 1)[0] if item["kind"] == "attribute" else name
+            for item in name_variants
+            for name in item["names"]
+        }
+    )
+    detail_keys = [key for key, label in labels.items() if label in named]
+    return {
+        "model_summary": {
+            "entities": [
+                {
+                    "schema": entity["logical_entity_schema_name"],
+                    "name": entity["logical_entity_name"],
+                    "type": entity["logical_entity_type"],
+                    "grain": entity["logical_entity_grain"],
+                    "subject_areas": sorted(
+                        {name for table in tables_of[key] for name in object_areas.get(table, ())}
+                    ),
+                    "keys": _natural_keys(attributes.get(key, []), "logical"),
+                    "attribute_count": len(attributes.get(key, [])),
+                    "sources": sorted(
+                        (table_ids[table] for table in tables_of[key] if table in table_ids),
+                        key=lambda table: int(table[1:]),
+                    ),
+                    "is_locked": entity["logical_entity_is_locked"],
+                }
+                for key, entity in entities.items()
+            ],
+            "relationships": [
+                {
+                    "from": f"{_label(row, 'logical', 'from_')}."
+                    f"{row['from_logical_attribute_name']}",
+                    "to": _label(row, "logical", "to_"),
+                    "cardinality": row["logical_relationship_cardinality"],
+                }
+                for row in model["relationships"]
+            ],
+        },
+        "unlinked_analysis_edges": unlinked,
+        "type_conflicts": type_conflicts,
+        "name_variants": name_variants,
+        "entity_details": _compact_logical(
+            [entities[key] for key in detail_keys],
+            attributes,
+            [
+                row
+                for row in model["relationships"]
+                if _entity_key(row, "logical", "from_") in detail_keys
+                or _entity_key(row, "logical", "to_") in detail_keys
+            ],
+            table_ids,
+        ),
+        "logical_entity_types": _active_types(context, "logical", "logical_entity_type"),
+    }
+
+
+def _dimensional_build_inputs(context: Mapping[str, Any]) -> dict[str, Any]:
+    model = _active_section(context, "dimensional")
+    attributes = _attributes_by_entity(model["attributes"], "dimensional")
+    area_logical = {
+        _entity_key(item["entity"], "logical") for item in context["selected_logical_entities"]
+    }
+
+    def logical_sources(entity: Mapping[str, Any]) -> set[_Key]:
+        return {
+            _entity_key(source["source_logical_entity"], "logical")
+            for source in entity["sources"]
+            if source["support_source_type"] == "logical_entity" and source["is_active"]
+        }
+
+    existing = [entity for entity in model["entities"] if logical_sources(entity) & area_logical]
+    focus = {_entity_key(entity, "dimensional") for entity in existing}
+    touching = [
+        row
+        for row in model["relationships"]
+        if _entity_key(row, "dimensional", "from_") in focus
+        or _entity_key(row, "dimensional", "to_") in focus
+    ]
+    linked: dict[_Key, set[str]] = {}
+    for row in touching:
+        for side in ("from_", "to_"):
+            linked.setdefault(_entity_key(row, "dimensional", side), set()).add("relationship")
+    neighbors, directory = _neighbors_and_directory(
+        model["entities"],
+        attributes,
+        family="dimensional",
+        focus=focus,
+        linked=linked,
+        grain_field="dimensional_entity_grain_definition",
+        type_field="dimensional_entity_type",
+    )
+    area: Mapping[str, Any] = context.get("build_subject_area") or {}
+    logical_links = [
+        {
+            "from": f"{_label(row, 'logical', 'from_')}.{row['from_logical_attribute_name']}",
+            "to": _label(row, "logical", "to_"),
+            "cardinality": row["logical_relationship_cardinality"],
+        }
+        for row in _active_section(context, "logical")["relationships"]
+        if _entity_key(row, "logical", "from_") in area_logical
+        or _entity_key(row, "logical", "to_") in area_logical
+    ]
+    return {
+        "subject_area_context": {
+            "name": area.get("name", ""),
+            "definition": area.get("definition", ""),
+            "input_count": len(context["selected_logical_entities"]),
+        },
+        "logical_links": logical_links,
+        "existing_entities": {
+            "entities": deepcopy(existing),
+            # Model order, so every worker renders the same prompt.
+            "attributes": [
+                deepcopy(row)
+                for entity in existing
+                for row in attributes.get(_entity_key(entity, "dimensional"), [])
+            ],
+            "relationships": deepcopy(touching),
+        },
+        "neighbor_entities": neighbors,
+        "entity_directory": directory,
+        "dimensional_fact_types": _active_types(context, "dimensional", "dimensional_fact_type"),
+    }
+
+
+def _dimensional_optimize_inputs(context: Mapping[str, Any]) -> dict[str, Any]:
+    model = _active_section(context, "dimensional")
+    attributes = _attributes_by_entity(model["attributes"], "dimensional")
+    entities = {_entity_key(entity, "dimensional"): entity for entity in model["entities"]}
+    labels = {key: _label(entity, "dimensional") for key, entity in entities.items()}
+    logical = _active_section(context, "logical")
+    logical_tables = {
+        _entity_key(entity, "logical"): set(_object_sources(entity))
+        for entity in logical["entities"]
+    }
+    object_areas = _entity_areas(context)
+    sources_of = {
+        key: [
+            source["source_logical_entity"]
+            for source in entity["sources"]
+            if source["support_source_type"] == "logical_entity" and source["is_active"]
+        ]
+        for key, entity in entities.items()
+    }
+    same_source: dict[_Key, list[str]] = {}
+    for key, entity in entities.items():
+        if entity["dimensional_entity_type"] == "dimension":
+            for source in sources_of[key]:
+                same_source.setdefault(_entity_key(source, "logical"), []).append(labels[key])
+    name_variants = _name_variants(
+        [(label, entities[key]["dimensional_entity_name"]) for key, label in labels.items()],
+        "entity",
+    )
+    conformance = [
+        {"reason": "same_logical_source", "dimensions": sorted(names)}
+        for names in same_source.values()
+        if len(names) > 1
+    ] + [{"reason": "name_variant", "dimensions": item["names"]} for item in name_variants]
+    type_conflicts = _type_conflicts(attributes, labels, model["relationships"], "dimensional")
+    named = {name for item in conformance for name in item["dimensions"]} | {
+        value["entity"] for item in type_conflicts for value in item["values"]
+    }
+    # A list in model order, so every worker renders the same prompt.
+    detail = [key for key, label in labels.items() if label in named]
+
+    def areas(key: _Key) -> list[str]:
+        # A Dimensional Entity's areas come through its Logical sources' tables.
+        tables = {
+            table
+            for source in sources_of[key]
+            for table in logical_tables.get(_entity_key(source, "logical"), ())
+        }
+        return sorted({name for table in tables for name in object_areas.get(table, ())})
+
+    return {
+        "model_summary": {
+            "entities": [
+                {
+                    "schema": entity["dimensional_entity_schema_name"],
+                    "name": entity["dimensional_entity_name"],
+                    "type": entity["dimensional_entity_type"],
+                    "fact_type": entity["dimensional_fact_type"],
+                    "grain": entity["dimensional_entity_grain_definition"],
+                    "subject_areas": areas(key),
+                    "keys": _natural_keys(attributes.get(key, []), "dimensional"),
+                    "attribute_count": len(attributes.get(key, [])),
+                    "logical_sources": sorted(
+                        _label(source, "logical") for source in sources_of[key]
+                    ),
+                    "is_locked": entity["dimensional_entity_is_locked"],
+                }
+                for key, entity in entities.items()
+            ],
+            "relationships": [
+                {
+                    "from": f"{_label(row, 'dimensional', 'from_')}."
+                    f"{row['from_dimensional_attribute_name']}",
+                    "to": _label(row, "dimensional", "to_"),
+                    "role": row["dimensional_relationship_role_name"],
+                }
+                for row in model["relationships"]
+            ],
+        },
+        "conformance_candidates": conformance,
+        "type_conflicts": type_conflicts,
+        "name_variants": name_variants
+        + _name_variants(
+            [
+                (
+                    f"{labels[key]}.{row['dimensional_attribute_name']}",
+                    row["dimensional_attribute_name"],
+                )
+                for key, rows in attributes.items()
+                for row in rows
+                if not row["dimensional_attribute_is_surrogate_key"]
+                and not row["dimensional_attribute_is_audit_column"]
+            ],
+            "attribute",
+        ),
+        "entity_details": {
+            "entities": [deepcopy(entities[key]) for key in detail],
+            "attributes": [deepcopy(row) for key in detail for row in attributes.get(key, [])],
+            "relationships": [
+                deepcopy(row)
+                for row in model["relationships"]
+                if _entity_key(row, "dimensional", "from_") in detail
+                or _entity_key(row, "dimensional", "to_") in detail
+            ],
+        },
+        "dimensional_fact_types": _active_types(context, "dimensional", "dimensional_fact_type"),
     }

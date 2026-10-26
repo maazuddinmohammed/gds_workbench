@@ -8,6 +8,14 @@ import pytest
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
+from tests.mcp.conftest import DisposablePostgres
+from tests.mcp.database_test_support import require_row
+from tests.mcp.test_database_workflow_run_lifecycle import (
+    WorkflowContext,
+    _seed_project_input_scope_object_in_zone,
+    seed_workflow_context,
+)
+
 from gds_workbench_api.capabilities import load_default_agent_capabilities
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.project_change_sets.contracts import (
@@ -21,14 +29,6 @@ from gds_workbench_api.features.projects import ProjectRevisionConflictError
 from gds_workbench_api.features.workflows.commands import (
     CreateWorkflowRunRequest,
     DatabaseWorkflowCommandService,
-)
-
-from tests.mcp.conftest import DisposablePostgres
-from tests.mcp.database_test_support import require_row
-from tests.mcp.test_database_workflow_run_lifecycle import (
-    WorkflowContext,
-    _seed_project_input_scope_object_in_zone,
-    seed_workflow_context,
 )
 
 _DEFINITION = "Orders and the customers who place them."
@@ -160,7 +160,7 @@ async def test_subject_area_saves_create_regroup_and_rename_without_deleting(
         )
         with database.connect_owner() as connection:
             after_removal = connection.execute(
-                "SELECT object_id, subject_area_table_status FROM workflow.subject_area_table "
+                "SELECT object_id, subject_area_table_is_active FROM workflow.subject_area_table "
                 "WHERE subject_area_id = %s ORDER BY object_id",
                 (sales_id,),
             ).fetchall()
@@ -220,19 +220,19 @@ async def test_subject_area_saves_create_regroup_and_rename_without_deleting(
     assert (created.project_revision, created.action_count) == (2, 3)
     assert [result.project_revision for result in (removed, added, renamed)] == [3, 4, 5]
     assert after_removal == [
-        {"object_id": orders, "subject_area_table_status": "active"},
-        {"object_id": customers, "subject_area_table_status": "inactive"},
+        {"object_id": orders, "subject_area_table_is_active": True},
+        {"object_id": customers, "subject_area_table_is_active": False},
     ]
     with database.connect_owner() as connection:
         areas = connection.execute(
             "SELECT subject_area_id, subject_area_name, subject_area_definition, "
-            "subject_area_status, workflow_run_id FROM workflow.subject_area "
+            "subject_area_is_active, workflow_run_id FROM workflow.subject_area "
             "WHERE project_id = %s ORDER BY subject_area_id",
             (context.project_id,),
         ).fetchall()
         memberships = connection.execute(
             "SELECT area.subject_area_name, membership.object_id, "
-            "membership.subject_area_table_status "
+            "membership.subject_area_table_is_active "
             "FROM workflow.subject_area_table AS membership "
             "JOIN workflow.subject_area AS area USING (subject_area_id) "
             "WHERE membership.project_id = %s "
@@ -244,21 +244,21 @@ async def test_subject_area_saves_create_regroup_and_rename_without_deleting(
             "subject_area_id": sales_id,
             "subject_area_name": "Sales",
             "subject_area_definition": _DEFINITION,
-            "subject_area_status": "inactive",
+            "subject_area_is_active": False,
             "workflow_run_id": None,
         },
         {
             "subject_area_id": commerce_id,
             "subject_area_name": "Commerce",
             "subject_area_definition": _DEFINITION,
-            "subject_area_status": "active",
+            "subject_area_is_active": True,
             "workflow_run_id": None,
         },
     ]
     # Re-adding customers reactivated its one Sales membership row before the rename.
     assert memberships == [
-        {"subject_area_name": name, "object_id": table, "subject_area_table_status": status}
-        for name, status in (("Sales", "inactive"), ("Commerce", "active"))
+        {"subject_area_name": name, "object_id": table, "subject_area_table_is_active": active}
+        for name, active in (("Sales", False), ("Commerce", True))
         for table in (orders, customers, payments)
     ]
 
@@ -296,7 +296,7 @@ async def test_subject_area_save_replays_its_key_and_rejects_a_different_body(
     assert conflict == "review_conflict"
 
 
-async def test_subject_area_run_must_select_the_whole_active_bronze_scope(
+async def test_subject_area_run_selects_all_or_some_active_bronze_scope_objects(
     web_postgres_database: DisposablePostgres,
 ) -> None:
     database = web_postgres_database
@@ -327,30 +327,28 @@ async def test_subject_area_run_must_select_the_whole_active_bronze_scope(
 
     await runtime.open()
     try:
-        for selection in (
-            list(context.selected_object_ids[:2]),
-            [*context.selected_object_ids, source_table],
-        ):
-            with pytest.raises(InvalidRequestError):
-                await commands.create_run(
-                    principal,
-                    tenant_id=context.tenant_id,
-                    project_id=context.project_id,
-                    correlation_id=uuid4(),
-                    command=selecting(selection),
-                )
+        # A Source-zone table is not Bronze Scope, so it cannot be grouped.
+        with pytest.raises(InvalidRequestError):
+            await commands.create_run(
+                principal,
+                tenant_id=context.tenant_id,
+                project_id=context.project_id,
+                correlation_id=uuid4(),
+                command=selecting([*context.selected_object_ids, source_table]),
+            )
+        # Some of the Bronze Scope is a valid run; the other tables keep their areas.
         created = await commands.create_run(
             principal,
             tenant_id=context.tenant_id,
             project_id=context.project_id,
             correlation_id=uuid4(),
-            command=selecting(list(reversed(context.selected_object_ids))),
+            command=selecting(list(reversed(context.selected_object_ids[:2]))),
         )
     finally:
         await runtime.close()
 
     assert created.created and created.workflow_run_state == "queued"
-    assert created.selected_scope_count == len(context.selected_object_ids)
+    assert created.selected_scope_count == 2
     with database.connect_owner() as connection:
         runs = connection.execute(
             "SELECT workflow_run_id FROM application.workflow_run WHERE project_id = %s",

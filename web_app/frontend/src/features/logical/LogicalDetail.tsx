@@ -1,7 +1,9 @@
 import { SourceMappings } from "../projects/SourceMappings";
 import { EntityAttributes } from "../projects/EntityAttributes";
+import { EntitySubjectAreas } from "../projects/EntitySubjectAreas";
+import { ModelSubjectAreaView } from "../projects/ModelSubjectAreas";
 import { useEffect, useRef, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 
 import { DetailState, Fact } from "../../shared/ui";
@@ -9,7 +11,6 @@ import type {
   LogicalAttributeDetail,
   LogicalEntityDetail,
   LogicalRelationshipDetail,
-  LogicalSubmodelDetail,
 } from "./api";
 import { formatRequiredDateTime as formatDateTime } from "../../shared/presentation";
 import { logicalQueryKeys, type LogicalApi } from "./api";
@@ -38,6 +39,50 @@ export function LogicalEntityDetailPage({
   if (query.isPending) return <DetailState label="Loading Logical Entity…" />;
   if (query.isError) return <DetailState label="Logical Entity details could not be loaded." error />;
   return <LogicalEntityView actions={actions} projectRevision={projectRevision} hasTenantLock={hasTenantLock} api={api} tenantId={tenantId} projectId={projectId} entity={query.data} />;
+}
+
+/** One Subject Area's active Logical Entities, each opening the usual Entity page. */
+export function LogicalSubjectAreaPage({ api, tenantId, projectId, projectRevision, subjectAreaId }: {
+  api: LogicalApi;
+  tenantId: number;
+  projectId: number;
+  projectRevision: number;
+  subjectAreaId: number;
+}) {
+  // Same cache entry as the Subject Areas tab.
+  const areasQuery = useQuery({
+    queryKey: logicalQueryKeys.subjectAreas(tenantId, projectId),
+    queryFn: () => api.listLogicalSubjectAreas(tenantId, projectId),
+  });
+  const filters = { subjectAreaId, active: true };
+  const entitiesQuery = useInfiniteQuery({
+    queryKey: logicalQueryKeys.entities(tenantId, projectId, filters),
+    queryFn: ({ pageParam }) => api.listLogicalEntities(tenantId, projectId, filters, 200, pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+  });
+  if (areasQuery.isPending) return <DetailState label="Loading Subject Area…" />;
+  if (areasQuery.isError) return <DetailState label="Subject Area could not be loaded." error />;
+  const area = areasQuery.data.items.find((item) => item.subject_area_id === subjectAreaId);
+  if (!area) return <DetailState label="This Subject Area is not active. Return to Logical and refresh." error />;
+  return <ModelSubjectAreaView layer="logical" tenantId={tenantId} projectId={projectId} area={area}
+    entities={(entitiesQuery.data?.pages.flatMap((page) => page.items) ?? []).map((entity) => ({
+      id: entity.logical_entity_id,
+      schema: entity.logical_entity_schema_name,
+      name: entity.logical_entity_name,
+      type: humanize(entity.logical_entity_type),
+      active: entity.logical_entity_is_active,
+      locked: entity.logical_entity_is_locked,
+      updatedAt: entity.updated_at,
+    }))}
+    state={{
+      isLoading: entitiesQuery.isPending,
+      isError: entitiesQuery.isError,
+      revisionMismatch: areasQuery.data.project_revision !== projectRevision
+        || (entitiesQuery.data?.pages.some((page) => page.project_revision !== projectRevision) ?? false),
+    }}
+    hasMore={entitiesQuery.hasNextPage} isLoadingMore={entitiesQuery.isFetchingNextPage}
+    onLoadMore={() => void entitiesQuery.fetchNextPage()} />;
 }
 
 export function LogicalAttributeDetailPage({
@@ -93,28 +138,6 @@ export function LogicalRelationshipDetailPage({
   );
 }
 
-export function LogicalSubmodelDetailPage({
-  actions,
-  api,
-  tenantId,
-  projectId,
-  submodelId,
-}: {
-  actions?: ReactNode;
-  api: LogicalApi;
-  tenantId: number;
-  projectId: number;
-  submodelId: number;
-}) {
-  const query = useQuery({
-    queryKey: logicalQueryKeys.submodel(tenantId, projectId, submodelId),
-    queryFn: () => api.readLogicalSubmodel(tenantId, projectId, submodelId),
-  });
-  if (query.isPending) return <DetailState label="Loading Logical Submodel…" />;
-  if (query.isError) return <DetailState label="Logical Submodel details could not be loaded." error />;
-  return <LogicalSubmodelView actions={actions} tenantId={tenantId} projectId={projectId} submodel={query.data} />;
-}
-
 function LogicalEntityView({
   actions,
   api,
@@ -139,7 +162,7 @@ function LogicalEntityView({
         tenantId={tenantId} projectId={projectId}
         recordId={entity.logical_entity_id}
         title={`${entity.logical_entity_schema_name}.${entity.logical_entity_name}`}
-        status={entity.logical_entity_status}
+        active={entity.logical_entity_is_active}
         locked={entity.logical_entity_is_locked}
       />
 
@@ -149,41 +172,14 @@ function LogicalEntityView({
           <div className="is-definition"><dt>Definition</dt><dd>{entity.logical_entity_definition}</dd></div>
           <Fact label="Grain" value={entity.logical_entity_grain} />
           <Fact label="Type" value={humanize(entity.logical_entity_type)} />
-          <Fact label="Type detail" value={entity.logical_entity_type_detail ?? "Not specified"} />
           <Fact label="Dependency order" value={String(entity.logical_entity_dependency_order)} />
+          <EntitySubjectAreas tenantId={tenantId} projectId={projectId} areas={entity.subject_areas} />
           <Fact label="Updated" value={formatDateTime(entity.updated_at)} />
         </dl>
       </section>
 
       <EntityAttributes projectRevision={projectRevision} hasTenantLock={hasTenantLock} api={api} layer="logical" tenantId={tenantId} projectId={projectId} entityId={entity.logical_entity_id} />
       <SourceMappings sources={entity.sources} />
-
-      <details className="detail-section detail-disclosure" aria-labelledby="logical-submodel-membership">
-        <summary>
-          <h2 id="logical-submodel-membership">Submodel membership</h2>
-          <span>{entity.submodels.length} records</span>
-        </summary>
-        {entity.submodels.length === 0 ? (
-          <p className="detail-empty">No Submodel membership is recorded.</p>
-        ) : (
-          <div className="table-scroll" role="region" aria-label="Scrollable Submodel memberships" tabIndex={0}>
-            <table aria-label="Submodel memberships">
-              <thead><tr><th>Submodel</th><th>Status</th><th>Lock</th></tr></thead>
-              <tbody>{entity.submodels.map((membership) => (
-                <tr key={membership.logical_entity_submodel_id}>
-                  <td><Link className="text-action" to="/tenants/$tenantId/projects/$projectId/logical/submodels/$submodelId"
-                    params={{ tenantId: String(tenantId), projectId: String(projectId), submodelId: String(membership.logical_submodel_id) }}>
-                    {membership.logical_submodel_name}
-                  </Link></td>
-                  <td>{humanize(membership.membership_status)}</td>
-                  <td>{membership.membership_is_locked ? "Locked" : "Open"}</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>
-        )}
-      </details>
-
     </article>
   );
 }
@@ -208,7 +204,7 @@ function LogicalAttributeView({
         parentEntityId={attribute.logical_entity_id}
         recordId={attribute.logical_attribute_id}
         title={attribute.logical_attribute_name}
-        status={attribute.logical_attribute_status}
+        active={attribute.logical_attribute_is_active}
         locked={attribute.logical_attribute_is_locked}
       />
       <section className="detail-section detail-primary" aria-labelledby="logical-attribute-overview">
@@ -235,6 +231,7 @@ function LogicalAttributeView({
   );
 }
 
+/** A Relationship points from the child Entity's foreign key to the parent Entity's key. */
 function LogicalRelationshipView({
   actions,
   tenantId,
@@ -246,6 +243,8 @@ function LogicalRelationshipView({
   projectId: number;
   relationship: LogicalRelationshipDetail;
 }) {
+  const from = `${relationship.from_logical_entity_schema_name}.${relationship.from_logical_entity_name}`;
+  const to = `${relationship.to_logical_entity_schema_name}.${relationship.to_logical_entity_name}`;
   return (
     <article className="workflow-detail-page logical-detail-page modeled-detail-page page-enter">
       <LogicalDetailHeader
@@ -253,87 +252,31 @@ function LogicalRelationshipView({
         tenantId={tenantId}
         projectId={projectId}
         recordId={relationship.logical_relationship_id}
-        title={relationship.logical_relationship_name}
-        status={relationship.logical_relationship_status}
+        title={`${from}.${relationship.from_logical_attribute_name} → ${to}.${relationship.to_logical_attribute_name}`}
+        active={relationship.logical_relationship_is_active}
         locked={relationship.logical_relationship_is_locked}
       />
       <section className="detail-section detail-primary" aria-labelledby="logical-relationship-overview">
         <header><h2 id="logical-relationship-overview">Relationship definition</h2></header>
         <dl className="modeled-detail-fields">
-          <div className="is-definition"><dt>Definition</dt><dd>{relationship.logical_relationship_definition}</dd></div>
-          <Fact label="From Attribute" value={`${relationship.from_logical_entity_schema_name}.${relationship.from_logical_entity_name}.${relationship.from_logical_attribute_name}`} />
-          <Fact label="To Attribute" value={`${relationship.to_logical_entity_schema_name}.${relationship.to_logical_entity_name}.${relationship.to_logical_attribute_name}`} />
+          <div><dt>From Entity</dt><dd>
+            <Link className="text-action" to="/tenants/$tenantId/projects/$projectId/logical/entities/$entityId"
+              params={{ tenantId: String(tenantId), projectId: String(projectId), entityId: String(relationship.from_logical_entity_id) }}>
+              {from}
+            </Link>
+          </dd></div>
+          <Fact label="Foreign key Attribute" value={relationship.from_logical_attribute_name} />
+          <div><dt>To Entity</dt><dd>
+            <Link className="text-action" to="/tenants/$tenantId/projects/$projectId/logical/entities/$entityId"
+              params={{ tenantId: String(tenantId), projectId: String(projectId), entityId: String(relationship.to_logical_entity_id) }}>
+              {to}
+            </Link>
+          </dd></div>
+          <Fact label="Key Attribute" value={relationship.to_logical_attribute_name} />
           <Fact label="Cardinality" value={humanize(relationship.logical_relationship_cardinality)} />
+          <div className="is-definition"><dt>Basis</dt><dd>{relationship.logical_relationship_basis}</dd></div>
           <Fact label="Updated" value={formatDateTime(relationship.updated_at)} />
         </dl>
-      </section>
-      <section className="detail-section" aria-labelledby="logical-relationship-reasoning">
-        <header><h2 id="logical-relationship-reasoning">Reasoning</h2></header>
-        <dl className="modeled-detail-fields">
-          <Fact label="Relationship basis" value={relationship.logical_relationship_basis} />
-          <Fact label="Cardinality basis" value={relationship.logical_relationship_cardinality_basis} />
-        </dl>
-      </section>
-    </article>
-  );
-}
-
-function LogicalSubmodelView({
-  actions,
-  tenantId,
-  projectId,
-  submodel,
-}: {
-  actions?: ReactNode;
-  tenantId: number;
-  projectId: number;
-  submodel: LogicalSubmodelDetail;
-}) {
-  return (
-    <article className="workflow-detail-page logical-detail-page modeled-detail-page page-enter">
-      <LogicalDetailHeader
-        actions={actions}
-        tenantId={tenantId}
-        projectId={projectId}
-        recordId={submodel.logical_submodel_id}
-        title={submodel.logical_submodel_name}
-        status={submodel.logical_submodel_status}
-        locked={submodel.logical_submodel_is_locked}
-      />
-      <section className="detail-section detail-primary" aria-labelledby="logical-submodel-overview">
-        <header><h2 id="logical-submodel-overview">Submodel definition</h2></header>
-        <dl className="modeled-detail-fields">
-          <div className="is-definition"><dt>Definition</dt><dd>{submodel.logical_submodel_definition}</dd></div>
-          <Fact label="Entities" value={String(submodel.entity_count)} />
-          <Fact label="Updated" value={formatDateTime(submodel.updated_at)} />
-        </dl>
-      </section>
-      <section className="detail-section" aria-labelledby="logical-submodel-entities">
-        <header>
-          <h2 id="logical-submodel-entities">Member entities</h2>
-          <span>{submodel.entities.length} records</span>
-        </header>
-        {submodel.entities.length === 0 ? (
-          <p className="detail-empty">No member entities are recorded.</p>
-        ) : (
-          <div className="table-scroll" role="region" aria-label="Scrollable Member entities" tabIndex={0}>
-            <table aria-label="Member entities">
-              <thead><tr><th>Entity</th><th>Type</th><th>Entity status</th><th>Membership status</th><th>Entity ID</th></tr></thead>
-              <tbody>{submodel.entities.map((membership) => (
-                <tr key={membership.logical_entity_submodel_id}>
-                  <td><Link className="text-action" to="/tenants/$tenantId/projects/$projectId/logical/entities/$entityId"
-                    params={{ tenantId: String(tenantId), projectId: String(projectId), entityId: String(membership.logical_entity_id) }}>
-                    {membership.logical_entity_schema_name}.{membership.logical_entity_name}
-                  </Link></td>
-                  <td>{humanize(membership.logical_entity_type)}</td>
-                  <td>{humanize(membership.logical_entity_status)}</td>
-                  <td>{humanize(membership.membership_status)}</td>
-                  <td>{membership.logical_entity_id}</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>
-        )}
       </section>
     </article>
   );
@@ -345,7 +288,7 @@ function LogicalDetailHeader({
   projectId,
   recordId,
   title,
-  status,
+  active,
   locked,
   parentEntityId,
 }: {
@@ -354,7 +297,7 @@ function LogicalDetailHeader({
   projectId: number;
   recordId: number;
   title: string;
-  status: string;
+  active: boolean;
   locked: boolean;
   parentEntityId?: number;
 }) {
@@ -375,7 +318,7 @@ function LogicalDetailHeader({
       </div>
       <div className="workflow-command-actions">
         <div className="detail-badge-stack">
-          <span className={`status-badge ${statusTone(status)}`}>{humanize(status)}</span>
+          <span className={`status-badge ${active ? "is-success" : "is-neutral"}`}>{active ? "Active" : "Inactive"}</span>
           <span className="status-badge is-neutral">{locked ? "Locked" : "Open"}</span>
         </div>
         {actions}
@@ -386,9 +329,4 @@ function LogicalDetailHeader({
 
 function humanize(value: string): string {
   return value.replaceAll("_", " ").replace(/^./, (character) => character.toLocaleUpperCase());
-}
-
-function statusTone(status: string): string {
-  if (status === "active") return "is-success";
-  return "is-neutral";
 }

@@ -24,11 +24,12 @@ from gds_etl_workbench.application.modeling.enrichment import (
 )
 from gds_etl_workbench.application.modeling.modeled_layer import (
     DIMENSIONAL,
+    DIMENSIONAL_FACT_TYPES_SQL,
     LOGICAL,
+    LOGICAL_ENTITY_TYPES_SQL,
     attributes_sql,
     entities_sql,
     relationships_sql,
-    submodels_sql,
 )
 from gds_etl_workbench.application.modeling.profiling_analysis import (
     ANALYSIS_SQL,
@@ -58,11 +59,11 @@ type ReadableProjectDataset = Literal[
     "context_record",
     "subject_area",
     "subject_area_table",
-    "logical_submodel",
+    "logical_entity_type",
     "logical_entity",
     "logical_attribute",
     "logical_relationship",
-    "dimensional_submodel",
+    "dimensional_fact_type",
     "dimensional_entity",
     "dimensional_attribute",
     "dimensional_relationship",
@@ -213,6 +214,10 @@ async def _read_dataset(
         )
     if dataset == "context_type":
         return await transaction.fetch_all(TYPES_SQL, (limit, offset))
+    if dataset == "logical_entity_type":
+        return await transaction.fetch_all(LOGICAL_ENTITY_TYPES_SQL, (limit, offset))
+    if dataset == "dimensional_fact_type":
+        return await transaction.fetch_all(DIMENSIONAL_FACT_TYPES_SQL, (limit, offset))
     if dataset == "context_group":
         return await transaction.fetch_all(GROUPS_SQL, (project_id, limit, offset))
     if dataset == "context_record":
@@ -228,11 +233,6 @@ async def _read_dataset(
     if layer in {"logical", "dimensional"}:
         config = LOGICAL if layer == "logical" else DIMENSIONAL
         empty_ids: list[int] = []
-        if kind == "submodel":
-            return await transaction.fetch_all(
-                submodels_sql(config),
-                (project_id, limit, offset),
-            )
         if kind == "entity":
             return await transaction.fetch_all(
                 entities_sql(config),

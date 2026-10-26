@@ -1,106 +1,137 @@
-"""Logical inputs describe exact source evidence and applied layer history."""
+"""Logical Build and Optimize stages read their own input sets from the actual call context."""
 
 # pyright: reportPrivateUsage=false
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import pytest
 from gds_etl_workbench.domain.errors import InvalidRequestError
+from jsonschema import Draft202012Validator
+from pydantic import JsonValue
+from tests.mcp.project_test_fixtures import complete_project_graph, snapshot_from_graph
+from tests.web_backend.test_logical_executor import (
+    _context_bundle,
+    _plan,
+    _saved_customer,
+    _validation_context,
+)
+
+from gds_workbench_api.features.workflows.authoring.context import (
+    AgentContextBundle,
+    InMemoryAgentContextToolCatalog,
+    focus_subject_area,
+    modeled_layer_dependencies,
+)
+from gds_workbench_api.features.workflows.authoring.context_contracts import WORKFLOW_INPUTS
 from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
-    get_prompt_input_contract,
+    list_prompt_input_contracts,
     project_prompt_input_values,
 )
 from gds_workbench_api.prompt_rendering import PromptVariableDefinition
-from jsonschema import Draft202012Validator
-from pydantic import JsonValue
 
-from tests.web_backend.test_logical_executor import _context_bundle, _plan
 
-NAMES = {
-    "one_shot": (
-        "project_brief",
-        "selected_metadata",
-        "profile_evidence",
-        "context_records",
-        "analysis_evidence",
-        "applied_logical",
-    ),
-    "tool_assisted": ("project_identity", "evidence_datasets"),
-}
+def _call_bundle(mode: str, operation: Literal["build", "optimize"]) -> AgentContextBundle:
+    """The bundle one agent call receives, over a saved Customer built from customer_raw."""
+    loaded = _validation_context(
+        _context_bundle(mode=mode, operation=operation), graph=_saved_customer()
+    )
+    if operation == "optimize":
+        return loaded
+    plan = _plan(mode=mode)
+    assert loaded.snapshot is not None
+    focused = focus_subject_area(
+        loaded, plan=plan, subject_area=plan.subject_areas[0], logical=loaded.snapshot.logical
+    )
+    assert focused is not None
+    return focused
 
 
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
-def test_logical_inputs_match_actual_context_and_documented_examples(mode: str) -> None:
-    plan = _plan(mode=mode)
-    prefix = f"workflow.logical.{mode}.candidate_authoring.inputs."
+@pytest.mark.parametrize("operation", ["build", "optimize"])
+def test_stage_inputs_match_actual_context_and_documented_contracts(
+    mode: str, operation: Literal["build", "optimize"]
+) -> None:
+    stage_code = f"{operation}_authoring"
+    contracts = list_prompt_input_contracts(
+        project_workflow="logical", workflow_execution_mode=mode, stage_code=stage_code
+    )
+    input_set = "logical" if operation == "build" else "logical_optimize"
+    assert [contract.name for contract in contracts] == list(WORKFLOW_INPUTS[input_set])
+    plan = _plan(mode=mode, operation=operation)
     stage = plan.stages[0].model_copy(
         update={
-            "variables": (
-                *plan.stages[0].variables,
-                *(
-                    PromptVariableDefinition(
-                        name=name,
-                        resolver_key=prefix + name,
-                        data_type="json",
-                        is_required=False,
-                    )
-                    for name in NAMES[mode]
-                ),
+            "variables": tuple(
+                PromptVariableDefinition(
+                    name=contract.name,
+                    resolver_key=contract.resolver_key,
+                    data_type=contract.data_type,
+                    is_required=False,
+                )
+                for contract in contracts
             )
         }
     )
     plan = plan.model_copy(update={"stages": (stage,)})
-    context = _context_bundle(mode=mode).embedded_context
+    bundle = _call_bundle(mode, operation)
+    context = bundle.embedded_context
     before = deepcopy(context)
-    legacy = {"legacy": context, "project.naming_instructions": "Keep supplied names."}
-    values = project_prompt_input_values(
-        plan=plan, stage=stage, context=context, resolver_values=legacy
-    )
-    assert context == before and values["legacy"] is context
-    assert values["project.naming_instructions"] is legacy["project.naming_instructions"]
-    assert set(values) - set(legacy) == {prefix + name for name in NAMES[mode]}
-    for name in NAMES[mode]:
-        contract = get_prompt_input_contract(
-            project_workflow="logical",
-            workflow_execution_mode=mode,
-            stage_code="candidate_authoring",
-            resolver_key=prefix + name,
-        )
-        assert contract is not None
-        schema = cast(Any, Draft202012Validator(contract.value_schema))
-        assert not list(schema.iter_errors(contract.example))
-        assert not list(schema.iter_errors(values[prefix + name]))
-    if mode == "one_shot":
-        assert values[prefix + "applied_logical"] is None
-        broken = cast(dict[str, JsonValue], deepcopy(context))
-        broken.pop("applied")
-        with pytest.raises(InvalidRequestError):
-            project_prompt_input_values(
-                plan=plan, stage=stage, context=broken, resolver_values=legacy
-            )
 
+    values = project_prompt_input_values(
+        plan=plan,
+        stage=stage,
+        context=context,
+        resolver_values={},
+        precomputed_values=bundle.tool_catalog.prompt_values if bundle.tool_catalog else None,
+    )
+
+    assert context == before
+    for contract in contracts:
+        schema = cast(Any, Draft202012Validator(contract.value_schema))
+        assert not list(schema.iter_errors(contract.example)), contract.name
+        assert not list(schema.iter_errors(values[contract.resolver_key])), contract.name
+    prefix = f"workflow.logical.common.{stage_code}.inputs."
+    assert values[prefix + "table_index"] == [
+        {
+            "table": "t1",
+            "tenant_code": "NWA",
+            "system_code": "CRM",
+            "connection_code": "SOURCE",
+            "object_schema": "bronze",
+            "object_name": "customer_raw",
+        }
+    ]
+    if operation == "build":
+        assert values[prefix + "subject_area_context"] == {
+            "name": "Customers",
+            "definition": "Customers business area.",
+            "input_count": 1,
+        }
+        # The saved Customer is built from this area's table, so it is shown in full.
+        existing = cast(dict[str, Any], values[prefix + "existing_entities"])
+        assert [(entity["name"], entity["sources"]) for entity in existing["entities"]] == [
+            ("Customer", ["t1"])
+        ]
+        assert values[prefix + "neighbor_entities"] == []
+        assert values[prefix + "entity_directory"] == []
     else:
+        summary = cast(dict[str, Any], values[prefix + "model_summary"])
+        assert [
+            (entity["name"], entity["subject_areas"], entity["sources"])
+            for entity in summary["entities"]
+        ] == [("Customer", ["Customers"], ["t1"])]
+        for finding in ("unlinked_analysis_edges", "type_conflicts", "name_variants"):
+            assert values[prefix + finding] == []
+    if mode == "one_shot":
+        # A frozen input that no longer matches its contract fails closed.
         broken = cast(dict[str, JsonValue], deepcopy(context))
-        broken["project_workflow"] = "analysis"
+        cast(dict[str, JsonValue], broken["prompt_inputs"])["table_index"] = "t1"
         with pytest.raises(InvalidRequestError):
-            project_prompt_input_values(
-                plan=plan, stage=stage, context=broken, resolver_values=legacy
-            )
+            project_prompt_input_values(plan=plan, stage=stage, context=broken, resolver_values={})
 
 
 def test_logical_manifest_contains_actual_applied_and_downstream_datasets() -> None:
-    from gds_workbench_api.features.workflows.authoring.context import (
-        InMemoryAgentContextToolCatalog,
-        modeled_layer_dependencies,
-    )
-
-    from tests.mcp.project_test_fixtures import (
-        complete_project_graph,
-        snapshot_from_graph,
-    )
-
     snapshot = snapshot_from_graph(complete_project_graph())
     context = _context_bundle(mode="tool_assisted").context
     context = context.model_copy(
@@ -117,30 +148,15 @@ def test_logical_manifest_contains_actual_applied_and_downstream_datasets() -> N
         max_catalog_bytes=1024 * 1024,
         max_page_records=20,
     )
-    plan = _plan(mode="tool_assisted")
-    prefix = "workflow.logical.tool_assisted.candidate_authoring.inputs."
-    stage = plan.stages[0].model_copy(
-        update={
-            "variables": (
-                PromptVariableDefinition(
-                    name="evidence_datasets",
-                    resolver_key=prefix + "evidence_datasets",
-                    data_type="json",
-                    is_required=False,
-                ),
-            )
-        }
-    )
-    projected = project_prompt_input_values(
-        plan=plan, stage=stage, context=catalog.manifest, resolver_values={}
-    )
-    datasets = {
-        item["dataset"]
-        for item in cast(list[dict[str, Any]], projected[prefix + "evidence_datasets"])
-    }
+
+    datasets = cast(dict[str, Any], catalog.manifest)["dataset_counts"]
+
     assert {
         "logical_entity",
         "logical_attribute",
+        "logical_relationship",
         "read_only_mapping_object",
         "read_only_generated_code",
-    } <= datasets
+    } <= set(datasets)
+    # Subject Areas choose tables; they are not datasets of a Logical context.
+    assert not {"subject_area", "subject_area_table"} & set(datasets)

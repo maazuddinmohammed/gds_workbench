@@ -34,13 +34,9 @@ from gds_workbench_api.features.logical.read_contracts import (
     LogicalRelationshipNotFoundError,
     LogicalRelationshipPage,
     LogicalRelationshipSummary,
-    LogicalSubmodelDetail,
-    LogicalSubmodelEntityMembership,
-    LogicalSubmodelMembership,
-    LogicalSubmodelNotFoundError,
-    LogicalSubmodelPage,
-    LogicalSubmodelSummary,
     ModeledFilters,
+    ModelSubjectArea,
+    ModelSubjectAreaPage,
 )
 from gds_workbench_api.features.projects import ProjectNotFoundError
 
@@ -59,7 +55,7 @@ SELECT entity.logical_entity_id,
        entity.logical_entity_name,
        entity.logical_entity_type,
        entity.logical_entity_dependency_order,
-       entity.logical_entity_status,
+       entity.logical_entity_is_active,
        entity.logical_entity_is_locked,
        entity.updated_time AS updated_at
   FROM workflow.logical_entity AS entity
@@ -68,7 +64,7 @@ SELECT entity.logical_entity_id,
  WHERE target_project.tenant_id = %s
    AND target_project.project_id = %s
    AND target_project.is_active
-   AND (%s::VARCHAR IS NULL OR entity.logical_entity_status = %s)
+   AND (%s::BOOLEAN IS NULL OR entity.logical_entity_is_active = %s)
    AND (%s::BOOLEAN IS NULL OR entity.logical_entity_is_locked = %s)
    AND (
        %s::VARCHAR IS NULL
@@ -85,12 +81,15 @@ SELECT entity.logical_entity_id,
        %s::BIGINT IS NULL
        OR EXISTS (
            SELECT 1
-             FROM workflow.logical_entity_submodel AS membership
-            WHERE membership.project_id = entity.project_id
-              AND membership.logical_entity_id = entity.logical_entity_id
-              AND membership.logical_submodel_id = %s
-              AND membership.logical_entity_submodel_status
-                  = 'active'
+             FROM workflow.logical_entity_source_mapping AS source
+             JOIN workflow.subject_area_table AS member
+               ON member.project_id = source.project_id
+              AND member.object_id = source.source_object_id
+              AND member.subject_area_table_is_active
+            WHERE source.project_id = entity.project_id
+              AND source.logical_entity_id = entity.logical_entity_id
+              AND source.logical_entity_source_mapping_is_active
+              AND member.subject_area_id = %s
        )
    )
  ORDER BY entity.logical_entity_dependency_order,
@@ -106,10 +105,9 @@ SELECT entity.logical_entity_id,
        entity.logical_entity_name,
        entity.logical_entity_definition,
        entity.logical_entity_type,
-       entity.logical_entity_type_detail,
        entity.logical_entity_grain,
        entity.logical_entity_dependency_order,
-       entity.logical_entity_status,
+       entity.logical_entity_is_active,
        entity.logical_entity_is_locked,
        entity.created_time AS created_at,
        entity.updated_time AS updated_at
@@ -122,40 +120,84 @@ SELECT entity.logical_entity_id,
    AND entity.logical_entity_id = %s
 """
 
-_LOGICAL_ENTITY_SUBMODELS_SQL: LiteralString = """
-SELECT membership.logical_entity_submodel_id,
-       membership.workflow_run_id,
-       submodel.logical_submodel_id,
-       submodel.logical_submodel_name,
-       membership.logical_entity_submodel_status AS membership_status,
-       membership.logical_entity_submodel_is_locked AS membership_is_locked,
-       membership.created_time AS created_at,
-       membership.updated_time AS updated_at
-  FROM workflow.logical_entity_submodel AS membership
-  JOIN workflow.logical_entity AS entity
-    ON entity.logical_entity_id = membership.logical_entity_id
-   AND entity.project_id = membership.project_id
-  JOIN workflow.logical_submodel AS submodel
-    ON submodel.logical_submodel_id = membership.logical_submodel_id
-   AND submodel.project_id = membership.project_id
+# Active Subject Areas with their active Objects and the active Entities sourced from them.
+_LOGICAL_SUBJECT_AREAS_SQL: LiteralString = """
+SELECT area.subject_area_id,
+       area.subject_area_name,
+       area.subject_area_definition,
+       (
+           SELECT count(*)
+             FROM workflow.subject_area_table AS member
+            WHERE member.project_id = area.project_id
+              AND member.subject_area_id = area.subject_area_id
+              AND member.subject_area_table_is_active
+       ) AS table_count,
+       (
+           SELECT count(*)
+             FROM workflow.logical_entity AS entity
+            WHERE entity.project_id = area.project_id
+              AND entity.logical_entity_is_active
+              AND EXISTS (
+                  SELECT 1
+                    FROM workflow.logical_entity_source_mapping AS source
+                    JOIN workflow.subject_area_table AS member
+                      ON member.project_id = source.project_id
+                     AND member.object_id = source.source_object_id
+                     AND member.subject_area_table_is_active
+                   WHERE source.project_id = entity.project_id
+                     AND source.logical_entity_id = entity.logical_entity_id
+                     AND source.logical_entity_source_mapping_is_active
+                     AND member.subject_area_id = area.subject_area_id
+              )
+       ) AS entity_count
+  FROM workflow.subject_area AS area
   JOIN project.project AS target_project
-    ON target_project.project_id = membership.project_id
+    ON target_project.project_id = area.project_id
  WHERE target_project.tenant_id = %s
    AND target_project.project_id = %s
    AND target_project.is_active
-   AND membership.logical_entity_id = %s
- ORDER BY lower(btrim(submodel.logical_submodel_name)),
-          membership.logical_entity_submodel_id
+   AND area.subject_area_is_active
+ ORDER BY lower(btrim(area.subject_area_name)),
+          area.subject_area_id
+ LIMIT 1001
+"""
+
+# An Entity's Subject Areas are worked out from its active Object sources, never stored.
+_LOGICAL_ENTITY_SUBJECT_AREAS_SQL: LiteralString = """
+SELECT area.subject_area_id,
+       area.subject_area_name
+  FROM workflow.subject_area AS area
+  JOIN project.project AS target_project
+    ON target_project.project_id = area.project_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
+   AND area.subject_area_is_active
+   AND EXISTS (
+       SELECT 1
+         FROM workflow.subject_area_table AS member
+         JOIN workflow.logical_entity_source_mapping AS source
+           ON source.project_id = member.project_id
+          AND source.source_object_id = member.object_id
+          AND source.logical_entity_source_mapping_is_active
+        WHERE member.project_id = area.project_id
+          AND member.subject_area_id = area.subject_area_id
+          AND member.subject_area_table_is_active
+          AND source.logical_entity_id = %s
+   )
+ ORDER BY lower(btrim(area.subject_area_name)),
+          area.subject_area_id
  LIMIT %s
 """
 
 LOGICAL_ENTITY_SOURCES_SQL: LiteralString = """
 SELECT source.logical_entity_source_mapping_id,
        source.workflow_run_id,
-       source.support_source_type,
-       source.logical_entity_source_mapping_order AS source_order,
+       CASE WHEN source.source_object_id IS NOT NULL THEN 'object'
+            ELSE 'context_record'
+       END AS support_source_type,
        source.logical_entity_source_mapping_rationale AS rationale,
-       source.logical_entity_source_mapping_status AS status,
+       source.logical_entity_source_mapping_is_active AS is_active,
        source.logical_entity_source_mapping_is_locked AS is_locked,
        source.created_time AS created_at,
        source.updated_time AS updated_at,
@@ -205,7 +247,7 @@ SELECT source.logical_entity_source_mapping_id,
    AND target_project.is_active
    AND source.logical_entity_id = %s
    AND (
-       source.support_source_type <> 'object'
+       source.source_object_id IS NULL
        OR source_eligibility.object_id IS NOT NULL
    )
  ORDER BY source.logical_entity_source_mapping_id
@@ -225,7 +267,7 @@ SELECT attribute.logical_attribute_id,
        attribute.logical_attribute_is_surrogate_key,
        attribute.logical_attribute_ordinal_position,
        attribute.logical_attribute_is_audit_column,
-       attribute.logical_attribute_status,
+       attribute.logical_attribute_is_active,
        attribute.logical_attribute_is_locked,
        attribute.updated_time AS updated_at
   FROM workflow.logical_attribute AS attribute
@@ -237,7 +279,7 @@ SELECT attribute.logical_attribute_id,
  WHERE target_project.tenant_id = %s
    AND target_project.project_id = %s
    AND target_project.is_active
-   AND (%s::VARCHAR IS NULL OR attribute.logical_attribute_status = %s)
+   AND (%s::BOOLEAN IS NULL OR attribute.logical_attribute_is_active = %s)
    AND (%s::BOOLEAN IS NULL OR attribute.logical_attribute_is_locked = %s)
    AND (
        %s::VARCHAR IS NULL
@@ -271,7 +313,7 @@ SELECT attribute.logical_attribute_id,
        attribute.logical_attribute_is_surrogate_key,
        attribute.logical_attribute_ordinal_position,
        attribute.logical_attribute_is_audit_column,
-       attribute.logical_attribute_status,
+       attribute.logical_attribute_is_active,
        attribute.logical_attribute_is_locked,
        attribute.created_time AS created_at,
        attribute.updated_time AS updated_at
@@ -291,10 +333,11 @@ LOGICAL_ATTRIBUTE_SOURCES_SQL: LiteralString = """
 SELECT source.logical_attribute_source_mapping_id,
        source.workflow_run_id,
        source.logical_entity_source_mapping_id,
-       source.support_source_type,
-       source.logical_attribute_source_mapping_order AS source_order,
+       CASE WHEN source.source_attribute_id IS NOT NULL THEN 'attribute'
+            ELSE 'context_record'
+       END AS support_source_type,
        source.logical_attribute_source_mapping_rationale AS rationale,
-       source.logical_attribute_source_mapping_status AS status,
+       source.logical_attribute_source_mapping_is_active AS is_active,
        source.logical_attribute_source_mapping_is_locked AS is_locked,
        source.created_time AS created_at,
        source.updated_time AS updated_at,
@@ -351,7 +394,7 @@ SELECT source.logical_attribute_source_mapping_id,
    AND target_project.is_active
    AND source.logical_attribute_id = %s
    AND (
-       source.support_source_type <> 'attribute'
+       source.source_attribute_id IS NULL
        OR source_eligibility.attribute_id IS NOT NULL
    )
  ORDER BY source.logical_attribute_source_mapping_id
@@ -375,9 +418,8 @@ SELECT relationship.logical_relationship_id,
        relationship.logical_relationship_to_attribute_id
            AS to_logical_attribute_id,
        to_attribute.logical_attribute_name AS to_logical_attribute_name,
-       relationship.logical_relationship_name,
        relationship.logical_relationship_cardinality,
-       relationship.logical_relationship_status,
+       relationship.logical_relationship_is_active,
        relationship.logical_relationship_is_locked,
        relationship.updated_time AS updated_at
   FROM workflow.logical_relationship AS relationship
@@ -406,16 +448,16 @@ SELECT relationship.logical_relationship_id,
  WHERE target_project.tenant_id = %s
    AND target_project.project_id = %s
    AND target_project.is_active
-   AND (%s::VARCHAR IS NULL OR relationship.logical_relationship_status = %s)
+   AND (%s::BOOLEAN IS NULL OR relationship.logical_relationship_is_active = %s)
    AND (%s::BOOLEAN IS NULL OR relationship.logical_relationship_is_locked = %s)
    AND (
        %s::VARCHAR IS NULL
-       OR lower(btrim(relationship.logical_relationship_name)) = %s
+       OR lower(btrim(from_attribute.logical_attribute_name)) = %s
    )
    AND (
        %s::VARCHAR IS NULL
        OR left(
-           lower(btrim(relationship.logical_relationship_name)),
+           lower(btrim(from_attribute.logical_attribute_name)),
            char_length(%s)
        ) = %s
    )
@@ -424,7 +466,8 @@ SELECT relationship.logical_relationship_id,
        OR relationship.logical_relationship_from_entity_id = %s
        OR relationship.logical_relationship_to_entity_id = %s
    )
- ORDER BY lower(btrim(relationship.logical_relationship_name)),
+ ORDER BY lower(btrim(from_entity.logical_entity_name)),
+          lower(btrim(from_attribute.logical_attribute_name)),
           relationship.logical_relationship_id
  LIMIT %s OFFSET %s
 """
@@ -446,12 +489,9 @@ SELECT relationship.logical_relationship_id,
        relationship.logical_relationship_to_attribute_id
            AS to_logical_attribute_id,
        to_attribute.logical_attribute_name AS to_logical_attribute_name,
-       relationship.logical_relationship_name,
-       relationship.logical_relationship_definition,
        relationship.logical_relationship_cardinality,
        relationship.logical_relationship_basis,
-       relationship.logical_relationship_cardinality_basis,
-       relationship.logical_relationship_status,
+       relationship.logical_relationship_is_active,
        relationship.logical_relationship_is_locked,
        relationship.created_time AS created_at,
        relationship.updated_time AS updated_at
@@ -484,104 +524,16 @@ SELECT relationship.logical_relationship_id,
    AND relationship.logical_relationship_id = %s
 """
 
-_LOGICAL_SUBMODELS_SQL: LiteralString = """
-SELECT submodel.logical_submodel_id,
-       submodel.workflow_run_id,
-       submodel.logical_submodel_name,
-       submodel.logical_submodel_status,
-       submodel.logical_submodel_is_locked,
-       count(DISTINCT membership.logical_entity_id) FILTER (
-           WHERE membership.logical_entity_submodel_status
-               = 'active'
-       )::INTEGER AS entity_count,
-       submodel.updated_time AS updated_at
-  FROM workflow.logical_submodel AS submodel
-  JOIN project.project AS target_project
-    ON target_project.project_id = submodel.project_id
-  LEFT JOIN workflow.logical_entity_submodel AS membership
-    ON membership.project_id = submodel.project_id
-   AND membership.logical_submodel_id = submodel.logical_submodel_id
- WHERE target_project.tenant_id = %s
-   AND target_project.project_id = %s
-   AND target_project.is_active
-   AND (%s::VARCHAR IS NULL OR submodel.logical_submodel_status = %s)
-   AND (%s::BOOLEAN IS NULL OR submodel.logical_submodel_is_locked = %s)
-   AND (
-       %s::VARCHAR IS NULL
-       OR lower(btrim(submodel.logical_submodel_name)) = %s
-   )
-   AND (
-       %s::VARCHAR IS NULL
-       OR left(
-           lower(btrim(submodel.logical_submodel_name)),
-           char_length(%s)
-       ) = %s
-   )
- GROUP BY submodel.logical_submodel_id
- ORDER BY lower(btrim(submodel.logical_submodel_name)),
-          submodel.logical_submodel_id
- LIMIT %s OFFSET %s
-"""
-
-_LOGICAL_SUBMODEL_DETAIL_SQL: LiteralString = """
-SELECT submodel.logical_submodel_id,
-       submodel.workflow_run_id,
-       submodel.logical_submodel_name,
-       submodel.logical_submodel_definition,
-       submodel.logical_submodel_status,
-       submodel.logical_submodel_is_locked,
-       (
-           SELECT count(DISTINCT membership.logical_entity_id)::INTEGER
-             FROM workflow.logical_entity_submodel AS membership
-            WHERE membership.project_id = submodel.project_id
-              AND membership.logical_submodel_id = submodel.logical_submodel_id
-              AND membership.logical_entity_submodel_status
-                  = 'active'
-       ) AS entity_count,
-       submodel.created_time AS created_at,
-       submodel.updated_time AS updated_at
-  FROM workflow.logical_submodel AS submodel
-  JOIN project.project AS target_project
-    ON target_project.project_id = submodel.project_id
- WHERE target_project.tenant_id = %s
-   AND target_project.project_id = %s
-   AND target_project.is_active
-   AND submodel.logical_submodel_id = %s
-"""
-
-_LOGICAL_SUBMODEL_ENTITIES_SQL: LiteralString = """
-SELECT membership.logical_entity_submodel_id,
-       membership.workflow_run_id,
-       entity.logical_entity_id,
-       entity.logical_entity_schema_name,
-       entity.logical_entity_name,
-       entity.logical_entity_type,
-       entity.logical_entity_status,
-       membership.logical_entity_submodel_status AS membership_status,
-       membership.logical_entity_submodel_is_locked AS membership_is_locked,
-       membership.created_time AS created_at,
-       membership.updated_time AS updated_at
-  FROM workflow.logical_entity_submodel AS membership
-  JOIN workflow.logical_submodel AS submodel
-    ON submodel.logical_submodel_id = membership.logical_submodel_id
-   AND submodel.project_id = membership.project_id
-  JOIN workflow.logical_entity AS entity
-    ON entity.logical_entity_id = membership.logical_entity_id
-   AND entity.project_id = membership.project_id
-  JOIN project.project AS target_project
-    ON target_project.project_id = membership.project_id
- WHERE target_project.tenant_id = %s
-   AND target_project.project_id = %s
-   AND target_project.is_active
-   AND membership.logical_submodel_id = %s
- ORDER BY entity.logical_entity_dependency_order,
-          lower(btrim(entity.logical_entity_name)),
-          membership.logical_entity_submodel_id
- LIMIT %s
-"""
-
 
 class LogicalService(Protocol):
+    async def list_subject_areas(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        project_id: int,
+    ) -> ModelSubjectAreaPage: ...
+
     async def list_entities(
         self,
         principal: RequestPrincipal,
@@ -642,26 +594,6 @@ class LogicalService(Protocol):
         logical_relationship_id: int,
     ) -> LogicalRelationshipDetail: ...
 
-    async def list_submodels(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        project_id: int,
-        filters: ModeledFilters,
-        page_size: int,
-        cursor: str | None,
-    ) -> LogicalSubmodelPage: ...
-
-    async def read_submodel(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        project_id: int,
-        logical_submodel_id: int,
-    ) -> LogicalSubmodelDetail: ...
-
 
 class LogicalReadDatabase(Protocol):
     def read_transaction(
@@ -682,6 +614,35 @@ class DatabaseLogicalService:
         self._database = database
         self._authorizer = authorizer
         self._cursors = CursorCodec(cursor_signing_key)
+
+    async def list_subject_areas(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        project_id: int,
+    ) -> ModelSubjectAreaPage:
+        async with self._database.read_transaction(
+            isolation=ReadIsolation.REPEATABLE_READ
+        ) as transaction:
+            await self._authorizer.authorize_tenant(
+                transaction,
+                principal,
+                tenant_id=tenant_id,
+                policy=ToolPolicy.TENANT_READ,
+                project_id=project_id,
+            )
+            header = await transaction.fetch_one(_PROJECT_HEADER_SQL, (tenant_id, project_id))
+            if header is None:
+                raise ProjectNotFoundError()
+            rows = await transaction.fetch_all(_LOGICAL_SUBJECT_AREAS_SQL, (tenant_id, project_id))
+        if len(rows) > 1_000:
+            raise LogicalDetailLimitExceededError()
+        return ModelSubjectAreaPage(
+            project_id=project_id,
+            project_revision=header["project_revision"],
+            items=tuple(ModelSubjectArea.model_validate(row) for row in rows),
+        )
 
     async def list_entities(
         self,
@@ -751,22 +712,20 @@ class DatabaseLogicalService:
             )
             if row is None:
                 raise LogicalEntityNotFoundError()
-            submodel_rows = await transaction.fetch_all(
-                _LOGICAL_ENTITY_SUBMODELS_SQL,
+            area_rows = await transaction.fetch_all(
+                _LOGICAL_ENTITY_SUBJECT_AREAS_SQL,
                 (tenant_id, project_id, logical_entity_id, MAX_DETAIL_ROWS + 1),
             )
             source_rows = await transaction.fetch_all(
                 LOGICAL_ENTITY_SOURCES_SQL,
                 (tenant_id, project_id, logical_entity_id, MAX_DETAIL_ROWS + 1),
             )
-        if len(submodel_rows) > MAX_DETAIL_ROWS or len(source_rows) > MAX_DETAIL_ROWS:
+        if len(area_rows) > MAX_DETAIL_ROWS or len(source_rows) > MAX_DETAIL_ROWS:
             raise LogicalDetailLimitExceededError()
         return LogicalEntityDetail.model_validate(
             {
                 **row,
-                "submodels": tuple(
-                    LogicalSubmodelMembership.model_validate(item) for item in submodel_rows
-                ),
+                "subject_areas": tuple(area_rows),
                 "sources": tuple(_normalize_entity_source(item) for item in source_rows),
             },
             strict=False,
@@ -951,90 +910,6 @@ class DatabaseLogicalService:
             raise LogicalRelationshipNotFoundError()
         return LogicalRelationshipDetail.model_validate(row)
 
-    async def list_submodels(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        project_id: int,
-        filters: ModeledFilters,
-        page_size: int,
-        cursor: str | None,
-    ) -> LogicalSubmodelPage:
-        filter_digest = sha256(filters.model_dump_json().encode()).hexdigest()
-        collection = f"web_logical_submodels:{tenant_id}:{project_id}:{page_size}:{filter_digest}"
-        offset = self._cursors.decode(cursor, collection=collection)
-        async with self._database.read_transaction(
-            isolation=ReadIsolation.REPEATABLE_READ
-        ) as transaction:
-            await self._authorizer.authorize_tenant(
-                transaction,
-                principal,
-                tenant_id=tenant_id,
-                policy=ToolPolicy.TENANT_READ,
-                project_id=project_id,
-            )
-            header = await transaction.fetch_one(_PROJECT_HEADER_SQL, (tenant_id, project_id))
-            if header is None:
-                raise ProjectNotFoundError()
-            rows = await transaction.fetch_all(
-                _LOGICAL_SUBMODELS_SQL,
-                _list_parameters(tenant_id, project_id, filters, page_size, offset),
-            )
-
-        next_cursor = None
-        if len(rows) > page_size:
-            next_cursor = self._cursors.encode(
-                collection=collection,
-                offset=offset + page_size,
-            )
-        return LogicalSubmodelPage(
-            project_id=project_id,
-            project_revision=header["project_revision"],
-            items=tuple(LogicalSubmodelSummary.model_validate(row) for row in rows[:page_size]),
-            next_cursor=next_cursor,
-        )
-
-    async def read_submodel(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        project_id: int,
-        logical_submodel_id: int,
-    ) -> LogicalSubmodelDetail:
-        async with self._database.read_transaction(
-            isolation=ReadIsolation.REPEATABLE_READ
-        ) as transaction:
-            await self._authorizer.authorize_tenant(
-                transaction,
-                principal,
-                tenant_id=tenant_id,
-                policy=ToolPolicy.TENANT_READ,
-                project_id=project_id,
-            )
-            row = await transaction.fetch_one(
-                _LOGICAL_SUBMODEL_DETAIL_SQL,
-                (tenant_id, project_id, logical_submodel_id),
-            )
-            if row is None:
-                raise LogicalSubmodelNotFoundError()
-            entity_rows = await transaction.fetch_all(
-                _LOGICAL_SUBMODEL_ENTITIES_SQL,
-                (tenant_id, project_id, logical_submodel_id, MAX_DETAIL_ROWS + 1),
-            )
-        if len(entity_rows) > MAX_DETAIL_ROWS:
-            raise LogicalDetailLimitExceededError()
-        return LogicalSubmodelDetail.model_validate(
-            {
-                **row,
-                "entities": tuple(
-                    LogicalSubmodelEntityMembership.model_validate(item) for item in entity_rows
-                ),
-            },
-            strict=False,
-        )
-
 
 def _list_parameters(
     tenant_id: int,
@@ -1046,8 +921,8 @@ def _list_parameters(
     return (
         tenant_id,
         project_id,
-        filters.status,
-        filters.status,
+        filters.active,
+        filters.active,
         filters.locked,
         filters.locked,
         filters.name_exact,
@@ -1070,8 +945,8 @@ def _entity_list_parameters(
     common = _list_parameters(tenant_id, project_id, filters, page_size, offset)
     return (
         *common[:-2],
-        filters.logical_submodel_id,
-        filters.logical_submodel_id,
+        filters.subject_area_id,
+        filters.subject_area_id,
         *common[-2:],
     )
 
@@ -1080,9 +955,8 @@ def _normalize_entity_source(row: Mapping[str, object]) -> LogicalEntitySource:
     common = {
         "logical_entity_source_mapping_id": row["logical_entity_source_mapping_id"],
         "workflow_run_id": row["workflow_run_id"],
-        "source_order": row["source_order"],
         "rationale": row["rationale"],
-        "status": row["status"],
+        "is_active": row["is_active"],
         "is_locked": row["is_locked"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
@@ -1126,9 +1000,8 @@ def _normalize_attribute_source(row: Mapping[str, object]) -> LogicalAttributeSo
     common = {
         "logical_attribute_source_mapping_id": row["logical_attribute_source_mapping_id"],
         "workflow_run_id": row["workflow_run_id"],
-        "source_order": row["source_order"],
         "rationale": row["rationale"],
-        "status": row["status"],
+        "is_active": row["is_active"],
         "is_locked": row["is_locked"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],

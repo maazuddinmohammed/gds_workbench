@@ -56,7 +56,7 @@ const run: WorkflowRunDetail = {
     history_incomplete: false,
   },
   workflow_run_id: 1048, project_workflow: "metadata_enrichment", workflow_execution_mode: "one_shot",
-  modeled_entity_type: null, selected_scope_count: 2, requested_batch_id: null,
+  workflow_operation: null, modeled_entity_type: null, selected_scope_count: 2, requested_batch_id: null,
   workflow_run_state: "completed", actor_display_name: "Fixture user", created_at: "2026-09-05T12:00:00Z",
   started_at: "2026-09-05T12:00:01Z", completed_at: "2026-09-05T12:01:00Z", correlation_id: "fixture-correlation",
   agent_sdk_code: "sdk", agent_provider_code: "provider", agent_model_code: "one-shot",

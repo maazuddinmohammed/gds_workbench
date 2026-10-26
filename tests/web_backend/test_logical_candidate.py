@@ -5,7 +5,6 @@ from copy import deepcopy
 from typing import Any, cast
 
 import pytest
-
 from gds_etl_workbench.application.change_sets.project_validation import (
     PhysicalProjectCatalog,
     ProjectValidationIssue,
@@ -22,12 +21,12 @@ from gds_etl_workbench.domain.snapshots.project import (
     LogicalSection,
     ProjectChangeSetDataset,
 )
-from gds_workbench_api.features.logical.candidate import LogicalCandidateValidator
-from gds_workbench_api.features.logical.policy import project_logical_audit_policy
 from jsonschema import Draft202012Validator
 from pydantic import JsonValue
+from tests.mcp.project_test_fixtures import LOGICAL_ENTITY_TYPES, snapshot_from_graph
 
-from tests.mcp.project_test_fixtures import snapshot_from_graph
+from gds_workbench_api.features.logical.candidate import LogicalCandidateValidator
+from gds_workbench_api.features.logical.policy import project_logical_audit_policy
 
 
 def _object(name: str = "customer_raw") -> PhysicalObjectKey:
@@ -40,9 +39,7 @@ def _object(name: str = "customer_raw") -> PhysicalObjectKey:
     )
 
 
-def _attribute(
-    name: str = "customer_id", table: str = "customer_raw"
-) -> PhysicalAttributeKey:
+def _attribute(name: str = "customer_id", table: str = "customer_raw") -> PhysicalAttributeKey:
     return PhysicalAttributeKey(**_object(table).model_dump(), attribute_name=name)
 
 
@@ -61,19 +58,16 @@ def _validator(
     reserved: tuple[str, ...] = ("Created At",),
     coverage_threshold_percent: int = 70,
 ) -> LogicalCandidateValidator:
-    attributes = tuple(
-        _attribute(column, table) for table in tables for column in _COLUMNS[table]
-    )
+    attributes = tuple(_attribute(column, table) for table in tables for column in _COLUMNS[table])
     return LogicalCandidateValidator(
         selected_object_keys=tuple(_object(table) for table in tables),
         selected_attribute_keys=attributes,
         context_record_ids=(),
         applied=applied,
+        entity_types=LOGICAL_ENTITY_TYPES,
         coverage_threshold_percent=coverage_threshold_percent,
         attribute_descriptions=(
-            {key: f"Source {key.attribute_name}." for key in attributes}
-            if described
-            else {}
+            {key: f"Source {key.attribute_name}." for key in attributes} if described else {}
         ),
         reserved_attribute_names=reserved,
     )
@@ -167,7 +161,6 @@ def _records(
 def _applied(answer: dict[str, Any]) -> LogicalSection:
     records = _records(_validator(), answer)
     return LogicalSection(
-        submodels=(),
         entities=tuple(
             LogicalEntityRecord.model_validate_json(json.dumps(item), strict=True)
             for item in records.get("logical_entity", [])
@@ -203,17 +196,16 @@ async def test_compact_answer_expands_to_complete_logical_records() -> None:
         "logical_relationship",
     ]
     customer, order = records["logical_entity"]
+    # A straight table source needs no rationale.
     assert customer["sources"] == [
         {
             "support_source_type": "object",
             "source_object": _object().model_dump(mode="json"),
-            "source_order": None,
-            "rationale": "Built from bronze.customer_raw.",
-            "status": "active",
+            "rationale": None,
+            "is_active": True,
             "is_locked": False,
         }
     ]
-    assert customer["submodels"] == []
     # Parents come first.
     assert (
         customer["logical_entity_dependency_order"],
@@ -236,22 +228,18 @@ async def test_compact_answer_expands_to_complete_logical_records() -> None:
     assert attributes[("SalesOrder", "CustomerID")]["sources"][0]["rationale"] == (
         "Looked up from Customer by customer_id."
     )
+    # Child -> parent: the child's foreign key references the parent's generated key.
     (relationship,) = records["logical_relationship"]
     assert relationship == {
         "from_logical_entity_schema_name": "silver",
         "to_logical_entity_schema_name": "silver",
-        "logical_relationship_name": "CustomerID",
-        "logical_relationship_definition": "SalesOrder references Customer through CustomerID.",
         "from_logical_entity_name": "SalesOrder",
         "from_logical_attribute_name": "CustomerID",
         "to_logical_entity_name": "Customer",
         "to_logical_attribute_name": "CustomerID",
         "logical_relationship_cardinality": "many_to_one",
         "logical_relationship_basis": "Analysis: orders.customer_id to customers, supported.",
-        "logical_relationship_cardinality_basis": (
-            "Analysis: orders.customer_id to customers, supported."
-        ),
-        "logical_relationship_status": "active",
+        "logical_relationship_is_active": True,
         "logical_relationship_is_locked": False,
     }
 
@@ -324,8 +312,14 @@ async def test_generated_key_and_audit_names_are_reserved() -> None:
 
 async def test_record_rules_are_reported_at_the_answer_path_without_values() -> None:
     answer = _answer()
-    answer["entities"][1]["type"] = "other"
-    answer["entities"][1]["definition"] = "never-copy-this-candidate-value"
+    # The schema allows it, but a Relationship from Customer's own key to Customer has
+    # identical endpoints.
+    answer["relationships"][0]["from"] = {
+        "schema": "silver",
+        "entity": "Customer",
+        "attribute": "CustomerID",
+    }
+    answer["relationships"][0]["basis"] = "never-copy-this-candidate-value"
     validator = _validator()
     assert (
         tuple(
@@ -339,9 +333,22 @@ async def test_record_rules_are_reported_at_the_answer_path_without_values() -> 
     issues = (await validator.validate(cast(JsonValue, answer))).issues
 
     assert [(issue.code, issue.path) for issue in issues] == [
-        ("candidate.cross_field_invalid", ("entities", 1))
+        ("candidate.cross_field_invalid", ("relationships", 0))
     ]
     assert "never-copy-this-candidate-value" not in issues[0].model_dump_json()
+
+
+async def test_entity_types_are_the_snapshot_reference_codes() -> None:
+    answer = _answer()
+    # Retired codes such as "other" are no longer offered or accepted.
+    answer["entities"][1]["type"] = "other"
+    validator = _validator()
+    entity_schema = cast(dict[str, Any], validator.output_schema()["$defs"])["_CompactEntity"]
+
+    assert entity_schema["properties"]["type"]["anyOf"][0] == {"enum": list(LOGICAL_ENTITY_TYPES)}
+    assert await _issues(validator, answer) == {
+        ("candidate.entity_type_unknown", ("entities", 1, "type")),
+    }
 
 
 async def test_saved_records_accept_identity_plus_changes() -> None:
@@ -392,22 +399,8 @@ async def test_saved_records_accept_identity_plus_changes() -> None:
     )
 
 
-async def test_saved_relationship_keeps_its_name_and_unchanged_basis() -> None:
-    applied = _applied(_answer())
-    (saved,) = applied.relationships
-    applied = applied.model_copy(
-        update={
-            "relationships": (
-                saved.model_copy(
-                    update={
-                        "logical_relationship_name": "places",
-                        "logical_relationship_cardinality_basis": "Each order has one customer.",
-                    }
-                ),
-            )
-        }
-    )
-    validator = _validator(applied=applied)
+async def test_saved_relationship_is_staged_only_when_restated_differently() -> None:
+    validator = _validator(applied=_applied(_answer()))
     unchanged = {"entities": [], "relationships": [_relationship()], "retire": []}
     assert _records(validator, unchanged) == {}
 
@@ -417,8 +410,7 @@ async def test_saved_relationship_keeps_its_name_and_unchanged_basis() -> None:
         "retire": [],
     }
     (record,) = _records(validator, changed)["logical_relationship"]
-    assert record["logical_relationship_name"] == "places"
-    assert record["logical_relationship_cardinality_basis"] == "Validated: 0 orphans."
+    assert record["logical_relationship_basis"] == "Validated: 0 orphans."
 
 
 async def test_retiring_an_entity_retires_its_attributes_and_relationships() -> None:
@@ -431,22 +423,20 @@ async def test_retiring_an_entity_retires_its_attributes_and_relationships() -> 
     assert await _issues(validator, answer) == set()
     records = _records(validator, answer)
 
-    assert [item["logical_entity_status"] for item in records["logical_entity"]] == [
-        "inactive"
-    ]
+    assert [item["logical_entity_is_active"] for item in records["logical_entity"]] == [False]
     assert {
-        (item["logical_attribute_name"], item["logical_attribute_status"])
+        (item["logical_attribute_name"], item["logical_attribute_is_active"])
         for item in records["logical_attribute"]
     } == {
-        ("CustomerID", "inactive"),
-        ("SourceCustomerID", "inactive"),
-        ("CustomerName", "inactive"),
+        ("CustomerID", False),
+        ("SourceCustomerID", False),
+        ("CustomerName", False),
     }
     # The retired Entity keeps its saved sources; only the lifecycle changes.
-    assert records["logical_entity"][0]["sources"][0]["status"] == "active"
-    assert [
-        item["logical_relationship_status"] for item in records["logical_relationship"]
-    ] == ["inactive"]
+    assert records["logical_entity"][0]["sources"][0]["is_active"] is True
+    assert [item["logical_relationship_is_active"] for item in records["logical_relationship"]] == [
+        False
+    ]
 
 
 async def test_retirements_name_saved_records_only() -> None:
@@ -518,9 +508,7 @@ async def test_saved_history_outside_the_selection_is_kept_and_never_restated(
     assert await _issues(validator, extended) == expected
     if not locked:
         (entity,) = _records(validator, extended)["logical_entity"]
-        assert [
-            source["source_object"]["object_name"] for source in entity["sources"]
-        ] == [
+        assert [source["source_object"]["object_name"] for source in entity["sources"]] == [
             "customer_raw",
             "new_selected_raw",
         ]
@@ -533,9 +521,7 @@ async def test_saved_history_outside_the_selection_is_kept_and_never_restated(
     }
     duplicate = deepcopy(echo)
     duplicate["entities"].append(deepcopy(echo["entities"][0]))
-    assert ("candidate.duplicate_record", ("entities", 1)) in await _issues(
-        validator, duplicate
-    )
+    assert ("candidate.duplicate_record", ("entities", 1)) in await _issues(validator, duplicate)
 
 
 async def test_locked_saved_records_cannot_change() -> None:
@@ -549,9 +535,7 @@ async def test_locked_saved_records_cannot_change() -> None:
         }
     )
     answer = {
-        "entities": [
-            {"schema": "silver", "name": "Customer", "definition": "Changed."}
-        ],
+        "entities": [{"schema": "silver", "name": "Customer", "definition": "Changed."}],
         "relationships": [],
         "retire": [],
     }
@@ -572,9 +556,7 @@ async def test_coverage_names_missing_tables_by_short_id() -> None:
         "candidate.object_coverage_incomplete",
         ("entities",),
     )
-    assert issue.source_refs == (
-        {"table": "t2", **_object("order_raw").model_dump(mode="json")},
-    )
+    assert issue.source_refs == ({"table": "t2", **_object("order_raw").model_dump(mode="json")},)
     assert validator.validate_coverage(cast(JsonValue, _answer())) == ()
 
 
@@ -663,9 +645,7 @@ def test_expanded_answer_passes_policy_projection_and_whole_graph_validation() -
     )
     attributes = frozenset(
         (
-            *tuple(
-                str(value).casefold() for value in _object(table).model_dump().values()
-            ),
+            *tuple(str(value).casefold() for value in _object(table).model_dump().values()),
             column,
         )
         for table in tables
@@ -730,9 +710,8 @@ def test_compact_answer_is_a_fraction_of_the_expanded_records() -> None:
         selected_attribute_keys=keys,
         context_record_ids=(),
         applied=None,
-        attribute_descriptions={
-            key: f"Business meaning of {key.attribute_name}." for key in keys
-        },
+        entity_types=LOGICAL_ENTITY_TYPES,
+        attribute_descriptions={key: f"Business meaning of {key.attribute_name}." for key in keys},
     )
     entities: list[dict[str, Any]] = []
     relationships: list[dict[str, Any]] = []

@@ -133,6 +133,31 @@
       }
     },
     {
+      "id": "logical-subject-area-build",
+      "rubric": "Build one Subject Area's Logical model",
+      "request": "Build the Logical model for the Customer Orders Subject Area. SQL policy: Never. Keep the work local; do not submit it.",
+      "workspace": "project",
+      "sql_policy": "never",
+      "expect": {
+        "skills_read_any": [
+          "atlas-logical-model"
+        ],
+        "forbidden_tools": [
+          "execute_databricks_sql",
+          "start_profiling_run"
+        ],
+        "required_helper_commands": [
+          "coverage"
+        ],
+        "forbidden_files": [
+          "project-change-set/subject_area*.json",
+          "project-change-set/dimensional_*.json",
+          "project-change-set/mapping_*.json",
+          "metadata-change-set/*.json"
+        ]
+      }
+    },
+    {
       "id": "logical-validate-only",
       "rubric": "Validate a logical model; no Mapping",
       "request": "Validate the logical model. Do not generate SQL Validation checks or change anything.",

@@ -13,10 +13,6 @@ Providers determine supported input capacity; their failures become safe workflo
 diagnostics. Candidate validation and persistence limits remain separate. `analysis_validation.json` controls bounded
 relationship validation queries and progress reporting. `profiling.json` bounds
 Profiling query size, concurrency, and execution time.
-`subject_areas.json` caps the total column count of one Subject Area
-(`max_subject_area_columns`, default 300) so each Logical Build call fits one answer.
-Subject Area runs receive the cap as a prompt input and reject larger areas with repair
-feedback.
 
 Both execution modes allow 1–100 agent turns per authoring attempt and 0–25
 validation retries. Defaults are 50 turns and 5 retries; saved user selections

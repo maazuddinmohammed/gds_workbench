@@ -15,6 +15,7 @@ import { WorkflowTokenUsage } from "../workflows/WorkflowTokenUsage";
 import { RunStateBadge } from "../workflows/presentation";
 import { workflowRunQueryKeys, type WorkflowCreationApi, type WorkflowRunMonitorApi } from "../workflows/api";
 import type { EnrichmentEditFields, ReviewEnrichmentCommand, MetadataEnrichmentTransport } from "./api";
+import { RefreshButton } from "../../shared/ui";
 
 type EnrichmentApi = WorkflowCreationApi & WorkflowRunMonitorApi & MetadataEnrichmentTransport
   & Pick<ProjectInputScopeApi, "listProjectInputScope" | "readProjectInputScopeObject">
@@ -150,7 +151,7 @@ export function MetadataEnrichmentScreen({ api, tenantId, project, hasTenantLock
       <div className="workflow-command-actions">
         <WorkflowCommandTools />
         <button type="button" className="button button-secondary button-small" disabled={download.isPending || busy} onClick={() => download.mutate()}>{download.isPending ? "Exporting…" : "Export"}</button>
-        <button className="button button-secondary button-small" type="button" disabled={busy || objects.isFetching || detail.isFetching} onClick={() => void refresh()}>Refresh</button>
+        <RefreshButton refreshing={objects.isFetching || detail.isFetching} disabled={busy || objects.isFetching || detail.isFetching} onClick={() => void refresh()} />
         {objectId === null ? <WorkflowMenu label="Run" primary>
         <button className={`button button-${objectId === null ? "secondary" : "primary"} button-small`} type="button" disabled={!hasTenantLock || busy || refreshRequired || changed || (objectId !== null && (!current || current.is_locked || current.source_tenant_id !== tenantId))} title={hasTenantLock ? undefined : "Owned Tenant Lock required"} onClick={() => setRunDialog("attribute")}>Run attribute enrichment</button>
         {objectId === null ? <button className="button button-primary button-small" type="button" disabled={!hasTenantLock || busy || refreshRequired || changed} title={hasTenantLock ? undefined : "Owned Tenant Lock required"} onClick={() => setRunDialog("object")}>Run object enrichment</button> : null}

@@ -163,30 +163,24 @@ def build_project_ddl(
             + f"\n) USING DELTA\nCOMMENT {table_comment}\n"
             + "TBLPROPERTIES ('delta.columnMapping.mode' = 'name');"
         )
-    seen: set[tuple[object, str, object, str]] = set()
+    # Relationships point child -> parent: the from column is the foreign key and the
+    # to column is the parent's key. Unity Catalog references only a primary key.
     for relation in relationships:
-        left = (relation["from_entity_id"], str(relation["from_attribute_name"]))
-        right = (relation["to_entity_id"], str(relation["to_attribute_name"]))
-        if left[0] not in tables or right[0] not in tables:
+        child = (relation["from_entity_id"], str(relation["from_attribute_name"]))
+        parent = (relation["to_entity_id"], str(relation["to_attribute_name"]))
+        if child[0] not in tables or parent[0] not in tables:
             lines.append("-- Relationship omitted: its other Entity is outside this export.")
             continue
-        if keys.get(right[0]) == right[1]:
-            child, parent = left, right
-        elif keys.get(left[0]) == left[1]:
-            child, parent = right, left
-        else:
+        if keys.get(parent[0]) != parent[1]:
             lines.append(
                 "-- Relationship retained in the Project: "
-                "no single generated key endpoint for a foreign key."
+                "its parent column is not the parent table's generated key."
             )
-            continue
-        if child == parent or (*child, *parent) in seen:
             continue
         if types.get(child) != types.get(parent) or child not in types:
             raise InvalidRequestError(
                 "A relationship has missing columns or incompatible Databricks types."
             )
-        seen.add((*child, *parent))
         lines.append(
             f"ALTER TABLE {names[child[0]]} ADD FOREIGN KEY ({_identifier(child[1])}) "
             f"REFERENCES {names[parent[0]]} ({_identifier(parent[1])}) NOT ENFORCED;"

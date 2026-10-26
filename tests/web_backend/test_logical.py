@@ -16,6 +16,7 @@ from gds_etl_workbench.infrastructure.postgres import ReadIsolation
 from gds_workbench_api.features.logical import (
     ContextRecordReference,
     DatabaseLogicalService,
+    EntitySubjectArea,
     LogicalAttributeDetail,
     LogicalAttributeFilters,
     LogicalAttributePage,
@@ -31,12 +32,8 @@ from gds_workbench_api.features.logical import (
     LogicalRelationshipFilters,
     LogicalRelationshipPage,
     LogicalRelationshipSummary,
-    LogicalSubmodelDetail,
-    LogicalSubmodelEntityMembership,
-    LogicalSubmodelMembership,
-    LogicalSubmodelPage,
-    LogicalSubmodelSummary,
-    ModeledFilters,
+    ModelSubjectArea,
+    ModelSubjectAreaPage,
     PhysicalAttributeReference,
     PhysicalObjectReference,
     create_logical_router,
@@ -45,6 +42,24 @@ from gds_workbench_api.features.logical import (
 
 class StaticLogicalService:
     filters: LogicalEntityFilters | None = None
+
+    async def list_subject_areas(
+        self, principal: RequestPrincipal, *, tenant_id: int, project_id: int
+    ) -> ModelSubjectAreaPage:
+        assert (tenant_id, project_id) == (7, 18)
+        return ModelSubjectAreaPage(
+            project_id=18,
+            project_revision=4,
+            items=(
+                ModelSubjectArea(
+                    subject_area_id=41,
+                    subject_area_name="Sales",
+                    subject_area_definition="Customer orders.",
+                    table_count=3,
+                    entity_count=2,
+                ),
+            ),
+        )
 
     async def list_entities(
         self,
@@ -70,7 +85,7 @@ class StaticLogicalService:
                     logical_entity_name="Customer",
                     logical_entity_type="core",
                     logical_entity_dependency_order=0,
-                    logical_entity_status="active",
+                    logical_entity_is_active=True,
                     logical_entity_is_locked=False,
                     updated_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
                 ),
@@ -95,24 +110,14 @@ class StaticLogicalService:
             logical_entity_name="Customer",
             logical_entity_definition="One governed customer.",
             logical_entity_type="core",
-            logical_entity_type_detail=None,
             logical_entity_grain="One row per customer.",
             logical_entity_dependency_order=0,
-            logical_entity_status="active",
+            logical_entity_is_active=True,
             logical_entity_is_locked=False,
             created_at=datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
             updated_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
-            submodels=(
-                LogicalSubmodelMembership(
-                    logical_entity_submodel_id=201,
-                    workflow_run_id=None,
-                    logical_submodel_id=301,
-                    logical_submodel_name="Customer Domain",
-                    membership_status="active",
-                    membership_is_locked=False,
-                    created_at=datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
-                    updated_at=datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
-                ),
+            subject_areas=(
+                EntitySubjectArea(subject_area_id=301, subject_area_name="Customer"),
             ),
             sources=(
                 LogicalObjectSource(
@@ -127,9 +132,8 @@ class StaticLogicalService:
                         object_schema="bronze_crm",
                         object_name="customer_raw",
                     ),
-                    source_order=1,
                     rationale="Supplies Customer identity.",
-                    status="active",
+                    is_active=True,
                     is_locked=False,
                     created_at=datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
                     updated_at=datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
@@ -146,9 +150,8 @@ class StaticLogicalService:
                         source_reference=None,
                         status="active",
                     ),
-                    source_order=None,
-                    rationale="Defines the grain.",
-                    status="active",
+                    rationale=None,
+                    is_active=True,
                     is_locked=True,
                     created_at=datetime(2026, 8, 24, 13, 1, tzinfo=UTC),
                     updated_at=datetime(2026, 8, 24, 13, 1, tzinfo=UTC),
@@ -169,7 +172,7 @@ class StaticLogicalService:
         assert principal.actor_kind is ActorKind.HUMAN
         assert (tenant_id, project_id, page_size, cursor) == (7, 18, 25, None)
         assert filters == LogicalAttributeFilters(
-            status="active",
+            active=True,
             name_exact="customer id",
             logical_entity_id=101,
         )
@@ -190,7 +193,7 @@ class StaticLogicalService:
                     logical_attribute_is_surrogate_key=True,
                     logical_attribute_ordinal_position=1,
                     logical_attribute_is_audit_column=False,
-                    logical_attribute_status="active",
+                    logical_attribute_is_active=True,
                     logical_attribute_is_locked=False,
                     updated_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
                 ),
@@ -222,7 +225,7 @@ class StaticLogicalService:
             logical_attribute_is_surrogate_key=True,
             logical_attribute_ordinal_position=1,
             logical_attribute_is_audit_column=False,
-            logical_attribute_status="active",
+            logical_attribute_is_active=True,
             logical_attribute_is_locked=False,
             created_at=datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
             updated_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
@@ -242,9 +245,8 @@ class StaticLogicalService:
                         object_name="customer_raw",
                         attribute_name="customer_id",
                     ),
-                    source_order=1,
                     rationale="Maps the stable Customer identifier.",
-                    status="active",
+                    is_active=True,
                     is_locked=False,
                     created_at=datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
                     updated_at=datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
@@ -264,7 +266,7 @@ class StaticLogicalService:
     ) -> LogicalRelationshipPage:
         assert principal.actor_kind is ActorKind.HUMAN
         assert filters == LogicalRelationshipFilters(
-            status="inactive",
+            active=False,
             locked=True,
             logical_entity_id=102,
         )
@@ -288,9 +290,7 @@ class StaticLogicalService:
         relationship = self._relationship()
         return LogicalRelationshipDetail(
             **relationship.model_dump(),
-            logical_relationship_definition="Each Order references one Customer.",
             logical_relationship_basis="The governed Customer key appears on Order.",
-            logical_relationship_cardinality_basis="Observed and asserted key usage.",
             created_at=datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
         )
 
@@ -309,77 +309,10 @@ class StaticLogicalService:
             to_logical_entity_name="Customer",
             to_logical_attribute_id=701,
             to_logical_attribute_name="Customer ID",
-            logical_relationship_name="Order references Customer",
             logical_relationship_cardinality="many_to_one",
-            logical_relationship_status="active",
+            logical_relationship_is_active=True,
             logical_relationship_is_locked=True,
             updated_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
-        )
-
-    async def list_submodels(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        project_id: int,
-        filters: ModeledFilters,
-        page_size: int,
-        cursor: str | None,
-    ) -> LogicalSubmodelPage:
-        assert principal.actor_kind is ActorKind.HUMAN
-        assert filters == ModeledFilters(status="active", name_prefix="customer")
-        return LogicalSubmodelPage(
-            project_id=18,
-            project_revision=4,
-            items=(
-                LogicalSubmodelSummary(
-                    logical_submodel_id=301,
-                    workflow_run_id=None,
-                    logical_submodel_name="Customer Domain",
-                    logical_submodel_status="active",
-                    logical_submodel_is_locked=False,
-                    entity_count=1,
-                    updated_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
-                ),
-            ),
-            next_cursor=None,
-        )
-
-    async def read_submodel(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        project_id: int,
-        logical_submodel_id: int,
-    ) -> LogicalSubmodelDetail:
-        assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, project_id, logical_submodel_id) == (7, 18, 301)
-        return LogicalSubmodelDetail(
-            logical_submodel_id=301,
-            workflow_run_id=None,
-            logical_submodel_name="Customer Domain",
-            logical_submodel_definition="Customer-facing governed entities.",
-            logical_submodel_status="active",
-            logical_submodel_is_locked=False,
-            entity_count=1,
-            created_at=datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
-            updated_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
-            entities=(
-                LogicalSubmodelEntityMembership(
-                    logical_entity_submodel_id=201,
-                    workflow_run_id=None,
-                    logical_entity_id=101,
-                    logical_entity_schema_name="silver",
-                    logical_entity_name="Customer",
-                    logical_entity_type="core",
-                    logical_entity_status="active",
-                    membership_status="active",
-                    membership_is_locked=False,
-                    created_at=datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
-                    updated_at=datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
-                ),
-            ),
         )
 
 
@@ -405,26 +338,64 @@ def test_logical_entity_collection_normalizes_review_filters() -> None:
         response = client.get(
             "/api/v1/tenants/7/projects/18/logical/entities",
             params={
-                "status": "INACTIVE",
+                "active": "false",
                 "locked": "false",
                 "name_prefix": "  Cust  ",
-                "logical_submodel_id": "301",
+                "subject_area_id": "301",
                 "page_size": "25",
             },
         )
 
     assert response.status_code == 200
-    assert response.json()["items"][0]["workflow_run_id"] is None
-    assert response.json()["items"][0]["logical_entity_name"] == "Customer"
+    item = response.json()["items"][0]
+    assert item["workflow_run_id"] is None
+    assert item["logical_entity_name"] == "Customer"
+    assert item["logical_entity_is_active"] is True
+    assert "logical_entity_status" not in item
     assert service.filters == LogicalEntityFilters(
-        status="inactive",
+        active=False,
         locked=False,
         name_prefix="cust",
-        logical_submodel_id=301,
+        subject_area_id=301,
     )
 
 
-def test_logical_entity_detail_returns_all_normalized_memberships_and_sources() -> None:
+@pytest.mark.parametrize(
+    "params",
+    [{"status": "active"}, {"logical_submodel_id": "301"}, {"active": "maybe"}],
+)
+def test_logical_entity_collection_rejects_retired_filters(params: dict[str, str]) -> None:
+    app = FastAPI()
+    app.include_router(
+        create_logical_router(
+            identity_provider=_identity_provider(),
+            service=StaticLogicalService(),
+        )
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/tenants/7/projects/18/logical/entities", params=params)
+
+    assert response.status_code == 422
+
+
+def test_logical_submodel_routes_are_gone() -> None:
+    app = FastAPI()
+    app.include_router(
+        create_logical_router(
+            identity_provider=_identity_provider(),
+            service=StaticLogicalService(),
+        )
+    )
+
+    with TestClient(app) as client:
+        collection = client.get("/api/v1/tenants/7/projects/18/logical/submodels")
+        detail = client.get("/api/v1/tenants/7/projects/18/logical/submodels/301")
+
+    assert (collection.status_code, detail.status_code) == (404, 404)
+
+
+def test_logical_entity_detail_returns_derived_subject_areas_and_sources() -> None:
     app = FastAPI()
     app.include_router(
         create_logical_router(
@@ -439,8 +410,16 @@ def test_logical_entity_detail_returns_all_normalized_memberships_and_sources() 
     assert response.status_code == 200
     payload = response.json()
     assert payload["workflow_run_id"] is None
-    assert payload["submodels"][0]["logical_submodel_name"] == "Customer Domain"
+    assert payload["subject_areas"] == [
+        {"subject_area_id": 301, "subject_area_name": "Customer"}
+    ]
+    assert "submodels" not in payload
+    assert "logical_entity_type_detail" not in payload
+    assert payload["sources"][0]["support_source_type"] == "object"
     assert payload["sources"][0]["source_object"]["object_name"] == "customer_raw"
+    assert payload["sources"][0]["is_active"] is True
+    assert "source_order" not in payload["sources"][0]
+    assert payload["sources"][1]["rationale"] is None
     assert payload["sources"][1]["context_record"] == {
         "context_record_id": "f6c97e13-4665-53e0-aa01-865c4b35e7b2",
         "context_group_name": "customer_rules",
@@ -466,7 +445,7 @@ def test_logical_attribute_collection_and_detail_use_exact_normalized_sources() 
         collection = client.get(
             "/api/v1/tenants/7/projects/18/logical/attributes",
             params={
-                "status": "ACTIVE",
+                "active": "true",
                 "name_exact": "  Customer ID  ",
                 "logical_entity_id": "101",
                 "page_size": "25",
@@ -495,7 +474,7 @@ def test_logical_relationship_collection_and_detail_return_named_endpoints() -> 
         collection = client.get(
             "/api/v1/tenants/7/projects/18/logical/relationships",
             params={
-                "status": "INACTIVE",
+                "active": "false",
                 "locked": "true",
                 "logical_entity_id": "102",
             },
@@ -506,32 +485,14 @@ def test_logical_relationship_collection_and_detail_return_named_endpoints() -> 
     item = collection.json()["items"][0]
     assert item["from_logical_entity_name"] == "Order"
     assert item["to_logical_attribute_name"] == "Customer ID"
+    assert item["logical_relationship_is_active"] is True
+    assert "logical_relationship_name" not in item
     assert detail.status_code == 200
-    assert detail.json()["logical_relationship_cardinality_basis"] == (
-        "Observed and asserted key usage."
+    assert detail.json()["logical_relationship_basis"] == (
+        "The governed Customer key appears on Order."
     )
-
-
-def test_logical_submodel_collection_and_detail_return_bounded_memberships() -> None:
-    app = FastAPI()
-    app.include_router(
-        create_logical_router(
-            identity_provider=_identity_provider(),
-            service=StaticLogicalService(),
-        )
-    )
-
-    with TestClient(app) as client:
-        collection = client.get(
-            "/api/v1/tenants/7/projects/18/logical/submodels",
-            params={"status": "ACTIVE", "name_prefix": " Customer "},
-        )
-        detail = client.get("/api/v1/tenants/7/projects/18/logical/submodels/301")
-
-    assert collection.status_code == 200
-    assert collection.json()["items"][0]["entity_count"] == 1
-    assert detail.status_code == 200
-    assert detail.json()["entities"][0]["logical_entity_name"] == "Customer"
+    assert "logical_relationship_definition" not in detail.json()
+    assert "logical_relationship_cardinality_basis" not in detail.json()
 
 
 class LogicalCollectionTransaction:
@@ -573,13 +534,17 @@ class LogicalCollectionTransaction:
         assert "FROM workflow.logical_entity AS entity" in query
         assert "JOIN project.project AS target_project" in query
         assert "target_project.tenant_id = %s" in query
-        assert "FROM workflow.logical_entity_submodel AS membership" in query
-        assert "membership.logical_entity_submodel_status" in query
+        assert "entity.logical_entity_is_active = %s" in query
+        # The area filter follows active Object sources to the area's active members.
+        assert "JOIN workflow.subject_area_table AS member" in query
+        assert "member.subject_area_table_is_active" in query
+        assert "source.logical_entity_source_mapping_is_active" in query
+        assert "submodel" not in query
         assert parameters[:11] == (
             7,
             18,
-            "active",
-            "active",
+            True,
+            True,
             False,
             False,
             None,
@@ -600,7 +565,7 @@ class LogicalCollectionTransaction:
                 "logical_entity_name": "Customer",
                 "logical_entity_type": "core",
                 "logical_entity_dependency_order": 0,
-                "logical_entity_status": "active",
+                "logical_entity_is_active": True,
                 "logical_entity_is_locked": False,
                 "updated_at": datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
             },
@@ -611,7 +576,7 @@ class LogicalCollectionTransaction:
                 "logical_entity_name": "Customer Account",
                 "logical_entity_type": "association",
                 "logical_entity_dependency_order": 1,
-                "logical_entity_status": "active",
+                "logical_entity_is_active": True,
                 "logical_entity_is_locked": False,
                 "updated_at": datetime(2026, 8, 24, 14, 1, tzinfo=UTC),
             },
@@ -649,10 +614,10 @@ async def test_database_logical_entities_are_tenant_authorized_and_cursor_bound(
         entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
     )
     filters = LogicalEntityFilters(
-        status="active",
+        active=True,
         locked=False,
         name_prefix="cust",
-        logical_submodel_id=301,
+        subject_area_id=301,
     )
 
     first = await service.list_entities(
@@ -682,9 +647,162 @@ async def test_database_logical_entities_are_tenant_authorized_and_cursor_bound(
             principal,
             tenant_id=7,
             project_id=18,
-            filters=LogicalEntityFilters(
-                name_prefix="account", logical_submodel_id=301
-            ),
+            filters=LogicalEntityFilters(name_prefix="account", subject_area_id=301),
             page_size=1,
             cursor=first.next_cursor,
         )
+
+
+class LogicalDetailTransaction:
+    async def fetch_one(
+        self,
+        query: LiteralString,
+        parameters: tuple[Any, ...] = (),
+    ) -> dict[str, Any] | None:
+        if "FROM workflow.logical_entity AS entity" in query:
+            assert parameters == (7, 18, 101)
+            assert "logical_entity_type_detail" not in query
+            return {
+                "logical_entity_id": 101,
+                "workflow_run_id": None,
+                "logical_entity_schema_name": "silver",
+                "logical_entity_name": "Customer",
+                "logical_entity_definition": "One governed customer.",
+                "logical_entity_type": "core",
+                "logical_entity_grain": "One row per customer.",
+                "logical_entity_dependency_order": 0,
+                "logical_entity_is_active": True,
+                "logical_entity_is_locked": False,
+                "created_at": datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
+                "updated_at": datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
+            }
+        return await LogicalCollectionTransaction().fetch_one(query, parameters)
+
+    async def fetch_all(
+        self,
+        query: LiteralString,
+        parameters: tuple[Any, ...] = (),
+    ) -> list[dict[str, Any]]:
+        if "SELECT DISTINCT object.source_tenant_id" in query:
+            return []
+        if "core.tenant AS tenant" in query and "effective_role" in query:
+            return []
+        assert parameters == (7, 18, 101, 2001)
+        if "FROM workflow.subject_area AS area" in query:
+            # Only active areas whose active members hold an active Object source.
+            assert "area.subject_area_is_active" in query
+            assert "member.subject_area_table_is_active" in query
+            assert "source.logical_entity_source_mapping_is_active" in query
+            return [{"subject_area_id": 301, "subject_area_name": "Customer"}]
+        assert "FROM workflow.logical_entity_source_mapping AS source" in query
+        assert "source.support_source_type" not in query
+        assert "WHEN source.source_object_id IS NOT NULL THEN 'object'" in query
+        common = {
+            "workflow_run_id": None,
+            "is_active": True,
+            "is_locked": False,
+            "created_at": datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
+            "updated_at": datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
+            "source_object_id": None,
+            "source_tenant_code": None,
+            "source_system_code": None,
+            "source_connection_code": None,
+            "source_object_schema": None,
+            "source_object_name": None,
+            "context_record_id": None,
+            "context_group_name": None,
+            "context_type_name": None,
+            "context_text": None,
+            "source_reference": None,
+            "context_record_status": None,
+        }
+        return [
+            {
+                **common,
+                "logical_entity_source_mapping_id": 401,
+                "support_source_type": "object",
+                "rationale": None,
+                "source_object_id": 501,
+                "source_tenant_code": "GRDM",
+                "source_system_code": "CRM",
+                "source_connection_code": "crm_prod",
+                "source_object_schema": "bronze_crm",
+                "source_object_name": "customer_raw",
+            },
+            {
+                **common,
+                "logical_entity_source_mapping_id": 402,
+                "support_source_type": "context_record",
+                "rationale": "Defines the grain.",
+                "is_active": False,
+                "context_record_id": "f6c97e13-4665-53e0-aa01-865c4b35e7b2",
+                "context_group_name": "customer_rules",
+                "context_type_name": "Business Rules",
+                "context_text": "One row represents one Customer.",
+                "context_record_status": "active",
+            },
+        ]
+
+
+class LogicalDetailDatabase:
+    @asynccontextmanager
+    async def read_transaction(
+        self,
+        *,
+        isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
+    ) -> AsyncGenerator[LogicalDetailTransaction]:
+        assert isolation is ReadIsolation.REPEATABLE_READ
+        yield LogicalDetailTransaction()
+
+
+@pytest.mark.asyncio
+async def test_database_logical_entity_detail_derives_subject_areas_and_source_kinds() -> None:
+    service = DatabaseLogicalService(
+        database=LogicalDetailDatabase(),
+        authorizer=AuthorizationService(),
+        cursor_signing_key=b"development-only-key-32-bytes-long",
+    )
+    principal = RequestPrincipal(
+        actor_kind=ActorKind.HUMAN,
+        entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+        entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
+    )
+
+    detail = await service.read_entity(
+        principal, tenant_id=7, project_id=18, logical_entity_id=101
+    )
+
+    assert detail.subject_areas == (
+        EntitySubjectArea(subject_area_id=301, subject_area_name="Customer"),
+    )
+    object_source, context_source = detail.sources
+    assert isinstance(object_source, LogicalObjectSource)
+    assert object_source.rationale is None
+    assert object_source.source_object.object_name == "customer_raw"
+    assert isinstance(context_source, LogicalContextSource)
+    assert context_source.is_active is False
+
+
+def test_logical_subject_areas_list_each_area_with_its_entity_count() -> None:
+    app = FastAPI()
+    app.include_router(
+        create_logical_router(identity_provider=_identity_provider(), service=StaticLogicalService())
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/tenants/7/projects/18/logical/subject-areas")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "project_id": 18,
+        "project_revision": 4,
+        "items": [
+            {
+                "subject_area_id": 41,
+                "subject_area_name": "Sales",
+                "subject_area_definition": "Customer orders.",
+                "table_count": 3,
+                "entity_count": 2,
+            }
+        ],
+    }

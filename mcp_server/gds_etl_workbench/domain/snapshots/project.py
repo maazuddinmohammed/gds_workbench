@@ -15,14 +15,14 @@ from gds_etl_workbench.domain.modeling_records import (
     ContextTypeRecord,
     DimensionalAttributeRecord,
     DimensionalEntityRecord,
+    DimensionalFactTypeRecord,
     DimensionalRelationshipRecord,
-    DimensionalSubmodelRecord,
     GeneratedCodeRecord,
     GeneratedCodeSourceSystemRecord,
     LogicalAttributeRecord,
     LogicalEntityRecord,
+    LogicalEntityTypeRecord,
     LogicalRelationshipRecord,
-    LogicalSubmodelRecord,
     MappingAttributeRecord,
     MappingObjectRecord,
     ModelingRecord,
@@ -68,11 +68,11 @@ type ProjectDataset = Literal[
     "context_record",
     "subject_area",
     "subject_area_table",
-    "logical_submodel",
+    "logical_entity_type",
     "logical_entity",
     "logical_attribute",
     "logical_relationship",
-    "dimensional_submodel",
+    "dimensional_fact_type",
     "dimensional_entity",
     "dimensional_attribute",
     "dimensional_relationship",
@@ -95,11 +95,9 @@ type ProjectChangeSetDataset = Literal[
     "context_record",
     "subject_area",
     "subject_area_table",
-    "logical_submodel",
     "logical_entity",
     "logical_attribute",
     "logical_relationship",
-    "dimensional_submodel",
     "dimensional_entity",
     "dimensional_attribute",
     "dimensional_relationship",
@@ -177,14 +175,14 @@ class SubjectAreaSection(ContractModel):
 
 
 class LogicalSection(ContractModel):
-    submodels: tuple[LogicalSubmodelRecord, ...]
+    entity_types: tuple[LogicalEntityTypeRecord, ...] = ()
     entities: tuple[LogicalEntityRecord, ...]
     attributes: tuple[LogicalAttributeRecord, ...]
     relationships: tuple[LogicalRelationshipRecord, ...]
 
 
 class DimensionalSection(ContractModel):
-    submodels: tuple[DimensionalSubmodelRecord, ...]
+    fact_types: tuple[DimensionalFactTypeRecord, ...] = ()
     entities: tuple[DimensionalEntityRecord, ...]
     attributes: tuple[DimensionalAttributeRecord, ...]
     relationships: tuple[DimensionalRelationshipRecord, ...]
@@ -245,11 +243,11 @@ def project_snapshot_records(
         "context_record": snapshot.context.records,
         "subject_area": snapshot.subject_area.areas,
         "subject_area_table": snapshot.subject_area.tables,
-        "logical_submodel": snapshot.logical.submodels,
+        "logical_entity_type": snapshot.logical.entity_types,
         "logical_entity": snapshot.logical.entities,
         "logical_attribute": snapshot.logical.attributes,
         "logical_relationship": snapshot.logical.relationships,
-        "dimensional_submodel": snapshot.dimensional.submodels,
+        "dimensional_fact_type": snapshot.dimensional.fact_types,
         "dimensional_entity": snapshot.dimensional.entities,
         "dimensional_attribute": snapshot.dimensional.attributes,
         "dimensional_relationship": snapshot.dimensional.relationships,
@@ -420,10 +418,11 @@ DATASETS = (
         ),
     ),
     ModelingDatasetDefinition(
-        name="logical_submodel",
+        name="logical_entity_type",
         section="logical",
-        row_model=LogicalSubmodelRecord,
-        canonical_key=("logical_submodel_name",),
+        row_model=LogicalEntityTypeRecord,
+        canonical_key=("logical_entity_type_code",),
+        change_set_eligible=False,
     ),
     ModelingDatasetDefinition(
         name="logical_entity",
@@ -445,21 +444,19 @@ DATASETS = (
         name="logical_relationship",
         section="logical",
         row_model=LogicalRelationshipRecord,
+        # One foreign-key Attribute points at one parent.
         canonical_key=(
             "from_logical_entity_schema_name",
             "from_logical_entity_name",
             "from_logical_attribute_name",
-            "to_logical_entity_schema_name",
-            "to_logical_entity_name",
-            "to_logical_attribute_name",
-            "logical_relationship_name",
         ),
     ),
     ModelingDatasetDefinition(
-        name="dimensional_submodel",
+        name="dimensional_fact_type",
         section="dimensional",
-        row_model=DimensionalSubmodelRecord,
-        canonical_key=("dimensional_submodel_name",),
+        row_model=DimensionalFactTypeRecord,
+        canonical_key=("dimensional_fact_type_code",),
+        change_set_eligible=False,
     ),
     ModelingDatasetDefinition(
         name="dimensional_entity",
@@ -481,15 +478,11 @@ DATASETS = (
         name="dimensional_relationship",
         section="dimensional",
         row_model=DimensionalRelationshipRecord,
+        # One foreign-key Attribute points at one dimension.
         canonical_key=(
             "from_dimensional_entity_schema_name",
             "from_dimensional_entity_name",
             "from_dimensional_attribute_name",
-            "to_dimensional_entity_schema_name",
-            "to_dimensional_entity_name",
-            "to_dimensional_attribute_name",
-            "dimensional_relationship_kind",
-            "dimensional_relationship_role_name",
         ),
     ),
     ModelingDatasetDefinition(

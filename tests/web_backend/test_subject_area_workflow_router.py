@@ -135,7 +135,7 @@ def test_execute_endpoint_accepts_explicit_one_shot_mode() -> None:
 
 def test_execute_endpoint_rejects_unknown_modes_and_fields_before_starting() -> None:
     service = _StaticSubjectAreaWorkflowService()
-    # The run's frozen selection is the whole Input Scope; a request cannot pick tables.
+    # The run's tables are frozen when it is created; execute cannot pick tables.
     bodies: tuple[dict[str, object], ...] = (
         {"execution_mode": "batch", "expected_project_revision": 4},
         {"execution_mode": "one_shot", "expected_project_revision": 0},

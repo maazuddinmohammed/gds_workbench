@@ -13,23 +13,7 @@ from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_etl_workbench.domain.modeling_records import ContextRecord
 from gds_etl_workbench.domain.safe_json import validate_safe_json
 from gds_etl_workbench.domain.snapshots.project import ProjectSnapshot
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
-    AgentExecutionRequest,
-)
-from gds_workbench_api.features.workflows.authoring.context import (
-    AgentContextToolRequestError,
-    PostgresAgentContextRepository,
-    reject_forbidden_provider_json,
-)
-from gds_workbench_api.features.workflows.authoring.context_contracts import (
-    INPUT_EXAMPLES,
-)
-from gds_workbench_api.features.workflows.authoring.context_readers import (
-    FrozenContextReaders,
-)
-from gds_workbench_api.integrations.agents.adapters import OpenAIAgentsSdkAdapter
 from pydantic import JsonValue, ValidationError
-
 from tests.web_backend.test_agent_context import (
     ContextTransaction,
     _load_physical_scope,
@@ -39,6 +23,23 @@ from tests.web_backend.test_agent_context import (
     _snapshot_with_policy_json,
 )
 
+from gds_workbench_api.features.workflows.authoring.agent_execution import (
+    AgentExecutionRequest,
+)
+from gds_workbench_api.features.workflows.authoring.context import (
+    AgentContextToolRequestError,
+    PostgresAgentContextRepository,
+    focus_subject_area,
+    reject_forbidden_provider_json,
+)
+from gds_workbench_api.features.workflows.authoring.context_contracts import (
+    INPUT_EXAMPLES,
+)
+from gds_workbench_api.features.workflows.authoring.context_readers import (
+    FrozenContextReaders,
+)
+from gds_workbench_api.integrations.agents.adapters import OpenAIAgentsSdkAdapter
+
 LARGE_DESCRIPTION = "Documented business meaning. " * 50_000
 
 
@@ -47,9 +48,7 @@ class UnlimitedContextTransaction(ContextTransaction):
         self, query: LiteralString, parameters: tuple[Any, ...] = ()
     ) -> list[dict[str, Any]]:
         if "attribute_ordinal_position" in query:
-            assert parameters[-1] is None, (
-                "Default SQL retrieval must not impose a row limit."
-            )
+            assert parameters[-1] is None, "Default SQL retrieval must not impose a row limit."
             parameters = (
                 *parameters[:-1],
                 101,
@@ -73,14 +72,17 @@ async def test_default_repository_preserves_large_descriptions_in_both_modes(
 ) -> None:
     assert len(LARGE_DESCRIPTION.encode()) > 1024 * 1024
     # Logical reads whole physical Objects and Attributes through its readers.
-    bundle = await PostgresAgentContextRepository(
+    plan = _plan(execution_mode=mode, project_workflow="logical")
+    loaded = await PostgresAgentContextRepository(
         physical_scope_loader=_load_physical_scope,
         snapshot_loader=_load_snapshot,
-    ).load(
-        UnlimitedContextTransaction(),
-        tenant_id=7,
-        plan=_plan(execution_mode=mode, project_workflow="logical"),
+    ).load(UnlimitedContextTransaction(), tenant_id=7, plan=plan)
+    assert loaded.snapshot is not None
+    # A Build packages each Subject Area call; this run's one area holds the Object.
+    bundle = focus_subject_area(
+        loaded, plan=plan, subject_area=plan.subject_areas[0], logical=loaded.snapshot.logical
     )
+    assert bundle is not None
     if mode == "one_shot":
         assert bundle.tool_catalog is None
         embedded = cast(dict[str, Any], bundle.embedded_context)
@@ -92,14 +94,9 @@ async def test_default_repository_preserves_large_descriptions_in_both_modes(
         assert bundle.tool_catalog.max_result_bytes is None
         assert bundle.tool_catalog.max_cumulative_result_bytes is None
         objects = cast(dict[str, Any], bundle.tool_catalog.invoke("get_objects", {}))
-        details = cast(
-            dict[str, Any], bundle.tool_catalog.invoke("get_object_details", {})
-        )
+        details = cast(dict[str, Any], bundle.tool_catalog.invoke("get_object_details", {}))
         assert objects["items"][0]["object_description"] == LARGE_DESCRIPTION
-        assert (
-            details["items"][0]["attributes"][0]["attribute_description"]
-            == LARGE_DESCRIPTION
-        )
+        assert details["items"][0]["attributes"][0]["attribute_description"] == LARGE_DESCRIPTION
         assert objects["is_complete"] and details["is_complete"]
         assert details["incomplete_object_key"] is None
 
@@ -131,9 +128,7 @@ def test_unlimited_readers_keep_whole_records_paging_and_cursor_boundaries() -> 
     )
     provider_catalog = OpenAIAgentsSdkAdapter._tool_catalog(request)
     assert provider_catalog is not None
-    assert provider_catalog is catalog, (
-        "No cumulative byte limiter may wrap unlimited readers."
-    )
+    assert provider_catalog is catalog, "No cumulative byte limiter may wrap unlimited readers."
     first = catalog.invoke("get_object_details", {})
     cursor = first["next_cursor"]
     assert isinstance(cursor, str) and not first["is_complete"]
@@ -162,9 +157,7 @@ def test_unlimited_readers_keep_whole_records_paging_and_cursor_boundaries() -> 
 
 
 @pytest.mark.asyncio
-async def test_default_repository_accepts_large_deep_nonsecret_policy_evidence() -> (
-    None
-):
+async def test_default_repository_accepts_large_deep_nonsecret_policy_evidence() -> None:
     # Stay inside the separate 256 KiB persisted policy contract while exceeding
     # the old provider JSON string, depth, and node limits.
     nested: dict[str, object] = {"explanation": "Documented rule. " * 2500}
@@ -194,9 +187,7 @@ async def test_unlimited_repository_still_rejects_prohibited_nested_fields(
     prohibited_key: str,
 ) -> None:
     async def load_snapshot(*_: object) -> ProjectSnapshot:
-        return _snapshot_with_policy_json(
-            {"detail": {prohibited_key: "synthetic-private-marker"}}
-        )
+        return _snapshot_with_policy_json({"detail": {prohibited_key: "synthetic-private-marker"}})
 
     with pytest.raises(WorkbenchError) as caught:
         await PostgresAgentContextRepository(
@@ -249,9 +240,7 @@ def test_explicit_json_and_mcp_record_bounds_are_unchanged(shape: str) -> None:
 
 
 def test_provider_context_preserves_only_canonical_context_uuid_identity() -> None:
-    reject_forbidden_provider_json(
-        {"context_record_id": "00000000-0000-4000-8000-000000000001"}
-    )
+    reject_forbidden_provider_json({"context_record_id": "00000000-0000-4000-8000-000000000001"})
     for value in (1, "customer.key", "00000000-0000-4000-8000-00000000000A"):
         with pytest.raises(WorkbenchError):
             reject_forbidden_provider_json({"context_record_id": value})

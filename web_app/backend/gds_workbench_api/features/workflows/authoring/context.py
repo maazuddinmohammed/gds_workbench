@@ -19,8 +19,10 @@ from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_etl_workbench.domain.metadata_records import AttributeRecord, ObjectRecord
 from gds_etl_workbench.domain.modeling_records import (
     AnalysisResultRecord,
+    AttributePhysicalSourceRecord,
     LogicalAttributeRecord,
     LogicalEntityRecord,
+    LogicalObjectSourceRecord,
     ProfilingProfileRecord,
     ProjectDetailsRecord,
     normalize_project_key_value,
@@ -51,7 +53,13 @@ from gds_workbench_api.features.workflows.authoring.tool_configuration import (
 
 from .context_inputs import OBJECT_FIELDS, natural_key, project_context_inputs
 from .context_readers import FrozenContextReaders
-from .plan import AgentRunPlan, ProjectWorkflow, WorkflowExecutionMode
+from .plan import (
+    AgentRunPlan,
+    PlannedSubjectArea,
+    ProjectWorkflow,
+    WorkflowExecutionMode,
+    WorkflowOperation,
+)
 from .repair import AgentContextTooLargeError, load_default_agent_context_policy
 
 type SnapshotLoader = Callable[
@@ -151,7 +159,7 @@ SELECT selection.selection_order, selection.modeled_entity_id,
    AND lower(btrim(entity.logical_entity_schema_name))
        = lower(btrim(selection.modeled_entity_schema_name))
    AND lower(btrim(entity.logical_entity_name)) = lower(btrim(selection.modeled_entity_name))
-   AND entity.logical_entity_status = 'active'
+   AND entity.logical_entity_is_active
  WHERE selection.workflow_run_id = %s AND selection.project_id = %s
    AND selection.modeled_entity_type = 'logical_entity'
  ORDER BY selection.selection_order
@@ -436,6 +444,15 @@ class ApplicableAppliedRecords(BaseModel):
     mapping: MappingSection | None = Field(default=None, repr=False)
 
 
+class BuildSubjectArea(BaseModel):
+    """The one Subject Area a Build call works on; a focus window, not a separate model."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    name: str = Field(min_length=1, max_length=255)
+    definition: str = Field(min_length=1)
+
+
 class AgentProjectDependency(BaseModel):
     """Read-only dependency identity and state, without generated code or Mapping bodies."""
 
@@ -457,6 +474,9 @@ class AgentAuthoringContext(BaseModel):
     project_revision: int = Field(gt=0)
     project_workflow: ProjectWorkflow
     workflow_execution_mode: WorkflowExecutionMode | None
+    workflow_operation: WorkflowOperation | None = None
+    # Set only on a Build call's focused context.
+    build_subject_area: BuildSubjectArea | None = None
     modeled_entity_type: Literal["logical_entity", "dimensional_entity"] | None
     selected_scope_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     project_details: ProjectDetailsRecord = Field(repr=False)
@@ -666,6 +686,8 @@ class AgentContextBundle:
     tool_catalog: InMemoryAgentContextToolCatalog | None = field(default=None, repr=False)
     snapshot: ProjectSnapshot | None = field(default=None, repr=False)
     physical_scope: PhysicalProjectCatalog | None = field(default=None, repr=False)
+    # Kept so a Build can focus the same bounded context on each Subject Area.
+    limits: AgentContextLimits | None = field(default=None, repr=False)
 
     def __repr__(self) -> str:
         return (
@@ -776,7 +798,7 @@ class PostgresAgentContextRepository:
                         normalize_project_key_value(entity.logical_entity_name),
                     ): entity
                     for entity in snapshot.logical.entities
-                    if entity.logical_entity_status == "active"
+                    if entity.logical_entity_is_active
                 }
                 selected_entities: list[SelectedLogicalEntityContext] = []
                 for order, (entity_id, row) in enumerate(
@@ -799,7 +821,7 @@ class PostgresAgentContextRepository:
                             normalize_project_key_value(attribute.logical_entity_name),
                         )
                         == key
-                        and attribute.logical_attribute_status == "active"
+                        and attribute.logical_attribute_is_active
                     )
                     selected_entities.append(
                         SelectedLogicalEntityContext(
@@ -823,13 +845,13 @@ class PostgresAgentContextRepository:
                     physical_sources = [
                         source.source_object
                         for source in logical.entity.sources
-                        if source.support_source_type == "object" and source.status == "active"
+                        if source.support_source_type == "object" and source.is_active
                     ]
                     physical_sources.extend(
                         source.source_attribute
                         for attribute in logical.attributes
                         for source in attribute.sources
-                        if source.support_source_type == "attribute" and source.status == "active"
+                        if source.support_source_type == "attribute" and source.is_active
                     )
                     for source in physical_sources:
                         key = _physical_key(source)
@@ -920,54 +942,33 @@ class PostgresAgentContextRepository:
                     else []
                 ),
             )
+            # A Build is bounded per Subject Area once focus_subject_area narrows it, so its
+            # whole selection is neither size-checked nor packaged for a model here.
+            building = plan.workflow_operation == "build"
             if (
-                self._limits.max_total_records is not None
+                not building
+                and self._limits.max_total_records is not None
                 and _context_record_count(context) > self._limits.max_total_records
             ):
                 raise AgentContextTooLargeError()
 
-            _validate_nested_provider_json(
-                context,
-                maximum_bytes=max(
-                    (
-                        value
-                        for value in (
-                            self._limits.one_shot_max_context_bytes,
-                            self._limits.stage_max_context_bytes,
-                            self._limits.max_tool_catalog_bytes,
-                        )
-                        if value is not None
-                    ),
-                    default=None,
-                ),
-            )
-            full_context = _provider_context(context)
-            tool_catalog = None
-            if plan.workflow_execution_mode == "tool_assisted":
-                tool_catalog = InMemoryAgentContextToolCatalog(
+            bundle = (
+                AgentContextBundle(
                     context=context,
-                    max_result_bytes=_tool_result_budget(
-                        limits=self._limits,
-                        max_turns=plan.selection.max_turns,
-                    ),
-                    max_cumulative_result_bytes=_tool_transcript_allowance(self._limits),
-                    max_catalog_bytes=self._limits.max_tool_catalog_bytes,
-                    max_page_records=self._limits.max_tool_page_records,
+                    embedded_context={},
+                    snapshot=snapshot,
+                    physical_scope=physical_scope,
+                    limits=self._limits,
                 )
-                embedded = tool_catalog.manifest
-            else:
-                embedded = full_context
-            if (
-                plan.workflow_execution_mode in (None, "one_shot")
-                and self._limits.one_shot_max_context_bytes is not None
-                and _json_bytes(embedded) > self._limits.one_shot_max_context_bytes
-            ) or (
-                plan.workflow_execution_mode == "tool_assisted"
-                and self._limits.stage_max_context_bytes is not None
-                and _json_bytes(embedded) > self._limits.stage_max_context_bytes
-            ):
-                raise AgentContextTooLargeError()
-
+                if building
+                else _context_bundle(
+                    context,
+                    plan=plan,
+                    limits=self._limits,
+                    snapshot=snapshot,
+                    physical_scope=physical_scope,
+                )
+            )
             final_project_row = await transaction.fetch_one(
                 _PROJECT_FENCE_SQL,
                 (tenant_id, plan.project_id, plan.project_revision),
@@ -982,17 +983,181 @@ class PostgresAgentContextRepository:
                 != project
             ):
                 raise AgentContextUnavailableError()
-            return AgentContextBundle(
-                context=context,
-                embedded_context=embedded,
-                tool_catalog=tool_catalog,
-                snapshot=snapshot,
-                physical_scope=physical_scope,
-            )
+            return bundle
         except AgentContextTooLargeError, AgentContextUnavailableError:
             raise
         except Exception:
             raise AgentContextUnavailableError() from None
+
+
+def _context_bundle(
+    context: AgentAuthoringContext,
+    *,
+    plan: AgentRunPlan,
+    limits: AgentContextLimits,
+    snapshot: ProjectSnapshot,
+    physical_scope: PhysicalProjectCatalog | None,
+) -> AgentContextBundle:
+    """Bound one context and package it as inline evidence or a tool catalog."""
+    _validate_nested_provider_json(
+        context,
+        maximum_bytes=max(
+            (
+                value
+                for value in (
+                    limits.one_shot_max_context_bytes,
+                    limits.stage_max_context_bytes,
+                    limits.max_tool_catalog_bytes,
+                )
+                if value is not None
+            ),
+            default=None,
+        ),
+    )
+    tool_catalog = None
+    if plan.workflow_execution_mode == "tool_assisted":
+        tool_catalog = InMemoryAgentContextToolCatalog(
+            context=context,
+            max_result_bytes=_tool_result_budget(limits=limits, max_turns=plan.selection.max_turns),
+            max_cumulative_result_bytes=_tool_transcript_allowance(limits),
+            max_catalog_bytes=limits.max_tool_catalog_bytes,
+            max_page_records=limits.max_tool_page_records,
+        )
+        embedded = tool_catalog.manifest
+    else:
+        embedded = _provider_context(context)
+    if (
+        plan.workflow_execution_mode in (None, "one_shot")
+        and limits.one_shot_max_context_bytes is not None
+        and _json_bytes(embedded) > limits.one_shot_max_context_bytes
+    ) or (
+        plan.workflow_execution_mode == "tool_assisted"
+        and limits.stage_max_context_bytes is not None
+        and _json_bytes(embedded) > limits.stage_max_context_bytes
+    ):
+        raise AgentContextTooLargeError()
+    return AgentContextBundle(
+        context=context,
+        embedded_context=embedded,
+        tool_catalog=tool_catalog,
+        snapshot=snapshot,
+        physical_scope=physical_scope,
+        limits=limits,
+    )
+
+
+def focus_subject_area(
+    bundle: AgentContextBundle,
+    *,
+    plan: AgentRunPlan,
+    subject_area: PlannedSubjectArea,
+    logical: LogicalSection,
+    dimensional: DimensionalSection | None = None,
+) -> AgentContextBundle | None:
+    """Narrow a loaded Build context to one Subject Area and the model built so far.
+
+    Logical works on the area's member Objects. Dimensional works on the active Logical
+    Entities built from them, with their physical lineage as read-only support. The
+    snapshot stays whole and private for final graph validation. None means the area has
+    nothing to build from.
+    """
+    context = bundle.context
+    areas = context.applied.subject_area
+    if areas is None or bundle.limits is None or bundle.snapshot is None:
+        raise AgentContextUnavailableError()
+    area_name = normalize_project_key_value(subject_area.subject_area_name)
+    members = {
+        _physical_key(member)
+        for member in areas.tables
+        if member.subject_area_table_is_active
+        and normalize_project_key_value(member.subject_area_name) == area_name
+    }
+    selected = tuple(
+        item for item in context.selected_objects if _physical_key(item.object) in members
+    )
+    selected_logical = tuple(
+        item
+        for item in context.selected_logical_entities
+        if any(
+            source.support_source_type == "object"
+            and source.is_active
+            and _physical_key(source.source_object) in members
+            for source in item.entity.sources
+        )
+    )
+    lineage = {
+        _physical_key(
+            source.source_object
+            if isinstance(source, LogicalObjectSourceRecord)
+            else source.source_attribute
+        )
+        for item in selected_logical
+        for source in (
+            *item.entity.sources,
+            *(source for attribute in item.attributes for source in attribute.sources),
+        )
+        if isinstance(source, (LogicalObjectSourceRecord, AttributePhysicalSourceRecord))
+        and source.is_active
+    }
+    supporting = tuple(
+        item for item in context.supporting_objects if _physical_key(item.object) in lineage
+    )
+    if not (selected or selected_logical):
+        return None
+    object_keys = {_physical_key(item.object) for item in (*selected, *supporting)}
+    systems = {
+        normalize_project_key_value(item.object.system_code) for item in (*selected, *supporting)
+    }
+    focused = context.model_copy(
+        update={
+            "build_subject_area": BuildSubjectArea(
+                name=subject_area.subject_area_name,
+                definition=subject_area.subject_area_definition,
+            ),
+            "selected_objects": selected,
+            "selected_logical_entities": selected_logical,
+            "supporting_objects": supporting,
+            "profiles": tuple(
+                profile for profile in context.profiles if _physical_key(profile) in object_keys
+            ),
+            "analysis_relationships": tuple(
+                relationship
+                for relationship in context.analysis_relationships
+                if _analysis_endpoint_key(relationship, "from") in object_keys
+                or _analysis_endpoint_key(relationship, "to") in object_keys
+            ),
+            "applied": context.applied.model_copy(
+                update={"logical": logical}
+                if dimensional is None
+                else {"logical": logical, "dimensional": dimensional}
+            ),
+            "context_source_scope": tuple(
+                scope
+                for scope in context.context_source_scope
+                if normalize_project_key_value(scope["system_code"]) in systems
+            ),
+            "ingestion_mapping": tuple(
+                mapping
+                for mapping in context.ingestion_mapping
+                if natural_key(cast(dict[str, Any], mapping["target"])) in object_keys
+            ),
+            "profile_provenance": tuple(
+                row for row in context.profile_provenance if natural_key(row) in object_keys
+            ),
+        }
+    )
+    if (
+        bundle.limits.max_total_records is not None
+        and _context_record_count(focused) > bundle.limits.max_total_records
+    ):
+        raise AgentContextTooLargeError()
+    return _context_bundle(
+        focused,
+        plan=plan,
+        limits=bundle.limits,
+        snapshot=bundle.snapshot,
+        physical_scope=bundle.physical_scope,
+    )
 
 
 async def load_frozen_project_graph(
@@ -1183,6 +1348,7 @@ def _assemble_context(
         project_revision=project.project_revision,
         project_workflow=plan.project_workflow,
         workflow_execution_mode=plan.workflow_execution_mode,
+        workflow_operation=plan.workflow_operation,
         modeled_entity_type=plan.modeled_entity_type,
         selected_scope_digest=plan.selected_scope_digest,
         project_details=snapshot.project_input_scope.details,
@@ -1364,9 +1530,11 @@ def _applicable_applied_records(
     if plan.project_workflow == "subject_area":
         subject_area = snapshot.subject_area
     elif plan.project_workflow == "logical":
-        # Keep the full snapshot private for final graph validation only.
+        # Builds focus on one area at a time; prompts get only the area's slice of the model.
+        subject_area = snapshot.subject_area
         logical = snapshot.logical
     elif plan.project_workflow == "dimensional":
+        subject_area = snapshot.subject_area
         logical = snapshot.logical
         dimensional = snapshot.dimensional
         mapping = snapshot.mapping
@@ -1591,13 +1759,11 @@ def _context_datasets(
         datasets["subject_area_table"] = _dump_records(subject_area.tables)
     logical = context.applied.logical
     if logical is not None:
-        datasets["logical_submodel"] = _dump_records(logical.submodels)
         datasets["logical_entity"] = _dump_records(logical.entities)
         datasets["logical_attribute"] = _dump_records(logical.attributes)
         datasets["logical_relationship"] = _dump_records(logical.relationships)
     dimensional = context.applied.dimensional
     if dimensional is not None:
-        datasets["dimensional_submodel"] = _dump_records(dimensional.submodels)
         datasets["dimensional_entity"] = _dump_records(dimensional.entities)
         datasets["dimensional_attribute"] = _dump_records(dimensional.attributes)
         datasets["dimensional_relationship"] = _dump_records(dimensional.relationships)

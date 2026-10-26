@@ -18,29 +18,40 @@ from gds_etl_workbench.domain.modeling_records import (
     MappingObjectRecord,
 )
 from gds_etl_workbench.domain.snapshots.project import ProjectSnapshot
+
 from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.workflows.authoring.context import (
     AgentContextLimits,
     AgentContextToolRequestError,
+    BuildSubjectArea,
     InMemoryAgentContextToolCatalog,
     PostgresAgentContextRepository,
+    focus_subject_area,
 )
 from gds_workbench_api.features.workflows.authoring.plan import (
     AgentRunPlan,
     FrozenAgentStage,
+    PlannedSubjectArea,
 )
 from gds_workbench_api.prompt_rendering import PromptComponentTemplates
+
+_CUSTOMERS = PlannedSubjectArea(
+    subject_area_id=61,
+    subject_area_name="Customers",
+    subject_area_definition="Customer accounts.",
+)
 
 
 def _plan(
     *,
     execution_mode: Literal["one_shot", "tool_assisted"] = "one_shot",
-    project_workflow: Literal[
-        "subject_area", "logical", "dimensional"
-    ] = "subject_area",
+    project_workflow: Literal["subject_area", "logical", "dimensional"] = "subject_area",
     selected_object_ids: tuple[int, ...] = (501,),
     max_turns: int = 8,
+    operation: Literal["build", "optimize"] = "build",
 ) -> AgentRunPlan:
+    """Logical and Dimensional plans Build the Customers area unless they Optimize."""
+    modeling = project_workflow in {"logical", "dimensional"}
     return AgentRunPlan.model_validate(
         {
             "workflow_run_id": 1048,
@@ -49,16 +60,12 @@ def _plan(
             "project_revision": 7,
             "project_workflow": project_workflow,
             "workflow_execution_mode": execution_mode,
-            "modeled_entity_type": "logical_entity"
-            if project_workflow == "dimensional"
-            else None,
+            "workflow_operation": operation if modeling else None,
+            "subject_areas": (_CUSTOMERS,) if modeling and operation == "build" else (),
+            "modeled_entity_type": "logical_entity" if project_workflow == "dimensional" else None,
             "selected_scope_digest": "a" * 64,
-            "selected_object_ids": ()
-            if project_workflow == "dimensional"
-            else selected_object_ids,
-            "selected_entity_ids": selected_object_ids
-            if project_workflow == "dimensional"
-            else (),
+            "selected_object_ids": () if project_workflow == "dimensional" else selected_object_ids,
+            "selected_entity_ids": selected_object_ids if project_workflow == "dimensional" else (),
             "selection": AgentRunSelection(
                 sdk_code="openai_agents_sdk",
                 provider_code="microsoft_foundry",
@@ -70,7 +77,7 @@ def _plan(
             "stages": (
                 FrozenAgentStage(
                     workflow_stage_id=31,
-                    stage_code="candidate_authoring",
+                    stage_code=f"{operation}_authoring" if modeling else "candidate_authoring",
                     stage_order=10,
                     prompt_template_version_id=81,
                     prompt_template_digest="b" * 64,
@@ -157,12 +164,8 @@ def _snapshot() -> ProjectSnapshot:
                 "details": {
                     "project_name": "Customer Project",
                     "project_description": None,
-                    "logical_schemas": [
-                        {"schema_name": "silver_sales", "description": None}
-                    ],
-                    "dimensional_schemas": [
-                        {"schema_name": "gold_sales", "description": None}
-                    ],
+                    "logical_schemas": [{"schema_name": "silver_sales", "description": None}],
+                    "dimensional_schemas": [{"schema_name": "gold_sales", "description": None}],
                     "silver_model_naming_instructions": None,
                     "silver_model_audit_columns_template": None,
                     "gold_model_naming_instructions": None,
@@ -235,31 +238,33 @@ def _snapshot() -> ProjectSnapshot:
                     {
                         "subject_area_name": "Legacy Customer",
                         "subject_area_definition": "Existing authored baseline.",
-                        "subject_area_status": "inactive",
+                        "subject_area_is_active": False,
                         "subject_area_is_locked": True,
+                    },
+                    {
+                        "subject_area_name": "Customers",
+                        "subject_area_definition": "Customer accounts.",
+                        "subject_area_is_active": True,
+                        "subject_area_is_locked": False,
                     },
                 ),
                 "tables": (
                     {
                         "subject_area_name": "Legacy Customer",
                         **_object_key("customers"),
-                        "subject_area_table_status": "inactive",
+                        "subject_area_table_is_active": False,
                         "subject_area_table_is_locked": True,
+                    },
+                    {
+                        "subject_area_name": "Customers",
+                        **_object_key("customers"),
+                        "subject_area_table_is_active": True,
+                        "subject_area_table_is_locked": False,
                     },
                 ),
             },
-            "logical": {
-                "submodels": (),
-                "entities": (),
-                "attributes": (),
-                "relationships": (),
-            },
-            "dimensional": {
-                "submodels": (),
-                "entities": (),
-                "attributes": (),
-                "relationships": (),
-            },
+            "logical": {"entities": (), "attributes": (), "relationships": ()},
+            "dimensional": {"entities": (), "attributes": (), "relationships": ()},
             "mapping": {"objects": (), "attributes": ()},
         },
         strict=False,
@@ -269,11 +274,7 @@ def _snapshot() -> ProjectSnapshot:
 def _snapshot_with_large_context(text: str) -> ProjectSnapshot:
     snapshot = _snapshot()
     context_section = snapshot.context.model_copy(
-        update={
-            "records": (
-                snapshot.context.records[0].model_copy(update={"context_text": text}),
-            )
-        }
+        update={"records": (snapshot.context.records[0].model_copy(update={"context_text": text}),)}
     )
     return snapshot.model_copy(update={"context": context_section})
 
@@ -285,12 +286,10 @@ def _dimensional_snapshot() -> ProjectSnapshot:
         logical_entity_name="Customer",
         logical_entity_definition="Customer",
         logical_entity_type="core",
-        logical_entity_type_detail=None,
         logical_entity_grain="One customer",
         logical_entity_dependency_order=0,
-        logical_entity_status="active",
+        logical_entity_is_active=True,
         logical_entity_is_locked=False,
-        submodels=(),
         sources=(),
     )
     attribute = LogicalAttributeRecord(
@@ -304,7 +303,7 @@ def _dimensional_snapshot() -> ProjectSnapshot:
         logical_attribute_is_surrogate_key=False,
         logical_attribute_ordinal_position=1,
         logical_attribute_is_audit_column=False,
-        logical_attribute_status="active",
+        logical_attribute_is_active=True,
         logical_attribute_is_locked=False,
         sources=(),
     )
@@ -447,9 +446,7 @@ class DimensionalContextTransaction(ContextTransaction):
     ) -> list[dict[str, Any]]:
         if "workflow_run_entity_selection" in query:
             assert parameters == (1048, 18)
-            self.entity_query_filtered = (
-                "entity.logical_entity_status = 'active'" in query
-            )
+            self.entity_query_filtered = "entity.logical_entity_is_active" in query
             return (
                 [
                     {
@@ -486,9 +483,7 @@ class LogicalContextTransaction(ContextTransaction):
         if len(parameters) == 2:
             return await super().fetch_all(query, parameters)
         assert parameters[2] == "logical"
-        return await super().fetch_all(
-            query, (*parameters[:2], "subject_area", *parameters[3:])
-        )
+        return await super().fetch_all(query, (*parameters[:2], "subject_area", *parameters[3:]))
 
 
 @pytest.mark.asyncio
@@ -542,9 +537,7 @@ async def test_full_validation_state_stays_private_while_dependencies_are_readab
         project_input_attributes=frozenset(),
     )
     transaction = (
-        LogicalContextTransaction()
-        if project_workflow == "logical"
-        else ContextTransaction()
+        LogicalContextTransaction() if project_workflow == "logical" else ContextTransaction()
     )
     loaded: list[str] = []
 
@@ -565,6 +558,7 @@ async def test_full_validation_state_stays_private_while_dependencies_are_readab
         loaded.append("physical_scope")
         return physical_scope
 
+    plan = _plan(project_workflow=project_workflow, execution_mode=execution_mode)
     result = await PostgresAgentContextRepository(
         snapshot_loader=load_snapshot,
         physical_scope_loader=load_physical_scope,
@@ -577,14 +571,14 @@ async def test_full_validation_state_stays_private_while_dependencies_are_readab
             max_tool_result_bytes=1_000_000,
             max_tool_page_records=1,
         ),
-    ).load(
-        transaction,
-        tenant_id=7,
-        plan=_plan(
-            project_workflow=project_workflow,
-            execution_mode=execution_mode,
-        ),
+    ).load(transaction, tenant_id=7, plan=plan)
+    # A Build agent call receives the context focused on one Subject Area.
+    call = (
+        focus_subject_area(result, plan=plan, subject_area=_CUSTOMERS, logical=snapshot.logical)
+        if project_workflow == "logical"
+        else result
     )
+    assert call is not None
 
     assert result.snapshot is snapshot
     assert result.snapshot is not None
@@ -592,22 +586,21 @@ async def test_full_validation_state_stays_private_while_dependencies_are_readab
     assert len(result.context.selected_objects) == 1
     assert result.physical_scope is physical_scope
     assert loaded == ["snapshot", "physical_scope"]
-    provider_text = json.dumps(result.context.model_dump(mode="json")) + json.dumps(
-        result.embedded_context
-    )
-    assert "PRIVATE_CATALOG_TENANT" not in provider_text + repr(result)
-    assert "PRIVATE_MAPPING_BODY" not in provider_text + repr(result)
-    assert "PRIVATE_CODE_BODY" not in provider_text + repr(result)
+    provider_text = json.dumps(call.embedded_context)
+    context_text = json.dumps(result.context.model_dump(mode="json")) + provider_text
+    assert "PRIVATE_CATALOG_TENANT" not in context_text + repr(result)
+    assert "PRIVATE_MAPPING_BODY" not in context_text + repr(result)
+    assert "PRIVATE_CODE_BODY" not in context_text + repr(result)
     if project_workflow == "logical":
-        # Subject Areas choose tables; they are not Logical modeling evidence.
-        assert result.context.applied.subject_area is None
+        # The Build focuses through Subject Areas, but their records never reach the agent.
+        assert result.context.applied.subject_area == snapshot.subject_area
         assert "Legacy Customer" not in provider_text
         assert {item.dataset for item in result.context.read_only_dependencies} == {
             "mapping_object",
             "generated_code",
         }
         if execution_mode == "tool_assisted":
-            catalog = result.tool_catalog
+            catalog = call.tool_catalog
             assert catalog is not None
             with pytest.raises(AgentContextToolRequestError):
                 catalog.invoke("get_subject_areas", {})
@@ -634,9 +627,7 @@ def _snapshot_with_policy_json(value: dict[str, object]) -> ProjectSnapshot:
     details = snapshot.project_input_scope.details.model_copy(
         update={"silver_model_audit_columns_template": value}
     )
-    project_input_scope = snapshot.project_input_scope.model_copy(
-        update={"details": details}
-    )
+    project_input_scope = snapshot.project_input_scope.model_copy(update={"details": details})
     return snapshot.model_copy(update={"project_input_scope": project_input_scope})
 
 
@@ -648,7 +639,7 @@ def _snapshot_with_nested_sources(count: int) -> ProjectSnapshot:
                 "support_source_type": "object",
                 "source_object": _object_key(f"source_{index}"),
                 "rationale": "Existing evidence.",
-                "status": "inactive",
+                "is_active": False,
                 "is_locked": True,
             },
             strict=False,
@@ -664,9 +655,7 @@ def _json_keys(value: object) -> set[str]:
     if isinstance(value, dict):
         mapping = cast(dict[str, object], value)
         return set(mapping) | {
-            nested_key
-            for nested in mapping.values()
-            for nested_key in _json_keys(nested)
+            nested_key for nested in mapping.values() for nested_key in _json_keys(nested)
         }
     if isinstance(value, list):
         items = cast(list[object], value)
@@ -675,9 +664,7 @@ def _json_keys(value: object) -> set[str]:
 
 
 @pytest.mark.asyncio
-async def test_load_builds_selected_canonical_evidence_and_reconciliation_baseline() -> (
-    None
-):
+async def test_load_builds_selected_canonical_evidence_and_reconciliation_baseline() -> None:
     result = await PostgresAgentContextRepository(
         physical_scope_loader=_load_physical_scope,
         snapshot_loader=_load_snapshot,
@@ -692,9 +679,7 @@ async def test_load_builds_selected_canonical_evidence_and_reconciliation_baseli
     ).load(ContextTransaction(), tenant_id=7, plan=_plan())
 
     context = result.context
-    assert [item.object.object_name for item in context.selected_objects] == [
-        "customers"
-    ]
+    assert [item.object.object_name for item in context.selected_objects] == ["customers"]
     assert context.selected_objects[0].object.tenant_code == "SOURCE"
     assert [item.attribute_name for item in context.selected_objects[0].attributes] == [
         "customer_id"
@@ -706,7 +691,7 @@ async def test_load_builds_selected_canonical_evidence_and_reconciliation_baseli
         "80f02975-f05a-5bcb-9c57-cea147951c16",
     ]
     assert context.applied.subject_area is not None
-    assert context.applied.subject_area.areas[0].subject_area_status == "inactive"
+    assert context.applied.subject_area.areas[0].subject_area_is_active is False
     assert context.applied.subject_area.areas[0].subject_area_is_locked is True
     assert context.applied.subject_area.tables[0].subject_area_table_is_locked is True
     assert context.applied.logical is None
@@ -726,9 +711,7 @@ async def test_load_builds_selected_canonical_evidence_and_reconciliation_baseli
 
 
 @pytest.mark.asyncio
-async def test_dimensional_context_reads_active_logical_attributes_without_registration() -> (
-    None
-):
+async def test_dimensional_context_reads_active_logical_attributes_without_registration() -> None:
     transaction = DimensionalContextTransaction()
     snapshot = _dimensional_snapshot()
     physical_scope: PhysicalProjectCatalog | None = None
@@ -765,19 +748,12 @@ async def test_dimensional_context_reads_active_logical_attributes_without_regis
     assert transaction.entity_query_filtered is True
     assert result.context.selected_objects == ()
     assert result.context.gds_context[0]["zone_code"] == "gold"
-    assert (
-        result.context.selected_logical_entities[0].entity.logical_entity_name
-        == "Customer"
-    )
+    assert result.context.selected_logical_entities[0].entity.logical_entity_name == "Customer"
     assert [
         attribute.logical_attribute_name
         for attribute in result.context.selected_logical_entities[0].attributes
     ] == ["CustomerID"]
-    assert (
-        scope_loaded
-        and result.snapshot is snapshot
-        and result.physical_scope is physical_scope
-    )
+    assert scope_loaded and result.snapshot is snapshot and result.physical_scope is physical_scope
     assert result.context.read_only_dependencies == ()
 
 
@@ -811,9 +787,7 @@ async def test_dimensional_context_rejects_an_ineligible_selected_object() -> No
 
 
 @pytest.mark.asyncio
-async def test_tool_assisted_mode_embeds_manifest_and_pages_only_local_records() -> (
-    None
-):
+async def test_tool_assisted_mode_embeds_manifest_and_pages_only_local_records() -> None:
     result = await PostgresAgentContextRepository(
         physical_scope_loader=_load_physical_scope,
         snapshot_loader=_load_snapshot,
@@ -906,9 +880,7 @@ async def test_tool_result_budget_reserves_half_the_stage_for_all_turns() -> Non
 
 
 @pytest.mark.asyncio
-async def test_tool_manifest_compacts_selected_objects_to_stay_within_result_bound() -> (
-    None
-):
+async def test_tool_manifest_compacts_selected_objects_to_stay_within_result_bound() -> None:
     result = await PostgresAgentContextRepository(
         physical_scope_loader=_load_physical_scope,
         snapshot_loader=_load_snapshot,
@@ -1045,24 +1017,18 @@ async def test_tool_pages_byte_pack_and_reassemble_one_oversized_record() -> Non
         assert items
         next_offset = page["next_offset"]
         expected_next = offset + len(items)
-        assert next_offset == (
-            expected_next if expected_next < page_counts[dataset] else None
-        )
+        assert next_offset == (expected_next if expected_next < page_counts[dataset] else None)
         if first_page:
             assert len(items) < requested_limit
             first_page = False
         fragments.extend(items)
         offset = expected_next
 
-    metadata = [
-        cast(dict[str, object], item["__gds_context_fragment__"]) for item in fragments
-    ]
+    metadata = [cast(dict[str, object], item["__gds_context_fragment__"]) for item in fragments]
     assert [item["fragment_index"] for item in metadata] == list(range(len(fragments)))
     assert {item["fragment_count"] for item in metadata} == {len(fragments)}
     assert {item["encoding"] for item in metadata} == {"canonical_json"}
-    reconstructed = json.loads(
-        "".join(cast(str, item["json_text"]) for item in fragments)
-    )
+    reconstructed = json.loads("".join(cast(str, item["json_text"]) for item in fragments))
     assert reconstructed == _snapshot_with_large_context(context_text).context.records[
         0
     ].model_dump(mode="json")
@@ -1091,9 +1057,7 @@ class UnavailableFenceTransaction(ContextTransaction):
 
 
 @pytest.mark.asyncio
-async def test_revision_or_tenant_fence_fails_before_any_context_rows_are_read() -> (
-    None
-):
+async def test_revision_or_tenant_fence_fails_before_any_context_rows_are_read() -> None:
     transaction = UnavailableFenceTransaction()
 
     with pytest.raises(WorkbenchError) as captured:
@@ -1153,6 +1117,74 @@ async def test_tool_mode_rejects_a_bound_too_small_for_its_manifest() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("execution_mode", ("one_shot", "tool_assisted"))
+async def test_build_load_packages_and_bounds_each_subject_area_separately(
+    execution_mode: Literal["one_shot", "tool_assisted"],
+) -> None:
+    plan = _plan(project_workflow="logical", execution_mode=execution_mode)
+    generous = AgentContextLimits(
+        max_selected_objects=10,
+        max_selected_attributes=100,
+        max_total_records=1_000,
+        one_shot_max_context_bytes=1_000_000,
+        stage_max_context_bytes=1_000_000,
+        max_tool_result_bytes=1_000_000,
+    )
+    # Too small for any packaged context; the whole selection is never packaged.
+    tight = generous.model_copy(
+        update={
+            "one_shot_max_context_bytes": 100,
+            "stage_max_context_bytes": 100,
+            "max_tool_result_bytes": 100,
+        }
+    )
+    loaded = {
+        name: await PostgresAgentContextRepository(
+            physical_scope_loader=_load_physical_scope,
+            snapshot_loader=_load_snapshot,
+            limits=limits,
+        ).load(LogicalContextTransaction(), tenant_id=7, plan=plan)
+        for name, limits in (("generous", generous), ("tight", tight))
+    }
+
+    for result in loaded.values():
+        assert result.embedded_context == {} and result.tool_catalog is None
+        assert result.snapshot is not None and result.context.build_subject_area is None
+    snapshot = loaded["generous"].snapshot
+    assert snapshot is not None
+    focused = focus_subject_area(
+        loaded["generous"], plan=plan, subject_area=_CUSTOMERS, logical=snapshot.logical
+    )
+    assert focused is not None
+    assert focused.context.build_subject_area == BuildSubjectArea(
+        name="Customers", definition="Customer accounts."
+    )
+    assert [item.object.object_name for item in focused.context.selected_objects] == ["customers"]
+    assert (focused.tool_catalog is not None) == (execution_mode == "tool_assisted")
+    if execution_mode == "one_shot":
+        embedded = cast(dict[str, Any], focused.embedded_context)
+        assert embedded["applied"]["subject_area"] is None
+        assert embedded["prompt_inputs"]["subject_area_context"]["input_count"] == 1
+    with pytest.raises(WorkbenchError) as captured:
+        focus_subject_area(
+            loaded["tight"], plan=plan, subject_area=_CUSTOMERS, logical=snapshot.logical
+        )
+    assert captured.value.code == "agent_context_too_large"
+    # Legacy Customer's only membership is inactive: that area has nothing to build from.
+    legacy = PlannedSubjectArea(
+        subject_area_id=62,
+        subject_area_name="Legacy Customer",
+        subject_area_definition="Existing authored baseline.",
+    )
+    assert (
+        focus_subject_area(
+            loaded["generous"], plan=plan, subject_area=legacy, logical=snapshot.logical
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "unsafe_json",
     (
@@ -1185,27 +1217,36 @@ async def test_provider_projection_rejects_unsafe_nested_json(
 
 
 @pytest.mark.asyncio
-async def test_nested_authored_records_count_toward_hard_record_bound() -> None:
+@pytest.mark.parametrize("operation", ("build", "optimize"))
+async def test_nested_authored_records_count_toward_hard_record_bound(
+    operation: Literal["build", "optimize"],
+) -> None:
+    snapshot = _snapshot_with_nested_sources(25)
+
     async def load_nested_snapshot(*_: object) -> ProjectSnapshot:
-        return _snapshot_with_nested_sources(25)
+        return snapshot
+
+    plan = _plan(project_workflow="logical", operation=operation)
+    repository = PostgresAgentContextRepository(
+        physical_scope_loader=_load_physical_scope,
+        snapshot_loader=load_nested_snapshot,
+        limits=AgentContextLimits(
+            max_selected_objects=10,
+            max_selected_attributes=100,
+            max_total_records=20,
+            one_shot_max_context_bytes=1_000_000,
+            stage_max_context_bytes=1_000_000,
+            max_tool_result_bytes=1_000_000,
+        ),
+    )
 
     with pytest.raises(WorkbenchError) as captured:
-        await PostgresAgentContextRepository(
-            physical_scope_loader=_load_physical_scope,
-            snapshot_loader=load_nested_snapshot,
-            limits=AgentContextLimits(
-                max_selected_objects=10,
-                max_selected_attributes=100,
-                max_total_records=20,
-                one_shot_max_context_bytes=1_000_000,
-                stage_max_context_bytes=1_000_000,
-                max_tool_result_bytes=1_000_000,
-            ),
-        ).load(
-            LogicalContextTransaction(),
-            tenant_id=7,
-            plan=_plan(project_workflow="logical"),
-        )
+        if operation == "optimize":
+            await repository.load(LogicalContextTransaction(), tenant_id=7, plan=plan)
+        else:
+            # A Build is bounded per Subject Area, once the area is focused.
+            loaded = await repository.load(LogicalContextTransaction(), tenant_id=7, plan=plan)
+            focus_subject_area(loaded, plan=plan, subject_area=_CUSTOMERS, logical=snapshot.logical)
 
     assert captured.value.code == "agent_context_too_large"
 
@@ -1261,9 +1302,7 @@ async def test_tool_catalog_cap_measures_the_exact_stored_projection() -> None:
         await PostgresAgentContextRepository(
             physical_scope_loader=_load_physical_scope,
             snapshot_loader=_load_snapshot,
-            limits=generous.model_copy(
-                update={"max_tool_catalog_bytes": expected_bytes - 1}
-            ),
+            limits=generous.model_copy(update={"max_tool_catalog_bytes": expected_bytes - 1}),
         ).load(
             ContextTransaction(),
             tenant_id=7,
@@ -1319,14 +1358,16 @@ async def test_read_committed_revision_change_fails_the_final_fence() -> None:
 async def test_projected_inputs_keep_actual_keys_profiles_and_scoped_relationships(
     project_workflow: Literal["subject_area", "logical"],
 ) -> None:
+    from jsonschema import Draft202012Validator
+
     from gds_workbench_api.features.workflows.authoring.context_contracts import (
         workflow_input_contracts,
     )
     from gds_workbench_api.features.workflows.authoring.context_inputs import (
         project_context_inputs,
     )
-    from jsonschema import Draft202012Validator
 
+    plan = _plan(project_workflow=project_workflow)
     result = await PostgresAgentContextRepository(
         physical_scope_loader=_load_physical_scope,
         snapshot_loader=_load_snapshot,
@@ -1339,15 +1380,20 @@ async def test_projected_inputs_keep_actual_keys_profiles_and_scoped_relationshi
             max_tool_result_bytes=1_000_000,
         ),
     ).load(
-        LogicalContextTransaction()
-        if project_workflow == "logical"
-        else ContextTransaction(),
+        LogicalContextTransaction() if project_workflow == "logical" else ContextTransaction(),
         tenant_id=7,
-        plan=_plan(project_workflow=project_workflow),
+        plan=plan,
     )
+    if project_workflow == "logical":
+        assert result.snapshot is not None
+        focused = focus_subject_area(
+            result, plan=plan, subject_area=_CUSTOMERS, logical=result.snapshot.logical
+        )
+        assert focused is not None
+        result = focused
     values = project_context_inputs(result.context.model_dump(mode="json"))
     for name, spec in workflow_input_contracts(project_workflow).items():
-        assert cast(Any, Draft202012Validator(spec["schema"])).is_valid(values[name])
+        assert cast(Any, Draft202012Validator(spec["schema"])).is_valid(values[name]), name
     assert values["source_context"][0]["connection_description"] == "Source application"
     if project_workflow == "subject_area":
         # Subject Areas cite the selected tables by id, sized by profiles and columns.
@@ -1368,13 +1414,28 @@ async def test_projected_inputs_keep_actual_keys_profiles_and_scoped_relationshi
             {
                 "name": "Legacy Customer",
                 "definition": "Existing authored baseline.",
-                "status": "inactive",
+                "is_active": False,
                 "is_locked": True,
                 "tables": [],
                 "locked_tables": ["t1"],
-            }
+                "other_table_count": 0,
+            },
+            {
+                "name": "Customers",
+                "definition": "Customer accounts.",
+                "is_active": True,
+                "is_locked": False,
+                "tables": ["t1"],
+                "locked_tables": [],
+                "other_table_count": 0,
+            },
         ]
         return
+    assert values["subject_area_context"] == {
+        "name": "Customers",
+        "definition": "Customer accounts.",
+        "input_count": 1,
+    }
     assert values["object_context"][0]["connection_code"] == "GDS"
     assert values["ingestion_mapping"][0]["source"]["connection_code"] == "SOURCE"
     group = values["object_attribute_context"][0]
@@ -1389,9 +1450,7 @@ async def test_projected_inputs_keep_actual_keys_profiles_and_scoped_relationshi
         for relationship in result.context.analysis_relationships
     ]
     assert len(values["object_context"]) == len(values["object_attribute_context"]) == 1
-    assert (
-        relationships[0]["to_object_name"] != values["object_context"][0]["object_name"]
-    )
+    assert relationships[0]["to_object_name"] != values["object_context"][0]["object_name"]
     assert "read_only_dependencies" not in values
 
 
@@ -1399,9 +1458,7 @@ async def test_projected_inputs_keep_actual_keys_profiles_and_scoped_relationshi
 @pytest.mark.parametrize("workflow", ["logical", "dimensional"])
 async def test_authoring_requires_configured_output_schemas(workflow: Any) -> None:
     snapshot = _dimensional_snapshot()
-    details = snapshot.project_input_scope.details.model_copy(
-        update={f"{workflow}_schemas": ()}
-    )
+    details = snapshot.project_input_scope.details.model_copy(update={f"{workflow}_schemas": ()})
     snapshot = snapshot.model_copy(
         update={
             "project_input_scope": snapshot.project_input_scope.model_copy(

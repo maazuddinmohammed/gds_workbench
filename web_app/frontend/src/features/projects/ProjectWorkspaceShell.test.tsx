@@ -44,7 +44,7 @@ const overview = {
 } satisfies ProjectWorkflowOverview;
 const sectionNames = [
   "Overview", "Settings", "Project Input Scope", "Context", "Profiling", "Metadata enrichment",
-  "Analysis", "Subject areas", "Logical", "Dimensional", "Mapping", "Code generation", "Validation",
+  "Analysis", "Subject Areas", "Logical", "Dimensional", "Mapping", "Code generation", "Validation",
 ];
 
 describe("Project workspace status ribbon", () => {
@@ -144,7 +144,7 @@ describe("Project workspace status ribbon", () => {
     await user.keyboard("{ArrowRight}");
     expect(sections.getByRole("link", { name: "Metadata enrichment" })).toHaveFocus();
     await user.keyboard("{ArrowRight}{ArrowRight}");
-    expect(sections.getByRole("link", { name: "Subject areas" })).toHaveFocus();
+    expect(sections.getByRole("link", { name: "Subject Areas" })).toHaveFocus();
     await user.keyboard("{ArrowRight}{ArrowRight}{ArrowRight}");
     expect(sections.getByRole("link", { name: "Mapping" })).toHaveFocus();
     await user.keyboard("{End}{ArrowRight}");

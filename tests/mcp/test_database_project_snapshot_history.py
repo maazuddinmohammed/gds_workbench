@@ -59,9 +59,8 @@ async def test_locked_nested_evidence_survives_physical_deactivation(
                 "logical_entity_schema_name": "silver",
                 "logical_entity_name": "Order",
             },
-            "source_order": 1,
             "rationale": "Applied Logical mapping contribution.",
-            "status": "active",
+            "is_active": True,
             "is_locked": True,
         }
     ]
@@ -73,9 +72,8 @@ async def test_locked_nested_evidence_survives_physical_deactivation(
                 "logical_entity_name": "Order",
                 "logical_attribute_name": "OrderID",
             },
-            "source_order": 1,
-            "rationale": "Applied Logical mapping contribution.",
-            "status": "active",
+            "rationale": None,
+            "is_active": True,
             "is_locked": True,
         }
     ]

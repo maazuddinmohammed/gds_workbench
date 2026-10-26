@@ -15,6 +15,7 @@ import { validationQueryKeys, type ValidationApi } from "./api";
 import { ValidationLedger } from "./ValidationLedger";
 import { ValidationRunDialog } from "./ValidationRunDialog";
 import { ValidationInspector } from "./ValidationInspector";
+import { RefreshButton } from "../../shared/ui";
 
 export function ValidationScreen({
   api,
@@ -123,14 +124,10 @@ export function ValidationScreen({
               title="All active validation checks for this layer and shared groups, including stale checks, SQL and criteria; ignores table filters."
             >{download.isPending ? "Preparing validation export…" : "Export all validations"}</button>
           </WorkflowMenu>
-          <button
-            className="button button-secondary button-small"
-            type="button"
-            disabled={systemsQuery.isFetching || ledgerQuery.isFetching}
+          <RefreshButton
+            refreshing={systemsQuery.isFetching || ledgerQuery.isFetching}
             onClick={() => void refresh()}
-          >
-            {systemsQuery.isFetching || ledgerQuery.isFetching ? "Refreshing…" : "Refresh"}
-          </button>
+          />
           {groupId === undefined ? <button
             className="button button-primary button-small"
             type="button"

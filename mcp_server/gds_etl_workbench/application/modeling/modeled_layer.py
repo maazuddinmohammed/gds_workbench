@@ -9,22 +9,13 @@ from typing import LiteralString, cast
 @dataclass(frozen=True, slots=True)
 class LayerConfig:
     layer: str
-    submodel_fields: tuple[str, ...]
     entity_fields: tuple[str, ...]
     attribute_fields: tuple[str, ...]
     relationship_fields: tuple[str, ...]
 
     @property
-    def submodel_table(self) -> str:
-        return f"workflow.{self.layer}_submodel"
-
-    @property
     def entity_table(self) -> str:
         return f"workflow.{self.layer}_entity"
-
-    @property
-    def membership_table(self) -> str:
-        return f"workflow.{self.layer}_entity_submodel"
 
     @property
     def attribute_table(self) -> str:
@@ -43,10 +34,6 @@ class LayerConfig:
         return f"workflow.{self.layer}_relationship"
 
     @property
-    def submodel_id(self) -> str:
-        return f"{self.layer}_submodel_id"
-
-    @property
     def entity_id(self) -> str:
         return f"{self.layer}_entity_id"
 
@@ -61,21 +48,14 @@ class LayerConfig:
 
 LOGICAL = LayerConfig(
     layer="logical",
-    submodel_fields=(
-        "logical_submodel_name",
-        "logical_submodel_definition",
-        "logical_submodel_status",
-        "logical_submodel_is_locked",
-    ),
     entity_fields=(
         "logical_entity_schema_name",
         "logical_entity_name",
         "logical_entity_definition",
         "logical_entity_type",
-        "logical_entity_type_detail",
         "logical_entity_grain",
         "logical_entity_dependency_order",
-        "logical_entity_status",
+        "logical_entity_is_active",
         "logical_entity_is_locked",
     ),
     attribute_fields=(
@@ -87,28 +67,19 @@ LOGICAL = LayerConfig(
         "logical_attribute_is_surrogate_key",
         "logical_attribute_ordinal_position",
         "logical_attribute_is_audit_column",
-        "logical_attribute_status",
+        "logical_attribute_is_active",
         "logical_attribute_is_locked",
     ),
     relationship_fields=(
-        "logical_relationship_name",
-        "logical_relationship_definition",
         "logical_relationship_cardinality",
         "logical_relationship_basis",
-        "logical_relationship_cardinality_basis",
-        "logical_relationship_status",
+        "logical_relationship_is_active",
         "logical_relationship_is_locked",
     ),
 )
 
 DIMENSIONAL = LayerConfig(
     layer="dimensional",
-    submodel_fields=(
-        "dimensional_submodel_name",
-        "dimensional_submodel_definition",
-        "dimensional_submodel_status",
-        "dimensional_submodel_is_locked",
-    ),
     entity_fields=(
         "dimensional_entity_schema_name",
         "dimensional_entity_name",
@@ -117,7 +88,7 @@ DIMENSIONAL = LayerConfig(
         "dimensional_fact_type",
         "dimensional_entity_grain_definition",
         "dimensional_entity_dependency_order",
-        "dimensional_entity_status",
+        "dimensional_entity_is_active",
         "dimensional_entity_is_locked",
     ),
     attribute_fields=(
@@ -129,47 +100,40 @@ DIMENSIONAL = LayerConfig(
         "dimensional_attribute_is_natural_key",
         "dimensional_attribute_is_surrogate_key",
         "dimensional_attribute_is_audit_column",
-        "dimensional_attribute_status",
+        "dimensional_attribute_is_active",
         "dimensional_attribute_is_locked",
     ),
     relationship_fields=(
-        "dimensional_relationship_name",
-        "dimensional_relationship_definition",
-        "dimensional_relationship_kind",
-        "dimensional_relationship_cardinality",
-        "dimensional_relationship_is_optional",
         "dimensional_relationship_role_name",
         "dimensional_relationship_basis",
-        "dimensional_relationship_cardinality_basis",
-        "dimensional_relationship_status",
+        "dimensional_relationship_is_active",
         "dimensional_relationship_is_locked",
     ),
 )
 
-
-def submodels_sql(config: LayerConfig) -> LiteralString:
-    selected = _select_fields("submodel", config.submodel_fields)
-    return cast(
-        LiteralString,
-        f"""
-SELECT submodel.{config.submodel_id},
-       {selected},
-       count(DISTINCT membership.{config.entity_id}) FILTER (
-           WHERE membership.{config.layer}_entity_submodel_status
-               = 'active'
-       ) AS entity_count
-  FROM {config.submodel_table} AS submodel
-  LEFT JOIN {config.membership_table} AS membership
-    ON membership.project_id = submodel.project_id
-   AND membership.{config.submodel_id} = submodel.{config.submodel_id}
- WHERE submodel.project_id = %s
- GROUP BY submodel.{config.submodel_id}
- ORDER BY lower(submodel.{config.layer}_submodel_name), submodel.{config.submodel_id}
+# Read-only label lists. Inactive codes stay listed so applied history still resolves;
+# Change Set validation accepts only active codes for new or changed records.
+LOGICAL_ENTITY_TYPES_SQL: LiteralString = """
+SELECT logical_entity_type_code,
+       logical_entity_type_description,
+       logical_entity_type_is_active
+  FROM reference.logical_entity_type
+ ORDER BY logical_entity_type_code
  LIMIT %s OFFSET %s
-""",
-    )
+"""
+
+DIMENSIONAL_FACT_TYPES_SQL: LiteralString = """
+SELECT dimensional_fact_type_code,
+       dimensional_fact_type_description,
+       dimensional_fact_type_is_active
+  FROM reference.dimensional_fact_type
+ ORDER BY dimensional_fact_type_code
+ LIMIT %s OFFSET %s
+"""
 
 
+# Source mapping rows store no source type. The filled id says which kind a source is,
+# so every query below derives the record's support_source_type from context_record_id.
 def entities_sql(config: LayerConfig, *, historical: bool = False) -> LiteralString:
     if config.layer == "dimensional":
         return _dimensional_records_sql(attributes=False, historical=historical)
@@ -209,64 +173,29 @@ eligible_objects AS MATERIALIZED (
 SELECT entity.{config.entity_id},
        {selected},
        COALESCE((
-           SELECT jsonb_agg(jsonb_build_object(
-                      'entity_submodel_id', membership.{config.layer}_entity_submodel_id,
-                      'submodel_id', submodel.{config.submodel_id},
-                      'submodel_name', submodel.{config.layer}_submodel_name,
-                      'membership_status',
-                          membership.{config.layer}_entity_submodel_status,
-                      'membership_is_locked',
-                          membership.{config.layer}_entity_submodel_is_locked
-                  ) ORDER BY lower(submodel.{config.layer}_submodel_name))
-             FROM {config.membership_table} AS membership
-             JOIN {config.submodel_table} AS submodel
-               ON submodel.project_id = membership.project_id
-              AND submodel.{config.submodel_id} = membership.{config.submodel_id}
-            WHERE membership.project_id = entity.project_id
-              AND membership.{config.entity_id} = entity.{config.entity_id}
-       ), '[]'::JSONB) AS submodels,
-       COALESCE((
            SELECT jsonb_agg(
-                      CASE source.support_source_type
-                          WHEN 'object' THEN jsonb_build_object(
-                              'entity_source_mapping_id',
-                                  source.{config.layer}_entity_source_mapping_id,
-                              'support_source_type', 'object',
-                              'source_object', jsonb_build_object(
-                                  'object_id', source_object.object_id,
-                                  'tenant_code', source_tenant.tenant_code,
-                                  'system_code', source_system.system_code,
-                                  'connection_code', source_connection.connection_code,
-                                  'object_schema', source_object.object_schema,
-                                  'object_name', source_object.object_name
-                              ),
-                              'source_order',
-                                  source.{config.layer}_entity_source_mapping_order,
-                              'rationale',
-                                  source.{config.layer}_entity_source_mapping_rationale,
-                              'status',
-                                  source.{config.layer}_entity_source_mapping_status,
-                              'is_locked',
-                                  source.{config.layer}_entity_source_mapping_is_locked
+                      jsonb_build_object(
+                          'entity_source_mapping_id',
+                              source.{config.layer}_entity_source_mapping_id,
+                          'rationale', source.{config.layer}_entity_source_mapping_rationale,
+                          'is_active', source.{config.layer}_entity_source_mapping_is_active,
+                          'is_locked', source.{config.layer}_entity_source_mapping_is_locked
+                      ) || CASE WHEN source.context_record_id IS NULL THEN jsonb_build_object(
+                          'support_source_type', 'object',
+                          'source_object', jsonb_build_object(
+                              'object_id', source_object.object_id,
+                              'tenant_code', source_tenant.tenant_code,
+                              'system_code', source_system.system_code,
+                              'connection_code', source_connection.connection_code,
+                              'object_schema', source_object.object_schema,
+                              'object_name', source_object.object_name
                           )
-                          ELSE jsonb_build_object(
-                              'entity_source_mapping_id',
-                                  source.{config.layer}_entity_source_mapping_id,
-                              'support_source_type', 'context_record',
-                              'context_record', jsonb_build_object(
-                                  'context_record_id',
-                                      context_record.context_record_id
-                              ),
-                              'source_order',
-                                  source.{config.layer}_entity_source_mapping_order,
-                              'rationale',
-                                  source.{config.layer}_entity_source_mapping_rationale,
-                              'status',
-                                  source.{config.layer}_entity_source_mapping_status,
-                              'is_locked',
-                                  source.{config.layer}_entity_source_mapping_is_locked
+                      ) ELSE jsonb_build_object(
+                          'support_source_type', 'context_record',
+                          'context_record', jsonb_build_object(
+                              'context_record_id', context_record.context_record_id
                           )
-                      END ORDER BY source.{config.layer}_entity_source_mapping_id
+                      ) END ORDER BY source.{config.layer}_entity_source_mapping_id
                   )
              FROM {config.entity_source_table} AS source
              LEFT JOIN core.object AS source_object
@@ -288,7 +217,7 @@ SELECT entity.{config.entity_id},
             WHERE source.project_id = entity.project_id
               AND source.{config.entity_id} = entity.{config.entity_id}
               AND (
-                  source.support_source_type <> 'object'
+                  source.source_object_id IS NULL
                   OR EXISTS (
                       SELECT 1
                         FROM eligible_objects AS eligibility
@@ -307,7 +236,6 @@ SELECT entity.{config.entity_id},
              FROM {config.entity_source_table} AS selected_source
             WHERE selected_source.project_id = entity.project_id
               AND selected_source.{config.entity_id} = entity.{config.entity_id}
-              AND selected_source.support_source_type = 'object'
               AND selected_source.source_object_id = ANY(%s::BIGINT[])
               AND EXISTS (
                   SELECT 1
@@ -370,50 +298,32 @@ SELECT attribute.{config.attribute_id},
        {selected},
        COALESCE((
            SELECT jsonb_agg(
-                      CASE source.support_source_type
-                          WHEN 'attribute' THEN jsonb_build_object(
-                              'attribute_source_mapping_id',
-                                  source.{config.layer}_attribute_source_mapping_id,
-                              'entity_source_mapping_id',
-                                  source.{config.layer}_entity_source_mapping_id,
-                              'support_source_type', 'attribute',
-                              'source_attribute', jsonb_build_object(
-                                  'object_id', source_object.object_id,
-                                  'attribute_id', source_attribute.attribute_id,
-                                  'tenant_code', source_tenant.tenant_code,
-                                  'system_code', source_system.system_code,
-                                  'connection_code', source_connection.connection_code,
-                                  'object_schema', source_object.object_schema,
-                                  'object_name', source_object.object_name,
-                                  'attribute_name', source_attribute.attribute_name
-                              ),
-                              'source_order',
-                                  source.{config.layer}_attribute_source_mapping_order,
-                              'rationale',
-                                  source.{config.layer}_attribute_source_mapping_rationale,
-                              'status',
-                                  source.{config.layer}_attribute_source_mapping_status,
-                              'is_locked',
-                                  source.{config.layer}_attribute_source_mapping_is_locked
+                      jsonb_build_object(
+                          'attribute_source_mapping_id',
+                              source.{config.layer}_attribute_source_mapping_id,
+                          'rationale', source.{config.layer}_attribute_source_mapping_rationale,
+                          'is_active', source.{config.layer}_attribute_source_mapping_is_active,
+                          'is_locked', source.{config.layer}_attribute_source_mapping_is_locked
+                      ) || CASE WHEN source.context_record_id IS NULL THEN jsonb_build_object(
+                          'entity_source_mapping_id',
+                              source.{config.layer}_entity_source_mapping_id,
+                          'support_source_type', 'attribute',
+                          'source_attribute', jsonb_build_object(
+                              'object_id', source_object.object_id,
+                              'attribute_id', source_attribute.attribute_id,
+                              'tenant_code', source_tenant.tenant_code,
+                              'system_code', source_system.system_code,
+                              'connection_code', source_connection.connection_code,
+                              'object_schema', source_object.object_schema,
+                              'object_name', source_object.object_name,
+                              'attribute_name', source_attribute.attribute_name
                           )
-                          ELSE jsonb_build_object(
-                              'attribute_source_mapping_id',
-                                  source.{config.layer}_attribute_source_mapping_id,
-                              'support_source_type', 'context_record',
-                              'context_record', jsonb_build_object(
-                                  'context_record_id',
-                                      context_record.context_record_id
-                              ),
-                              'source_order',
-                                  source.{config.layer}_attribute_source_mapping_order,
-                              'rationale',
-                                  source.{config.layer}_attribute_source_mapping_rationale,
-                              'status',
-                                  source.{config.layer}_attribute_source_mapping_status,
-                              'is_locked',
-                                  source.{config.layer}_attribute_source_mapping_is_locked
+                      ) ELSE jsonb_build_object(
+                          'support_source_type', 'context_record',
+                          'context_record', jsonb_build_object(
+                              'context_record_id', context_record.context_record_id
                           )
-                      END ORDER BY source.{config.layer}_attribute_source_mapping_id
+                      ) END ORDER BY source.{config.layer}_attribute_source_mapping_id
                   )
              FROM {config.attribute_source_table} AS source
              LEFT JOIN core.object AS source_object
@@ -439,7 +349,7 @@ SELECT attribute.{config.attribute_id},
             WHERE source.project_id = attribute.project_id
               AND source.{config.attribute_id} = attribute.{config.attribute_id}
               AND (
-                  source.support_source_type <> 'attribute'
+                  source.source_attribute_id IS NULL
                   OR EXISTS (
                       SELECT 1
                         FROM eligible_attributes AS eligibility
@@ -469,6 +379,7 @@ SELECT attribute.{config.attribute_id},
 
 
 def relationships_sql(config: LayerConfig) -> LiteralString:
+    """Child -> parent links; one per foreign-key (from) Attribute."""
     selected = _select_fields("relationship", config.relationship_fields)
     return cast(
         LiteralString,
@@ -518,8 +429,7 @@ SELECT relationship.{config.relationship_id},
        OR relationship.{config.layer}_relationship_to_entity_id = ANY(%s::BIGINT[])
    )
  ORDER BY relationship.{config.layer}_relationship_from_entity_id,
-          relationship.{config.layer}_relationship_to_entity_id,
-          lower(relationship.{config.layer}_relationship_name),
+          relationship.{config.layer}_relationship_from_attribute_id,
           relationship.{config.relationship_id}
  LIMIT %s OFFSET %s
 """,
@@ -539,27 +449,6 @@ def _dimensional_records_sql(*, attributes: bool, historical: bool) -> LiteralSt
         "entity.dimensional_entity_schema_name, entity.dimensional_entity_name,"
         if attributes
         else "entity.dimensional_entity_id,"
-    )
-    memberships = (
-        ""
-        if attributes
-        else """
-       COALESCE((
-           SELECT jsonb_agg(jsonb_build_object(
-               'entity_submodel_id', membership.dimensional_entity_submodel_id,
-               'submodel_id', submodel.dimensional_submodel_id,
-               'submodel_name', submodel.dimensional_submodel_name,
-               'membership_status', membership.dimensional_entity_submodel_status,
-               'membership_is_locked', membership.dimensional_entity_submodel_is_locked
-           ) ORDER BY lower(submodel.dimensional_submodel_name))
-           FROM workflow.dimensional_entity_submodel AS membership
-           JOIN workflow.dimensional_submodel AS submodel
-             ON submodel.dimensional_submodel_id = membership.dimensional_submodel_id
-            AND submodel.project_id = membership.project_id
-           WHERE membership.project_id = entity.project_id
-             AND membership.dimensional_entity_id = entity.dimensional_entity_id
-       ), '[]'::JSONB) AS submodels,
-"""
     )
     key_attribute = (
         ",'logical_attribute_id', logical_attribute.logical_attribute_id, "
@@ -581,8 +470,8 @@ def _dimensional_records_sql(*, attributes: bool, historical: bool) -> LiteralSt
         "TRUE"
         if historical
         else (
-            "logical_entity.logical_entity_status = 'active'"
-            + (" AND logical_attribute.logical_attribute_status = 'active'" if attributes else "")
+            "logical_entity.logical_entity_is_active"
+            + (" AND logical_attribute.logical_attribute_is_active" if attributes else "")
         )
     )
     from_records = (
@@ -599,7 +488,6 @@ def _dimensional_records_sql(*, attributes: bool, historical: bool) -> LiteralSt
        EXISTS (SELECT 1 FROM workflow.dimensional_entity_source_mapping AS selected_source
                 WHERE selected_source.project_id = entity.project_id
                   AND selected_source.dimensional_entity_id = entity.dimensional_entity_id
-                  AND selected_source.support_source_type = 'logical_entity'
                   AND selected_source.source_logical_entity_id = ANY(%s::BIGINT[]))
 """
     )
@@ -616,18 +504,15 @@ def _dimensional_records_sql(*, attributes: bool, historical: bool) -> LiteralSt
         f"""
 SELECT {identity}
        {fields},
-       {memberships}
        COALESCE((
            SELECT jsonb_agg(
                jsonb_build_object(
                    '{kind}_source_mapping_id', source.dimensional_{kind}_source_mapping_id,
-                   'support_source_type', source.support_source_type,
-                   'source_order', source.dimensional_{kind}_source_mapping_order,
                    'rationale', source.dimensional_{kind}_source_mapping_rationale,
-                   'status', source.dimensional_{kind}_source_mapping_status,
+                   'is_active', source.dimensional_{kind}_source_mapping_is_active,
                    'is_locked', source.dimensional_{kind}_source_mapping_is_locked
-               ) || CASE source.support_source_type
-                   WHEN '{source_kind}' THEN jsonb_build_object(
+               ) || CASE WHEN source.context_record_id IS NULL THEN jsonb_build_object(
+                       'support_source_type', '{source_kind}',
                        'source_{source_kind}', jsonb_build_object(
                            'logical_entity_id', logical_entity.logical_entity_id,
                            'logical_entity_schema_name', logical_entity.logical_entity_schema_name,
@@ -635,6 +520,7 @@ SELECT {identity}
                            {key_attribute}
                        )
                    ) ELSE jsonb_build_object(
+                       'support_source_type', 'context_record',
                        'context_record', jsonb_build_object(
                            'context_record_id',
                            context_record.context_record_id
@@ -652,7 +538,7 @@ SELECT {identity}
               AND context_record.project_id = source.project_id
             WHERE source.project_id = {record}.project_id
               AND source.dimensional_{kind}_id = {record}.dimensional_{kind}_id
-              AND (source.support_source_type = 'context_record' OR ({active_source}))
+              AND (source.context_record_id IS NOT NULL OR ({active_source}))
        ), '[]'::JSONB) AS sources
   FROM {from_records}
  WHERE {record}.project_id = %s

@@ -174,10 +174,9 @@ def test_native_new_project_policy_rejects_unsupported_layout(
                 {
                     "logical_entity_schema_name": "silver",
                     "logical_entity_name": "bad_name",
-                    "logical_entity_status": "active",
-                    "logical_entity_type": "master",
+                    "logical_entity_is_active": True,
+                    "logical_entity_type": "core",
                     "logical_entity_dependency_order": 1,
-                    "submodels": [],
                     "sources": [],
                 }
             ]

@@ -36,7 +36,6 @@
     "sources": [
       {
         "is_locked": false,
-        "mapping_order": 1,
         "modeled_entity_id": 201,
         "object": {
           "attributes": [
@@ -211,7 +210,6 @@
               "source_mapping_id": 1,
               "role": "primary",
               "rationale": "Recorded customer source.",
-              "mapping_order": 1,
               "is_locked": false,
               "object": {
                 "object_id": 401,
@@ -355,7 +353,6 @@
               "source_mapping_id": 1,
               "role": "primary",
               "rationale": "Recorded customer source.",
-              "mapping_order": 1,
               "is_locked": false,
               "object": {
                 "object_id": 401,

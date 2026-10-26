@@ -42,4 +42,4 @@ Goal: scoped findings with explicit coverage. Profiling measures data, Project e
 
 ## Next
 
-Continue to [logical modeling](../atlas-logical-model/SKILL.md), [mapping](../atlas-mapping/SKILL.md) or [subject areas](../atlas-subject-areas/SKILL.md) only when the outcome needs it.
+Continue to [logical modeling](../atlas-logical-model/SKILL.md), [mapping](../atlas-mapping/SKILL.md) or [Subject Areas](../atlas-subject-areas/SKILL.md) only when the outcome needs it.

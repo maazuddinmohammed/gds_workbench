@@ -130,15 +130,34 @@ def test_local_workbench_seed_uses_the_simplified_workflow_schema(
             ).fetchone()
         )
         assert flags == {"natural": 0, "surrogate": 1, "audit": 0, "nullable_keys": 0}
+        # Kind and optionality are not stored: kind follows the two Entity types and
+        # optionality is the foreign-key Attribute's nullability.
         relationship = require_row(
             connection.execute(
                 """
-                SELECT relationship.dimensional_relationship_kind AS kind,
-                       relationship.dimensional_relationship_is_optional AS optional,
+                SELECT CASE
+                           WHEN from_entity.dimensional_entity_type = 'fact'
+                            AND to_entity.dimensional_entity_type = 'dimension'
+                           THEN 'fact_dimension'
+                           WHEN from_entity.dimensional_entity_type = 'bridge'
+                            AND to_entity.dimensional_entity_type = 'dimension'
+                           THEN 'bridge_dimension'
+                           WHEN from_entity.dimensional_entity_type = 'dimension'
+                            AND to_entity.dimensional_entity_type = 'dimension'
+                           THEN 'dimension_outrigger'
+                           ELSE 'reference'
+                       END AS kind,
+                       source.dimensional_attribute_is_nullable AS optional,
                        relationship.dimensional_relationship_role_name AS role,
                        source.dimensional_attribute_is_surrogate_key AS source_surrogate,
                        target.dimensional_attribute_is_surrogate_key AS target_surrogate
                   FROM workflow.dimensional_relationship AS relationship
+                  JOIN workflow.dimensional_entity AS from_entity
+                    ON from_entity.dimensional_entity_id =
+                       relationship.dimensional_relationship_from_entity_id
+                  JOIN workflow.dimensional_entity AS to_entity
+                    ON to_entity.dimensional_entity_id =
+                       relationship.dimensional_relationship_to_entity_id
                   JOIN workflow.dimensional_attribute AS source
                     ON source.dimensional_attribute_id =
                        relationship.dimensional_relationship_from_attribute_id

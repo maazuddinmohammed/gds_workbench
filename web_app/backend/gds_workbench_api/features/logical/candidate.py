@@ -13,7 +13,7 @@ import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Annotated, Literal, cast
+from typing import Annotated, Any, Literal, cast
 
 from gds_etl_workbench.application.change_sets.project import StageProjectChange
 from gds_etl_workbench.application.change_sets.project_validation import (
@@ -75,19 +75,8 @@ _NOTE = (
     "Short reason, only when the value is not a straight copy: a filter, lookup, derivation "
     "or combination of sources."
 )
-# Mirrors LogicalEntityRecord.logical_entity_type.
-_EntityType = Literal[
-    "core",
-    "reference",
-    "transaction",
-    "event",
-    "bridge",
-    "history",
-    "snapshot",
-    "association",
-    "aggregate",
-    "other",
-]
+# A code from logical_entity_types; the output schema lists the active ones.
+_EntityType = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,49}$")]
 
 
 class _Compact(BaseModel):
@@ -161,10 +150,9 @@ class _CompactEntity(_Compact):
     schema_: Name400 = Field(alias="schema", description="One schema_name from schemas.")
     name: _Name = Field(description="Singular Entity name, following naming_instructions.")
     type: _EntityType | None = Field(
-        default=None, description="Required for a new Entity; omit to keep a saved one."
-    )
-    type_detail: NonblankText | None = Field(
-        default=None, description="Required only when type is other."
+        default=None,
+        description="A logical_entity_types code. Required for a new Entity; omit to keep a "
+        "saved one.",
     )
     definition: NonblankText | None = Field(
         default=None,
@@ -295,7 +283,8 @@ class _Draft:
     listed_entities: set[_Key] = field(default_factory=set[_Key])
     # Listed Entities already reported; references to them add no second issue.
     rejected_entities: set[_Key] = field(default_factory=set[_Key])
-    listed_endpoints: set[_Key] = field(default_factory=set[_Key])
+    # Relationships this answer lists, by their child foreign-key Attribute.
+    listed_relationships: set[_Key] = field(default_factory=set[_Key])
     issues: list[AgentValidationIssue] = field(default_factory=list[AgentValidationIssue])
 
     def problem(self, code: str, path: _Path, message: str) -> None:
@@ -342,7 +331,6 @@ _AGENT_FIELDS = {
     "logical_entity_schema_name": "schema",
     "logical_entity_name": "name",
     "logical_entity_type": "type",
-    "logical_entity_type_detail": "type_detail",
     "logical_entity_definition": "definition",
     "logical_entity_grain": "grain",
     "logical_attribute_name": "name",
@@ -371,6 +359,7 @@ class LogicalCandidateValidator:
         selected_attribute_keys: tuple[PhysicalAttributeKey, ...],
         context_record_ids: tuple[str, ...],
         applied: LogicalSection | None,
+        entity_types: tuple[str, ...] = (),
         coverage_threshold_percent: int = 70,
         attribute_descriptions: Mapping[PhysicalAttributeKey, str] | None = None,
         reserved_attribute_names: tuple[str, ...] = (),
@@ -422,9 +411,9 @@ class LogicalCandidateValidator:
             normalize_project_key_value(name) for name in reserved_attribute_names
         }
 
-        self._applied = applied or LogicalSection(
-            submodels=(), entities=(), attributes=(), relationships=()
-        )
+        self._applied = applied or LogicalSection(entities=(), attributes=(), relationships=())
+        # Active codes of reference.logical_entity_type, as frozen in the run's snapshot.
+        self._entity_types = tuple(dict.fromkeys(entity_types))
         self._applied_entities = {_entity_key(record): record for record in self._applied.entities}
         self._applied_attributes = {
             _attribute_key(record): record for record in self._applied.attributes
@@ -444,6 +433,13 @@ class LogicalCandidateValidator:
 
     def output_schema(self) -> dict[str, JsonValue]:
         schema = cast(dict[str, JsonValue], deepcopy(_CompactLogicalCandidate.model_json_schema()))
+        entity_schema = cast(dict[str, Any], schema["$defs"])["_CompactEntity"]
+        entity_schema["properties"]["type"] = {
+            "anyOf": [{"enum": list(self._entity_types)}, {"type": "null"}],
+            "default": None,
+            "description": "A logical_entity_types code. Required for a new Entity; omit to "
+            "keep a saved one.",
+        }
         schema["description"] = (
             "Return only new or changed Logical records in the three arrays; omitted saved "
             "records stay as they are. Cite tables by table_index id (t1) and columns as "
@@ -475,12 +471,18 @@ class LogicalCandidateValidator:
             **self._applied_entities,
             **{_entity_key(record): record for record in normalized.entities},
         }
+        return self.coverage_of(entities.values())
+
+    def coverage_of(
+        self, entities: Iterable[LogicalEntityRecord]
+    ) -> tuple[AgentValidationIssue, ...]:
+        """Distinct selected Objects with active support on active Entities."""
         covered_objects = {
             _physical_object_key(source.source_object)
-            for record in entities.values()
-            if record.logical_entity_status == "active"
+            for record in entities
+            if record.logical_entity_is_active
             for source in record.sources
-            if isinstance(source, LogicalObjectSourceRecord) and source.status == "active"
+            if isinstance(source, LogicalObjectSourceRecord) and source.is_active
         }
         missing_objects = self._selected_object_keys.keys() - covered_objects
         total = len(self._selected_object_keys)
@@ -664,6 +666,14 @@ class LogicalCandidateValidator:
             return
         saved = self._applied_entities.get(key)
         generated_key = normalize_project_key_value(f"{entity.name}ID")
+        if entity.type is not None and entity.type not in self._entity_types:
+            draft.rejected_entities.add(key)
+            draft.problem(
+                "candidate.entity_type_unknown",
+                (*path, "type"),
+                "Use an active code from logical_entity_types.",
+            )
+            return
         if saved is None:
             missing = [
                 name for name in ("type", "definition", "grain") if getattr(entity, name) is None
@@ -711,22 +721,14 @@ class LogicalCandidateValidator:
                 "logical_entity_definition": entity.definition
                 or (saved.logical_entity_definition if saved else ""),
                 "logical_entity_type": entity_type,
-                "logical_entity_type_detail": (
-                    saved.logical_entity_type_detail
-                    if entity.type is None and saved is not None
-                    else entity.type_detail
-                    if entity_type == "other"
-                    else None
-                ),
                 "logical_entity_grain": entity.grain
                 or (saved.logical_entity_grain if saved else ""),
                 # The backend sets dependency order once every Relationship is known.
                 "logical_entity_dependency_order": (
                     saved.logical_entity_dependency_order if saved else 0
                 ),
-                "logical_entity_status": "active",
+                "logical_entity_is_active": True,
                 "logical_entity_is_locked": False,
-                "submodels": [],
                 "sources": sources,
             },
             path,
@@ -944,7 +946,7 @@ class LogicalCandidateValidator:
                 if attribute_key[:2] == parent_key
                 and (record := self._current("logical_attribute", draft, attribute_key)) is not None
                 and record["logical_attribute_is_surrogate_key"] is True
-                and record["logical_attribute_status"] == "active"
+                and record["logical_attribute_is_active"] is True
             ),
             None,
         )
@@ -966,55 +968,25 @@ class LogicalCandidateValidator:
             else relationship.from_.attribute
         )
         to_name = cast(str, parent_attribute["logical_attribute_name"])
-        endpoints = (
-            *child_key,
-            normalize_project_key_value(from_name),
-            *parent_key,
-            normalize_project_key_value(to_name),
-        )
-        if endpoints in draft.listed_endpoints:
+        # One foreign-key Attribute points at one parent: it identifies the Relationship.
+        key = (*child_key, normalize_project_key_value(from_name))
+        if key in draft.listed_relationships:
             draft.problem("candidate.duplicate_record", path, "List each Relationship once.")
             return
-        draft.listed_endpoints.add(endpoints)
-        saved = min(
-            (record for key, record in self._applied_relationships.items() if key[:6] == endpoints),
-            key=lambda record: (
-                record.logical_relationship_status != "active",
-                _relationship_key(record),
-            ),
-            default=None,
-        )
-        child_name = cast(str, child["logical_entity_name"])
-        parent_name = cast(str, parent["logical_entity_name"])
-        # The foreign-key column carries the role, so it names a new Relationship.
-        name = saved.logical_relationship_name if saved else from_name
+        draft.listed_relationships.add(key)
         draft.add(
             "logical_relationship",
-            (*endpoints, normalize_project_key_value(name)),
+            key,
             {
                 "from_logical_entity_schema_name": child["logical_entity_schema_name"],
                 "to_logical_entity_schema_name": parent["logical_entity_schema_name"],
-                "logical_relationship_name": name,
-                "logical_relationship_definition": (
-                    saved.logical_relationship_definition
-                    if saved
-                    else f"{child_name} references {parent_name} through {from_name}."
-                ),
-                "from_logical_entity_name": child_name,
+                "from_logical_entity_name": child["logical_entity_name"],
                 "from_logical_attribute_name": from_name,
-                "to_logical_entity_name": parent_name,
+                "to_logical_entity_name": parent["logical_entity_name"],
                 "to_logical_attribute_name": to_name,
                 "logical_relationship_cardinality": relationship.cardinality,
                 "logical_relationship_basis": relationship.basis,
-                # One basis covers the link and its cardinality; an unchanged saved pair stays.
-                "logical_relationship_cardinality_basis": (
-                    saved.logical_relationship_cardinality_basis
-                    if saved is not None
-                    and saved.logical_relationship_basis == relationship.basis
-                    and saved.logical_relationship_cardinality == relationship.cardinality
-                    else relationship.basis
-                ),
-                "logical_relationship_status": "active",
+                "logical_relationship_is_active": True,
                 "logical_relationship_is_locked": False,
             },
             path,
@@ -1043,21 +1015,19 @@ class LogicalCandidateValidator:
                 normalize_project_key_value(item.to.schema_),
                 normalize_project_key_value(item.to.entity),
             )
-            found = {
-                key
-                for key in self._applied_relationships
-                if key[:3] == attribute_key and key[3:5] == parent_key
-            }
-            if not found:
+            saved_relationship = self._applied_relationships.get(attribute_key)
+            if saved_relationship is None or _to_entity_key(saved_relationship) != parent_key:
                 draft.problem("candidate.record_missing", path, "No saved Relationship matches.")
-            elif any(key[:6] in draft.listed_endpoints for key in found):
+            elif attribute_key in draft.listed_relationships:
                 draft.problem(
                     "candidate.retire_conflict",
                     path,
                     "Do not list a Relationship and also retire it.",
                 )
             else:
-                self._retire_relationships(draft, path, lambda key: key in found)
+                self._retire_relationships(
+                    draft, path, lambda record: _relationship_key(record) == attribute_key
+                )
             return
 
         if item.source is not None:
@@ -1086,7 +1056,7 @@ class LogicalCandidateValidator:
                 path,
             )
             cast(list[object], record["sources"]).append(
-                {**saved_source.model_dump(mode="json"), "status": "inactive"}
+                {**saved_source.model_dump(mode="json"), "is_active": False}
             )
             draft.source_paths[(dataset, record_key)].append(path)
             return
@@ -1113,7 +1083,7 @@ class LogicalCandidateValidator:
             entity_key,
             {
                 **saved_entity.model_dump(mode="json"),
-                "logical_entity_status": "inactive",
+                "logical_entity_is_active": False,
                 "sources": [],
             },
             path,
@@ -1122,10 +1092,14 @@ class LogicalCandidateValidator:
             if (
                 key[:2] == entity_key
                 and key not in draft.records["logical_attribute"]
-                and saved_attribute.logical_attribute_status == "active"
+                and saved_attribute.logical_attribute_is_active
             ):
                 self._retire_attribute(draft, saved_attribute, path)
-        self._retire_relationships(draft, path, lambda key: entity_key in (key[:2], key[3:5]))
+        self._retire_relationships(
+            draft,
+            path,
+            lambda record: entity_key in (_relationship_key(record)[:2], _to_entity_key(record)),
+        )
 
     def _retire_attribute(self, draft: _Draft, saved: LogicalAttributeRecord, path: _Path) -> None:
         key = _attribute_key(saved)
@@ -1134,30 +1108,32 @@ class LogicalCandidateValidator:
             key,
             {
                 **saved.model_dump(mode="json"),
-                "logical_attribute_status": "inactive",
+                "logical_attribute_is_active": False,
                 "sources": [],
             },
             path,
         )
         self._retire_relationships(
-            draft, path, lambda relationship: key in (relationship[:3], relationship[3:6])
+            draft,
+            path,
+            lambda record: key in (_relationship_key(record), _to_attribute_key(record)),
         )
 
     def _retire_relationships(
-        self, draft: _Draft, path: _Path, matches: Callable[[_Key], bool]
+        self, draft: _Draft, path: _Path, matches: Callable[[LogicalRelationshipRecord], bool]
     ) -> None:
         """Retire active saved Relationships the agent did not list itself."""
         for key, saved in self._applied_relationships.items():
             if (
-                saved.logical_relationship_status == "active"
-                and key[:6] not in draft.listed_endpoints
+                saved.logical_relationship_is_active
+                and key not in draft.listed_relationships
                 and key not in draft.records["logical_relationship"]
-                and matches(key)
+                and matches(saved)
             ):
                 draft.add(
                     "logical_relationship",
                     key,
-                    {**saved.model_dump(mode="json"), "logical_relationship_status": "inactive"},
+                    {**saved.model_dump(mode="json"), "logical_relationship_is_active": False},
                     path,
                 )
 
@@ -1168,13 +1144,19 @@ class LogicalCandidateValidator:
         their saved order, or zero.
         """
         relationships = {
-            key: (key[:2], key[3:5])
+            key: (key[:2], _to_entity_key(record))
             for key, record in self._applied_relationships.items()
-            if record.logical_relationship_status == "active"
+            if record.logical_relationship_is_active
         }
         for key, record in draft.records["logical_relationship"].items():
-            if record["logical_relationship_status"] == "active":
-                relationships[key] = (key[:2], key[3:5])
+            if record["logical_relationship_is_active"]:
+                relationships[key] = (
+                    key[:2],
+                    (
+                        normalize_project_key_value(str(record["to_logical_entity_schema_name"])),
+                        normalize_project_key_value(str(record["to_logical_entity_name"])),
+                    ),
+                )
             else:
                 relationships.pop(key, None)
         parents: dict[_Key, set[_Key]] = {}
@@ -1229,7 +1211,6 @@ class LogicalCandidateValidator:
             source: dict[str, object] = {
                 "support_source_type": "context_record",
                 "context_record": {"context_record_id": reference.context},
-                "rationale": note or "A Context record supports this Entity.",
             }
         else:
             table = self._tables.get(reference if isinstance(reference, str) else reference.table)
@@ -1239,13 +1220,12 @@ class LogicalCandidateValidator:
             source = {
                 "support_source_type": "object",
                 "source_object": table.model_dump(mode="json"),
-                "rationale": note or f"Built from {table.object_schema}.{table.object_name}.",
             }
         saved = saved_sources.get(identity)
         if saved is not None and note is None:
-            # A repeated source keeps its saved rationale and order.
-            return {**saved.model_dump(mode="json"), "status": "active", "is_locked": False}
-        return {**source, "source_order": None, "status": "active", "is_locked": False}
+            # A repeated source keeps its saved rationale.
+            return {**saved.model_dump(mode="json"), "is_active": True, "is_locked": False}
+        return {**source, "rationale": note, "is_active": True, "is_locked": False}
 
     def _attribute_source(
         self,
@@ -1259,7 +1239,6 @@ class LogicalCandidateValidator:
             source: dict[str, object] = {
                 "support_source_type": "context_record",
                 "context_record": {"context_record_id": reference.context},
-                "rationale": note or "A Context record supports this Attribute.",
             }
         else:
             column = self._column(reference if isinstance(reference, str) else reference.column)
@@ -1269,12 +1248,12 @@ class LogicalCandidateValidator:
             source = {
                 "support_source_type": "attribute",
                 "source_attribute": column.model_dump(mode="json"),
-                "rationale": note or f"Copied from {column.object_name}.{column.attribute_name}.",
             }
         saved = saved_sources.get(identity)
         if saved is not None and note is None:
-            return {**saved.model_dump(mode="json"), "status": "active", "is_locked": False}
-        return {**source, "source_order": None, "status": "active", "is_locked": False}
+            return {**saved.model_dump(mode="json"), "is_active": True, "is_locked": False}
+        # A straight copy needs no rationale; the note explains anything else.
+        return {**source, "rationale": note, "is_active": True, "is_locked": False}
 
     def _column(self, reference: str) -> PhysicalAttributeKey | None:
         table_id, _, column = reference.partition(".")
@@ -1300,7 +1279,7 @@ class LogicalCandidateValidator:
     ) -> None:
         for source_index, source in enumerate(record.sources):
             # Retiring evidence never needs it to be in this run.
-            if source.status != "active":
+            if not source.is_active:
                 continue
             if isinstance(source, LogicalObjectSourceRecord):
                 valid = (
@@ -1334,7 +1313,7 @@ class LogicalCandidateValidator:
         issues: list[AgentValidationIssue],
     ) -> None:
         for source_index, source in enumerate(record.sources):
-            if source.status != "active":
+            if not source.is_active:
                 continue
             if isinstance(source, AttributePhysicalSourceRecord):
                 valid = (
@@ -1486,7 +1465,7 @@ def _attribute_record(
         "logical_attribute_is_surrogate_key": surrogate_key,
         "logical_attribute_ordinal_position": ordinal,
         "logical_attribute_is_audit_column": False,
-        "logical_attribute_status": "active",
+        "logical_attribute_is_active": True,
         "logical_attribute_is_locked": False,
         "sources": sources,
     }
@@ -1564,10 +1543,6 @@ def _record_identity(dataset: str, record: Mapping[str, object]) -> _Key:
             "from_logical_entity_schema_name",
             "from_logical_entity_name",
             "from_logical_attribute_name",
-            "to_logical_entity_schema_name",
-            "to_logical_entity_name",
-            "to_logical_attribute_name",
-            "logical_relationship_name",
         ),
     )
     return tuple(normalize_project_key_value(str(record.get(name, ""))) for name in fields)
@@ -1584,10 +1559,6 @@ def _merge_entity(
     value = cast(dict[str, object], record.model_dump(mode="json"))
     value["logical_entity_is_locked"] = (
         existing.logical_entity_is_locked if existing is not None else False
-    )
-    # Submodel memberships are no longer authored; saved ones stay as they are.
-    value["submodels"] = (
-        [] if existing is None else [item.model_dump(mode="json") for item in existing.submodels]
     )
     value["sources"] = _merge_nested(
         record.sources,
@@ -1692,15 +1663,23 @@ def _attribute_key(record: LogicalAttributeRecord) -> _Key:
 
 
 def _relationship_key(record: LogicalRelationshipRecord) -> _Key:
+    """A Relationship is its child foreign-key Attribute."""
     return (
         normalize_project_key_value(record.from_logical_entity_schema_name),
         normalize_project_key_value(record.from_logical_entity_name),
         normalize_project_key_value(record.from_logical_attribute_name),
+    )
+
+
+def _to_entity_key(record: LogicalRelationshipRecord) -> _Key:
+    return (
         normalize_project_key_value(record.to_logical_entity_schema_name),
         normalize_project_key_value(record.to_logical_entity_name),
-        normalize_project_key_value(record.to_logical_attribute_name),
-        normalize_project_key_value(record.logical_relationship_name),
     )
+
+
+def _to_attribute_key(record: LogicalRelationshipRecord) -> _Key:
+    return (*_to_entity_key(record), normalize_project_key_value(record.to_logical_attribute_name))
 
 
 def _entity_source_key(record: _EntitySource) -> _Key:

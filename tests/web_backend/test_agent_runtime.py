@@ -12,6 +12,10 @@ from gds_etl_workbench.domain.modeling_records import (
     PhysicalAttributeKey,
     PhysicalObjectKey,
 )
+from mapping_fixtures import mapping_preparation as _mapping_preparation
+from pydantic import JsonValue, SecretStr
+from tests.mcp.project_test_fixtures import LOGICAL_ENTITY_TYPES
+
 from gds_workbench_api.capabilities import (
     AgentModelExecutionProfile,
     AgentRunSelection,
@@ -47,8 +51,6 @@ from gds_workbench_api.integrations.agents.configuration import (
     AgentRuntimeConfiguration,
     FoundryClientCredentials,
 )
-from mapping_fixtures import mapping_preparation as _mapping_preparation
-from pydantic import JsonValue, SecretStr
 
 
 def _selection(*, sdk_code: str) -> AgentRunSelection:
@@ -86,13 +88,9 @@ def _request(*, sdk_code: str) -> AgentExecutionRequest:
 
 
 @pytest.mark.asyncio
-async def test_agent_router_rejects_a_model_profile_for_the_wrong_execution_mode() -> (
-    None
-):
+async def test_agent_router_rejects_a_model_profile_for_the_wrong_execution_mode() -> None:
     registry = load_default_agent_capabilities()
-    primary_model = next(
-        model for model in registry.models if model.code == "foundry-primary"
-    )
+    primary_model = next(model for model in registry.models if model.code == "foundry-primary")
     restricted = primary_model.model_copy(
         update={
             "execution_profiles": (
@@ -107,8 +105,7 @@ async def test_agent_router_rejects_a_model_profile_for_the_wrong_execution_mode
     registry = registry.model_copy(
         update={
             "models": tuple(
-                restricted if model.code == restricted.code else model
-                for model in registry.models
+                restricted if model.code == restricted.code else model for model in registry.models
             )
         }
     )
@@ -231,13 +228,10 @@ def _subject_area_request(*, sdk_code: str) -> AgentExecutionRequest:
                             "zone_code": "bronze",
                             "row_count": None,
                             "column_count": count,
-                            "column_names": [
-                                f"column_{index}" for index in range(count)
-                            ],
+                            "column_names": [f"column_{index}" for index in range(count)],
                         }
-                        for position, count in enumerate((200, 150, 400), start=1)
+                        for position, count in enumerate((200, 150, 400, 20, 5), start=1)
                     ],
-                    "max_subject_area_columns": 300,
                 }
             },
             "repair": None,
@@ -440,7 +434,7 @@ def _tool_assisted_logical_request(*, sdk_code: str) -> AgentExecutionRequest:
     return AgentExecutionRequest(
         workflow_run_id=1048,
         workflow="logical",
-        stage="candidate_authoring",
+        stage="build_authoring",
         execution_mode="tool_assisted",
         selection=_selection(sdk_code=sdk_code),
         system_prompt="private system prompt",
@@ -477,7 +471,7 @@ def _tool_assisted_dimensional_request(
     return AgentExecutionRequest(
         workflow_run_id=1048,
         workflow="dimensional",
-        stage="candidate_authoring",
+        stage="build_authoring",
         execution_mode="tool_assisted",
         selection=_selection(sdk_code=sdk_code),
         system_prompt="private system prompt",
@@ -569,7 +563,7 @@ def _logical_request(*, sdk_code: str) -> AgentExecutionRequest:
     return AgentExecutionRequest(
         workflow_run_id=1048,
         workflow="logical",
-        stage="candidate_authoring",
+        stage="build_authoring",
         execution_mode="one_shot",
         selection=_selection(sdk_code=sdk_code),
         system_prompt="private system prompt",
@@ -630,6 +624,7 @@ def _logical_validator() -> LogicalCandidateValidator:
         ),
         context_record_ids=(),
         applied=None,
+        entity_types=LOGICAL_ENTITY_TYPES,
     )
 
 
@@ -668,9 +663,7 @@ class _PaginatedLogicalEntityCatalog:
         assert arguments == ({"cursor": "next"} if offset else {})
         self.calls.append(offset)
         return {
-            "items": [
-                _dimensional_selected(("customer_curated", "order_curated")[offset])
-            ],
+            "items": [_dimensional_selected(("customer_curated", "order_curated")[offset])],
             "next_cursor": "next" if offset == 0 else None,
             "is_complete": offset == 1,
             "incomplete_object_key": None,
@@ -681,7 +674,7 @@ def _dimensional_request(*, sdk_code: str) -> AgentExecutionRequest:
     return AgentExecutionRequest(
         workflow_run_id=1048,
         workflow="dimensional",
-        stage="candidate_authoring",
+        stage="build_authoring",
         execution_mode="one_shot",
         selection=_selection(sdk_code=sdk_code),
         system_prompt="private system prompt",
@@ -689,13 +682,9 @@ def _dimensional_request(*, sdk_code: str) -> AgentExecutionRequest:
         context={
             "original_context": {
                 "project_details": {
-                    "dimensional_schemas": [
-                        {"schema_name": "gold", "description": None}
-                    ]
+                    "dimensional_schemas": [{"schema_name": "gold", "description": None}]
                 },
-                "selected_logical_entities": [
-                    _dimensional_selected("customer_curated")
-                ],
+                "selected_logical_entities": [_dimensional_selected("customer_curated")],
             },
             "repair": None,
         },
@@ -783,9 +772,7 @@ async def test_local_fake_uses_local_tools_for_one_complete_mapping_candidate(
         parent = cast(list[dict[str, JsonValue]], page["items"])[0]
         assert parent[nested_field]
         assert "object_id" not in parent
-    page = cast(
-        dict[str, JsonValue], catalog.delegate.invoke("get_mapping_sources", {})
-    )
+    page = cast(dict[str, JsonValue], catalog.delegate.invoke("get_mapping_sources", {}))
     source = cast(list[dict[str, JsonValue]], page["items"])[0]
     assert cast(dict[str, JsonValue], source["object"])["attributes"]
 
@@ -838,14 +825,14 @@ async def test_local_fake_returns_bounded_subject_area_candidate(
 
     result = await router.execute(_subject_area_request(sdk_code=sdk_code))
 
-    # Tables pack in order within the column cap; an oversized table stays unassigned.
+    # Four tables per area in order, whatever their size; neighbours share one table.
     candidate = cast(dict[str, JsonValue], result.candidate)
     areas = cast(list[dict[str, JsonValue]], candidate["areas"])
     assert [(area["name"], area["tables"]) for area in areas] == [
-        ("Business Area 1", ["t1"]),
-        ("Business Area 2", ["t2"]),
+        ("Business Area 1", ["t1", "t2", "t3", "t4"]),
+        ("Business Area 2", ["t4", "t5"]),
     ]
-    assert candidate["unassigned"] == ["t3"]
+    assert candidate["unassigned"] == []
     assert candidate["retire"] == []
     validator = SubjectAreaCandidateValidator(
         selected_object_keys=tuple(
@@ -856,11 +843,9 @@ async def test_local_fake_returns_bounded_subject_area_candidate(
                 object_schema="bronze",
                 object_name=f"table_{position}",
             )
-            for position in range(1, 4)
+            for position in range(1, 6)
         ),
-        column_counts=(200, 150, 400),
         applied=None,
-        max_subject_area_columns=300,
     )
     assert (await validator.validate(result.candidate)).issues == ()
     assert "private" not in repr(result) + repr(candidate)
@@ -891,11 +876,11 @@ async def test_local_fake_returns_deterministic_valid_logical_candidate(
     assert (await _logical_validator().validate(result.candidate)).issues == ()
     candidate = cast(dict[str, JsonValue], result.candidate)
     entities = cast(list[dict[str, JsonValue]], candidate["entities"])
-    assert len(entities) == 1
-    assert entities[0]["sources"] == ["t1"]
+    # Named after its table, so a later area sharing the table reuses the Entity.
+    assert [(entity["name"], entity["sources"]) for entity in entities] == [("CustomerRaw", ["t1"])]
     assert entities[0]["attributes"] == [
         {
-            "name": "Logical Attribute 1",
+            "name": "CustomerIdValue",
             "type": "string",
             "nullable": True,
             "from": "t1.customer_id",
@@ -948,6 +933,31 @@ async def test_local_fake_returns_deterministic_valid_dimensional_business_candi
     assert result.tool_call_count == 0
 
 
+@pytest.mark.parametrize("workflow", ["logical", "dimensional"])
+async def test_local_fake_optimize_proposes_no_change(workflow: str) -> None:
+    router = create_agent_execution_router(
+        configuration=AgentRuntimeConfiguration(
+            mode="fake",
+            timeout_seconds=120,
+            connections=(),
+        ),
+        capabilities=load_default_agent_capabilities(),
+    )
+    build = (_logical_request if workflow == "logical" else _dimensional_request)(
+        sdk_code="openai_agents_sdk"
+    )
+
+    result = await router.execute(build.model_copy(update={"stage": "optimize_authoring"}))
+
+    # The fake has no cross-area judgment, so its whole-model answer is a no-op.
+    assert result.candidate == (
+        {"entities": [], "relationships": [], "retire": []}
+        if workflow == "logical"
+        else {"entities": [], "attributes": [], "relationships": []}
+    )
+    assert result.tool_call_count == 0
+
+
 @pytest.mark.parametrize(
     "sdk_code",
     ("openai_agents_sdk",),
@@ -964,9 +974,7 @@ async def test_local_fake_uses_only_the_tool_assisted_catalog(
         capabilities=load_default_agent_capabilities(),
     )
 
-    result = await router.execute(
-        _tool_assisted_subject_area_request(sdk_code=sdk_code)
-    )
+    result = await router.execute(_tool_assisted_subject_area_request(sdk_code=sdk_code))
 
     # The tables come only from the paged get_scope_tables reader.
     candidate = cast(dict[str, JsonValue], result.candidate)
@@ -1024,15 +1032,11 @@ async def test_local_fake_pages_dimensional_tool_catalog_and_preserves_sources(
     )
 
     source_objects = tuple(
-        LogicalEntityKey(
-            logical_entity_schema_name="silver", logical_entity_name=object_name
-        )
+        LogicalEntityKey(logical_entity_schema_name="silver", logical_entity_name=object_name)
         for object_name in ("customer_curated", "order_curated")
     )
     source_attributes = tuple(
-        LogicalAttributeKey(
-            **source_object.model_dump(), logical_attribute_name="customer_id"
-        )
+        LogicalAttributeKey(**source_object.model_dump(), logical_attribute_name="customer_id")
         for source_object in source_objects
     )
     assert (
@@ -1081,9 +1085,7 @@ async def test_local_fake_returns_bounded_analysis_inference_candidate(
                 "to_attribute_name": "customer_id",
                 "relationship_kind": "reference",
                 "inferred_cardinality": "unknown",
-                "relationship_basis": (
-                    "Selected Attribute metadata supports this candidate."
-                ),
+                "relationship_basis": ("Selected Attribute metadata supports this candidate."),
             }
         ]
     }
@@ -1128,9 +1130,7 @@ async def test_local_fake_pages_tool_assisted_analysis_context(
                 "to_attribute_name": "customer_id",
                 "relationship_kind": "reference",
                 "inferred_cardinality": "unknown",
-                "relationship_basis": (
-                    "Selected Attribute metadata supports this candidate."
-                ),
+                "relationship_basis": ("Selected Attribute metadata supports this candidate."),
             }
         ]
     }
@@ -1153,9 +1153,7 @@ async def test_local_fake_rejects_unsupported_path_or_malformed_context() -> Non
         ),
         capabilities=load_default_agent_capabilities(),
     )
-    unsupported = _request(sdk_code="openai_agents_sdk").model_copy(
-        update={"workflow": "logical"}
-    )
+    unsupported = _request(sdk_code="openai_agents_sdk").model_copy(update={"workflow": "logical"})
     malformed = _request(sdk_code="openai_agents_sdk").model_copy(
         update={"context": {"original_context": {}, "repair": None}}
     )

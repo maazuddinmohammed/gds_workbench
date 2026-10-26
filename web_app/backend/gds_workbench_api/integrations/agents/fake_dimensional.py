@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import cast
 
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from pydantic import JsonValue
+
+from gds_workbench_api.integrations.agents.fake_logical import pascal_case
 
 LOGICAL_SOURCE_FIELDS = ("logical_entity_schema_name", "logical_entity_name")
 
@@ -17,153 +18,77 @@ def fake_dimensional_candidate(
     source_entities: tuple[dict[str, JsonValue], ...],
     source_attributes: tuple[dict[str, JsonValue], ...],
 ) -> JsonValue:
+    """One dimension per Logical Entity, named after it so areas sharing it reuse it."""
     if len(source_entities) + len(source_attributes) > 20_000:
         raise InvalidRequestError("The local fake agent context is invalid.")
-    object_positions = {
-        tuple(
-            cast(str, source[name]).strip().casefold() for name in LOGICAL_SOURCE_FIELDS
-        ): position
-        for position, source in enumerate(source_entities, start=1)
+    attributes_by_entity: dict[tuple[str, ...], list[dict[str, JsonValue]]] = {
+        _key(source): [] for source in source_entities
     }
-    if len(object_positions) != len(source_entities):
+    if len(attributes_by_entity) != len(source_entities):
         raise InvalidRequestError("The local fake agent context is invalid.")
-    attributes_by_position: dict[int, list[dict[str, JsonValue]]] = {
-        position: [] for position in object_positions.values()
-    }
     for attribute in source_attributes:
-        object_key = tuple(
-            cast(str, attribute[name]).strip().casefold() for name in LOGICAL_SOURCE_FIELDS
-        )
-        position = object_positions.get(object_key)
-        if position is None:
+        rows = attributes_by_entity.get(_key(attribute))
+        if rows is None:
             raise InvalidRequestError("The local fake agent context is invalid.")
-        attributes_by_position[position].append(attribute)
+        rows.append(attribute)
 
     entities: list[JsonValue] = []
     attributes: list[JsonValue] = []
     for position, source_entity in enumerate(source_entities, start=1):
-        entity_name = f"Dimensional Entity {position}"
+        entity_name = f"Dim{pascal_case(cast(str, source_entity['logical_entity_name']))}"
         entities.append(
-            _fake_dimensional_entity_record(
-                schema_name=schema_name,
-                entity_name=entity_name,
-                entity_type="dimension",
-                fact_type=None,
-                grain_definition=None,
-                dependency_order=position - 1,
-                memberships=[],
-                sources=[_fake_dimensional_object_source(source_entity, source_order=1)],
-            )
+            {
+                "dimensional_entity_schema_name": schema_name,
+                "dimensional_entity_name": entity_name,
+                "dimensional_entity_definition": "One row per locally generated member.",
+                "dimensional_entity_type": "dimension",
+                "dimensional_fact_type": None,
+                "dimensional_entity_grain_definition": None,
+                "dimensional_entity_dependency_order": position - 1,
+                "dimensional_entity_is_active": True,
+                "dimensional_entity_is_locked": False,
+                "sources": [
+                    {
+                        "support_source_type": "logical_entity",
+                        "source_logical_entity": source_entity,
+                        "rationale": None,
+                        "is_active": True,
+                        "is_locked": False,
+                    }
+                ],
+            }
         )
-        for ordinal, source_attribute in enumerate(
-            attributes_by_position[position],
-            start=1,
-        ):
+        for ordinal, source_attribute in enumerate(attributes_by_entity[_key(source_entity)], 1):
             attributes.append(
-                _fake_dimensional_attribute_record(
-                    schema_name=schema_name,
-                    entity_name=entity_name,
-                    attribute_name=f"Dimensional Attribute {ordinal}",
-                    ordinal=ordinal,
-                    sources=[
-                        _fake_dimensional_attribute_source(
-                            source_attribute,
-                            source_order=1,
-                        )
+                {
+                    "dimensional_entity_schema_name": schema_name,
+                    "dimensional_entity_name": entity_name,
+                    "dimensional_attribute_name": f"Dimensional Attribute {ordinal}",
+                    "dimensional_attribute_definition": "A locally generated Attribute.",
+                    "dimensional_attribute_data_type": "string",
+                    "dimensional_attribute_is_nullable": True,
+                    "dimensional_attribute_ordinal_position": ordinal,
+                    "dimensional_attribute_is_natural_key": False,
+                    "dimensional_attribute_is_surrogate_key": False,
+                    "dimensional_attribute_is_audit_column": False,
+                    "dimensional_attribute_is_active": True,
+                    "dimensional_attribute_is_locked": False,
+                    "sources": [
+                        {
+                            "support_source_type": "logical_attribute",
+                            "source_logical_attribute": source_attribute,
+                            "rationale": None,
+                            "is_active": True,
+                            "is_locked": False,
+                        }
                     ],
-                )
+                }
             )
     return cast(
         JsonValue,
-        {
-            "submodels": [],
-            "entities": entities,
-            "attributes": attributes,
-            "relationships": [],
-        },
+        {"entities": entities, "attributes": attributes, "relationships": []},
     )
 
 
-def _fake_dimensional_object_source(
-    source_entity: dict[str, JsonValue],
-    *,
-    source_order: int,
-) -> dict[str, JsonValue]:
-    return {
-        "support_source_type": "logical_entity",
-        "source_logical_entity": source_entity,
-        "source_order": source_order,
-        "rationale": "Selected Logical Entity metadata supports this candidate.",
-        "status": "active",
-        "is_locked": False,
-    }
-
-
-def _fake_dimensional_attribute_source(
-    source_attribute: dict[str, JsonValue],
-    *,
-    source_order: int,
-) -> dict[str, JsonValue]:
-    return {
-        "support_source_type": "logical_attribute",
-        "source_logical_attribute": source_attribute,
-        "source_order": source_order,
-        "rationale": "Selected Logical Attribute metadata supports this candidate.",
-        "status": "active",
-        "is_locked": False,
-    }
-
-
-def _fake_dimensional_entity_record(
-    *,
-    schema_name: str,
-    entity_name: str,
-    entity_type: str,
-    fact_type: JsonValue,
-    grain_definition: JsonValue,
-    dependency_order: int,
-    memberships: Sequence[JsonValue],
-    sources: Sequence[JsonValue],
-) -> dict[str, JsonValue]:
-    return {
-        "dimensional_entity_schema_name": schema_name,
-        "dimensional_entity_name": entity_name,
-        "dimensional_entity_definition": (
-            "A locally generated Dimensional business entity candidate."
-        ),
-        "dimensional_entity_type": entity_type,
-        "dimensional_fact_type": fact_type,
-        "dimensional_entity_grain_definition": grain_definition,
-        "dimensional_entity_dependency_order": dependency_order,
-        "dimensional_entity_status": "active",
-        "dimensional_entity_is_locked": False,
-        "submodels": list(memberships),
-        "sources": list(sources),
-    }
-
-
-def _fake_dimensional_attribute_record(
-    *,
-    schema_name: str,
-    entity_name: str,
-    attribute_name: str,
-    ordinal: int,
-    sources: Sequence[JsonValue],
-) -> dict[str, JsonValue]:
-    return {
-        "dimensional_entity_schema_name": schema_name,
-        "dimensional_entity_name": entity_name,
-        "dimensional_attribute_name": attribute_name,
-        "dimensional_attribute_definition": (
-            "A locally generated Dimensional business attribute candidate."
-        ),
-        "dimensional_attribute_data_type": "string",
-        "dimensional_attribute_is_nullable": True,
-        "dimensional_attribute_ordinal_position": ordinal,
-        "dimensional_attribute_is_natural_key": False,
-        "dimensional_attribute_is_surrogate_key": False,
-        "dimensional_attribute_is_audit_column": False,
-        "dimensional_attribute_status": "active",
-        "dimensional_attribute_is_locked": False,
-        "sources": list(sources),
-    }
+def _key(record: dict[str, JsonValue]) -> tuple[str, ...]:
+    return tuple(cast(str, record[name]).strip().casefold() for name in LOGICAL_SOURCE_FIELDS)

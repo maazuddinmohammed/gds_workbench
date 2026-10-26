@@ -13,6 +13,7 @@ import { ProfilingRunConfiguration } from "./ProfilingRunConfiguration";
 import { ProfilingResults } from "./ProfilingResults";
 import { useScopeFilterChoices } from "../project_input_scope/scopeFilterChoices";
 import { ProfilingRunDrawer, ProfilingRuns } from "./ProfilingRuns";
+import { RefreshButton } from "../../shared/ui";
 
 type ProfilingView = "results" | "runs";
 
@@ -142,13 +143,7 @@ export function ProfilingScreen({
         </div>
         <div className="workflow-command-actions">
           <WorkflowCommandTools />
-          <button
-            className="button button-secondary button-small"
-            type="button"
-            onClick={refresh}
-          >
-            Refresh
-          </button>
+          <RefreshButton refreshing={false} onClick={refresh} />
           <button
             id="run-profiling-trigger"
             className="button button-primary button-small"

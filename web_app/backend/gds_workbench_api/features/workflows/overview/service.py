@@ -88,14 +88,14 @@ WITH target_project AS (
     SELECT 5,
            'subject_area',
            count(area.subject_area_id) FILTER (
-               WHERE area.subject_area_status = 'active'
+               WHERE area.subject_area_is_active
            )::INTEGER,
            count(area.subject_area_id) FILTER (
-               WHERE area.subject_area_status = 'active'
+               WHERE area.subject_area_is_active
                  AND area.subject_area_is_locked
            )::INTEGER,
            max(area.updated_time) FILTER (
-               WHERE area.subject_area_status = 'active'
+               WHERE area.subject_area_is_active
            )
       FROM target_project
       LEFT JOIN workflow.subject_area AS area
@@ -104,14 +104,14 @@ WITH target_project AS (
     SELECT 6,
            'logical',
            count(logical.logical_entity_id) FILTER (
-               WHERE logical.logical_entity_status = 'active'
+               WHERE logical.logical_entity_is_active
            )::INTEGER,
            count(logical.logical_entity_id) FILTER (
-               WHERE logical.logical_entity_status = 'active'
+               WHERE logical.logical_entity_is_active
                  AND logical.logical_entity_is_locked
            )::INTEGER,
            max(logical.updated_time) FILTER (
-               WHERE logical.logical_entity_status = 'active'
+               WHERE logical.logical_entity_is_active
            )
       FROM target_project
       LEFT JOIN workflow.logical_entity AS logical
@@ -120,14 +120,14 @@ WITH target_project AS (
     SELECT 7,
            'dimensional',
            count(dimensional.dimensional_entity_id) FILTER (
-               WHERE dimensional.dimensional_entity_status = 'active'
+               WHERE dimensional.dimensional_entity_is_active
            )::INTEGER,
            count(dimensional.dimensional_entity_id) FILTER (
-               WHERE dimensional.dimensional_entity_status = 'active'
+               WHERE dimensional.dimensional_entity_is_active
                  AND dimensional.dimensional_entity_is_locked
            )::INTEGER,
            max(dimensional.updated_time) FILTER (
-               WHERE dimensional.dimensional_entity_status = 'active'
+               WHERE dimensional.dimensional_entity_is_active
            )
       FROM target_project
       LEFT JOIN workflow.dimensional_entity AS dimensional

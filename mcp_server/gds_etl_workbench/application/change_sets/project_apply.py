@@ -24,13 +24,11 @@ from gds_etl_workbench.domain.modeling_records import (
     DimensionalAttributeRecord,
     DimensionalEntityRecord,
     DimensionalRelationshipRecord,
-    DimensionalSubmodelRecord,
     GeneratedCodeRecord,
     GeneratedCodeSourceSystemRecord,
     LogicalAttributeRecord,
     LogicalEntityRecord,
     LogicalRelationshipRecord,
-    LogicalSubmodelRecord,
     MappingAttributeRecord,
     MappingObjectRecord,
     ModelingRecord,
@@ -375,22 +373,22 @@ INSERT INTO workflow.subject_area (
     workflow_run_id,
     subject_area_name,
     subject_area_definition,
-    subject_area_status,
+    subject_area_is_active,
     subject_area_is_locked
 )
 VALUES (%s, %s, %s, %s, %s, %s)
 RETURNING subject_area_id
 """
 
+# Model tables keep updated_time only; they have no updated_by column.
 _UPDATE_SUBJECT_AREA_SQL: LiteralString = """
 UPDATE workflow.subject_area
    SET workflow_run_id = %s,
        subject_area_name = %s,
        subject_area_definition = %s,
-       subject_area_status = %s,
+       subject_area_is_active = %s,
        subject_area_is_locked = %s,
-       updated_time = CURRENT_TIMESTAMP,
-       updated_by = CURRENT_USER
+       updated_time = CURRENT_TIMESTAMP
  WHERE subject_area_id = %s
 RETURNING subject_area_id
 """
@@ -401,16 +399,15 @@ INSERT INTO workflow.subject_area_table (
     workflow_run_id,
     subject_area_id,
     object_id,
-    subject_area_table_status,
+    subject_area_table_is_active,
     subject_area_table_is_locked
 )
 VALUES (%s, %s, %s, %s, %s, %s)
 ON CONFLICT ON CONSTRAINT uq_subject_area_table_member DO UPDATE
    SET workflow_run_id = EXCLUDED.workflow_run_id,
-       subject_area_table_status = EXCLUDED.subject_area_table_status,
+       subject_area_table_is_active = EXCLUDED.subject_area_table_is_active,
        subject_area_table_is_locked = EXCLUDED.subject_area_table_is_locked,
-       updated_time = CURRENT_TIMESTAMP,
-       updated_by = CURRENT_USER
+       updated_time = CURRENT_TIMESTAMP
 RETURNING subject_area_table_id
 """
 
@@ -786,14 +783,12 @@ class ProjectMaterializer:
     _context_group_ids: dict[str, int] = field(default_factory=dict[str, int])
     _context_record_ids: dict[str, str] = field(default_factory=dict[str, str])
     _subject_area_ids: dict[str, int] = field(default_factory=dict[str, int])
-    _logical_submodel_ids: dict[str, int] = field(default_factory=dict[str, int])
     _logical_entity_ids: dict[tuple[str, str], int] = field(
         default_factory=dict[tuple[str, str], int]
     )
     _logical_attribute_ids: dict[tuple[str, str, str], int] = field(
         default_factory=dict[tuple[str, str, str], int]
     )
-    _dimensional_submodel_ids: dict[str, int] = field(default_factory=dict[str, int])
     _dimensional_entity_ids: dict[tuple[str, str], int] = field(
         default_factory=dict[tuple[str, str], int]
     )
@@ -1243,7 +1238,7 @@ SELECT context_record_id::TEXT
             values = (
                 record.subject_area_name,
                 record.subject_area_definition,
-                record.subject_area_status,
+                record.subject_area_is_active,
                 record.subject_area_is_locked,
             )
             row = await self.transaction.fetch_one(
@@ -1291,7 +1286,7 @@ SELECT context_record_id::TEXT
                     self.workflow_run_id,
                     area_id,
                     object_id,
-                    record.subject_area_table_status,
+                    record.subject_area_table_is_active,
                     record.subject_area_table_is_locked,
                 ),
             )
@@ -1300,11 +1295,9 @@ SELECT context_record_id::TEXT
     async def _apply_logical(self, records: dict[str, tuple[ModelingRecord, ...]]) -> int:
         return await self._apply_layer(
             config=LOGICAL,
-            submodel_records=records.get("logical_submodel", ()),
             entity_records=records.get("logical_entity", ()),
             attribute_records=records.get("logical_attribute", ()),
             relationship_records=records.get("logical_relationship", ()),
-            submodel_type=LogicalSubmodelRecord,
             entity_type=LogicalEntityRecord,
             attribute_type=LogicalAttributeRecord,
             relationship_type=LogicalRelationshipRecord,
@@ -1313,11 +1306,9 @@ SELECT context_record_id::TEXT
     async def _apply_dimensional(self, records: dict[str, tuple[ModelingRecord, ...]]) -> int:
         return await self._apply_layer(
             config=DIMENSIONAL,
-            submodel_records=records.get("dimensional_submodel", ()),
             entity_records=records.get("dimensional_entity", ()),
             attribute_records=records.get("dimensional_attribute", ()),
             relationship_records=records.get("dimensional_relationship", ()),
-            submodel_type=DimensionalSubmodelRecord,
             entity_type=DimensionalEntityRecord,
             attribute_type=DimensionalAttributeRecord,
             relationship_type=DimensionalRelationshipRecord,
@@ -1327,27 +1318,18 @@ SELECT context_record_id::TEXT
         self,
         *,
         config: LayerConfig,
-        submodel_records: tuple[ModelingRecord, ...],
         entity_records: tuple[ModelingRecord, ...],
         attribute_records: tuple[ModelingRecord, ...],
         relationship_records: tuple[ModelingRecord, ...],
-        submodel_type: type[ModelingRecord],
         entity_type: type[ModelingRecord],
         attribute_type: type[ModelingRecord],
         relationship_type: type[ModelingRecord],
     ) -> int:
         action_count = 0
-        for raw in submodel_records:
-            record = _as_runtime(raw, submodel_type)
-            await self._upsert_submodel(config, record)
-            action_count += 1
         for raw in entity_records:
             record = _as_runtime(raw, entity_type)
             entity_id = await self._upsert_entity(config, record)
             action_count += 1
-            for membership in record.submodels:
-                await self._upsert_membership(config, entity_id, membership)
-                action_count += 1
             for source in record.sources:
                 await self._upsert_entity_source(config, entity_id, source)
                 action_count += 1
@@ -1369,68 +1351,7 @@ SELECT context_record_id::TEXT
             action_count += 1
         return action_count
 
-    async def _upsert_submodel(self, config: LayerConfig, record: Any) -> int:
-        name_field = f"{config.layer}_submodel_name"
-        definition_field = f"{config.layer}_submodel_definition"
-        status_field = f"{config.layer}_submodel_status"
-        locked_field = f"{config.layer}_submodel_is_locked"
-        name = getattr(record, name_field)
-        existing = await self.transaction.fetch_one(
-            cast(
-                LiteralString,
-                f"""
-SELECT {config.submodel_id}
-  FROM {config.submodel_table}
- WHERE project_id = %s
-   AND lower(btrim({name_field})) = lower(btrim(%s))
- FOR UPDATE
-""",
-            ),
-            (self.project_id, name),
-        )
-        values = (
-            name,
-            getattr(record, definition_field),
-            getattr(record, status_field),
-            getattr(record, locked_field),
-        )
-        if existing is None:
-            row = await self.transaction.fetch_one(
-                cast(
-                    LiteralString,
-                    f"""
-INSERT INTO {config.submodel_table} (
-    project_id, workflow_run_id, {name_field}, {definition_field}, {status_field}, {locked_field}
-)
-VALUES (%s, %s, %s, %s, %s, %s)
-RETURNING {config.submodel_id}
-""",
-                ),
-                (self.project_id, self.workflow_run_id, *values),
-            )
-        else:
-            row = await self.transaction.fetch_one(
-                cast(
-                    LiteralString,
-                    f"""
-UPDATE {config.submodel_table}
-   SET workflow_run_id = %s,
-       {name_field} = %s,
-       {definition_field} = %s,
-       {status_field} = %s,
-       {locked_field} = %s,
-       updated_time = CURRENT_TIMESTAMP,
-       updated_by = CURRENT_USER
- WHERE {config.submodel_id} = %s
-RETURNING {config.submodel_id}
-""",
-                ),
-                (self.workflow_run_id, *values, existing[config.submodel_id]),
-            )
-        assert row is not None
-        self._submodel_cache(config)[normalize_project_key_value(name)] = row[config.submodel_id]
-        return row[config.submodel_id]
-
+    # Model tables keep updated_time only; they have no updated_by column.
     async def _upsert_entity(self, config: LayerConfig, record: Any) -> int:
         name_field = f"{config.layer}_entity_name"
         name = getattr(record, name_field)
@@ -1473,8 +1394,7 @@ RETURNING {config.entity_id}
 UPDATE {config.entity_table}
    SET workflow_run_id = %s,
        {assignments},
-       updated_time = CURRENT_TIMESTAMP,
-       updated_by = CURRENT_USER
+       updated_time = CURRENT_TIMESTAMP
  WHERE {config.entity_id} = %s
 RETURNING {config.entity_id}
 """,
@@ -1487,93 +1407,31 @@ RETURNING {config.entity_id}
         ] = row[config.entity_id]
         return row[config.entity_id]
 
-    async def _upsert_membership(
-        self, config: LayerConfig, entity_id: int, membership: Any
-    ) -> None:
-        submodel_id = await self.resolve_submodel(config, membership.submodel_name)
-        id_field = f"{config.layer}_entity_submodel_id"
-        status_field = f"{config.layer}_entity_submodel_status"
-        locked_field = f"{config.layer}_entity_submodel_is_locked"
-        existing = await self.transaction.fetch_one(
-            cast(
-                LiteralString,
-                f"""
-SELECT {id_field}
-  FROM {config.membership_table}
- WHERE project_id = %s
-   AND {config.entity_id} = %s
-   AND {config.submodel_id} = %s
- ORDER BY {id_field}
- LIMIT 1
- FOR UPDATE
-""",
-            ),
-            (self.project_id, entity_id, submodel_id),
-        )
-        if existing is None:
-            await self.transaction.fetch_one(
-                cast(
-                    LiteralString,
-                    f"""
-INSERT INTO {config.membership_table} (
-    project_id, workflow_run_id, {config.entity_id}, {config.submodel_id},
-    {status_field}, {locked_field}
-)
-VALUES (%s, %s, %s, %s, %s, %s)
-RETURNING {id_field}
-""",
-                ),
-                (
-                    self.project_id,
-                    self.workflow_run_id,
-                    entity_id,
-                    submodel_id,
-                    membership.membership_status,
-                    membership.membership_is_locked,
-                ),
-            )
-        else:
-            await self.transaction.fetch_one(
-                cast(
-                    LiteralString,
-                    f"""
-UPDATE {config.membership_table}
-   SET workflow_run_id = %s,
-       {status_field} = %s,
-       {locked_field} = %s,
-       updated_time = CURRENT_TIMESTAMP,
-       updated_by = CURRENT_USER
- WHERE {id_field} = %s
-RETURNING {id_field}
-""",
-                ),
-                (
-                    self.workflow_run_id,
-                    membership.membership_status,
-                    membership.membership_is_locked,
-                    existing[id_field],
-                ),
-            )
-
     async def _upsert_entity_source(self, config: LayerConfig, entity_id: int, source: Any) -> int:
+        # The row stores no source type: the filled id is the source, either an Object
+        # (Logical), a Logical Entity (Dimensional) or a Context Record.
         source_column = (
             "source_object_id" if config.layer == "logical" else "source_logical_entity_id"
         )
-        source_type = "object" if config.layer == "logical" else "logical_entity"
         if source.support_source_type == "logical_entity":
             key = source.source_logical_entity
-            source_object_id = await self.resolve_entity(
+            source_id = await self.resolve_entity(
                 LOGICAL, key.logical_entity_schema_name, key.logical_entity_name
             )
             context_record_id = None
         elif source.support_source_type == "object":
-            source_object_id, _ = await self.resolve_object(source.source_object)
+            source_id, _ = await self.resolve_object(source.source_object)
             context_record_id = None
         else:
-            source_object_id = None
+            source_id = None
             context_record_id = await self.resolve_context_record(
                 source.context_record.context_record_id
             )
+        match_column, match_value = (
+            (source_column, source_id)
+            if context_record_id is None
+            else ("context_record_id", context_record_id)
+        )
         id_field = f"{config.layer}_entity_source_mapping_id"
         existing = await self.transaction.fetch_one(
             cast(
@@ -1583,64 +1441,43 @@ SELECT {id_field}
   FROM {config.entity_source_table}
  WHERE project_id = %s
    AND {config.entity_id} = %s
-   AND support_source_type = %s
-   AND (
-       (%s = '{source_type}' AND {source_column} = %s)
-       OR (%s = 'context_record' AND context_record_id = %s)
-   )
+   AND {match_column} = %s
  ORDER BY {id_field}
  LIMIT 1
  FOR UPDATE
 """,
             ),
-            (
-                self.project_id,
-                entity_id,
-                source.support_source_type,
-                source.support_source_type,
-                source_object_id,
-                source.support_source_type,
-                context_record_id,
-            ),
+            (self.project_id, entity_id, match_value),
         )
-        columns = [
-            "project_id",
-            "workflow_run_id",
-            config.entity_id,
-            "support_source_type",
-            source_column,
-            "context_record_id",
-        ]
-        values: list[object] = [
-            self.project_id,
-            self.workflow_run_id,
-            entity_id,
-            source.support_source_type,
-            source_object_id,
-            context_record_id,
-        ]
-        update_fields: list[tuple[str, object]] = [("workflow_run_id", self.workflow_run_id)]
-        for suffix, value in (
-            ("order", source.source_order),
-            ("rationale", source.rationale),
-            ("status", source.status),
-            ("is_locked", source.is_locked),
-        ):
-            column = f"{config.layer}_entity_source_mapping_{suffix}"
-            columns.append(column)
-            values.append(value)
-            update_fields.append((column, value))
+        prefix = f"{config.layer}_entity_source_mapping"
+        values = (source.rationale, source.is_active, source.is_locked)
         if existing is None:
             row = await self.transaction.fetch_one(
                 cast(
                     LiteralString,
                     f"""
-INSERT INTO {config.entity_source_table} ({", ".join(columns)})
-VALUES ({", ".join("%s" for _ in columns)})
+INSERT INTO {config.entity_source_table} (
+    project_id,
+    workflow_run_id,
+    {config.entity_id},
+    {source_column},
+    context_record_id,
+    {prefix}_rationale,
+    {prefix}_is_active,
+    {prefix}_is_locked
+)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
 RETURNING {id_field}
 """,
                 ),
-                tuple(values),
+                (
+                    self.project_id,
+                    self.workflow_run_id,
+                    entity_id,
+                    source_id,
+                    context_record_id,
+                    *values,
+                ),
             )
         else:
             row = await self.transaction.fetch_one(
@@ -1648,14 +1485,16 @@ RETURNING {id_field}
                     LiteralString,
                     f"""
 UPDATE {config.entity_source_table}
-   SET {", ".join(f"{column} = %s" for column, _ in update_fields)},
-       updated_time = CURRENT_TIMESTAMP,
-       updated_by = CURRENT_USER
+   SET workflow_run_id = %s,
+       {prefix}_rationale = %s,
+       {prefix}_is_active = %s,
+       {prefix}_is_locked = %s,
+       updated_time = CURRENT_TIMESTAMP
  WHERE {id_field} = %s
 RETURNING {id_field}
 """,
                 ),
-                (*[value for _, value in update_fields], existing[id_field]),
+                (self.workflow_run_id, *values, existing[id_field]),
             )
         assert row is not None
         return row[id_field]
@@ -1705,8 +1544,7 @@ RETURNING {config.attribute_id}
 UPDATE {config.attribute_table}
    SET workflow_run_id = %s,
        {assignments},
-       updated_time = CURRENT_TIMESTAMP,
-       updated_by = CURRENT_USER
+       updated_time = CURRENT_TIMESTAMP
  WHERE {config.attribute_id} = %s
 RETURNING {config.attribute_id}
 """,
@@ -1737,7 +1575,6 @@ RETURNING {config.attribute_id}
         attribute_column = (
             "source_attribute_id" if config.layer == "logical" else "source_logical_attribute_id"
         )
-        source_type = "attribute" if config.layer == "logical" else "logical_attribute"
         entity_source_mapping_id = None
         if source.support_source_type == "logical_attribute":
             key = source.source_logical_attribute
@@ -1768,6 +1605,11 @@ RETURNING {config.attribute_id}
             context_record_id = await self.resolve_context_record(
                 source.context_record.context_record_id
             )
+        match_column, match_value = (
+            (attribute_column, source_attribute_id)
+            if context_record_id is None
+            else ("context_record_id", context_record_id)
+        )
         id_field = f"{config.layer}_attribute_source_mapping_id"
         existing = await self.transaction.fetch_one(
             cast(
@@ -1777,30 +1619,16 @@ SELECT {id_field}
   FROM {config.attribute_source_table}
  WHERE project_id = %s
    AND {config.attribute_id} = %s
-   AND support_source_type = %s
-   AND (
-       (%s = '{source_type}' AND {attribute_column} = %s)
-       OR (%s = 'context_record' AND context_record_id = %s)
-   )
+   AND {match_column} = %s
  ORDER BY {id_field}
  LIMIT 1
  FOR UPDATE
 """,
             ),
-            (
-                self.project_id,
-                attribute_id,
-                source.support_source_type,
-                source.support_source_type,
-                source_attribute_id,
-                source.support_source_type,
-                context_record_id,
-            ),
+            (self.project_id, attribute_id, match_value),
         )
-        order_field = f"{config.layer}_attribute_source_mapping_order"
-        rationale_field = f"{config.layer}_attribute_source_mapping_rationale"
-        status_field = f"{config.layer}_attribute_source_mapping_status"
-        locked_field = f"{config.layer}_attribute_source_mapping_is_locked"
+        prefix = f"{config.layer}_attribute_source_mapping"
+        values = (source.rationale, source.is_active, source.is_locked)
         if existing is None:
             await self.transaction.fetch_one(
                 cast(
@@ -1812,16 +1640,14 @@ INSERT INTO {config.attribute_source_table} (
     {config.layer}_entity_source_mapping_id,
     {config.entity_id},
     {config.attribute_id},
-    support_source_type,
     {object_column},
     {attribute_column},
     context_record_id,
-    {order_field},
-    {rationale_field},
-    {status_field},
-    {locked_field}
+    {prefix}_rationale,
+    {prefix}_is_active,
+    {prefix}_is_locked
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 RETURNING {id_field}
 """,
                 ),
@@ -1831,14 +1657,10 @@ RETURNING {id_field}
                     entity_source_mapping_id,
                     entity_id,
                     attribute_id,
-                    source.support_source_type,
                     source_object_id,
                     source_attribute_id,
                     context_record_id,
-                    source.source_order,
-                    source.rationale,
-                    source.status,
-                    source.is_locked,
+                    *values,
                 ),
             )
         else:
@@ -1848,24 +1670,15 @@ RETURNING {id_field}
                     f"""
 UPDATE {config.attribute_source_table}
    SET workflow_run_id = %s,
-       {order_field} = %s,
-       {rationale_field} = %s,
-       {status_field} = %s,
-       {locked_field} = %s,
-       updated_time = CURRENT_TIMESTAMP,
-       updated_by = CURRENT_USER
+       {prefix}_rationale = %s,
+       {prefix}_is_active = %s,
+       {prefix}_is_locked = %s,
+       updated_time = CURRENT_TIMESTAMP
  WHERE {id_field} = %s
 RETURNING {id_field}
 """,
                 ),
-                (
-                    self.workflow_run_id,
-                    source.source_order,
-                    source.rationale,
-                    source.status,
-                    source.is_locked,
-                    existing[id_field],
-                ),
+                (self.workflow_run_id, *values, existing[id_field]),
             )
 
     async def _find_entity_source(
@@ -1875,7 +1688,6 @@ RETURNING {id_field}
         source_column = (
             "source_object_id" if config.layer == "logical" else "source_logical_entity_id"
         )
-        source_type = "object" if config.layer == "logical" else "logical_entity"
         row = await self.transaction.fetch_one(
             cast(
                 LiteralString,
@@ -1884,7 +1696,6 @@ SELECT {id_field}
   FROM {config.entity_source_table}
  WHERE project_id = %s
    AND {config.entity_id} = %s
-   AND support_source_type = '{source_type}'
    AND {source_column} = %s
  ORDER BY {id_field}
  LIMIT 1
@@ -1911,21 +1722,8 @@ SELECT {id_field}
         to_attribute_id = await self.resolve_modeled_attribute(
             config, to_schema, to_entity_name, to_attribute_name
         )
-        relationship_name = getattr(record, f"{config.layer}_relationship_name")
-        if config.layer == "logical":
-            identity_predicate = (
-                f"lower(btrim({config.layer}_relationship_name)) = lower(btrim(%s))"
-            )
-            identity_values = (relationship_name,)
-        else:
-            relationship_kind = record.dimensional_relationship_kind
-            relationship_role = record.dimensional_relationship_role_name
-            identity_predicate = """
-lower(btrim(dimensional_relationship_kind)) = lower(btrim(%s))
-   AND coalesce(lower(btrim(dimensional_relationship_role_name)), '') =
-       coalesce(lower(btrim(%s::text)), '')
-""".strip()
-            identity_values = (relationship_kind, relationship_role)
+        # Child -> parent: the table allows one relationship per foreign-key (from) Attribute,
+        # so that Attribute is the identity; Apply may repoint its parent endpoint.
         existing = await self.transaction.fetch_one(
             cast(
                 LiteralString,
@@ -1933,24 +1731,11 @@ lower(btrim(dimensional_relationship_kind)) = lower(btrim(%s))
 SELECT {config.relationship_id}
   FROM {config.relationship_table}
  WHERE project_id = %s
-   AND {config.layer}_relationship_from_entity_id = %s
    AND {config.layer}_relationship_from_attribute_id = %s
-   AND {config.layer}_relationship_to_entity_id = %s
-   AND {config.layer}_relationship_to_attribute_id = %s
-   AND {identity_predicate}
- ORDER BY {config.relationship_id}
- LIMIT 1
  FOR UPDATE
 """,
             ),
-            (
-                self.project_id,
-                from_entity_id,
-                from_attribute_id,
-                to_entity_id,
-                to_attribute_id,
-                *identity_values,
-            ),
+            (self.project_id, from_attribute_id),
         )
         endpoint_fields = (
             f"{config.layer}_relationship_from_entity_id",
@@ -1988,38 +1773,13 @@ RETURNING {config.relationship_id}
 UPDATE {config.relationship_table}
    SET workflow_run_id = %s,
        {assignments},
-       updated_time = CURRENT_TIMESTAMP,
-       updated_by = CURRENT_USER
+       updated_time = CURRENT_TIMESTAMP
  WHERE {config.relationship_id} = %s
 RETURNING {config.relationship_id}
 """,
                 ),
                 (self.workflow_run_id, *values, existing[config.relationship_id]),
             )
-
-    async def resolve_submodel(self, config: LayerConfig, name: str) -> int:
-        cache = self._submodel_cache(config)
-        normalized = normalize_project_key_value(name)
-        if normalized in cache:
-            return cache[normalized]
-        row = await self.transaction.fetch_one(
-            cast(
-                LiteralString,
-                f"""
-SELECT {config.submodel_id}
-  FROM {config.submodel_table}
- WHERE project_id = %s
-   AND lower(btrim({config.layer}_submodel_name)) = lower(btrim(%s))
- ORDER BY {config.submodel_id}
- LIMIT 1
-""",
-            ),
-            (self.project_id, name),
-        )
-        if row is None:
-            raise InvalidRequestError(f"A referenced {config.layer} Submodel was not found.")
-        cache[normalized] = row[config.submodel_id]
-        return row[config.submodel_id]
 
     async def resolve_entity(self, config: LayerConfig, schema_name: str, name: str) -> int:
         cache = self._entity_cache(config)
@@ -2080,13 +1840,6 @@ SELECT attribute.{config.attribute_id}
             raise InvalidRequestError(f"A referenced {config.layer} Attribute was not found.")
         cache[key] = row[config.attribute_id]
         return row[config.attribute_id]
-
-    def _submodel_cache(self, config: LayerConfig) -> dict[str, int]:
-        return (
-            self._logical_submodel_ids
-            if config.layer == "logical"
-            else self._dimensional_submodel_ids
-        )
 
     def _entity_cache(self, config: LayerConfig) -> dict[tuple[str, str], int]:
         return (

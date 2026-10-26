@@ -8,18 +8,15 @@ import pytest
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import AuthorizationDeniedError, TenantNotFoundError
+from tests.mcp.conftest import DisposablePostgres
+from tests.mcp.database_test_support import require_row
+from tests.web_backend.test_database_project_change_sets import _seed_profile_project
+
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.subject_areas import (
     DatabaseSubjectAreaService,
     SubjectAreaNotFoundError,
 )
-from gds_workbench_api.features.workflows.authoring.subject_area_policy import (
-    load_subject_area_policy,
-)
-
-from tests.mcp.conftest import DisposablePostgres
-from tests.mcp.database_test_support import require_row
-from tests.web_backend.test_database_project_change_sets import _seed_profile_project
 
 
 async def test_subject_area_reads_count_active_bronze_scope_and_memberships(
@@ -95,10 +92,10 @@ async def test_subject_area_reads_count_active_bronze_scope_and_memberships(
             for row in connection.execute(
                 """
                 INSERT INTO workflow.subject_area (
-                    project_id, subject_area_name, subject_area_definition, subject_area_status
-                ) VALUES (%s, 'Sales', 'Orders and the customers who place them.', 'active'),
-                         (%s, 'Customers', 'Customer identities.', 'active'),
-                         (%s, 'Billing', 'A retired billing grouping.', 'inactive')
+                    project_id, subject_area_name, subject_area_definition, subject_area_is_active
+                ) VALUES (%s, 'Sales', 'Orders and the customers who place them.', TRUE),
+                         (%s, 'Customers', 'Customer identities.', TRUE),
+                         (%s, 'Billing', 'A retired billing grouping.', FALSE)
                 RETURNING subject_area_id, subject_area_name
                 """,
                 (project_id, project_id, project_id),
@@ -110,20 +107,20 @@ async def test_subject_area_reads_count_active_bronze_scope_and_memberships(
                     """
                     INSERT INTO workflow.subject_area_table (
                         project_id, subject_area_id, object_id,
-                        subject_area_table_status, subject_area_table_is_locked
+                        subject_area_table_is_active, subject_area_table_is_locked
                     ) VALUES (%s, %s, %s, %s, %s)
                     RETURNING subject_area_table_id
                     """,
-                    (project_id, areas[area], objects[table], status, locked),
+                    (project_id, areas[area], objects[table], is_active, locked),
                 ).fetchone()
             )["subject_area_table_id"]
-            for area, table, status, locked in (
-                ("Sales", "orders", "active", False),
-                ("Sales", "customers", "active", False),
-                ("Sales", "payments", "inactive", False),
-                ("Sales", "source_orders", "active", False),
-                ("Customers", "customers", "active", True),
-                ("Billing", "payments", "active", False),
+            for area, table, is_active, locked in (
+                ("Sales", "orders", True, False),
+                ("Sales", "customers", True, False),
+                ("Sales", "payments", False, False),
+                ("Sales", "source_orders", True, False),
+                ("Customers", "customers", True, True),
+                ("Billing", "payments", True, False),
             )
         }
         # Another Project of the same Tenant groups the same table in its own area.
@@ -200,23 +197,25 @@ async def test_subject_area_reads_count_active_bronze_scope_and_memberships(
     finally:
         await runtime.close()
 
-    # Only active Bronze Scope tables count; payments has no active membership.
+    # Only active Bronze Scope tables count; payments has no active membership. A shared
+    # table is in another active area of this Project, so the other Project's Sales area
+    # does not make orders shared.
     assert (page.project_id, page.project_revision) == (project_id, 1)
-    assert page.max_subject_area_columns == load_subject_area_policy().max_subject_area_columns
     assert (page.scope_table_count, page.unassigned_table_count) == (3, 1)
     assert [
         (
             item.subject_area_name,
-            item.subject_area_status,
+            item.subject_area_is_active,
             item.table_count,
             item.column_count,
+            item.shared_table_count,
             item.workflow_run_id,
         )
         for item in page.items
     ] == [
-        ("Billing", "inactive", 0, 0, None),
-        ("Customers", "active", 1, 3, None),
-        ("Sales", "active", 2, 4, None),
+        ("Billing", False, 0, 0, 0, None),
+        ("Customers", True, 1, 3, 1, None),
+        ("Sales", True, 2, 4, 1, None),
     ]
     assert [
         (
@@ -257,6 +256,11 @@ async def test_subject_area_reads_count_active_bronze_scope_and_memberships(
         objects["customers"],
         objects["payments"],
     }
-    assert (detail.subject_area_name, detail.table_count, detail.column_count) == ("Sales", 2, 4)
+    assert (
+        detail.subject_area_name,
+        detail.table_count,
+        detail.column_count,
+        detail.shared_table_count,
+    ) == ("Sales", 2, 4, 1)
     assert (detail.project_id, detail.project_revision) == (project_id, 1)
     assert [table.object_name for table in detail.tables] == ["customers", "orders"]

@@ -29,6 +29,7 @@ from gds_etl_workbench.domain.snapshots.project import (
     CHANGE_SET_DATASETS_BY_NAME,
     DATASETS_BY_NAME,
     ProjectChangeSetDataset,
+    ProjectSnapshot,
     build_project_dataset_schema,
 )
 from tests.mcp.project_test_fixtures import (
@@ -43,7 +44,7 @@ from tests.mcp.project_test_fixtures import (
 )
 
 
-def test_complete_24_dataset_project_graph_validates() -> None:
+def test_complete_22_dataset_project_graph_validates() -> None:
     graph = complete_project_graph(include_enrichment=True)
 
     result = validate_future_graph(
@@ -58,7 +59,7 @@ def test_complete_24_dataset_project_graph_validates() -> None:
     assert result.phase == "complete"
     assert result.issues == ()
     assert set(result.records) == set(CHANGE_SET_DATASETS_BY_NAME)
-    assert len(result.action_review) == 24
+    assert len(result.action_review) == 22
     assert all(
         summary.insert_count + summary.no_change_count > 0
         for summary in result.action_review
@@ -207,9 +208,9 @@ def test_active_subject_area_table_requires_an_active_area(action: str) -> None:
     # Canonical references are case/space insensitive, including lifecycle checks.
     membership["subject_area_name"] = f" {str(area['subject_area_name']).upper()} "
     if action == "reactivate_child":
-        area["subject_area_status"] = "inactive"
+        area["subject_area_is_active"] = False
         for record in graph["subject_area_table"]:
-            record["subject_area_table_status"] = "inactive"
+            record["subject_area_table_is_active"] = False
     snapshot = snapshot_from_graph(graph)
     baseline = validate_future_graph(
         snapshot=snapshot,
@@ -218,9 +219,9 @@ def test_active_subject_area_table_requires_an_active_area(action: str) -> None:
     )
     assert baseline.valid
     changes: dict[ProjectChangeSetDataset, list[dict[str, object]]] = (
-        {"subject_area": [{**area, "subject_area_status": "inactive"}]}
+        {"subject_area": [{**area, "subject_area_is_active": False}]}
         if action == "deactivate_parent"
-        else {"subject_area_table": [{**membership, "subject_area_table_status": "active"}]}
+        else {"subject_area_table": [{**membership, "subject_area_table_is_active": True}]}
     )
 
     result = validate_future_graph(
@@ -282,9 +283,9 @@ def test_active_modeled_attribute_requires_active_parent_entity(
     for child in children:
         child[f"{layer}_entity_name"] = f" {parent_name.upper()} "
     if action == "reactivate_child":
-        parent[f"{layer}_entity_status"] = "inactive"
+        parent[f"{layer}_entity_is_active"] = False
         for child in children:
-            child[f"{layer}_attribute_status"] = "inactive"
+            child[f"{layer}_attribute_is_active"] = False
     snapshot = snapshot_from_graph(graph)
     baseline = validate_future_graph(
         snapshot=snapshot,
@@ -293,10 +294,10 @@ def test_active_modeled_attribute_requires_active_parent_entity(
     )
     assert baseline.valid
     if action == "deactivate_parent":
-        changes = {entity_dataset: [{**parent, f"{layer}_entity_status": "inactive"}]}
+        changes = {entity_dataset: [{**parent, f"{layer}_entity_is_active": False}]}
     else:
         changes = {
-            attribute_dataset: [{**children[0], f"{layer}_attribute_status": "active"}]
+            attribute_dataset: [{**children[0], f"{layer}_attribute_is_active": True}]
         }
 
     result = validate_future_graph(
@@ -349,15 +350,15 @@ def test_active_modeled_relationship_requires_active_attributes_and_entities(
         )
     )
     if action == "reactivate_relationship":
-        endpoint[f"{layer}_{inactive_record}_status"] = "inactive"
-        relationship[f"{layer}_relationship_status"] = "inactive"
+        endpoint[f"{layer}_{inactive_record}_is_active"] = False
+        relationship[f"{layer}_relationship_is_active"] = False
         if inactive_record == "entity":
             attribute_dataset = (
                 "logical_attribute" if layer == "logical" else "dimensional_attribute"
             )
             for attribute in graph[attribute_dataset]:
                 if attribute[f"{layer}_entity_name"] == entity_name:
-                    attribute[f"{layer}_attribute_status"] = "inactive"
+                    attribute[f"{layer}_attribute_is_active"] = False
     snapshot = snapshot_from_graph(graph)
     baseline = validate_future_graph(
         snapshot=snapshot,
@@ -366,11 +367,11 @@ def test_active_modeled_relationship_requires_active_attributes_and_entities(
     )
     assert baseline.valid
     changes: dict[ProjectChangeSetDataset, list[dict[str, object]]] = (
-        {dataset: [{**endpoint, f"{layer}_{inactive_record}_status": "inactive"}]}
+        {dataset: [{**endpoint, f"{layer}_{inactive_record}_is_active": False}]}
         if action == "deactivate_endpoint"
         else {
             relationship_dataset: [
-                {**relationship, f"{layer}_relationship_status": "active"}
+                {**relationship, f"{layer}_relationship_is_active": True}
             ]
         }
     )
@@ -391,19 +392,199 @@ def test_active_modeled_relationship_requires_active_attributes_and_entities(
     )
 
 
+def _retire_type_codes(snapshot: ProjectSnapshot, *codes: str) -> ProjectSnapshot:
+    """Retire label codes the way the reference lists do: the rows stay, inactive."""
+    logical = snapshot.logical.model_copy(
+        update={
+            "entity_types": tuple(
+                row.model_copy(
+                    update={
+                        "logical_entity_type_is_active": row.logical_entity_type_code not in codes
+                    }
+                )
+                for row in snapshot.logical.entity_types
+            )
+        }
+    )
+    dimensional = snapshot.dimensional.model_copy(
+        update={
+            "fact_types": tuple(
+                row.model_copy(
+                    update={
+                        "dimensional_fact_type_is_active": row.dimensional_fact_type_code
+                        not in codes
+                    }
+                )
+                for row in snapshot.dimensional.fact_types
+            )
+        }
+    )
+    return snapshot.model_copy(update={"logical": logical, "dimensional": dimensional})
+
+
+@pytest.mark.parametrize(
+    ("dataset", "field", "code"),
+    [
+        ("logical_entity", "logical_entity_type", "snapshot"),
+        ("logical_entity", "logical_entity_type", "bridge"),
+        ("dimensional_entity", "dimensional_fact_type", "factless"),
+        ("dimensional_entity", "dimensional_fact_type", "aggregate"),
+    ],
+)
+def test_new_records_need_an_active_reference_type_code(
+    dataset: ProjectChangeSetDataset, field: str, code: str
+) -> None:
+    graph = complete_project_graph()
+    graph[dataset][0][field] = code
+
+    result = validate_future_graph(
+        snapshot=_retire_type_codes(empty_project_snapshot(), "snapshot", "factless"),
+        staged_documents=graph,
+        physical_scope=complete_physical_scope(),
+    )
+
+    assert result.valid is False
+    assert result.phase == "references"
+    assert [(issue.code, issue.dataset, issue.fields) for issue in result.issues] == [
+        ("reference_code_invalid", dataset, (field,))
+    ]
+
+
+def test_unchanged_applied_records_keep_a_retired_type_code() -> None:
+    graph = complete_project_graph()
+    graph["logical_entity"][0]["logical_entity_type"] = "snapshot"
+    graph["dimensional_entity"][0]["dimensional_fact_type"] = "factless"
+    snapshot = _retire_type_codes(snapshot_from_graph(graph), "snapshot", "factless")
+    order = graph["logical_entity"][0]
+    fact = graph["dimensional_entity"][0]
+
+    def check(
+        changes: dict[ProjectChangeSetDataset, list[dict[str, object]]],
+    ) -> ValidatedProjectChangeSet:
+        return validate_future_graph(
+            snapshot=snapshot,
+            staged_documents=changes,
+            physical_scope=complete_physical_scope(),
+        )
+
+    assert check({}).valid
+    assert check({"logical_entity": [{**order, "logical_entity_is_locked": True}]}).valid
+    edited = check(
+        {
+            "logical_entity": [{**order, "logical_entity_definition": "Edited Order."}],
+            "dimensional_entity": [{**fact, "dimensional_entity_definition": "Edited fact."}],
+        }
+    )
+    assert [(issue.code, issue.fields) for issue in edited.issues] == [
+        ("reference_code_invalid", ("logical_entity_type",)),
+        ("reference_code_invalid", ("dimensional_fact_type",)),
+    ]
+    assert check({"logical_entity": [{**order, "logical_entity_type": "transaction"}]}).valid
+
+
+@pytest.mark.parametrize("layer", ["logical", "dimensional"])
+def test_relationship_identity_is_its_foreign_key_attribute(
+    layer: Literal["logical", "dimensional"],
+) -> None:
+    graph = complete_project_graph()
+    dataset: ProjectChangeSetDataset = (
+        "logical_relationship" if layer == "logical" else "dimensional_relationship"
+    )
+    relationship = graph[dataset][0]
+    foreign_key = str(relationship[f"from_{layer}_attribute_name"])
+    own_key = "OrderID" if layer == "logical" else "SalesKey"
+    # The same foreign-key Attribute, however it is spelled, cannot name a second parent.
+    second_parent = {
+        **relationship,
+        f"from_{layer}_attribute_name": f" {foreign_key.upper()} ",
+        f"to_{layer}_entity_name": relationship[f"from_{layer}_entity_name"],
+        f"to_{layer}_attribute_name": own_key,
+    }
+
+    records, issues = validate_staged_records(dataset, [relationship, second_parent])
+
+    assert len(records) == 1
+    assert [(issue.code, issue.record_number) for issue in issues] == [
+        ("duplicate_canonical_key", 2)
+    ]
+    repointed = {**second_parent, f"from_{layer}_attribute_name": foreign_key}
+    result = validate_future_graph(
+        snapshot=snapshot_from_graph(graph),
+        staged_documents={dataset: [repointed]},
+        physical_scope=complete_physical_scope(),
+    )
+    assert result.valid, result.issues
+    assert (result.action_review[0].insert_count, result.action_review[0].update_count) == (0, 1)
+
+
+@pytest.mark.parametrize("layer", ["logical", "dimensional"])
+@pytest.mark.parametrize("parent", ["missing", "not_key", "inactive_not_key"])
+def test_relationship_points_at_an_existing_parent_key(
+    layer: Literal["logical", "dimensional"],
+    parent: str,
+) -> None:
+    graph = complete_project_graph()
+    attribute_dataset: ProjectChangeSetDataset = (
+        "logical_attribute" if layer == "logical" else "dimensional_attribute"
+    )
+    relationship_dataset: ProjectChangeSetDataset = (
+        "logical_relationship" if layer == "logical" else "dimensional_relationship"
+    )
+    relationship = graph[relationship_dataset][0]
+    key = next(
+        record
+        for record in graph[attribute_dataset]
+        if record[f"{layer}_entity_name"] == relationship[f"to_{layer}_entity_name"]
+    )
+    graph[attribute_dataset].append(
+        {
+            **key,
+            f"{layer}_attribute_name": "CustomerName",
+            f"{layer}_attribute_data_type": "string",
+            f"{layer}_attribute_ordinal_position": 2,
+            f"{layer}_attribute_is_natural_key": False,
+            f"{layer}_attribute_is_surrogate_key": False,
+        }
+    )
+    relationship[f"to_{layer}_attribute_name"] = (
+        "Missing" if parent == "missing" else "CustomerName"
+    )
+    relationship[f"{layer}_relationship_is_active"] = parent != "inactive_not_key"
+
+    result = validate_future_graph(
+        snapshot=empty_project_snapshot(),
+        staged_documents=graph,
+        physical_scope=complete_physical_scope(),
+    )
+
+    issues = {(issue.code, issue.dataset, issue.fields) for issue in result.issues}
+    if parent == "missing":
+        assert ("reference_not_found", relationship_dataset, (f"{layer}_attribute_name",)) in issues
+    elif parent == "not_key":
+        assert issues == {
+            (
+                "relationship_target_not_key",
+                relationship_dataset,
+                (f"to_{layer}_attribute_name",),
+            )
+        }
+    else:
+        assert result.valid, result.issues
+
+
 @pytest.mark.parametrize("layer", ["subject_area", "logical", "dimensional"])
 @pytest.mark.parametrize("locked", [False, True])
-@pytest.mark.parametrize("status", ["active", "inactive"])
+@pytest.mark.parametrize("active", [True, False])
 def test_project_layer_activity_is_independent_of_locks(
     layer: Literal["subject_area", "logical", "dimensional"],
     locked: bool,
-    status: str,
+    active: bool,
 ) -> None:
     graph = _project_layer_graph(layer)
     for dataset, records in graph.items():
         if dataset == layer or dataset.startswith(f"{layer}_"):
             for record in records:
-                record[f"{dataset}_status"] = status
+                record[f"{dataset}_is_active"] = active
                 record[f"{dataset}_is_locked"] = locked
 
     result = validate_future_graph(
@@ -488,7 +669,7 @@ def test_lifecycle_review_preserves_inactive_physical_history(
     else:
         sources = changed["sources"]
         assert isinstance(sources, list)
-        sources[0]["status"] = "inactive"
+        sources[0]["is_active"] = False
         sources[0]["is_locked"] = True
 
     result = validate_future_graph(
@@ -509,16 +690,16 @@ def test_authoring_cannot_claim_retained_physical_history(change: str) -> None:
         if record["object_name"] == SOURCE_ORDERS[4]
     )
     if change == "reactivate":
-        existing["subject_area_table_status"] = "inactive"
+        existing["subject_area_table_is_active"] = False
     changes: dict[ProjectChangeSetDataset, list[dict[str, object]]]
     if change == "reactivate":
-        changes = {"subject_area_table": [{**existing, "subject_area_table_status": "active"}]}
+        changes = {"subject_area_table": [{**existing, "subject_area_table_is_active": True}]}
     else:
         # The same retained table placed in another area is new authored evidence.
         area = {**graph["subject_area"][0], "subject_area_name": "Billing"}
         membership = {**existing, "subject_area_name": "Billing"}
         if change == "new_inactive":
-            membership["subject_area_table_status"] = "inactive"
+            membership["subject_area_table_is_active"] = False
         changes = {"subject_area": [area], "subject_area_table": [membership]}
 
     result = validate_future_graph(
@@ -585,9 +766,8 @@ def test_dimensional_design_uses_active_logical_sources_without_registration(
     }
     source = {
         "support_source_type": source_type,
-        "source_order": 1,
         "rationale": "Applied Logical source.",
-        "status": "active",
+        "is_active": True,
         "is_locked": False,
     }
     if source_type == "logical_entity":
@@ -601,9 +781,8 @@ def test_dimensional_design_uses_active_logical_sources_without_registration(
             {
                 "support_source_type": "logical_entity",
                 "source_logical_entity": logical_key,
-                "source_order": 1,
-                "rationale": "Parent source.",
-                "status": "active",
+                "rationale": None,
+                "is_active": True,
                 "is_locked": False,
             }
         ]
@@ -613,7 +792,7 @@ def test_dimensional_design_uses_active_logical_sources_without_registration(
         staged_documents=graph,
         physical_scope=complete_physical_scope(),
     ).valid
-    graph["logical_entity"][0]["logical_entity_status"] = "inactive"
+    graph["logical_entity"][0]["logical_entity_is_active"] = False
     result = validate_future_graph(
         snapshot=empty_project_snapshot(),
         staged_documents=graph,
@@ -1227,9 +1406,8 @@ def test_dimensional_attribute_requires_matching_active_parent_support(
             {
                 "support_source_type": "logical_entity",
                 "source_logical_entity": logical_key,
-                "source_order": 1,
                 "rationale": "Parent source.",
-                "status": "inactive",
+                "is_active": False,
                 "is_locked": False,
             }
         ]
@@ -1241,9 +1419,8 @@ def test_dimensional_attribute_requires_matching_active_parent_support(
                 **logical_key,
                 "logical_attribute_name": "OrderID",
             },
-            "source_order": 1,
             "rationale": "Attribute source.",
-            "status": "active",
+            "is_active": True,
             "is_locked": False,
         }
     ]

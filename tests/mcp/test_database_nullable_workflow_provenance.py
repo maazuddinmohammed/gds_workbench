@@ -110,12 +110,11 @@ def test_direct_project_writes_do_not_require_workflow_provenance(
                 """
             INSERT INTO workflow.subject_area (
                 project_id,
-                agent_run_id,
                 workflow_run_id,
                 subject_area_name,
                 subject_area_definition
             )
-            VALUES (%s, NULL, NULL, 'Customers', 'Customer tables.')
+            VALUES (%s, NULL, 'Customers', 'Customer tables.')
             RETURNING subject_area_id
             """,
                 (project_id,),
@@ -126,12 +125,11 @@ def test_direct_project_writes_do_not_require_workflow_provenance(
                 """
             INSERT INTO workflow.subject_area_table (
                 project_id,
-                agent_run_id,
                 workflow_run_id,
                 subject_area_id,
                 object_id
             )
-            VALUES (%s, NULL, NULL, %s, %s)
+            VALUES (%s, NULL, %s, %s)
             RETURNING subject_area_table_id
             """,
                 (project_id, subject_area_id, bronze["object_id"]),
@@ -142,7 +140,6 @@ def test_direct_project_writes_do_not_require_workflow_provenance(
                 """
             INSERT INTO workflow.logical_entity (
                 project_id,
-                agent_run_id,
                 workflow_run_id,
                 logical_entity_schema_name,
                 logical_entity_name,
@@ -150,7 +147,7 @@ def test_direct_project_writes_do_not_require_workflow_provenance(
                 logical_entity_type,
                 logical_entity_grain
             )
-            VALUES (%s, NULL, NULL, 'silver', 'customer', 'A logical customer.',
+            VALUES (%s, NULL, 'silver', 'customer', 'A logical customer.',
                     'core', 'One customer')
             RETURNING logical_entity_id
             """,
@@ -162,14 +159,13 @@ def test_direct_project_writes_do_not_require_workflow_provenance(
                 """
             INSERT INTO workflow.dimensional_entity (
                 project_id,
-                agent_run_id,
                 workflow_run_id,
                 dimensional_entity_schema_name,
                 dimensional_entity_name,
                 dimensional_entity_definition,
                 dimensional_entity_type
             )
-            VALUES (%s, NULL, NULL, 'gold', 'dim_customer',
+            VALUES (%s, NULL, 'gold', 'dim_customer',
                     'A reusable customer Dimension.', 'dimension')
             RETURNING dimensional_entity_id
             """,
@@ -207,20 +203,21 @@ def test_direct_project_writes_do_not_require_workflow_provenance(
                    validation_workflow_run_id
               FROM workflow.analysis_result
              WHERE analysis_result_id = %s
+            -- Subject Area, Logical and Dimensional tables have no agent_run_id column.
             UNION ALL
-            SELECT 'subject_area', agent_run_id, workflow_run_id, NULL
+            SELECT 'subject_area', NULL, workflow_run_id, NULL
               FROM workflow.subject_area
              WHERE subject_area_id = %s
             UNION ALL
-            SELECT 'subject_area_table', agent_run_id, workflow_run_id, NULL
+            SELECT 'subject_area_table', NULL, workflow_run_id, NULL
               FROM workflow.subject_area_table
              WHERE subject_area_table_id = %s
             UNION ALL
-            SELECT 'logical', agent_run_id, workflow_run_id, NULL
+            SELECT 'logical', NULL, workflow_run_id, NULL
               FROM workflow.logical_entity
              WHERE logical_entity_id = %s
             UNION ALL
-            SELECT 'dimensional', agent_run_id, workflow_run_id, NULL
+            SELECT 'dimensional', NULL, workflow_run_id, NULL
               FROM workflow.dimensional_entity
              WHERE dimensional_entity_id = %s
             UNION ALL

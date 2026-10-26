@@ -35,13 +35,14 @@ import {
   LogicalAttributeDetailPage,
   LogicalEntityDetailPage,
   LogicalRelationshipDetailPage,
-  LogicalSubmodelDetailPage,
+  LogicalSubjectAreaPage,
 } from "./features/logical/LogicalDetail";
 import { LogicalScreen } from "./features/logical/LogicalScreen";
 import {
   DimensionalAttributeDetailPage,
   DimensionalObjectDetailPage,
   DimensionalRelationshipDetailPage,
+  DimensionalSubjectAreaPage,
 } from "./features/dimensional/DimensionalDetail";
 import { DimensionalScreen } from "./features/dimensional/DimensionalScreen";
 import { MappingScreen } from "./features/mapping/MappingScreen";
@@ -321,11 +322,24 @@ const tenantProjectSubjectAreaRoute = createRoute({
   component: ProjectSubjectArea,
 });
 
+// Logical and Dimensional open a tab by name, so a Subject Area page can link back to its tab.
+type ModelView = "subject_areas" | "entities" | "relationships";
+const modelViewSearch = (search: Record<string, unknown>): { view?: ModelView } => (
+  search.view === "subject_areas" || search.view === "entities" || search.view === "relationships"
+    ? { view: search.view } : {}
+);
+
 const tenantProjectLogicalRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/projects/$projectId/logical",
-  validateSearch: projectLayerSearch,
+  validateSearch: modelViewSearch,
   component: ProjectLogical,
+});
+
+const tenantProjectLogicalSubjectAreaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tenants/$tenantId/projects/$projectId/logical/subject-areas/$subjectAreaId",
+  component: ProjectLogicalSubjectArea,
 });
 
 const tenantProjectLogicalEntityRoute = createRoute({
@@ -349,18 +363,17 @@ const tenantProjectLogicalRelationshipRoute = createRoute({
   component: ProjectLogicalRelationship,
 });
 
-const tenantProjectLogicalSubmodelRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/projects/$projectId/logical/submodels/$submodelId",
-  validateSearch: projectLayerSearch,
-  component: ProjectLogicalSubmodel,
-});
-
 const tenantProjectDimensionalRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/projects/$projectId/dimensional",
-  validateSearch: projectLayerSearch,
+  validateSearch: modelViewSearch,
   component: ProjectDimensional,
+});
+
+const tenantProjectDimensionalSubjectAreaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tenants/$tenantId/projects/$projectId/dimensional/subject-areas/$subjectAreaId",
+  component: ProjectDimensionalSubjectArea,
 });
 
 const tenantProjectDimensionalObjectRoute = createRoute({
@@ -418,11 +431,12 @@ const routeTree = rootRoute.addChildren([
   tenantProjectSubjectAreasRoute,
   tenantProjectSubjectAreaRoute,
   tenantProjectLogicalRoute,
+  tenantProjectLogicalSubjectAreaRoute,
   tenantProjectLogicalEntityRoute,
   tenantProjectLogicalAttributeRoute,
   tenantProjectLogicalRelationshipRoute,
-  tenantProjectLogicalSubmodelRoute,
   tenantProjectDimensionalRoute,
+  tenantProjectDimensionalSubjectAreaRoute,
   tenantProjectDimensionalObjectRoute,
   tenantProjectDimensionalAttributeRoute,
   tenantProjectDimensionalRelationshipRoute,
@@ -1094,6 +1108,7 @@ function ProjectSubjectArea() {
 function ProjectLogical() {
   const { api } = rootRoute.useRouteContext();
   const { tenantId, projectId } = tenantProjectLogicalRoute.useParams();
+  const { view } = tenantProjectLogicalRoute.useSearch();
   const numericTenantId = Number(tenantId);
   const numericProjectId = Number(projectId);
   return (
@@ -1110,10 +1125,27 @@ function ProjectLogical() {
           api={api}
           tenantId={numericTenantId}
           project={project}
+          initialView={view}
           canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"}
           hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true}
         />
       )}
+    </ProjectRouteFrame>
+  );
+}
+
+function ProjectLogicalSubjectArea() {
+  const { api } = rootRoute.useRouteContext();
+  const { tenantId, projectId, subjectAreaId } = tenantProjectLogicalSubjectAreaRoute.useParams();
+  const numericTenantId = Number(tenantId);
+  const numericProjectId = Number(projectId);
+  const numericSubjectAreaId = Number(subjectAreaId);
+  if (!Number.isSafeInteger(numericSubjectAreaId) || numericSubjectAreaId <= 0) return <ErrorPage />;
+  return (
+    <ProjectRouteFrame tenantLockApi={api} api={api} tenantId={numericTenantId} projectId={numericProjectId}
+      activeStage="logical" loadingLabel="Loading Logical">
+      {({ project }) => <LogicalSubjectAreaPage api={api} tenantId={numericTenantId} projectId={numericProjectId}
+        projectRevision={project.project_revision} subjectAreaId={numericSubjectAreaId} />}
     </ProjectRouteFrame>
   );
 }
@@ -1181,20 +1213,6 @@ function ProjectLogicalRelationship() {
   );
 }
 
-function ProjectLogicalSubmodel() {
-  const { api } = rootRoute.useRouteContext();
-  const { tenantId, projectId, submodelId } = tenantProjectLogicalSubmodelRoute.useParams();
-  return (
-    <LogicalDetailRoute
-      api={api}
-      tenantId={Number(tenantId)}
-      projectId={Number(projectId)}
-      detailId={Number(submodelId)}
-      kind="submodel"
-    />
-  );
-}
-
 function LogicalDetailRoute({
   api,
   tenantId,
@@ -1206,7 +1224,7 @@ function LogicalDetailRoute({
   tenantId: number;
   projectId: number;
   detailId: number;
-  kind: "attribute" | "relationship" | "submodel";
+  kind: "attribute" | "relationship";
 }) {
   if (!Number.isSafeInteger(detailId) || detailId <= 0) return <ErrorPage />;
   return (
@@ -1230,21 +1248,13 @@ function LogicalDetailRoute({
               projectId={projectId}
               attributeId={detailId}
             />
-          ) : kind === "relationship" ? (
+          ) : (
             <LogicalRelationshipDetailPage
               actions={actions}
               api={api}
               tenantId={tenantId}
               projectId={projectId}
               relationshipId={detailId}
-            />
-          ) : (
-            <LogicalSubmodelDetailPage
-              actions={actions}
-              api={api}
-              tenantId={tenantId}
-              projectId={projectId}
-              submodelId={detailId}
             />
           )
         );
@@ -1256,6 +1266,7 @@ function LogicalDetailRoute({
 function ProjectDimensional() {
   const { api } = rootRoute.useRouteContext();
   const { tenantId, projectId } = tenantProjectDimensionalRoute.useParams();
+  const { view } = tenantProjectDimensionalRoute.useSearch();
   const numericTenantId = Number(tenantId);
   const numericProjectId = Number(projectId);
   return (
@@ -1272,10 +1283,27 @@ function ProjectDimensional() {
           api={api}
           tenantId={numericTenantId}
           project={project}
+          initialView={view}
           canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"}
           hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true}
         />
       )}
+    </ProjectRouteFrame>
+  );
+}
+
+function ProjectDimensionalSubjectArea() {
+  const { api } = rootRoute.useRouteContext();
+  const { tenantId, projectId, subjectAreaId } = tenantProjectDimensionalSubjectAreaRoute.useParams();
+  const numericTenantId = Number(tenantId);
+  const numericProjectId = Number(projectId);
+  const numericSubjectAreaId = Number(subjectAreaId);
+  if (!Number.isSafeInteger(numericSubjectAreaId) || numericSubjectAreaId <= 0) return <ErrorPage />;
+  return (
+    <ProjectRouteFrame tenantLockApi={api} api={api} tenantId={numericTenantId} projectId={numericProjectId}
+      activeStage="dimensional" loadingLabel="Loading Dimensional">
+      {({ project }) => <DimensionalSubjectAreaPage api={api} tenantId={numericTenantId} projectId={numericProjectId}
+        projectRevision={project.project_revision} subjectAreaId={numericSubjectAreaId} />}
     </ProjectRouteFrame>
   );
 }

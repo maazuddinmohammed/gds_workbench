@@ -61,9 +61,6 @@ from gds_workbench_api.features.workflows.authoring.repair import (
 from gds_workbench_api.features.workflows.authoring.stage_runner import (
     AgentStageRunner,
 )
-from gds_workbench_api.features.workflows.authoring.subject_area_policy import (
-    load_subject_area_policy,
-)
 from gds_workbench_api.features.workflows.execution.contracts import WorkflowExecutionDatabase
 
 from .candidate import SubjectAreaCandidateValidator
@@ -395,7 +392,9 @@ class SubjectAreaWorkflow:
 
 def _candidate_validator(context: AgentContextBundle) -> SubjectAreaCandidateValidator:
     selected = context.context.selected_objects
+    scope = context.physical_scope
     return SubjectAreaCandidateValidator(
+        scope_object_keys=frozenset() if scope is None else scope.project_input_objects,
         selected_object_keys=tuple(
             PhysicalObjectKey(
                 tenant_code=item.object.tenant_code,
@@ -406,9 +405,7 @@ def _candidate_validator(context: AgentContextBundle) -> SubjectAreaCandidateVal
             )
             for item in selected
         ),
-        column_counts=tuple(len(item.attributes) for item in selected),
         applied=context.context.applied.subject_area,
-        max_subject_area_columns=load_subject_area_policy().max_subject_area_columns,
     )
 
 

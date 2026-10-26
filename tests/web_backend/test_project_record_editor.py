@@ -1,5 +1,6 @@
 """Manual definition edits validate complete records and preserve their graph identity."""
 
+from dataclasses import replace
 from typing import get_args
 
 import pytest
@@ -43,11 +44,12 @@ def test_edit_definition_preserves_all_other_fields(dataset: EditableDataset) ->
             expected_project_revision=1,
         ),
     )
-    name = f"{dataset}_definition"
+    # Relationships have no definition; their basis explains the link.
+    name = f"{dataset}_basis" if dataset.endswith("_relationship") else f"{dataset}_definition"
     assert name in {field.name for field in editor.fields}
     assert not any(
         field.name in DATASETS_BY_NAME[dataset].canonical_key
-        or field.name.endswith(("_status", "_is_locked"))
+        or field.name.endswith(("_status", "_is_active", "_is_locked"))
         for field in editor.fields
     )
     validation = prepare_project_record_edit(
@@ -101,7 +103,7 @@ def test_logical_attribute_editor_exposes_key_origins_and_audit_classification()
     [
         {"logical_entity_schema_name": "silver", "logical_entity_name": "Renamed"},
         {"logical_entity_is_locked": False},
-        {"logical_entity_status": "inactive"},
+        {"logical_entity_is_active": False},
         {"sources": []},
         {"logical_entity_type": "invalid"},
         {"logical_entity_type": "other"},
@@ -143,6 +145,54 @@ def test_editor_protects_locked_records_and_shows_project_choices() -> None:
     with pytest.raises(WorkbenchError) as error:
         prepare_project_record_edit(review, command, complete_physical_scope())
     assert error.value.code == "record_locked"
+
+
+def test_editor_offers_only_active_reference_codes() -> None:
+    review = review_graph(complete_project_graph())
+    logical = review.snapshot.logical
+    review = replace(
+        review,
+        snapshot=review.snapshot.model_copy(
+            update={
+                "logical": logical.model_copy(
+                    update={
+                        "entity_types": tuple(
+                            row.model_copy(
+                                update={
+                                    "logical_entity_type_is_active": (
+                                        row.logical_entity_type_code != "history"
+                                    )
+                                }
+                            )
+                            for row in logical.entity_types
+                        )
+                    }
+                )
+            }
+        ),
+    )
+    entity_editor = project_record_editor(
+        review,
+        ProjectRecordEditorRequest(
+            dataset="logical_entity", record_id=1, expected_project_revision=1
+        ),
+    )
+    entity_type = next(
+        field for field in entity_editor.fields if field.name == "logical_entity_type"
+    )
+    assert "core" in entity_type.options and "history" not in entity_type.options
+    assert "logical_entity_type_detail" not in {field.name for field in entity_editor.fields}
+    fact_editor = project_record_editor(
+        review,
+        ProjectRecordEditorRequest(
+            dataset="dimensional_entity", record_id=1, expected_project_revision=1
+        ),
+    )
+    fact_type = next(
+        field for field in fact_editor.fields if field.name == "dimensional_fact_type"
+    )
+    assert fact_type.kind == "choice" and not fact_type.required
+    assert {"transaction", "periodic_snapshot"} <= set(fact_type.options)
 
 
 @pytest.mark.parametrize(

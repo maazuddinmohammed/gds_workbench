@@ -17,6 +17,22 @@ SILVER_ORDER = ("GDS", "GDS", "LAKEHOUSE", "silver", "Order")
 SILVER_CUSTOMER = ("GDS", "GDS", "LAKEHOUSE", "silver", "Customer")
 GOLD_SALES_FACT = ("GDS", "GDS", "LAKEHOUSE", "gold", "SalesFact")
 GOLD_CUSTOMER = ("GDS", "GDS", "LAKEHOUSE", "gold", "CustomerDimension")
+# Mirrors the seeded rows in database/01_reference.sql.
+LOGICAL_ENTITY_TYPES = (
+    "association",
+    "core",
+    "event",
+    "history",
+    "reference",
+    "snapshot",
+    "transaction",
+)
+DIMENSIONAL_FACT_TYPES = (
+    "accumulating_snapshot",
+    "factless",
+    "periodic_snapshot",
+    "transaction",
+)
 
 
 def physical_object(key: tuple[str, str, str, str, str]) -> dict[str, object]:
@@ -155,21 +171,13 @@ def complete_project_graph(
             {
                 "subject_area_name": "Sales",
                 "subject_area_definition": "Customer orders and the customers who place them.",
-                "subject_area_status": "active",
+                "subject_area_is_active": True,
                 "subject_area_is_locked": False,
             }
         ],
         "subject_area_table": [
             subject_area_table("Sales", source_order),
             subject_area_table("Sales", source_customer),
-        ],
-        "logical_submodel": [
-            {
-                "logical_submodel_name": "Sales",
-                "logical_submodel_definition": "Sales operations.",
-                "logical_submodel_status": "active",
-                "logical_submodel_is_locked": False,
-            }
         ],
         "logical_entity": [
             logical_entity("Order", "transaction", source_order),
@@ -193,14 +201,6 @@ def complete_project_graph(
             ),
         ],
         "logical_relationship": [logical_relationship()],
-        "dimensional_submodel": [
-            {
-                "dimensional_submodel_name": "SalesMart",
-                "dimensional_submodel_definition": "Sales analytics.",
-                "dimensional_submodel_status": "active",
-                "dimensional_submodel_is_locked": False,
-            }
-        ],
         "dimensional_entity": [
             dimensional_entity("SalesFact", "fact"),
             dimensional_entity("CustomerDimension", "dimension"),
@@ -299,7 +299,7 @@ def subject_area_table(area: str, source: dict[str, object]) -> dict[str, object
     return {
         "subject_area_name": area,
         **source,
-        "subject_area_table_status": "active",
+        "subject_area_table_is_active": True,
         "subject_area_table_is_locked": False,
     }
 
@@ -314,25 +314,16 @@ def logical_entity(
         "logical_entity_name": name,
         "logical_entity_definition": f"Normalized {name} entity.",
         "logical_entity_type": entity_type,
-        "logical_entity_type_detail": None,
         "logical_entity_grain": f"One {name}.",
         "logical_entity_dependency_order": 0,
-        "logical_entity_status": "active",
+        "logical_entity_is_active": True,
         "logical_entity_is_locked": False,
-        "submodels": [
-            {
-                "submodel_name": "Sales",
-                "membership_status": "active",
-                "membership_is_locked": False,
-            }
-        ],
         "sources": [
             {
                 "support_source_type": "object",
                 "source_object": source,
-                "source_order": 1,
                 "rationale": "Primary physical source.",
-                "status": "active",
+                "is_active": True,
                 "is_locked": False,
             }
         ],
@@ -358,15 +349,14 @@ def logical_attribute(
         "logical_attribute_is_surrogate_key": False,
         "logical_attribute_ordinal_position": ordinal,
         "logical_attribute_is_audit_column": False,
-        "logical_attribute_status": "active",
+        "logical_attribute_is_active": True,
         "logical_attribute_is_locked": False,
         "sources": [
             {
                 "support_source_type": "attribute",
                 "source_attribute": source,
-                "source_order": 1,
                 "rationale": "Direct physical source.",
-                "status": "active",
+                "is_active": True,
                 "is_locked": False,
             }
         ],
@@ -375,8 +365,6 @@ def logical_attribute(
 
 def logical_relationship() -> dict[str, object]:
     return {
-        "logical_relationship_name": "OrderCustomer",
-        "logical_relationship_definition": "Order references Customer.",
         "from_logical_entity_schema_name": "silver",
         "from_logical_entity_name": "Order",
         "from_logical_attribute_name": "CustomerID",
@@ -384,9 +372,8 @@ def logical_relationship() -> dict[str, object]:
         "to_logical_entity_name": "Customer",
         "to_logical_attribute_name": "CustomerID",
         "logical_relationship_cardinality": "many_to_one",
-        "logical_relationship_basis": "Source relationship.",
-        "logical_relationship_cardinality_basis": "Many Orders per Customer.",
-        "logical_relationship_status": "active",
+        "logical_relationship_basis": "Many Orders per Customer.",
+        "logical_relationship_is_active": True,
         "logical_relationship_is_locked": False,
     }
 
@@ -401,24 +388,16 @@ def dimensional_entity(name: str, entity_type: str) -> dict[str, object]:
         "dimensional_fact_type": "transaction" if is_fact else None,
         "dimensional_entity_grain_definition": "One Order." if is_fact else None,
         "dimensional_entity_dependency_order": 0,
-        "dimensional_entity_status": "active",
+        "dimensional_entity_is_active": True,
         "dimensional_entity_is_locked": False,
-        "submodels": [
-            {
-                "submodel_name": "SalesMart",
-                "membership_status": "active",
-                "membership_is_locked": False,
-            }
-        ],
         "sources": [
             {
                 "support_source_type": "context_record",
                 "context_record": {
                     "context_record_id": "00000000-0000-4000-8000-000000000001"
                 },
-                "source_order": 1,
                 "rationale": "Approved dimensional requirement.",
-                "status": "active",
+                "is_active": True,
                 "is_locked": False,
             }
         ],
@@ -444,7 +423,7 @@ def dimensional_attribute(
         "dimensional_attribute_is_natural_key": key_role == "business",
         "dimensional_attribute_is_surrogate_key": key_role == "surrogate",
         "dimensional_attribute_is_audit_column": False,
-        "dimensional_attribute_status": "active",
+        "dimensional_attribute_is_active": True,
         "dimensional_attribute_is_locked": False,
         "sources": [
             {
@@ -452,9 +431,8 @@ def dimensional_attribute(
                 "context_record": {
                     "context_record_id": "00000000-0000-4000-8000-000000000001"
                 },
-                "source_order": 1,
                 "rationale": "Approved dimensional requirement.",
-                "status": "active",
+                "is_active": True,
                 "is_locked": False,
             }
         ],
@@ -463,21 +441,15 @@ def dimensional_attribute(
 
 def dimensional_relationship() -> dict[str, object]:
     return {
-        "dimensional_relationship_name": "SalesCustomer",
-        "dimensional_relationship_definition": "Fact joins Customer Dimension.",
         "from_dimensional_entity_schema_name": "gold",
         "from_dimensional_entity_name": "SalesFact",
         "from_dimensional_attribute_name": "CustomerKey",
         "to_dimensional_entity_schema_name": "gold",
         "to_dimensional_entity_name": "CustomerDimension",
         "to_dimensional_attribute_name": "CustomerKey",
-        "dimensional_relationship_kind": "fact_dimension",
-        "dimensional_relationship_cardinality": "many_to_one",
-        "dimensional_relationship_is_optional": False,
         "dimensional_relationship_role_name": None,
         "dimensional_relationship_basis": "Star schema.",
-        "dimensional_relationship_cardinality_basis": "Many Facts per Customer.",
-        "dimensional_relationship_status": "active",
+        "dimensional_relationship_is_active": True,
         "dimensional_relationship_is_locked": False,
     }
 
@@ -565,13 +537,27 @@ def snapshot_from_graph(
                 "tables": rows("subject_area_table"),
             },
             "logical": {
-                "submodels": rows("logical_submodel"),
+                "entity_types": [
+                    {
+                        "logical_entity_type_code": code,
+                        "logical_entity_type_description": f"The {code} Entity type.",
+                        "logical_entity_type_is_active": True,
+                    }
+                    for code in LOGICAL_ENTITY_TYPES
+                ],
                 "entities": rows("logical_entity"),
                 "attributes": rows("logical_attribute"),
                 "relationships": rows("logical_relationship"),
             },
             "dimensional": {
-                "submodels": rows("dimensional_submodel"),
+                "fact_types": [
+                    {
+                        "dimensional_fact_type_code": code,
+                        "dimensional_fact_type_description": f"The {code} fact type.",
+                        "dimensional_fact_type_is_active": True,
+                    }
+                    for code in DIMENSIONAL_FACT_TYPES
+                ],
                 "entities": rows("dimensional_entity"),
                 "attributes": rows("dimensional_attribute"),
                 "relationships": rows("dimensional_relationship"),

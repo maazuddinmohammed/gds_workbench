@@ -28,7 +28,7 @@ DECLARE
         'application.set_prompt_assignment(uuid,uuid,character varying,bigint,character varying,bigint,bigint,bigint)',
         'application.create_output_template(uuid,uuid,character varying,character varying,character varying,character varying,character varying,jsonb,character varying)',
         'application.update_output_template(uuid,uuid,character varying,bigint,character varying,character varying,boolean,timestamp with time zone)',
-        'application.create_workflow_run(uuid,uuid,character varying,bigint,bigint,character varying,character varying,character varying,character varying,character varying,character varying,integer,integer,bigint[],character varying[],character varying,character varying,uuid,jsonb,character varying,character varying,bigint,bigint,bigint,character varying,jsonb,jsonb,character varying,bigint[])',
+        'application.create_workflow_run(uuid,uuid,character varying,bigint,bigint,character varying,character varying,character varying,character varying,character varying,character varying,integer,integer,bigint[],character varying[],character varying,character varying,uuid,jsonb,character varying,character varying,bigint,bigint,bigint,character varying,jsonb,jsonb,character varying,bigint[],character varying,bigint[])',
         'application.start_workflow_run(uuid,uuid,character varying,bigint,bigint)',
         'application.cancel_workflow_run(uuid,uuid,character varying,bigint,bigint,bigint)',
         'application.claim_next_workflow_run(integer)',
@@ -99,19 +99,27 @@ BEGIN
         RAISE EXCEPTION 'one or more release schemas are missing';
     END IF;
 
-    IF NOT EXISTS (
+    -- Model relationships point child -> parent: one foreign-key Attribute, one parent.
+    IF EXISTS (
         SELECT 1
           FROM information_schema.columns AS column_record
          WHERE column_record.table_schema = 'workflow'
-           AND column_record.table_name = 'dimensional_relationship'
-           AND column_record.column_name =
-               'dimensional_relationship_is_optional'
-           AND column_record.data_type = 'boolean'
-           AND column_record.is_nullable = 'NO'
-           AND column_record.column_default IS NULL
-    ) THEN
+           AND column_record.table_name IN ('logical_relationship', 'dimensional_relationship')
+           AND column_record.column_name IN (
+                   'logical_relationship_name', 'dimensional_relationship_kind',
+                   'dimensional_relationship_is_optional', 'dimensional_relationship_cardinality'
+               )
+    ) OR (
+        SELECT count(*)
+          FROM pg_catalog.pg_constraint AS constraint_record
+         WHERE constraint_record.conname IN (
+                   'uq_logical_relationship_from_attribute',
+                   'uq_dimensional_relationship_from_attribute'
+               )
+           AND constraint_record.contype = 'u'
+    ) <> 2 THEN
         RAISE EXCEPTION
-            'Dimensional Relationship optionality contract is invalid';
+            'Model relationship child-to-parent contract is invalid';
     END IF;
 
     IF (
@@ -250,6 +258,7 @@ BEGIN
                'output_template_field',
                'workflow_run',
                'workflow_run_object_selection',
+               'workflow_run_subject_area_selection',
                    'workflow_run_entity_selection',
                'workflow_run_system_selection',
                'workflow_run_mapping_target_selection',
@@ -259,7 +268,7 @@ BEGIN
                'metadata_review_event'
            );
 
-    IF v_application_table_count <> 17 OR EXISTS (
+    IF v_application_table_count <> 18 OR EXISTS (
         SELECT 1
           FROM information_schema.tables AS table_record
          WHERE table_record.table_schema = 'application'
@@ -275,6 +284,7 @@ BEGIN
                    'output_template_field',
                    'workflow_run',
                    'workflow_run_object_selection',
+                   'workflow_run_subject_area_selection',
                    'workflow_run_entity_selection',
                    'workflow_run_system_selection',
                    'workflow_run_mapping_target_selection',
@@ -1153,16 +1163,12 @@ BEGIN
                       'workflow.dimensional_attribute_source_mapping',
                       'workflow.dimensional_entity',
                       'workflow.dimensional_entity_source_mapping',
-                      'workflow.dimensional_entity_submodel',
                       'workflow.dimensional_relationship',
-                      'workflow.dimensional_submodel',
                       'workflow.logical_attribute',
                       'workflow.logical_attribute_source_mapping',
                       'workflow.logical_entity',
                       'workflow.logical_entity_source_mapping',
-                      'workflow.logical_entity_submodel',
                       'workflow.logical_relationship',
-                      'workflow.logical_submodel',
                       'workflow.validation_check',
                       'workflow.validation_group',
                       'workflow.mapping_object'

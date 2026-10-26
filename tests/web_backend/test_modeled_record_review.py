@@ -323,7 +323,7 @@ def test_removing_logical_output_traces_persisted_dimensional_entity_lineage() -
                 "logical_entity_name": logical["logical_entity_name"],
             },
             "rationale": "Applied Logical Entity input.",
-            "status": "active",
+            "is_active": True,
             "is_locked": False,
         }
     ]

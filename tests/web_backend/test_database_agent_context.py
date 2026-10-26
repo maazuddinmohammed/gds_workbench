@@ -5,21 +5,7 @@ from uuid import uuid4
 
 import pytest
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from gds_workbench_api.capabilities import AgentRunSelection
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.workflows.authoring.context import (
-    PostgresAgentContextRepository,
-)
-from gds_workbench_api.features.workflows.authoring.plan import (
-    AgentRunPlan,
-    FrozenAgentStage,
-)
-from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
-    project_prompt_input_values,
-)
-from gds_workbench_api.prompt_rendering import PromptComponentTemplates, render_prompt
 from psycopg import Connection
-
 from tests.mcp.conftest import (
     bootstrap_postgres_database as bootstrap_postgres_database,
 )
@@ -27,6 +13,23 @@ from tests.web_backend.test_database_seeded_defaults import SeedStages
 from tests.web_backend.test_database_seeded_defaults import (
     installed_stages as installed_stages,
 )
+
+from gds_workbench_api.capabilities import AgentRunSelection
+from gds_workbench_api.database import WebPostgresDatabase
+from gds_workbench_api.features.workflows.authoring.context import (
+    AgentContextBundle,
+    PostgresAgentContextRepository,
+    focus_subject_area,
+)
+from gds_workbench_api.features.workflows.authoring.plan import (
+    AgentRunPlan,
+    FrozenAgentStage,
+    PlannedSubjectArea,
+)
+from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
+    project_prompt_input_values,
+)
+from gds_workbench_api.prompt_rendering import PromptComponentTemplates, render_prompt
 
 _DATABASE_ROOT = Path(__file__).resolve().parents[2] / "database"
 
@@ -124,7 +127,9 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
         object_id = _required_int(foundation, "object_id")
         project = connection.execute(
             """
-            INSERT INTO project.project (tenant_id, project_name, logical_schemas, dimensional_schemas)
+            INSERT INTO project.project (
+                tenant_id, project_name, logical_schemas, dimensional_schemas
+            )
             VALUES (%s, %s,
                     '[{"schema_name":"silver","description":null}]',
                     '[{"schema_name":"gold","description":null}]')
@@ -165,23 +170,36 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
         )
 
         connection.execute(
-            "INSERT INTO workflow.object_enrichment(project_id,object_id,object_description) VALUES(%s,%s,'Project object description')",
+            "INSERT INTO workflow.object_enrichment(project_id,object_id,object_description) "
+            "VALUES(%s,%s,'Project object description')",
             (project_id, object_id),
         )
         connection.execute(
-            "INSERT INTO workflow.attribute_enrichment(project_id,object_id,attribute_id,attribute_description,attribute_inferred_data_type,is_natural_key,is_primary_key,is_nullable,is_pii) VALUES(%s,%s,%s,'Project attribute description','BIGINT',TRUE,TRUE,FALSE,NULL)",
+            "INSERT INTO workflow.attribute_enrichment(project_id,object_id,attribute_id,"
+            "attribute_description,attribute_inferred_data_type,is_natural_key,is_primary_key,"
+            "is_nullable,is_pii) VALUES(%s,%s,%s,'Project attribute description','BIGINT',"
+            "TRUE,TRUE,FALSE,NULL)",
             (project_id, object_id, attributes[0]["attribute_id"]),
         )
-
-    stages = installed_stages[(workflow, mode)]
-    plan = _plan(
-        project_id=project_id, project_revision=project_revision, object_id=object_id
-    ).model_copy(
-        update={
-            "project_workflow": workflow,
-            "workflow_execution_mode": mode,
-            "stages": stages,
-        },
+        # A Logical Build reads its Subject Area's member Objects.
+        area_id = _required_int(
+            connection.execute(
+                "INSERT INTO workflow.subject_area (project_id, subject_area_name, "
+                "subject_area_definition) VALUES (%s, 'Customers', 'Customer accounts.') "
+                "RETURNING subject_area_id",
+                (project_id,),
+            ).fetchone(),
+            "subject_area_id",
+        )
+        connection.execute(
+            "INSERT INTO workflow.subject_area_table (project_id, subject_area_id, object_id) "
+            "VALUES (%s, %s, %s)",
+            (project_id, area_id, object_id),
+        )
+    area = PlannedSubjectArea(
+        subject_area_id=area_id,
+        subject_area_name="Customers",
+        subject_area_definition="Customer accounts.",
     )
 
     database = WebPostgresDatabase(
@@ -190,31 +208,58 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
         pool_max=1,
         pool_timeout_seconds=5,
     )
+    stages = installed_stages[(workflow, mode)]
+    # A Logical run freezes one stage: Build packages each area's call, Optimize the model.
+    runs = [
+        (stage.stage_code.removesuffix("_authoring") if workflow == "logical" else None, stage)
+        for stage in stages
+    ]
     await database.open()
     try:
-        async with database.read_transaction(
-            isolation=ReadIsolation.REPEATABLE_READ
-        ) as transaction:
-            result = await PostgresAgentContextRepository().load(
-                transaction,
-                tenant_id=tenant_id,
-                plan=plan,
+        loaded: list[tuple[AgentRunPlan, FrozenAgentStage, AgentContextBundle]] = []
+        for operation, stage in runs:
+            plan = _plan(
+                project_id=project_id, project_revision=project_revision, object_id=object_id
+            ).model_copy(
+                update={
+                    "project_workflow": workflow,
+                    "workflow_execution_mode": mode,
+                    "workflow_operation": operation,
+                    "subject_areas": (area,) if operation == "build" else (),
+                    "stages": stages if operation is None else (stage,),
+                },
             )
+            async with database.read_transaction(
+                isolation=ReadIsolation.REPEATABLE_READ
+            ) as transaction:
+                result = await PostgresAgentContextRepository().load(
+                    transaction,
+                    tenant_id=tenant_id,
+                    plan=plan,
+                )
+            if operation == "build":
+                assert result.snapshot is not None
+                focused = focus_subject_area(
+                    result, plan=plan, subject_area=area, logical=result.snapshot.logical
+                )
+                assert focused is not None
+                result = focused
+            loaded.append((plan, stage, result))
     finally:
         await database.close()
 
-    selected = result.context.selected_objects[0]
-    assert selected.object.tenant_code == "DEMO_GDS_TENANT"
-    assert selected.object.source_tenant_code == "DEMO_TENANT"
-    assert selected.object.connection_code == "DEMO_GDS"
-    assert [attribute.attribute_name for attribute in selected.attributes] == [
-        "customer_id",
-        "customer_name",
-    ]
-    assert isinstance(result.embedded_context, dict)
-    assert "workflow_run_id" not in result.embedded_context
-    assert "project_id" not in result.embedded_context
-    for stage in stages:
+    for plan, stage, result in loaded:
+        selected = result.context.selected_objects[0]
+        assert selected.object.tenant_code == "DEMO_GDS_TENANT"
+        assert selected.object.source_tenant_code == "DEMO_TENANT"
+        assert selected.object.connection_code == "DEMO_GDS"
+        assert [attribute.attribute_name for attribute in selected.attributes] == [
+            "customer_id",
+            "customer_name",
+        ]
+        assert isinstance(result.embedded_context, dict)
+        assert "workflow_run_id" not in result.embedded_context
+        assert "project_id" not in result.embedded_context
         catalog = result.tool_catalog
         values = project_prompt_input_values(
             plan=plan,
@@ -245,9 +290,7 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
             ]
             assert values[prefix + "table_links"] == []
             continue
-        groups = cast(
-            list[dict[str, Any]], values[prefix + "object_relationship_context"]
-        )
+        groups = cast(list[dict[str, Any]], values[prefix + "object_relationship_context"])
         for direction in ("incoming_relationships", "outgoing_relationships"):
             assert len(groups[0][direction]) == 1
             assert groups[0][direction][0]["analysis_result_is_locked"] is True
@@ -267,15 +310,12 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
                 "validation_unused_target_count": None,
                 "validation_duplicate_target_key_count": None,
             }
-        attribute_groups = cast(
-            list[dict[str, Any]], values[prefix + "object_attribute_context"]
-        )
+        attribute_groups = cast(list[dict[str, Any]], values[prefix + "object_attribute_context"])
         assert attribute_groups[0]["attributes"][0]["profile"]["avg_data_length"] == 3.5
         enriched = attribute_groups[0]["attributes"][0]
         assert enriched["attribute_description"] == "Project attribute description"
         assert enriched["attribute_inferred_data_type"] == "BIGINT"
         assert [
-            enriched[flag]
-            for flag in ("is_natural_key", "is_primary_key", "is_nullable", "is_pii")
+            enriched[flag] for flag in ("is_natural_key", "is_primary_key", "is_nullable", "is_pii")
         ] == [True, True, False, None]
         assert values[prefix + "ingestion_mapping"]

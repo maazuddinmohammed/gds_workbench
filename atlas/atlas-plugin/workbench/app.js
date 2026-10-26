@@ -336,8 +336,8 @@
         state.screen = "validation";
         throw new Error("Correct the blocking Project findings before generating DBML.");
       }
-      const documents = root.GDSDbml.render(loaded, areaSnapshot("project").catalog.project, { modelType: "full", includeSubmodels: true });
-      const result = await state.workspace.saveDbmlDocuments(documents, { modelType: "full", includeSubmodels: true, binding: validation.binding });
+      const documents = root.GDSDbml.render(loaded, areaSnapshot("project").catalog.project, { modelType: "full", includeSubjectAreas: true });
+      const result = await state.workspace.saveDbmlDocuments(documents, { modelType: "full", includeSubjectAreas: true, binding: validation.binding });
       state.dbml = { documents, result, selected: documents[0].path };
       state.screen = "dbml";
       setMessage(`Generated ${result.file_count} DBML files from Snapshot + local changes.`);

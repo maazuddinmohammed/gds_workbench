@@ -1,5 +1,5 @@
 import { withRecordReview } from "../../test/projectRecordReview";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
@@ -11,8 +11,7 @@ describe("Project Logical", () => {
   it.each([
     ["entities/71", "silver.customer_account"],
     ["attributes/81", "customer_id"],
-    ["relationships/101", "customer places order"],
-    ["submodels/91", "Customer domain"],
+    ["relationships/101", "silver.sales_order.customer_id → silver.customer_account.customer_id"],
   ])("keeps %s record actions beside its heading with lifecycle commands under More", async (detail, title) => {
     const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({
@@ -21,7 +20,8 @@ describe("Project Logical", () => {
     })} />);
     const heading = await screen.findByRole("heading", { level: 1, name: title });
     const header = heading.closest("header")!;
-    expect(within(header).queryByText(/^Logical (Entity|Attribute|Relationship|Submodel) \d+$/)).not.toBeInTheDocument();
+    expect(within(header).queryByText(/^Logical (Entity|Attribute|Relationship) \d+$/)).not.toBeInTheDocument();
+    expect(within(header).getByText("Active")).toBeVisible();
     expect(within(header).getByRole("button", { name: "Edit definition" })).toBeVisible();
     expect(within(header).getByRole("button", { name: "Lock" })).not.toBeVisible();
     const more = within(header).getByText("More", { selector: "summary" });
@@ -34,7 +34,43 @@ describe("Project Logical", () => {
     expect(within(header).getByRole("button", { name: "Lock" })).not.toBeVisible();
   });
 
-  it("reviews a Logical Entity and its complete normalized context on a detail page", async () => {
+  it("lists Subject Areas with their Logical Entities, each opening the usual Entity page", async () => {
+    const user = userEvent.setup();
+    const fetcher = logicalFetchStub();
+    const router = logicalRouter(fetcher);
+    render(<WorkbenchApp router={router} />);
+    await screen.findByRole("table", { name: "Logical Entities" });
+    await user.click(within(screen.getByRole("navigation", { name: "Logical views" })).getByRole("button", { name: /Subject Areas/ }));
+
+    const areas = await screen.findByRole("table", { name: "Logical Subject Areas" });
+    expect(within(areas).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+      "Subject Area", "Objects", "Logical Entities", "",
+    ]);
+    const row = within(areas).getByRole("row", { name: /Sales/ });
+    expect(within(row).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
+      "SalesCustomer orders.", "2", "1", "Show Entities",
+    ]);
+    await user.click(within(row).getByRole("link", { name: "Show Sales Entities" }));
+
+    expect(await screen.findByRole("heading", { name: "Sales", level: 1 })).toBeVisible();
+    const entities = await screen.findByRole("table", { name: "Sales Logical Entities" });
+    expect(within(entities).getByText("customer_account")).toBeVisible();
+    expect(fetcher.mock.calls.some(([input]) => String(input).includes("subject_area_id=41"))).toBe(true);
+    expect(screen.getByRole("link", { name: "Edit Subject Area" })).toHaveAttribute(
+      "href", "/tenants/7/projects/18/subject-areas/41",
+    );
+    await user.click(within(entities).getByRole("link", { name: "Open Logical Entity 71" }));
+    expect(await screen.findByRole("heading", { name: "silver.customer_account" })).toBeVisible();
+
+    // Back from the area returns to the Subject Areas tab.
+    act(() => router.history.back());
+    await user.click(await screen.findByRole("link", { name: "← Back to Subject Areas" }));
+    expect(await screen.findByRole("table", { name: "Logical Subject Areas" })).toBeVisible();
+    expect(within(screen.getByRole("navigation", { name: "Logical views" })).getByRole("button", { name: /Subject Areas/ }))
+      .toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("reviews a Logical Entity with its derived Subject Areas and sources on a detail page", async () => {
     const fetcher = logicalFetchStub();
     const user = userEvent.setup();
     render(<WorkbenchApp router={logicalRouter(fetcher)} />);
@@ -43,49 +79,56 @@ describe("Project Logical", () => {
     expect(within(ledger).getAllByRole("columnheader").slice(1, 3).map((cell) => cell.textContent)).toEqual(["Schema", "Entity name"]);
     expect(within(ledger).getByRole("cell", { name: "silver" })).toBeVisible();
     expect(within(ledger).getByText("customer_account")).toBeVisible();
+    expect(within(ledger).getByText("Core")).toBeVisible();
+    expect(within(ledger).getByRole("cell", { name: "Active" })).toBeVisible();
 
     await user.click(screen.getByRole("link", { name: "Open Logical Entity 71" }));
 
     expect(await screen.findByRole("heading", { name: "silver.customer_account" })).toHaveFocus();
-    expect(screen.getByRole("heading", { name: "Submodel membership" })).toBeVisible();
-    expect(screen.getByText("Customer domain")).not.toBeVisible();
+    const definition = within(screen.getByRole("region", { name: "Entity definition" }));
+    expect(definition.getByText("Type", { selector: "dt" }).nextElementSibling).toHaveTextContent("Core");
+    expect(screen.queryByText("Type detail")).not.toBeInTheDocument();
+    const areas = definition.getByRole("list", { name: "Entity Subject Areas" });
+    expect(within(areas).getAllByRole("link").map((link) => link.textContent)).toEqual(["Sales", "Support"]);
+    expect(within(areas).getByRole("link", { name: "Sales" })).toHaveAttribute("href", "/tenants/7/projects/18/subject-areas/41");
     expect(await screen.findByRole("table", { name: "Entity Attributes" })).toBeVisible();
-    await user.click(screen.getByRole("heading", { name: "Submodel membership" }));
-    await user.click(within(screen.getByRole("table", { name: "Source mappings" })).getAllByText("Show details")[0]!);
-    expect(screen.getByText("Customer domain")).toBeVisible();
-    expect(screen.getByText("crm-prod")).toBeVisible();
     const sources = screen.getByRole("table", { name: "Source mappings" });
-    expect(within(sources).getAllByRole("columnheader").slice(0, 3).map((cell) => cell.textContent)).toEqual(["Order", "Schema", "Object / entity"]);
+    expect(within(sources).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+      "Schema", "Object / entity", "Rationale", "Status", "Details",
+    ]);
     expect(within(sources).getByRole("cell", { name: "bronze" })).toBeVisible();
     expect(within(sources).getByRole("cell", { name: "customer_raw" })).toBeVisible();
-    const sourceHeading = screen.getByRole("heading", { name: "Source mappings" });
-    const membershipHeading = screen.getByRole("heading", { name: "Submodel membership" });
-    expect(sourceHeading.compareDocumentPosition(membershipHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByRole("table", { name: "Submodel memberships" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Customer domain" })).toHaveAttribute("href", "/tenants/7/projects/18/logical/submodels/91");
-    await user.click(within(screen.getByRole("table", { name: "Source mappings" })).getAllByText("Show details")[1]!);
+    // The Object source has no rationale.
+    expect(within(sources).getAllByRole("row")[1]!.querySelectorAll("td")[2]).toHaveTextContent("—");
+    expect(within(sources).getAllByRole("cell", { name: /^Active/ })).toHaveLength(2);
+    await user.click(within(sources).getAllByText("Show details")[0]!);
+    expect(screen.getByText("crm-prod")).toBeVisible();
+    await user.click(within(sources).getAllByText("Show details")[1]!);
     expect(screen.getByText("Customer identity is governed across systems.")).toBeVisible();
     expect(screen.queryByText("Source mapping id")).not.toBeInTheDocument();
     expect(screen.queryByText("Workflow run 1048")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Provenance" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Submodel/)).not.toBeInTheDocument();
   });
 
-  it("reviews Submodels, Attributes, and Relationships in dedicated ledgers and pages", async () => {
+  it("shows no Submodels and reviews Attributes and child-to-parent Relationships", async () => {
     const user = userEvent.setup();
-    render(<WorkbenchApp router={logicalRouter(logicalFetchStub())} />);
+    const fetcher = logicalFetchStub();
+    render(<WorkbenchApp router={logicalRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Logical Entities" });
+    const views = within(screen.getByRole("navigation", { name: "Logical views" }));
+    expect(views.getAllByRole("button").map((button) => button.textContent?.replace(/\d/g, ""))).toEqual(["Subject Areas", "Entities", "Relationships"]);
+    expect(screen.queryByText(/Submodel/)).not.toBeInTheDocument();
+    expect(fetcher.mock.calls.some(([input]) => String(input).includes("submodel"))).toBe(false);
 
-    await user.click(screen.getByRole("button", { name: "Submodels" }));
-    expect(await screen.findByRole("table", { name: "Logical Submodels" })).toBeVisible();
-    await user.click(screen.getByRole("link", { name: "Open Logical Submodel 91" }));
-    expect(await screen.findByRole("heading", { name: "Customer domain" })).toBeVisible();
-    expect(screen.getByRole("heading", { name: "Member entities" })).toBeVisible();
-    expect(screen.getByText("silver.customer_account")).toBeVisible();
-
-    await user.click(screen.getByRole("link", { name: "Back to Logical" }));
     expect(screen.queryByRole("button", { name: "Attributes" })).not.toBeInTheDocument();
-    await user.click(await screen.findByRole("link", { name: "Open Logical Entity 71" }));
+    await user.click(screen.getByRole("link", { name: "Open Logical Entity 71" }));
     expect(await screen.findByRole("table", { name: "Entity Attributes" })).toBeVisible();
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/v1/tenants/7/projects/18/logical/attributes?active=true&logical_entity_id=71&page_size=200",
+      expect.objectContaining({ credentials: "same-origin" }),
+    );
+    expect(within(screen.getByRole("table", { name: "Entity Attributes" })).getByRole("cell", { name: "Active" })).toBeVisible();
     await user.click(screen.getByRole("link", { name: "Open Logical Attribute 81" }));
     expect(await screen.findByRole("heading", { name: "customer_id" })).toHaveFocus();
     expect(screen.getByRole("heading", { name: "Type and nullability" })).toBeVisible();
@@ -93,7 +136,6 @@ describe("Project Logical", () => {
     expect(screen.getByText("Nullable").nextElementSibling).toHaveTextContent("No");
     expect(screen.getByText("Surrogate key").nextElementSibling).toHaveTextContent("Yes");
     expect(screen.queryByText("Primary key")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Source mappings" })).toBeVisible();
     const sourceTable = screen.getByRole("table", { name: "Source mappings" });
     for (const name of ["bronze", "customer_raw", "customer_id"]) expect(within(sourceTable).getByRole("cell", { name })).toBeVisible();
     expect(within(sourceTable).getByRole("columnheader", { name: "Attribute" })).toBeVisible();
@@ -101,39 +143,67 @@ describe("Project Logical", () => {
     await user.click(screen.getByRole("link", { name: "Back to Entity" }));
     expect(await screen.findByRole("table", { name: "Entity Attributes" })).toBeVisible();
     await user.click(screen.getByRole("link", { name: "Back to Logical" }));
-    await user.click(screen.getByRole("button", { name: "Relationships" }));
-    expect(await screen.findByRole("table", { name: "Logical Relationships" })).toBeVisible();
+    await user.click(await screen.findByRole("button", { name: "Relationships" }));
+    const relationships = await screen.findByRole("table", { name: "Logical Relationships" });
+    expect(within(relationships).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+      "", "From", "To", "Cardinality", "Status", "Lock", "Updated", "",
+    ]);
+    const [from, to, cardinality, status, lock] = within(relationships).getAllByRole("row")[1]!
+      .querySelectorAll("td:not(:first-child)");
+    expect(from).toHaveTextContent("silver.sales_ordercustomer_id");
+    expect(to).toHaveTextContent("silver.customer_accountcustomer_id");
+    expect(cardinality).toHaveTextContent("Many to one");
+    expect(status).toHaveTextContent("Active");
+    expect(lock).toHaveTextContent("Open");
+    expect(within(relationships).queryByText("customer places order")).not.toBeInTheDocument();
+
     await user.click(screen.getByRole("link", { name: "Open Logical Relationship 101" }));
-    expect(await screen.findByRole("heading", { name: "customer places order" })).toBeVisible();
-    expect(screen.getByText("Customer activity establishes order ownership.")).toBeVisible();
-    expect(screen.getByText("silver.customer_account.customer_id")).toBeVisible();
-    expect(screen.getByText("silver.sales_order.customer_id")).toBeVisible();
+    expect(await screen.findByRole("heading", {
+      name: "silver.sales_order.customer_id → silver.customer_account.customer_id",
+    })).toHaveFocus();
+    const fact = (label: string) => screen.getByText(label, { selector: "dt" }).nextElementSibling;
+    expect(within(fact("From Entity") as HTMLElement).getByRole("link", { name: "silver.sales_order" }))
+      .toHaveAttribute("href", "/tenants/7/projects/18/logical/entities/72");
+    expect(fact("Foreign key Attribute")).toHaveTextContent("customer_id");
+    expect(within(fact("To Entity") as HTMLElement).getByRole("link", { name: "silver.customer_account" }))
+      .toHaveAttribute("href", "/tenants/7/projects/18/logical/entities/71");
+    expect(fact("Key Attribute")).toHaveTextContent("customer_id");
+    expect(fact("Cardinality")).toHaveTextContent("Many to one");
+    expect(fact("Basis")).toHaveTextContent("Each order belongs to the customer who placed it.");
+    expect(screen.queryByText("Cardinality basis")).not.toBeInTheDocument();
+    expect(screen.queryByText("Definition", { selector: "dt" })).not.toBeInTheDocument();
   });
 
-  it("uses backend Logical filters and keeps empty, error, and revision states explicit", async () => {
+  it("filters Entities by Subject Area and status, and keeps empty, error, and revision states explicit", async () => {
     const user = userEvent.setup();
     const fetcher = logicalFetchStub();
     const filtered = render(<WorkbenchApp router={logicalRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Logical Entities" });
 
     if (screen.getByRole("button", { name: /^Filters/ }).getAttribute("aria-expanded") === "false") await user.click(screen.getByRole("button", { name: /^Filters/ }));
+    const areaFilter = screen.getByLabelText("Subject Area");
+    await waitFor(() => expect(areaFilter).toBeEnabled());
+    expect(within(areaFilter).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "All Subject Areas", "Empty", "Finance", "Marketing", "Sales", "Support",
+    ]);
+    expect(screen.queryByLabelText("Entity Submodel")).not.toBeInTheDocument();
     await user.type(screen.getByLabelText("Entity name prefix"), " Customer ");
-    await user.selectOptions(screen.getByLabelText("Entity Submodel"), "91");
-    await user.selectOptions(screen.getByLabelText("Entity status"), "inactive");
+    await user.selectOptions(areaFilter, "Sales");
+    await user.selectOptions(screen.getByLabelText("Entity status"), "Inactive");
     await user.selectOptions(screen.getByLabelText("Entity lock"), "true");
     await user.click(screen.getByRole("button", { name: "Apply Entity filters" }));
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/projects/18/logical/entities?status=inactive&locked=true&name_prefix=customer&logical_submodel_id=91&page_size=200",
+      "/api/v1/tenants/7/projects/18/logical/entities?active=false&locked=true&name_prefix=customer&subject_area_id=41&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
     await user.click(screen.getByRole("button", { name: "Clear" }));
-    expect(screen.getByLabelText("Entity status")).toHaveValue("active");
+    expect(screen.getByLabelText("Entity status")).toHaveValue("true");
     expect(screen.getByLabelText("Entity name prefix")).toHaveValue("");
-    expect(screen.getByLabelText("Entity Submodel")).toHaveValue("");
+    expect(screen.getByLabelText("Subject Area")).toHaveValue("");
     expect(screen.getByLabelText("Entity lock")).toHaveValue("");
     expect(screen.queryByRole("button", { name: "Activate selected" })).not.toBeInTheDocument();
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/projects/18/logical/entities?status=active&page_size=200",
+      "/api/v1/tenants/7/projects/18/logical/entities?active=true&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
     filtered.unmount();
@@ -158,40 +228,126 @@ describe("Project Logical", () => {
     );
   });
 
-  it("keeps Logical execution lock-gated and explicitly creates then starts a run", async () => {
-    const unlocked = render(
-      <WorkbenchApp router={logicalRouter(logicalFetchStub({ hasLock: false }))} />,
-    );
+  it("keeps Build and Optimize lock-gated", async () => {
+    render(<WorkbenchApp router={logicalRouter(logicalFetchStub({ hasLock: false }))} />);
     await screen.findByRole("table", { name: "Logical Entities" });
-    expect(screen.getByRole("button", { name: "Run Logical" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Run Logical" })).toHaveAttribute("title", "Tenant Lock required");
-    unlocked.unmount();
+    for (const name of ["Build", "Optimize"]) {
+      expect(screen.getByRole("button", { name })).toBeDisabled();
+      expect(screen.getByRole("button", { name })).toHaveAttribute("title", "Tenant Lock required");
+    }
+    // Build and Optimize sit in one Run menu, like the other Run menus.
+    expect(screen.getByText("Run Logical", { selector: "summary" })).toBeVisible();
+  });
 
+  it("builds checked Subject Areas in the default most-shared-first order, as reordered", async () => {
     const fetcher = logicalFetchStub();
     const user = userEvent.setup();
     render(<WorkbenchApp router={logicalRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Logical Entities" });
     expect(screen.getByText("Tenant Lock held by you")).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Run Logical" }));
-    expect(await screen.findByRole("heading", { name: "Configure Logical run" })).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Create and run Logical" }));
+    await user.click(screen.getByText("Run Logical", { selector: "summary" }));
+    await user.click(screen.getByRole("button", { name: "Build" }));
 
-    expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/projects/18/runs",
-      expect.objectContaining({
-        method: "POST",
-        body: expect.stringContaining('"project_workflow":"logical"'),
-      }),
-    );
-    expect(fetcher).toHaveBeenCalledWith(
+    const dialog = await screen.findByRole("dialog", { name: "Configure Logical Build" });
+    expect(within(dialog).getByText(/one after another into one draft/)).toBeVisible();
+    expect(within(dialog).queryByRole("checkbox", { name: "Select all Objects" })).not.toBeInTheDocument();
+    const areas = await within(dialog).findByRole("table", { name: "Subject Areas to build" });
+    const rowNames = () => within(areas).getAllByRole("rowheader").map((cell) => cell.textContent);
+    // Active areas with Objects: most shared Objects first, then most Objects, then name.
+    expect(rowNames()).toEqual(["Support", "Marketing", "Sales", "Finance"]);
+    expect(within(areas).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+      "", "Order", "Subject Area", "Objects", "Shared Objects", "Move",
+    ]);
+    const support = within(areas).getByRole("row", { name: /Support/ });
+    expect([...support.querySelectorAll("td")].slice(1, 4).map((cell) => cell.textContent)).toEqual(["1", "3", "1"]);
+    expect(within(dialog).getByText("4 of 4 selected")).toBeVisible();
+    expect(within(areas).getByRole("button", { name: "Move Support up" })).toBeDisabled();
+    expect(within(areas).getByRole("button", { name: "Move Finance down" })).toBeDisabled();
+
+    await user.click(within(areas).getByRole("button", { name: "Move Finance up" }));
+    expect(rowNames()).toEqual(["Support", "Marketing", "Finance", "Sales"]);
+    expect(within(areas).getByRole("button", { name: "Move Finance up" })).toHaveFocus();
+    await user.click(within(areas).getByRole("button", { name: "Move Marketing up" }));
+    expect(rowNames()).toEqual(["Marketing", "Support", "Finance", "Sales"]);
+    // The top row cannot move up, so focus stays on the same row's other move button.
+    expect(within(areas).getByRole("button", { name: "Move Marketing down" })).toHaveFocus();
+    expect(within(dialog).getByRole("status")).toHaveTextContent("Marketing moved to position 1 of 4.");
+
+    await user.click(within(areas).getByRole("checkbox", { name: "Select Support" }));
+    expect(within(areas).getByRole("row", { name: /Support/ })).toHaveTextContent("Skipped");
+    expect(within(areas).getByRole("row", { name: /Finance/ }).querySelectorAll("td")[1]).toHaveTextContent("2");
+    expect(within(dialog).getByText("3 of 4 selected")).toBeVisible();
+    const selectAll = within(areas).getByRole("checkbox", { name: "Select all Subject Areas" });
+    expect(selectAll).toBePartiallyChecked();
+    await user.click(selectAll);
+    expect(within(dialog).getByText("4 of 4 selected")).toBeVisible();
+    await user.click(selectAll);
+    expect(within(dialog).getByText("0 of 4 selected")).toBeVisible();
+    expect(within(dialog).getByRole("button", { name: "Create and run Logical Build" })).toBeDisabled();
+    for (const name of ["Marketing", "Finance", "Sales"]) {
+      await user.click(within(areas).getByRole("checkbox", { name: `Select ${name}` }));
+    }
+
+    await user.click(within(dialog).getByRole("button", { name: "Create and run Logical Build" }));
+    await waitFor(() => expect(createRunBody(fetcher)).toBeDefined());
+    const body = createRunBody(fetcher)!;
+    expect(body).toMatchObject({
+      expected_project_revision: 18,
+      project_workflow: "logical",
+      workflow_execution_mode: "tool_assisted",
+      workflow_operation: "build",
+      subject_area_ids: [46, 43, 41],
+      selected_object_ids: [],
+      requested_batch_id: null,
+      prompt_overrides: {},
+    });
+    expect(body).not.toHaveProperty("selected_entity_ids");
+    expect(body).not.toHaveProperty("modeled_entity_type");
+    expect(fetcher.mock.calls.some(([input]) => String(input).includes("input-scope"))).toBe(false);
+    await waitFor(() => expect(fetcher).toHaveBeenCalledWith(
       "/api/v1/tenants/7/projects/18/logical/runs/1050/execute",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ execution_mode: "tool_assisted", expected_project_revision: 18 }),
       }),
-    );
+    ));
+  });
+
+  it("optimizes the whole Logical model without a Subject Area or Object selection", async () => {
+    const fetcher = logicalFetchStub();
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={logicalRouter(fetcher)} />);
+    await screen.findByRole("table", { name: "Logical Entities" });
+    await user.click(screen.getByText("Run Logical", { selector: "summary" }));
+    await user.click(screen.getByRole("button", { name: "Optimize" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Configure Logical Optimize" });
+    expect(within(dialog).getByText(/reviews the whole Logical model/)).toBeVisible();
+    expect(within(dialog).getByText(/merging duplicate Entities by retiring/)).toBeVisible();
+    expect(within(dialog).queryByRole("table")).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("Batch ID (optional)")).not.toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Execution mode")).toBeVisible();
+    await user.click(within(dialog).getByRole("button", { name: "Create and run Logical Optimize" }));
+
+    await waitFor(() => expect(createRunBody(fetcher)).toBeDefined());
+    const body = createRunBody(fetcher)!;
+    expect(body).toMatchObject({
+      project_workflow: "logical",
+      workflow_operation: "optimize",
+      selected_object_ids: [],
+      requested_batch_id: null,
+    });
+    expect(body).not.toHaveProperty("subject_area_ids");
+    expect(body).not.toHaveProperty("selected_entity_ids");
+    expect(fetcher.mock.calls.some(([input]) => String(input).includes("input-scope"))).toBe(false);
   });
 });
+
+function createRunBody(fetcher: ReturnType<typeof logicalFetchStub>): Record<string, unknown> | undefined {
+  const call = fetcher.mock.calls.find(([input, init]) => String(input) === "/api/v1/tenants/7/projects/18/runs" && init?.method === "POST");
+  return call ? JSON.parse(String(call[1]?.body)) as Record<string, unknown> : undefined;
+}
 
 function logicalRouter(fetcher: ReturnType<typeof logicalFetchStub>) {
   return createWorkbenchRouter({
@@ -233,16 +389,16 @@ function logicalFetchStub(options: {
     if (url === "/api/v1/tenants/7/projects/18/logical/entities/71") {
       return jsonResponse(logicalEntityDetailPayload);
     }
-    if (url.startsWith("/api/v1/tenants/7/projects/18/logical/submodels?")) {
+    if (url === "/api/v1/tenants/7/projects/18/subject-areas") return jsonResponse(subjectAreaPagePayload);
+    if (url === "/api/v1/tenants/7/projects/18/logical/subject-areas") {
       return jsonResponse({
         project_id: 18,
         project_revision: 18,
-        items: [logicalSubmodelPayload],
-        next_cursor: null,
+        items: [{
+          subject_area_id: 41, subject_area_name: "Sales", subject_area_definition: "Customer orders.",
+          table_count: 2, entity_count: 1,
+        }],
       });
-    }
-    if (url === "/api/v1/tenants/7/projects/18/logical/submodels/91") {
-      return jsonResponse(logicalSubmodelDetailPayload);
     }
     if (url.startsWith("/api/v1/tenants/7/projects/18/logical/attributes?")) {
       return jsonResponse({
@@ -265,14 +421,6 @@ function logicalFetchStub(options: {
     }
     if (url === "/api/v1/tenants/7/projects/18/logical/relationships/101") {
       return jsonResponse(logicalRelationshipDetailPayload);
-    }
-    if (url === "/api/v1/tenants/7/projects/18/input-scope?zone=bronze&page_size=200") {
-      return jsonResponse({
-        project_id: 18,
-        project_revision: 18,
-        items: [scopeObjectPayload],
-        next_cursor: null,
-      });
     }
     if (url === "/api/v1/config/agent-capabilities") {
       return jsonResponse(agentCapabilitiesPayload);
@@ -355,13 +503,38 @@ const projectPayload = {
   updated_at: "2026-08-24T14:00:00Z",
 };
 
+function subjectArea(id: number, name: string, tables: number, shared: number, active = true) {
+  return {
+    subject_area_id: id, workflow_run_id: null, subject_area_name: name,
+    subject_area_definition: `${name} capability.`, subject_area_is_active: active,
+    subject_area_is_locked: false, table_count: tables, shared_table_count: shared,
+    column_count: tables * 10, updated_at: "2026-08-24T14:30:00Z",
+  };
+}
+
+// Inactive areas and areas without Objects are not offered for Build.
+const subjectAreaPagePayload = {
+  project_id: 18,
+  project_revision: 18,
+  scope_table_count: 12,
+  unassigned_table_count: 0,
+  items: [
+    subjectArea(41, "Sales", 2, 1),
+    subjectArea(42, "Support", 3, 1),
+    subjectArea(43, "Finance", 4, 0),
+    subjectArea(44, "Archive", 2, 2, false),
+    subjectArea(45, "Empty", 0, 0),
+    subjectArea(46, "Marketing", 2, 1),
+  ],
+};
+
 const logicalEntityPayload = {
   logical_entity_id: 71,
   workflow_run_id: 1048,
   logical_entity_schema_name: "silver", logical_entity_name: "customer_account",
   logical_entity_type: "core",
   logical_entity_dependency_order: 1,
-  logical_entity_status: "active",
+  logical_entity_is_active: true,
   logical_entity_is_locked: false,
   updated_at: "2026-08-24T15:00:00Z",
 };
@@ -369,29 +542,19 @@ const logicalEntityPayload = {
 const logicalEntityDetailPayload = {
   ...logicalEntityPayload,
   logical_entity_definition: "A governed customer identity used by downstream projects.",
-  logical_entity_type_detail: null,
   logical_entity_grain: "One row per recognized customer.",
   created_at: "2026-08-24T14:40:00Z",
-  submodels: [
-    {
-      logical_entity_submodel_id: 801,
-      workflow_run_id: 1048,
-      logical_submodel_id: 91,
-      logical_submodel_name: "Customer domain",
-      membership_status: "active",
-      membership_is_locked: false,
-      created_at: "2026-08-24T14:45:00Z",
-      updated_at: "2026-08-24T15:00:00Z",
-    },
+  subject_areas: [
+    { subject_area_id: 41, subject_area_name: "Sales" },
+    { subject_area_id: 42, subject_area_name: "Support" },
   ],
   sources: [
     {
       logical_entity_source_mapping_id: 901,
       workflow_run_id: 1048,
       support_source_type: "object",
-      source_order: 1,
-      rationale: "The CRM customer table establishes the entity grain.",
-      status: "active",
+      rationale: null,
+      is_active: true,
       is_locked: false,
       created_at: "2026-08-24T14:45:00Z",
       updated_at: "2026-08-24T15:00:00Z",
@@ -408,9 +571,8 @@ const logicalEntityDetailPayload = {
       logical_entity_source_mapping_id: 902,
       workflow_run_id: null,
       support_source_type: "context_record",
-      source_order: 2,
       rationale: "The context confirms cross-system semantics.",
-      status: "active",
+      is_active: true,
       is_locked: true,
       created_at: "2026-08-24T14:46:00Z",
       updated_at: "2026-08-24T15:00:00Z",
@@ -422,36 +584,6 @@ const logicalEntityDetailPayload = {
         context_text: "Customer identity is governed across systems.",
         status: "active",
       },
-    },
-  ],
-};
-
-const logicalSubmodelPayload = {
-  logical_submodel_id: 91,
-  workflow_run_id: 1048,
-  logical_submodel_name: "Customer domain",
-  logical_submodel_status: "active",
-  logical_submodel_is_locked: false,
-  entity_count: 1,
-  updated_at: "2026-08-24T15:00:00Z",
-};
-
-const logicalSubmodelDetailPayload = {
-  ...logicalSubmodelPayload,
-  logical_submodel_definition: "Customer identity and engagement boundary.",
-  created_at: "2026-08-24T14:40:00Z",
-  entities: [
-    {
-      logical_entity_submodel_id: 801,
-      workflow_run_id: 1048,
-      logical_entity_id: 71,
-      logical_entity_schema_name: "silver", logical_entity_name: "customer_account",
-      logical_entity_type: "core",
-      logical_entity_status: "active",
-      membership_status: "active",
-      membership_is_locked: false,
-      created_at: "2026-08-24T14:45:00Z",
-      updated_at: "2026-08-24T15:00:00Z",
     },
   ],
 };
@@ -468,7 +600,7 @@ const logicalAttributePayload = {
   logical_attribute_is_surrogate_key: true,
   logical_attribute_ordinal_position: 1,
   logical_attribute_is_audit_column: false,
-  logical_attribute_status: "active",
+  logical_attribute_is_active: true,
   logical_attribute_is_locked: false,
   updated_at: "2026-08-24T15:00:00Z",
 };
@@ -483,9 +615,8 @@ const logicalAttributeDetailPayload = {
       workflow_run_id: 1048,
       logical_entity_source_mapping_id: 901,
       support_source_type: "attribute",
-      source_order: 1,
       rationale: "Source customer identifier seeds the surrogate key.",
-      status: "active",
+      is_active: true,
       is_locked: false,
       created_at: "2026-08-24T14:45:00Z",
       updated_at: "2026-08-24T15:00:00Z",
@@ -503,50 +634,28 @@ const logicalAttributeDetailPayload = {
   ],
 };
 
+// Child to parent: each sales order points at the customer who placed it.
 const logicalRelationshipPayload = {
   logical_relationship_id: 101,
   workflow_run_id: 1048,
-  from_logical_entity_id: 71,
-  from_logical_entity_schema_name: "silver", from_logical_entity_name: "customer_account",
-  from_logical_attribute_id: 81,
+  from_logical_entity_id: 72,
+  from_logical_entity_schema_name: "silver", from_logical_entity_name: "sales_order",
+  from_logical_attribute_id: 82,
   from_logical_attribute_name: "customer_id",
-  to_logical_entity_id: 72,
-  to_logical_entity_schema_name: "silver", to_logical_entity_name: "sales_order",
-  to_logical_attribute_id: 82,
+  to_logical_entity_id: 71,
+  to_logical_entity_schema_name: "silver", to_logical_entity_name: "customer_account",
+  to_logical_attribute_id: 81,
   to_logical_attribute_name: "customer_id",
-  logical_relationship_name: "customer places order",
-  logical_relationship_cardinality: "one_to_many",
-  logical_relationship_status: "active",
+  logical_relationship_cardinality: "many_to_one",
+  logical_relationship_is_active: true,
   logical_relationship_is_locked: false,
   updated_at: "2026-08-24T15:00:00Z",
 };
 
 const logicalRelationshipDetailPayload = {
   ...logicalRelationshipPayload,
-  logical_relationship_definition: "One customer may place many orders.",
-  logical_relationship_basis: "Customer activity establishes order ownership.",
-  logical_relationship_cardinality_basis: "One customer key occurs on many order records.",
+  logical_relationship_basis: "Each order belongs to the customer who placed it.",
   created_at: "2026-08-24T14:42:00Z",
-};
-
-const scopeObjectPayload = {
-  project_input_scope_id: 201,
-  object_id: 501,
-  connection_id: 301,
-  system_id: 401,
-  system_code: "CRM",
-  system_name: "Customer Relationship Management",
-  source_tenant_id: 8,
-  source_tenant_code: "GRDM",
-  source_tenant_name: "Global Reference Data",
-  object_schema: "bronze",
-  object_name: "customer_raw",
-  zone_code: "bronze",
-  batch_attribute_name: "batch_id",
-  attribute_count: 12,
-  is_project_input_eligible: true,
-  created_at: "2026-08-24T14:00:00Z",
-  updated_at: "2026-08-24T14:00:00Z",
 };
 
 const agentCapabilitiesPayload = {
@@ -570,7 +679,7 @@ const agentCapabilitiesPayload = {
 };
 
 
-it.each([["Entities", "logical_entity", 71], ["Attributes", "logical_attribute", 81], ["Relationships", "logical_relationship", 101], ["Submodels", "logical_submodel", 91]] as const)("reviews selected %s through the governed endpoint", async (view, dataset, recordId) => {
+it.each([["Entities", "logical_entity", 71], ["Attributes", "logical_attribute", 81], ["Relationships", "logical_relationship", 101]] as const)("reviews selected %s through the governed endpoint", async (view, dataset, recordId) => {
   const { fetcher, commands } = withRecordReview(logicalFetchStub());
   render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
     history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/logical"] }),
