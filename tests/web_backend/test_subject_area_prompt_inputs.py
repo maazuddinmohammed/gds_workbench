@@ -1,4 +1,4 @@
-"""Subject Area runs see the whole Input Scope as compact inputs, cited by table id."""
+"""Subject Area runs see their tables, all or selected Bronze Scope, by table id."""
 
 # pyright: reportPrivateUsage=false
 from __future__ import annotations
@@ -30,9 +30,6 @@ from gds_workbench_api.features.workflows.authoring.context_inputs import (
 from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
     list_prompt_input_contracts,
     project_prompt_input_values,
-)
-from gds_workbench_api.features.workflows.authoring.subject_area_policy import (
-    load_subject_area_policy,
 )
 from gds_workbench_api.prompt_rendering import PromptVariableDefinition
 
@@ -87,14 +84,14 @@ def _edge(
 
 
 def _member(
-    area: str, table: str, *, status: str = "active", locked: bool = False
+    area: str, table: str, *, is_active: bool = True, locked: bool = False
 ) -> SubjectAreaTableRecord:
     return SubjectAreaTableRecord.model_validate(
         {
             "subject_area_name": area,
             **_KEY,
             "object_name": table,
-            "subject_area_table_status": status,
+            "subject_area_table_is_active": is_active,
             "subject_area_table_is_locked": locked,
         }
     )
@@ -107,13 +104,13 @@ def _context() -> AgentAuthoringContext:
             SubjectAreaRecord(
                 subject_area_name="Sales",
                 subject_area_definition="Customer orders.",
-                subject_area_status="active",
+                subject_area_is_active=True,
                 subject_area_is_locked=False,
             ),
             SubjectAreaRecord(
                 subject_area_name="Archive",
                 subject_area_definition="Retired tables.",
-                subject_area_status="inactive",
+                subject_area_is_active=False,
                 subject_area_is_locked=True,
             ),
         ),
@@ -121,8 +118,8 @@ def _context() -> AgentAuthoringContext:
             _member("Sales", "order_raw"),
             _member("Sales", "customer_raw", locked=True),
             _member("Sales", "crm_customer"),  # Outside this run's selection.
-            _member("Archive", "customer_raw", status="inactive"),
-            _member("Archive", "order_raw", status="inactive", locked=True),
+            _member("Archive", "customer_raw", is_active=False),
+            _member("Archive", "order_raw", is_active=False, locked=True),
         ),
     )
     context = _context_bundle(applied=applied).context.model_dump(mode="json")
@@ -152,7 +149,7 @@ def _context() -> AgentAuthoringContext:
     )
 
 
-def test_inputs_compact_the_whole_scope_by_table_id() -> None:
+def test_inputs_compact_the_run_tables_by_table_id() -> None:
     values = project_context_inputs(_context().model_dump(mode="json"))
 
     assert list(values) == list(WORKFLOW_INPUTS["subject_area"])
@@ -190,22 +187,24 @@ def test_inputs_compact_the_whole_scope_by_table_id() -> None:
         {
             "name": "Sales",
             "definition": "Customer orders.",
-            "status": "active",
+            "is_active": True,
             "is_locked": False,
             "tables": ["t1", "t2"],
             "locked_tables": ["t1"],
+            # crm_customer is an active member outside this run; it keeps its membership.
+            "other_table_count": 1,
         },
         {
             "name": "Archive",
             "definition": "Retired tables.",
-            "status": "inactive",
+            "is_active": False,
             "is_locked": True,
             "tables": [],
             "locked_tables": ["t2"],
+            "other_table_count": 0,
         },
     ]
-    assert values["max_subject_area_columns"] == 300
-    assert load_subject_area_policy().max_subject_area_columns == 300
+    assert "max_subject_area_columns" not in values
     assert values["context_records"] == values["source_context"] == values["gds_context"] == []
 
 

@@ -25,6 +25,7 @@ from gds_workbench_api.features.workflows.authoring.plan import AgentRunPlan
 type MappingOperation = Literal["build", "extend", "generate"]
 type MappingRoute = Literal["logical_to_silver", "dimensional_to_gold"]
 type ModeledEntityType = Literal["logical_entity", "dimensional_entity"]
+# Modeled Entities keep a boolean lifecycle; Mapping context shows it as this label.
 type LifecycleStatus = Literal["active", "inactive", "deprecated"]
 type ReadinessAction = Literal["author", "extend", "preserve", "blocked"]
 type JsonObject = dict[str, JsonValue]
@@ -275,7 +276,6 @@ class MappingSource(_FrozenProject):
     modeled_entity_id: int = Field(gt=0)
     role: str = Field(min_length=1, max_length=2_000)
     rationale: str = Field(min_length=1, max_length=2_000)
-    mapping_order: int | None = Field(default=None, gt=0)
     is_locked: bool
     object: MappingPhysicalObject | MappingModeledEntity
 

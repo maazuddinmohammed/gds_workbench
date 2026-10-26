@@ -10,7 +10,7 @@ Goal: make the requested difference and account for its real downstream effects,
 ## When to use
 
 - Change grain, identity, type, nullability, relationships, history or a business rule in applied work, or update Project settings.
-- Design itself happens in the owning skill: [subject areas](../atlas-subject-areas/SKILL.md), [logical](../atlas-logical-model/SKILL.md), [dimensional](../atlas-dimensional-model/SKILL.md), [mapping](../atlas-mapping/SKILL.md), [code](../atlas-code-generation/SKILL.md), [metadata](../atlas-metadata/SKILL.md), or [source analysis](../atlas-source-analysis/SKILL.md) for Project enrichment. A "why" question goes to [investigate](../atlas-investigate/SKILL.md) first.
+- Design itself happens in the owning skill: [Subject Areas](../atlas-subject-areas/SKILL.md), [logical](../atlas-logical-model/SKILL.md), [dimensional](../atlas-dimensional-model/SKILL.md), [mapping](../atlas-mapping/SKILL.md), [code](../atlas-code-generation/SKILL.md), [metadata](../atlas-metadata/SKILL.md), or [source analysis](../atlas-source-analysis/SKILL.md) for Project enrichment. A "why" question goes to [investigate](../atlas-investigate/SKILL.md) first.
 
 ## What you need
 

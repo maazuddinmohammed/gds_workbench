@@ -4,8 +4,8 @@ import type { ReviewStatus } from "../../shared/contracts";
 export type ProjectReviewDataset =
   | "context_record"
   | "subject_area" | "subject_area_table"
-  | "logical_submodel" | "logical_entity" | "logical_attribute" | "logical_relationship"
-  | "dimensional_submodel" | "dimensional_entity" | "dimensional_attribute" | "dimensional_relationship"
+  | "logical_entity" | "logical_attribute" | "logical_relationship"
+  | "dimensional_entity" | "dimensional_attribute" | "dimensional_relationship"
   | "mapping_object" | "mapping_attribute"
   | "generated_code" | "generated_code_source_system" | "validation_group" | "validation_check";
 export type ProjectReviewAction = "lock" | "unlock" | "deactivate" | "reactivate" | "delete";

@@ -1,4 +1,4 @@
-"""Detail APIs preserve source status for physical and Logical evidence."""
+"""Detail APIs preserve source lifecycle for physical and Logical evidence."""
 
 # Fixture imports reuse only disposable databases and synthetic identities.
 # pyright: reportPrivateUsage=false
@@ -103,7 +103,7 @@ async def test_seeded_modeled_detail_apis_preserve_non_context_source_status(
                 assert response.status_code == 200
                 for source in response.json()["sources"]:
                     source_types.add(source["support_source_type"])
-                    assert source["status"] == "active"
+                    assert source["is_active"] is True
     finally:
         await database.close()
     assert {"object", "attribute", "logical_entity", "logical_attribute"} <= source_types

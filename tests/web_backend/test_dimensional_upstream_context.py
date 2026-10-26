@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any, LiteralString, cast
+from typing import Any, Literal, LiteralString, cast
 
 import pytest
 from gds_etl_workbench.application.change_sets.project_validation import (
@@ -17,26 +17,11 @@ from gds_etl_workbench.domain.modeling_records import (
     PhysicalObjectKey,
 )
 from gds_etl_workbench.domain.snapshots.project import ProjectSnapshot
-from gds_workbench_api.features.dimensional.service import _candidate_validator
-from gds_workbench_api.features.workflows.authoring.context import (
-    AgentContextLimits,
-    AgentContextUnavailableError,
-    PostgresAgentContextRepository,
-)
-from gds_workbench_api.features.workflows.authoring.context_contracts import (
-    workflow_input_contracts,
-)
-from gds_workbench_api.features.workflows.authoring.context_inputs import (
-    OBJECT_FIELDS,
-    natural_key,
-)
-from gds_workbench_api.features.workflows.authoring.context_readers import (
-    FrozenContextReaders,
-)
 from jsonschema import Draft202012Validator
 from pydantic import JsonValue
-
+from tests.mcp.project_test_fixtures import DIMENSIONAL_FACT_TYPES
 from tests.web_backend.test_agent_context import (
+    _CUSTOMERS,
     ContextTransaction,
     DimensionalContextTransaction,
     _dimensional_snapshot,
@@ -49,21 +34,38 @@ from tests.web_backend.test_dimensional_executor import (
     _technical_template,
 )
 
+from gds_workbench_api.features.dimensional.service import _candidate_validator
+from gds_workbench_api.features.workflows.authoring.context import (
+    AgentContextLimits,
+    AgentContextUnavailableError,
+    PostgresAgentContextRepository,
+    focus_subject_area,
+)
+from gds_workbench_api.features.workflows.authoring.context_contracts import (
+    workflow_input_contracts,
+)
+from gds_workbench_api.features.workflows.authoring.context_inputs import (
+    OBJECT_FIELDS,
+    natural_key,
+)
+from gds_workbench_api.features.workflows.authoring.context_readers import (
+    FrozenContextReaders,
+)
+
 
 def _snapshot(*, attribute_only: bool = False) -> ProjectSnapshot:
     snapshot = _dimensional_snapshot()
     source = LogicalObjectSourceRecord(
         support_source_type="object",
         source_object=PhysicalObjectKey.model_validate(_object_key("customers")),
-        source_order=1,
         rationale="Selected Logical source.",
-        status="active",
+        is_active=True,
         is_locked=False,
     )
     inactive = source.model_copy(
         update={
             "source_object": PhysicalObjectKey.model_validate(_object_key("orders")),
-            "status": "inactive",
+            "is_active": False,
         }
     )
     unauthorized = source.model_copy(
@@ -85,18 +87,15 @@ def _snapshot(*, attribute_only: bool = False) -> ProjectSnapshot:
         source_attribute=PhysicalAttributeKey.model_validate(
             {**_object_key("customers"), "attribute_name": "customer_id"}
         ),
-        source_order=1,
         rationale="Physical Attribute lineage.",
-        status="active",
+        is_active=True,
         is_locked=False,
     )
-    attribute = snapshot.logical.attributes[0].model_copy(
-        update={"sources": (attribute_source,)}
-    )
+    attribute = snapshot.logical.attributes[0].model_copy(update={"sources": (attribute_source,)})
     inactive_attribute = attribute.model_copy(
         update={
             "logical_attribute_name": "OldOrderRef",
-            "logical_attribute_status": "inactive",
+            "logical_attribute_is_active": False,
             "sources": (
                 attribute_source.model_copy(
                     update={
@@ -111,7 +110,7 @@ def _snapshot(*, attribute_only: bool = False) -> ProjectSnapshot:
     unselected_entity = entity.model_copy(
         update={
             "logical_entity_name": "UnselectedOrder",
-            "sources": (inactive.model_copy(update={"status": "active"}),),
+            "sources": (inactive.model_copy(update={"is_active": True}),),
         }
     )
     return snapshot.model_copy(
@@ -207,9 +206,7 @@ class SupportingContextTransaction(DimensionalContextTransaction):
 
 
 @pytest.mark.asyncio
-async def test_dimensional_rejects_physical_authoring_selection_before_loading() -> (
-    None
-):
+async def test_dimensional_rejects_physical_authoring_selection_before_loading() -> None:
     plan = _plan(project_workflow="dimensional", selected_object_ids=(701,)).model_copy(
         update={"selected_object_ids": (501,)}
     )
@@ -221,9 +218,13 @@ async def test_dimensional_rejects_physical_authoring_selection_before_loading()
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
-@pytest.mark.parametrize("attribute_only", [False, True])
+# A Build selects Entities built from its area's tables; Optimize also selects Entities
+# whose only physical lineage is an Attribute.
+@pytest.mark.parametrize(
+    ("operation", "attribute_only"), [("build", False), ("optimize", False), ("optimize", True)]
+)
 async def test_dimensional_support_preserves_enrichment_profiles_and_scope(
-    mode: Any, attribute_only: bool
+    mode: Any, operation: Literal["build", "optimize"], attribute_only: bool
 ) -> None:
     snapshot = _snapshot(attribute_only=attribute_only)
     transaction = SupportingContextTransaction()
@@ -233,9 +234,7 @@ async def test_dimensional_support_preserves_enrichment_profiles_and_scope(
 
     async def scope_loader(*_: Any) -> PhysicalProjectCatalog:
         # Orders is authorized but has only inactive or unselected Logical lineage.
-        keys = frozenset(
-            natural_key(_object_key(name)) for name in ("customers", "orders")
-        )
+        keys = frozenset(natural_key(_object_key(name)) for name in ("customers", "orders"))
         attrs = frozenset((*key, "customer_id") for key in keys)
         return PhysicalProjectCatalog(
             project_tenant_code="SOURCE",
@@ -246,43 +245,48 @@ async def test_dimensional_support_preserves_enrichment_profiles_and_scope(
             project_input_attributes=attrs,
         )
 
+    plan = _plan(
+        project_workflow="dimensional",
+        execution_mode=mode,
+        selected_object_ids=(701,),
+        operation=operation,
+    )
     result = await PostgresAgentContextRepository(
         snapshot_loader=snapshot_loader,
         physical_scope_loader=scope_loader,
         limits=AgentContextLimits(max_selected_objects=10, max_selected_attributes=100),
-    ).load(
-        transaction,
-        tenant_id=7,
-        plan=_plan(
-            project_workflow="dimensional",
-            execution_mode=mode,
-            selected_object_ids=(701,),
-        ),
-    )
+    ).load(transaction, tenant_id=7, plan=plan)
+    if operation == "build":
+        # The Customers area's call keeps the Entity built from its table and its lineage.
+        assert result.embedded_context == {} and result.tool_catalog is None
+        focused = focus_subject_area(
+            result,
+            plan=plan,
+            subject_area=_CUSTOMERS,
+            logical=snapshot.logical,
+            dimensional=snapshot.dimensional,
+        )
+        assert focused is not None
+        assert focused.context.supporting_objects == result.context.supporting_objects
+        result = focused
     assert result.context.selected_objects == ()
     assert len(result.context.selected_logical_entities) == 1
     assert [
-        a.logical_attribute_name
-        for a in result.context.selected_logical_entities[0].attributes
+        a.logical_attribute_name for a in result.context.selected_logical_entities[0].attributes
     ] == ["CustomerID"]
-    assert [g.object.object_name for g in result.context.supporting_objects] == [
-        "customers"
-    ]
+    assert [g.object.object_name for g in result.context.supporting_objects] == ["customers"]
     assert len(result.context.profiles) == 1
     values = (
         result.tool_catalog.prompt_values
         if result.tool_catalog
         else cast(dict[str, Any], result.embedded_context)["prompt_inputs"]
     )
-    for name, contract in workflow_input_contracts("dimensional").items():
-        assert cast(Any, Draft202012Validator(contract["schema"])).is_valid(
-            values[name]
-        )
+    input_set = "dimensional" if operation == "build" else "dimensional_optimize"
+    assert set(values) == set(workflow_input_contracts(input_set))
+    for name, contract in workflow_input_contracts(input_set).items():
+        assert cast(Any, Draft202012Validator(contract["schema"])).is_valid(values[name])
     assert [row["object_name"] for row in values["object_context"]] == ["customers"]
-    assert (
-        values["object_context"][0]["object_description"]
-        == "sensitive physical description"
-    )
+    assert values["object_context"][0]["object_description"] == "sensitive physical description"
     attribute = values["object_attribute_context"][0]["attributes"][0]
     assert attribute["attribute_description"] == "Customer identifier."
     assert attribute["profile"]["row_count"] == 10
@@ -292,10 +296,7 @@ async def test_dimensional_support_preserves_enrichment_profiles_and_scope(
     assert other_attribute["attribute_name"] == "region"
     assert other_attribute["attribute_inferred_data_type"] == "STRING"
     assert other_attribute["profile"] is None
-    assert (
-        attribute["profile"]["row_scope"] == "batch"
-        and attribute["profile"]["batch_id"] == "42"
-    )
+    assert attribute["profile"]["row_scope"] == "batch" and attribute["profile"]["batch_id"] == "42"
     assert values["source_context"][0]["connection_code"] == "SOURCE"
     assert values["ingestion_mapping"][0]["target"]["connection_code"] == "GDS"
     assert [row["zone_code"] for row in values["gds_context"]] == ["gold"]
@@ -322,24 +323,23 @@ async def test_dimensional_support_preserves_enrichment_profiles_and_scope(
         "logical_entity_name": "UnselectedOrder",
     }
     issues = (
-        await _candidate_validator(result).validate(cast(JsonValue, candidate))
+        await _candidate_validator(result, fact_types=DIMENSIONAL_FACT_TYPES).validate(
+            cast(JsonValue, candidate)
+        )
     ).issues
     assert "candidate.source_outside_selection" in {issue.code for issue in issues}
 
 
 def test_dimensional_physical_detail_reader_pages_existing_attribute_cards() -> None:
     values = {
-        name: spec["example"]
-        for name, spec in workflow_input_contracts("dimensional").items()
+        name: spec["example"] for name, spec in workflow_input_contracts("dimensional").items()
     }
     group = values["object_attribute_context"][0]
     prototype = group["attributes"][0]
     group["attributes"] = [
         {**prototype, "attribute_name": f"context_column_{n}"} for n in range(12)
     ]
-    group["selected_attribute_names"] = [
-        a["attribute_name"] for a in group["attributes"]
-    ]
+    group["selected_attribute_names"] = [a["attribute_name"] for a in group["attributes"]]
     readers = FrozenContextReaders(
         workflow="dimensional",
         values=values,
@@ -348,9 +348,7 @@ def test_dimensional_physical_detail_reader_pages_existing_attribute_cards() -> 
         max_cumulative_result_bytes=200_000,
     )
     page = readers.invoke("get_object_details", {})
-    assert page["incomplete_object_key"] == {
-        name: group[name] for name in OBJECT_FIELDS
-    }
+    assert page["incomplete_object_key"] == {name: group[name] for name in OBJECT_FIELDS}
     recovered: list[dict[str, Any]] = []
     while True:
         recovered.extend(page["items"][0]["attributes"])

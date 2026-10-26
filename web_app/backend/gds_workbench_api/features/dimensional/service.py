@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, cast
 from uuid import UUID
 
 from gds_etl_workbench.application.authorization import AuthorizationService
@@ -16,13 +18,18 @@ from gds_etl_workbench.application.change_sets.project_validation import (
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 from gds_etl_workbench.domain.modeling_records import (
+    DimensionalAttributeRecord,
+    DimensionalEntityRecord,
+    DimensionalRelationshipRecord,
     LogicalAttributeKey,
     LogicalEntityKey,
+    normalize_project_key_value,
 )
+from gds_etl_workbench.domain.snapshots.project import DimensionalSection, ProjectChangeSetDataset
 from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
 )
-from pydantic import JsonValue
+from pydantic import BaseModel, JsonValue
 
 from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetFinalizer,
@@ -33,7 +40,9 @@ from gds_workbench_api.features.workflows.authoring.context import (
     AgentContextBundle,
     AgentContextRepository,
     PostgresAgentContextRepository,
+    focus_subject_area,
 )
+from gds_workbench_api.features.workflows.authoring.context_inputs import project_key_fields
 from gds_workbench_api.features.workflows.authoring.gold_policy import effective_gold_templates
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
@@ -201,8 +210,14 @@ class DimensionalWorkflow:
         workflow_run_claim_token: UUID,
         expected_project_revision: int,
     ) -> DimensionalExecutionResult:
+        """Build the selected Subject Areas one after another, or Optimize the whole model.
+
+        A Build call works on the Logical Entities built from one area's Objects and sees
+        the Dimensional model as earlier areas left it, so a shared dimension is created
+        once and reused. Every call returns only changes; they reach the Project as one draft.
+        """
         finalization_attempted = False
-        changes: tuple[StageProjectChange, ...] = ()
+        staged: _Staged = {}
         rejected = _RejectedCandidate()
         try:
             async with self._database.write_transaction(
@@ -246,13 +261,12 @@ class DimensionalWorkflow:
                 raw_technical_template=technical,
                 raw_audit_template=audit,
             )
-
+            snapshot, physical_scope = context.snapshot, context.physical_scope
+            if snapshot is None or physical_scope is None:
+                raise InvalidRequestError("The Dimensional validation context is unavailable.")
             execution_mode = plan.workflow_execution_mode
-            selected_object_count = len(context.context.selected_logical_entities)
-            selected_object_label = (
-                "Logical Entity" if selected_object_count == 1 else "Logical Entities"
-            )
-            candidate_mode_label = "one-shot" if execution_mode == "one_shot" else "tool-assisted"
+            operation = plan.workflow_operation
+            stage_code = f"{operation}_authoring"
             progress = AgentWorkflowProgress(
                 lifecycle=self._lifecycle,
                 principal=principal,
@@ -260,126 +274,169 @@ class DimensionalWorkflow:
                 workflow_run_claim_token=workflow_run_claim_token,
                 expected_project_revision=expected_project_revision,
             )
-            await progress.append(
-                attempt=1,
-                stage=("dimensional.candidate_authoring"),
-                status="running",
-                message=(
-                    f"Dimensional {candidate_mode_label} candidate authoring started for "
-                    f"{selected_object_count} selected {selected_object_label}; the next "
-                    "persisted milestone follows bounded agent-response validation."
-                ),
-                current=None,
-                total=None,
-                finding_count=0,
+            fact_types = tuple(
+                item.dimensional_fact_type_code
+                for item in snapshot.dimensional.fact_types
+                if item.dimensional_fact_type_is_active
             )
-            validator = _candidate_validator(context)
-            snapshot, physical_scope = context.snapshot, context.physical_scope
-            if snapshot is None or physical_scope is None:
-                raise InvalidRequestError("The Dimensional validation context is unavailable.")
-
-            async def validate_complete_candidate(value: JsonValue) -> AgentCandidateValidation:
-                try:
-                    candidate_changes = _project_dimensional_changes(
-                        validator=validator,
-                        candidate=value,
-                        context=context,
+            model = snapshot.dimensional
+            warnings: list[str] = []
+            final_attempt = 1
+            # Optimize is one call over the whole model; Build is one call per area.
+            calls = plan.subject_areas if operation == "build" else (None,)
+            for position, area in enumerate(calls, start=1):
+                bundle = (
+                    context
+                    if area is None
+                    else focus_subject_area(
+                        context,
+                        plan=plan,
+                        subject_area=area,
+                        logical=snapshot.logical,
+                        dimensional=model,
                     )
-                except DimensionalProjectionConflictError as projection_error:
-                    issues = (
-                        ProjectValidationIssue(
-                            code="gold_projection_conflict",
-                            dataset="dimensional_entity",
-                            record_number=None,
-                            fields=(),
-                            message=projection_error.message,
-                        ),
+                )
+                if bundle is None:
+                    # No active Logical Entity is built from this area's Objects yet.
+                    warnings.append(
+                        f"{area.subject_area_name if area else 'Model'}: skipped, no Logical "
+                        "Entities."
                     )
-                    # An earlier complete projected draft is more useful than a later
-                    # candidate that could not be projected. Retain the raw candidate
-                    # only when no complete projected rejection exists yet.
-                    if not rejected.changes:
-                        rejected.changes = validator.parse_validated(value)
-                        rejected.issues = issues
-                    return AgentCandidateValidation(issues=project_validation_issues(issues))
-                checked = validate_future_graph(
-                    snapshot=snapshot,
-                    staged_documents={
-                        change.dataset: change.records for change in candidate_changes
-                    },
-                    physical_scope=physical_scope,
-                )
-                coverage = validator.validate_coverage(value)
-                coverage_issues = tuple(
-                    ProjectValidationIssue(
-                        code=issue.code.removeprefix("candidate."),
-                        dataset="dimensional_entity",
-                        record_number=None,
-                        fields=(),
-                        message=issue.message,
-                    )
-                    for issue in coverage
-                )
-                if checked.issues or coverage_issues:
-                    rejected.changes = candidate_changes
-                    rejected.issues = checked.issues + coverage_issues
-                return AgentCandidateValidation(
-                    issues=project_validation_issues(checked.issues) + coverage
-                )
-
-            resolver_values: dict[str, object] = {
-                (
-                    f"workflow.dimensional.{execution_mode}.candidate_authoring.context"
-                ): context.embedded_context,
-                "workflow.validation_failures": [],
-            }
-            resolver_values["project.naming_instructions"] = effective_naming_instructions(
-                "dimensional",
-                context.context.project_details.gold_model_naming_instructions,
-            )
-            coverage_warning: str | None = None
-            try:
-                outcome = await self._stage_runner.run(
-                    plan=plan,
-                    stage_code="candidate_authoring",
-                    resolver_values=resolver_values,
-                    context=context.embedded_context,
-                    output_schema=validator.output_schema(),
-                    allowed_tool_names=(
-                        context.tool_catalog.allowed_tool_names
-                        if context.tool_catalog is not None
-                        else ()
+                    continue
+                validator = _candidate_validator(bundle, fact_types=fact_types)
+                inputs = len(bundle.context.selected_logical_entities)
+                await progress.append(
+                    attempt=1,
+                    stage=f"dimensional.{stage_code}",
+                    status="running",
+                    message=(
+                        "Optimizing the whole Dimensional model."
+                        if area is None
+                        else f"Building {area.subject_area_name} ({position} of {len(calls)}): "
+                        f"{inputs} Logical {'Entity' if inputs == 1 else 'Entities'}."
                     ),
-                    local_tool_catalog=context.tool_catalog,
-                    validator=validator,
-                    final_validation=validate_complete_candidate,
+                    current=position - 1,
+                    total=len(calls),
+                    finding_count=sum(len(records) for records in staged.values()),
                 )
-            except AgentCandidateValidationError as error:
-                # The shared runner attaches a checked candidate only after all attempts.
-                # Only advisory coverage may fall short; all other validation blocks.
-                if (
-                    context.context.project_details.dimensional_enforce_coverage_threshold
-                    or error.candidate is None
-                    or not error.issues
-                    or any(
-                        issue.code != "candidate.entity_coverage_incomplete"
-                        for issue in error.issues
+
+                async def validate_complete_candidate(
+                    value: JsonValue,
+                    validator: DimensionalCandidateValidator = validator,
+                    bundle: AgentContextBundle = bundle,
+                    staged: _Staged = staged,
+                    building: bool = area is not None,
+                ) -> AgentCandidateValidation:
+                    try:
+                        candidate_changes = _project_dimensional_changes(
+                            validator=validator, candidate=value, context=bundle
+                        )
+                    except DimensionalProjectionConflictError as projection_error:
+                        issues = (
+                            ProjectValidationIssue(
+                                code="gold_projection_conflict",
+                                dataset="dimensional_entity",
+                                record_number=None,
+                                fields=(),
+                                message=projection_error.message,
+                            ),
+                        )
+                        # An earlier complete projected draft is more useful than a later
+                        # candidate that could not be projected.
+                        if not rejected.changes:
+                            rejected.changes = _staged_changes(
+                                _with_staged(staged, validator.parse_validated(value))
+                            )
+                            rejected.issues = issues
+                        return AgentCandidateValidation(issues=project_validation_issues(issues))
+                    documents = _with_staged(staged, candidate_changes)
+                    checked = validate_future_graph(
+                        snapshot=snapshot,
+                        staged_documents={
+                            dataset: list(records.values())
+                            for dataset, records in documents.items()
+                        },
+                        physical_scope=physical_scope,
                     )
-                ):
-                    raise
-                candidate = error.candidate
-                final_attempt = plan.selection.validation_retry_count + 1
-                coverage_warning = error.issues[0].message
-                warning = True
-            else:
-                candidate = outcome.candidate
-                final_attempt = outcome.attempt_count
-                warning = outcome.was_repaired or bool(outcome.warning_codes)
-            changes = _project_dimensional_changes(
-                validator=validator,
-                candidate=candidate,
-                context=context,
-            )
+                    # Build measures the area's coverage; Optimize only cleans up.
+                    coverage = validator.validate_coverage(value) if building else ()
+                    if checked.issues or coverage:
+                        rejected.changes = _staged_changes(documents)
+                        rejected.issues = checked.issues + tuple(
+                            ProjectValidationIssue(
+                                code=issue.code.removeprefix("candidate."),
+                                dataset="dimensional_entity",
+                                record_number=None,
+                                fields=(),
+                                message=issue.message,
+                            )
+                            for issue in coverage
+                        )
+                    return AgentCandidateValidation(
+                        issues=project_validation_issues(checked.issues) + coverage
+                    )
+
+                resolver_values: dict[str, object] = {
+                    f"workflow.dimensional.{execution_mode}.{stage_code}.context": (
+                        bundle.embedded_context
+                    ),
+                    "workflow.validation_failures": [],
+                    "project.naming_instructions": effective_naming_instructions(
+                        "dimensional", project_details.gold_model_naming_instructions
+                    ),
+                }
+                try:
+                    outcome = await self._stage_runner.run(
+                        plan=plan,
+                        stage_code=stage_code,
+                        resolver_values=resolver_values,
+                        context=bundle.embedded_context,
+                        output_schema=validator.output_schema(),
+                        allowed_tool_names=(
+                            bundle.tool_catalog.allowed_tool_names
+                            if bundle.tool_catalog is not None
+                            else ()
+                        ),
+                        local_tool_catalog=bundle.tool_catalog,
+                        validator=validator,
+                        final_validation=validate_complete_candidate,
+                    )
+                except AgentCandidateValidationError as error:
+                    # After every attempt only advisory coverage may still fall short.
+                    if (
+                        project_details.dimensional_enforce_coverage_threshold
+                        or error.candidate is None
+                        or not error.issues
+                        or any(
+                            issue.code != "candidate.entity_coverage_incomplete"
+                            for issue in error.issues
+                        )
+                    ):
+                        raise
+                    candidate = error.candidate
+                    final_attempt = plan.selection.validation_retry_count + 1
+                    warnings.append(
+                        f"{area.subject_area_name if area else 'Model'}: {error.issues[0].message}"
+                    )
+                else:
+                    candidate = outcome.candidate
+                    final_attempt = max(final_attempt, outcome.attempt_count)
+                    if outcome.was_repaired or outcome.warning_codes:
+                        warnings.append(f"{area.subject_area_name if area else 'Model'}: repaired.")
+                changes = _project_dimensional_changes(
+                    validator=validator, candidate=candidate, context=bundle
+                )
+                staged = _with_staged(staged, changes)
+                model = _with_changes(model, changes)
+                rejected.changes, rejected.issues = (), ()
+
+            changes = _staged_changes(staged)
+            if operation == "build":
+                coverage = _candidate_validator(context, fact_types=fact_types).coverage_of(
+                    model.entities
+                )
+                if coverage:
+                    warnings.append(f"Run selection: {coverage[0].message}")
             if not changes:
                 finalization_attempted = True
                 return await self._no_op.complete(
@@ -397,35 +454,20 @@ class DimensionalWorkflow:
                         final_event=progress.event(
                             attempt=final_attempt,
                             stage="dimensional.backend_validation",
-                            status=("warning" if warning else "running"),
-                            message=(
-                                "Dimensional final attempt produced no effective change; "
-                                f"coverage target remains unmet. {coverage_warning}"
-                                if coverage_warning
-                                else "Dimensional authoring completed with no effective change."
-                            ),
-                            current=1,
-                            total=1,
+                            status="warning" if warnings else "running",
+                            message=" ".join(
+                                [
+                                    f"Dimensional {operation} produced no effective change.",
+                                    *warnings,
+                                ]
+                            )[:2000],
+                            current=len(calls),
+                            total=len(calls),
                             finding_count=0,
                         ),
                     ),
                 )
 
-            staged_record_count = sum(len(change.records) for change in changes)
-            final_event = progress.event(
-                attempt=final_attempt,
-                stage="dimensional.backend_validation",
-                status="warning" if warning else "running",
-                message=(
-                    "Dimensional draft returned after the final attempt with partial coverage. "
-                    f"{coverage_warning}"
-                    if coverage_warning
-                    else "Dimensional candidate is ready in a validated draft."
-                ),
-                current=1,
-                total=1,
-                finding_count=staged_record_count,
-            )
             finalization_attempted = True
             finalized = await self._handoff.finalize(
                 principal,
@@ -436,13 +478,26 @@ class DimensionalWorkflow:
                 expected_workflow="dimensional",
                 expected_project_revision=expected_project_revision,
                 changes=changes,
-                final_event=final_event,
+                final_event=progress.event(
+                    attempt=final_attempt,
+                    stage="dimensional.backend_validation",
+                    status="warning" if warnings else "running",
+                    message=(
+                        f"Dimensional {operation} completed with notes. {' '.join(warnings)}"[:2000]
+                        if warnings
+                        else f"Dimensional {operation} is ready in a validated draft."
+                    ),
+                    current=len(calls),
+                    total=len(calls),
+                    finding_count=sum(len(change.records) for change in changes),
+                ),
             )
             return finalized.handoff
         except Exception as error:
             retention_issues = (
                 error.issues if isinstance(error, WorkflowChangeSetValidationError) else ()
             )
+            changes = _staged_changes(staged)
             if (
                 isinstance(error, AgentCandidateValidationError)
                 and rejected.changes
@@ -520,22 +575,22 @@ class DimensionalWorkflow:
         expected_project_revision: int,
     ) -> None:
         stage_codes = tuple(stage.stage_code for stage in plan.stages)
-        mode_path_is_valid = plan.workflow_execution_mode in (
-            "one_shot",
-            "tool_assisted",
-        ) and stage_codes == ("candidate_authoring",)
         if (
             plan.project_id != project_id
             or plan.workflow_run_id != workflow_run_id
             or plan.project_revision != expected_project_revision
             or plan.project_workflow != "dimensional"
             or plan.modeled_entity_type != "logical_entity"
-            or not mode_path_is_valid
+            or plan.workflow_execution_mode not in ("one_shot", "tool_assisted")
+            or plan.workflow_operation is None
+            or stage_codes != (f"{plan.workflow_operation}_authoring",)
         ):
             raise InvalidRequestError("The Dimensional run does not use the fixed execution path.")
 
 
-def _candidate_validator(context: AgentContextBundle) -> DimensionalCandidateValidator:
+def _candidate_validator(
+    context: AgentContextBundle, *, fact_types: tuple[str, ...]
+) -> DimensionalCandidateValidator:
     selected_entities = tuple(
         LogicalEntityKey(
             logical_entity_schema_name=item.entity.logical_entity_schema_name,
@@ -564,6 +619,7 @@ def _candidate_validator(context: AgentContextBundle) -> DimensionalCandidateVal
         selected_attribute_keys=selected_attributes,
         context_record_ids=context_record_ids,
         applied=context.context.applied.dimensional,
+        fact_types=fact_types,
         raw_technical_template=technical,
         raw_audit_template=audit,
         coverage_threshold_percent=context.context.project_details.dimensional_coverage_threshold_percent,
@@ -594,6 +650,64 @@ def _project_dimensional_changes(
         applied=context.context.applied.dimensional,
         raw_technical_template=technical,
     )
+
+
+type _Staged = dict[ProjectChangeSetDataset, dict[tuple[str, ...], dict[str, object]]]
+_DATASET_KINDS = {
+    "dimensional_entity": "entity",
+    "dimensional_attribute": "attribute",
+    "dimensional_relationship": "relationship",
+}
+
+
+def _record_key(dataset: str, record: Mapping[str, object]) -> tuple[str, ...]:
+    return tuple(
+        normalize_project_key_value(str(record[name]))
+        for name in project_key_fields("dimensional", _DATASET_KINDS[dataset])
+    )
+
+
+def _with_staged(staged: _Staged, changes: tuple[StageProjectChange, ...]) -> _Staged:
+    """A later call's complete record replaces an earlier one with the same identity."""
+    merged: _Staged = {dataset: dict(records) for dataset, records in staged.items()}
+    for change in changes:
+        records = merged.setdefault(change.dataset, {})
+        for record in change.records:
+            records[_record_key(change.dataset, record)] = record
+    return merged
+
+
+def _staged_changes(staged: _Staged) -> tuple[StageProjectChange, ...]:
+    return tuple(
+        StageProjectChange(dataset=dataset, records=list(records.values()))
+        for dataset, records in staged.items()
+        if records
+    )
+
+
+def _with_changes(
+    model: DimensionalSection, changes: tuple[StageProjectChange, ...]
+) -> DimensionalSection:
+    """The model as the next area sees it: saved records with this run's changes applied."""
+    sections = {
+        "dimensional_entity": ("entities", DimensionalEntityRecord),
+        "dimensional_attribute": ("attributes", DimensionalAttributeRecord),
+        "dimensional_relationship": ("relationships", DimensionalRelationshipRecord),
+    }
+    update: dict[str, tuple[BaseModel, ...]] = {}
+    for change in changes:
+        field, record_type = sections[change.dataset]
+        current = update.get(field, cast(tuple[BaseModel, ...], getattr(model, field)))
+        records = {
+            _record_key(change.dataset, record.model_dump(mode="json")): record
+            for record in current
+        }
+        for record in change.records:
+            records[_record_key(change.dataset, record)] = record_type.model_validate_json(
+                json.dumps(record)
+            )
+        update[field] = tuple(records.values())
+    return model.model_copy(update=update)
 
 
 def _safe_execution_error(

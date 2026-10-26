@@ -20,14 +20,7 @@ from gds_etl_workbench.application.project_read import (
 from gds_etl_workbench.application.project_snapshot import build_project_snapshot
 from gds_etl_workbench.domain.authorization import ActorKind
 from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_workbench_api.capabilities import load_default_agent_capabilities
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.projects.command_contracts import SetProjectLockRequest
-from gds_workbench_api.features.projects.command_service import (
-    DatabaseProjectCommandService,
-)
 from psycopg import errors, sql
-
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.project_test_fixtures import complete_project_graph
 from tests.mcp.test_database_project_change_set_round_trip import (
@@ -35,6 +28,13 @@ from tests.mcp.test_database_project_change_set_round_trip import (
     _acquire_tenant_lock,
     _replace_codes,
     _seed_project_foundation,
+)
+
+from gds_workbench_api.capabilities import load_default_agent_capabilities
+from gds_workbench_api.database import WebPostgresDatabase
+from gds_workbench_api.features.projects.command_contracts import SetProjectLockRequest
+from gds_workbench_api.features.projects.command_service import (
+    DatabaseProjectCommandService,
 )
 
 
@@ -52,14 +52,10 @@ async def test_project_lock_fences_graph_and_runtime_but_keeps_reads_and_metadat
             validation = validate_future_graph(
                 snapshot=await build_project_snapshot(transaction, project),
                 physical_scope=await load_project_physical_scope(transaction, project),
-                staged_documents=_replace_codes(
-                    complete_project_graph(), code_prefix=prefix
-                ),
+                staged_documents=_replace_codes(complete_project_graph(), code_prefix=prefix),
             )
             assert validation.valid
-            await ProjectMaterializer(transaction, project_id, "a" * 64).apply(
-                validation.records
-            )
+            await ProjectMaterializer(transaction, project_id, "a" * 64).apply(validation.records)
     finally:
         await runtime.close()
     _acquire_tenant_lock(fixture, tenant_id)
@@ -90,27 +86,22 @@ async def test_project_lock_fences_graph_and_runtime_but_keeps_reads_and_metadat
             )
             snapshot = await build_project_snapshot(transaction, context)
         assert context.is_locked and snapshot.is_locked
-        assert (
-            snapshot.logical.entities
-            and snapshot.mapping.objects
-            and snapshot.validation.checks
-        )
+        assert snapshot.logical.entities and snapshot.mapping.objects and snapshot.validation.checks
         with fixture.connect_owner() as connection:
             tables = connection.execute("""
                 SELECT namespace.nspname, relation.relname, attribute.attname
-                FROM pg_class AS relation JOIN pg_namespace AS namespace ON namespace.oid=relation.relnamespace
+                FROM pg_class AS relation
+                JOIN pg_namespace AS namespace ON namespace.oid=relation.relnamespace
                 JOIN pg_attribute AS attribute ON attribute.attrelid=relation.oid
                 WHERE namespace.nspname IN ('project','workflow','application','mcp')
                   AND relation.relkind='r' AND attribute.attname='project_id'
                   AND relation.relname <> 'project_lock_event'
                 """).fetchall()
-            checked = 0
+            fenced: set[str] = set()
             for table in tables:
                 identifier = sql.Identifier(table["nspname"], table["relname"])
                 count = connection.execute(
-                    sql.SQL("SELECT count(*) AS n FROM {} WHERE project_id=%s").format(
-                        identifier
-                    ),
+                    sql.SQL("SELECT count(*) AS n FROM {} WHERE project_id=%s").format(identifier),
                     (project_id,),
                 ).fetchone()
                 if count is None or count["n"] == 0:
@@ -121,8 +112,7 @@ async def test_project_lock_fences_graph_and_runtime_but_keeps_reads_and_metadat
                 ):
                     column = sql.Identifier(
                         "updated_by"
-                        if table["nspname"] == "project"
-                        and table["relname"] == "project"
+                        if table["nspname"] == "project" and table["relname"] == "project"
                         else "project_id"
                     )
                     connection.execute(
@@ -132,8 +122,32 @@ async def test_project_lock_fences_graph_and_runtime_but_keeps_reads_and_metadat
                         (project_id,),
                     )
                 assert denied.value.diag.message_primary == "project_locked"
-                checked += 1
-            assert checked >= 25
+                fenced.add(f"{table['nspname']}.{table['relname']}")
+            # Every table the complete graph populates is fenced; Submodel tables are gone.
+            assert fenced >= {
+                "project.project",
+                "project.project_input_scope",
+                "project.context_group",
+                "project.context_record",
+                "workflow.analysis_result",
+                "workflow.attribute_profile",
+                "workflow.subject_area",
+                "workflow.subject_area_table",
+                "workflow.logical_entity",
+                "workflow.logical_entity_source_mapping",
+                "workflow.logical_attribute",
+                "workflow.logical_attribute_source_mapping",
+                "workflow.logical_relationship",
+                "workflow.dimensional_entity",
+                "workflow.dimensional_entity_source_mapping",
+                "workflow.dimensional_attribute",
+                "workflow.dimensional_attribute_source_mapping",
+                "workflow.dimensional_relationship",
+                "workflow.mapping_object",
+                "workflow.mapping_attribute",
+                "workflow.generated_code",
+                "workflow.validation_group",
+            }
             with (
                 pytest.raises(errors.ObjectNotInPrerequisiteState),
                 connection.transaction(),
@@ -147,7 +161,9 @@ async def test_project_lock_fences_graph_and_runtime_but_keeps_reads_and_metadat
                 connection.transaction(),
             ):
                 connection.execute(
-                    "UPDATE workflow.validation_check SET is_active=is_active WHERE validation_group_id IN (SELECT validation_group_id FROM workflow.validation_group WHERE project_id=%s)",
+                    "UPDATE workflow.validation_check SET is_active=is_active "
+                    "WHERE validation_group_id IN (SELECT validation_group_id "
+                    "FROM workflow.validation_group WHERE project_id=%s)",
                     (project_id,),
                 )
             # Metadata remains writable independently of this Project.
@@ -164,7 +180,9 @@ async def test_project_lock_fences_graph_and_runtime_but_keeps_reads_and_metadat
             ).fetchone() == {"is_locked": True}
         with fixture.connect_runtime() as connection:
             assert connection.execute(
-                "SELECT has_function_privilege(current_user, 'application.set_project_lock(uuid,uuid,bigint,bigint,bigint,boolean)', 'EXECUTE') AS allowed"
+                "SELECT has_function_privilege(current_user, "
+                "'application.set_project_lock(uuid,uuid,bigint,bigint,bigint,boolean)', "
+                "'EXECUTE') AS allowed"
             ).fetchone() == {"allowed": False}
             with pytest.raises(errors.InsufficientPrivilege), connection.transaction():
                 connection.execute(
@@ -176,9 +194,7 @@ async def test_project_lock_fences_graph_and_runtime_but_keeps_reads_and_metadat
                 replace(principal, actor_kind=ActorKind.WORKLOAD),
                 tenant_id=tenant_id,
                 project_id=project_id,
-                request=SetProjectLockRequest(
-                    expected_project_revision=2, is_locked=False
-                ),
+                request=SetProjectLockRequest(expected_project_revision=2, is_locked=False),
             )
         assert denied.value.code == "authorization_denied"
         with pytest.raises(WorkbenchError) as stale:
@@ -186,9 +202,7 @@ async def test_project_lock_fences_graph_and_runtime_but_keeps_reads_and_metadat
                 principal,
                 tenant_id=tenant_id,
                 project_id=project_id,
-                request=SetProjectLockRequest(
-                    expected_project_revision=1, is_locked=False
-                ),
+                request=SetProjectLockRequest(expected_project_revision=1, is_locked=False),
             )
         assert stale.value.code == "project_revision_conflict"
         unlocked = await service.set_project_lock(
@@ -204,7 +218,8 @@ async def test_project_lock_fences_graph_and_runtime_but_keeps_reads_and_metadat
                 (project_id,),
             )
             assert connection.execute(
-                "SELECT is_locked, project_revision FROM project.project_lock_event WHERE project_id=%s ORDER BY project_lock_event_id",
+                "SELECT is_locked, project_revision FROM project.project_lock_event "
+                "WHERE project_id=%s ORDER BY project_lock_event_id",
                 (project_id,),
             ).fetchall() == [
                 {"is_locked": True, "project_revision": 2},
@@ -227,7 +242,9 @@ def test_project_lock_rejects_queued_work_and_locked_project_rejects_new_work(
             (tenant_id,),
         ).fetchone()
         assert principal is not None
-        insert = """INSERT INTO application.workflow_run(tenant_id,project_id,project_revision,project_workflow,actor_principal_id,selected_scope_digest,selected_scope_count,correlation_id)
+        insert = """INSERT INTO application.workflow_run(
+                        tenant_id,project_id,project_revision,project_workflow,actor_principal_id,
+                        selected_scope_digest,selected_scope_count,correlation_id)
                     VALUES (%s,%s,1,'profiling',%s,%s,1,%s) RETURNING workflow_run_id"""
         row = connection.execute(
             insert,
@@ -244,7 +261,8 @@ def test_project_lock_rejects_queued_work_and_locked_project_rejects_new_work(
             )
         assert busy.value.diag.message_primary == "project_workflow_conflict"
         connection.execute(
-            "UPDATE application.workflow_run SET workflow_run_state='cancelled', completed_time=clock_timestamp() WHERE workflow_run_id=%s",
+            "UPDATE application.workflow_run SET workflow_run_state='cancelled', "
+            "completed_time=clock_timestamp() WHERE workflow_run_id=%s",
             (row["workflow_run_id"],),
         )
         connection.execute(
@@ -274,9 +292,7 @@ async def test_locked_project_mcp_reads_work_but_change_set_mutations_fail(
     from mcp.types import TextContent
 
     fixture = web_postgres_database
-    project_id, tenant_id = _seed_project_foundation(
-        fixture, code_prefix="LOCK_MCP_" + uuid4().hex
-    )
+    project_id, tenant_id = _seed_project_foundation(fixture, code_prefix="LOCK_MCP_" + uuid4().hex)
     _acquire_tenant_lock(fixture, tenant_id)
     database = fixture.create_runtime_adapter()
     identity = StaticIdentityProvider()
@@ -302,7 +318,11 @@ async def test_locked_project_mcp_reads_work_but_change_set_mutations_fail(
             change_set_id = created.structured_content["project_change_set_id"]
             with fixture.connect_owner() as connection:
                 connection.execute(
-                    "UPDATE mcp.project_change_set SET created_time=clock_timestamp()-interval '3 hours', last_activity_time=clock_timestamp()-interval '2 hours', expires_time=clock_timestamp()-interval '1 hour' WHERE project_change_set_id=%s",
+                    "UPDATE mcp.project_change_set SET "
+                    "created_time=clock_timestamp()-interval '3 hours', "
+                    "last_activity_time=clock_timestamp()-interval '2 hours', "
+                    "expires_time=clock_timestamp()-interval '1 hour' "
+                    "WHERE project_change_set_id=%s",
                     (change_set_id,),
                 )
                 connection.execute(
@@ -330,17 +350,15 @@ async def test_locked_project_mcp_reads_work_but_change_set_mutations_fail(
                     isinstance(block, TextContent) and "project_locked:" in block.text
                     for block in result.content
                 )
-            result = await client.call_tool(
-                "create_project_change_set", {"project_id": project_id}
-            )
+            result = await client.call_tool("create_project_change_set", {"project_id": project_id})
             assert result.is_error
             assert all(
-                "project_lock" not in tool.name
-                for tool in (await client.list_tools()).tools
+                "project_lock" not in tool.name for tool in (await client.list_tools()).tools
             )
             with fixture.connect_owner() as connection:
                 assert connection.execute(
-                    "SELECT project_change_set_status FROM mcp.project_change_set WHERE project_change_set_id=%s",
+                    "SELECT project_change_set_status FROM mcp.project_change_set "
+                    "WHERE project_change_set_id=%s",
                     (change_set_id,),
                 ).fetchone() == {"project_change_set_status": "active"}
     finally:
@@ -356,7 +374,8 @@ def test_lock_transition_serializes_with_an_in_flight_project_write(
     )
     with fixture.connect_owner() as writer, fixture.connect_owner() as locker:
         writer.execute(
-            "INSERT INTO project.project_input_scope(project_id, object_id) SELECT %s, object_id FROM core.object WHERE source_tenant_id=%s LIMIT 1",
+            "INSERT INTO project.project_input_scope(project_id, object_id) "
+            "SELECT %s, object_id FROM core.object WHERE source_tenant_id=%s LIMIT 1",
             (project_id, tenant_id),
         )
         with pytest.raises(errors.LockNotAvailable), locker.transaction():

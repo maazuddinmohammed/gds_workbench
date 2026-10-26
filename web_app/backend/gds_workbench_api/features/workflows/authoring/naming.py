@@ -12,7 +12,7 @@ _DEFAULT_NAMING_INSTRUCTIONS: dict[NamingWorkflow, str] = {
         "Identifier Attribute names end with ID, with both I and D uppercase."
     ),
     "dimensional": (
-        "Use PascalCase for Dimensional submodel, entity, attribute, and relationship names. "
+        "Use PascalCase for Dimensional entity and attribute names. "
         "Dimensional key Attribute names end with Key."
     ),
 }

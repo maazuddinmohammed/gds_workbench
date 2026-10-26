@@ -5,6 +5,7 @@ import { contextQueryKeys, loadContextSystems, type ContextGroupFilters, type Co
 import { ContextGroupsLedger } from "./ContextLedgers";
 import { ContextEditor } from "./ContextEditor";
 import { WorkflowCommandCenter, WorkflowCommandTools } from "../workflows/WorkflowCommandCenter";
+import { RefreshButton } from "../../shared/ui";
 
 export function ContextScreen({ api, tenantId, project, hasTenantLock, authoringDisabledReason }: { api: ContextApi; tenantId: number; project: ProjectDetail; hasTenantLock: boolean; authoringDisabledReason?: string | undefined }) {
   const queryClient = useQueryClient();
@@ -27,7 +28,7 @@ export function ContextScreen({ api, tenantId, project, hasTenantLock, authoring
       <h1 className="project-section-title sr-only">Context groups</h1>
       <div className="workflow-command-context"><span className={hasTenantLock ? "lock-context is-held" : "lock-context"}>{hasTenantLock ? "Tenant Lock held" : authoringDisabledReason ?? "Tenant Lock required to change Context"}</span></div>
       <div className="workflow-command-actions"><WorkflowCommandTools />
-        <button className="button button-secondary button-small" type="button" onClick={async () => { await Promise.all([groups.refetch(), types.refetch(), systems.refetch(), queryClient.invalidateQueries({ queryKey: ["project", tenantId, project.project_id] }), queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] })]); }}>Refresh</button>
+        <RefreshButton refreshing={false} onClick={async () => { await Promise.all([groups.refetch(), types.refetch(), systems.refetch(), queryClient.invalidateQueries({ queryKey: ["project", tenantId, project.project_id] }), queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] })]); }} />
         <button className="button button-primary button-small" type="button" disabled={!hasTenantLock} title={!hasTenantLock ? authoringDisabledReason ?? "Tenant Lock required" : undefined} onClick={() => { setSavedNotice(false); setEditing(true); }}>Create group</button>
       </div>
     </header>

@@ -18,6 +18,15 @@ from gds_etl_workbench.domain.errors import (
     ProjectChangeSetNotValidatedError,
     TenantLockRequiredError,
 )
+from tests.mcp.conftest import DisposablePostgres
+from tests.web_backend.test_database_project_change_sets import (
+    _create_queued_subject_area_run_with_prompt,  # pyright: ignore[reportPrivateUsage]
+    _seed_profile_project,  # pyright: ignore[reportPrivateUsage]
+)
+from tests.web_backend.test_database_workflow_run_claims import (
+    _expire_claim,  # pyright: ignore[reportPrivateUsage]
+)
+
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.project_change_sets.contracts import (
     ExpectedDraftRevisionRequest,
@@ -44,15 +53,6 @@ from gds_workbench_api.features.workflows.execution.repository import (
     DatabaseWorkflowClaimRepository,
 )
 
-from tests.mcp.conftest import DisposablePostgres
-from tests.web_backend.test_database_project_change_sets import (
-    _create_queued_subject_area_run_with_prompt,  # pyright: ignore[reportPrivateUsage]
-    _seed_profile_project,  # pyright: ignore[reportPrivateUsage]
-)
-from tests.web_backend.test_database_workflow_run_claims import (
-    _expire_claim,  # pyright: ignore[reportPrivateUsage]
-)
-
 type ClaimedRun = tuple[WebPostgresDatabase, WorkflowExecutionClaim]
 
 
@@ -68,7 +68,7 @@ def _candidate() -> StageProjectChange:
                 "connection_code": "MISSING_CONNECTION",
                 "object_schema": "missing",
                 "object_name": "missing_table",
-                "subject_area_table_status": "active",
+                "subject_area_table_is_active": True,
                 "subject_area_table_is_locked": False,
             }
         ],
@@ -408,7 +408,7 @@ async def test_retention_rejects_noncanonical_records_before_persisting(
     database, claim = claimed_subject_area_run
     arguments = _retention_arguments(claim)
     record = dict(_candidate().records[0])
-    record.pop("subject_area_table_status")
+    record.pop("subject_area_table_is_active")
     arguments["changes"] = (StageProjectChange(dataset="subject_area_table", records=[record]),)
     with pytest.raises(InvalidRequestError):
         await WorkflowChangeSetHandoff(
@@ -430,13 +430,13 @@ async def test_caller_issues_cannot_mark_a_freshly_valid_candidate_invalid(
                 {
                     "subject_area_name": "Customer",
                     "subject_area_definition": "A governed customer.",
-                    "subject_area_status": "active",
+                    "subject_area_is_active": True,
                     "subject_area_is_locked": False,
                 }
             ],
         ),
     )
-    with pytest.raises(InvalidRequestError):
+    with pytest.raises(InvalidRequestError, match="no longer fails authoritative validation"):
         await WorkflowChangeSetHandoff(
             database=database, authorizer=AuthorizationService()
         ).retain_failed_candidate(claim.principal, **arguments)

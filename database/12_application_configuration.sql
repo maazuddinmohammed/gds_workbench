@@ -887,8 +887,8 @@ BEGIN
         v_allowed_tools := CASE v_workflow
             WHEN 'analysis' THEN ARRAY['get_source_context', 'get_gds_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_context_records']
             WHEN 'subject_area' THEN ARRAY['get_source_context', 'get_gds_context', 'get_scope_tables', 'get_table_links', 'get_subject_areas', 'get_context_records']
-            WHEN 'logical' THEN ARRAY['get_source_context', 'get_gds_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_context_records', 'list_logical_entities', 'get_logical_entities', 'list_logical_attributes', 'get_logical_attributes', 'list_logical_relationships', 'get_logical_relationships']
-            WHEN 'dimensional' THEN ARRAY['get_source_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_gds_context', 'get_selected_logical_entities', 'get_context_records', 'list_logical_submodels', 'get_logical_submodels', 'list_logical_entities', 'get_logical_entities', 'list_logical_attributes', 'get_logical_attributes', 'list_logical_relationships', 'get_logical_relationships', 'list_dimensional_submodels', 'get_dimensional_submodels', 'list_dimensional_entities', 'get_dimensional_entities', 'list_dimensional_attributes', 'get_dimensional_attributes', 'list_dimensional_relationships', 'get_dimensional_relationships']
+            WHEN 'logical' THEN ARRAY['get_source_context', 'get_gds_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_context_records', 'get_logical_entities', 'get_logical_attributes', 'get_logical_relationships']
+            WHEN 'dimensional' THEN ARRAY['get_source_context', 'get_gds_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_selected_logical_entities', 'get_context_records', 'get_logical_entities', 'get_logical_attributes', 'get_logical_relationships', 'get_dimensional_entities', 'get_dimensional_attributes', 'get_dimensional_relationships']
             WHEN 'mapping' THEN ARRAY['get_mapping_target', 'get_mapping_sources', 'get_existing_mapping', 'get_mapping_support', 'get_mapping_support_records']
             WHEN 'code_generation' THEN ARRAY['get_code_target', 'get_code_sources', 'get_code_source_systems', 'get_object_transformations', 'get_attribute_transformations']
             WHEN 'validation' THEN ARRAY['get_mapping_evidence', 'get_current_code', 'get_applied_groups', 'get_applied_checks']
@@ -2235,7 +2235,7 @@ AS $list_code_generation_target_context$
           JOIN core.tenant AS placement ON placement.tenant_id = connection.tenant_id AND placement.is_active
           JOIN core.system AS system ON system.system_id = connection.system_id AND system.is_active
          WHERE entity.project_id = p_project_id AND entity.modeled_entity_type = p_modeled_entity_type
-           AND entity.status = 'active'
+           AND entity.is_active
            AND (p_required_artifact_type IS NULL OR p_required_artifact_type IN ('sql_file','python_file','python_notebook'))
     ), active_mapping AS MATERIALIZED (
         SELECT mapping.*, source.system_code AS source_system_code, source.system_name AS source_system_name
@@ -2255,7 +2255,7 @@ AS $list_code_generation_target_context$
                      AND attribute.modeled_entity_type = mapping.modeled_entity_type
                      AND attribute.modeled_entity_id = coalesce(mapping.logical_entity_id,mapping.dimensional_entity_id)
                      AND attribute.modeled_attribute_id = coalesce(mapped.logical_attribute_id,mapped.dimensional_attribute_id)
-                     AND attribute.status = 'active'
+                     AND attribute.is_active
                    WHERE mapped.mapping_object_id = mapping.mapping_object_id
                      AND mapped.attribute_mapping_status = 'active'
                      AND mapped.attribute_mapping_transformation_document IS NOT NULL
@@ -2274,7 +2274,7 @@ AS $list_code_generation_target_context$
                 AND (mapping.mapping_transformation_document IS NULL OR EXISTS (
                   SELECT 1 FROM workflow.modeled_attribute AS attribute
                    WHERE attribute.project_id = target.project_id AND attribute.modeled_entity_type = target.modeled_entity_type
-                     AND attribute.modeled_entity_id = target.modeled_entity_id AND attribute.status = 'active'
+                     AND attribute.modeled_entity_id = target.modeled_entity_id AND attribute.is_active
                      AND NOT EXISTS (
                        SELECT 1 FROM workflow.mapping_attribute AS mapped
                         WHERE mapped.mapping_object_id = mapping.mapping_object_id
@@ -2318,7 +2318,7 @@ AS $list_code_generation_target_context$
             'attribute_inferred_data_type',a.data_type,'attribute_nullability',a.is_nullable,
             'attribute_description',a.definition,'fc_attribute_name',NULL,'attribute_custom_code',NULL,
             'is_surrogate_key',a.is_surrogate_key,'is_natural_key',a.is_natural_key,'is_meta_data',a.is_audit_column,
-            'is_masking_required',FALSE,'is_active',a.status = 'active','is_locked',a.is_locked
+            'is_masking_required',FALSE,'is_active',a.is_active,'is_locked',a.is_locked
           ) ORDER BY a.ordinal_position,a.modeled_attribute_id),'[]'::JSONB) AS documents
           FROM workflow.modeled_attribute AS a WHERE a.project_id = target.project_id
            AND a.modeled_entity_type = target.modeled_entity_type AND a.modeled_entity_id = target.modeled_entity_id
@@ -2371,7 +2371,7 @@ AS $list_code_generation_target_context$
             JOIN workflow.modeled_attribute AS attribute ON attribute.project_id = m.project_id
               AND attribute.modeled_entity_type = m.modeled_entity_type
               AND attribute.modeled_entity_id = coalesce(m.logical_entity_id,m.dimensional_entity_id)
-              AND attribute.status = 'active'
+              AND attribute.is_active
             LEFT JOIN workflow.mapping_attribute AS a ON a.mapping_object_id = m.mapping_object_id
               AND a.attribute_mapping_status = 'active'
               AND attribute.modeled_attribute_id = coalesce(a.logical_attribute_id,a.dimensional_attribute_id)
@@ -2400,7 +2400,7 @@ AS $list_code_generation_target_context$
               AND attribute.modeled_entity_type = m.modeled_entity_type
               AND attribute.modeled_entity_id = coalesce(m.logical_entity_id,m.dimensional_entity_id)
               AND attribute.modeled_attribute_id = coalesce(a.logical_attribute_id,a.dimensional_attribute_id)
-              AND attribute.status = 'active'
+              AND attribute.is_active
              WHERE m.project_id = target.project_id AND m.modeled_entity_type = target.modeled_entity_type
                AND coalesce(m.logical_entity_id,m.dimensional_entity_id) = target.modeled_entity_id
           ) AS used ON used.output_template_id = template.output_template_id
@@ -2420,9 +2420,9 @@ AS $list_code_generation_target_context$
         CROSS JOIN LATERAL (
           SELECT coalesce(jsonb_agg(jsonb_build_object(
             'selected_source_system_id',m.source_system_id,'source_mapping_id',source.source_mapping_id,
-            'role',source.role,'rationale',source.rationale,'mapping_order',source.mapping_order,'is_locked',source.is_locked,
+            'role',source.role,'rationale',source.rationale,'is_locked',source.is_locked,
             'object',CASE WHEN source.source_object_id IS NOT NULL THEN physical.document ELSE modeled.document END
-          ) ORDER BY lower(m.source_system_code),m.source_system_id,source.mapping_order NULLS LAST,source.source_object_id,source.source_logical_entity_id,source.source_dimensional_entity_id),'[]'::JSONB) AS documents
+          ) ORDER BY lower(m.source_system_code),m.source_system_id,source.source_object_id,source.source_logical_entity_id,source.source_dimensional_entity_id),'[]'::JSONB) AS documents
           FROM active_mapping AS m
           CROSS JOIN LATERAL workflow.list_mapping_source_objects(m.project_id,target.modeled_entity_id,target.modeled_entity_type,m.source_system_id) AS source
           LEFT JOIN LATERAL (
@@ -2461,7 +2461,7 @@ AS $list_code_generation_target_context$
               'object_schema',e.modeled_entity_schema_name,'object_name',e.modeled_entity_name,'object_description',e.definition,
               'fc_object_schema',NULL,'fc_object_name',NULL,'foreign_catalog',NULL,'batch_attribute_name',NULL,
               'zone_code',CASE e.modeled_entity_type WHEN 'logical_entity' THEN 'silver' ELSE 'gold' END,
-              'is_active',e.status = 'active','is_locked',e.is_locked,
+              'is_active',e.is_active,'is_locked',e.is_locked,
               'scope_is_active',source.scope_is_active,'scope_is_locked',source.scope_is_locked,
               'attributes',(SELECT coalesce(jsonb_agg(jsonb_build_object(
                 'modeled_attribute_id',a.modeled_attribute_id,
@@ -2469,7 +2469,7 @@ AS $list_code_generation_target_context$
                 'attribute_data_type',a.data_type,'attribute_inferred_data_type',a.data_type,'attribute_nullability',a.is_nullable,
                 'attribute_description',a.definition,'fc_attribute_name',NULL,'attribute_custom_code',NULL,
                 'is_surrogate_key',a.is_surrogate_key,'is_natural_key',a.is_natural_key,'is_meta_data',a.is_audit_column,
-                'is_masking_required',FALSE,'is_active',a.status = 'active','is_locked',a.is_locked
+                'is_masking_required',FALSE,'is_active',a.is_active,'is_locked',a.is_locked
               ) || jsonb_build_object(
                 CASE e.modeled_entity_type WHEN 'logical_entity' THEN 'logical_attribute_name' ELSE 'dimensional_attribute_name' END,
                 a.attribute_name

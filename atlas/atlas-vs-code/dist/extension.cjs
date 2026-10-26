@@ -7398,12 +7398,12 @@ var require_core3 = __commonJS({
         for (const section of catalog.sections) {
           if (section?.name === "project_binding" || !Array.isArray(section?.datasets)) return false;
           for (const dataset of section.datasets) {
-            if (["project_object_binding", "project_attribute_binding", "mapping_dependency"].includes(dataset?.name)) return false;
+            if (["project_object_binding", "project_attribute_binding", "mapping_dependency", "logical_submodel", "dimensional_submodel"].includes(dataset?.name)) return false;
             let required2 = [];
             if (["mapping_object", "mapping_attribute", "generated_code", "generated_code_source_system"].includes(dataset?.name)) required2 = ["modeled_entity_schema_name"];
             for (const layer of ["logical", "dimensional"]) {
               if ([`${layer}_entity`, `${layer}_attribute`].includes(dataset?.name)) required2 = [`${layer}_entity_schema_name`];
-              if (dataset?.name === `${layer}_relationship`) required2 = [`from_${layer}_entity_schema_name`, `to_${layer}_entity_schema_name`];
+              if (dataset?.name === `${layer}_relationship`) required2 = [`from_${layer}_entity_schema_name`];
             }
             if (required2.some((field) => !Array.isArray(dataset.canonical_key) || !dataset.canonical_key.includes(field))) return false;
           }
@@ -7426,9 +7426,11 @@ var require_core3 = __commonJS({
       function active(record2) {
         if (typeof record2.is_active === "boolean") return record2.is_active;
         if (typeof record2.status === "string") return record2.status === "active";
-        const statusField = Object.keys(record2).find((field) => field.endsWith("_status"));
-        if (statusField && typeof record2[statusField] === "string") {
-          return record2[statusField] === "active";
+        for (const [field, value] of Object.entries(record2)) {
+          if (field.endsWith("_is_active") && typeof value === "boolean") return value;
+        }
+        for (const [field, value] of Object.entries(record2)) {
+          if (field.endsWith("_status") && typeof value === "string") return value === "active";
         }
         return null;
       }
@@ -19101,11 +19103,9 @@ var ALLOWED_DATASETS = {
     "context_record",
     "subject_area",
     "subject_area_table",
-    "logical_submodel",
     "logical_entity",
     "logical_attribute",
     "logical_relationship",
-    "dimensional_submodel",
     "dimensional_entity",
     "dimensional_attribute",
     "dimensional_relationship",

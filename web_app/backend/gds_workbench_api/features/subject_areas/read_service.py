@@ -17,9 +17,6 @@ from gds_workbench_api.features.subject_areas.read_contracts import (
     SubjectAreaPage,
     SubjectAreaSummary,
 )
-from gds_workbench_api.features.workflows.authoring.subject_area_policy import (
-    load_subject_area_policy,
-)
 
 _MAX_SCOPE_TABLES = 10_000
 
@@ -75,8 +72,8 @@ SELECT eligible_object.object_id,
               AND area.project_id = membership.project_id
             WHERE membership.project_id = target_project.project_id
               AND membership.object_id = eligible_object.object_id
-              AND membership.subject_area_table_status = 'active'
-              AND area.subject_area_status = 'active'
+              AND membership.subject_area_table_is_active
+              AND area.subject_area_is_active
        ), '[]'::JSONB) AS areas
   FROM target_project
   JOIN eligible_objects AS eligible_object
@@ -112,7 +109,7 @@ SELECT area.subject_area_id,
        area.workflow_run_id,
        area.subject_area_name,
        area.subject_area_definition,
-       area.subject_area_status,
+       area.subject_area_is_active,
        area.subject_area_is_locked,
        area.updated_time AS updated_at
   FROM workflow.subject_area AS area
@@ -170,7 +167,6 @@ class DatabaseSubjectAreaService:
         return SubjectAreaPage(
             project_id=project_id,
             project_revision=revision,
-            max_subject_area_columns=load_subject_area_policy().max_subject_area_columns,
             scope_table_count=len(tables),
             unassigned_table_count=sum(not table.areas for table in tables),
             items=tuple(_summary(area, tables) for area in areas),
@@ -200,7 +196,6 @@ class DatabaseSubjectAreaService:
             **summary.model_dump(),
             project_id=project_id,
             project_revision=revision,
-            max_subject_area_columns=load_subject_area_policy().max_subject_area_columns,
             tables=tuple(
                 table
                 for table in tables
@@ -255,6 +250,9 @@ def _summary(area: dict[str, Any], tables: tuple[ScopeTable, ...]) -> SubjectAre
             **area,
             "table_count": len(members),
             "column_count": sum(table.column_count for table in members),
+            # Builds start with the areas that share most Objects, so shared Entities
+            # are designed with the most context.
+            "shared_table_count": sum(len(table.areas) > 1 for table in members),
         },
         strict=False,
     )

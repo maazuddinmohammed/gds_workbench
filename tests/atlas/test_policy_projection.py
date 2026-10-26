@@ -37,9 +37,8 @@ SOURCE = {
         "object_name": "customer",
         "attribute_name": "code",
     },
-    "source_order": 1,
     "rationale": "Customer code from CRM.",
-    "status": "active",
+    "is_active": True,
     "is_locked": False,
 }
 
@@ -72,7 +71,7 @@ def _js(function: str, *arguments: Any) -> Any:
     return json.loads(completed.stdout)
 
 
-def _logical_entity(name: str, *, status: str = "active") -> dict[str, Any]:
+def _logical_entity(name: str, *, is_active: bool = True) -> dict[str, Any]:
     return _load(
         LogicalEntityRecord,
         {
@@ -80,12 +79,10 @@ def _logical_entity(name: str, *, status: str = "active") -> dict[str, Any]:
             "logical_entity_name": name,
             "logical_entity_definition": f"One {name}.",
             "logical_entity_type": "core",
-            "logical_entity_type_detail": None,
             "logical_entity_grain": f"One {name}",
             "logical_entity_dependency_order": 0,
-            "logical_entity_status": status,
+            "logical_entity_is_active": is_active,
             "logical_entity_is_locked": False,
-            "submodels": [],
             "sources": [],
         },
     ).model_dump(mode="json")
@@ -103,7 +100,7 @@ def _logical_attribute(entity: str, name: str, ordinal: int, **changes: Any) -> 
         "logical_attribute_is_surrogate_key": False,
         "logical_attribute_ordinal_position": ordinal,
         "logical_attribute_is_audit_column": False,
-        "logical_attribute_status": "active",
+        "logical_attribute_is_active": True,
         "logical_attribute_is_locked": False,
         "sources": [],
         **changes,
@@ -125,7 +122,6 @@ def _python_logical(
         if records
     )
     applied = LogicalSection(
-        submodels=(),
         entities=tuple(_load(LogicalEntityRecord, row) for row in baseline["entities"]),
         attributes=tuple(_load(LogicalAttributeRecord, row) for row in baseline["attributes"]),
         relationships=(),
@@ -194,7 +190,7 @@ LOGICAL_CASES: dict[str, tuple[dict[str, Any], dict[str, Any], dict[str, Any] | 
         },
     ),
     "inactive entities are skipped": (
-        {"entities": [_logical_entity("Retired", status="inactive")], "attributes": []},
+        {"entities": [_logical_entity("Retired", is_active=False)], "attributes": []},
         {"entities": [], "attributes": []},
         None,
     ),
@@ -254,9 +250,8 @@ def _dimensional_entity(name: str, kind: str = "dimension") -> dict[str, Any]:
             "dimensional_fact_type": "transaction" if kind == "fact" else None,
             "dimensional_entity_grain_definition": f"One {name}",
             "dimensional_entity_dependency_order": 0,
-            "dimensional_entity_status": "active",
+            "dimensional_entity_is_active": True,
             "dimensional_entity_is_locked": False,
-            "submodels": [],
             "sources": [],
         },
     ).model_dump(mode="json")
@@ -274,7 +269,7 @@ def _dimensional_attribute(entity: str, name: str, ordinal: int, **changes: Any)
         "dimensional_attribute_is_natural_key": False,
         "dimensional_attribute_is_surrogate_key": False,
         "dimensional_attribute_is_audit_column": False,
-        "dimensional_attribute_status": "active",
+        "dimensional_attribute_is_active": True,
         "dimensional_attribute_is_locked": False,
         "sources": [],
         **changes,
@@ -298,7 +293,6 @@ def _python_dimensional(
         if records
     )
     applied = DimensionalSection(
-        submodels=(),
         entities=tuple(_load(DimensionalEntityRecord, row) for row in baseline["entities"]),
         attributes=tuple(_load(DimensionalAttributeRecord, row) for row in baseline["attributes"]),
         relationships=(),

@@ -1,12 +1,9 @@
 """Tenant-owned Subject Area review contracts."""
 
 from datetime import datetime
-from typing import Literal
 
 from gds_etl_workbench.domain.errors import WorkbenchError
 from pydantic import BaseModel, ConfigDict, Field
-
-type SubjectAreaStatus = Literal["active", "inactive", "deprecated"]
 
 
 class ContractModel(BaseModel):
@@ -18,17 +15,17 @@ class SubjectAreaSummary(ContractModel):
     workflow_run_id: int | None = Field(default=None, gt=0)
     subject_area_name: str = Field(min_length=1, max_length=255)
     subject_area_definition: str = Field(min_length=1)
-    subject_area_status: SubjectAreaStatus
+    subject_area_is_active: bool
     subject_area_is_locked: bool
     table_count: int = Field(ge=0)
     column_count: int = Field(ge=0)
+    shared_table_count: int = Field(ge=0)
     updated_at: datetime
 
 
 class SubjectAreaPage(ContractModel):
     project_id: int = Field(gt=0)
     project_revision: int = Field(gt=0)
-    max_subject_area_columns: int = Field(gt=0)
     scope_table_count: int = Field(ge=0)
     unassigned_table_count: int = Field(ge=0)
     items: tuple[SubjectAreaSummary, ...] = Field(max_length=1_000)
@@ -65,7 +62,6 @@ class ScopeTablePage(ContractModel):
 class SubjectAreaDetail(SubjectAreaSummary):
     project_id: int = Field(gt=0)
     project_revision: int = Field(gt=0)
-    max_subject_area_columns: int = Field(gt=0)
     tables: tuple[ScopeTable, ...] = Field(max_length=10_000)
 
 
@@ -94,6 +90,5 @@ __all__ = [
     "SubjectAreaMembership",
     "SubjectAreaNotFoundError",
     "SubjectAreaPage",
-    "SubjectAreaStatus",
     "SubjectAreaSummary",
 ]

@@ -152,7 +152,7 @@ function Invoke-AtlasLogicalProjection($Candidate, $Baseline, $Template) {
     $projected = New-Object Collections.ArrayList
     $ordered = Get-AtlasSortedRecords @($entities.Values) { param($a, $b) Compare-AtlasKeyTuple (Get-AtlasLayerKey 'logical' $a $false) (Get-AtlasLayerKey 'logical' $b $false) }
     foreach ($entity in $ordered) {
-        if ((Get-Property $entity 'logical_entity_status') -cne 'active') { continue }
+        if ((Get-Property $entity 'logical_entity_is_active') -ne $true) { continue }
         $entityKey = Get-AtlasLayerKey 'logical' $entity $false
         $entityText = Get-AtlasKeyText $entityKey
         $owned = { $list = New-Object Collections.ArrayList; foreach ($record in @($attributes.Values)) { if ((Get-AtlasKeyText @((Get-AtlasLayerKey 'logical' $record $true)[0..1])) -ceq $entityText) { [void]$list.Add($record) } }; return ,@($list) }
@@ -174,7 +174,7 @@ function Invoke-AtlasLogicalProjection($Candidate, $Baseline, $Template) {
                     logical_attribute_name = $name; logical_attribute_definition = 'Generated identifier for ' + $entity.logical_entity_name + '.';
                     logical_attribute_data_type = 'BIGINT'; logical_attribute_is_nullable = $false; logical_attribute_is_natural_key = $false;
                     logical_attribute_is_surrogate_key = $true; logical_attribute_ordinal_position = 1; logical_attribute_is_audit_column = $false;
-                    logical_attribute_status = 'active'; logical_attribute_is_locked = $false; sources = @()}
+                    logical_attribute_is_active = $true; logical_attribute_is_locked = $false; sources = @()}
             }
             $surrogateText = Get-AtlasKeyText (Get-AtlasLayerKey 'logical' $surrogate $true)
             $rest = Get-AtlasSortedRecords @($entityAttributes | Where-Object { (Get-AtlasKeyText (Get-AtlasLayerKey 'logical' $_ $true)) -cne $surrogateText }) {
@@ -214,7 +214,7 @@ function Invoke-AtlasLogicalProjection($Candidate, $Baseline, $Template) {
                 logical_attribute_data_type = $column.data_type; logical_attribute_is_nullable = $column.nullable;
                 logical_attribute_is_natural_key = $(if ($null -ne $existing) { Get-Property $existing 'logical_attribute_is_natural_key' } else { $false });
                 logical_attribute_is_surrogate_key = $false; logical_attribute_ordinal_position = $maximum + 1 + $offset;
-                logical_attribute_is_audit_column = $true; logical_attribute_status = 'active';
+                logical_attribute_is_audit_column = $true; logical_attribute_is_active = $true;
                 logical_attribute_is_locked = $(if ($null -ne $existing) { Get-Property $existing 'logical_attribute_is_locked' } else { $false });
                 sources = $(if ($null -ne $existing) { ,$sources } else { ,@() })}
             if ($null -ne $existing -and (Get-Property $existing 'logical_attribute_is_locked') -eq $true -and -not (Test-AtlasSameRecord $existing $desired)) { Fail 'Policy projection rejected the logical draft: A locked Logical audit column cannot be projected.' }
@@ -242,7 +242,7 @@ function Invoke-AtlasDimensionalProjection($Candidate, $Baseline, $Technical, $A
     $projected = New-Object Collections.ArrayList
     $ordered = Get-AtlasSortedRecords @($entities.Values) { param($a, $b) Compare-AtlasKeyTuple (Get-AtlasLayerKey 'dimensional' $a $false) (Get-AtlasLayerKey 'dimensional' $b $false) }
     foreach ($entity in $ordered) {
-        if ((Get-Property $entity 'dimensional_entity_status') -cne 'active') { continue }
+        if ((Get-Property $entity 'dimensional_entity_is_active') -ne $true) { continue }
         $entityKey = Get-AtlasLayerKey 'dimensional' $entity $false
         $entityText = Get-AtlasKeyText $entityKey
         $owned = { $list = New-Object Collections.ArrayList; foreach ($record in @($attributes.Values)) { if ((Get-AtlasKeyText @((Get-AtlasLayerKey 'dimensional' $record $true)[0..1])) -ceq $entityText) { [void]$list.Add($record) } }; return ,@($list) }
@@ -320,7 +320,7 @@ function Invoke-AtlasDimensionalProjection($Candidate, $Baseline, $Technical, $A
                 dimensional_attribute_data_type = $column.data_type; dimensional_attribute_is_nullable = $column.nullable;
                 dimensional_attribute_ordinal_position = $ordinal; dimensional_attribute_is_natural_key = $false;
                 dimensional_attribute_is_surrogate_key = ($keyRole -ceq 'surrogate'); dimensional_attribute_is_audit_column = ($role -ceq 'audit');
-                dimensional_attribute_status = 'active';
+                dimensional_attribute_is_active = $true;
                 dimensional_attribute_is_locked = $(if ($null -ne $existing) { Get-Property $existing 'dimensional_attribute_is_locked' } else { $false });
                 sources = $(if ($null -ne $existing) { ,$sources } else { ,@() })}
             if ($null -ne $existing -and (Get-Property $existing 'dimensional_attribute_is_locked') -eq $true -and -not (Test-AtlasSameRecord $existing $desired)) { Fail 'Policy projection rejected the dimensional draft: A locked Gold policy column cannot be projected.' }
@@ -400,6 +400,7 @@ function Get-AtlasCoverage([hashtable]$Options) {
     # Twin of coverageReport in atlas-local.js: the web workflow's coverage rule on the effective Project.
     $layer = [string]$Options['layer']
     if (@('logical', 'dimensional') -cnotcontains $layer) { Fail '--layer must be logical or dimensional.' }
+    if ($Options.ContainsKey('select') -and $Options.ContainsKey('subject-area')) { Fail 'Use --select or --subject-area, not both.' }
     $snapshot = Find-Snapshot @{session = (Require-Option $Options 'session'); area = 'project'}
     $directory = [IO.Path]::Combine($snapshot.Session, 'project-change-set')
     $pending = @{}
@@ -422,16 +423,42 @@ function Get-AtlasCoverage([hashtable]$Options) {
     $logical = @('logical_entity_schema_name', 'logical_entity_name')
     $keyOf = { param($record, $fields) $values = @(); foreach ($field in $fields) { $values += ,(Normalize-Value 'project' $field (Get-Property $record $field)) }; return ConvertTo-StableJson @($values) }
     $labelOf = { param($record, $fields) $values = @(); foreach ($field in $fields) { $values += ,[string](Get-Property $record $field) }; return $values -join '.' }
-    $isActive = { param($record, $field) return (Get-Property $record $field) -ceq 'active' -or (Get-Property $record 'is_active') -eq $true }
     if ($layer -ceq 'logical') {
         $fields = $physical; $entityDataset = 'logical_entity'; $sourceType = 'object'; $sourceField = 'source_object'
         $inputs = @(@(& $applied 'project_input_scope') | Where-Object { (Get-Property $_ 'is_active') -eq $true })
     }
     else {
         $fields = $logical; $entityDataset = 'dimensional_entity'; $sourceType = 'logical_entity'; $sourceField = 'source_logical_entity'
-        $inputs = @(@(& $applied 'logical_entity') | Where-Object { & $isActive $_ 'logical_entity_status' })
+        $inputs = @(@(& $applied 'logical_entity') | Where-Object { (Get-Property $_ 'logical_entity_is_active') -eq $true })
     }
     $selected = $inputs
+    $area = $null
+    if ($Options.ContainsKey('subject-area')) {
+        # Selects like a web Build of one applied area: its active member Objects, or the active
+        # Logical Entities with an active Object source among those members.
+        $areaKey = Normalize-Value 'project' 'subject_area_name' $Options['subject-area']
+        foreach ($row in @(& $applied 'subject_area')) {
+            if ($null -ne $row -and (Get-Property $row 'subject_area_is_active') -eq $true -and
+                (Normalize-Value 'project' 'subject_area_name' (Get-Property $row 'subject_area_name')) -ceq $areaKey) { $area = $row; break }
+        }
+        if ($null -eq $area) { Fail '--subject-area names no active applied Subject Area.' }
+        $members = @{}
+        foreach ($row in @(& $applied 'subject_area_table')) {
+            if ($null -ne $row -and (Get-Property $row 'subject_area_table_is_active') -eq $true -and
+                (Normalize-Value 'project' 'subject_area_name' (Get-Property $row 'subject_area_name')) -ceq $areaKey) { $members[(& $keyOf $row $physical)] = $true }
+        }
+        if ($layer -ceq 'logical') { $selected = @($inputs | Where-Object { $members.ContainsKey((& $keyOf $_ $physical)) }) }
+        else {
+            $selected = @($inputs | Where-Object {
+                $inArea = $false
+                foreach ($source in (Get-Property $_ 'sources')) {
+                    if ($null -ne $source -and (Get-Property $source 'support_source_type') -ceq 'object' -and (Get-Property $source 'is_active') -eq $true -and
+                        $members.ContainsKey((& $keyOf (Get-Property $source 'source_object') $physical))) { $inArea = $true; break }
+                }
+                $inArea
+            })
+        }
+    }
     if ($Options.ContainsKey('select')) {
         try { $requested = ConvertFrom-GdsJson $Options['select'] } catch { Fail '--select must be a JSON array of input identities.' }
         if ($requested -isnot [Array] -or $requested.Count -eq 0) { Fail '--select must be a non-empty JSON array of input identity objects.' }
@@ -445,9 +472,9 @@ function Get-AtlasCoverage([hashtable]$Options) {
     }
     $covered = @{}
     foreach ($entity in @(& $effective $entityDataset)) {
-        if ($null -eq $entity -or -not (& $isActive $entity ($entityDataset + '_status'))) { continue }
+        if ($null -eq $entity -or (Get-Property $entity ($entityDataset + '_is_active')) -ne $true) { continue }
         foreach ($source in (Get-Property $entity 'sources')) {
-            if ($null -ne $source -and (Get-Property $source 'support_source_type') -ceq $sourceType -and (Get-Property $source 'status') -ceq 'active') {
+            if ($null -ne $source -and (Get-Property $source 'support_source_type') -ceq $sourceType -and (Get-Property $source 'is_active') -eq $true) {
                 $covered[(& $keyOf (Get-Property $source $sourceField) $fields)] = $true
             }
         }
@@ -457,7 +484,10 @@ function Get-AtlasCoverage([hashtable]$Options) {
     $total = @($selected | Where-Object { $null -ne $_ }).Count
     $coveredCount = $total - $missing.Count
     $required = [long][Math]::Floor(($total * [double]$percent + 99) / 100)
-    return [ordered]@{layer = $layer; threshold_percent = $percent; enforced = ((Get-Property $details ($layer + '_enforce_coverage_threshold')) -eq $true);
-        total = $total; covered = $coveredCount; required = $required; meets_target = ($coveredCount -ge $required);
-        missing_count = $missing.Count; missing = @($missing | Select-Object -First 50)}
+    $result = [ordered]@{layer = $layer}
+    if ($null -ne $area) { $result.subject_area = Get-Property $area 'subject_area_name' }
+    $result.threshold_percent = $percent; $result.enforced = ((Get-Property $details ($layer + '_enforce_coverage_threshold')) -eq $true)
+    $result.total = $total; $result.covered = $coveredCount; $result.required = $required; $result.meets_target = ($coveredCount -ge $required)
+    $result.missing_count = $missing.Count; $result.missing = @($missing | Select-Object -First 50)
+    return $result
 }

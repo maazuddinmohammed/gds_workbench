@@ -345,7 +345,7 @@ def validate_future_graph(
         return _failed(staged, "uniqueness", candidate_digest, uniqueness_issues)
 
     reference_issues = mapping_document_issues
-    _validate_references(future, reference_issues)
+    _validate_references(future, reference_issues, retained_keys=retained_keys)
     _validate_active_dependencies(
         future,
         reference_issues,
@@ -449,7 +449,14 @@ def build_project_action_review(
 
 
 def _project_active_state(values: Mapping[str, object]) -> bool | None:
-    active = values.get("is_active")
+    active = next(
+        (
+            value
+            for name, value in values.items()
+            if name == "is_active" or name.endswith("_is_active")
+        ),
+        None,
+    )
     if isinstance(active, bool):
         return active
     status = next((value for name, value in values.items() if name.endswith("_status")), None)
@@ -475,17 +482,17 @@ def _retains_physical_history(existing: ModelingRecord, changed: ModelingRecord)
             and isinstance(current, bool)
         ):
             continue
-        if field == "is_active" and previous is True and current is False:
+        if (
+            (field == "is_active" or field.endswith("_is_active"))
+            and previous is True
+            and current is False
+        ):
             continue
         if (field == "status" or field.endswith("_status")) and (
             previous == "active" and current == "inactive"
         ):
             continue
-        if (
-            field in {"sources", "submodels"}
-            and isinstance(previous, tuple)
-            and isinstance(current, tuple)
-        ):
+        if field == "sources" and isinstance(previous, tuple) and isinstance(current, tuple):
             previous_items = cast(tuple[object, ...], previous)
             current_items = cast(tuple[object, ...], current)
             if len(previous_items) == len(current_items) and all(
@@ -722,6 +729,8 @@ def _validate_physical_scope(
 def _validate_references(
     future: Mapping[str, tuple[Any, ...]],
     issues: list[ProjectValidationIssue],
+    *,
+    retained_keys: Mapping[str, set[tuple[object, ...]]],
 ) -> None:
     context_types = {
         normalize_project_key_value(record.context_type_name) for record in future["context_type"]
@@ -748,10 +757,10 @@ def _validate_references(
         "dimensional_attribute",
     ):
         for owner in future[dataset]:
-            if getattr(owner, f"{dataset}_status") != "active":
+            if not getattr(owner, f"{dataset}_is_active"):
                 continue
             for support in owner.sources:
-                if support.support_source_type != "context_record" or support.status != "active":
+                if support.support_source_type != "context_record" or not support.is_active:
                     continue
                 target = context_records.get(support.context_record.context_record_id)
                 group = (
@@ -776,6 +785,34 @@ def _validate_references(
         if normalize_project_key_value(record.subject_area_name) not in subject_areas:
             _missing(issues, "subject_area_table", "subject_area_name")
 
+    # Type codes come from read-only reference lists. New or changed records need an
+    # active code; unchanged applied records may keep a code retired after they were saved.
+    for dataset, code_list in (
+        ("logical_entity", "logical_entity_type"),
+        ("dimensional_entity", "dimensional_fact_type"),
+    ):
+        code_is_active = {
+            getattr(row, f"{code_list}_code"): getattr(row, f"{code_list}_is_active")
+            for row in future[code_list]
+        }
+        definition = CHANGE_SET_DATASETS_BY_NAME[dataset]
+        for record in future[dataset]:
+            code = getattr(record, code_list)
+            retained = _canonical_key(definition, record) in retained_keys[dataset]
+            if (
+                code is None
+                or code_is_active.get(code) is True
+                or (retained and code in code_is_active)
+            ):
+                continue
+            _issue(
+                issues,
+                "reference_code_invalid",
+                dataset,
+                (code_list,),
+                f"Use an active code from the read-only {code_list} list.",
+            )
+
     _validate_modeled_layer(future, "logical", context_records, issues)
     _validate_modeled_layer(future, "dimensional", context_records, issues)
 
@@ -783,27 +820,27 @@ def _validate_references(
     logical_attributes = {_attribute_key(row): row for row in future["logical_attribute"]}
     for dataset in ("dimensional_entity", "dimensional_attribute"):
         for record in future[dataset]:
-            active = getattr(record, f"{dataset}_status") == "active"
+            active = getattr(record, f"{dataset}_is_active")
             for source in record.sources:
                 if source.support_source_type == "logical_entity":
                     target = logical_entities.get(_entity_key(source.source_logical_entity))
                     parent = target
-                    is_active = target is not None and target.logical_entity_status == "active"
+                    is_active = target is not None and target.logical_entity_is_active
                 elif source.support_source_type == "logical_attribute":
                     key = source.source_logical_attribute
                     target = logical_attributes.get(_attribute_key(key))
                     parent = logical_entities.get(_entity_key(key))
                     is_active = (
                         target is not None
-                        and target.logical_attribute_status == "active"
+                        and target.logical_attribute_is_active
                         and parent is not None
-                        and parent.logical_entity_status == "active"
+                        and parent.logical_entity_is_active
                     )
                 else:
                     continue
                 if target is None or parent is None:
                     _missing(issues, dataset, "sources")
-                elif active and source.status == "active" and not is_active:
+                elif active and source.is_active and not is_active:
                     _active_invalid(
                         issues,
                         dataset,
@@ -849,11 +886,11 @@ def _validate_active_dependencies(
     active_subject_areas = {
         normalize_project_key_value(record.subject_area_name)
         for record in future["subject_area"]
-        if record.subject_area_status == "active"
+        if record.subject_area_is_active
     }
     for record in future["subject_area_table"]:
         if (
-            record.subject_area_table_status == "active"
+            record.subject_area_table_is_active
             and normalize_project_key_value(record.subject_area_name) not in active_subject_areas
         ):
             _active_invalid(
@@ -866,18 +903,18 @@ def _validate_active_dependencies(
         _entity_key(record)
         for layer in ("logical", "dimensional")
         for record in future[f"{layer}_entity"]
-        if getattr(record, f"{layer}_entity_status") == "active"
+        if getattr(record, f"{layer}_entity_is_active")
     }
     active_attributes = {
         _attribute_key(record)
         for layer in ("logical", "dimensional")
         for record in future[f"{layer}_attribute"]
-        if getattr(record, f"{layer}_attribute_status") == "active"
+        if getattr(record, f"{layer}_attribute_is_active")
     }
     for layer in ("logical", "dimensional"):
         for record in future[f"{layer}_attribute"]:
             if (
-                getattr(record, f"{layer}_attribute_status") == "active"
+                getattr(record, f"{layer}_attribute_is_active")
                 and _entity_key(record) not in active_entities
             ):
                 _active_invalid(
@@ -887,7 +924,7 @@ def _validate_active_dependencies(
                     f"Active {layer.title()} Attribute requires an active parent Entity.",
                 )
         for record in future[f"{layer}_relationship"]:
-            if getattr(record, f"{layer}_relationship_status") != "active":
+            if not getattr(record, f"{layer}_relationship_is_active"):
                 continue
             endpoints = (
                 (
@@ -1208,18 +1245,9 @@ def _validate_modeled_layer(
     context_records: dict[object, Any],
     issues: list[ProjectValidationIssue],
 ) -> None:
-    submodels = {
-        normalize_project_key_value(getattr(record, f"{layer}_submodel_name"))
-        for record in future[f"{layer}_submodel"]
-    }
     entities = {_entity_key(record): record for record in future[f"{layer}_entity"]}
-    attributes = {_attribute_key(record) for record in future[f"{layer}_attribute"]}
+    attributes = {_attribute_key(record): record for record in future[f"{layer}_attribute"]}
     for record in future[f"{layer}_entity"]:
-        if any(
-            normalize_project_key_value(membership.submodel_name) not in submodels
-            for membership in record.submodels
-        ):
-            _missing(issues, f"{layer}_entity", "submodel_name")
         _validate_supports(
             record.sources,
             dataset=f"{layer}_entity",
@@ -1243,9 +1271,9 @@ def _validate_modeled_layer(
                 if not parents:
                     _missing(issues, "dimensional_attribute", "sources")
                 elif (
-                    record.dimensional_attribute_status == "active"
-                    and source.status == "active"
-                    and not any(parent.status == "active" for parent in parents)
+                    record.dimensional_attribute_is_active
+                    and source.is_active
+                    and not any(parent.is_active for parent in parents)
                 ):
                     _active_invalid(
                         issues,
@@ -1259,8 +1287,10 @@ def _validate_modeled_layer(
             context_records=context_records,
             issues=issues,
         )
+    # Child -> parent: the canonical key makes the from (foreign-key) Attribute unique, and
+    # an active link must point at a natural or surrogate key of the parent Entity.
     for record in future[f"{layer}_relationship"]:
-        endpoints = (
+        from_key, to_key = (
             (
                 f"{layer}_entity",
                 normalize_project_key_value(getattr(record, f"{side}_{layer}_entity_schema_name")),
@@ -1269,8 +1299,20 @@ def _validate_modeled_layer(
             )
             for side in ("from", "to")
         )
-        if any(endpoint not in attributes for endpoint in endpoints):
+        parent_attribute = attributes.get(to_key)
+        if from_key not in attributes or parent_attribute is None:
             _missing(issues, f"{layer}_relationship", f"{layer}_attribute_name")
+        elif getattr(record, f"{layer}_relationship_is_active") and not (
+            getattr(parent_attribute, f"{layer}_attribute_is_natural_key")
+            or getattr(parent_attribute, f"{layer}_attribute_is_surrogate_key")
+        ):
+            _issue(
+                issues,
+                "relationship_target_not_key",
+                f"{layer}_relationship",
+                (f"to_{layer}_attribute_name",),
+                "Point the relationship at a natural or surrogate key Attribute of the parent.",
+            )
 
 
 def _validate_supports(
@@ -1475,28 +1517,24 @@ def _validate_locked_nested_records(
     changed: ModelingRecord,
     issues: list[ProjectValidationIssue],
 ) -> None:
-    for field in ("submodels", "sources"):
-        changed_by_key = {_nested_record_key(item): item for item in getattr(changed, field, ())}
-        for existing_item in getattr(existing, field, ()):
-            changed_item = changed_by_key.get(_nested_record_key(existing_item))
-            if (
-                changed_item is not None
-                and _record_is_locked(existing_item)
-                and existing_item != changed_item
-            ):
-                _issue(
-                    issues,
-                    "record_locked",
-                    dataset,
-                    (field,),
-                    f"A locked applied nested {field} record cannot be changed.",
-                )
+    changed_by_key = {_nested_record_key(item): item for item in getattr(changed, "sources", ())}
+    for existing_item in getattr(existing, "sources", ()):
+        changed_item = changed_by_key.get(_nested_record_key(existing_item))
+        if (
+            changed_item is not None
+            and _record_is_locked(existing_item)
+            and existing_item != changed_item
+        ):
+            _issue(
+                issues,
+                "record_locked",
+                dataset,
+                ("sources",),
+                "A locked applied nested sources record cannot be changed.",
+            )
 
 
 def _nested_record_key(record: Any) -> tuple[object, ...]:
-    submodel_name = getattr(record, "submodel_name", None)
-    if submodel_name is not None:
-        return "submodel", normalize_project_key_value(submodel_name)
     source_type = record.support_source_type
     if source_type == "context_record":
         return (

@@ -7,7 +7,7 @@ import type { ProjectRecordReviewApi, ProjectReviewCommand, ProjectReviewDataset
 import "./project-review.css";
 
 const deletionSections = [
-  { label: "Subject areas", datasets: /^subject_area/ },
+  { label: "Subject Areas", datasets: /^subject_area/ },
   { label: "Logical", datasets: /^logical_/ },
   { label: "Dimensional", datasets: /^dimensional_/ },
   { label: "Mapping", datasets: /^mapping_/ },
@@ -16,6 +16,16 @@ const deletionSections = [
   { label: "Context", datasets: /^context/ },
   { label: "Other records", datasets: /.*/ },
 ] as const;
+
+// Stored dataset names stay; screens call Subject Area members Objects.
+const datasetLabels: Readonly<Record<string, string>> = {
+  subject_area: "Subject Area",
+  subject_area_table: "Subject Area Object",
+};
+
+function datasetLabel(dataset: string): string {
+  return datasetLabels[dataset] ?? dataset.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
+}
 
 export function ProjectRecordReview({
   api, tenantId, projectId, projectRevision, dataset, selectedIds, hasTenantLock, disabled, onApplied, deleteIds, actions = ["lock", "unlock", "deactivate", "reactivate"], presentation = "selection", menuActions,
@@ -139,11 +149,11 @@ export function ReviewDialog({
     const records = items.filter((item) => item.dataset === dataset);
     return { dataset, records, count: preview?.changes_by_dataset?.[dataset] ?? records.length,
       section: deletionSections.find((section) => section.datasets.test(dataset))!.label,
-      label: dataset.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase()) };
+      label: datasetLabel(dataset) };
   }) : [];
   const deletionWorkflows = deletionSections.map(({ label }) => {
     const groups = deletionGroups.filter((group) => group.section === label).sort((left, right) => {
-      const kinds = ["entity", "object", "attribute", "relationship", "submodel"];
+      const kinds = ["entity", "object", "attribute", "relationship"];
       const leftKind = kinds.findIndex((kind) => left.dataset.endsWith(`_${kind}`));
       const rightKind = kinds.findIndex((kind) => right.dataset.endsWith(`_${kind}`));
       return (leftKind < 0 ? kinds.length : leftKind) - (rightKind < 0 ? kinds.length : rightKind)
@@ -217,12 +227,12 @@ export function ReviewDialog({
           {stale ? <p role="alert">The Project changed. Close this preview and refresh before reviewing again.</p> : null}
           {!hasTenantLock ? <p role="alert">Tenant Lock required to apply this review.</p> : null}
           {command.layer ? <p>{deleting ? "Includes all records in this layer, across pages and filters." : command.layer === "subject_area"
-            ? "This includes every active Subject Area and its table memberships. Input Scope tables are not changed."
-            : `This includes every active ${command.layer === "logical" ? "Logical" : "Dimensional"} entity, attribute, relationship, and submodel, including memberships and support records, across all pages and filters.`}</p> : null}
+            ? "This includes every active Subject Area and its Object memberships. Input Scope Objects are not changed."
+            : `This includes every active ${command.layer === "logical" ? "Logical" : "Dimensional"} Entity, Attribute and Relationship, including their source mappings, across all pages and filters.`}</p> : null}
           {deleting ? <p className="project-delete-warning">Permanently deletes these records, including inactive records. This cannot be undone. Unlock locked records first.</p> : null}
           {command.action === "deactivate" ? <p>Deactivation keeps records in the database and excludes them from active workflows. You can activate them again. Required dependent status changes are listed below.</p> : null}
           {preview ? <>
-            {!deleting && preview.changes_by_dataset ? <details className="project-review-breakdown"><summary>Counts by record type</summary><dl className="detail-fact-grid">{Object.entries(preview.changes_by_dataset).map(([dataset, count]) => <div key={dataset}><dt>{dataset.replaceAll("_", " ")}</dt><dd>{count}</dd></div>)}</dl></details> : null}
+            {!deleting && preview.changes_by_dataset ? <details className="project-review-breakdown"><summary>Counts by record type</summary><dl className="detail-fact-grid">{Object.entries(preview.changes_by_dataset).map(([dataset, count]) => <div key={dataset}><dt>{datasetLabel(dataset)}</dt><dd>{count}</dd></div>)}</dl></details> : null}
             {!deleting ? <>
               {preview.warnings?.map((warning) => <p className="field-help" key={warning}>{warning}</p>)}
               <p>{preview.action_count} {preview.action_count === 1 ? "change" : "changes"}: {preview.action_count - preview.additional_change_count} selected,

@@ -19,7 +19,7 @@ test('Dimensional source uniqueness distinguishes complete Logical Entity and At
     const reference = {logical_entity_schema_name:'one',logical_entity_name:'Customer',...(kind==='attribute'?{logical_attribute_name:'ID'}:{})};
     const first = {support_source_type:`logical_${kind}`,[`source_logical_${kind}`]:reference};
     const second = {support_source_type:`logical_${kind}`,[`source_logical_${kind}`]:{...reference,logical_entity_schema_name:'two'}};
-    const record = {sources:[first,second],submodels:[],dimensional_entity_type:'dimension',dimensional_fact_type:null,dimensional_attribute_is_natural_key:false,dimensional_attribute_is_surrogate_key:false,dimensional_attribute_is_audit_column:false};
+    const record = {sources:[first,second],dimensional_entity_type:'dimension',dimensional_fact_type:null,dimensional_attribute_is_natural_key:false,dimensional_attribute_is_surrogate_key:false,dimensional_attribute_is_audit_column:false};
     assert.deepEqual(validation.validateSchema(record,schema(`dimensional_${kind}`)),[]);
     second[`source_logical_${kind}`].logical_entity_schema_name=' ONE ';
     assert.ok(validation.validateSchema(record,schema(`dimensional_${kind}`)).some(issue=>issue.includes('sources must be unique')));

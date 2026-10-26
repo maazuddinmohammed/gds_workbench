@@ -9,6 +9,9 @@ from typing import Any, cast
 
 import pytest
 from gds_etl_workbench.domain.errors import InvalidRequestError
+from jsonschema import Draft202012Validator
+from tests.web_backend.mapping_fixtures import mapping_preparation
+
 from gds_workbench_api.features.mapping.execution_context import (
     build_mapping_execution_context,
 )
@@ -27,9 +30,6 @@ from gds_workbench_api.prompt_rendering import (
     PromptVariableDefinition,
     render_prompt,
 )
-from jsonschema import Draft202012Validator
-
-from tests.web_backend.mapping_fixtures import mapping_preparation
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULTS = json.loads(
@@ -132,9 +132,9 @@ def test_enrichment_inputs_carry_registered_descriptions_as_own_fields(
     objects = contracts["object_context"]
     groups = contracts["object_attribute_context"]
     object_entry = objects["schema"]["$defs"]["object_context_entry"]
-    attribute_item = groups["schema"]["$defs"]["object_attribute_context_entry"][
-        "properties"
-    ]["attributes"]["items"]
+    attribute_item = groups["schema"]["$defs"]["object_attribute_context_entry"]["properties"][
+        "attributes"
+    ]["items"]
     assert "registered_object_description" in object_entry["required"]
     assert "registered_attribute_description" in attribute_item["required"]
     assert "registered_object_description" in objects["description"]
@@ -149,7 +149,17 @@ def test_enrichment_inputs_carry_registered_descriptions_as_own_fields(
     assert "registered_object_description" not in json.dumps(shared)
 
 
-@pytest.mark.parametrize("workflow", ("analysis", "subject_area", "logical", "dimensional"))
+@pytest.mark.parametrize(
+    "workflow",
+    (
+        "analysis",
+        "subject_area",
+        "logical",
+        "logical_optimize",
+        "dimensional",
+        "dimensional_optimize",
+    ),
+)
 def test_context_records_description_names_the_delivered_fields(workflow: str) -> None:
     contract = workflow_input_contracts(workflow)["context_records"]
     fields = contract["schema"]["$defs"]["context_records_entry"]["properties"]

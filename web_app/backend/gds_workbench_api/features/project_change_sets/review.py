@@ -25,11 +25,9 @@ type ProjectReviewDataset = Literal[
     "context_record",
     "subject_area",
     "subject_area_table",
-    "logical_submodel",
     "logical_entity",
     "logical_attribute",
     "logical_relationship",
-    "dimensional_submodel",
     "dimensional_entity",
     "dimensional_attribute",
     "dimensional_relationship",
@@ -45,28 +43,28 @@ type ProjectLayer = Literal["subject_area", "logical", "dimensional"]
 type RecordIdentity = tuple[ProjectReviewDataset, int | str]
 
 # Dataset-specific lifecycle columns and snapshot collections. Table names remain
-# a separate fixed SQL allowlist in the repository.
+# a separate fixed SQL allowlist in the repository. Subject Area, Logical, Dimensional
+# and Validation records keep a boolean *is_active; the others keep a status text.
 REVIEW_FIELDS: dict[ProjectReviewDataset, tuple[str, str, str]] = {
     "context_record": (
         "is_locked",
         "status",
         "records",
     ),
-    "subject_area": ("subject_area_is_locked", "subject_area_status", "areas"),
+    "subject_area": ("subject_area_is_locked", "subject_area_is_active", "areas"),
     "subject_area_table": (
         "subject_area_table_is_locked",
-        "subject_area_table_status",
+        "subject_area_table_is_active",
         "tables",
     ),
     **{
         cast(ProjectReviewDataset, f"{layer}_{kind}"): (
             f"{layer}_{kind}_is_locked",
-            f"{layer}_{kind}_status",
+            f"{layer}_{kind}_is_active",
             collection,
         )
         for layer in ("logical", "dimensional")
         for kind, collection in (
-            ("submodel", "submodels"),
             ("entity", "entities"),
             ("attribute", "attributes"),
             ("relationship", "relationships"),
@@ -86,11 +84,12 @@ REVIEW_FIELDS: dict[ProjectReviewDataset, tuple[str, str, str]] = {
 
 
 def review_lifecycle(record: ModelingRecord, dataset: ProjectReviewDataset) -> tuple[bool, str]:
+    """Return (is_locked, display status); boolean lifecycles show as active/inactive."""
     lock_field, status_field, _ = REVIEW_FIELDS[dataset]
     status = getattr(record, status_field)
-    return bool(getattr(record, lock_field)), (
-        "active" if status else "inactive"
-    ) if status_field == "is_active" else status
+    if status_field.endswith("is_active"):
+        status = "active" if status else "inactive"
+    return bool(getattr(record, lock_field)), status
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,7 +165,7 @@ def plan_project_record_review(
             v = record.model_dump()
             for source in v.get("sources", ()):
                 if source["support_source_type"] == "context_record" and (
-                    source["status"] == "active" or action == "delete"
+                    source["is_active"] or action == "delete"
                 ):
                     link(identity, "context_record", source["context_record"]["context_record_id"])
             if name == "subject_area_table":
@@ -229,7 +228,7 @@ def plan_project_record_review(
                 continue
             for source in row.sources:
                 if (
-                    source.status != "active" and action != "delete"
+                    not source.is_active and action != "delete"
                 ) or source.support_source_type == "context_record":
                     continue
                 if source.support_source_type == "logical_entity":
@@ -395,12 +394,10 @@ def plan_project_record_review(
         values = original.model_dump(mode="json")
         if action in {"lock", "unlock"}:
             values[lock_field] = action == "lock"
+        elif status_field.endswith("is_active"):
+            values[status_field] = action == "reactivate"
         else:
-            values[status_field] = (
-                (action == "reactivate")
-                if status_field == "is_active"
-                else ("active" if action == "reactivate" else "inactive")
-            )
+            values[status_field] = "active" if action == "reactivate" else "inactive"
         decisions.append(
             ProjectReviewDecision(
                 dataset=name,

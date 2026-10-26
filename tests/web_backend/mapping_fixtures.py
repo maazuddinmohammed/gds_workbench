@@ -148,7 +148,6 @@ def mapping_preparation(
                 "modeled_entity_id": 201,
                 "role": "support",
                 "rationale": "Authoritative CRM feed.",
-                "mapping_order": 1,
                 "is_locked": False,
                 "object": physical_object(
                     object_id=401,
@@ -416,13 +415,11 @@ def mapping_validation_preparation(
         else logical_entity(entity.entity_name, "core", source_key)
     )
     entity_record[layer + "_entity_schema_name"] = entity.entity_schema_name
-    entity_record["submodels"] = []
     support: dict[str, Any] = {
         "support_source_type": "object",
         "source_object": source_key,
-        "source_order": 1,
         "rationale": "Synthetic source.",
-        "status": "active",
+        "is_active": True,
         "is_locked": False,
     }
     if dimensional:
@@ -451,9 +448,8 @@ def mapping_validation_preparation(
             {
                 "support_source_type": "attribute",
                 "source_attribute": source_attribute,
-                "source_order": 1,
                 "rationale": "Synthetic source.",
-                "status": "active",
+                "is_active": True,
                 "is_locked": False,
             }
         ]
@@ -462,9 +458,8 @@ def mapping_validation_preparation(
                 {
                     "support_source_type": "logical_attribute",
                     "source_logical_attribute": logical_attribute_key,
-                    "source_order": 1,
                     "rationale": "Logical lineage.",
-                    "status": "active",
+                    "is_active": True,
                     "is_locked": False,
                 }
             ]
@@ -478,9 +473,7 @@ def mapping_validation_preparation(
         cast(ProjectChangeSetDataset, layer + "_attribute"): attributes,
     }
     if dimensional:
-        input_entity = logical_entity("CustomerInput", "core", source_key)
-        input_entity["submodels"] = []
-        graph["logical_entity"] = [input_entity]
+        graph["logical_entity"] = [logical_entity("CustomerInput", "core", source_key)]
         graph["logical_attribute"] = [
             logical_attribute(
                 "CustomerInput", "customer_id", 1, source_attribute, natural=True

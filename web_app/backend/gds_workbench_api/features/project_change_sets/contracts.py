@@ -136,11 +136,9 @@ def _validate_review_selection(
         "logical_entity",
         "logical_attribute",
         "logical_relationship",
-        "logical_submodel",
         "dimensional_entity",
         "dimensional_attribute",
         "dimensional_relationship",
-        "dimensional_submodel",
     }:
         raise ValueError("Permanent deletion is available only for modeled records.")
     if layer is None:

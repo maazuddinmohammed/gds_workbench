@@ -17,7 +17,8 @@ from gds_etl_workbench.domain.snapshots.description import (
 _COMMON_RULES = (
     "Use exact natural-key names from the current Snapshot; never database IDs.",
     "Use only active, authorized records from this Project and its readable Source Tenants.",
-    "Applied status values are active, inactive, or deprecated; resolve review questions locally.",
+    "Retire instead of deleting: set is_active to false on model records, or status to "
+    "inactive or deprecated where a record has status; resolve review questions locally.",
 )
 
 _DATASET_RULES: dict[str, tuple[str, ...]] = {
@@ -85,16 +86,17 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
     ),
     "subject_area": (
         "Name one business capability, such as Sales or Support. A Subject Area is a focus "
-        "window over Input Scope tables for Logical work, not a separate model.",
-        "Define what the area covers so each Logical Build call knows its boundary.",
-        "Keep each area small enough for one modeling call; split a large capability.",
+        "window over Input Scope Objects for Logical and Dimensional Builds, not a separate model.",
+        "Define what the area covers so each Build call knows its boundary.",
     ),
     "subject_area_table": (
-        "Place each active Input Scope table in every area it serves; a table may belong "
-        "to several areas. A table with no active membership is Unassigned.",
-        "Use the table's exact Input Scope key; memberships are not modeling evidence.",
+        "Place each active Input Scope Object in every area it serves; an Object may belong "
+        "to several areas. An Object with no active membership is Unassigned.",
+        "Use the Object's exact Input Scope key; memberships are not modeling evidence.",
     ),
-    "logical_submodel": ("Group the normalized operational project by coherent business area.",),
+    "logical_entity_type": (
+        "Read-only label list; choose an active code for logical_entity_type.",
+    ),
     "logical_entity": (
         "Choose logical_entity_schema_name from Project logical_schemas using its description.",
         (
@@ -118,9 +120,15 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
         "overrides it.",
     ),
     "logical_relationship": (
-        "Reference existing Logical Entities and Attributes and provide relationship evidence.",
+        "Point child -> parent: from the child's foreign-key Attribute to the parent's key "
+        "Attribute. One foreign-key Attribute has one parent; model many-to-many as an "
+        "association Entity.",
+        "Use many_to_one, or one_to_one when each parent row has at most one child; explain "
+        "both in logical_relationship_basis.",
     ),
-    "dimensional_submodel": ("Group Facts and Dimensions around a coherent business process.",),
+    "dimensional_fact_type": (
+        "Read-only label list; choose an active code for dimensional_fact_type on facts.",
+    ),
     "dimensional_entity": (
         "Choose dimensional_entity_schema_name from Project dimensional_schemas.",
         "Use schema-qualified Logical Entities and Attributes as sources.",
@@ -141,7 +149,10 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
         ),
     ),
     "dimensional_relationship": (
-        "Reference existing Dimensional Entities and Attributes and preserve the declared grain.",
+        "Point child -> parent: from a fact, bridge or outrigger foreign-key Attribute to the "
+        "dimension's key Attribute. One foreign-key Attribute has one dimension.",
+        "Name a role only for role-playing dimensions; write a basis only when the link does "
+        "not follow a Logical Relationship.",
     ),
     "mapping_object": (
         "Author one target-oriented Mapping per schema-qualified Entity and source System.",
@@ -195,8 +206,9 @@ _FIELD_GUIDANCE: dict[str, str] = {
     "modeled_attribute_name": (
         "Use the exact current modeled Attribute name under the named Entity."
     ),
-    "logical_entity_type_detail": (
-        "Use null unless logical_entity_type is other; other requires a nonblank detail."
+    "logical_entity_type": "Use an active code from the logical_entity_type dataset.",
+    "dimensional_fact_type": (
+        "Use an active code from the dimensional_fact_type dataset for facts; null otherwise."
     ),
     "output_template_code": (
         "Use an advisory Output Template code, or null when no template applies."
@@ -284,17 +296,6 @@ def enrich_project_dataset_schema(dataset: str, schema: dict[str, object]) -> No
         )
         columns.append(column.model_dump(mode="json"))
     _enrich_nested_field_guidance(schema)
-    if dataset == "logical_entity":
-        schema["allOf"] = [
-            {
-                "if": {
-                    "properties": {"logical_entity_type": {"const": "other"}},
-                    "required": ["logical_entity_type"],
-                },
-                "then": {"properties": {"logical_entity_type_detail": {"type": "string"}}},
-                "else": {"properties": {"logical_entity_type_detail": {"type": "null"}}},
-            }
-        ]
     schema["x-gds-population-rules"] = list(rules)
     schema["x-gds-columns"] = columns
 

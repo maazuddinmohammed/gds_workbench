@@ -5,11 +5,11 @@ Confirmed Atlas defaults for newly authored names. Reuse the selected Project's 
 | Name | Default / example |
 |---|---|
 | Subject Area | Short Title Case business capability: `Order Capture`, `Billing`, `Customer Support`. |
-| Logical Entity / Submodel | PascalCase meaningful subject: `CustomerAccount`, `Sales`. |
+| Logical Entity | PascalCase meaningful subject: `CustomerAccount`, `SalesOrder`. |
 | Logical Attribute | PascalCase: `CustomerName`, `OrderDate`, `TotalAmount`. Only identifiers take the `ID` suffix. |
 | Logical identifier / foreign key | Uppercase `ID`: `CustomerID`, `BillingCustomerID`; never default to `CustomerId` or `customer_id`. |
-| Logical Relationship | PascalCase phrase preserving the role: `BilledTo`, `Contains`. |
-| Dimensional Entity / Submodel / Attribute / Relationship | PascalCase; apply confirmed Project prefixes where present, such as `DimCustomer` or `FactSales`. Do not invent mandatory prefixes. |
+| Dimensional Entity / Attribute | PascalCase; apply confirmed Project prefixes where present, such as `DimCustomer` or `FactSales`. Do not invent mandatory prefixes. |
+| Relationship | No name: the child's foreign-key Attribute names it. A Dimensional role name, set only for a role-playing dimension, is PascalCase: `OrderDate`, `ShipDate`. |
 | Dimensional surrogate / foreign key | End in `Key`: `CustomerKey`, `BillingCustomerKey`. Retained source/business identifiers may still end in `ID`. |
 | Audit fields | Preserve the exact confirmed spellings in [keys and audit columns](keys-and-audit.md), including `SourceSystemID`, `GDSBatchID` and `HashKey`. |
 
@@ -18,7 +18,7 @@ Confirmed Atlas defaults for newly authored names. Reuse the selected Project's 
 1. Check existing effective names, definitions, aliases and user terminology before naming a new record. Preserve one name for the same meaning; qualify genuinely different meanings or roles.
 2. Use PascalCase without separators by default. Preserve meaningful identifier distinctions: `CustomerCode` remains a code, and `CustomerName` does not acquire an `ID` suffix.
 3. Reserve the Entity's own surrogate name. If a source business identifier would collide with `CustomerID`, use a meaningful distinct name such as `SourceCustomerID` or `CustomerNumber`, based on its actual meaning. Preserve its exact physical source key in lineage.
-4. Check normalized-name collisions in the correct scope: Entities/Submodels within their Project, Attributes within their Entity, Relationships by their published key. Do not create spelling variants to bypass an occupied or locked key.
+4. Check normalized-name collisions in the correct scope: Entities within their Project, Attributes within their Entity, Relationships by their child foreign-key Attribute. Do not create spelling variants to bypass an occupied or locked key.
 5. Keep payload field names and enum values exactly as the schema defines them. PascalCase applies to modeled names, not JSON property names, physical source keys or status/type values. Existing physical Object/Attribute names remain unchanged.
 
 Aliases are business synonyms, not alternate casing copies. Definitions use ordinary readable prose. Do not silently apply new naming defaults to existing records; structural renaming requires an explicit request and the supported lifecycle. [Project authoring](change-sets.md) and [record state](../record-state.md) still apply.

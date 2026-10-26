@@ -1,4 +1,4 @@
-"""Plan permanent project deletion, including owned support and membership rows."""
+"""Plan permanent project deletion, including owned source-mapping rows."""
 
 import hashlib
 import json
@@ -31,18 +31,15 @@ class ProjectDeletionPlan:
     digest: str
 
 
-# Fixed SQL identifiers only. Supporting rows are not standalone authored datasets,
+# Fixed SQL identifiers only. Source mappings are not standalone authored datasets,
 # but their numeric identities and locks must participate in deletion confirmation.
-_SUPPORT_PARENTS = (
-    *(
-        (f"{layer}_{kind}", tuple(f"{layer}_{parent}" for parent in parents))
-        for layer in ("logical", "dimensional")
-        for kind, parents in (
-            ("entity_submodel", ("entity", "submodel")),
-            ("entity_source_mapping", ("entity",)),
-            ("attribute_source_mapping", ("entity", "attribute")),
-        )
-    ),
+_SUPPORT_PARENTS = tuple(
+    (f"{layer}_{kind}", tuple(f"{layer}_{parent}" for parent in parents))
+    for layer in ("logical", "dimensional")
+    for kind, parents in (
+        ("entity_source_mapping", ("entity",)),
+        ("attribute_source_mapping", ("entity", "attribute")),
+    )
 )
 
 
@@ -88,7 +85,9 @@ async def plan_project_deletion(
             LiteralString,
             f"""
             SELECT '{table}' AS dataset, target.{table}_id AS record_id,
-                   target.{table}_is_locked AS is_locked, target.{table}_status AS status,
+                   target.{table}_is_locked AS is_locked,
+                   CASE WHEN target.{table}_is_active THEN 'active' ELSE 'inactive' END
+                       AS status,
                    target.updated_time::TEXT AS revision
               FROM workflow.{table} AS target
              WHERE target.project_id = %s AND ({where})
@@ -107,7 +106,7 @@ async def plan_project_deletion(
                     selected=False,
                     is_locked=row["is_locked"],
                     status=row["status"],
-                    reason="Owned support or submodel membership.",
+                    reason="Owned source mapping.",
                 )
             )
             support_revisions.append(row["revision"])

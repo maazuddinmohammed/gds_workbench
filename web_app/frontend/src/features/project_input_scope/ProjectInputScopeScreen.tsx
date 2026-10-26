@@ -11,7 +11,7 @@ import {
 
 import { TenantWorkspace } from "../../app/TenantWorkspace";
 import { zoneLabel } from "../../shared/presentation";
-import { ErrorPage, LoadingPage, WorkspaceToolbar } from "../../shared/ui";
+import { ErrorPage, LoadingPage, RefreshButton, WorkspaceToolbar } from "../../shared/ui";
 import { validTenantProjectIds } from "../projects/ProjectRouteFrame";
 import { ProjectWorkspaceShell } from "../projects/ProjectWorkspaceShell";
 import { WorkflowCommandCenter, WorkflowCommandTools, WorkflowFilters } from "../workflows/WorkflowCommandCenter";
@@ -229,7 +229,7 @@ function ScopeView({
       <h1 className="project-section-title sr-only">Input Scope</h1>
       <WorkspaceToolbar actions={<>
           <WorkflowCommandTools />
-          <button className="button button-secondary button-small" type="button" onClick={onRefresh}>Refresh</button>
+          <RefreshButton refreshing={false} onClick={onRefresh} />
           <button className="button button-primary button-small" type="button" disabled={projectLocked} onClick={onAdd}>Add Objects</button>
       </>}><span>{objects.length} of {projectInputScopeObjectCount} Objects</span></WorkspaceToolbar>
       <WorkflowFilters><ScopeFilterForm sourceChoices={sourceChoices} onApply={onFiltersChange} /></WorkflowFilters>

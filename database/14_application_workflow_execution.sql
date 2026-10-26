@@ -3444,10 +3444,10 @@ DECLARE
         'generated_code_source_system', 'generated_code',
         'mapping_attribute', 'mapping_object',
         'dimensional_attribute_source_mapping', 'dimensional_entity_source_mapping',
-        'dimensional_entity_submodel', 'dimensional_relationship', 'dimensional_attribute',
+        'dimensional_relationship', 'dimensional_attribute',
         'logical_attribute_source_mapping', 'logical_entity_source_mapping',
-        'logical_entity_submodel', 'logical_relationship', 'logical_attribute',
-        'dimensional_entity', 'logical_entity', 'dimensional_submodel', 'logical_submodel',
+        'logical_relationship', 'logical_attribute',
+        'dimensional_entity', 'logical_entity',
         'subject_area_table', 'subject_area'
     ];
 BEGIN

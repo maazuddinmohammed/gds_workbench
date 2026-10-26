@@ -92,6 +92,7 @@ export function isActiveRun(run: WorkflowRunRecord): boolean {
 
 export function workflowStageLabel(stage: string): string {
   return stage
+    .replace(/^subject_area\b/, "Subject Area")
     .replaceAll("_", " ")
     .replaceAll(".", " · ")
     .replace(/^./, (character) => character.toLocaleUpperCase());

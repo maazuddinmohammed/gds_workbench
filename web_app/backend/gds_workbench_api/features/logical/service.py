@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+from collections.abc import Mapping
 from typing import cast
 from uuid import UUID
 
@@ -15,14 +17,18 @@ from gds_etl_workbench.application.change_sets.project_validation import (
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 from gds_etl_workbench.domain.modeling_records import (
+    LogicalAttributeRecord,
+    LogicalEntityRecord,
+    LogicalRelationshipRecord,
     PhysicalAttributeKey,
     PhysicalObjectKey,
+    normalize_project_key_value,
 )
-from gds_etl_workbench.domain.snapshots.project import ProjectChangeSetDataset
+from gds_etl_workbench.domain.snapshots.project import LogicalSection, ProjectChangeSetDataset
 from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
 )
-from pydantic import JsonValue
+from pydantic import BaseModel, JsonValue
 
 from gds_workbench_api.features.workflows.authoring.audit_policy import effective_audit_template
 from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
@@ -34,7 +40,9 @@ from gds_workbench_api.features.workflows.authoring.context import (
     AgentContextBundle,
     AgentContextRepository,
     PostgresAgentContextRepository,
+    focus_subject_area,
 )
+from gds_workbench_api.features.workflows.authoring.context_inputs import project_key_fields
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowLifecycle,
     AgentWorkflowRunStart,
@@ -153,9 +161,15 @@ class LogicalWorkflow:
         expected_project_revision: int,
         workflow_run_claim_token: UUID,
     ) -> LogicalExecutionResult:
+        """Build the selected Subject Areas one after another, or Optimize the whole model.
+
+        Each Build call sees one area's Objects and the model as earlier areas left it, so a
+        shared table's Entity is created once and then reused. Every call returns only
+        changes; they accumulate in memory and reach the Project as one draft.
+        """
         finalization_attempted = False
-        changes: tuple[StageProjectChange, ...] = ()
-        recovery_context: tuple[LogicalCandidateValidator, AgentContextBundle] | None = None
+        staged: dict[ProjectChangeSetDataset, dict[tuple[str, ...], dict[str, object]]] = {}
+        failed_changes: tuple[StageProjectChange, ...] = ()
         try:
             async with self._database.write_transaction(
                 isolation=ReadIsolation.REPEATABLE_READ
@@ -185,10 +199,14 @@ class LogicalWorkflow:
                     plan=plan,
                 )
 
+            snapshot = context.snapshot
+            physical_scope = context.physical_scope
+            if snapshot is None or physical_scope is None:
+                raise InvalidRequestError("The Logical validation context is unavailable.")
             execution_mode = plan.workflow_execution_mode
-            selected_object_count = len(context.context.selected_objects)
-            selected_object_label = "Object" if selected_object_count == 1 else "Objects"
-            candidate_mode_label = "one-shot" if execution_mode == "one_shot" else "tool-assisted"
+            operation = plan.workflow_operation
+            stage_code = f"{operation}_authoring"
+            details = context.context.project_details
             progress = AgentWorkflowProgress(
                 lifecycle=self._lifecycle,
                 principal=principal,
@@ -196,98 +214,147 @@ class LogicalWorkflow:
                 expected_project_revision=expected_project_revision,
                 workflow_run_claim_token=workflow_run_claim_token,
             )
-            await progress.append(
-                attempt=1,
-                stage=("logical.candidate_authoring"),
-                status="running",
-                message=(
-                    f"Logical {candidate_mode_label} candidate authoring started "
-                    f"for {selected_object_count} selected {selected_object_label}; the next "
-                    "persisted milestone follows bounded agent-response validation."
-                ),
-                current=None,
-                total=None,
-                finding_count=0,
+            entity_types = tuple(
+                item.logical_entity_type_code
+                for item in snapshot.logical.entity_types
+                if item.logical_entity_type_is_active
             )
-            validator = _candidate_validator(context)
-            recovery_context = validator, context
-            snapshot = context.snapshot
-            physical_scope = context.physical_scope
-            if snapshot is None or physical_scope is None:
-                raise InvalidRequestError("The Logical validation context is unavailable.")
-
-            async def validate_complete_candidate(value: JsonValue) -> AgentCandidateValidation:
-                changes = project_logical_audit_policy(
-                    changes=validator.parse_validated(value),
-                    applied=context.context.applied.logical,
-                    raw_template=context.context.project_details.silver_model_audit_columns_template,
+            model = snapshot.logical
+            warnings: list[str] = []
+            final_attempt = 1
+            # Optimize is one call over the whole model; Build is one call per area.
+            calls = plan.subject_areas if operation == "build" else (None,)
+            for position, area in enumerate(calls, start=1):
+                bundle = (
+                    context
+                    if area is None
+                    else focus_subject_area(context, plan=plan, subject_area=area, logical=model)
                 )
-                staged: dict[ProjectChangeSetDataset, list[dict[str, object]]] = {
-                    change.dataset: change.records for change in changes
-                }
-                checked = validate_future_graph(
-                    snapshot=snapshot,
-                    staged_documents=staged,
-                    physical_scope=physical_scope,
-                )
-                return AgentCandidateValidation(
-                    issues=validator.agent_issues(value, checked.issues, staged)
-                    + validator.validate_coverage(value)
-                )
-
-            resolver_values: dict[str, object] = {
-                (
-                    f"workflow.logical.{execution_mode}.candidate_authoring.context"
-                ): context.embedded_context,
-                "workflow.validation_failures": [],
-            }
-            resolver_values["project.naming_instructions"] = effective_naming_instructions(
-                "logical",
-                context.context.project_details.silver_model_naming_instructions,
-            )
-            coverage_warning: str | None = None
-            try:
-                outcome = await self._stage_runner.run(
-                    plan=plan,
-                    stage_code="candidate_authoring",
-                    resolver_values=resolver_values,
-                    context=context.embedded_context,
-                    output_schema=validator.output_schema(),
-                    allowed_tool_names=(
-                        context.tool_catalog.allowed_tool_names
-                        if context.tool_catalog is not None
-                        else ()
+                if bundle is None:
+                    # An area whose Objects all left the eligible scope has nothing to build.
+                    warnings.append(f"{area.subject_area_name if area else 'Model'}: skipped.")
+                    continue
+                validator = _candidate_validator(bundle, entity_types=entity_types)
+                inputs = len(bundle.context.selected_objects)
+                await progress.append(
+                    attempt=1,
+                    stage=f"logical.{stage_code}",
+                    status="running",
+                    message=(
+                        "Optimizing the whole Logical model."
+                        if area is None
+                        else f"Building {area.subject_area_name} ({position} of {len(calls)}): "
+                        f"{inputs} {'Object' if inputs == 1 else 'Objects'}."
                     ),
-                    local_tool_catalog=context.tool_catalog,
-                    validator=validator,
-                    final_validation=validate_complete_candidate,
+                    current=position - 1,
+                    total=len(calls),
+                    finding_count=sum(len(records) for records in staged.values()),
                 )
-            except AgentCandidateValidationError as error:
-                # The shared runner attaches a checked candidate only after all attempts.
-                # Only advisory coverage may fall short; all other validation blocks.
-                if (
-                    context.context.project_details.logical_enforce_coverage_threshold
-                    or error.candidate is None
-                    or not error.issues
-                    or any(
-                        issue.code != "candidate.object_coverage_incomplete"
+
+                async def validate_complete_candidate(
+                    value: JsonValue,
+                    validator: LogicalCandidateValidator = validator,
+                    model: LogicalSection = model,
+                    staged: _Staged = staged,
+                    building: bool = area is not None,
+                ) -> AgentCandidateValidation:
+                    changes = project_logical_audit_policy(
+                        changes=validator.parse_validated(value),
+                        applied=model,
+                        raw_template=details.silver_model_audit_columns_template,
+                    )
+                    documents = _staged_documents(_with_staged(staged, changes))
+                    checked = validate_future_graph(
+                        snapshot=snapshot,
+                        staged_documents=documents,
+                        physical_scope=physical_scope,
+                    )
+                    return AgentCandidateValidation(
+                        issues=validator.agent_issues(value, checked.issues, documents)
+                        # Build measures the area's coverage; Optimize only cleans up.
+                        + (validator.validate_coverage(value) if building else ())
+                    )
+
+                resolver_values: dict[str, object] = {
+                    f"workflow.logical.{execution_mode}.{stage_code}.context": (
+                        bundle.embedded_context
+                    ),
+                    "workflow.validation_failures": [],
+                    "project.naming_instructions": effective_naming_instructions(
+                        "logical", details.silver_model_naming_instructions
+                    ),
+                }
+                try:
+                    outcome = await self._stage_runner.run(
+                        plan=plan,
+                        stage_code=stage_code,
+                        resolver_values=resolver_values,
+                        context=bundle.embedded_context,
+                        output_schema=validator.output_schema(),
+                        allowed_tool_names=(
+                            bundle.tool_catalog.allowed_tool_names
+                            if bundle.tool_catalog is not None
+                            else ()
+                        ),
+                        local_tool_catalog=bundle.tool_catalog,
+                        validator=validator,
+                        final_validation=validate_complete_candidate,
+                    )
+                except AgentCandidateValidationError as error:
+                    coverage_only = bool(error.issues) and all(
+                        issue.code == "candidate.object_coverage_incomplete"
                         for issue in error.issues
                     )
-                ):
-                    raise
-                candidate = error.candidate
-                final_attempt = plan.selection.validation_retry_count + 1
-                coverage_warning = error.issues[0].message
-                warning = True
-            else:
-                candidate = outcome.candidate
-                final_attempt = outcome.attempt_count
-                warning = outcome.was_repaired or bool(outcome.warning_codes)
-            changes = validator.parse_validated(candidate)
-            changes = project_logical_audit_policy(
-                changes=changes,
-                applied=context.context.applied.logical,
-                raw_template=(context.context.project_details.silver_model_audit_columns_template),
+                    # After every attempt only advisory coverage may still fall short.
+                    if (
+                        details.logical_enforce_coverage_threshold
+                        or error.candidate is None
+                        or not coverage_only
+                    ):
+                        # Coverage is checked only by this workflow, not by draft retention.
+                        if not coverage_only:
+                            try:
+                                failed_changes = project_logical_audit_policy(
+                                    changes=validator.parse_validated(error.candidate),
+                                    applied=model,
+                                    raw_template=details.silver_model_audit_columns_template,
+                                )
+                            except Exception:
+                                failed_changes = ()
+                        raise
+                    candidate = error.candidate
+                    final_attempt = plan.selection.validation_retry_count + 1
+                    warnings.append(
+                        f"{area.subject_area_name if area else 'Model'}: {error.issues[0].message}"
+                    )
+                else:
+                    candidate = outcome.candidate
+                    final_attempt = max(final_attempt, outcome.attempt_count)
+                    if outcome.was_repaired or outcome.warning_codes:
+                        warnings.append(f"{area.subject_area_name if area else 'Model'}: repaired.")
+                changes = project_logical_audit_policy(
+                    changes=validator.parse_validated(candidate),
+                    applied=model,
+                    raw_template=details.silver_model_audit_columns_template,
+                )
+                staged = _with_staged(staged, changes)
+                model = _with_changes(model, changes)
+
+            changes = tuple(
+                StageProjectChange(dataset=dataset, records=list(records.values()))
+                for dataset, records in staged.items()
+                if records
+            )
+            if operation == "build":
+                coverage = _candidate_validator(context, entity_types=entity_types).coverage_of(
+                    model.entities
+                )
+                if coverage:
+                    warnings.append(f"Run selection: {coverage[0].message}")
+            summary = (
+                f"Logical {operation} completed with notes. {' '.join(warnings)}"[:2000]
+                if warnings
+                else f"Logical {operation} is ready in a validated draft."
             )
             if not changes:
                 finalization_attempted = True
@@ -306,21 +373,17 @@ class LogicalWorkflow:
                         final_event=progress.event(
                             attempt=final_attempt,
                             stage="logical.backend_validation",
-                            status="warning" if warning else "running",
-                            message=(
-                                "Logical final attempt produced no effective change; "
-                                f"coverage target remains unmet. {coverage_warning}"
-                                if coverage_warning
-                                else "Logical authoring completed with no effective change."
-                            ),
-                            current=1,
-                            total=1,
+                            status="warning" if warnings else "running",
+                            message=" ".join(
+                                [f"Logical {operation} produced no effective change.", *warnings]
+                            )[:2000],
+                            current=len(calls),
+                            total=len(calls),
                             finding_count=0,
                         ),
                     ),
                 )
 
-            staged_record_count = sum(len(change.records) for change in changes)
             finalization_attempted = True
             finalization = await self._handoff.finalize(
                 principal,
@@ -334,16 +397,11 @@ class LogicalWorkflow:
                 final_event=progress.event(
                     attempt=final_attempt,
                     stage="logical.backend_validation",
-                    status="warning" if warning else "running",
-                    message=(
-                        "Logical draft returned after the final attempt with partial coverage. "
-                        f"{coverage_warning}"
-                        if coverage_warning
-                        else "Logical candidate is ready in a validated draft."
-                    ),
-                    current=1,
-                    total=1,
-                    finding_count=staged_record_count,
+                    status="warning" if warnings else "running",
+                    message=summary,
+                    current=len(calls),
+                    total=len(calls),
+                    finding_count=sum(len(change.records) for change in changes),
                 ),
             )
             return finalization.handoff
@@ -351,23 +409,9 @@ class LogicalWorkflow:
             retention_issues = (
                 error.issues if isinstance(error, WorkflowChangeSetValidationError) else ()
             )
-            if (
-                isinstance(error, AgentCandidateValidationError)
-                and error.candidate is not None
-                and recovery_context is not None
-                # Coverage is checked only by this workflow, not by draft retention.
-                and any(
-                    issue.code != "candidate.object_coverage_incomplete" for issue in error.issues
-                )
-            ):
-                recovery_validator, recovery_bundle = recovery_context
-                changes = project_logical_audit_policy(
-                    changes=recovery_validator.parse_validated(error.candidate),
-                    applied=recovery_bundle.context.applied.logical,
-                    raw_template=(
-                        recovery_bundle.context.project_details.silver_model_audit_columns_template
-                    ),
-                )
+            # Keep earlier areas and the failed answer as a rejected draft for review.
+            retained = _with_staged(staged, failed_changes)
+            if isinstance(error, AgentCandidateValidationError) and failed_changes:
                 # Issues name the agent's answer paths; the retained draft lists datasets.
                 retention_issues = tuple(
                     ProjectValidationIssue(
@@ -391,7 +435,12 @@ class LogicalWorkflow:
                     )
                     for issue in error.issues
                 )
-            if retention_issues and changes and isinstance(error, WorkbenchError):
+            retained_changes = tuple(
+                StageProjectChange(dataset=dataset, records=list(records.values()))
+                for dataset, records in retained.items()
+                if records
+            )
+            if retention_issues and retained_changes and isinstance(error, WorkbenchError):
                 try:
                     await self._handoff.retain_failed_candidate(
                         principal,
@@ -401,7 +450,7 @@ class LogicalWorkflow:
                         expected_workflow="logical",
                         expected_project_revision=expected_project_revision,
                         workflow_run_claim_token=workflow_run_claim_token,
-                        changes=changes,
+                        changes=retained_changes,
                         issues=retention_issues,
                         failure_code=error.code,
                         safe_failure_message=(
@@ -461,22 +510,22 @@ class LogicalWorkflow:
         expected_project_revision: int,
     ) -> None:
         stage_codes = tuple(stage.stage_code for stage in plan.stages)
-        mode_path_is_valid = plan.workflow_execution_mode in (
-            "one_shot",
-            "tool_assisted",
-        ) and stage_codes == ("candidate_authoring",)
         if (
             plan.project_id != project_id
             or plan.workflow_run_id != workflow_run_id
             or plan.project_revision != expected_project_revision
             or plan.project_workflow != "logical"
             or plan.modeled_entity_type is not None
-            or not mode_path_is_valid
+            or plan.workflow_execution_mode not in ("one_shot", "tool_assisted")
+            or plan.workflow_operation is None
+            or stage_codes != (f"{plan.workflow_operation}_authoring",)
         ):
             raise InvalidRequestError("The Logical run does not use the fixed execution path.")
 
 
-def _candidate_validator(context: AgentContextBundle) -> LogicalCandidateValidator:
+def _candidate_validator(
+    bundle: AgentContextBundle, *, entity_types: tuple[str, ...]
+) -> LogicalCandidateValidator:
     selected_objects = tuple(
         PhysicalObjectKey(
             tenant_code=item.object.tenant_code,
@@ -485,12 +534,12 @@ def _candidate_validator(context: AgentContextBundle) -> LogicalCandidateValidat
             object_schema=item.object.object_schema,
             object_name=item.object.object_name,
         )
-        for item in context.context.selected_objects
+        for item in bundle.context.selected_objects
     )
     selected_attributes: list[PhysicalAttributeKey] = []
     # A missing Attribute definition defaults to its source column's Project description.
     descriptions: dict[PhysicalAttributeKey, str] = {}
-    for selected in context.context.selected_objects:
+    for selected in bundle.context.selected_objects:
         for attribute in selected.attributes:
             key = PhysicalAttributeKey(
                 tenant_code=attribute.tenant_code,
@@ -503,17 +552,17 @@ def _candidate_validator(context: AgentContextBundle) -> LogicalCandidateValidat
             selected_attributes.append(key)
             if attribute.attribute_description:
                 descriptions[key] = attribute.attribute_description
-    audit_template = effective_audit_template(
-        context.context.project_details.silver_model_audit_columns_template
-    )
+    details = bundle.context.project_details
+    audit_template = effective_audit_template(details.silver_model_audit_columns_template)
     return LogicalCandidateValidator(
         selected_object_keys=selected_objects,
         selected_attribute_keys=tuple(selected_attributes),
         context_record_ids=tuple(
-            record.context_record_id for record in context.context.context.records
+            record.context_record_id for record in bundle.context.context.records
         ),
-        applied=context.context.applied.logical,
-        coverage_threshold_percent=context.context.project_details.logical_coverage_threshold_percent,
+        applied=bundle.context.applied.logical,
+        entity_types=entity_types,
+        coverage_threshold_percent=details.logical_coverage_threshold_percent,
         attribute_descriptions=descriptions,
         # The backend projects audit columns, so business Attributes cannot take their names.
         reserved_attribute_names=tuple(
@@ -521,6 +570,60 @@ def _candidate_validator(context: AgentContextBundle) -> LogicalCandidateValidat
             for column in cast(list[dict[str, object]], audit_template["columns"])
         ),
     )
+
+
+type _Staged = dict[ProjectChangeSetDataset, dict[tuple[str, ...], dict[str, object]]]
+_DATASET_KINDS = {
+    "logical_entity": "entity",
+    "logical_attribute": "attribute",
+    "logical_relationship": "relationship",
+}
+
+
+def _record_key(dataset: str, record: Mapping[str, object]) -> tuple[str, ...]:
+    return tuple(
+        normalize_project_key_value(str(record[name]))
+        for name in project_key_fields("logical", _DATASET_KINDS[dataset])
+    )
+
+
+def _with_staged(staged: _Staged, changes: tuple[StageProjectChange, ...]) -> _Staged:
+    """A later call's complete record replaces an earlier one with the same identity."""
+    merged: _Staged = {dataset: dict(records) for dataset, records in staged.items()}
+    for change in changes:
+        records = merged.setdefault(change.dataset, {})
+        for record in change.records:
+            records[_record_key(change.dataset, record)] = record
+    return merged
+
+
+def _staged_documents(
+    staged: _Staged,
+) -> dict[ProjectChangeSetDataset, list[dict[str, object]]]:
+    return {dataset: list(records.values()) for dataset, records in staged.items()}
+
+
+def _with_changes(model: LogicalSection, changes: tuple[StageProjectChange, ...]) -> LogicalSection:
+    """The model as the next area sees it: saved records with this run's changes applied."""
+    sections = {
+        "logical_entity": ("entities", LogicalEntityRecord),
+        "logical_attribute": ("attributes", LogicalAttributeRecord),
+        "logical_relationship": ("relationships", LogicalRelationshipRecord),
+    }
+    update: dict[str, tuple[BaseModel, ...]] = {}
+    for change in changes:
+        field, record_type = sections[change.dataset]
+        current = update.get(field, cast(tuple[BaseModel, ...], getattr(model, field)))
+        records = {
+            _record_key(change.dataset, record.model_dump(mode="json")): record
+            for record in current
+        }
+        for record in change.records:
+            records[_record_key(change.dataset, record)] = record_type.model_validate_json(
+                json.dumps(record)
+            )
+        update[field] = tuple(records.values())
+    return model.model_copy(update=update)
 
 
 def _safe_execution_error(

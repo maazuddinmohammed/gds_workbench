@@ -5,6 +5,9 @@ from typing import Any, LiteralString, cast
 
 import pytest
 from gds_etl_workbench.domain.snapshots.project import ContextSection
+from tests.mcp.project_test_fixtures import complete_project_graph
+from tests.web_backend.mapping_fixtures import mapping_preparation
+
 from gds_workbench_api.features.context.context import select_context_records
 from gds_workbench_api.features.mapping.execution_context import (
     build_mapping_execution_context,
@@ -13,9 +16,6 @@ from gds_workbench_api.features.workflows.authoring.downstream_inputs import (
     DownstreamContextReaders,
     project_downstream_inputs,
 )
-
-from tests.mcp.project_test_fixtures import complete_project_graph
-from tests.web_backend.mapping_fixtures import mapping_preparation
 
 
 def section() -> dict[str, Any]:
@@ -37,9 +37,7 @@ def section() -> dict[str, Any]:
     }
 
 
-def test_requirements_are_filtered_by_activity_and_authorized_source_system_scope() -> (
-    None
-):
+def test_requirements_are_filtered_by_activity_and_authorized_source_system_scope() -> None:
     data = section()
     scope = [
         {"tenant_code": "ACME", "system_code": "ERP"},
@@ -68,15 +66,11 @@ def test_mapping_receives_unlinked_project_wide_requirements_in_both_modes(
     preparation = preparation.model_copy(
         update={
             "snapshot": preparation.snapshot.model_copy(
-                update={
-                    "context": ContextSection.model_validate(section(), strict=False)
-                }
+                update={"context": ContextSection.model_validate(section(), strict=False)}
             )
         }
     )
-    execution = build_mapping_execution_context(
-        preparation=preparation, execution_mode=mode
-    )
+    execution = build_mapping_execution_context(preparation=preparation, execution_mode=mode)
     if mode == "one_shot":
         values = project_downstream_inputs(
             "mapping", cast(dict[str, Any], execution.embedded_context)
@@ -86,9 +80,7 @@ def test_mapping_receives_unlinked_project_wide_requirements_in_both_modes(
         values = execution.tool_catalog.prompt_values
     requirements = values["mapping_support"]["context_records"]
     assert len(requirements) == 1
-    assert (
-        requirements[0]["context_text"] == "Report sales at month and customer grain."
-    )
+    assert requirements[0]["context_text"] == "Report sales at month and customer grain."
     assert "context_record_id" in requirements[0]
 
 
@@ -96,16 +88,16 @@ def test_mapping_receives_unlinked_project_wide_requirements_in_both_modes(
 async def test_dimensional_requirements_follow_business_system_behind_silver(
     mode: Any,
 ) -> None:
-    from gds_workbench_api.features.workflows.authoring.context import (
-        AgentContextLimits,
-        PostgresAgentContextRepository,
-    )
-
     from tests.web_backend.test_agent_context import (
         DimensionalContextTransaction,
         _dimensional_snapshot,
         _load_physical_scope,
         _plan,
+    )
+
+    from gds_workbench_api.features.workflows.authoring.context import (
+        AgentContextLimits,
+        PostgresAgentContextRepository,
     )
 
     requirement = section()
@@ -120,6 +112,7 @@ async def test_dimensional_requirements_follow_business_system_behind_silver(
     async def load_snapshot(*_: object):
         return snapshot
 
+    # Optimize packages the whole run when it loads; the Mapping behind silver names ERP.
     result = await PostgresAgentContextRepository(
         snapshot_loader=load_snapshot,
         physical_scope_loader=_load_physical_scope,
@@ -128,8 +121,11 @@ async def test_dimensional_requirements_follow_business_system_behind_silver(
         DimensionalContextTransaction(),
         tenant_id=7,
         plan=_plan(
-            project_workflow="dimensional", selected_object_ids=(701,)
-        ).model_copy(update={"workflow_execution_mode": mode}),
+            project_workflow="dimensional",
+            selected_object_ids=(701,),
+            execution_mode=mode,
+            operation="optimize",
+        ),
     )
     if mode == "one_shot":
         assert isinstance(result.embedded_context, dict)
@@ -148,16 +144,18 @@ async def test_dimensional_requirements_follow_business_system_behind_silver(
 async def test_all_modeling_workflows_receive_context_without_layer_selection(
     workflow: Any, mode: Any
 ) -> None:
-    from gds_workbench_api.features.workflows.authoring.context import (
-        AgentContextLimits,
-        PostgresAgentContextRepository,
-    )
-
     from tests.web_backend.test_agent_context import (
+        _CUSTOMERS,
         ContextTransaction,
         _load_physical_scope,
         _plan,
         _snapshot,
+    )
+
+    from gds_workbench_api.features.workflows.authoring.context import (
+        AgentContextLimits,
+        PostgresAgentContextRepository,
+        focus_subject_area,
     )
 
     data = section()
@@ -173,24 +171,24 @@ async def test_all_modeling_workflows_receive_context_without_layer_selection(
         return snapshot
 
     class ModelingTransaction(ContextTransaction):
-        async def fetch_all(
-            self, query: LiteralString, parameters: tuple[Any, ...] = ()
-        ):
+        async def fetch_all(self, query: LiteralString, parameters: tuple[Any, ...] = ()):
             if len(parameters) >= 3 and parameters[2] == workflow:
                 parameters = (*parameters[:2], "subject_area", *parameters[3:])
             return await super().fetch_all(query, parameters)
 
+    plan = _plan(project_workflow=workflow, execution_mode=mode)
     result = await PostgresAgentContextRepository(
         snapshot_loader=load_snapshot,
         physical_scope_loader=_load_physical_scope,
         limits=AgentContextLimits(max_selected_attributes=100),
-    ).load(
-        ModelingTransaction(),
-        tenant_id=7,
-        plan=_plan(project_workflow=workflow).model_copy(
-            update={"workflow_execution_mode": mode}
-        ),
-    )
+    ).load(ModelingTransaction(), tenant_id=7, plan=plan)
+    if workflow == "logical":
+        # A Logical Build packages each Subject Area call; the area holds the Object.
+        focused = focus_subject_area(
+            result, plan=plan, subject_area=_CUSTOMERS, logical=snapshot.logical
+        )
+        assert focused is not None
+        result = focused
     if mode == "one_shot":
         assert isinstance(result.embedded_context, dict)
         assert "context_source_scope" not in result.embedded_context

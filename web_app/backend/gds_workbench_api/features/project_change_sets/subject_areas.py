@@ -68,9 +68,9 @@ def prepare_subject_area_change(
             "subject_area_name": name,
             "subject_area_definition": command.subject_area_definition
             or (saved.subject_area_definition if saved else ""),
-            "subject_area_status": "active"
-            if saved is None or command.add_object_ids
-            else saved.subject_area_status,
+            "subject_area_is_active": saved is None
+            or bool(command.add_object_ids)
+            or saved.subject_area_is_active,
             "subject_area_is_locked": False,
         }
     ]
@@ -97,17 +97,17 @@ def prepare_subject_area_change(
         if member_key in removed_keys:
             if member.subject_area_table_is_locked:
                 raise WorkbenchError("record_locked", "Unlock this table before removing it.")
-            table_records[member_key] = _member(member, status="inactive")
+            table_records[member_key] = _member(member, active=False)
             removed_keys.discard(member_key)
-        elif renamed and member.subject_area_table_status == "active":
+        elif renamed and member.subject_area_table_is_active:
             if member.subject_area_table_is_locked:
                 raise WorkbenchError(
                     "record_locked", "Unlock this area's tables before renaming it."
                 )
             # The old area keeps its history; the new area takes the active tables.
-            table_records[("old", *member_key)] = _member(member, status="inactive")
+            table_records[("old", *member_key)] = _member(member, active=False)
             table_records[member_key] = {
-                **_member(member, status="active"),
+                **_member(member, active=True),
                 "subject_area_name": name,
             }
     if removed_keys:
@@ -126,7 +126,7 @@ def prepare_subject_area_change(
         if (
             previous is not None
             and previous.subject_area_table_is_locked
-            and previous.subject_area_table_status != "active"
+            and not previous.subject_area_table_is_active
         ):
             raise WorkbenchError(
                 "record_locked", "Unlock this table before adding it back to the area."
@@ -134,13 +134,13 @@ def prepare_subject_area_change(
         table_records[member_key] = {
             "subject_area_name": name,
             **{field: table[field] for field in _OBJECT_FIELDS},
-            "subject_area_table_status": "active",
+            "subject_area_table_is_active": True,
             "subject_area_table_is_locked": (
                 previous.subject_area_table_is_locked if previous is not None else False
             ),
         }
     if saved is not None and renamed:
-        area_records.append({**saved.model_dump(mode="json"), "subject_area_status": "inactive"})
+        area_records.append({**saved.model_dump(mode="json"), "subject_area_is_active": False})
     elif saved is not None:
         area_records[0]["subject_area_is_locked"] = saved.subject_area_is_locked
     validation = validate_future_graph(
@@ -159,8 +159,8 @@ def prepare_subject_area_change(
     return validation
 
 
-def _member(member: SubjectAreaTableRecord, *, status: str) -> dict[str, object]:
-    return {**member.model_dump(mode="json"), "subject_area_table_status": status}
+def _member(member: SubjectAreaTableRecord, *, active: bool) -> dict[str, object]:
+    return {**member.model_dump(mode="json"), "subject_area_table_is_active": active}
 
 
 def _object_key(values: Mapping[str, Any]) -> tuple[str, ...]:

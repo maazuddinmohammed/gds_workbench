@@ -53,40 +53,18 @@ def workflow_reader_specs(workflow: str) -> ReaderSpecs:
             "get_subject_areas": ("existing_subject_areas", "subject_area_names", ("name",)),
             "get_context_records": specs["get_context_records"],
         }
-    for family in (
-        ("logical",)
-        if workflow == "logical"
-        else ("logical", "dimensional")
-        if workflow == "dimensional"
-        else ()
+    # Readers page the whole model, so a Build can inspect any Entity its slice names.
+    for family in {"logical": ("logical",), "dimensional": ("logical", "dimensional")}.get(
+        workflow, ()
     ):
-        # Logical runs no longer author Submodels, so they read none.
-        kinds = ("entity", "attribute", "relationship")
-        for kind in kinds if workflow == "logical" else ("submodel", *kinds):
-            plural = "entities" if kind == "entity" else kind + "s"
-            selector = (
-                None
-                if kind == "submodel"
-                else "object_keys"
-                if kind == "entity" and workflow != "dimensional"
-                else f"{family}_entity_keys"
-            )
-            fields = (
-                OBJECT_FIELDS if selector == "object_keys" else project_key_fields(family, "entity")
-            )
-            specs[f"list_{family}_{plural}"] = (f"{family}_{kind}_list", selector, fields)
-            get_selector = (
-                f"{family}_submodel_names"
-                if kind == "submodel"
-                else f"{family}_entity_keys"
-                if kind == "entity"
-                else "attribute_keys"
-                if kind == "attribute"
-                else "relationship_keys"
-            )
+        for kind, plural, selector in (
+            ("entity", "entities", f"{family}_entity_keys"),
+            ("attribute", "attributes", "attribute_keys"),
+            ("relationship", "relationships", "relationship_keys"),
+        ):
             specs[f"get_{family}_{plural}"] = (
                 f"{family}_{plural}",
-                get_selector,
+                selector,
                 project_key_fields(family, kind),
             )
     return specs
@@ -164,12 +142,6 @@ def reader_definitions(
             description += (
                 " Physical lineage is supporting evidence only; "
                 "it does not expand selected Logical authoring sources."
-            )
-        if name.endswith("_entities") and name.startswith("list_"):
-            description += (
-                " Entity filters use the complete schema-qualified Entity key."
-                if workflow == "dimensional"
-                else " Physical filters match own direct sources only."
             )
         contract = contracts.get(variable, {})
         schema: dict[str, Any] = contract.get("schema", {})
@@ -436,43 +408,11 @@ class FrozenContextReaders:
             available = {natural_key(r) for r in self._values["object_context"]}
             if not wanted <= available:
                 self._invalid()
-            if tool.startswith("list_"):
-                full_name = variable.removesuffix("_list")
-                full_name = (
-                    full_name[: -len("entity")] + "entities"
-                    if full_name.endswith("entity")
-                    else full_name + "s"
-                )
-                full_rows = self._values[full_name]
-                matched: list[dict[str, Any]] = []
-                for compact, full in zip(rows, full_rows, strict=True):
-                    if any(
-                        isinstance(s.get("source_object"), dict)
-                        and natural_key(s["source_object"]) in wanted
-                        for s in full.get("sources", [])
-                    ):
-                        matched.append(compact)
-                return matched
             return [r for r in rows if natural_key(r) in wanted]
         if tool == "get_selected_logical_entities":
             if not wanted <= {natural_key(r["entity"], fields) for r in rows}:
                 self._invalid()
             return [r for r in rows if natural_key(r["entity"], fields) in wanted]
-        if tool.startswith("list_") and selector and selector.endswith("_entity_keys"):
-            family = selector.removesuffix("_entity_keys")
-            if not wanted <= {natural_key(r, fields) for r in self._values[f"{family}_entities"]}:
-                self._invalid()
-            if variable.endswith("relationship_list"):
-                return [
-                    r
-                    for r in rows
-                    if any(
-                        natural_key({field: r[f"{side}_{field}"] for field in fields}, fields)
-                        in wanted
-                        for side in ("from", "to")
-                    )
-                ]
-            return [r for r in rows if natural_key(r, fields) in wanted]
         if not wanted <= {natural_key(r, fields) for r in rows}:
             self._invalid()
         return [r for r in rows if natural_key(r, fields) in wanted]

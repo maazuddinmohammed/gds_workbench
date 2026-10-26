@@ -16,6 +16,7 @@ import { MetadataChangeSetPanel } from "./MetadataChangeSetPanel";
 import { MetadataExportDialog } from "./MetadataExportDialog";
 import { MetadataLedger } from "./MetadataLedger";
 import { PhysicalMetadataScreen } from "./PhysicalMetadataScreen";
+import { RefreshButton } from "../../shared/ui";
 
 export type MetadataCategory = MetadataSection | "objects";
 const SECTIONS: Array<{ section: MetadataCategory; label: string }> = [
@@ -229,18 +230,15 @@ export function MetadataScreen({
           <span className={`metadata-catalog-state${hasTenantLock ? " is-held" : ""}`} title={lockStateText(tenantLock)}>
             {hasTenantLock ? "Lock held" : "Read-only"}
           </span>
-          {section !== "objects" ? <button
-            className="button button-secondary button-small"
-            type="button"
+          {section !== "objects" ? <RefreshButton
+            refreshing={registryQuery.isFetching || rowsQuery.isFetching}
             disabled={registryQuery.isFetching || rowsQuery.isFetching || isChangeSetBusy}
             onClick={() => void Promise.all([
               registryQuery.refetch(),
               rowsQuery.refetch(),
               changeSetId ? changeSetQuery.refetch() : Promise.resolve(),
             ])}
-          >
-            {registryQuery.isFetching || rowsQuery.isFetching ? "Refreshing…" : "Refresh"}
-          </button> : null}
+          /> : null}
           <button className="button button-secondary button-small" type="button" onClick={() => setExportOpen(true)}>
             Export Excel
           </button>

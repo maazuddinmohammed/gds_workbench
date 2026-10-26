@@ -1,7 +1,5 @@
 """Human Subject Area edits stage one validated change: nothing deleted, locks respected."""
 
-from typing import Literal
-
 import pytest
 from gds_etl_workbench.application.project_snapshot import ProjectReviewSnapshot
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
@@ -22,7 +20,6 @@ from gds_workbench_api.features.project_change_sets.subject_areas import (
 )
 
 type Graph = dict[ProjectChangeSetDataset, list[dict[str, object]]]
-type Status = Literal["active", "inactive"]
 
 # Input Scope rows by object id, as the service reads them. The fixture's saved Sales
 # area holds 101 and 102; only active eligible Bronze tables (103) can be added.
@@ -35,12 +32,12 @@ SALES_DEFINITION = "Customer orders and the customers who place them."
 
 
 def _area(
-    name: str = "Sales", *, definition: str = SALES_DEFINITION, status: Status = "active"
+    name: str = "Sales", *, definition: str = SALES_DEFINITION, is_active: bool = True
 ) -> dict[str, object]:
     return {
         "subject_area_name": name,
         "subject_area_definition": definition,
-        "subject_area_status": status,
+        "subject_area_is_active": is_active,
         "subject_area_is_locked": False,
     }
 
@@ -49,13 +46,13 @@ def _member(
     area: str,
     key: tuple[str, str, str, str, str],
     *,
-    status: Status = "active",
+    is_active: bool = True,
     locked: bool = False,
 ) -> dict[str, object]:
     return {
         "subject_area_name": area,
         **physical_object(key),
-        "subject_area_table_status": status,
+        "subject_area_table_is_active": is_active,
         "subject_area_table_is_locked": locked,
     }
 
@@ -105,7 +102,7 @@ def test_edit_changes_the_definition_or_tables_and_keeps_removed_tables_inactive
     assert _save(subject_area_id=1, add_object_ids=[103], remove_object_ids=[101]) == {
         "subject_area": [_area()],
         "subject_area_table": [
-            _member("Sales", SOURCE_ORDERS, status="inactive"),
+            _member("Sales", SOURCE_ORDERS, is_active=False),
             _member("Sales", BRONZE_ORDERS),
         ],
     }
@@ -113,13 +110,13 @@ def test_edit_changes_the_definition_or_tables_and_keeps_removed_tables_inactive
 
 def test_rename_moves_active_tables_and_keeps_the_old_area_inactive() -> None:
     graph = complete_project_graph()
-    graph["subject_area_table"][1]["subject_area_table_status"] = "inactive"
+    graph["subject_area_table"][1]["subject_area_table_is_active"] = False
 
     # The inactive customers membership stays with the old area as history.
     assert _save(graph, subject_area_id=1, subject_area_name="Customer Orders") == {
-        "subject_area": [_area("Customer Orders"), _area(status="inactive")],
+        "subject_area": [_area("Customer Orders"), _area(is_active=False)],
         "subject_area_table": [
-            _member("Sales", SOURCE_ORDERS, status="inactive"),
+            _member("Sales", SOURCE_ORDERS, is_active=False),
             _member("Customer Orders", SOURCE_ORDERS),
         ],
     }
@@ -132,7 +129,7 @@ def test_locks_protect_the_area_and_its_tables() -> None:
     locked_table["subject_area_table"][0]["subject_area_table_is_locked"] = True
     locked_out = complete_project_graph()
     locked_out["subject_area_table"].append(
-        _member("Sales", BRONZE_ORDERS, status="inactive", locked=True)
+        _member("Sales", BRONZE_ORDERS, is_active=False, locked=True)
     )
 
     assert _error_code(locked_area, subject_area_id=1, subject_area_definition="New.") == (
@@ -154,12 +151,12 @@ def test_locks_protect_the_area_and_its_tables() -> None:
 
 def test_saving_keeps_an_inactive_area_inactive_until_tables_are_added() -> None:
     graph = complete_project_graph()
-    graph["subject_area"][0]["subject_area_status"] = "inactive"
+    graph["subject_area"][0]["subject_area_is_active"] = False
     for member in graph["subject_area_table"]:
-        member["subject_area_table_status"] = "inactive"
+        member["subject_area_table_is_active"] = False
 
     assert _save(graph, subject_area_id=1, subject_area_definition="Retired orders.") == {
-        "subject_area": [_area(definition="Retired orders.", status="inactive")],
+        "subject_area": [_area(definition="Retired orders.", is_active=False)],
         "subject_area_table": [],
     }
     assert _save(graph, subject_area_id=1, add_object_ids=[103]) == {
@@ -170,7 +167,7 @@ def test_saving_keeps_an_inactive_area_inactive_until_tables_are_added() -> None
 
 def test_names_stay_unique_and_only_eligible_tables_change() -> None:
     graph = complete_project_graph()
-    graph["subject_area"].append(_area("Archive", definition="Old tables.", status="inactive"))
+    graph["subject_area"].append(_area("Archive", definition="Old tables.", is_active=False))
 
     # Names compare trimmed and case-insensitively, inactive areas included.
     assert _error_code(graph, subject_area_name=" sales ", subject_area_definition="Again.") == (

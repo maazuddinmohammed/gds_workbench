@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import cast
 
 from gds_etl_workbench.domain.errors import InvalidRequestError
@@ -46,7 +47,7 @@ def fake_logical_candidate(
     }
     entities: list[JsonValue] = []
     attributes_by_table: dict[str, list[JsonValue]] = {}
-    for position, source_object in enumerate(source_objects, start=1):
+    for source_object in source_objects:
         key = tuple(
             cast(str, source_object[name]).strip().casefold() for name in FAKE_SOURCE_FIELDS
         )
@@ -58,7 +59,8 @@ def fake_logical_candidate(
         entities.append(
             {
                 "schema": schema_name,
-                "name": f"Logical Entity {position}",
+                # Named after its table, so an area sharing the table reuses the Entity.
+                "name": pascal_case(cast(str, source_object["object_name"])),
                 "type": "core",
                 "definition": "A locally generated Logical entity candidate.",
                 "grain": "One governed Logical entity record.",
@@ -74,7 +76,7 @@ def fake_logical_candidate(
         attributes = attributes_by_table[table_id]
         attributes.append(
             {
-                "name": f"Logical Attribute {len(attributes) + 1}",
+                "name": f"{pascal_case(cast(str, attribute['attribute_name']))}Value",
                 "type": "string",
                 "nullable": True,
                 "from": f"{table_id}.{attribute['attribute_name']}",
@@ -82,3 +84,7 @@ def fake_logical_candidate(
             }
         )
     return cast(JsonValue, {"entities": entities, "relationships": [], "retire": []})
+
+
+def pascal_case(name: str) -> str:
+    return "".join(part[:1].upper() + part[1:] for part in re.split(r"[^A-Za-z0-9]+", name)) or "X"

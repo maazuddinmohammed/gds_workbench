@@ -5,7 +5,10 @@ from uuid import UUID
 
 import pytest
 from gds_etl_workbench.domain.errors import WorkbenchError
+from pydantic import ValidationError
+
 from gds_workbench_api.features.workflows.authoring.plan import (
+    AgentRunPlan,
     PostgresAgentRunPlanRepository,
 )
 
@@ -58,6 +61,7 @@ class PlanTransaction:
         rows: list[dict[str, Any]] | None = None,
         selection: list[dict[str, Any]] | None = None,
         system_selection: list[dict[str, Any]] | None = None,
+        subject_areas: list[dict[str, Any]] | None = None,
     ) -> None:
         self.rows = (
             rows
@@ -76,6 +80,7 @@ class PlanTransaction:
             ]
         )
         self.system_selection = system_selection if system_selection is not None else []
+        self.subject_areas = subject_areas
 
     async def fetch_all(
         self,
@@ -87,6 +92,9 @@ class PlanTransaction:
             return self.selection
         if "workflow_run_system_selection" in query:
             return self.system_selection
+        if "workflow_run_subject_area_selection" in query:
+            assert self.subject_areas is not None, "Only a Build reads Subject Areas."
+            return self.subject_areas
         assert "workflow_run_prompt_snapshot" in query
         assert "run.workflow_run_state = 'running'" in query
         return self.rows
@@ -117,9 +125,7 @@ async def test_repository_loads_frozen_prompts_variables_and_exact_selection() -
 
 
 @pytest.mark.asyncio
-async def test_repository_loads_exact_validation_system_selection_without_objects() -> (
-    None
-):
+async def test_repository_loads_exact_validation_system_selection_without_objects() -> None:
     row = _stage_row(variable_id=1, variable_name="stage_context")
     row.update(
         {
@@ -223,23 +229,14 @@ async def test_plan_freezes_tool_permissions_and_rejects_inconsistent_rows() -> 
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "workflow,count", [("subject_area", 50_001), ("validation", 1001)]
-)
-async def test_run_plan_keeps_complete_large_selection(
-    workflow: str, count: int
-) -> None:
+@pytest.mark.parametrize("workflow,count", [("subject_area", 50_001), ("validation", 1001)])
+async def test_run_plan_keeps_complete_large_selection(workflow: str, count: int) -> None:
     row = _stage_row(variable_id=None)
     row.update(project_workflow=workflow, selected_scope_count=count)
     if workflow == "validation":
-        row.update(
-            workflow_execution_mode=None, workflow_stage_code="validation_generation"
-        )
+        row.update(workflow_execution_mode=None, workflow_stage_code="validation_generation")
     objects = (
-        [
-            {"object_id": index, "selection_order": index}
-            for index in range(1, count + 1)
-        ]
+        [{"object_id": index, "selection_order": index} for index in range(1, count + 1)]
         if workflow != "validation"
         else []
     )
@@ -257,7 +254,160 @@ async def test_run_plan_keeps_complete_large_selection(
         project_id=18,
         workflow_run_id=1048,
     )
-    assert (
-        len(plan.selected_object_ids if objects else plan.selected_system_codes)
-        == count
+    assert len(plan.selected_object_ids if objects else plan.selected_system_codes) == count
+
+
+def _logical_row(operation: str) -> dict[str, Any]:
+    row = _stage_row(variable_id=None)
+    row.update(
+        project_workflow="logical",
+        workflow_operation=operation,
+        workflow_stage_code=f"{operation}_authoring",
     )
+    return row
+
+
+def _area(order: int, area_id: int, name: str) -> dict[str, Any]:
+    return {
+        "selection_order": order,
+        "subject_area_id": area_id,
+        "subject_area_name": name,
+        "subject_area_definition": f"{name} business area.",
+    }
+
+
+@pytest.mark.asyncio
+async def test_repository_loads_build_subject_areas_in_frozen_order() -> None:
+    plan = await PostgresAgentRunPlanRepository().load(
+        PlanTransaction(
+            rows=[_logical_row("build")],
+            subject_areas=[_area(1, 62, "Orders"), _area(2, 61, "Customers")],
+        ),
+        tenant_id=7,
+        project_id=18,
+        workflow_run_id=1048,
+    )
+
+    assert plan.workflow_operation == "build"
+    assert [(area.subject_area_id, area.subject_area_name) for area in plan.subject_areas] == [
+        (62, "Orders"),
+        (61, "Customers"),
+    ]
+    assert [stage.stage_code for stage in plan.stages] == ["build_authoring"]
+
+
+@pytest.mark.asyncio
+async def test_repository_loads_optimize_without_subject_areas() -> None:
+    # PlanTransaction fails if an Optimize plan asks for Subject Areas.
+    plan = await PostgresAgentRunPlanRepository().load(
+        PlanTransaction(rows=[_logical_row("optimize")]),
+        tenant_id=7,
+        project_id=18,
+        workflow_run_id=1048,
+    )
+
+    assert (plan.workflow_operation, plan.subject_areas) == ("optimize", ())
+    assert plan.selected_object_ids == (501, 502)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "subject_areas",
+    [[], [_area(2, 62, "Orders")], [_area(1, 62, "Orders"), _area(2, 62, "Orders")]],
+    ids=["none", "order-gap", "duplicate"],
+)
+async def test_repository_rejects_missing_or_inconsistent_build_subject_areas(
+    subject_areas: list[dict[str, Any]],
+) -> None:
+    with pytest.raises(WorkbenchError) as captured:
+        await PostgresAgentRunPlanRepository().load(
+            PlanTransaction(rows=[_logical_row("build")], subject_areas=subject_areas),
+            tenant_id=7,
+            project_id=18,
+            workflow_run_id=1048,
+        )
+
+    assert captured.value.code == "agent_run_plan_unavailable"
+
+
+def _plan(
+    *, project_workflow: str, workflow_operation: str | None, area_ids: tuple[int, ...] = ()
+) -> AgentRunPlan:
+    dimensional = project_workflow == "dimensional"
+    return AgentRunPlan.model_validate(
+        {
+            "workflow_run_id": 1048,
+            "project_id": 18,
+            "correlation_id": UUID("33333333-3333-3333-3333-333333333333"),
+            "project_revision": 7,
+            "project_workflow": project_workflow,
+            "workflow_execution_mode": "one_shot",
+            "workflow_operation": workflow_operation,
+            "subject_areas": [
+                {
+                    "subject_area_id": area_id,
+                    "subject_area_name": f"Area {area_id}",
+                    "subject_area_definition": "Business area.",
+                }
+                for area_id in area_ids
+            ],
+            "modeled_entity_type": "logical_entity" if dimensional else None,
+            "selected_scope_digest": "a" * 64,
+            "selected_object_ids": () if dimensional else (501,),
+            "selected_entity_ids": (701,) if dimensional else (),
+            "selection": {
+                "sdk_code": "openai_agents_sdk",
+                "provider_code": "microsoft_foundry",
+                "model_code": "foundry-primary",
+                "reasoning_effort_code": "medium",
+                "max_turns": 8,
+                "validation_retry_count": 2,
+            },
+            "stages": [
+                {
+                    "workflow_stage_id": 31,
+                    "stage_code": f"{workflow_operation or 'candidate'}_authoring",
+                    "stage_order": 10,
+                    "prompt_template_version_id": 81,
+                    "prompt_template_digest": "b" * 64,
+                    "templates": {"system": "System.", "instruction": "Instruction."},
+                    "variables": [],
+                }
+            ],
+        },
+        strict=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("project_workflow", "workflow_operation", "area_ids", "message"),
+    [
+        ("logical", None, (), "Build and Optimize plans"),
+        ("dimensional", None, (), "Build and Optimize plans"),
+        ("subject_area", "build", (61,), "Build and Optimize plans"),
+        ("logical", "build", (), "Build and Optimize plans"),
+        ("logical", "optimize", (61,), "Build and Optimize plans"),
+        ("logical", "build", (61, 61), "Subject Areas must be unique"),
+    ],
+    ids=[
+        "logical-without-operation",
+        "dimensional-without-operation",
+        "operation-outside-modeling",
+        "build-without-areas",
+        "optimize-with-areas",
+        "duplicate-areas",
+    ],
+)
+def test_plan_requires_an_operation_for_modeling_and_unique_areas_only_for_build(
+    project_workflow: str,
+    workflow_operation: str | None,
+    area_ids: tuple[int, ...],
+    message: str,
+) -> None:
+    assert _plan(project_workflow="logical", workflow_operation="build", area_ids=(61, 62))
+    with pytest.raises(ValidationError, match=message):
+        _plan(
+            project_workflow=project_workflow,
+            workflow_operation=workflow_operation,
+            area_ids=area_ids,
+        )

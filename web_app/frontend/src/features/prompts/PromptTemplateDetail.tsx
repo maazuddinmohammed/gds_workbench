@@ -3,7 +3,7 @@ import { useForm, useStore } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useBlocker } from "@tanstack/react-router";
 
-import { Fact } from "../../shared/ui";
+import { Fact, RefreshButton } from "../../shared/ui";
 import { ApiError } from "../../core/http";
 import { formatRequiredDateTime as formatDateTime } from "../../shared/presentation";
 import {
@@ -143,14 +143,10 @@ export function PromptTemplateDetailPage({
           <span className={canMutate ? "lock-context is-held" : "lock-context"}>
             {canMutate ? "Editing available" : "Read-only"}
           </span>
-          <button
-            className="button button-secondary button-small"
-            type="button"
-            disabled={query.isFetching}
+          <RefreshButton
+            refreshing={query.isFetching}
             onClick={() => confirmDiscard(() => { setEditorGeneration((value) => value + 1); void query.refetch(); })}
-          >
-            {query.isFetching ? "Refreshing…" : "Refresh"}
-          </button>
+          />
           <button
             className="button button-secondary button-small"
             type="button"

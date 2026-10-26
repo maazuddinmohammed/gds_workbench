@@ -16,6 +16,9 @@ export type WorkflowExecutionMode =
   | "one_shot"
   | "tool_assisted";
 
+/** Logical and Dimensional runs build chosen Subject Areas or optimize the whole model. */
+export type WorkflowOperation = "build" | "optimize";
+
 export type WorkflowRunState =
   | "queued"
   | "running"
@@ -79,6 +82,10 @@ export interface CreateWorkflowRunCommand {
   expected_project_revision: number;
   project_workflow: ProjectWorkflow;
   workflow_execution_mode: WorkflowExecutionMode | null;
+  /** Logical and Dimensional only. */
+  workflow_operation?: WorkflowOperation;
+  /** Build only: the Subject Areas to build, in build order. */
+  subject_area_ids?: number[];
   selected_object_ids: number[];
   selected_entity_ids?: number[];
   description_targets?: { object_id: number; attribute_id: number | null; expected_revision: string }[];
@@ -121,6 +128,8 @@ export interface WorkflowRunRecord {
   workflow_run_id: number;
   project_workflow: ProjectWorkflow;
   workflow_execution_mode: WorkflowExecutionMode | null;
+  /** Set for Logical and Dimensional runs; null for other workflows. */
+  workflow_operation: WorkflowOperation | null;
   modeled_entity_type: "logical_entity" | "dimensional_entity" | null;
   selected_scope_count: number;
   requested_batch_id: string | null;

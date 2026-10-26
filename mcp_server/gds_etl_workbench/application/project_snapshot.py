@@ -14,12 +14,13 @@ from gds_etl_workbench.application.modeling.enrichment import (
 )
 from gds_etl_workbench.application.modeling.modeled_layer import (
     DIMENSIONAL,
+    DIMENSIONAL_FACT_TYPES_SQL,
     LOGICAL,
+    LOGICAL_ENTITY_TYPES_SQL,
     LayerConfig,
     attributes_sql,
     entities_sql,
     relationships_sql,
-    submodels_sql,
 )
 from gds_etl_workbench.application.modeling.profiling_analysis import (
     HISTORICAL_ANALYSIS_SQL,
@@ -249,10 +250,7 @@ _INTERNAL_READ_FIELDS = frozenset(
         "dimensional_attribute_id",
         "dimensional_entity_id",
         "dimensional_relationship_id",
-        "dimensional_submodel_id",
-        "entity_count",
         "entity_source_mapping_id",
-        "entity_submodel_id",
         "from_attribute_id",
         "from_dimensional_attribute_id",
         "from_dimensional_entity_id",
@@ -264,7 +262,6 @@ _INTERNAL_READ_FIELDS = frozenset(
         "logical_attribute_id",
         "logical_entity_id",
         "logical_relationship_id",
-        "logical_submodel_id",
         "mapping_attribute_id",
         "mapping_object_id",
         "project_tenant_code",
@@ -277,7 +274,6 @@ _INTERNAL_READ_FIELDS = frozenset(
         "source_system_name",
         "subject_area_id",
         "subject_area_table_id",
-        "submodel_id",
         "to_attribute_id",
         "to_dimensional_attribute_id",
         "to_dimensional_entity_id",
@@ -363,12 +359,14 @@ async def read_project_review_snapshot(
         HISTORICAL_ANALYSIS_SQL,
         (project.project_id, list(project.readable_source_tenant_ids), [], [], [], limit, 0),
     )
-    rows["context_type"] = await fetch(
-        transaction,
-        "context_type",
-        TYPES_SQL,
-        (limit, 0),
+    # Global read-only label lists, read in this transaction so validation sees the same codes.
+    label_queries: tuple[tuple[str, LiteralString], ...] = (
+        ("context_type", TYPES_SQL),
+        ("logical_entity_type", LOGICAL_ENTITY_TYPES_SQL),
+        ("dimensional_fact_type", DIMENSIONAL_FACT_TYPES_SQL),
     )
+    for dataset, query in label_queries:
+        rows[dataset] = await fetch(transaction, dataset, query, (limit, 0))
     rows["context_group"] = await fetch(
         transaction,
         "context_group",
@@ -452,13 +450,13 @@ async def read_project_review_snapshot(
                 "tables": records["subject_area_table"],
             },
             "logical": {
-                "submodels": records["logical_submodel"],
+                "entity_types": records["logical_entity_type"],
                 "entities": records["logical_entity"],
                 "attributes": records["logical_attribute"],
                 "relationships": records["logical_relationship"],
             },
             "dimensional": {
-                "submodels": records["dimensional_submodel"],
+                "fact_types": records["dimensional_fact_type"],
                 "entities": records["dimensional_entity"],
                 "attributes": records["dimensional_attribute"],
                 "relationships": records["dimensional_relationship"],
@@ -486,11 +484,9 @@ async def read_project_review_snapshot(
         "analysis_result",
         "subject_area",
         "subject_area_table",
-        "logical_submodel",
         "logical_entity",
         "logical_attribute",
         "logical_relationship",
-        "dimensional_submodel",
         "dimensional_entity",
         "dimensional_attribute",
         "dimensional_relationship",
@@ -542,12 +538,6 @@ async def _fetch_layer(
     limit: int | None,
 ) -> None:
     fetch = partial(_fetch, enforce_row_limits=limit is not None)
-    rows[f"{config.layer}_submodel"] = await fetch(
-        transaction,
-        f"{config.layer}_submodel",
-        submodels_sql(config),
-        (project.project_id, limit, 0),
-    )
     rows[f"{config.layer}_entity"] = await fetch(
         transaction,
         f"{config.layer}_entity",

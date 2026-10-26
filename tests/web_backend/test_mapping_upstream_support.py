@@ -20,6 +20,9 @@ from jsonschema import Draft202012Validator
 
 from tests.mcp.project_test_fixtures import (
     complete_project_graph,
+    dimensional_attribute,
+    dimensional_entity,
+    dimensional_relationship,
     logical_relationship,
     snapshot_from_graph,
 )
@@ -105,13 +108,10 @@ def test_gold_support_records_keep_upstream_documents_lineage_and_page_completel
         to_logical_entity_name="RegionInput",
         to_logical_attribute_name="region_id",
     )
+    # One foreign key per relationship: the excluded one starts in another schema.
     graph["logical_relationship"] = [
         relation,
-        {
-            **relation,
-            "logical_relationship_name": "Excluded",
-            "to_logical_entity_schema_name": "other_schema",
-        },
+        {**relation, "from_logical_entity_schema_name": "other_schema"},
     ]
     key = {
         name: getattr(physical, name)
@@ -298,3 +298,43 @@ def test_gold_without_authorized_physical_support_does_not_project_other_system_
         if row["evidence_type"] == "source_logical_attribute"
     ]
     assert logical and all(row["sources"] == [] for row in logical)
+
+
+def test_gold_support_works_out_dimensional_link_kind_optionality_and_cardinality() -> (
+    None
+):
+    preparation = mapping_preparation(modeled_entity_type="dimensional_entity")
+    assert preparation.snapshot is not None
+    graph = {
+        name: [row.model_dump(mode="json") for row in rows]
+        for name, rows in project_snapshot_records(preparation.snapshot).items()
+    }
+    # A fact's nullable foreign key points at the target dimension's key.
+    graph["dimensional_entity"].append(dimensional_entity("SalesFact", "fact"))
+    graph["dimensional_attribute"].append(
+        {
+            **dimensional_attribute("SalesFact", "CustomerKey", key_role="foreign"),
+            "dimensional_attribute_is_nullable": True,
+        }
+    )
+    graph["dimensional_relationship"] = [
+        {
+            **dimensional_relationship(),
+            "to_dimensional_entity_name": "Customer",
+            "to_dimensional_attribute_name": "CustomerID",
+        }
+    ]
+    preparation = preparation.model_copy(
+        update={"snapshot": snapshot_from_graph(cast(Any, graph))}
+    )
+    execution = build_mapping_execution_context(
+        preparation=preparation, execution_mode="one_shot"
+    )
+    values = cast(dict[str, Any], execution.embedded_context)["values"]
+    (link,) = values["mapping_support"]["modeled_relationships"]
+    assert link["from_dimensional_entity_name"] == "SalesFact"
+    assert link["dimensional_relationship_kind"] == "fact_dimension"
+    assert link["dimensional_relationship_cardinality"] == "many_to_one"
+    assert link["dimensional_relationship_is_optional"] is True
+    assert "dimensional_relationship_is_active" not in link
+    assert "dimensional_relationship_is_locked" not in link

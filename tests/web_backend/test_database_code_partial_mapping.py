@@ -151,9 +151,9 @@ def test_code_keeps_partial_system_pairs_and_all_active_target_attributes(
                 )
         if shape == "inactive_target_attribute":
             connection.execute(
-                sql.SQL("UPDATE workflow.{} SET {}='inactive' WHERE {}=%s").format(
+                sql.SQL("UPDATE workflow.{} SET {}=FALSE WHERE {}=%s").format(
                     sql.Identifier(f"{layer}_attribute"),
-                    sql.Identifier(f"{layer}_attribute_status"),
+                    sql.Identifier(f"{layer}_attribute_is_active"),
                     sql.Identifier(f"{layer}_attribute_id"),
                 ),
                 (attributes[-1]["modeled_attribute_id"],),

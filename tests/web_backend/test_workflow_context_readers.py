@@ -11,6 +11,9 @@ from typing import Any, cast
 import pytest
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import AnalysisResultRecord
+from jsonschema import Draft202012Validator
+from tests.web_backend.test_analysis_executor import _candidate, _context_bundle, _plan
+
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentContextToolResultTooLargeError,
 )
@@ -37,9 +40,6 @@ from gds_workbench_api.features.workflows.authoring.tool_configuration import (
     configure_tools,
 )
 from gds_workbench_api.prompt_rendering import PromptVariableDefinition
-from jsonschema import Draft202012Validator
-
-from tests.web_backend.test_analysis_executor import _candidate, _context_bundle, _plan
 
 
 def catalog(
@@ -95,17 +95,23 @@ def test_existing_relationships_preserve_locks_and_recorded_validation(
             **validation,
         }
     )
+    operation = "build" if workflow == "logical" else None
     context = _context_bundle().context.model_copy(
         update={
             "project_workflow": workflow,
             "workflow_execution_mode": mode,
+            "workflow_operation": operation,
             "analysis_relationships": (relationship,),
         }
     )
     plan = _plan().model_copy(
-        update={"project_workflow": workflow, "workflow_execution_mode": mode}
+        update={
+            "project_workflow": workflow,
+            "workflow_execution_mode": mode,
+            "workflow_operation": operation,
+        }
     )
-    code = "relationship_inference" if workflow == "analysis" else "candidate_authoring"
+    code = "relationship_inference" if workflow == "analysis" else "build_authoring"
     key = f"workflow.{workflow}.common.{code}.inputs.object_relationship_context"
     stage = plan.stages[0].model_copy(
         update={
@@ -274,19 +280,25 @@ def test_subject_area_table_links_do_not_widen_selected_tables(
 
 
 @pytest.mark.parametrize(
-    ("workflow", "count"),
+    ("input_set", "count"),
     [
         ("analysis", 6),
         ("subject_area", 6),
-        # Logical reads no Submodels; Dimensional still reads both Submodel families.
-        ("logical", 12),
-        ("dimensional", 23),
+        # Modeling readers page the whole model: get_* only, no list_* or Submodel readers.
+        ("logical", 9),
+        ("logical_optimize", 9),
+        ("dimensional", 13),
+        ("dimensional_optimize", 13),
     ],
 )
-def test_approved_schema_examples_and_every_no_input_reader(workflow: str, count: int) -> None:
-    reader = catalog(workflow)
+def test_approved_schema_examples_and_every_no_input_reader(input_set: str, count: int) -> None:
+    # Optimize reads the same readers as Build, over its own input set.
+    reader = catalog(input_set.removesuffix("_optimize"), values=INPUT_EXAMPLES[input_set])
     assert len(reader.definitions) == count
-    for definition in workflow_input_contracts(workflow).values():
+    assert not any(
+        "submodel" in tool.name or tool.name.startswith("list_") for tool in reader.definitions
+    )
+    for definition in workflow_input_contracts(input_set).values():
         Draft202012Validator.check_schema(definition["schema"])
         assert cast(Any, Draft202012Validator(definition["schema"])).is_valid(definition["example"])
     for tool in reader.definitions:
@@ -372,7 +384,7 @@ def test_saved_project_records_are_whole_and_unavailable_is_not_empty() -> None:
     values = deepcopy(INPUT_EXAMPLES["logical"])
     values["logical_entities"][0]["logical_entity_definition"] = "x" * 2000
     reader = catalog("logical", values=values, size=1000)
-    assert reader.invoke("list_logical_entities", {})["items"]
+    # A saved record is never cut to fit a page.
     with pytest.raises(AgentContextToolResultTooLargeError):
         reader.invoke("get_logical_entities", {})
     values["logical_entities"] = None

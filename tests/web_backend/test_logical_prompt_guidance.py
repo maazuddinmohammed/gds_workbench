@@ -10,10 +10,10 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from gds_workbench_api.features.logical.policy import project_logical_audit_policy
 from pydantic import JsonValue
-
 from tests.web_backend.test_logical_candidate import _answer, _validator
+
+from gds_workbench_api.features.logical.policy import project_logical_audit_policy
 
 SEED_ROOT = Path(__file__).resolve().parents[2] / "database/seed"
 # Seed 05 v2 is a second version of the global defaults and must keep the same boundaries.
@@ -31,16 +31,66 @@ PROMPT_SETS = {
 }
 
 
+# Boundaries both stages keep: the compact answer, backend-owned keys and safe repair.
+SHARED_RULES = (
+    "SourceSystemID/source namespace",
+    "composite join",
+    "never list or source it",
+    "never list them",
+    "the backend references the parent's generated key",
+    "Omit definition when its single source column's Project description",
+    "Add note only when the value is not a straight copy",
+    "its identity plus only what changes",
+    "retire marks saved records inactive; nothing is deleted",
+    "Omission is not deletion",
+    "Locked records cannot change",
+    "Attempts are not accumulated",
+)
+# A Build call models one Subject Area against the model so far and owns its coverage.
+BUILD_RULES = (
+    "Preserve disagreements between registered",
+    "null means unvalidated",
+    "Duplicate target",
+    "one value per Attribute at that grain",
+    "meaningful repeating children and multivalued facts",
+    "Cite a table by its id (t1)",
+    "never cite it as a source",
+    "Enforcement on rejects",
+    "enforcement off can return",
+    "source_refs_truncated",
+)
+STAGE_INPUTS = {
+    "build_authoring": {
+        "subject_area_context",
+        "table_index",
+        "existing_entities",
+        "neighbor_entities",
+        "entity_directory",
+        "coverage_threshold_percent",
+    },
+    "optimize_authoring": {
+        "table_index",
+        "model_summary",
+        "unlinked_analysis_edges",
+        "type_conflicts",
+        "name_variants",
+        "entity_details",
+    },
+}
+
+
 @pytest.mark.parametrize("prompt_set", sorted(PROMPT_SETS))
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
+@pytest.mark.parametrize("stage", sorted(STAGE_INPUTS))
 def test_logical_defaults_describe_the_compact_answer_and_keep_boundaries(
-    prompt_set: str, mode: str
+    prompt_set: str, mode: str, stage: str
 ) -> None:
     row = next(
         item
         for item in PROMPT_SETS[prompt_set]
         if item["project_workflow"] == "logical"
         and item["workflow_execution_mode"] == mode
+        and item["workflow_stage_code"] == stage
     )
     # v1 keeps hard-wrapped lines; compare both versions as flowing text.
     system = " ".join(row["system_prompt"].split())
@@ -48,40 +98,29 @@ def test_logical_defaults_describe_the_compact_answer_and_keep_boundaries(
     assert len(row["system_prompt"]) + len(instruction) < 17_000
     placeholders = re.findall(r"\{\{\s*(\w+)\s*\}\}", instruction)
     assert len(placeholders) == len(set(placeholders))
-    assert "table_index" in placeholders
-    assert not any(
-        "subject_area" in name or "submodel" in name for name in placeholders
-    )
+    # Each stage reads only its own input set; Optimize has no area and no coverage.
+    other = next(name for name in STAGE_INPUTS if name != stage)
+    assert STAGE_INPUTS[stage] <= set(placeholders)
+    assert not (STAGE_INPUTS[other] - STAGE_INPUTS[stage]) & set(placeholders)
+    assert not any("submodel" in name for name in placeholders)
     assert "Submodel" not in system
-    assert (
-        system.index("Decide each Entity's grain")
-        < system.index("Consolidate only compatible")
-        < system.index("After normalization, revisit")
-    )
-    for invariant in (
-        "Preserve disagreements between registered",
-        "null means unvalidated",
-        "Duplicate target",
-        "SourceSystemID/source namespace",
-        "one value per Attribute at that grain",
-        "meaningful repeating children and multivalued facts",
-        "composite join",
-        "Cite a table by its id (t1)",
-        "never list or source it",
-        "never list them",
-        "the backend references the parent's generated key",
-        "Omit definition when its single source column's Project description",
-        "Add note only when the value is not a straight copy",
-        "its identity plus only what changes",
-        "retire marks saved records inactive; nothing is deleted",
-        "Omission is not deletion",
-        "Locked records cannot change",
-        "Enforcement on rejects",
-        "enforcement off can return",
-        "Attempts are not accumulated",
-        "source_refs_truncated",
-    ):
+    for invariant in SHARED_RULES:
         assert invariant in system, invariant
+    for invariant in BUILD_RULES:
+        assert (invariant in system) == (stage == "build_authoring"), invariant
+    if stage == "build_authoring":
+        assert (
+            system.index("Reuse before you create")
+            < system.index("Decide each new or changed Entity's grain")
+            < system.index("Consolidate only compatible")
+            < system.index("After normalization, revisit")
+        )
+    else:
+        assert (
+            system.index("Cross-area links")
+            < system.index("Duplicates:")
+            < system.index("Type conflicts:")
+        )
     # Rules the backend now applies are no longer the agent's job.
     for removed in (
         "logical_attribute_is_surrogate_key",
@@ -94,16 +133,22 @@ def test_logical_defaults_describe_the_compact_answer_and_keep_boundaries(
         assert removed not in system, removed
     if mode == "tool_assisted":
         assert "next_cursor/is_complete" in system
-        assert "Reuse complete inline or previously read evidence" in system
-        assert "get_logical_submodels" not in system
-        assert "get_logical_submodels" not in row["agent_tool_names"]
+        # Only the whole-model readers remain: no list_* or Submodel readers.
+        assert {name for name in row["agent_tool_names"] if name.startswith("get_logical_")} == {
+            "get_logical_entities",
+            "get_logical_attributes",
+            "get_logical_relationships",
+        }
+        assert not any(
+            "submodel" in name or name.startswith("list_") for name in row["agent_tool_names"]
+        )
     else:
-        assert "All selected evidence is inline; there are no readers" in system
-        assert {
-            "object_context",
-            "object_attribute_context",
-            "object_relationship_context",
-        } <= set(placeholders)
+        assert row["agent_tool_names"] is None
+        assert "there are no readers" in system
+        assert (
+            {"object_context", "object_attribute_context", "object_relationship_context"}
+            <= set(placeholders)
+        ) == (stage == "build_authoring")
 
 
 def test_generated_parent_key_is_projected_once() -> None:
@@ -118,13 +163,11 @@ def test_generated_parent_key_is_projected_once() -> None:
         row
         for change in projected
         for row in change.records
-        if change.dataset == "logical_attribute"
-        and row["logical_entity_name"] == "Customer"
+        if change.dataset == "logical_attribute" and row["logical_entity_name"] == "Customer"
     ]
     keys = [row for row in rows if row["logical_attribute_is_surrogate_key"]]
     assert [
-        (row["logical_attribute_name"], row["logical_attribute_ordinal_position"])
-        for row in keys
+        (row["logical_attribute_name"], row["logical_attribute_ordinal_position"]) for row in keys
     ] == [("CustomerID", 1)]
     relationship = next(
         row

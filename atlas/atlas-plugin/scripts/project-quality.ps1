@@ -398,25 +398,47 @@ function Get-ModelingQuality($States, $Decisions, $NoteFiles = @{}, $MetadataSta
             elseif (-not (Get-Property $record 'attribute_name') -and (Normalize-Value 'project' 'value' (Get-Property $record 'zone_code')) -ceq 'bronze') { [void]$bronzeObjects.Add((Get-QPhysical $record)) }
         }
     }
-    # Subject Areas are optional table groups, never modeling evidence. Once a Project has an
-    # active area, an active Bronze Input Scope table outside every active area is unassigned.
+    # Subject Areas are optional focus windows over Input Scope Objects, never modeling evidence.
+    # Once a Project has an active area, an active Bronze Input Scope Object outside every active
+    # area is unassigned. Builds work one area at a time, so each area also reports how many of its
+    # Objects are shared with another area and already support an active Logical Entity.
     $subjectAreas = @(Get-QRows 'subject_area' | Where-Object { (Get-Active $_) -eq $true })
-    $areaNames = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
-    foreach ($record in $subjectAreas) { [void]$areaNames.Add((Normalize-Value 'project' 'value' (Get-Property $record 'subject_area_name'))) }
+    $areaObjects = @{}
+    foreach ($record in $subjectAreas) { $areaObjects[(Normalize-Value 'project' 'value' (Get-Property $record 'subject_area_name'))] = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal) }
     $assignedTables = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
-    $filledAreas = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
     foreach ($record in @(Get-QRows 'subject_area_table')) {
         $areaName = Normalize-Value 'project' 'value' (Get-Property $record 'subject_area_name')
-        if ((Get-Active $record) -ne $true -or -not $areaNames.Contains($areaName)) { continue }
+        if ((Get-Active $record) -ne $true -or -not $areaObjects.ContainsKey($areaName)) { continue }
         [void]$assignedTables.Add((Get-QPhysical $record))
-        [void]$filledAreas.Add($areaName)
+        [void]$areaObjects[$areaName].Add((Get-QPhysical $record))
     }
+    $objectAreas = @{}
+    foreach ($objects in $areaObjects.Values) { foreach ($object in $objects) { $objectAreas[$object] = 1 + [int]$objectAreas[$object] } }
     $unassignedTables = @()
     if ($subjectAreas.Count -gt 0) {
         $unassignedTables = @(Get-QRows 'project_input_scope' | Where-Object {
             (Get-Active $_) -eq $true -and $bronzeObjects.Contains((Get-QPhysical $_)) -and -not $assignedTables.Contains((Get-QPhysical $_)) })
     }
-    $emptyAreas = @($subjectAreas | Where-Object { -not $filledAreas.Contains((Normalize-Value 'project' 'value' (Get-Property $_ 'subject_area_name'))) })
+    $emptyAreas = @($subjectAreas | Where-Object { $areaObjects[(Normalize-Value 'project' 'value' (Get-Property $_ 'subject_area_name'))].Count -eq 0 })
+    # Same default order as the web Build dialog: most shared Objects first, then larger areas, then name.
+    $areaSummaries = New-Object Collections.ArrayList
+    foreach ($record in $subjectAreas) {
+        $objects = $areaObjects[(Normalize-Value 'project' 'value' (Get-Property $record 'subject_area_name'))]
+        $shared = 0; $modeled = 0
+        foreach ($object in $objects) {
+            if ($objectAreas[$object] -gt 1) { $shared++ }
+            if ($logicalSourceObjects.Contains($object)) { $modeled++ }
+        }
+        [void]$areaSummaries.Add([ordered]@{ subject_area_name = Get-Property $record 'subject_area_name'; object_count = $objects.Count; shared_object_count = $shared; modeled_object_count = $modeled })
+    }
+    $areaSummaries = Get-AtlasSortedRecords @($areaSummaries) {
+        param($a, $b)
+        $order = [Math]::Sign([long]$b.shared_object_count - [long]$a.shared_object_count)
+        if ($order -ne 0) { return $order }
+        $order = [Math]::Sign([long]$b.object_count - [long]$a.object_count)
+        if ($order -ne 0) { return $order }
+        return Compare-AtlasCodePoints (Normalize-Value 'project' 'value' $a.subject_area_name) (Normalize-Value 'project' 'value' $b.subject_area_name)
+    }
     $metrics = [ordered]@{
         logical_entities = $entities.Count
         logical_relationships = $logical.Count; cross_entity_relationships = $crossEdges; self_relationships = $selfEdges
@@ -437,8 +459,9 @@ function Get-ModelingQuality($States, $Decisions, $NoteFiles = @{}, $MetadataSta
         unassigned_tables = @($unassignedTables | Select-Object -First 200 | ForEach-Object { Get-QKeyObject 'project_input_scope' $_ })
         empty_subject_area_count = $emptyAreas.Count
         empty_subject_areas = @($emptyAreas | Select-Object -First 200 | ForEach-Object { Get-Property $_ 'subject_area_name' })
+        subject_area_summaries = @($areaSummaries | Select-Object -First 200)
         metric_examples_truncated = $entities.Count -gt 200 -or $isolatedEntities.Count -gt 200 -or $entitiesWithoutNaturalKey.Count -gt 200 -or
-            $unassignedTables.Count -gt 200 -or $emptyAreas.Count -gt 200
+            $unassignedTables.Count -gt 200 -or $emptyAreas.Count -gt 200 -or $areaSummaries.Count -gt 200
     }
     if ($entities.Count -gt 0 -and $singleObject -eq $entities.Count -and $singleSource -eq $business.Count) {
         Add-QIssue $warnings 'source_shaped_project' 'logical_entity' $null 'All Entities have one physical Object support and all business Attributes have one physical source. Review grain and dependencies; this does not prove copying or require splitting.'
@@ -450,10 +473,10 @@ function Get-ModelingQuality($States, $Decisions, $NoteFiles = @{}, $MetadataSta
         Add-QIssue $warnings 'disconnected_components' 'logical_entity' $null 'Logical Entities form separate connected groups. Ask the user whether these groups are intentionally separate or evidence supports a relationship between them; do not invent joins.'
     }
     if ($unassignedTables.Count -gt 0) {
-        Add-QIssue $warnings 'unassigned_tables' 'subject_area_table' $null 'Some active Bronze Input Scope tables are in no active Subject Area. Place each one in an area or report why it stays unassigned.'
+        Add-QIssue $warnings 'unassigned_tables' 'subject_area_table' $null 'Some active Bronze Input Scope Objects are in no active Subject Area. Place each one in an area or report why it stays unassigned.'
     }
     if ($emptyAreas.Count -gt 0) {
-        Add-QIssue $warnings 'empty_subject_areas' 'subject_area' $null 'Some active Subject Areas have no active table. Add their tables or retire the empty areas.'
+        Add-QIssue $warnings 'empty_subject_areas' 'subject_area' $null 'Some active Subject Areas have no active Object. Add their Objects or retire the empty areas.'
     }
     foreach ($attribute in $business) {
         $dataType = Get-Property $attribute 'logical_attribute_data_type'
@@ -592,10 +615,10 @@ function Get-ModelingQuality($States, $Decisions, $NoteFiles = @{}, $MetadataSta
                                     if ((Get-Property $endpointAttribute 'logical_attribute_is_surrogate_key') -and
                                         @(Get-QEntityAttributes $record ($endpoint + '_') | Where-Object { Get-Property $_ 'logical_attribute_is_natural_key' }).Count -gt 1) { $compositeAnalysis = $true }
                                 }
+                                # Child -> parent: the Analysis must run from the child's foreign key to the parent's key.
                                 $cardinality = Get-Property $record 'logical_relationship_cardinality'
-                                if (-not (($cardinality -ceq 'many_to_one' -and $alignment -ceq 'forward') -or
-                                    ($cardinality -ceq 'one_to_many' -and $alignment -ceq 'reverse') -or
-                                    ($cardinality -ceq 'one_to_one' -and $alignment -and $sourceCount -eq $sourceDistinct))) {
+                                if (-not ($alignment -ceq 'forward' -and ($cardinality -ceq 'many_to_one' -or
+                                    ($cardinality -ceq 'one_to_one' -and $sourceCount -eq $sourceDistinct)))) {
                                     Add-QIssue $errors 'analysis_cardinality_mismatch' $dataset $entryKey 'Declared cardinality is not supported by the cited directional uniqueness evidence.'
                                 }
                             }

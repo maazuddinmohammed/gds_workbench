@@ -107,7 +107,7 @@ APPLICATION_WEB_FUNCTIONS = (
         "character varying, integer, integer, bigint[], character varying[], character varying, "
         "character varying, uuid, jsonb, character varying, character varying, "
         "bigint, bigint, bigint, character varying, jsonb, jsonb, "
-        "character varying, bigint[]",
+        "character varying, bigint[], character varying, bigint[]",
     ),
     (
         "delete_project_records",

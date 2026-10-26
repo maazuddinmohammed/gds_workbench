@@ -71,6 +71,28 @@ describe("Workflow Run monitor", () => {
     },
   );
 
+  it.each([
+    ["logical", "build", "Logical Build", "Objects"],
+    ["logical", "optimize", "Logical Optimize", "Objects"],
+    ["dimensional", "build", "Dimensional Build", "Entities"],
+    ["dimensional", "optimize", "Dimensional Optimize", "Entities"],
+  ] as const)("names a %s %s run %s in run history, details and Apply", async (workflow, operation, label, scope) => {
+    const api = monitorApi();
+    const run: WorkflowRunDetail = { ...workflowRun(false), project_workflow: workflow,
+      workflow_operation: operation, workflow_execution_mode: "tool_assisted" };
+    api.readWorkflowRun.mockResolvedValue(run);
+    api.listWorkflowRuns.mockResolvedValue({ items: [run], next_cursor: null });
+    renderMonitor(api, vi.fn(async () => undefined), workflow);
+    const article = await screen.findByRole("article", { name: "Run 1048 details" });
+    expect(within(article).getByText(`${label} · tool assisted`)).toBeVisible();
+    const history = screen.getByRole("list", { name: `${workflow === "logical" ? "Logical" : "Dimensional"} run list` });
+    expect(within(history).getByText(`${label} · tool assisted`)).toBeVisible();
+    expect(within(article).getByText(scope, { selector: "dt" })).toBeVisible();
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Apply validated draft" }));
+    expect(await screen.findByRole("dialog", { name: `Apply validated ${label} draft?` })).toBeVisible();
+    expect(api.applyWorkflowDraft).not.toHaveBeenCalled();
+  });
+
   it("allows queued cancellation to be retried after an uncertain response", async () => {
     const api = monitorApi();
     const run: WorkflowRunDetail = { ...workflowRun(false), workflow_run_state: "queued",
@@ -746,7 +768,7 @@ describe("Workflow Run monitor", () => {
     });
     expect(await screen.findByText(progressing.message)).toBeVisible();
     expect(screen.getByRole("progressbar", {
-      name: "Subject area · candidate authoring progress: 10 of 80",
+      name: "Subject Area · candidate authoring progress: 10 of 80",
     })).toHaveAttribute("value", "10");
     await waitFor(() => expect(sectionState).toHaveTextContent("failed"));
     expect(readOverview).toHaveBeenCalledTimes(overviewCalls + 1);
@@ -841,7 +863,7 @@ describe("Workflow Run monitor", () => {
     expect(failure).toHaveTextContent(
       "The selected execution mode cannot accept this context. Choose another mode explicitly.",
     );
-    expect(failure).toHaveTextContent("Subject area · candidate authoring");
+    expect(failure).toHaveTextContent("Subject Area · candidate authoring");
     expect(failure).toHaveTextContent("Attempt 2");
     expect(failure).toHaveTextContent("databricks · databricks-primary");
     const eventMeta = screen.getByText("Event 3 · Attempt 2").closest("small");
@@ -1052,6 +1074,7 @@ function workflowRun(deterministic: boolean): WorkflowRunDetail {
     workflow_run_id: 1048,
     project_workflow: deterministic ? "analysis" : "subject_area",
     workflow_execution_mode: deterministic ? null : "one_shot",
+    workflow_operation: null,
     modeled_entity_type: null,
     selected_scope_count: 2,
     requested_batch_id: null,

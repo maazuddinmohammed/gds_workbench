@@ -19,6 +19,7 @@ from gds_etl_workbench.domain.authorization import (
     ToolPolicy,
 )
 from gds_etl_workbench.domain.errors import InvalidRequestError
+from gds_etl_workbench.domain.modeling_records import LogicalObjectSourceRecord
 from gds_etl_workbench.domain.snapshots.project import (
     DimensionalSection,
     ProjectChangeSetDataset,
@@ -28,6 +29,10 @@ from gds_etl_workbench.infrastructure.postgres import (
     ReadTransaction,
     WriteTransaction,
 )
+from pydantic import JsonValue
+from tests.mcp.project_test_fixtures import snapshot_from_graph
+from tests.web_backend.workflow_recovery_fixtures import RetainingHandoff
+
 from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.dimensional.policy import (
     project_dimensional_foreign_key_policy,
@@ -49,6 +54,7 @@ from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
 from gds_workbench_api.features.workflows.authoring.context import (
     AgentAuthoringContext,
     AgentContextBundle,
+    AgentContextLimits,
     InMemoryAgentContextToolCatalog,
 )
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
@@ -63,6 +69,7 @@ from gds_workbench_api.features.workflows.authoring.no_op import (
 from gds_workbench_api.features.workflows.authoring.plan import (
     AgentRunPlan,
     FrozenAgentStage,
+    PlannedSubjectArea,
     WorkflowExecutionMode,
 )
 from gds_workbench_api.features.workflows.authoring.repair import (
@@ -73,12 +80,29 @@ from gds_workbench_api.prompt_rendering import (
     PromptComponentTemplates,
     PromptVariableDefinition,
 )
-from pydantic import JsonValue
-
-from tests.mcp.project_test_fixtures import snapshot_from_graph
-from tests.web_backend.workflow_recovery_fixtures import RetainingHandoff
 
 _CLAIM_TOKEN = UUID("44444444-4444-4444-4444-444444444444")
+_SALES = PlannedSubjectArea(
+    subject_area_id=61,
+    subject_area_name="Sales",
+    subject_area_definition="Customer sales activity.",
+)
+_BILLING = PlannedSubjectArea(
+    subject_area_id=62,
+    subject_area_name="Billing",
+    subject_area_definition="Customer invoices.",
+)
+_RETURNS = PlannedSubjectArea(
+    subject_area_id=63,
+    subject_area_name="Returns",
+    subject_area_definition="Returned goods.",
+)
+# The bounds a Build applies to each focused Subject Area context.
+_LIMITS = AgentContextLimits(
+    max_tool_result_bytes=128 * 1024,
+    max_tool_catalog_bytes=128 * 1024,
+    max_tool_page_records=20,
+)
 
 
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
@@ -99,31 +123,15 @@ async def test_coverage_shortfall_uses_every_attempt_but_never_waives_other_erro
     second["selection_order"] = 2
     second["attributes"] = []
     raw["selected_logical_entities"].append(second)
-    context = AgentAuthoringContext.model_validate(raw, strict=False)
-    catalog = (
-        InMemoryAgentContextToolCatalog(
-            context=context,
-            max_result_bytes=128 * 1024,
-            max_catalog_bytes=128 * 1024,
-            max_page_records=20,
-        )
-        if mode == "tool_assisted"
-        else None
-    )
-    bundle = replace(
-        bundle,
-        context=context,
-        tool_catalog=catalog,
-        embedded_context=catalog.manifest if catalog else cast(JsonValue, raw),
-    )
+    bundle = replace(bundle, context=AgentAuthoringContext.model_validate(raw, strict=False))
     candidates = [_candidate() for _ in range(retries + 1)]
     if final_invalid:
         candidates[-1] = _candidate(source_name="unselected")
     else:
         # Verify the final attempt is returned, not a saved earlier candidate.
-        cast(dict[str, Any], candidates[-1])["entities"][0][
-            "dimensional_entity_definition"
-        ] = "Final attempt definition."
+        cast(dict[str, Any], candidates[-1])["entities"][0]["dimensional_entity_definition"] = (
+            "Final attempt definition."
+        )
     agent = _AgentExecutor(responses=cast(list[_AgentResponse], candidates))
     service, _, _, handoff, lifecycle = _service(
         agent=agent,
@@ -152,17 +160,13 @@ async def test_coverage_shortfall_uses_every_attempt_but_never_waives_other_erro
         assert handoff.retained == [] and lifecycle.failed is None
         event = handoff.final_events[-1]
         assert event.attempt == retries + 1 and event.status == "warning"
-        assert "1/2" in event.message and "60%" in event.message
-        assert "final attempt" in event.message
+        # The area's shortfall and the whole Run's coverage are both reported.
+        assert "Sales: Coverage 1/2 is below 60%" in event.message
+        assert "Run selection: Coverage 1/2 is below 60%" in event.message
         entities = next(
-            change
-            for change in handoff.calls[0]
-            if change.dataset == "dimensional_entity"
+            change for change in handoff.calls[0] if change.dataset == "dimensional_entity"
         )
-        assert (
-            entities.records[0]["dimensional_entity_definition"]
-            == "Final attempt definition."
-        )
+        assert entities.records[0]["dimensional_entity_definition"] == "Final attempt definition."
     assert len(agent.requests) == retries + 1
     for request in agent.requests[1:]:
         repair = cast(dict[str, Any], request.context)["repair"]
@@ -186,55 +190,44 @@ def _plan(
     *,
     mode: Literal["one_shot", "tool_assisted"] = "one_shot",
     retry_count: int = 1,
+    operation: Literal["build", "optimize"] = "build",
+    subject_areas: tuple[PlannedSubjectArea, ...] = (_SALES,),
 ) -> AgentRunPlan:
-    stage_codes = ("candidate_authoring",)
-    stages: list[FrozenAgentStage] = []
-    for position, stage_code in enumerate(stage_codes, start=1):
-        variables = [
+    stage_code = f"{operation}_authoring"
+    stage = FrozenAgentStage(
+        workflow_stage_id=141,
+        stage_code=stage_code,
+        stage_order=10 if operation == "build" else 20,
+        prompt_template_version_id=191,
+        prompt_template_digest="1" * 64,
+        templates=PromptComponentTemplates(
+            system="Author one governed Dimensional stage candidate.",
+            instruction=(
+                "Use {{stage_context}}. Follow {{naming_instructions}}. "
+                "Repair {{validation_failures}}."
+            ),
+        ),
+        variables=(
             PromptVariableDefinition(
                 name="stage_context",
                 resolver_key=f"workflow.dimensional.{mode}.{stage_code}.context",
                 data_type="json",
                 is_required=True,
-            )
-        ]
-        instruction = "Use {{stage_context}}."
-        if stage_code in {
-            "candidate_authoring",
-        }:
-            variables.append(
-                PromptVariableDefinition(
-                    name="naming_instructions",
-                    resolver_key="project.naming_instructions",
-                    data_type="text",
-                    is_required=False,
-                )
-            )
-            instruction += " Follow {{naming_instructions}}."
-        if stage_code in {"candidate_authoring"}:
-            variables.append(
-                PromptVariableDefinition(
-                    name="validation_failures",
-                    resolver_key="workflow.validation_failures",
-                    data_type="json",
-                    is_required=False,
-                )
-            )
-            instruction += " Repair {{validation_failures}}."
-        stages.append(
-            FrozenAgentStage(
-                workflow_stage_id=140 + position,
-                stage_code=stage_code,
-                stage_order=position * 10,
-                prompt_template_version_id=190 + position,
-                prompt_template_digest=f"{position:x}" * 64,
-                templates=PromptComponentTemplates(
-                    system="Author one governed Dimensional stage candidate.",
-                    instruction=instruction,
-                ),
-                variables=tuple(variables),
-            )
-        )
+            ),
+            PromptVariableDefinition(
+                name="naming_instructions",
+                resolver_key="project.naming_instructions",
+                data_type="text",
+                is_required=False,
+            ),
+            PromptVariableDefinition(
+                name="validation_failures",
+                resolver_key="workflow.validation_failures",
+                data_type="json",
+                is_required=False,
+            ),
+        ),
+    )
     return AgentRunPlan.model_validate(
         {
             "workflow_run_id": 1048,
@@ -243,6 +236,8 @@ def _plan(
             "project_revision": 7,
             "project_workflow": "dimensional",
             "workflow_execution_mode": mode,
+            "workflow_operation": operation,
+            "subject_areas": subject_areas if operation == "build" else (),
             "modeled_entity_type": "logical_entity",
             "selected_scope_digest": "a" * 64,
             "selected_object_ids": (),
@@ -255,46 +250,90 @@ def _plan(
                 max_turns=8,
                 validation_retry_count=retry_count,
             ),
-            "stages": tuple(stages),
+            "stages": (stage,),
         },
         strict=False,
     )
 
 
-def _selected_logical_entity() -> dict[str, object]:
+def _table(name: str) -> dict[str, object]:
+    return {
+        "tenant_code": "nwa",
+        "system_code": "gds",
+        "connection_code": "lakehouse",
+        "object_schema": "bronze_nwa",
+        "object_name": name,
+    }
+
+
+def _subject_areas(*areas: tuple[PlannedSubjectArea, tuple[str, ...]]) -> dict[str, object]:
+    """Saved Subject Areas and their active member tables, as the Run snapshot holds them."""
+    return {
+        "areas": [
+            {
+                "subject_area_name": area.subject_area_name,
+                "subject_area_definition": area.subject_area_definition,
+                "subject_area_is_active": True,
+                "subject_area_is_locked": False,
+            }
+            for area, _ in areas
+        ],
+        "tables": [
+            {
+                "subject_area_name": area.subject_area_name,
+                **_table(table),
+                "subject_area_table_is_active": True,
+                "subject_area_table_is_locked": False,
+            }
+            for area, tables in areas
+            for table in tables
+        ],
+    }
+
+
+def _selected_logical_entity(
+    name: str = "sales_customer", *, table: str = "sales_customer", order: int = 1
+) -> dict[str, object]:
+    """A Logical Entity built from one table; the table's Subject Areas decide its Builds."""
     entity: dict[str, object] = {
         "logical_entity_schema_name": "silver_nwa",
-        "logical_entity_name": "sales_customer",
+        "logical_entity_name": name,
         "logical_entity_definition": "Customer",
         "logical_entity_type": "core",
-        "logical_entity_type_detail": None,
         "logical_entity_grain": "One customer",
         "logical_entity_dependency_order": 0,
-        "logical_entity_status": "active",
+        "logical_entity_is_active": True,
         "logical_entity_is_locked": False,
-        "submodels": [],
-        "sources": [],
+        "sources": [
+            {
+                "support_source_type": "object",
+                "source_object": _table(table),
+                "rationale": None,
+                "is_active": True,
+                "is_locked": False,
+            }
+        ],
     }
     return {
-        "selection_order": 1,
+        "selection_order": order,
         "entity": entity,
         "attributes": [
             {
                 "logical_entity_schema_name": "silver_nwa",
-                "logical_entity_name": "sales_customer",
-                "logical_attribute_name": name,
-                "logical_attribute_definition": name,
+                "logical_entity_name": name,
+                "logical_attribute_name": attribute,
+                "logical_attribute_definition": attribute,
                 "logical_attribute_data_type": "bigint",
                 "logical_attribute_is_nullable": False,
                 "logical_attribute_is_natural_key": True,
                 "logical_attribute_is_surrogate_key": False,
                 "logical_attribute_ordinal_position": ordinal,
                 "logical_attribute_is_audit_column": False,
-                "logical_attribute_status": "active",
+                "logical_attribute_is_active": True,
                 "logical_attribute_is_locked": False,
                 "sources": [],
             }
-            for ordinal, name in enumerate(("customer_id", "sale_customer_id"), start=1)
+            for ordinal, attribute in enumerate(("customer_id", "sale_customer_id"), start=1)
         ],
     }
 
@@ -353,7 +392,9 @@ def _audit_template() -> dict[str, object]:
 def _context_bundle(
     *,
     mode: Literal["one_shot", "tool_assisted"] = "one_shot",
+    operation: Literal["build", "optimize"] = "build",
 ) -> AgentContextBundle:
+    """The loaded Run context: one Logical Entity built from the Sales area's only table."""
     context = AgentAuthoringContext.model_validate(
         {
             "workflow_run_id": 1048,
@@ -362,15 +403,14 @@ def _context_bundle(
             "project_revision": 7,
             "project_workflow": "dimensional",
             "workflow_execution_mode": mode,
+            "workflow_operation": operation,
             "modeled_entity_type": "logical_entity",
             "selected_scope_digest": "a" * 64,
             "project_details": {
                 "project_name": "Sales Project",
                 "project_description": None,
                 "logical_schemas": [{"schema_name": "silver_nwa", "description": None}],
-                "dimensional_schemas": [
-                    {"schema_name": "gold_nwa", "description": None}
-                ],
+                "dimensional_schemas": [{"schema_name": "gold_nwa", "description": None}],
                 "silver_model_naming_instructions": None,
                 "silver_model_audit_columns_template": None,
                 "gold_model_naming_instructions": "Use business-facing Gold names.",
@@ -409,7 +449,7 @@ def _context_bundle(
                 ],
             },
             "applied": {
-                "subject_area": None,
+                "subject_area": _subject_areas((_SALES, ("sales_customer",))),
                 "logical": None,
                 "dimensional": None,
                 "mapping": None,
@@ -417,6 +457,9 @@ def _context_bundle(
         },
         strict=False,
     )
+    if operation == "build":
+        # A Build is bounded and packaged per Subject Area by focus_subject_area.
+        return AgentContextBundle(context=context, embedded_context={}, limits=_LIMITS)
     if mode == "tool_assisted":
         catalog = InMemoryAgentContextToolCatalog(
             context=context,
@@ -428,10 +471,12 @@ def _context_bundle(
             context=context,
             embedded_context=catalog.manifest,
             tool_catalog=catalog,
+            limits=_LIMITS,
         )
     return AgentContextBundle(
         context=context,
         embedded_context=cast(JsonValue, context.model_dump(mode="json")),
+        limits=_LIMITS,
     )
 
 
@@ -442,17 +487,16 @@ def _object_key(*, object_name: str = "sales_customer") -> dict[str, object]:
     }
 
 
-def _source(attribute_name: str) -> list[dict[str, object]]:
+def _source(attribute_name: str, *, object_name: str = "sales_customer") -> list[dict[str, object]]:
     return [
         {
             "support_source_type": "logical_attribute",
             "source_logical_attribute": {
-                **_object_key(),
+                **_object_key(object_name=object_name),
                 "logical_attribute_name": attribute_name,
             },
-            "source_order": 1,
             "rationale": "Eligible Silver contribution.",
-            "status": "active",
+            "is_active": True,
             "is_locked": False,
         }
     ]
@@ -461,30 +505,21 @@ def _source(attribute_name: str) -> list[dict[str, object]]:
 def _candidate(
     *,
     source_name: str = "sales_customer",
-    relationship_optional: bool = True,
+    customer_reference_nullable: bool = False,
 ) -> JsonValue:
-    source_object = _object_key(object_name=source_name)
+    """A Customer Dimension and a Sales Fact whose customer reference may be unknown."""
     entity_source = [
         {
             "support_source_type": "logical_entity",
-            "source_logical_entity": source_object,
-            "source_order": 1,
+            "source_logical_entity": _object_key(object_name=source_name),
             "rationale": "Eligible Silver contribution.",
-            "status": "active",
+            "is_active": True,
             "is_locked": False,
         }
     ]
     return cast(
         JsonValue,
         {
-            "submodels": [
-                {
-                    "dimensional_submodel_name": "Sales Analytics",
-                    "dimensional_submodel_definition": "Sales analysis.",
-                    "dimensional_submodel_status": "active",
-                    "dimensional_submodel_is_locked": False,
-                }
-            ],
             "entities": [
                 {
                     "dimensional_entity_schema_name": "gold_nwa",
@@ -494,15 +529,8 @@ def _candidate(
                     "dimensional_fact_type": None,
                     "dimensional_entity_grain_definition": None,
                     "dimensional_entity_dependency_order": 0,
-                    "dimensional_entity_status": "active",
+                    "dimensional_entity_is_active": True,
                     "dimensional_entity_is_locked": False,
-                    "submodels": [
-                        {
-                            "submodel_name": "Sales Analytics",
-                            "membership_status": "active",
-                            "membership_is_locked": False,
-                        }
-                    ],
                     "sources": entity_source,
                 },
                 {
@@ -513,15 +541,8 @@ def _candidate(
                     "dimensional_fact_type": "transaction",
                     "dimensional_entity_grain_definition": "One sale per customer.",
                     "dimensional_entity_dependency_order": 1,
-                    "dimensional_entity_status": "active",
+                    "dimensional_entity_is_active": True,
                     "dimensional_entity_is_locked": False,
-                    "submodels": [
-                        {
-                            "submodel_name": "Sales Analytics",
-                            "membership_status": "active",
-                            "membership_is_locked": False,
-                        }
-                    ],
                     "sources": entity_source,
                 },
             ],
@@ -537,7 +558,7 @@ def _candidate(
                     "dimensional_attribute_is_natural_key": True,
                     "dimensional_attribute_is_surrogate_key": False,
                     "dimensional_attribute_is_audit_column": False,
-                    "dimensional_attribute_status": "active",
+                    "dimensional_attribute_is_active": True,
                     "dimensional_attribute_is_locked": False,
                     "sources": _source("customer_id"),
                 },
@@ -547,35 +568,27 @@ def _candidate(
                     "dimensional_attribute_name": "Source Customer ID",
                     "dimensional_attribute_definition": "Sale customer identifier.",
                     "dimensional_attribute_data_type": "bigint",
-                    "dimensional_attribute_is_nullable": False,
+                    "dimensional_attribute_is_nullable": customer_reference_nullable,
                     "dimensional_attribute_ordinal_position": 1,
-                    "dimensional_attribute_is_natural_key": True,
+                    "dimensional_attribute_is_natural_key": not customer_reference_nullable,
                     "dimensional_attribute_is_surrogate_key": False,
                     "dimensional_attribute_is_audit_column": False,
-                    "dimensional_attribute_status": "active",
+                    "dimensional_attribute_is_active": True,
                     "dimensional_attribute_is_locked": False,
                     "sources": _source("sale_customer_id"),
                 },
             ],
             "relationships": [
                 {
-                    "dimensional_relationship_name": "Sales to customer",
-                    "dimensional_relationship_definition": "Each sale references a customer.",
                     "from_dimensional_entity_schema_name": "gold_nwa",
                     "from_dimensional_entity_name": "Sales Fact",
                     "from_dimensional_attribute_name": "Source Customer ID",
                     "to_dimensional_entity_schema_name": "gold_nwa",
                     "to_dimensional_entity_name": "Customer Dimension",
                     "to_dimensional_attribute_name": "Customer ID",
-                    "dimensional_relationship_kind": "foreign_key",
-                    "dimensional_relationship_cardinality": "many_to_one",
-                    "dimensional_relationship_is_optional": relationship_optional,
                     "dimensional_relationship_role_name": "Bill To Customer",
                     "dimensional_relationship_basis": "Sales customer evidence.",
-                    "dimensional_relationship_cardinality_basis": (
-                        "Many sales reference one customer."
-                    ),
-                    "dimensional_relationship_status": "active",
+                    "dimensional_relationship_is_active": True,
                     "dimensional_relationship_is_locked": False,
                 }
             ],
@@ -586,22 +599,9 @@ def _candidate(
 def _applied_dimensional_section() -> DimensionalSection:
     raw = cast(dict[str, list[dict[str, object]]], _candidate())
     changes = (
-        StageProjectChange(
-            dataset="dimensional_submodel",
-            records=raw["submodels"],
-        ),
-        StageProjectChange(
-            dataset="dimensional_entity",
-            records=raw["entities"],
-        ),
-        StageProjectChange(
-            dataset="dimensional_attribute",
-            records=raw["attributes"],
-        ),
-        StageProjectChange(
-            dataset="dimensional_relationship",
-            records=raw["relationships"],
-        ),
+        StageProjectChange(dataset="dimensional_entity", records=raw["entities"]),
+        StageProjectChange(dataset="dimensional_attribute", records=raw["attributes"]),
+        StageProjectChange(dataset="dimensional_relationship", records=raw["relationships"]),
     )
     projected = project_dimensional_gold_policy(
         changes=changes,
@@ -617,7 +617,6 @@ def _applied_dimensional_section() -> DimensionalSection:
     by_dataset = {change.dataset: change.records for change in projected}
     return DimensionalSection.model_validate(
         {
-            "submodels": tuple(by_dataset["dimensional_submodel"]),
             "entities": tuple(by_dataset["dimensional_entity"]),
             "attributes": tuple(by_dataset["dimensional_attribute"]),
             "relationships": tuple(by_dataset["dimensional_relationship"]),
@@ -631,11 +630,7 @@ def _no_op_context_bundle() -> AgentContextBundle:
     applied = bundle.context.applied.model_copy(
         update={"dimensional": _applied_dimensional_section()}
     )
-    context = bundle.context.model_copy(update={"applied": applied})
-    return AgentContextBundle(
-        context=context,
-        embedded_context=cast(JsonValue, context.model_dump(mode="json")),
-    )
+    return replace(bundle, context=bundle.context.model_copy(update={"applied": applied}))
 
 
 def _no_op_candidate() -> JsonValue:
@@ -646,16 +641,12 @@ def _no_op_candidate() -> JsonValue:
     return cast(JsonValue, candidate)
 
 
-type _AgentResponse = (
-    JsonValue | Exception | Callable[[AgentExecutionRequest], JsonValue]
-)
+type _AgentResponse = JsonValue | Exception | Callable[[AgentExecutionRequest], JsonValue]
 
 
 @dataclass
 class _Database:
-    isolations: list[ReadIsolation] = field(
-        default_factory=lambda: list[ReadIsolation]()
-    )
+    isolations: list[ReadIsolation] = field(default_factory=lambda: list[ReadIsolation]())
 
     @asynccontextmanager
     async def write_transaction(
@@ -717,45 +708,61 @@ class _ContextRepository:
         del transaction, tenant_id, plan
         if self.bundle.snapshot is not None:
             return self.bundle
+        # The private validation snapshot holds what the context shows: its Subject Areas,
+        # the selected Logical Entities with any saved Logical links, and the applied
+        # Dimensional model.
         context = self.bundle.context
         graph: dict[ProjectChangeSetDataset, list[dict[str, object]]] = {
             "project_details": [context.project_details.model_dump(mode="json")],
-            "context_group": [
-                item.model_dump(mode="json") for item in context.context.groups
+            "context_group": [item.model_dump(mode="json") for item in context.context.groups],
+            "context_record": [item.model_dump(mode="json") for item in context.context.records],
+            "logical_entity": [
+                item.entity.model_dump(mode="json") for item in context.selected_logical_entities
             ],
-            "context_record": [
-                item.model_dump(mode="json") for item in context.context.records
+            "logical_attribute": [
+                attribute.model_dump(mode="json")
+                for item in context.selected_logical_entities
+                for attribute in item.attributes
             ],
         }
-        graph["logical_entity"] = [
-            item.entity.model_dump(mode="json")
-            for item in context.selected_logical_entities
-        ]
-        graph["logical_attribute"] = [
-            attribute.model_dump(mode="json")
-            for item in context.selected_logical_entities
-            for attribute in item.attributes
-        ]
+        areas = context.applied.subject_area
+        if areas is not None:
+            graph["subject_area"] = [record.model_dump(mode="json") for record in areas.areas]
+            graph["subject_area_table"] = [
+                record.model_dump(mode="json") for record in areas.tables
+            ]
+        if context.applied.logical is not None:
+            graph["logical_relationship"] = [
+                record.model_dump(mode="json") for record in context.applied.logical.relationships
+            ]
         applied = context.applied.dimensional
         if applied:
-            for dataset, records in (
-                ("dimensional_submodel", applied.submodels),
-                ("dimensional_entity", applied.entities),
-                ("dimensional_attribute", applied.attributes),
-                ("dimensional_relationship", applied.relationships),
-            ):
-                graph[cast(ProjectChangeSetDataset, dataset)] = [
-                    record.model_dump(mode="json") for record in records
-                ]
+            graph["dimensional_entity"] = [r.model_dump(mode="json") for r in applied.entities]
+            graph["dimensional_attribute"] = [
+                record.model_dump(mode="json") for record in applied.attributes
+            ]
+            graph["dimensional_relationship"] = [
+                record.model_dump(mode="json") for record in applied.relationships
+            ]
+        # Saved Subject Area tables and Logical lineage keep their registered Objects.
         objects = frozenset(
             (
-                item.object.tenant_code.casefold(),
-                item.object.system_code.casefold(),
-                item.object.connection_code.casefold(),
-                item.object.object_schema.casefold(),
-                item.object.object_name.casefold(),
+                key.tenant_code.casefold(),
+                key.system_code.casefold(),
+                key.connection_code.casefold(),
+                key.object_schema.casefold(),
+                key.object_name.casefold(),
             )
-            for item in context.selected_objects
+            for key in (
+                *(item.object for item in context.selected_objects),
+                *(() if areas is None else areas.tables),
+                *(
+                    source.source_object
+                    for item in context.selected_logical_entities
+                    for source in item.entity.sources
+                    if isinstance(source, LogicalObjectSourceRecord)
+                ),
+            )
         )
         attributes = frozenset(
             (
@@ -777,9 +784,7 @@ class _ContextRepository:
             project_input_objects=frozenset(),
             project_input_attributes=frozenset(),
         )
-        return replace(
-            self.bundle, snapshot=snapshot_from_graph(graph), physical_scope=scope
-        )
+        return replace(self.bundle, snapshot=snapshot_from_graph(graph), physical_scope=scope)
 
 
 @dataclass
@@ -853,9 +858,7 @@ class _Handoff(RetainingHandoff):
 @dataclass
 class _Lifecycle:
     starts: list[tuple[RequestPrincipal, int, int, int, str, str | None, int]] = field(
-        default_factory=lambda: list[
-            tuple[RequestPrincipal, int, int, int, str, str | None, int]
-        ]()
+        default_factory=lambda: list[tuple[RequestPrincipal, int, int, int, str, str | None, int]]()
     )
 
     async def start(
@@ -888,9 +891,7 @@ class _Lifecycle:
             project_revision=expected_project_revision,
         )
 
-    events: list[AgentWorkflowEvent] = field(
-        default_factory=lambda: list[AgentWorkflowEvent]()
-    )
+    events: list[AgentWorkflowEvent] = field(default_factory=lambda: list[AgentWorkflowEvent]())
     finding_count: int | None = None
     failed: tuple[str, str] | None = None
     fail_event_sequence: int | None = None
@@ -973,9 +974,7 @@ class _NoOp:
             project_revision=request.expected_project_revision,
             workflow_run_id=workflow_run_id,
             workflow_run_state=(
-                "completed_with_repair"
-                if request.final_event.attempt > 1
-                else "completed"
+                "completed_with_repair" if request.final_event.attempt > 1 else "completed"
             ),
             project_workflow=request.expected_workflow,
             workflow_execution_mode=request.expected_execution_mode,
@@ -1015,6 +1014,7 @@ def _service(
                 context
                 or _context_bundle(
                     mode=selected_plan.workflow_execution_mode or "one_shot",
+                    operation=selected_plan.workflow_operation or "build",
                 )
             ),
             context_policy=AgentContextPolicy(
@@ -1031,7 +1031,17 @@ def _service(
     )
 
 
-@pytest.mark.asyncio
+async def _execute(service: DimensionalWorkflow) -> object:
+    return await service.execute_started(
+        _principal(),
+        tenant_id=7,
+        project_id=18,
+        workflow_run_id=1048,
+        workflow_run_claim_token=_CLAIM_TOKEN,
+        expected_project_revision=7,
+    )
+
+
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
 async def test_start_binds_dimensional_workflow_without_executing(
     mode: WorkflowExecutionMode,
@@ -1060,15 +1070,14 @@ async def test_start_binds_dimensional_workflow_without_executing(
     assert lifecycle.failed is None
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
 @pytest.mark.parametrize("scd_type", [None, "type_1", "type_2"])
 async def test_dimensional_runs_with_optional_gold_templates_unset(
     mode: Literal["one_shot", "tool_assisted"],
     scd_type: Literal["type_1", "type_2"] | None,
 ) -> None:
-    context = _context_bundle(mode=mode).context
-    details = context.project_details.model_copy(
+    bundle = _context_bundle(mode=mode)
+    details = bundle.context.project_details.model_copy(
         update={
             "logical_entity_scd_type": "type_1",
             "dimensional_entity_scd_type": scd_type,
@@ -1077,36 +1086,10 @@ async def test_dimensional_runs_with_optional_gold_templates_unset(
             "gold_model_audit_columns_template": None,
         }
     )
-    context = context.model_copy(update={"project_details": details})
-    catalog = (
-        InMemoryAgentContextToolCatalog(
-            context=context,
-            max_result_bytes=128 * 1024,
-            max_catalog_bytes=128 * 1024,
-            max_page_records=20,
-        )
-        if mode == "tool_assisted"
-        else None
-    )
-    bundle = AgentContextBundle(
-        context=context,
-        embedded_context=catalog.manifest
-        if catalog
-        else cast(JsonValue, context.model_dump(mode="json")),
-        tool_catalog=catalog,
-    )
+    bundle = replace(bundle, context=bundle.context.model_copy(update={"project_details": details}))
     agent = _AgentExecutor(responses=[_candidate()])
-    service, _, _, handoff, lifecycle = _service(
-        agent=agent, context=bundle, plan=_plan(mode=mode)
-    )
-    await service.execute_started(
-        _principal(),
-        tenant_id=7,
-        project_id=18,
-        workflow_run_id=1048,
-        workflow_run_claim_token=_CLAIM_TOKEN,
-        expected_project_revision=7,
-    )
+    service, _, _, handoff, lifecycle = _service(agent=agent, context=bundle, plan=_plan(mode=mode))
+    await _execute(service)
     assert agent.requests and handoff.calls
     assert lifecycle.failed is None
     attributes = [
@@ -1116,105 +1099,89 @@ async def test_dimensional_runs_with_optional_gold_templates_unset(
         for row in change.records
     ]
     dimension = [
-        row
-        for row in attributes
-        if row["dimensional_entity_name"] == "Customer Dimension"
+        row for row in attributes if row["dimensional_entity_name"] == "Customer Dimension"
     ]
     names = {row["dimensional_attribute_name"] for row in dimension}
     assert "Customer DimensionKey" in names
     assert {"RecordStartTime", "RecordEndTime", "IsCurrentRecord"}.issubset(names) is (
         scd_type == "type_2"
     )
-    assert sum(
-        bool(row["dimensional_attribute_is_audit_column"]) for row in dimension
-    ) == (13 if scd_type == "type_2" else 10)
+    assert sum(bool(row["dimensional_attribute_is_audit_column"]) for row in dimension) == (
+        13 if scd_type == "type_2" else 10
+    )
 
 
-@pytest.mark.asyncio
 async def test_invalid_gold_policy_blocks_before_agent_execution() -> None:
-    context = _context_bundle()
-    project_details = context.context.project_details.model_copy(
+    bundle = _context_bundle()
+    project_details = bundle.context.project_details.model_copy(
         update={"gold_model_audit_columns_template": {"schema_version": "invalid"}}
     )
-    authoring_context = context.context.model_copy(
-        update={"project_details": project_details}
+    bundle = replace(
+        bundle, context=bundle.context.model_copy(update={"project_details": project_details})
     )
     agent = _AgentExecutor(responses=[_candidate()])
-    service, _database, _authorizer, handoff, lifecycle = _service(
-        agent=agent,
-        context=AgentContextBundle(
-            context=authoring_context,
-            embedded_context=context.embedded_context,
-            tool_catalog=context.tool_catalog,
-        ),
-    )
+    service, _database, _authorizer, handoff, lifecycle = _service(agent=agent, context=bundle)
 
     with pytest.raises(InvalidRequestError):
-        await service.execute_started(
-            _principal(),
-            tenant_id=7,
-            project_id=18,
-            workflow_run_id=1048,
-            workflow_run_claim_token=_CLAIM_TOKEN,
-            expected_project_revision=7,
-        )
+        await _execute(service)
 
     assert agent.requests == []
     assert handoff.calls == []
     assert lifecycle.failed is not None
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("relationship_optional", [False, True])
-async def test_one_shot_projects_gold_policy_then_foreign_key_once(
-    relationship_optional: bool,
+@pytest.mark.parametrize("customer_reference_nullable", [False, True])
+async def test_build_projects_gold_policy_and_foreign_key_once(
+    customer_reference_nullable: bool,
 ) -> None:
     agent = _AgentExecutor(
-        responses=[_candidate(relationship_optional=relationship_optional)]
+        responses=[_candidate(customer_reference_nullable=customer_reference_nullable)]
     )
     service, database, authorizer, handoff, lifecycle = _service(agent=agent)
 
-    result = await service.execute_started(
-        _principal(),
-        tenant_id=7,
-        project_id=18,
-        workflow_run_id=1048,
-        workflow_run_claim_token=_CLAIM_TOKEN,
-        expected_project_revision=7,
-    )
+    result = await _execute(service)
 
+    # Two Entities, seven Attributes (two keys, two business, one foreign key, two audit)
+    # and one Relationship.
     assert isinstance(result, WorkflowChangeSetHandoffResult)
-    assert result.staged_record_count == 11
+    assert result.staged_record_count == 10
     assert database.isolations == [ReadIsolation.REPEATABLE_READ]
     assert authorizer.calls == [(7, ToolPolicy.TENANT_PROJECT_WRITE)]
     request = agent.requests[0]
     assert request.workflow == "dimensional"
-    assert request.stage == "candidate_authoring"
+    assert request.stage == "build_authoring"
     assert request.execution_mode == "one_shot"
     assert request.allowed_tool_names == ()
     assert "Use business-facing Gold names." in request.instruction_prompt
-    assert request.context == {
-        "original_context": _context_bundle().embedded_context,
-        "repair": None,
+    # The call sees its own Subject Area, never the saved Subject Area records.
+    sent = cast(dict[str, Any], request.context)
+    assert sent["repair"] is None
+    original = sent["original_context"]
+    assert original["build_subject_area"] == {
+        "name": "Sales",
+        "definition": "Customer sales activity.",
     }
+    assert original["prompt_inputs"]["subject_area_context"] == {
+        "name": "Sales",
+        "definition": "Customer sales activity.",
+        "input_count": 1,
+    }
+    assert original["applied"]["subject_area"] is None
     assert handoff.workflows == ["dimensional"]
     assert len(handoff.calls) == 1
     attribute_change = next(
-        change
-        for change in handoff.calls[0]
-        if change.dataset == "dimensional_attribute"
+        change for change in handoff.calls[0] if change.dataset == "dimensional_attribute"
     )
     foreign_key = next(
         record
         for record in attribute_change.records
         if record["dimensional_attribute_name"] == "Bill To Customer key"
     )
-    assert foreign_key["dimensional_attribute_name"] == "Bill To Customer key"
-    assert foreign_key["dimensional_attribute_is_nullable"] is relationship_optional
+    # A foreign key may be null exactly when its business customer reference may be null.
+    assert foreign_key["dimensional_entity_name"] == "Sales Fact"
+    assert foreign_key["dimensional_attribute_is_nullable"] is customer_reference_nullable
     relationship_change = next(
-        change
-        for change in handoff.calls[0]
-        if change.dataset == "dimensional_relationship"
+        change for change in handoff.calls[0] if change.dataset == "dimensional_relationship"
     )
     assert relationship_change.records[0]["from_dimensional_attribute_name"] == (
         "Bill To Customer key"
@@ -1222,11 +1189,14 @@ async def test_one_shot_projects_gold_policy_then_foreign_key_once(
     assert relationship_change.records[0]["to_dimensional_attribute_name"] == (
         "Customer Dimension key"
     )
-    assert handoff.final_events[-1].finding_count == 11
+    assert handoff.final_events[-1].finding_count == 10
+    assert handoff.final_events[-1].message == "Dimensional build is ready in a validated draft."
+    assert [event.message for event in lifecycle.events] == [
+        "Building Sales (1 of 1): 1 Logical Entity."
+    ]
     assert lifecycle.failed is None
 
 
-@pytest.mark.asyncio
 async def test_tool_assisted_uses_local_catalog_and_same_change_contract() -> None:
     agent = _AgentExecutor(responses=[_candidate()])
     service, _database, _authorizer, handoff, lifecycle = _service(
@@ -1234,22 +1204,15 @@ async def test_tool_assisted_uses_local_catalog_and_same_change_contract() -> No
         plan=_plan(mode="tool_assisted"),
     )
 
-    await service.execute_started(
-        _principal(),
-        tenant_id=7,
-        project_id=18,
-        workflow_run_id=1048,
-        workflow_run_claim_token=_CLAIM_TOKEN,
-        expected_project_revision=7,
-    )
+    await _execute(service)
 
     request = agent.requests[0]
     catalog = request.local_tool_catalog
     assert isinstance(catalog, InMemoryAgentContextToolCatalog)
     assert request.allowed_tool_names == catalog.allowed_tool_names
     assert request.context == {"original_context": catalog.manifest, "repair": None}
+    assert catalog.prompt_values["subject_area_context"]["name"] == "Sales"
     assert [change.dataset for change in handoff.calls[0]] == [
-        "dimensional_submodel",
         "dimensional_entity",
         "dimensional_attribute",
         "dimensional_relationship",
@@ -1257,21 +1220,11 @@ async def test_tool_assisted_uses_local_catalog_and_same_change_contract() -> No
     assert lifecycle.failed is None
 
 
-@pytest.mark.asyncio
 async def test_validation_repair_keeps_original_context_then_hands_off_once() -> None:
-    agent = _AgentExecutor(
-        responses=[_candidate(source_name="outside_selection"), _candidate()]
-    )
+    agent = _AgentExecutor(responses=[_candidate(source_name="outside_selection"), _candidate()])
     service, _database, _authorizer, handoff, _lifecycle = _service(agent=agent)
 
-    await service.execute_started(
-        _principal(),
-        tenant_id=7,
-        project_id=18,
-        workflow_run_id=1048,
-        workflow_run_claim_token=_CLAIM_TOKEN,
-        expected_project_revision=7,
-    )
+    await _execute(service)
 
     assert len(agent.requests) == 2
     first = cast(dict[str, JsonValue], agent.requests[0].context)
@@ -1281,23 +1234,250 @@ async def test_validation_repair_keeps_original_context_then_hands_off_once() ->
     assert repair["validation_issues"]
     assert len(handoff.calls) == 1
     assert handoff.final_events[-1].status == "warning"
+    assert "Sales: repaired." in handoff.final_events[-1].message
 
 
-@pytest.mark.asyncio
+async def test_build_makes_one_call_per_subject_area_over_the_model_built_so_far() -> None:
+    bundle = _context_bundle()
+    customer_link = {
+        "from_logical_entity_schema_name": "silver_nwa",
+        "from_logical_entity_name": "sales_invoice",
+        "from_logical_attribute_name": "sale_customer_id",
+        "to_logical_entity_schema_name": "silver_nwa",
+        "to_logical_entity_name": "sales_customer",
+        "to_logical_attribute_name": "customer_id",
+        "logical_relationship_cardinality": "many_to_one",
+        "logical_relationship_basis": "Each invoice bills one customer.",
+        "logical_relationship_is_active": True,
+        "logical_relationship_is_locked": False,
+    }
+    raw = bundle.context.model_dump(mode="json")
+    raw["selected_logical_entities"].append(
+        _selected_logical_entity("sales_invoice", table="sales_invoice", order=2)
+    )
+    raw["applied"]["subject_area"] = _subject_areas(
+        (_SALES, ("sales_customer",)), (_BILLING, ("sales_invoice",))
+    )
+    raw["applied"]["logical"] = {"entities": [], "attributes": [], "relationships": [customer_link]}
+    bundle = replace(bundle, context=AgentAuthoringContext.model_validate(raw, strict=False))
+    invoice = cast(dict[str, Any], _candidate(source_name="sales_invoice"))
+    # The Billing call reuses the Customer Dimension the Sales call created.
+    invoice["entities"] = [
+        {
+            **invoice["entities"][1],
+            "dimensional_entity_name": "Invoice Fact",
+            "dimensional_entity_definition": "One invoice.",
+            "dimensional_entity_grain_definition": "One invoice per customer.",
+        }
+    ]
+    invoice["attributes"] = [
+        {
+            **invoice["attributes"][1],
+            "dimensional_entity_name": "Invoice Fact",
+            "sources": _source("sale_customer_id", object_name="sales_invoice"),
+        }
+    ]
+    invoice["relationships"] = [
+        {
+            **invoice["relationships"][0],
+            "from_dimensional_entity_name": "Invoice Fact",
+            "to_dimensional_attribute_name": "Customer Dimension key",
+            "dimensional_relationship_role_name": None,
+        }
+    ]
+    agent = _AgentExecutor(responses=[_candidate(), cast(JsonValue, invoice)])
+    service, _database, _authorizer, handoff, lifecycle = _service(
+        agent=agent, context=bundle, plan=_plan(subject_areas=(_SALES, _BILLING))
+    )
+
+    await _execute(service)
+
+    sales, billing = [
+        cast(dict[str, Any], request.context)["original_context"]["prompt_inputs"]
+        for request in agent.requests
+    ]
+    assert sales["subject_area_context"] == {
+        "name": "Sales",
+        "definition": "Customer sales activity.",
+        "input_count": 1,
+    }
+    assert [
+        item["entity"]["logical_entity_name"] for item in sales["selected_logical_entities"]
+    ] == ["sales_customer"]
+    assert sales["entity_directory"] == []
+    assert billing["subject_area_context"] == {
+        "name": "Billing",
+        "definition": "Customer invoices.",
+        "input_count": 1,
+    }
+    assert [
+        item["entity"]["logical_entity_name"] for item in billing["selected_logical_entities"]
+    ] == ["sales_invoice"]
+    assert billing["logical_links"] == [
+        {
+            "from": "silver_nwa.sales_invoice.sale_customer_id",
+            "to": "silver_nwa.sales_customer",
+            "cardinality": "many_to_one",
+        }
+    ]
+    # Billing sees the model as the Sales call left it.
+    assert billing["existing_entities"]["entities"] == []
+    assert [item["name"] for item in billing["entity_directory"]] == [
+        "Customer Dimension",
+        "Sales Fact",
+    ]
+    assert [event.message for event in lifecycle.events] == [
+        "Building Sales (1 of 2): 1 Logical Entity.",
+        "Building Billing (2 of 2): 1 Logical Entity.",
+    ]
+    assert len(handoff.calls) == 1
+    staged = {
+        change.dataset: [
+            (record.get("dimensional_entity_name"), record.get("from_dimensional_entity_name"))
+            for record in change.records
+        ]
+        for change in handoff.calls[0]
+    }
+    assert [name for name, _ in staged["dimensional_entity"]] == [
+        "Customer Dimension",
+        "Sales Fact",
+        "Invoice Fact",
+    ]
+    assert [name for _, name in staged["dimensional_relationship"]] == [
+        "Sales Fact",
+        "Invoice Fact",
+    ]
+    invoice_key = next(
+        record
+        for change in handoff.calls[0]
+        if change.dataset == "dimensional_attribute"
+        for record in change.records
+        if record["dimensional_entity_name"] == "Invoice Fact"
+        and record["dimensional_attribute_name"] == "Customer Dimension key"
+    )
+    assert invoice_key["dimensional_attribute_is_surrogate_key"] is False
+    assert handoff.final_events[-1].current == handoff.final_events[-1].total == 2
+
+
+async def test_area_without_logical_entities_is_skipped_with_a_warning() -> None:
+    bundle = _context_bundle()
+    raw = bundle.context.model_dump(mode="json")
+    # Returns has a table, but no Logical Entity is built from it yet.
+    raw["applied"]["subject_area"] = _subject_areas(
+        (_SALES, ("sales_customer",)), (_RETURNS, ("sales_return",))
+    )
+    bundle = replace(bundle, context=AgentAuthoringContext.model_validate(raw, strict=False))
+    agent = _AgentExecutor(responses=[_candidate()])
+    service, _database, _authorizer, handoff, lifecycle = _service(
+        agent=agent, context=bundle, plan=_plan(subject_areas=(_RETURNS, _SALES))
+    )
+
+    result = await _execute(service)
+
+    assert isinstance(result, WorkflowChangeSetHandoffResult)
+    assert len(agent.requests) == 1
+    assert [event.message for event in lifecycle.events] == [
+        "Building Sales (2 of 2): 1 Logical Entity."
+    ]
+    final_event = handoff.final_events[-1]
+    assert final_event.status == "warning"
+    assert final_event.message == (
+        "Dimensional build completed with notes. Returns: skipped, no Logical Entities."
+    )
+    assert lifecycle.failed is None
+
+
+async def test_failed_area_keeps_earlier_areas_and_its_answer_as_a_rejected_draft() -> None:
+    bundle = _context_bundle()
+    raw = bundle.context.model_dump(mode="json")
+    raw["selected_logical_entities"].append(
+        _selected_logical_entity("sales_invoice", table="sales_invoice", order=2)
+    )
+    raw["applied"]["subject_area"] = _subject_areas(
+        (_SALES, ("sales_customer",)), (_BILLING, ("sales_invoice",))
+    )
+    bundle = replace(bundle, context=AgentAuthoringContext.model_validate(raw, strict=False))
+    invoice = cast(dict[str, Any], _candidate(source_name="sales_invoice"))
+    # An inactive Fact keeps an active Attribute, which the complete graph rejects.
+    invoice["entities"] = [
+        {
+            **invoice["entities"][1],
+            "dimensional_entity_name": "Invoice Fact",
+            "dimensional_entity_is_active": False,
+        }
+    ]
+    invoice["attributes"] = [
+        {
+            **invoice["attributes"][1],
+            "dimensional_entity_name": "Invoice Fact",
+            "sources": _source("sale_customer_id", object_name="sales_invoice"),
+        }
+    ]
+    invoice["relationships"] = []
+    agent = _AgentExecutor(responses=[_candidate(), cast(JsonValue, invoice), deepcopy(invoice)])
+    service, _database, _authorizer, handoff, lifecycle = _service(
+        agent=agent, context=bundle, plan=_plan(subject_areas=(_SALES, _BILLING))
+    )
+
+    with pytest.raises(AgentCandidateValidationError):
+        await _execute(service)
+
+    assert len(agent.requests) == 3
+    assert handoff.calls == []
+    (retained,) = handoff.retained
+    # The inactive Fact covers nothing, so the area's coverage issue is kept as well.
+    assert {issue.code for issue in retained["issues"]} == {
+        "active_dependency_invalid",
+        "entity_coverage_incomplete",
+    }
+    entities = next(
+        change for change in retained["changes"] if change.dataset == "dimensional_entity"
+    )
+    assert [record["dimensional_entity_name"] for record in entities.records] == [
+        "Customer Dimension",
+        "Sales Fact",
+        "Invoice Fact",
+    ]
+    assert lifecycle.failed is None
+
+
+@pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
+async def test_optimize_is_one_whole_model_call_without_coverage(
+    mode: Literal["one_shot", "tool_assisted"],
+) -> None:
+    bundle = _context_bundle(mode=mode, operation="optimize")
+    no_op = _NoOp()
+    # An empty answer means no change; Optimize never asks for more coverage.
+    agent = _AgentExecutor(
+        responses=[cast(JsonValue, {"entities": [], "attributes": [], "relationships": []})]
+    )
+    service, _database, _authorizer, handoff, lifecycle = _service(
+        agent=agent, plan=_plan(mode=mode, operation="optimize"), context=bundle, no_op=no_op
+    )
+
+    result = await _execute(service)
+
+    (request,) = agent.requests
+    assert request.stage == "optimize_authoring"
+    assert request.context == {"original_context": bundle.embedded_context, "repair": None}
+    assert [event.message for event in lifecycle.events] == [
+        "Optimizing the whole Dimensional model."
+    ]
+    assert isinstance(result, AuthoringNoOpReceipt)
+    final_event = no_op.requests[0].final_event
+    assert final_event.status == "running"
+    assert final_event.message == "Dimensional optimize produced no effective change."
+    assert handoff.calls == []
+    assert lifecycle.failed is None
+
+
 async def test_failure_is_safe_and_never_hands_off_partial_output() -> None:
     diagnostic = "token=secret; raw prompt and provider trace"
     agent = _AgentExecutor(responses=[RuntimeError(diagnostic)])
     service, _database, _authorizer, handoff, lifecycle = _service(agent=agent)
 
     with pytest.raises(DimensionalExecutionFailedError) as raised:
-        await service.execute_started(
-            _principal(),
-            tenant_id=7,
-            project_id=18,
-            workflow_run_id=1048,
-            workflow_run_claim_token=_CLAIM_TOKEN,
-            expected_project_revision=7,
-        )
+        await _execute(service)
 
     assert handoff.calls == []
     assert lifecycle.failed == (
@@ -1308,7 +1488,6 @@ async def test_failure_is_safe_and_never_hands_off_partial_output() -> None:
     assert diagnostic not in repr(raised.value)
 
 
-@pytest.mark.asyncio
 async def test_wrong_claim_token_is_rejected_before_agent_or_handoff() -> None:
     agent = _AgentExecutor(responses=[_candidate()])
     service, _database, _authorizer, handoff, lifecycle = _service(agent=agent)
@@ -1329,7 +1508,6 @@ async def test_wrong_claim_token_is_rejected_before_agent_or_handoff() -> None:
     assert lifecycle.failed is None
 
 
-@pytest.mark.asyncio
 async def test_valid_unchanged_candidate_completes_as_no_op() -> None:
     agent = _AgentExecutor(responses=[_no_op_candidate()])
     no_op = _NoOp()
@@ -1339,35 +1517,40 @@ async def test_valid_unchanged_candidate_completes_as_no_op() -> None:
         no_op=no_op,
     )
 
-    result = await service.execute_started(
-        _principal(),
-        tenant_id=7,
-        project_id=18,
-        workflow_run_id=1048,
-        workflow_run_claim_token=_CLAIM_TOKEN,
-        expected_project_revision=7,
-    )
+    result = await _execute(service)
 
     assert isinstance(result, AuthoringNoOpReceipt)
     assert result.workflow_run_state == "completed"
     assert handoff.calls == []
     assert len(no_op.requests) == 1
-    assert no_op.requests[0].final_event.message == (
-        "Dimensional authoring completed with no effective change."
-    )
-    assert no_op.requests[0].final_event.attempt == 1
+    final_event = no_op.requests[0].final_event
+    assert final_event.message == "Dimensional build produced no effective change."
+    assert final_event.status == "running"
+    assert final_event.attempt == 1
     assert no_op.requests[0].candidate_digest == result.candidate_digest
     assert lifecycle.finding_count is None
     assert lifecycle.failed is None
 
 
-@pytest.mark.asyncio
-async def test_repaired_unchanged_candidate_preserves_attempt_in_no_op_receipt() -> (
-    None
-):
+async def test_empty_build_answer_over_a_covering_model_is_no_change() -> None:
     agent = _AgentExecutor(
-        responses=[cast(JsonValue, {"invalid": True}), _no_op_candidate()]
+        responses=[cast(JsonValue, {"entities": [], "attributes": [], "relationships": []})]
     )
+    no_op = _NoOp()
+    service, _database, _authorizer, handoff, lifecycle = _service(
+        agent=agent, context=_no_op_context_bundle(), no_op=no_op
+    )
+
+    result = await _execute(service)
+
+    assert isinstance(result, AuthoringNoOpReceipt)
+    assert len(agent.requests) == 1 and handoff.calls == []
+    assert no_op.requests[0].final_event.status == "running"
+    assert lifecycle.failed is None
+
+
+async def test_repaired_unchanged_candidate_preserves_attempt_in_no_op_receipt() -> None:
+    agent = _AgentExecutor(responses=[cast(JsonValue, {"invalid": True}), _no_op_candidate()])
     no_op = _NoOp()
     service, _database, _authorizer, handoff, lifecycle = _service(
         agent=agent,
@@ -1375,14 +1558,7 @@ async def test_repaired_unchanged_candidate_preserves_attempt_in_no_op_receipt()
         no_op=no_op,
     )
 
-    result = await service.execute_started(
-        _principal(),
-        tenant_id=7,
-        project_id=18,
-        workflow_run_id=1048,
-        workflow_run_claim_token=_CLAIM_TOKEN,
-        expected_project_revision=7,
-    )
+    result = await _execute(service)
 
     assert isinstance(result, AuthoringNoOpReceipt)
     assert result.workflow_run_state == "completed_with_repair"
@@ -1392,7 +1568,6 @@ async def test_repaired_unchanged_candidate_preserves_attempt_in_no_op_receipt()
     assert lifecycle.failed is None
 
 
-@pytest.mark.asyncio
 async def test_post_handoff_failure_does_not_mark_validated_draft_failed() -> None:
     agent = _AgentExecutor(responses=[_candidate()])
     lifecycle = _Lifecycle()
@@ -1404,45 +1579,30 @@ async def test_post_handoff_failure_does_not_mark_validated_draft_failed() -> No
     )
 
     with pytest.raises(DimensionalFinalizationFailedError):
-        await service.execute_started(
-            _principal(),
-            tenant_id=7,
-            project_id=18,
-            workflow_run_id=1048,
-            workflow_run_claim_token=_CLAIM_TOKEN,
-            expected_project_revision=7,
-        )
+        await _execute(service)
 
     assert len(handoff.calls) == 1
     assert returned_lifecycle.failed is None
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "bad_plan",
     [
         _plan().model_copy(update={"project_workflow": "logical"}),
         _plan().model_copy(update={"modeled_entity_type": "dimensional_entity"}),
+        # A Build plan must run the Build stage, and an Optimize plan the Optimize stage.
+        _plan().model_copy(update={"workflow_operation": "optimize"}),
+        _plan(operation="optimize").model_copy(update={"workflow_operation": "build"}),
     ],
 )
 async def test_fixed_plan_identity_mismatch_is_rejected_before_agent_execution(
     bad_plan: AgentRunPlan,
 ) -> None:
     agent = _AgentExecutor(responses=[_candidate()])
-    service, _database, _authorizer, handoff, lifecycle = _service(
-        agent=agent,
-        plan=bad_plan,
-    )
+    service, _database, _authorizer, handoff, lifecycle = _service(agent=agent, plan=bad_plan)
 
     with pytest.raises(InvalidRequestError):
-        await service.execute_started(
-            _principal(),
-            tenant_id=7,
-            project_id=18,
-            workflow_run_id=1048,
-            workflow_run_claim_token=_CLAIM_TOKEN,
-            expected_project_revision=7,
-        )
+        await _execute(service)
 
     assert agent.requests == []
     assert handoff.calls == []

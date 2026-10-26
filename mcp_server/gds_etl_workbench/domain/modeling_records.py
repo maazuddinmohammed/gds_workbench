@@ -58,6 +58,10 @@ Cardinality = Literal[
     "many_to_many",
 ]
 InferredCardinality = Cardinality | Literal["unknown"]
+# Model relationships point child -> parent, so only these two remain.
+ModelCardinality = Literal["many_to_one", "one_to_one"]
+# Label codes come from reference lists; validation checks the active rows.
+ReferenceCode = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,49}$")]
 JsonObject = dict[str, object]
 ANALYSIS_VALIDATION_FIELDS = (
     "validation_policy_version",
@@ -444,7 +448,7 @@ class SubjectAreaRecord(ModelingRecord):
         StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
     ]
     subject_area_definition: NonblankText
-    subject_area_status: Status
+    subject_area_is_active: bool
     subject_area_is_locked: bool
 
 
@@ -460,34 +464,23 @@ class SubjectAreaTableRecord(ModelingRecord):
     connection_code: Code100
     object_schema: Name400
     object_name: Name400
-    subject_area_table_status: Status
+    subject_area_table_is_active: bool
     subject_area_table_is_locked: bool
-
-
-class SubmodelMembershipRecord(ModelingRecord):
-    submodel_name: Annotated[
-        str,
-        StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
-    ]
-    membership_status: Status
-    membership_is_locked: bool
 
 
 class LogicalObjectSourceRecord(ModelingRecord):
     support_source_type: Literal["object"]
     source_object: PhysicalObjectKey
-    source_order: int | None = Field(default=None, gt=0)
-    rationale: NonblankText
-    status: Status
+    rationale: NonblankText | None = None
+    is_active: bool
     is_locked: bool
 
 
 class LogicalContextSourceRecord(ModelingRecord):
     support_source_type: Literal["context_record"]
     context_record: ContextRecordReference
-    source_order: int | None = Field(default=None, gt=0)
-    rationale: NonblankText
-    status: Status
+    rationale: NonblankText | None = None
+    is_active: bool
     is_locked: bool
 
 
@@ -513,9 +506,8 @@ class LogicalAttributeKey(LogicalEntityKey):
 class DimensionalLogicalEntitySourceRecord(ModelingRecord):
     support_source_type: Literal["logical_entity"]
     source_logical_entity: LogicalEntityKey
-    source_order: int | None = Field(default=None, gt=0)
-    rationale: NonblankText
-    status: Status
+    rationale: NonblankText | None = None
+    is_active: bool
     is_locked: bool
 
 
@@ -528,18 +520,16 @@ type DimensionalEntitySourceRecord = Annotated[
 class AttributePhysicalSourceRecord(ModelingRecord):
     support_source_type: Literal["attribute"]
     source_attribute: PhysicalAttributeKey
-    source_order: int | None = Field(default=None, gt=0)
-    rationale: NonblankText
-    status: Status
+    rationale: NonblankText | None = None
+    is_active: bool
     is_locked: bool
 
 
 class AttributeContextSourceRecord(ModelingRecord):
     support_source_type: Literal["context_record"]
     context_record: ContextRecordReference
-    source_order: int | None = Field(default=None, gt=0)
-    rationale: NonblankText
-    status: Status
+    rationale: NonblankText | None = None
+    is_active: bool
     is_locked: bool
 
 
@@ -552,9 +542,8 @@ type AttributeSourceRecord = Annotated[
 class AttributeLogicalSourceRecord(ModelingRecord):
     support_source_type: Literal["logical_attribute"]
     source_logical_attribute: LogicalAttributeKey
-    source_order: int | None = Field(default=None, gt=0)
-    rationale: NonblankText
-    status: Status
+    rationale: NonblankText | None = None
+    is_active: bool
     is_locked: bool
 
 
@@ -564,14 +553,20 @@ type DimensionalAttributeSourceRecord = Annotated[
 ]
 
 
-class LogicalSubmodelRecord(ModelingRecord):
-    logical_submodel_name: Annotated[
-        str,
-        StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
-    ]
-    logical_submodel_definition: NonblankText
-    logical_submodel_status: Status
-    logical_submodel_is_locked: bool
+class LogicalEntityTypeRecord(ModelingRecord):
+    """One read-only Logical Entity type label from reference.logical_entity_type."""
+
+    logical_entity_type_code: ReferenceCode
+    logical_entity_type_description: NonblankText
+    logical_entity_type_is_active: bool
+
+
+class DimensionalFactTypeRecord(ModelingRecord):
+    """One read-only fact type label from reference.dimensional_fact_type."""
+
+    dimensional_fact_type_code: ReferenceCode
+    dimensional_fact_type_description: NonblankText
+    dimensional_fact_type_is_active: bool
 
 
 class LogicalEntityRecord(ModelingRecord):
@@ -581,34 +576,15 @@ class LogicalEntityRecord(ModelingRecord):
         StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
     ]
     logical_entity_definition: NonblankText
-    logical_entity_type: Literal[
-        "core",
-        "reference",
-        "transaction",
-        "event",
-        "bridge",
-        "history",
-        "snapshot",
-        "association",
-        "aggregate",
-        "other",
-    ]
-    logical_entity_type_detail: NonblankText | None
+    logical_entity_type: ReferenceCode
     logical_entity_grain: NonblankText
     logical_entity_dependency_order: int = Field(ge=0)
-    logical_entity_status: Status
+    logical_entity_is_active: bool
     logical_entity_is_locked: bool
-    submodels: tuple[SubmodelMembershipRecord, ...]
     sources: tuple[LogicalEntitySourceRecord, ...]
 
     @model_validator(mode="after")
-    def validate_type_detail(self) -> LogicalEntityRecord:
-        if (self.logical_entity_type == "other") != (self.logical_entity_type_detail is not None):
-            raise ValueError("Logical Entity type detail is required only for 'other'.")
-        _require_unique(
-            (membership.submodel_name for membership in self.submodels),
-            "Logical Entity Submodel memberships",
-        )
+    def validate_sources(self) -> LogicalEntityRecord:
         _require_unique_sources(self.sources, "Logical Entity sources")
         return self
 
@@ -630,7 +606,7 @@ class LogicalAttributeRecord(ModelingRecord):
     logical_attribute_is_surrogate_key: bool
     logical_attribute_ordinal_position: int = Field(gt=0)
     logical_attribute_is_audit_column: bool
-    logical_attribute_status: Status
+    logical_attribute_is_active: bool
     logical_attribute_is_locked: bool
     sources: tuple[AttributeSourceRecord, ...]
 
@@ -647,13 +623,10 @@ class LogicalAttributeRecord(ModelingRecord):
 
 
 class LogicalRelationshipRecord(ModelingRecord):
+    """Child -> parent: the from Attribute is the foreign key; to is the parent's key."""
+
     from_logical_entity_schema_name: Name400
     to_logical_entity_schema_name: Name400
-    logical_relationship_name: Annotated[
-        str,
-        StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
-    ]
-    logical_relationship_definition: NonblankText
     from_logical_entity_name: Annotated[
         str,
         StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
@@ -670,10 +643,9 @@ class LogicalRelationshipRecord(ModelingRecord):
         str,
         StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
     ]
-    logical_relationship_cardinality: Cardinality
+    logical_relationship_cardinality: ModelCardinality
     logical_relationship_basis: NonblankText
-    logical_relationship_cardinality_basis: NonblankText
-    logical_relationship_status: Status
+    logical_relationship_is_active: bool
     logical_relationship_is_locked: bool
 
     @model_validator(mode="after")
@@ -691,16 +663,6 @@ class LogicalRelationshipRecord(ModelingRecord):
         return self
 
 
-class DimensionalSubmodelRecord(ModelingRecord):
-    dimensional_submodel_name: Annotated[
-        str,
-        StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
-    ]
-    dimensional_submodel_definition: NonblankText
-    dimensional_submodel_status: Status
-    dimensional_submodel_is_locked: bool
-
-
 class DimensionalEntityRecord(ModelingRecord):
     dimensional_entity_schema_name: Name400
     dimensional_entity_name: Annotated[
@@ -709,20 +671,11 @@ class DimensionalEntityRecord(ModelingRecord):
     ]
     dimensional_entity_definition: NonblankText
     dimensional_entity_type: Literal["fact", "dimension", "bridge"]
-    dimensional_fact_type: (
-        Literal[
-            "transaction",
-            "periodic_snapshot",
-            "accumulating_snapshot",
-            "factless",
-        ]
-        | None
-    )
+    dimensional_fact_type: ReferenceCode | None
     dimensional_entity_grain_definition: NonblankText | None
     dimensional_entity_dependency_order: int = Field(ge=0)
-    dimensional_entity_status: Status
+    dimensional_entity_is_active: bool
     dimensional_entity_is_locked: bool
-    submodels: tuple[SubmodelMembershipRecord, ...]
     sources: tuple[DimensionalEntitySourceRecord, ...]
 
     @model_validator(mode="after")
@@ -734,10 +687,6 @@ class DimensionalEntityRecord(ModelingRecord):
             and self.dimensional_entity_grain_definition is None
         ):
             raise ValueError("Fact and bridge Entities require a grain definition.")
-        _require_unique(
-            (membership.submodel_name for membership in self.submodels),
-            "Dimensional Entity Submodel memberships",
-        )
         _require_unique_sources(self.sources, "Dimensional Entity sources")
         return self
 
@@ -759,7 +708,7 @@ class DimensionalAttributeRecord(ModelingRecord):
     dimensional_attribute_is_natural_key: bool
     dimensional_attribute_is_surrogate_key: bool
     dimensional_attribute_is_audit_column: bool
-    dimensional_attribute_status: Status
+    dimensional_attribute_is_active: bool
     dimensional_attribute_is_locked: bool
     sources: tuple[DimensionalAttributeSourceRecord, ...]
 
@@ -779,13 +728,13 @@ class DimensionalAttributeRecord(ModelingRecord):
 
 
 class DimensionalRelationshipRecord(ModelingRecord):
+    """Child -> parent: a fact, bridge or outrigger foreign key -> the dimension's key.
+
+    Kind, optionality and many-to-one cardinality are worked out, never stored.
+    """
+
     from_dimensional_entity_schema_name: Name400
     to_dimensional_entity_schema_name: Name400
-    dimensional_relationship_name: Annotated[
-        str,
-        StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
-    ]
-    dimensional_relationship_definition: NonblankText
     from_dimensional_entity_name: Annotated[
         str,
         StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
@@ -802,22 +751,15 @@ class DimensionalRelationshipRecord(ModelingRecord):
         str,
         StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
     ]
-    dimensional_relationship_kind: Annotated[
-        str,
-        StringConstraints(min_length=1, max_length=50, pattern=r"\S"),
-    ]
-    dimensional_relationship_cardinality: Cardinality
-    dimensional_relationship_is_optional: bool
     dimensional_relationship_role_name: (
         Annotated[
             str,
             StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
         ]
         | None
-    )
-    dimensional_relationship_basis: NonblankText
-    dimensional_relationship_cardinality_basis: NonblankText
-    dimensional_relationship_status: Status
+    ) = None
+    dimensional_relationship_basis: NonblankText | None = None
+    dimensional_relationship_is_active: bool
     dimensional_relationship_is_locked: bool
 
     @model_validator(mode="after")

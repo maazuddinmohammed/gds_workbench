@@ -36,7 +36,7 @@ SELECT entity.modeled_entity_schema_name, entity.modeled_entity_name,
   JOIN project.project AS project ON project.project_id = entity.project_id
   JOIN core.system AS system ON system.system_id = %s AND system.is_active
  WHERE entity.project_id = %s AND entity.modeled_entity_id = %s
-   AND entity.modeled_entity_type = %s AND entity.status = 'active'
+   AND entity.modeled_entity_type = %s AND entity.is_active
    AND (EXISTS (
        SELECT 1 FROM workflow.list_mapping_source_objects(entity.project_id,
            entity.modeled_entity_id, entity.modeled_entity_type, system.system_id)
@@ -171,7 +171,7 @@ def mapping_record_editor(
         ) != entity_key:
             continue
         protected_child = protected_child or bool(getattr(row, f"{layer}_attribute_is_locked"))
-        if getattr(row, f"{layer}_attribute_status") != "active":
+        if not getattr(row, f"{layer}_attribute_is_active"):
             continue
         name = getattr(row, f"{layer}_attribute_name")
         child = children.get(normalize_project_key_value(name))

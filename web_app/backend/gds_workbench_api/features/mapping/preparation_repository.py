@@ -147,10 +147,11 @@ SELECT run.workflow_run_id,
    AND run.workflow_run_state = 'running'
 """
 
+# Modeled records keep a boolean lifecycle; Mapping context shows it as a status label.
 _MAPPING_TARGET_NODES_SQL: LiteralString = """
 SELECT jsonb_build_object('modeled_entity_id', entity.modeled_entity_id,
  'dependency_order', coalesce(min(mapping.object_dependency_order), entity.dependency_order),
- 'status', entity.status,
+ 'status', CASE WHEN entity.is_active THEN 'active' ELSE 'inactive' END,
  'has_locked_headers', coalesce(bool_or(mapping.object_mapping_is_locked), false),
  'has_unlocked_headers', coalesce(bool_or(NOT mapping.object_mapping_is_locked), false)) AS node
  FROM workflow.modeled_entity AS entity
@@ -158,15 +159,15 @@ SELECT jsonb_build_object('modeled_entity_id', entity.modeled_entity_id,
   AND mapping.modeled_entity_type = entity.modeled_entity_type
   AND coalesce(mapping.logical_entity_id, mapping.dimensional_entity_id) = entity.modeled_entity_id
   AND mapping.object_mapping_status = 'active'
- WHERE entity.project_id = %s AND entity.modeled_entity_type = %s AND entity.status = 'active'
- GROUP BY entity.modeled_entity_id, entity.dependency_order, entity.status
+ WHERE entity.project_id = %s AND entity.modeled_entity_type = %s AND entity.is_active
+ GROUP BY entity.modeled_entity_id, entity.dependency_order, entity.is_active
  ORDER BY entity.modeled_entity_id
 """
 
 _MAPPING_ENTITY_CONTEXT_SQL: LiteralString = """
 WITH selected_entity AS MATERIALIZED (
  SELECT * FROM workflow.modeled_entity WHERE project_id = %s AND modeled_entity_id = %s
-  AND modeled_entity_type = %s AND status = 'active'
+  AND modeled_entity_type = %s AND is_active
 ), selected_mapping AS MATERIALIZED (
  SELECT mapping.* FROM selected_entity AS entity
  JOIN workflow.mapping_object AS mapping ON mapping.project_id = entity.project_id
@@ -178,7 +179,7 @@ WITH selected_entity AS MATERIALIZED (
  JOIN workflow.modeled_attribute AS attribute ON attribute.project_id = entity.project_id
   AND attribute.modeled_entity_type = entity.modeled_entity_type
   AND attribute.modeled_entity_id = entity.modeled_entity_id
- WHERE attribute.status = 'active'
+ WHERE attribute.is_active
 )
 SELECT jsonb_build_object('modeled_entity_id', entity.modeled_entity_id,
  'mapping_object_id', mapping.mapping_object_id, 'modeled_entity', jsonb_build_object(
@@ -187,7 +188,8 @@ SELECT jsonb_build_object('modeled_entity_id', entity.modeled_entity_id,
  'entity_name', entity.modeled_entity_name, 'entity_definition', entity.definition,
  'entity_kind', entity.classification, 'grain', entity.grain, 'dependency_order',
      entity.dependency_order,
- 'status', entity.status, 'is_locked', entity.is_locked, 'attributes', modeled_attributes.items),
+ 'status', CASE WHEN entity.is_active THEN 'active' ELSE 'inactive' END,
+ 'is_locked', entity.is_locked, 'attributes', modeled_attributes.items),
  'object_dependency_order', coalesce(mapping.object_dependency_order, entity.dependency_order),
  'transformation_document', mapping.mapping_transformation_document,
  'status', coalesce(mapping.object_mapping_status, 'active'),
@@ -201,7 +203,8 @@ SELECT jsonb_build_object('modeled_entity_id', entity.modeled_entity_id,
  'attribute_definition', item.definition, 'attribute_data_type', item.data_type,
  'is_nullable', item.is_nullable, 'ordinal_position', item.ordinal_position,
  'is_surrogate_key', item.is_surrogate_key,
- 'is_audit_column', item.is_audit_column, 'status', item.status, 'is_locked', item.is_locked)
+ 'is_audit_column', item.is_audit_column,
+ 'status', CASE WHEN item.is_active THEN 'active' ELSE 'inactive' END, 'is_locked', item.is_locked)
      ORDER BY item.ordinal_position, item.modeled_attribute_id), '[]'::JSONB) AS items FROM
      attributes AS item) AS modeled_attributes
  CROSS JOIN LATERAL (
@@ -230,7 +233,6 @@ SELECT jsonb_build_object(
            'modeled_entity_id', source.modeled_entity_id,
            'role', source.role,
            'rationale', source.rationale,
-           'mapping_order', source.mapping_order,
            'is_locked', source.is_locked,
            'object', jsonb_build_object(
                'object_id', source_object.object_id,
@@ -297,20 +299,21 @@ SELECT jsonb_build_object(
           AND enrichment.attribute_id = attribute.attribute_id
         WHERE attribute.object_id = source_object.object_id
   ) AS attributes
- ORDER BY source.mapping_order NULLS LAST, source.source_mapping_id
+ ORDER BY source.source_mapping_id NULLS LAST, source_object.object_id
 """
 
 _MAPPING_MODELED_SOURCE_CONTEXT_SQL: LiteralString = """
 SELECT jsonb_build_object(
  'source_mapping_id', source.source_mapping_id, 'modeled_entity_id', source.modeled_entity_id,
- 'role', source.role, 'rationale', source.rationale, 'mapping_order', source.mapping_order,
+ 'role', source.role, 'rationale', source.rationale,
  'is_locked', source.is_locked, 'object', jsonb_build_object(
  'entity_type', entity.modeled_entity_type, 'entity_id', entity.modeled_entity_id,
  'entity_schema_name', entity.modeled_entity_schema_name,
  'entity_name', entity.modeled_entity_name, 'entity_definition', entity.definition,
  'entity_kind', entity.classification, 'grain', entity.grain, 'dependency_order',
      entity.dependency_order,
- 'status', entity.status, 'is_locked', entity.is_locked, 'attributes', attributes.items)) AS source
+ 'status', CASE WHEN entity.is_active THEN 'active' ELSE 'inactive' END,
+ 'is_locked', entity.is_locked, 'attributes', attributes.items)) AS source
  FROM selected_sources AS source
  JOIN workflow.modeled_entity AS entity ON entity.modeled_entity_type = CASE
   WHEN source.source_dimensional_entity_id IS NOT NULL THEN 'dimensional_entity'
@@ -323,14 +326,15 @@ SELECT jsonb_build_object(
  'attribute_definition', item.definition, 'attribute_data_type', item.data_type,
  'is_nullable', item.is_nullable, 'ordinal_position', item.ordinal_position,
  'is_surrogate_key', item.is_surrogate_key,
- 'is_audit_column', item.is_audit_column, 'status', item.status, 'is_locked', item.is_locked
+ 'is_audit_column', item.is_audit_column,
+ 'status', CASE WHEN item.is_active THEN 'active' ELSE 'inactive' END, 'is_locked', item.is_locked
  ) ORDER BY item.ordinal_position, item.modeled_attribute_id), '[]'::JSONB) AS items
  FROM workflow.modeled_attribute AS item WHERE item.project_id = entity.project_id
   AND item.modeled_entity_type = entity.modeled_entity_type AND item.modeled_entity_id =
       entity.modeled_entity_id
-  AND item.status = 'active'
+  AND item.is_active
  ) AS attributes
- ORDER BY source.mapping_order NULLS LAST, entity.modeled_entity_id
+ ORDER BY entity.modeled_entity_id
 """
 
 MAPPING_SOURCE_CONTEXT_SQL: LiteralString = (
@@ -343,16 +347,15 @@ MAPPING_SOURCE_CONTEXT_SQL: LiteralString = (
     + ") UNION ALL ("
     + _MAPPING_MODELED_SOURCE_CONTEXT_SQL
     + ")) AS sources "
-    "ORDER BY (source ->> 'mapping_order')::INTEGER NULLS LAST, "
-    "source -> 'object' ->> 'entity_schema_name', source -> 'object' ->> 'entity_name', "
-    "(source ->> 'source_mapping_id')::BIGINT"
+    "ORDER BY source -> 'object' ->> 'entity_schema_name', source -> 'object' ->> 'entity_name', "
+    "(source ->> 'source_mapping_id')::BIGINT, (source -> 'object' ->> 'object_id')::BIGINT"
 )
 
 _MAPPING_UPSTREAM_PHYSICAL_CONTEXT_SQL: LiteralString = (
     "WITH selected_sources AS MATERIALIZED ("
     "SELECT NULL::BIGINT AS source_mapping_id, %s::BIGINT AS modeled_entity_id, "
     "'evidence'::TEXT AS role, 'Upstream physical provenance, not a Gold input.'::TEXT "
-    "AS rationale, NULL::INTEGER AS mapping_order, FALSE AS is_locked, "
+    "AS rationale, FALSE AS is_locked, "
     "input.object_id AS source_object_id, scope.project_input_scope_is_locked AS scope_is_locked, "
     "scope.is_active AS scope_is_active, scope.project_id "
     "FROM workflow.list_project_input_sources(%s) AS input "

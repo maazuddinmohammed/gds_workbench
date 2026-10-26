@@ -1,5 +1,5 @@
 import { withRecordReview } from "../../test/projectRecordReview";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
@@ -9,10 +9,10 @@ import { WorkbenchApp, createWorkbenchRouter } from "../../app";
 
 describe("Project Dimensional", () => {
   it.each([
-    ["objects/301", "gold.sales_fact"],
-    ["attributes/401", "sales_amount"],
-    ["relationships/501", "customer to sales"],
-  ])("keeps %s record actions beside its heading with lifecycle commands under More", async (detail, title) => {
+    ["objects/301", "gold.sales_fact", "Definition"],
+    ["attributes/401", "sales_amount", "Definition"],
+    ["relationships/501", "gold.sales_fact.customer_key → gold.customer_dimension.customer_key", "Basis"],
+  ])("keeps %s record actions beside its heading with lifecycle commands under More", async (detail, title, firstText) => {
     const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(dimensionalFetchStub()),
@@ -22,10 +22,11 @@ describe("Project Dimensional", () => {
     const header = heading.closest("header")!;
     const detailPage = heading.closest("article")!;
     expect(detailPage).toHaveClass("modeled-detail-page");
-    const definition = within(detailPage).getByText("Definition", { selector: "dt" });
+    const definition = within(detailPage).getByText(firstText, { selector: "dt" });
     expect(definition.closest("dl")).toHaveClass("modeled-detail-fields");
     expect(definition.nextElementSibling).not.toBeEmptyDOMElement();
-    expect(within(header).queryByText(/^Dimensional (Entity|Attribute|Relationship|Submodel) \d+$/)).not.toBeInTheDocument();
+    expect(within(header).queryByText(/^Dimensional (Entity|Attribute|Relationship) \d+$/)).not.toBeInTheDocument();
+    expect(within(header).getByText("Active")).toBeVisible();
     expect(within(header).getByRole("button", { name: "Edit definition" })).toBeVisible();
     expect(within(header).getByRole("button", { name: "Lock" })).not.toBeVisible();
     const more = within(header).getByText("More", { selector: "summary" });
@@ -38,31 +39,66 @@ describe("Project Dimensional", () => {
     expect(within(header).getByRole("button", { name: "Lock" })).not.toBeVisible();
   });
 
-  it("opens a Dimensional Entity detail page with complete normalized context", async () => {
+  it("lists Subject Areas with their Dimensional Entities, each opening the usual Entity page", async () => {
+    const user = userEvent.setup();
+    const fetcher = dimensionalFetchStub();
+    const router = dimensionalRouter(fetcher);
+    render(<WorkbenchApp router={router} />);
+    await screen.findByRole("table", { name: "Dimensional Entities" });
+    await user.click(within(screen.getByRole("navigation", { name: "Dimensional views" })).getByRole("button", { name: /Subject Areas/ }));
+
+    const areas = await screen.findByRole("table", { name: "Dimensional Subject Areas" });
+    expect(within(areas).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+      "Subject Area", "Objects", "Dimensional Entities", "",
+    ]);
+    const row = within(areas).getByRole("row", { name: /Sales/ });
+    expect(within(row).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
+      "SalesCustomer orders.", "2", "1", "Show Entities",
+    ]);
+    await user.click(within(row).getByRole("link", { name: "Show Sales Entities" }));
+
+    expect(await screen.findByRole("heading", { name: "Sales", level: 1 })).toBeVisible();
+    const entities = await screen.findByRole("table", { name: "Sales Dimensional Entities" });
+    expect(within(entities).getByText("sales_fact")).toBeVisible();
+    expect(fetcher.mock.calls.some(([input]) => String(input).includes("subject_area_id=41"))).toBe(true);
+    expect(screen.getByRole("link", { name: "Edit Subject Area" })).toHaveAttribute(
+      "href", "/tenants/7/projects/18/subject-areas/41",
+    );
+    await user.click(within(entities).getByRole("link", { name: "Open Dimensional Entity 301" }));
+    expect(await screen.findByRole("heading", { name: "gold.sales_fact" })).toBeVisible();
+
+    // Back from the area returns to the Subject Areas tab.
+    act(() => router.history.back());
+    await user.click(await screen.findByRole("link", { name: "← Back to Subject Areas" }));
+    expect(await screen.findByRole("table", { name: "Dimensional Subject Areas" })).toBeVisible();
+    expect(within(screen.getByRole("navigation", { name: "Dimensional views" })).getByRole("button", { name: /Subject Areas/ }))
+      .toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("opens a Dimensional Entity detail page with its derived Subject Areas and no Submodels", async () => {
     const user = userEvent.setup();
     const fetcher = dimensionalFetchStub();
     render(<WorkbenchApp router={dimensionalRouter(fetcher)} />);
 
     const ledger = await screen.findByRole("table", { name: "Dimensional Entities" });
     const views = within(screen.getByRole("navigation", { name: "Dimensional views" }));
-    expect(views.getAllByRole("button").map((button) => button.textContent?.replace(/\d/g, ""))).toEqual(["Entities", "Relationships", "Submodels"]);
+    expect(views.getAllByRole("button").map((button) => button.textContent?.replace(/\d/g, ""))).toEqual(["Subject Areas", "Entities", "Relationships"]);
+    expect(screen.queryByText(/Submodel/)).not.toBeInTheDocument();
     expect(fetcher.mock.calls.some(([input]) => String(input).includes("/dimensional/attributes"))).toBe(false);
+    expect(fetcher.mock.calls.some(([input]) => String(input).includes("submodel"))).toBe(false);
     expect(within(ledger).getAllByRole("columnheader").slice(1, 3).map((cell) => cell.textContent)).toEqual(["Schema", "Entity name"]);
     expect(within(ledger).getByRole("cell", { name: "gold" })).toBeVisible();
     expect(within(ledger).getByText("sales_fact")).toBeVisible();
+    expect(within(ledger).getByRole("cell", { name: "Transaction" })).toBeVisible();
+    expect(within(ledger).getByRole("cell", { name: "Active" })).toBeVisible();
     await user.click(screen.getByRole("link", { name: "Open Dimensional Entity 301" }));
 
     expect(await screen.findByRole("heading", { name: "gold.sales_fact" })).toBeVisible();
-    expect(screen.getByRole("heading", { name: "Submodel membership" })).toBeVisible();
-    expect(screen.getByText("Sales Analytics")).not.toBeVisible();
+    const definition = within(screen.getByRole("region", { name: "Entity definition" }));
+    expect(definition.getByText("Fact type", { selector: "dt" }).nextElementSibling).toHaveTextContent("Transaction");
+    expect(definition.getByRole("link", { name: "Sales" })).toHaveAttribute("href", "/tenants/7/projects/18/subject-areas/41");
+    expect(screen.queryByText(/Submodel/)).not.toBeInTheDocument();
     expect(await screen.findByRole("table", { name: "Entity Attributes" })).toBeVisible();
-    await user.click(screen.getByRole("heading", { name: "Submodel membership" }));
-    await user.click(screen.getByRole("heading", { name: "Source mappings" }));
-    expect(screen.getByText("Sales Analytics")).toBeVisible();
-    const memberships = screen.getByRole("region", { name: "Scrollable Submodel memberships" });
-    expect(memberships).toHaveAttribute("tabindex", "0");
-    memberships.focus();
-    expect(memberships).toHaveFocus();
     expect(screen.getByRole("heading", { name: "Source mappings" })).toBeVisible();
     expect(within(screen.getByRole("table", { name: "Source mappings" })).getByRole("cell", { name: "silver" })).toBeVisible();
     expect(within(screen.getByRole("table", { name: "Source mappings" })).getByRole("cell", { name: "sales_order" })).toBeVisible();
@@ -98,13 +134,41 @@ describe("Project Dimensional", () => {
     await user.click(screen.getByRole("link", { name: "Back to Dimensional" }));
     await screen.findByRole("table", { name: "Dimensional Entities" });
     await user.click(screen.getByRole("button", { name: "Relationships" }));
-    expect(await screen.findByRole("table", { name: "Dimensional Relationships" })).toBeVisible();
+    const relationships = await screen.findByRole("table", { name: "Dimensional Relationships" });
+    expect(within(relationships).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+      "", "From", "To", "Role", "Status", "Lock", "Updated", "",
+    ]);
+    const [from, to, role, status] = within(relationships).getAllByRole("row")[1]!.querySelectorAll("td:not(:first-child)");
+    expect(from).toHaveTextContent("gold.sales_factcustomer_key");
+    expect(to).toHaveTextContent("gold.customer_dimensioncustomer_key");
+    expect(role).toHaveTextContent("—");
+    expect(status).toHaveTextContent("Active");
     await user.click(screen.getByRole("link", { name: "Open Dimensional Relationship 501" }));
-    expect(await screen.findByRole("heading", { name: "customer to sales" })).toBeVisible();
-    expect(screen.getByText("From", { selector: "dt" }).nextElementSibling).toHaveTextContent("gold.customer_dimension.customer_key");
-    expect(screen.getByText("To", { selector: "dt" }).nextElementSibling).toHaveTextContent("gold.sales_fact.customer_key");
-    expect(screen.getByText("The customer key establishes the conformed join.")).toBeVisible();
-    expect(screen.getByText("Each sale has one customer; a customer has many sales.")).toBeVisible();
+    expect(await screen.findByRole("heading", {
+      name: "gold.sales_fact.customer_key → gold.customer_dimension.customer_key",
+    })).toBeVisible();
+    const fact = (label: string) => screen.getByText(label, { selector: "dt" }).nextElementSibling as HTMLElement;
+    expect(within(fact("From Entity")).getByRole("link", { name: "gold.sales_fact" }))
+      .toHaveAttribute("href", "/tenants/7/projects/18/dimensional/objects/301");
+    expect(fact("Foreign key Attribute")).toHaveTextContent("customer_key");
+    expect(within(fact("To Entity")).getByRole("link", { name: "gold.customer_dimension" }))
+      .toHaveAttribute("href", "/tenants/7/projects/18/dimensional/objects/302");
+    expect(fact("Key Attribute")).toHaveTextContent("customer_key");
+    expect(fact("Role")).toHaveTextContent("None");
+    expect(fact("Basis")).toHaveTextContent("The customer key establishes the conformed join.");
+    for (const removed of ["Kind", "Cardinality", "Optional", "Cardinality basis"]) {
+      expect(screen.queryByText(removed, { selector: "dt" })).not.toBeInTheDocument();
+    }
+  });
+
+  it("shows a role name and an unrecorded basis on role-playing Relationships", async () => {
+    render(<WorkbenchApp router={createWorkbenchRouter({
+      api: createApiClient(dimensionalFetchStub({ rolePlaying: true })),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/dimensional/relationships/501"] }),
+    })} />);
+    await screen.findByRole("heading", { level: 1 });
+    expect(screen.getByText("Role", { selector: "dt" }).nextElementSibling).toHaveTextContent("order_customer");
+    expect(screen.getByText("Basis", { selector: "dt" }).nextElementSibling).toHaveTextContent("Not recorded");
   });
 
   it.each(["natural", "surrogate"] as const)("shows %s key flags on Dimensional Attributes", async (keyAttribute) => {
@@ -127,26 +191,32 @@ describe("Project Dimensional", () => {
 
     if (screen.getByRole("button", { name: /^Filters/ }).getAttribute("aria-expanded") === "false") await user.click(screen.getByRole("button", { name: /^Filters/ }));
     await user.type(screen.getByLabelText("Entity name prefix"), " Sales ");
-    await user.selectOptions(screen.getByLabelText("Entity status"), "inactive");
+    const areaFilter = screen.getByLabelText("Subject Area");
+    await waitFor(() => expect(areaFilter).toBeEnabled());
+    expect(within(areaFilter).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "All Subject Areas", "Finance", "Sales",
+    ]);
+    await user.selectOptions(areaFilter, "Sales");
+    await user.selectOptions(screen.getByLabelText("Entity status"), "Inactive");
     await user.selectOptions(screen.getByLabelText("Entity lock"), "false");
     await user.click(screen.getByRole("button", { name: "Apply Entity filters" }));
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/projects/18/dimensional/objects?status=inactive&locked=false&name_prefix=sales&page_size=200",
+      "/api/v1/tenants/7/projects/18/dimensional/objects?active=false&locked=false&name_prefix=sales&subject_area_id=41&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
     await user.click(await screen.findByRole("button", { name: "Load more Dimensional Entities" }));
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/projects/18/dimensional/objects?status=inactive&locked=false&name_prefix=sales&page_size=200&cursor=objects-next",
+      "/api/v1/tenants/7/projects/18/dimensional/objects?active=false&locked=false&name_prefix=sales&subject_area_id=41&page_size=200&cursor=objects-next",
       expect.objectContaining({ credentials: "same-origin" }),
     );
 
     await user.click(screen.getByRole("button", { name: "Relationships" }));
     await screen.findByRole("table", { name: "Dimensional Relationships" });
-    await user.type(screen.getByLabelText("Relationship name prefix"), " Customer ");
+    expect(screen.queryByLabelText("Relationship name prefix")).not.toBeInTheDocument();
     await user.type(screen.getByLabelText("Relationship Entity ID"), "302");
     await user.click(screen.getByRole("button", { name: "Apply Relationship filters" }));
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/projects/18/dimensional/relationships?status=active&name_prefix=customer&dimensional_entity_id=302&page_size=200",
+      "/api/v1/tenants/7/projects/18/dimensional/relationships?active=true&dimensional_entity_id=302&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
   });
@@ -180,43 +250,82 @@ describe("Project Dimensional", () => {
     );
   });
 
-  it("keeps Dimensional execution lock-gated and explicitly creates then starts a run", async () => {
-    const unlocked = render(
-      <WorkbenchApp router={dimensionalRouter(dimensionalFetchStub({ hasLock: false }))} />,
-    );
+  it("keeps Dimensional Build and Optimize lock-gated", async () => {
+    render(<WorkbenchApp router={dimensionalRouter(dimensionalFetchStub({ hasLock: false }))} />);
     await screen.findByRole("table", { name: "Dimensional Entities" });
-    expect(screen.getByRole("button", { name: "Run Dimensional" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Run Dimensional" })).toHaveAttribute("title", "Tenant Lock required");
-    unlocked.unmount();
+    for (const name of ["Build", "Optimize"]) {
+      expect(screen.getByRole("button", { name })).toBeDisabled();
+      expect(screen.getByRole("button", { name })).toHaveAttribute("title", "Tenant Lock required");
+    }
+    // Build and Optimize sit in one Run menu, like the other Run menus.
+    expect(screen.getByText("Run Dimensional", { selector: "summary" })).toBeVisible();
+  });
 
+  it("builds checked Subject Areas without a Logical Entity picker, then starts the run", async () => {
     const fetcher = dimensionalFetchStub();
     const user = userEvent.setup();
     render(<WorkbenchApp router={dimensionalRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Dimensional Entities" });
     expect(screen.getByText("Tenant Lock held by you")).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Run Dimensional" }));
-    expect(await screen.findByRole("heading", { name: "Configure Dimensional run" })).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Create and run Dimensional" }));
+    await user.click(screen.getByText("Run Dimensional", { selector: "summary" }));
+    await user.click(screen.getByRole("button", { name: "Build" }));
+    const dialog = await screen.findByRole("dialog", { name: "Configure Dimensional Build" });
+    expect(within(dialog).getByText(/Logical Entities sourced from each area's Objects/)).toBeVisible();
+    const areas = await within(dialog).findByRole("table", { name: "Subject Areas to build" });
+    expect(within(areas).getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["Sales", "Finance"]);
+    expect(within(dialog).queryByRole("checkbox", { name: /Select all (Entities|Objects)/ })).not.toBeInTheDocument();
+    await user.click(within(areas).getByRole("button", { name: "Move Finance up" }));
+    expect(within(areas).getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["Finance", "Sales"]);
+    await user.click(within(dialog).getByRole("button", { name: "Create and run Dimensional Build" }));
 
-    expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/projects/18/runs",
-      expect.objectContaining({
-        method: "POST",
-        body: expect.stringContaining('"project_workflow":"dimensional"'),
-      }),
-    );
-    const createCall = fetcher.mock.calls.find(([input, init]) => String(input).endsWith("/projects/18/runs") && init?.method === "POST");
-    expect(JSON.parse(String(createCall?.[1]?.body))).toMatchObject({ selected_object_ids: [], selected_entity_ids: [501], modeled_entity_type: "logical_entity" });
-    expect(fetcher.mock.calls.some(([input]) => String(input).includes("input-scope?zone=silver"))).toBe(false);
-    expect(fetcher).toHaveBeenCalledWith(
+    await waitFor(() => expect(createRunBody(fetcher)).toBeDefined());
+    const body = createRunBody(fetcher)!;
+    expect(body).toMatchObject({
+      project_workflow: "dimensional",
+      workflow_execution_mode: "tool_assisted",
+      workflow_operation: "build",
+      subject_area_ids: [43, 41],
+      selected_object_ids: [],
+      modeled_entity_type: "logical_entity",
+      requested_batch_id: null,
+    });
+    expect(body).not.toHaveProperty("selected_entity_ids");
+    expect(fetcher.mock.calls.some(([input]) => String(input).includes("/logical/entities"))).toBe(false);
+    expect(fetcher.mock.calls.some(([input]) => String(input).includes("input-scope"))).toBe(false);
+    await waitFor(() => expect(fetcher).toHaveBeenCalledWith(
       "/api/v1/tenants/7/projects/18/dimensional/runs/1250/execute",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ execution_mode: "tool_assisted", expected_project_revision: 18 }),
       }),
-    );
+    ));
+  });
+
+  it("optimizes the whole Dimensional model with no selection", async () => {
+    const fetcher = dimensionalFetchStub();
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={dimensionalRouter(fetcher)} />);
+    await screen.findByRole("table", { name: "Dimensional Entities" });
+    await user.click(screen.getByText("Run Dimensional", { selector: "summary" }));
+    await user.click(screen.getByRole("button", { name: "Optimize" }));
+    const dialog = await screen.findByRole("dialog", { name: "Configure Dimensional Optimize" });
+    expect(within(dialog).getByText(/reviews the whole Dimensional model/)).toBeVisible();
+    expect(within(dialog).queryByRole("table")).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("checkbox")).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Create and run Dimensional Optimize" }));
+
+    await waitFor(() => expect(createRunBody(fetcher)).toBeDefined());
+    const body = createRunBody(fetcher)!;
+    expect(body).toMatchObject({ project_workflow: "dimensional", workflow_operation: "optimize", selected_object_ids: [] });
+    expect(body).not.toHaveProperty("subject_area_ids");
+    expect(body).not.toHaveProperty("selected_entity_ids");
   });
 });
+
+function createRunBody(fetcher: ReturnType<typeof dimensionalFetchStub>): Record<string, unknown> | undefined {
+  const call = fetcher.mock.calls.find(([input, init]) => String(input) === "/api/v1/tenants/7/projects/18/runs" && init?.method === "POST");
+  return call ? JSON.parse(String(call[1]?.body)) as Record<string, unknown> : undefined;
+}
 
 function dimensionalRouter(fetcher: ReturnType<typeof dimensionalFetchStub>) {
   return createWorkbenchRouter({
@@ -235,8 +344,9 @@ function dimensionalFetchStub(options: {
   hasNextPage?: boolean;
   keyAttribute?: "natural" | "surrogate";
   hasLock?: boolean;
+  rolePlaying?: boolean;
 } = {}) {
-  return vi.fn<typeof fetch>(async (input) => {
+  return vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input);
     if (url === "/api/v1/tenants/7/home") return jsonResponse({
       ...tenantHomePayload,
@@ -292,14 +402,19 @@ function dimensionalFetchStub(options: {
       });
     }
     if (url === "/api/v1/tenants/7/projects/18/dimensional/relationships/501") {
-      return jsonResponse(dimensionalRelationshipDetailPayload);
+      return jsonResponse(options.rolePlaying
+        ? { ...dimensionalRelationshipDetailPayload, dimensional_relationship_role_name: "order_customer", dimensional_relationship_basis: null }
+        : dimensionalRelationshipDetailPayload);
     }
-    if (url === "/api/v1/tenants/7/projects/18/logical/entities?status=active&page_size=200") {
+    if (url === "/api/v1/tenants/7/projects/18/subject-areas") return jsonResponse(subjectAreaPagePayload);
+    if (url === "/api/v1/tenants/7/projects/18/dimensional/subject-areas") {
       return jsonResponse({
         project_id: 18,
         project_revision: 18,
-        items: [{ logical_entity_id: 501, logical_entity_schema_name: "silver", logical_entity_name: "sales_order", logical_entity_status: "active", logical_entity_is_locked: false }],
-        next_cursor: null,
+        items: [{
+          subject_area_id: 41, subject_area_name: "Sales", subject_area_definition: "Customer orders.",
+          table_count: 2, entity_count: 1,
+        }],
       });
     }
     if (url === "/api/v1/config/agent-capabilities") {
@@ -308,7 +423,7 @@ function dimensionalFetchStub(options: {
     if (url === "/api/v1/tenants/7/projects/18/runs?workflow=dimensional&page_size=5") {
       return jsonResponse({ items: [], next_cursor: null });
     }
-    if (url === "/api/v1/tenants/7/projects/18/runs") {
+    if (url === "/api/v1/tenants/7/projects/18/runs" && init?.method === "POST") {
       return jsonResponse({
         created: true,
         workflow_run_id: 1250,
@@ -388,7 +503,7 @@ const dimensionalObjectPayload = {
   dimensional_entity_type: "fact",
   dimensional_fact_type: "transaction",
   dimensional_entity_dependency_order: 1,
-  dimensional_entity_status: "active",
+  dimensional_entity_is_active: true,
   dimensional_entity_is_locked: false,
   updated_at: "2026-08-24T15:00:00Z",
 };
@@ -398,24 +513,14 @@ const dimensionalObjectDetailPayload = {
   dimensional_entity_definition: "Transaction-grain sales activity for analytical reporting.",
   dimensional_entity_grain_definition: "One row per completed order line.",
   created_at: "2026-08-24T14:40:00Z",
-  submodels: [{
-    dimensional_entity_submodel_id: 801,
-    workflow_run_id: 1200,
-    dimensional_submodel_id: 91,
-    dimensional_submodel_name: "Sales Analytics",
-    membership_status: "active",
-    membership_is_locked: false,
-    created_at: "2026-08-24T14:42:00Z",
-    updated_at: "2026-08-24T15:00:00Z",
-  }],
+  subject_areas: [{ subject_area_id: 41, subject_area_name: "Sales" }],
   sources: [
     {
       dimensional_entity_source_mapping_id: 901,
       workflow_run_id: 1200,
       support_source_type: "logical_entity",
-      source_order: 1,
       rationale: "The Silver order table establishes the transaction grain.",
-      status: "active",
+      is_active: true,
       is_locked: false,
       created_at: "2026-08-24T14:42:00Z",
       updated_at: "2026-08-24T15:00:00Z",
@@ -425,9 +530,8 @@ const dimensionalObjectDetailPayload = {
       dimensional_entity_source_mapping_id: 902,
       workflow_run_id: null,
       support_source_type: "context_record",
-      source_order: 2,
       rationale: "The approved context confirms analytical grain.",
-      status: "active",
+      is_active: true,
       is_locked: true,
       created_at: "2026-08-24T14:43:00Z",
       updated_at: "2026-08-24T15:00:00Z",
@@ -455,7 +559,7 @@ const dimensionalAttributePayload = {
   dimensional_attribute_is_natural_key: false,
   dimensional_attribute_is_surrogate_key: false,
   dimensional_attribute_is_audit_column: false,
-  dimensional_attribute_status: "active",
+  dimensional_attribute_is_active: true,
   dimensional_attribute_is_locked: false,
   updated_at: "2026-08-24T15:00:00Z",
 };
@@ -470,9 +574,8 @@ const dimensionalAttributeDetailPayload = {
       workflow_run_id: 1200,
       dimensional_entity_source_mapping_id: 901,
       support_source_type: "logical_attribute",
-      source_order: 1,
       rationale: "The Silver amount is the governed monetary source.",
-      status: "active",
+      is_active: true,
       is_locked: false,
       created_at: "2026-08-24T14:42:00Z",
       updated_at: "2026-08-24T15:00:00Z",
@@ -482,9 +585,8 @@ const dimensionalAttributeDetailPayload = {
       dimensional_attribute_source_mapping_id: 1002,
       workflow_run_id: null,
       support_source_type: "context_record",
-      source_order: 2,
-      rationale: "The context establishes aggregation behavior.",
-      status: "active",
+      rationale: null,
+      is_active: true,
       is_locked: true,
       created_at: "2026-08-24T14:43:00Z",
       updated_at: "2026-08-24T15:00:00Z",
@@ -500,33 +602,47 @@ const dimensionalAttributeDetailPayload = {
   ],
 };
 
+// Child to parent: the fact's foreign key points at the dimension's key.
 const dimensionalRelationshipPayload = {
   dimensional_relationship_id: 501,
   workflow_run_id: 1200,
-  from_dimensional_entity_id: 302,
-  from_dimensional_entity_schema_name: "gold", from_dimensional_entity_name: "customer_dimension",
-  from_dimensional_attribute_id: 402,
+  from_dimensional_entity_id: 301,
+  from_dimensional_entity_schema_name: "gold", from_dimensional_entity_name: "sales_fact",
+  from_dimensional_attribute_id: 403,
   from_dimensional_attribute_name: "customer_key",
-  to_dimensional_entity_id: 301,
-  to_dimensional_entity_schema_name: "gold", to_dimensional_entity_name: "sales_fact",
-  to_dimensional_attribute_id: 403,
+  to_dimensional_entity_id: 302,
+  to_dimensional_entity_schema_name: "gold", to_dimensional_entity_name: "customer_dimension",
+  to_dimensional_attribute_id: 402,
   to_dimensional_attribute_name: "customer_key",
-  dimensional_relationship_name: "customer to sales",
-  dimensional_relationship_kind: "foreign_key",
-  dimensional_relationship_cardinality: "one_to_many",
-  dimensional_relationship_is_optional: false,
-  dimensional_relationship_role_name: "customer",
-  dimensional_relationship_status: "active",
+  dimensional_relationship_role_name: null,
+  dimensional_relationship_is_active: true,
   dimensional_relationship_is_locked: false,
   updated_at: "2026-08-24T15:00:00Z",
 };
 
 const dimensionalRelationshipDetailPayload = {
   ...dimensionalRelationshipPayload,
-  dimensional_relationship_definition: "Conformed Customer Dimension joined to the Sales Fact.",
   dimensional_relationship_basis: "The customer key establishes the conformed join.",
-  dimensional_relationship_cardinality_basis: "Each sale has one customer; a customer has many sales.",
   created_at: "2026-08-24T14:44:00Z",
+};
+
+// Inactive areas and areas without Objects are not offered for Build.
+const subjectAreaPagePayload = {
+  project_id: 18,
+  project_revision: 18,
+  scope_table_count: 6,
+  unassigned_table_count: 0,
+  items: [
+    { subject_area_id: 41, workflow_run_id: null, subject_area_name: "Sales", subject_area_definition: "Orders.",
+      subject_area_is_active: true, subject_area_is_locked: false, table_count: 3, shared_table_count: 1,
+      column_count: 30, updated_at: "2026-08-24T14:30:00Z" },
+    { subject_area_id: 43, workflow_run_id: null, subject_area_name: "Finance", subject_area_definition: "Invoices.",
+      subject_area_is_active: true, subject_area_is_locked: false, table_count: 2, shared_table_count: 0,
+      column_count: 20, updated_at: "2026-08-24T14:30:00Z" },
+    { subject_area_id: 44, workflow_run_id: null, subject_area_name: "Archive", subject_area_definition: "Retired.",
+      subject_area_is_active: false, subject_area_is_locked: false, table_count: 2, shared_table_count: 2,
+      column_count: 20, updated_at: "2026-08-24T14:30:00Z" },
+  ],
 };
 
 
@@ -562,7 +678,7 @@ it.each([["Entities", "dimensional_entity", 301], ["Attributes", "dimensional_at
     await user.click(await screen.findByRole("link", { name: "Open Dimensional Entity 301" }));
     await screen.findByRole("table", { name: "Entity Attributes" });
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/projects/18/dimensional/attributes?status=active&dimensional_entity_id=301&page_size=200",
+      "/api/v1/tenants/7/projects/18/dimensional/attributes?active=true&dimensional_entity_id=301&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
   } else await user.click(await screen.findByRole("button", { name: view }));

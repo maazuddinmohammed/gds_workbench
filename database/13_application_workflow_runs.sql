@@ -33,6 +33,7 @@ CREATE TABLE application.workflow_run (
     CONSTRAINT ck_profiling_progress CHECK (
         profiling_completed_objects >= 0 AND profiling_saved_profiles >= 0
     ),
+    workflow_operation VARCHAR(20),
     mapping_operation VARCHAR(20),
     mapping_coverage_mode VARCHAR(30),
     mapping_route VARCHAR(30),
@@ -216,6 +217,17 @@ CREATE TABLE application.workflow_run (
         ) OR (
             project_workflow <> 'code_generation'
             AND code_generation_coverage_mode IS NULL
+        )
+    ),
+    -- Logical and Dimensional runs either Build selected Subject Areas or Optimize the
+    -- whole model; each operation freezes only its own authoring stage.
+    CONSTRAINT ck_workflow_run_operation CHECK (
+        (
+            project_workflow IN ('logical', 'dimensional')
+            AND workflow_operation IN ('build', 'optimize')
+        ) OR (
+            project_workflow NOT IN ('logical', 'dimensional')
+            AND workflow_operation IS NULL
         )
     ),
     CONSTRAINT ck_workflow_run_mapping_request CHECK (
@@ -430,6 +442,38 @@ CREATE TABLE application.workflow_run_object_selection (
     )
 );
 
+-- The Subject Areas a Build run works on, in processing order. Their member Objects
+-- (Logical) or the Logical Entities built from them (Dimensional) are also frozen in the
+-- Object/Entity selection, so digests, counts and coverage keep one source.
+CREATE TABLE application.workflow_run_subject_area_selection (
+    workflow_run_id BIGINT NOT NULL,
+    project_id BIGINT NOT NULL,
+    subject_area_id BIGINT NOT NULL,
+    selection_order INTEGER NOT NULL,
+    created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_workflow_run_subject_area_selection PRIMARY KEY (
+        workflow_run_id,
+        subject_area_id
+    ),
+    CONSTRAINT fk_workflow_run_subject_area_selection_run FOREIGN KEY (
+        workflow_run_id,
+        project_id
+    ) REFERENCES application.workflow_run (workflow_run_id, project_id)
+        ON DELETE NO ACTION,
+    CONSTRAINT fk_workflow_run_subject_area_selection_area FOREIGN KEY (
+        subject_area_id,
+        project_id
+    ) REFERENCES workflow.subject_area (subject_area_id, project_id)
+        ON DELETE NO ACTION,
+    CONSTRAINT uq_workflow_run_subject_area_selection_order UNIQUE (
+        workflow_run_id,
+        selection_order
+    ),
+    CONSTRAINT ck_workflow_run_subject_area_selection_order CHECK (
+        selection_order > 0
+    )
+);
+
 CREATE TABLE application.workflow_run_system_selection (
     workflow_run_system_selection_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     workflow_run_id BIGINT NOT NULL,
@@ -568,6 +612,20 @@ $guard_workflow_run_object_selection$;
 CREATE TRIGGER guard_workflow_run_object_selection
 BEFORE UPDATE OR DELETE ON application.workflow_run_object_selection
 FOR EACH ROW EXECUTE FUNCTION application.guard_workflow_run_object_selection();
+
+CREATE FUNCTION application.guard_workflow_run_subject_area_selection()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = pg_catalog
+AS $guard_workflow_run_subject_area_selection$
+BEGIN
+    RAISE EXCEPTION 'Workflow Run Subject Area selections are immutable';
+END;
+$guard_workflow_run_subject_area_selection$;
+
+CREATE TRIGGER guard_workflow_run_subject_area_selection
+BEFORE UPDATE OR DELETE ON application.workflow_run_subject_area_selection
+FOR EACH ROW EXECUTE FUNCTION application.guard_workflow_run_subject_area_selection();
 
 CREATE FUNCTION application.guard_workflow_run_system_selection()
 RETURNS TRIGGER
@@ -803,20 +861,8 @@ ALTER TABLE workflow.subject_area_table
     REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
-ALTER TABLE workflow.logical_submodel
-    ADD CONSTRAINT fk_logical_submodel_workflow_run
-    FOREIGN KEY (workflow_run_id, project_id)
-    REFERENCES application.workflow_run (workflow_run_id, project_id)
-    ON DELETE NO ACTION;
-
 ALTER TABLE workflow.logical_entity
     ADD CONSTRAINT fk_logical_entity_workflow_run
-    FOREIGN KEY (workflow_run_id, project_id)
-    REFERENCES application.workflow_run (workflow_run_id, project_id)
-    ON DELETE NO ACTION;
-
-ALTER TABLE workflow.logical_entity_submodel
-    ADD CONSTRAINT fk_logical_entity_submodel_workflow_run
     FOREIGN KEY (workflow_run_id, project_id)
     REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
@@ -845,20 +891,8 @@ ALTER TABLE workflow.logical_relationship
     REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
 
-ALTER TABLE workflow.dimensional_submodel
-    ADD CONSTRAINT fk_dimensional_submodel_workflow_run
-    FOREIGN KEY (workflow_run_id, project_id)
-    REFERENCES application.workflow_run (workflow_run_id, project_id)
-    ON DELETE NO ACTION;
-
 ALTER TABLE workflow.dimensional_entity
     ADD CONSTRAINT fk_dimensional_entity_workflow_run
-    FOREIGN KEY (workflow_run_id, project_id)
-    REFERENCES application.workflow_run (workflow_run_id, project_id)
-    ON DELETE NO ACTION;
-
-ALTER TABLE workflow.dimensional_entity_submodel
-    ADD CONSTRAINT fk_dimensional_entity_submodel_workflow_run
     FOREIGN KEY (workflow_run_id, project_id)
     REFERENCES application.workflow_run (workflow_run_id, project_id)
     ON DELETE NO ACTION;
@@ -998,6 +1032,7 @@ BEGIN
            run.project_id,
            run.project_workflow,
            run.workflow_execution_mode,
+           run.workflow_operation,
            run.metadata_enrichment_description_targets,
            project.tenant_id
       INTO v_run
@@ -1036,6 +1071,9 @@ BEGIN
          )
            AND stage.workflow_execution_mode IS NOT DISTINCT FROM
                v_run.workflow_execution_mode
+           -- Build and Optimize share a workflow and mode; each freezes only its stage.
+           AND (v_run.workflow_operation IS NULL
+                OR stage.workflow_stage_code = v_run.workflow_operation || '_authoring')
            AND stage.workflow_stage_is_agentic
            AND stage.is_active
          ORDER BY stage.workflow_stage_order
@@ -1196,7 +1234,9 @@ CREATE FUNCTION application.create_workflow_run(
     p_metadata_enrichment_description_targets JSONB DEFAULT NULL,
     p_mapping_targets JSONB DEFAULT NULL,
     p_code_generation_file_layout VARCHAR(30) DEFAULT NULL,
-    p_selected_entity_ids BIGINT[] DEFAULT NULL
+    p_selected_entity_ids BIGINT[] DEFAULT NULL,
+    p_workflow_operation VARCHAR(20) DEFAULT NULL,
+    p_subject_area_ids BIGINT[] DEFAULT NULL
 )
 RETURNS TABLE (
     created BOOLEAN,
@@ -1261,6 +1301,34 @@ DECLARE
     v_request_digest CHAR(64);
     v_prompt_snapshot_count INTEGER := 0;
 BEGIN
+    -- Logical and Dimensional runs never take a caller selection: Build derives it from
+    -- the selected Subject Areas and Optimize from the applied model, for new runs only.
+    IF p_project_workflow IN ('logical', 'dimensional') THEN
+        IF p_workflow_operation IS NULL OR p_workflow_operation NOT IN ('build', 'optimize') THEN
+            RAISE EXCEPTION 'Logical and Dimensional runs require the build or optimize operation';
+        END IF;
+        IF cardinality(coalesce(p_selected_object_ids, ARRAY[]::BIGINT[])) <> 0
+           OR cardinality(coalesce(p_selected_entity_ids, ARRAY[]::BIGINT[])) <> 0 THEN
+            RAISE EXCEPTION 'Build and Optimize derive their own selection';
+        END IF;
+        IF p_workflow_operation = 'build'
+           AND cardinality(coalesce(p_subject_area_ids, ARRAY[]::BIGINT[])) < 1 THEN
+            RAISE EXCEPTION 'Build requires selected Subject Areas';
+        END IF;
+        IF p_workflow_operation = 'optimize'
+           AND cardinality(coalesce(p_subject_area_ids, ARRAY[]::BIGINT[])) <> 0 THEN
+            RAISE EXCEPTION 'Optimize works on the whole model without Subject Areas';
+        END IF;
+        IF EXISTS (SELECT 1 FROM unnest(p_subject_area_ids) AS area(id) WHERE area.id IS NULL OR area.id <= 0)
+           OR cardinality(p_subject_area_ids) <> (
+               SELECT count(DISTINCT area.id) FROM unnest(p_subject_area_ids) AS area(id)) THEN
+            RAISE EXCEPTION 'Selected Subject Areas must be unique positive IDs';
+        END IF;
+        p_selected_object_ids := ARRAY[]::BIGINT[];
+        p_selected_entity_ids := CASE WHEN p_project_workflow = 'dimensional' THEN ARRAY[]::BIGINT[] END;
+    ELSIF p_workflow_operation IS NOT NULL OR p_subject_area_ids IS NOT NULL THEN
+        RAISE EXCEPTION 'Build and Optimize apply only to Logical and Dimensional runs';
+    END IF;
     IF v_entity_workflow THEN
         IF p_selected_object_ids IS NULL OR cardinality(p_selected_object_ids) <> 0
            OR p_selected_entity_ids IS NULL THEN
@@ -1368,7 +1436,7 @@ BEGIN
             RAISE EXCEPTION
                 'Code Generation inputs are unavailable for this Workflow Run';
         END IF;
-        IF cardinality(p_selected_object_ids) < 1 THEN
+        IF cardinality(p_selected_object_ids) < 1 AND p_workflow_operation IS NULL THEN
             RAISE EXCEPTION
                 'Selected Scope requires Objects';
         END IF;
@@ -1664,6 +1732,8 @@ BEGIN
                         btrim(v_caller_selected_scope_digest::TEXT),
                     'selected_scope_count', v_caller_selected_scope_count,
                     'selected_system_codes', v_caller_selected_system_codes,
+                    'workflow_operation', p_workflow_operation,
+                    'subject_area_ids', p_subject_area_ids,
                     'prompt_overrides', p_prompt_overrides
                     , 'description_targets', p_metadata_enrichment_description_targets
                     , 'mapping_targets', p_mapping_targets
@@ -1759,6 +1829,79 @@ BEGIN
     IF p_expected_project_revision IS NULL
        OR v_project.project_revision <> p_expected_project_revision THEN
         RAISE EXCEPTION 'stale_project_revision';
+    END IF;
+
+    -- Build: the distinct eligible active members of the selected active Subject Areas.
+    -- Optimize: the eligible Objects behind the applied Logical model. Dimensional runs
+    -- then select the active Logical Entities built from those Objects (Build) or feeding
+    -- active Dimensional Entities (Optimize). The eligibility and Entity checks below
+    -- revalidate the derived ids and compute the digest.
+    IF p_workflow_operation = 'build' THEN
+        IF (SELECT count(*) FROM workflow.subject_area AS area
+             WHERE area.project_id = p_project_id
+               AND area.subject_area_id = ANY(p_subject_area_ids)
+               AND area.subject_area_is_active) <> cardinality(p_subject_area_ids) THEN
+            RAISE EXCEPTION 'Selected Subject Areas are unavailable';
+        END IF;
+        SELECT coalesce(array_agg(DISTINCT member.object_id), ARRAY[]::BIGINT[])
+          INTO v_selected_object_ids
+          FROM workflow.subject_area_table AS member
+          JOIN workflow.list_project_object_eligibility(p_project_id) AS eligible
+            ON eligible.object_id = member.object_id
+           AND eligible.is_project_input_eligible
+         WHERE member.project_id = p_project_id
+           AND member.subject_area_id = ANY(p_subject_area_ids)
+           AND member.subject_area_table_is_active;
+    ELSIF p_workflow_operation = 'optimize' AND p_project_workflow = 'logical' THEN
+        SELECT coalesce(array_agg(DISTINCT source.source_object_id), ARRAY[]::BIGINT[])
+          INTO v_selected_object_ids
+          FROM workflow.logical_entity_source_mapping AS source
+          JOIN workflow.logical_entity AS entity
+            ON entity.project_id = source.project_id
+           AND entity.logical_entity_id = source.logical_entity_id
+           AND entity.logical_entity_is_active
+          JOIN workflow.list_project_object_eligibility(p_project_id) AS eligible
+            ON eligible.object_id = source.source_object_id
+           AND eligible.is_project_input_eligible
+         WHERE source.project_id = p_project_id
+           AND source.logical_entity_source_mapping_is_active;
+    END IF;
+    IF p_workflow_operation IS NOT NULL AND p_project_workflow = 'dimensional' THEN
+        SELECT coalesce(array_agg(DISTINCT entity.logical_entity_id), ARRAY[]::BIGINT[])
+          INTO v_selected_object_ids
+          FROM workflow.logical_entity AS entity
+         WHERE entity.project_id = p_project_id
+           AND entity.logical_entity_is_active
+           AND CASE p_workflow_operation
+                   WHEN 'build' THEN EXISTS (
+                       SELECT 1 FROM workflow.logical_entity_source_mapping AS source
+                        WHERE source.project_id = entity.project_id
+                          AND source.logical_entity_id = entity.logical_entity_id
+                          AND source.logical_entity_source_mapping_is_active
+                          AND source.source_object_id = ANY(v_selected_object_ids))
+                   ELSE EXISTS (
+                       SELECT 1 FROM workflow.dimensional_entity_source_mapping AS source
+                         JOIN workflow.dimensional_entity AS dimensional
+                           ON dimensional.project_id = source.project_id
+                          AND dimensional.dimensional_entity_id = source.dimensional_entity_id
+                          AND dimensional.dimensional_entity_is_active
+                        WHERE source.project_id = entity.project_id
+                          AND source.source_logical_entity_id = entity.logical_entity_id
+                          AND source.dimensional_entity_source_mapping_is_active)
+               END;
+    END IF;
+    IF p_workflow_operation IS NOT NULL THEN
+        SELECT coalesce(array_agg(selected.id ORDER BY selected.id), ARRAY[]::BIGINT[])
+          INTO v_selected_object_ids
+          FROM unnest(v_selected_object_ids) AS selected(id);
+        v_selected_scope_count := cardinality(v_selected_object_ids);
+        IF v_selected_scope_count < 1 THEN
+            RAISE EXCEPTION '%', CASE p_workflow_operation
+                WHEN 'build' THEN 'The selected Subject Areas have nothing to build from'
+                ELSE 'Optimize requires an applied model' END;
+        END IF;
+        v_selected_scope_digest := encode(sha256(convert_to(
+            array_to_string(v_selected_object_ids, ','), 'UTF8')), 'hex');
     END IF;
 
     IF p_project_workflow = 'validation' THEN
@@ -1898,7 +2041,7 @@ BEGIN
         IF NOT EXISTS (
             SELECT 1 FROM workflow.modeled_entity AS entity
              WHERE entity.project_id = p_project_id AND entity.modeled_entity_type = p_modeled_entity_type
-               AND entity.modeled_entity_id = v_mapping_object_id AND entity.status = 'active' AND NOT entity.is_locked
+               AND entity.modeled_entity_id = v_mapping_object_id AND entity.is_active AND NOT entity.is_locked
         ) OR NOT (EXISTS (
             SELECT 1 FROM workflow.list_project_input_sources(p_project_id) AS input
             JOIN core.system AS system ON system.system_id = input.source_system_id AND system.is_active
@@ -1946,7 +2089,7 @@ BEGIN
                       AND coalesce(mapping.logical_attribute_id,mapping.dimensional_attribute_id) = attribute.modeled_attribute_id
                      WHERE attribute.project_id = p_project_id AND attribute.modeled_entity_type = p_modeled_entity_type
                        AND attribute.modeled_entity_id = v_mapping_object_id AND attribute.modeled_attribute_id = selected.id::BIGINT
-                       AND attribute.status = 'active' AND NOT attribute.is_locked AND NOT coalesce(mapping.attribute_mapping_is_locked,FALSE)
+                       AND attribute.is_active AND NOT attribute.is_locked AND NOT coalesce(mapping.attribute_mapping_is_locked,FALSE)
                  )
             ) OR (SELECT count(*) FROM jsonb_array_elements_text(v_mapping_target->'selected_attribute_ids')) <>
                  (SELECT count(DISTINCT id) FROM jsonb_array_elements_text(v_mapping_target->'selected_attribute_ids') AS selected(id)) THEN
@@ -2001,7 +2144,7 @@ BEGIN
     IF v_entity_workflow THEN
         SELECT count(*)::INTEGER INTO v_eligible_scope_count FROM workflow.modeled_entity AS entity
          WHERE entity.project_id = p_project_id AND entity.modeled_entity_type = p_modeled_entity_type
-           AND entity.modeled_entity_id = ANY(v_selected_object_ids) AND entity.status = 'active';
+           AND entity.modeled_entity_id = ANY(v_selected_object_ids) AND entity.is_active;
         IF v_eligible_scope_count <> v_selected_scope_count THEN
             RAISE EXCEPTION 'Selected Scope contains an unavailable Entity';
         END IF;
@@ -2112,6 +2255,7 @@ BEGIN
         modeled_entity_type,
         code_generation_coverage_mode,
         requested_batch_id,
+        workflow_operation,
         mapping_operation,
         mapping_coverage_mode,
         mapping_route,
@@ -2143,6 +2287,7 @@ BEGIN
         v_modeled_entity_type,
         p_code_generation_coverage_mode,
         v_requested_batch_id,
+        p_workflow_operation,
         p_mapping_operation,
         p_mapping_coverage_mode,
         v_mapping_route,
@@ -2198,6 +2343,16 @@ BEGIN
                selected.selection_order::INTEGER
           FROM unnest(v_selected_object_ids) WITH ORDINALITY
                AS selected(object_id, selection_order);
+    END IF;
+
+    IF p_workflow_operation = 'build' THEN
+        INSERT INTO application.workflow_run_subject_area_selection (
+            workflow_run_id, project_id, subject_area_id, selection_order
+        )
+        SELECT v_created.workflow_run_id, v_created.project_id,
+               selected.subject_area_id, selected.selection_order::INTEGER
+          FROM unnest(p_subject_area_ids) WITH ORDINALITY
+               AS selected(subject_area_id, selection_order);
     END IF;
 
     IF p_project_workflow = 'mapping' THEN
@@ -2262,6 +2417,8 @@ REVOKE ALL ON FUNCTION application.create_workflow_run(
     VARCHAR,
     JSONB,
     JSONB,
+    VARCHAR,
+    BIGINT[],
     VARCHAR,
     BIGINT[]
 ) FROM PUBLIC;

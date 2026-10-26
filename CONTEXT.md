@@ -45,9 +45,11 @@ Systems are independent. Internal numeric IDs are not business identifiers.
 | Context Type | Global read-only classification shared across Projects; defined by name and description. |
 | Context Group | Project-owned collection of related knowledge with one Context Type, optional description and source System. |
 | Context Record | Reusable requirement, source information, convention, decision or other knowledge. Contains a stable UUID, text, optional plain-text source reference, status and lock. Requirements are not proof that data exists. |
-| Subject Area | Named business capability, such as Sales or Billing, over active Bronze Input Scope tables; a table may belong to several. It chooses the tables a Logical Build works on and is never modeling evidence. Unassigned tables have no active membership and are not stored. |
-| Logical Model | Schema-qualified normalized Entities, Attributes and relationships supported by physical inputs or Context records. |
-| Dimensional Model | Schema-qualified dimensions, facts and bridges supported by applied Logical Entities/Attributes or Context records. |
+| Subject Area | Named business capability, such as Sales or Billing, over active Bronze Input Scope Objects; an Object may belong to several. It chooses the Objects one Logical or Dimensional Build call works on and is never modeling evidence. Unassigned Objects have no active membership and are not stored. |
+| Build | Logical or Dimensional Run over ordered Subject Areas: one agent call per area, each seeing earlier areas' work, into one draft. Default order: most-shared areas first. |
+| Optimize | Logical or Dimensional Run over the whole applied model: cross-area links, merges of duplicates and type or name fixes. |
+| Logical Model | Schema-qualified normalized Entities, Attributes and child-to-parent relationships supported by physical inputs or Context records. Entity types come from `reference.logical_entity_type`. |
+| Dimensional Model | Schema-qualified dimensions, facts and bridges supported by applied Logical Entities/Attributes or Context records. Fact types come from `reference.dimensional_fact_type`. |
 | Source Context | Business/physical source dictionary used to interpret evidence. Exact fields come from workflow input contracts. |
 | GDS Context | Target platform placement and project configuration; not source business evidence. |
 
@@ -57,7 +59,10 @@ Type 2 preserves Dimension versions. Stable identity stays fixed; Fact/Bridge
 behavior is unchanged. Runs freeze both policies and Mapping receives both.
 Dimensional Attributes use the same natural-key, surrogate-key and audit flags as
 Logical Attributes. Foreign-key meaning comes from relationships and configured
-templates. Entity type, fact subtype and entity grain remain explicit. Attribute
+templates. Entity type, fact type and entity grain remain explicit. A relationship runs
+from a child's foreign-key Attribute to its parent and is identified by that Attribute;
+a Dimensional relationship is optional when that Attribute is nullable. There are no
+Submodels, and every model record's lifecycle is its `is_active` flag. Attribute
 definitions carry measure meaning, units and aggregation restrictions; there are
 no separate attribute-role, aggregation, grain-component or change-behavior fields.
 Project SCD policy owns history; per-column history exceptions are not represented.
@@ -74,12 +79,12 @@ projects these columns; agents cannot omit them. Settings display effective defa
 and allow per-Project overrides or reset; an explicit empty audit column list disables common audit fields.
 Existing saved Projects change only through reviewed authoring, never a backfill.
 
-Subject Areas only choose tables, in both web and Atlas workflows. Their records
-never feed Logical or Dimensional authoring as evidence. Logical uses selected physical
-metadata, enrichment, Profiles, Analysis, Context records and applicable Logical history.
-Dimensional uses selected Logical Entities/Attributes and their supporting evidence.
-Logical coverage defaults to 70% of distinct physical Objects selected for the run;
-Dimensional coverage defaults to 60% of selected Logical Entities, rounding counts up.
+Subject Areas only choose Objects, in both web and Atlas workflows. Their records
+never feed Logical or Dimensional authoring as evidence. A Logical Build call uses its
+area's physical metadata, enrichment, Profiles, Analysis and Context records plus the
+Entities already built; a Dimensional Build call uses the area's Logical Entities and
+their supporting evidence. Logical coverage defaults to 70% of the area's distinct
+Objects; Dimensional coverage defaults to 60% of its Logical Entities, rounding counts up.
 Physical Attributes may be selected, consolidated or omitted for the Logical
 design; included Attributes still require valid references and source evidence.
 Consolidation may map several physical inputs to one modeled record. Existing

@@ -8,7 +8,7 @@ import { DetailState } from "../../shared/ui";
 import type { ProjectDetail } from "../projects/api";
 import { ProjectRecordReview } from "../project_record_review/ProjectRecordReview";
 import { subjectAreaQueryKeys, tableLabel, type SubjectAreaApi, type SubjectAreaDetail } from "./api";
-import { AddTablesDialog, AreaChips, ColumnMeter, SubjectAreaEditorDialog, useSubjectAreaSave } from "./SubjectAreaDialogs";
+import { AddTablesDialog, AreaChips, SubjectAreaEditorDialog, useSubjectAreaSave } from "./SubjectAreaDialogs";
 import "./subject-areas.css";
 
 export function SubjectAreaDetailPage({ api, tenantId, project, subjectAreaId, hasTenantLock, canDelete = false }: {
@@ -59,13 +59,11 @@ function SubjectAreaView({ api, tenantId, project, area, hasTenantLock, canDelet
     ]);
   };
   const removal = useSubjectAreaSave({ api, tenantId, projectId, onSaved: async () => {
-    setNotice("Tables removed from this area. They stay in the Input Scope and any other area.");
+    setNotice("Objects removed from this area. They stay in the Input Scope and any other area.");
     await invalidate();
   } });
   const blocked = !hasTenantLock ? "Tenant Lock required" : stale ? "Refresh before changing this area"
     : locked ? "Unlock this area first" : undefined;
-  const statusLabel = area.subject_area_status === "active" ? "Active"
-    : area.subject_area_status === "inactive" ? "Inactive" : "Deprecated";
 
   return <article className="workflow-detail-page modeled-detail-page subject-area-detail-page page-enter">
     <header className="workflow-detail-header">
@@ -75,7 +73,9 @@ function SubjectAreaView({ api, tenantId, project, area, hasTenantLock, canDelet
         <div className="subject-area-detail-title">
           <h1 ref={heading} tabIndex={-1}>{area.subject_area_name}</h1>
           <div className="detail-badge-stack">
-            <span className={`status-badge ${area.subject_area_status === "active" ? "is-success" : "is-warning"}`}>{statusLabel}</span>
+            <span className={`status-badge ${area.subject_area_is_active ? "is-success" : "is-warning"}`}>
+              {area.subject_area_is_active ? "Active" : "Inactive"}
+            </span>
             <span className="status-badge is-neutral">{locked ? "Locked" : "Open"}</span>
           </div>
         </div>
@@ -84,7 +84,7 @@ function SubjectAreaView({ api, tenantId, project, area, hasTenantLock, canDelet
         <button className="button button-secondary button-small" type="button" disabled={Boolean(blocked)} title={blocked}
           onClick={() => setDialog("edit")}>Edit</button>
         <button className="button button-primary button-small" type="button" disabled={Boolean(blocked)} title={blocked}
-          onClick={() => setDialog("add")}>Add tables</button>
+          onClick={() => setDialog("add")}>Add Objects</button>
         <ProjectRecordReview presentation="record" api={api} tenantId={tenantId} projectId={projectId}
           projectRevision={project.project_revision} dataset="subject_area" selectedIds={new Set([area.subject_area_id])}
           hasTenantLock={hasTenantLock} disabled={stale}
@@ -106,22 +106,20 @@ function SubjectAreaView({ api, tenantId, project, area, hasTenantLock, canDelet
     <section className="detail-section detail-primary" aria-label="Subject Area definition">
       <dl className="modeled-detail-fields">
         <div className="is-definition"><dt>Definition</dt><dd>{area.subject_area_definition}</dd></div>
-        <div><dt>Tables</dt><dd>{area.table_count}</dd></div>
-        <div><dt>Columns</dt><dd><ColumnMeter columns={area.column_count} limit={area.max_subject_area_columns} /></dd></div>
+        <div><dt>Objects</dt><dd>{area.table_count}</dd></div>
+        <div><dt>Attributes</dt><dd>{area.column_count.toLocaleString()}</dd></div>
         <div><dt>Updated</dt><dd>{formatDateTime(area.updated_at)}</dd></div>
       </dl>
-      {area.column_count > area.max_subject_area_columns ? <p className="subject-area-warning" role="status">
-        This area is over the {area.max_subject_area_columns}-column limit. Split it so each Logical Build fits one answer.</p> : null}
     </section>
 
-    <section className="detail-section subject-area-members" aria-labelledby="subject-area-tables-heading">
-      <header><h2 id="subject-area-tables-heading">Tables</h2></header>
+    <section className="detail-section subject-area-members" aria-labelledby="subject-area-objects-heading">
+      <header><h2 id="subject-area-objects-heading">Objects</h2></header>
       <div className="review-selectionbar" hidden={selected.size === 0}>
         <span>{selected.size} selected</span>
         <div className="workflow-command-actions">
           <button className="button button-secondary button-small" type="button"
             disabled={Boolean(blocked) || removal.busy || removable.length === 0}
-            title={blocked ?? (removable.length === 0 ? "Locked tables stay in the area" : undefined)}
+            title={blocked ?? (removable.length === 0 ? "Locked Objects stay in the area" : undefined)}
             onClick={() => {
               setNotice("");
               removal.submit({
@@ -143,14 +141,14 @@ function SubjectAreaView({ api, tenantId, project, area, hasTenantLock, canDelet
       {notice ? <p role="status">{notice}</p> : null}
       {removal.error ? <p className="inline-error" role="alert">{removal.error}</p> : null}
       {!area.tables.length ? <div className="empty-state compact subject-area-empty">
-        <p>No tables yet. Add Bronze Input Scope tables to define what this area covers.</p>
-      </div> : <div className="workflow-table-scroll table-scroll ledger-grid subject-area-ledger" tabIndex={0} role="region" aria-label="Scrollable Subject Area tables">
-        <table aria-label="Subject Area tables">
+        <p>No Objects yet. Add Bronze Input Scope Objects to define what this area covers.</p>
+      </div> : <div className="workflow-table-scroll table-scroll ledger-grid subject-area-ledger" tabIndex={0} role="region" aria-label="Scrollable Subject Area Objects">
+        <table aria-label="Subject Area Objects">
           <thead><tr>
-            <th><input type="checkbox" aria-label="Select all tables in this area"
+            <th><input type="checkbox" aria-label="Select all Objects in this area"
               checked={area.tables.every((table) => selected.has(table.object_id))}
               onChange={(event) => setSelected(event.target.checked ? new Set(area.tables.map((table) => table.object_id)) : new Set())} /></th>
-            <th>Table</th><th>System</th><th className="is-numeric">Columns</th><th>Description</th><th>Also in</th><th>Lock</th>
+            <th>System</th><th>Object schema</th><th>Object name</th><th className="is-numeric">Attributes</th><th>Description</th><th>Also in</th><th>Lock</th>
           </tr></thead>
           <tbody>{area.tables.map((table) => {
             const membership = membershipId(table.object_id);
@@ -161,10 +159,11 @@ function SubjectAreaView({ api, tenantId, project, area, hasTenantLock, canDelet
                   if (event.target.checked) next.add(table.object_id); else next.delete(table.object_id);
                   setSelected(next);
                 }} /></td>
-              <th scope="row"><span className="subject-area-table-name"><strong>{table.object_name}</strong><small>{table.object_schema}</small></span></th>
               <td>{table.system_code}</td>
+              <td>{table.object_schema}</td>
+              <th scope="row">{table.object_name}</th>
               <td className="is-numeric">{table.column_count}</td>
-              <td className="subject-area-description">{table.object_description ?? <span className="subject-area-muted">No description</span>}</td>
+              <td className="subject-area-description">{table.object_description ? <span>{table.object_description}</span> : <span className="subject-area-muted">No description</span>}</td>
               <td><AreaChips memberships={table.areas} exceptId={area.subject_area_id} /></td>
               <td>{membership?.subject_area_table_is_locked ? "Locked" : "Open"}</td>
             </tr>;
@@ -174,7 +173,7 @@ function SubjectAreaView({ api, tenantId, project, area, hasTenantLock, canDelet
     </section>
 
     {dialog === "edit" ? <SubjectAreaEditorDialog api={api} tenantId={tenantId} projectId={projectId}
-      projectRevision={project.project_revision} hasTenantLock={hasTenantLock} maxColumns={area.max_subject_area_columns}
+      projectRevision={project.project_revision} hasTenantLock={hasTenantLock}
       area={area} onClose={() => setDialog(null)} onSaved={async (_result, saved) => {
         await invalidate();
         if (saved.name.toLocaleLowerCase() === area.subject_area_name.toLocaleLowerCase()) return;
@@ -183,7 +182,7 @@ function SubjectAreaView({ api, tenantId, project, area, hasTenantLock, canDelet
           queryKey: subjectAreaQueryKeys.areas(tenantId, projectId),
           queryFn: () => api.listSubjectAreas(tenantId, projectId),
         });
-        const renamed = page.items.find((item) => item.subject_area_status === "active"
+        const renamed = page.items.find((item) => item.subject_area_is_active
           && item.subject_area_name.toLocaleLowerCase() === saved.name.toLocaleLowerCase());
         await navigate(renamed ? {
           to: "/tenants/$tenantId/projects/$projectId/subject-areas/$subjectAreaId",
@@ -194,8 +193,8 @@ function SubjectAreaView({ api, tenantId, project, area, hasTenantLock, canDelet
         });
       }} /> : null}
     {dialog === "add" ? <AddTablesDialog api={api} tenantId={tenantId} projectId={projectId}
-      projectRevision={project.project_revision} hasTenantLock={hasTenantLock} maxColumns={area.max_subject_area_columns}
-      area={area} memberIds={memberIds} memberColumns={area.column_count}
+      projectRevision={project.project_revision} hasTenantLock={hasTenantLock}
+      area={area} memberIds={memberIds}
       onClose={() => setDialog(null)} onSaved={invalidate} /> : null}
   </article>;
 }

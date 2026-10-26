@@ -20,7 +20,10 @@ from gds_etl_workbench.configuration import AuthMode, RuntimeSettings
 from gds_etl_workbench.domain.snapshots.metadata import (
     DATASETS_BY_NAME as METADATA_DATASETS_BY_NAME,
 )
-from gds_etl_workbench.domain.snapshots.project import DATASETS_BY_NAME
+from gds_etl_workbench.domain.snapshots.project import (
+    CHANGE_SET_DATASETS_BY_NAME,
+    DATASETS_BY_NAME,
+)
 from gds_etl_workbench.infrastructure.postgres import Database
 from gds_etl_workbench.tools.snapshots.project.describe_project_dataset import (
     register_describe_project_dataset_tool,
@@ -231,9 +234,10 @@ async def test_change_set_tools_advertise_exact_project_and_metadata_registries(
         advertised = tools[tool_name].input_schema["$defs"]["ProjectChangeSetDataset"][
             "enum"
         ]
-        assert advertised == [
-            name for name in DATASETS_BY_NAME if name != "context_type"
-        ]
+        assert advertised == list(CHANGE_SET_DATASETS_BY_NAME)
+        assert {"context_type", "logical_entity_type", "dimensional_fact_type"}.isdisjoint(
+            advertised
+        )
     for tool_name in ("get_project_change_set", "describe_project_dataset"):
         advertised = tools[tool_name].input_schema["$defs"]["ProjectDataset"]["enum"]
         assert advertised == list(DATASETS_BY_NAME)
@@ -257,6 +261,8 @@ async def test_focused_project_reader_excludes_broad_code_and_validation_payload
 
     assert not ({"project_object_binding", "project_attribute_binding"} & readable)
     assert {"mapping_object", "mapping_attribute"} <= readable
+    assert {"logical_entity_type", "dimensional_fact_type"} <= readable
+    assert not {"logical_submodel", "dimensional_submodel"} & readable
     assert "mapping_dependency" not in readable
     assert (
         not {
@@ -286,7 +292,9 @@ async def test_describe_project_dataset_explains_every_public_column() -> None:
         document = result.structured_content
         assert document is not None
         schema = document["record_schema"]
-        assert document["change_set_eligible"] is (dataset != "context_type")
+        assert document["change_set_eligible"] is (
+            dataset not in {"context_type", "logical_entity_type", "dimensional_fact_type"}
+        )
         assert [column["name"] for column in document["columns"]] == list(
             schema["properties"]
         )

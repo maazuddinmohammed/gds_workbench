@@ -19,6 +19,7 @@ import {
   type AnalysisReviewCommand,
 } from "./api";
 import { AnalysisResults } from "./AnalysisResults";
+import { RefreshButton } from "../../shared/ui";
 
 type RunDialogKind = "inference" | "validation" | null;
 
@@ -130,9 +131,7 @@ export function AnalysisScreen({
           <button className="button button-secondary button-small" type="button"
             disabled={download.isPending || revisionMismatch || findingsQuery.isPending || findingsQuery.isError}
             onClick={() => download.mutate()}>{download.isPending ? "Exporting…" : "Export"}</button>
-          <button className="button button-secondary button-small" type="button" onClick={refresh}>
-            Refresh
-          </button>
+          <RefreshButton refreshing={false} onClick={refresh} />
           <WorkflowMenu label="Run" primary>
           <button
             className="button button-secondary button-small"

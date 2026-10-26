@@ -34,16 +34,16 @@
       context_type: [filter("context_type_name", "Type")],
       context_group: [filter("context_group_name", "Group"), filter("source_system_code", "Source system"), filter("context_type_name", "Type")],
       context_record: [filter("context_group_name", "Group"), filter("status", "Status")],
-      subject_area: [filter("subject_area_name", "Subject area"), filter("subject_area_status", "Status")],
-      subject_area_table: [filter("subject_area_name", "Subject area"), filter("object_name", "Object"), filter("subject_area_table_status", "Status")],
-      logical_submodel: [filter("logical_submodel_name", "Submodel"), filter("logical_submodel_status", "Status")],
-      logical_entity: [filter("logical_entity_schema_name", "Schema"), filter("logical_entity_name", "Entity"), filter("logical_entity_type", "Entity type"), filter("logical_entity_status", "Status")],
-      logical_attribute: [filter("logical_entity_schema_name", "Schema"), filter("logical_entity_name", "Logical entity"), filter("logical_attribute_data_type", "Data type"), filter("logical_attribute_status", "Status")],
-      logical_relationship: [filter("logical_relationship_name", "Relationship"), filter("from_logical_entity_name", "From entity"), filter("to_logical_entity_name", "To entity")],
-      dimensional_submodel: [filter("dimensional_submodel_name", "Submodel"), filter("dimensional_submodel_status", "Status")],
-      dimensional_entity: [filter("dimensional_entity_schema_name", "Schema"), filter("dimensional_entity_name", "Entity"), filter("dimensional_entity_type", "Entity type"), filter("dimensional_entity_status", "Status")],
-      dimensional_attribute: [filter("dimensional_entity_schema_name", "Schema"), filter("dimensional_entity_name", "Dimensional entity"), filter("dimensional_attribute_data_type", "Data type"), filter("dimensional_attribute_status", "Status")],
-      dimensional_relationship: [filter("dimensional_relationship_name", "Relationship"), filter("from_dimensional_entity_name", "From entity"), filter("to_dimensional_entity_name", "To entity")],
+      subject_area: [filter("subject_area_name", "Subject Area"), filter("subject_area_is_active", "Active")],
+      subject_area_table: [filter("subject_area_name", "Subject Area"), filter("object_schema", "Object schema"), filter("object_name", "Object name"), filter("subject_area_table_is_active", "Active")],
+      logical_entity_type: [filter("logical_entity_type_is_active", "Active")],
+      logical_entity: [filter("logical_entity_schema_name", "Schema"), filter("logical_entity_name", "Entity"), filter("logical_entity_type", "Entity type"), filter("logical_entity_is_active", "Active")],
+      logical_attribute: [filter("logical_entity_schema_name", "Schema"), filter("logical_entity_name", "Logical entity"), filter("logical_attribute_data_type", "Data type"), filter("logical_attribute_is_active", "Active")],
+      logical_relationship: [filter("from_logical_entity_name", "Child entity"), filter("to_logical_entity_name", "Parent entity"), filter("logical_relationship_is_active", "Active")],
+      dimensional_fact_type: [filter("dimensional_fact_type_is_active", "Active")],
+      dimensional_entity: [filter("dimensional_entity_schema_name", "Schema"), filter("dimensional_entity_name", "Entity"), filter("dimensional_entity_type", "Entity type"), filter("dimensional_entity_is_active", "Active")],
+      dimensional_attribute: [filter("dimensional_entity_schema_name", "Schema"), filter("dimensional_entity_name", "Dimensional entity"), filter("dimensional_attribute_data_type", "Data type"), filter("dimensional_attribute_is_active", "Active")],
+      dimensional_relationship: [filter("from_dimensional_entity_name", "Child entity"), filter("to_dimensional_entity_name", "Parent entity"), filter("dimensional_relationship_role_name", "Role")],
       mapping_object: [filter("source_system_code", "Source system"), filter("modeled_entity_schema_name", "Schema"), filter("modeled_entity_name", "Modeled entity"), filter("object_mapping_status", "Status")],
       mapping_attribute: [filter("source_system_code", "Source system"), filter("modeled_entity_schema_name", "Schema"), filter("modeled_entity_name", "Modeled entity"), filter("modeled_attribute_name", "Modeled attribute")],
       generated_code: [filter("modeled_entity_schema_name", "Schema"), filter("modeled_entity_name", "Modeled entity"), filter("code_storage_type", "Storage type"), filter("artifact_name", "Artifact"), filter("artifact_type", "Artifact type")],
@@ -115,7 +115,7 @@
     if (includeDetail) return fields;
     const chosen = state.columns?.[`${state.area}:${state.dataset}`];
     const name = fields.find(field => field === `${state.dataset}_name`) || fields.find(field => ["attribute_name", "object_name", "modeled_attribute_name", "modeled_entity_name"].includes(field)) || fields[0];
-    const priority = [...(state.loaded.definition.canonical_key || []), name, ...fields.filter(field => /(_data_type|_description|_definition|_is_nullable|_role|_status)$/.test(field) || ["description", "definition", "is_active", "is_locked", "code_storage_type"].includes(field))];
+    const priority = [...(state.loaded.definition.canonical_key || []), name, ...fields.filter(field => /(_data_type|_description|_definition|_is_nullable|_role|_status|_is_active)$/.test(field) || ["description", "definition", "is_active", "is_locked", "code_storage_type"].includes(field))];
     const defaults = [...new Set(priority)].slice(0, Math.max(8, (state.loaded.definition.canonical_key || []).length + 1));
     const selected = chosen || defaults;
     return [...new Set([...(state.loaded.definition.canonical_key || []), name, ...selected])].filter(field => fields.includes(field));

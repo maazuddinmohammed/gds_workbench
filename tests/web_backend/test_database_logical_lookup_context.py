@@ -6,6 +6,15 @@
 from typing import Any, LiteralString, cast
 
 from gds_etl_workbench.application.mapping_context import project_mapping_inputs
+from jsonschema import Draft202012Validator
+from psycopg.types.json import Jsonb
+from tests.mcp.conftest import DisposablePostgres
+from tests.web_backend.test_database_mapping_source_context import (
+    _load,
+    _seed_mapping_scope,
+)
+from tests.web_backend.test_database_project_change_sets import _required_id
+
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.mapping import assess_mapping_readiness
 from gds_workbench_api.features.mapping.preparation_contracts import (
@@ -14,15 +23,6 @@ from gds_workbench_api.features.mapping.preparation_contracts import (
 from gds_workbench_api.features.workflows.authoring.downstream_contracts import (
     CONTRACTS,
 )
-from jsonschema import Draft202012Validator
-from psycopg.types.json import Jsonb
-
-from tests.mcp.conftest import DisposablePostgres
-from tests.web_backend.test_database_mapping_source_context import (
-    _load,
-    _seed_mapping_scope,
-)
-from tests.web_backend.test_database_project_change_sets import _required_id
 
 
 async def test_logical_peer_lookup_metadata_is_authorized_and_invalidates_code(
@@ -49,36 +49,12 @@ async def test_logical_peer_lookup_metadata_is_authorized_and_invalidates_code(
             "project_id",
         )
         ids: dict[str, int] = {}
-        for name, project_id, status, source_system_id, has_document in (
-            ("Customer", scope.plan.project_id, "active", scope.source_system_id, True),
-            (
-                "Inactive",
-                scope.plan.project_id,
-                "inactive",
-                scope.source_system_id,
-                True,
-            ),
-            (
-                "Unmapped",
-                scope.plan.project_id,
-                "active",
-                scope.source_system_id,
-                False,
-            ),
-            (
-                "OtherSystem",
-                scope.plan.project_id,
-                "active",
-                scope.other_system_id,
-                True,
-            ),
-            (
-                "OtherProject",
-                foreign_project_id,
-                "active",
-                scope.source_system_id,
-                True,
-            ),
+        for name, project_id, is_active, source_system_id, has_document in (
+            ("Customer", scope.plan.project_id, True, scope.source_system_id, True),
+            ("Inactive", scope.plan.project_id, False, scope.source_system_id, True),
+            ("Unmapped", scope.plan.project_id, True, scope.source_system_id, False),
+            ("OtherSystem", scope.plan.project_id, True, scope.other_system_id, True),
+            ("OtherProject", foreign_project_id, True, scope.source_system_id, True),
         ):
             entity_id = _required_id(
                 connection.execute(
@@ -86,11 +62,11 @@ async def test_logical_peer_lookup_metadata_is_authorized_and_invalidates_code(
                     INSERT INTO workflow.logical_entity (
                         project_id,logical_entity_schema_name,logical_entity_name,
                         logical_entity_definition,logical_entity_type,
-                        logical_entity_grain,logical_entity_status
+                        logical_entity_grain,logical_entity_is_active
                     ) VALUES (%s,'lookups',%s,'Customer lookup.','core','One customer.',%s)
                     RETURNING logical_entity_id
                     """,
-                    (project_id, name, status),
+                    (project_id, name, is_active),
                 ).fetchone(),
                 "logical_entity_id",
             )
@@ -119,9 +95,7 @@ async def test_logical_peer_lookup_metadata_is_authorized_and_invalidates_code(
                         project_id,
                         entity_id,
                         source_system_id,
-                        Jsonb({"steps": ["Read the Customer source."]})
-                        if has_document
-                        else None,
+                        Jsonb({"steps": ["Read the Customer source."]}) if has_document else None,
                     ),
                 ).fetchone(),
                 "mapping_object_id",
@@ -137,9 +111,7 @@ async def test_logical_peer_lookup_metadata_is_authorized_and_invalidates_code(
                 """,
                 (
                     mapping_id,
-                    Jsonb({"transformation": "source.CustomerKey"})
-                    if has_document
-                    else None,
+                    Jsonb({"transformation": "source.CustomerKey"}) if has_document else None,
                     entity_id,
                 ),
             )
@@ -169,16 +141,12 @@ async def test_logical_peer_lookup_metadata_is_authorized_and_invalidates_code(
                     scope.source_system_id,
                 ),
             )
-        modeled_sources = [
-            row for row in sources if row["source_logical_entity_id"] is not None
-        ]
+        modeled_sources = [row for row in sources if row["source_logical_entity_id"] is not None]
         assert len(modeled_sources) == 1
         assert modeled_sources[0]["source_logical_entity_id"] == ids["Customer"]
         assert modeled_sources[0]["source_object_id"] is None
         assert modeled_sources[0]["role"] == "lookup"
-        assert {
-            row["source_object_id"] for row in sources if row["source_object_id"]
-        } == {
+        assert {row["source_object_id"] for row in sources if row["source_object_id"]} == {
             scope.source_object_id,
             scope.bronze_object_id,
         }
@@ -199,13 +167,9 @@ async def test_logical_peer_lookup_metadata_is_authorized_and_invalidates_code(
         for name, value in projected.items():
             validator = cast(
                 Any,
-                Draft202012Validator(
-                    CONTRACTS["code_generation"][name]["value_schema"]
-                ),
+                Draft202012Validator(CONTRACTS["code_generation"][name]["value_schema"]),
             )
-            assert validator.is_valid(value), (
-                f"Code prompt input schema mismatch: {name}"
-            )
+            assert validator.is_valid(value), f"Code prompt input schema mismatch: {name}"
         lookup = next(
             row["object"]
             for row in initial["source_context"]["physical_sources"]
@@ -213,9 +177,7 @@ async def test_logical_peer_lookup_metadata_is_authorized_and_invalidates_code(
         )
         assert "object_id" not in lookup
         assert lookup["modeled_entity_id"] == ids["Customer"]
-        assert (
-            lookup["object_schema"] == lookup["logical_entity_schema_name"] == "lookups"
-        )
+        assert lookup["object_schema"] == lookup["logical_entity_schema_name"] == "lookups"
         assert lookup["object_name"] == lookup["logical_entity_name"] == "Customer"
         assert lookup["tenant_catalog"] == f"shared_{scope.plan.project_id}"
         assert lookup["source_tenant_id"] == scope.tenant_id
@@ -239,10 +201,7 @@ async def test_logical_peer_lookup_metadata_is_authorized_and_invalidates_code(
             assert changed["code_input_digest"] != prior["code_input_digest"]
             assert await current() == changed
             prior = changed
-        assert all(
-            row["role"] != "lookup"
-            for row in prior["source_context"]["physical_sources"]
-        )
+        assert all(row["role"] != "lookup" for row in prior["source_context"]["physical_sources"])
     finally:
         await runtime.close()
 
@@ -349,13 +308,9 @@ async def test_dimensional_peer_lookup_uses_gold_schema_and_tracks_changes(
         for name, value in projected.items():
             validator = cast(
                 Any,
-                Draft202012Validator(
-                    CONTRACTS["code_generation"][name]["value_schema"]
-                ),
+                Draft202012Validator(CONTRACTS["code_generation"][name]["value_schema"]),
             )
-            assert validator.is_valid(value), (
-                f"Code prompt input schema mismatch: {name}"
-            )
+            assert validator.is_valid(value), f"Code prompt input schema mismatch: {name}"
         lookup = next(
             row["object"]
             for row in initial["source_context"]["physical_sources"]
@@ -363,11 +318,7 @@ async def test_dimensional_peer_lookup_uses_gold_schema_and_tracks_changes(
         )
         assert "object_id" not in lookup
         assert lookup["modeled_entity_id"] == lookup_id
-        assert (
-            lookup["object_schema"]
-            == lookup["dimensional_entity_schema_name"]
-            == "gold"
-        )
+        assert lookup["object_schema"] == lookup["dimensional_entity_schema_name"] == "gold"
         assert lookup["object_name"] == lookup["dimensional_entity_name"] == "Customer"
         assert lookup["tenant_catalog"] == f"shared_{scope.plan.project_id}"
         assert lookup["zone_code"] == "gold"

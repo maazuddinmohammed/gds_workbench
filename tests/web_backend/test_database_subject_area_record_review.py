@@ -7,6 +7,13 @@ import pytest
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import WorkbenchError
+from tests.mcp.conftest import DisposablePostgres
+from tests.mcp.database_test_support import require_row
+from tests.mcp.test_database_workflow_run_lifecycle import (
+    WorkflowContext,
+    seed_workflow_context,
+)
+
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.project_change_sets.contracts import (
     PreviewProjectRecordsRequest,
@@ -14,13 +21,6 @@ from gds_workbench_api.features.project_change_sets.contracts import (
 )
 from gds_workbench_api.features.project_change_sets.service import (
     DatabaseProjectChangeSetService,
-)
-
-from tests.mcp.conftest import DisposablePostgres
-from tests.mcp.database_test_support import require_row
-from tests.mcp.test_database_workflow_run_lifecycle import (
-    WorkflowContext,
-    seed_workflow_context,
 )
 
 type StoredAreas = tuple[list[dict[str, Any]], list[dict[str, Any]]]
@@ -218,15 +218,11 @@ async def test_subject_area_preview_is_complete_paged_and_preserves_stored_state
         assert applied.action_count == first.action_count
         assert applied.project_revision == context.project_revision + 1
         after = _stored(database, context.project_id)
-        assert [row["subject_area_status"] for row in after[0]] == ["inactive"]
-        assert all(row["subject_area_table_status"] == "inactive" for row in after[1])
+        assert [row["subject_area_is_active"] for row in after[0]] == [False]
+        assert not any(row["subject_area_table_is_active"] for row in after[1])
         for dataset_index, dataset in enumerate(("subject_area", "subject_area_table")):
             for original, reviewed in zip(before[dataset_index], after[dataset_index], strict=True):
-                for field in original.keys() - {
-                    f"{dataset}_status",
-                    "updated_time",
-                    "updated_by",
-                }:
+                for field in original.keys() - {f"{dataset}_is_active", "updated_time"}:
                     assert original[field] == reviewed[field]
         replay = await service.review_records(
             principal,
@@ -295,11 +291,11 @@ async def test_subject_area_preview_is_complete_paged_and_preserves_stored_state
         )
         assert applied.action_count == 2
         final_areas, final_tables = _stored(database, context.project_id)
-        assert [row["subject_area_status"] for row in final_areas] == ["active"]
+        assert [row["subject_area_is_active"] for row in final_areas] == [True]
         assert [
             row["subject_area_table_id"]
             for row in final_tables
-            if row["subject_area_table_status"] == "active"
+            if row["subject_area_table_is_active"]
         ] == [table_ids[0]]
     finally:
         await runtime.close()

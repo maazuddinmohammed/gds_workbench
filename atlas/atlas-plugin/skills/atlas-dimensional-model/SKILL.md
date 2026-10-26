@@ -1,11 +1,11 @@
 ---
 name: atlas-dimensional-model
-description: Build or refine Atlas dimensional (Gold) facts, dimensions, bridges, measures, conformance and history from applied logical Entities. Use for star-schema, fact/dimension or SCD requests; supports Guided explanation and requested Grill Me discussion.
+description: Build or refine Atlas dimensional (Gold) facts, dimensions, bridges, measures, conformance and history from applied logical Entities, one Subject Area at a time. Use for star-schema, fact/dimension or SCD requests; supports Guided explanation and requested Grill Me discussion.
 ---
 
 # Build a dimensional model
 
-Goal: a Gold design with defensible grain, measures, conformance and history, traced to applied Logical Entities.
+Goal: one Gold model with defensible grain, measures, conformance and history from applied Logical Entities.
 
 ## When to use
 
@@ -15,25 +15,25 @@ Goal: a Gold design with defensible grain, measures, conformance and history, tr
 ## What you need
 
 - [Working context](../../references/working-method.md) and its golden rules.
-- Active applied Logical Entities and Attributes; Subject Areas are never an input. [Dimensional context](../../references/dimensional-build/context.md) lists what to read, including history rules.
-- The business process and questions the design must answer. A department name or report layout is not a fact grain.
+- Active applied Logical Entities and Attributes; [Dimensional context](../../references/dimensional-build/context.md) lists what to read, including history rules.
+- The business process and questions to answer; a department name or report layout is not a fact grain.
 
 ## Steps
 
-1. Read applied Logical sources with `select --session <dir> --area project --dataset <name> --view snapshot` and existing Dimensional records with `--view effective`, following `next_cursor` until it is null.
-2. State what one row means for each fact, dimension or bridge. A dimension-only request needs member or version grain, not an invented fact.
-3. Decide dimensions, roles and conformance, then facts and measures, with [dimensional design](../../references/dimensional-build/design.md). Put additivity, valid aggregation, units and population in Attribute definitions; a valid star can still double-count.
-4. Resolve history from requirements and the Project SCD setting; never guess effective time or missing-version behavior.
-5. Write complete records with `upsert-batch --session <dir> --area project --changes <JSON> --expected-digest <digest>` per [Dimensional records](../../references/project/dimensional.md), using configured `dimensional_schemas` and naming, with business field names distinct from framework audit names. Never invent SCD, bus-matrix or Logical-source fields.
-6. Add framework columns: `policy-apply --session <dir> --layer dimensional --expected-digest <digest> --dry-run true`, show the result, then run it without `--dry-run`. Type 2 Dimensions get the configured history fields.
-7. Run `validate --session <dir> --area project`, `coverage --session <dir> --layer dimensional` and the dimensional quality checks, then check coherence across processes.
+1. With [dimensional design](../../references/dimensional-build/design.md), **Build** one Subject Area at a time for named areas; otherwise **Optimize** existing facts and dimensions.
+2. Read applied Logical sources with `select --session <dir> --area project --dataset <name> --view snapshot` and Dimensional records with `--view effective` until `next_cursor` is null; for a Build, the area's Logical Entities, what was built from them and shared dimensions.
+3. State what one row means for each fact, dimension or bridge; a dimension-only request needs member or version grain, not an invented fact.
+4. Decide dimensions, roles and conformance, reusing shared dimensions, then facts and measures with additivity, units and population in their definitions. Resolve history from requirements and the Project SCD setting; never guess effective time.
+5. Write only new and changed records with `upsert-batch --session <dir> --area project --changes <JSON> --expected-digest <digest>` per [Dimensional records](../../references/project/dimensional.md): configured schemas and naming, active fact type codes, Relationships child -> parent with roles only for role-playing dimensions, retirement through `*_is_active: false`.
+6. Add framework columns: `policy-apply --session <dir> --layer dimensional --expected-digest <digest> --dry-run true`, show the result, then run it without `--dry-run`.
+7. Run `validate --session <dir> --area project`, `coverage --session <dir> --layer dimensional --subject-area <area>` (no area when optimizing) and the quality checks; check coherence across processes.
 8. Submit related work together: follow the [Change Set lifecycle](../../references/change-set-lifecycle.md) by repeating `next --session <dir> --area project`.
 
 ## Done when
 
 - Each requested structure has stated grain, identity, measures, conformance and history.
 - `validate` passes and `coverage` meets the Project target; when `enforced` is false, the user may accept a gap.
-- Unchanged, protected and unrelated stars are preserved; scope does not mean rebuilding every star.
+- Unchanged, protected and unrelated stars are preserved; scope never means rebuilding everything.
 
 ## Ask the user when
 
@@ -42,7 +42,7 @@ Goal: a Gold design with defensible grain, measures, conformance and history, tr
 - A change to a shared dimension affects other stars.
 - Approving Stage and, separately, Apply.
 
-Unresolved grain, identity or history is reported, never filled with a guess or disguised as a Context record. Guided explanation is the default; Grill Me changes questions, not records.
+Report unresolved grain, identity or history; never guess it or disguise it as Context. Guided explanation is the default; Grill Me changes questions, not records.
 
 ## Next
 

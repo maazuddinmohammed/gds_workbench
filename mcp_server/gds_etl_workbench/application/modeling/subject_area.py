@@ -8,7 +8,7 @@ SUBJECT_AREAS_SQL: LiteralString = """
 SELECT area.subject_area_id,
        area.subject_area_name,
        area.subject_area_definition,
-       area.subject_area_status,
+       area.subject_area_is_active,
        area.subject_area_is_locked
   FROM workflow.subject_area AS area
  WHERE area.project_id = %s
@@ -26,7 +26,7 @@ SELECT membership.subject_area_table_id,
        connection.connection_code,
        object_record.object_schema,
        object_record.object_name,
-       membership.subject_area_table_status,
+       membership.subject_area_table_is_active,
        membership.subject_area_table_is_locked
   FROM workflow.subject_area_table AS membership
   JOIN project.project AS project

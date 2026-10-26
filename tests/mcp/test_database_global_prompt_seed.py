@@ -34,10 +34,14 @@ EXPECTED_AGENTIC_STAGES: frozenset[StageIdentity] = frozenset(
         ("analysis", "tool_assisted", "relationship_inference"),
         ("subject_area", "one_shot", "candidate_authoring"),
         ("subject_area", "tool_assisted", "candidate_authoring"),
-        ("logical", "one_shot", "candidate_authoring"),
-        ("logical", "tool_assisted", "candidate_authoring"),
-        ("dimensional", "one_shot", "candidate_authoring"),
-        ("dimensional", "tool_assisted", "candidate_authoring"),
+        ("logical", "one_shot", "build_authoring"),
+        ("logical", "tool_assisted", "build_authoring"),
+        ("logical", "one_shot", "optimize_authoring"),
+        ("logical", "tool_assisted", "optimize_authoring"),
+        ("dimensional", "one_shot", "build_authoring"),
+        ("dimensional", "tool_assisted", "build_authoring"),
+        ("dimensional", "one_shot", "optimize_authoring"),
+        ("dimensional", "tool_assisted", "optimize_authoring"),
         ("mapping", "one_shot", "mapping_authoring"),
         ("mapping", "tool_assisted", "mapping_authoring"),
         ("code_generation", None, "sql_generation"),
@@ -48,8 +52,10 @@ TOOL_ASSISTED_STAGES: frozenset[StageIdentity] = frozenset(
     {
         ("analysis", "tool_assisted", "relationship_inference"),
         ("subject_area", "tool_assisted", "candidate_authoring"),
-        ("logical", "tool_assisted", "candidate_authoring"),
-        ("dimensional", "tool_assisted", "candidate_authoring"),
+        ("logical", "tool_assisted", "build_authoring"),
+        ("logical", "tool_assisted", "optimize_authoring"),
+        ("dimensional", "tool_assisted", "build_authoring"),
+        ("dimensional", "tool_assisted", "optimize_authoring"),
         ("mapping", "tool_assisted", "mapping_authoring"),
     }
 )
@@ -91,7 +97,7 @@ def _apply_sql(postgres_database: DisposablePostgres, content: str) -> None:
         ("05_global_prompt_defaults.template.v2.sql", "$workflow_defaults$"),
     ],
 )
-def test_default_prompt_versions_keep_subject_areas_out_of_downstream_inputs(
+def test_default_prompt_versions_use_subject_areas_only_as_build_focus(
     filename: str,
     payload_tag: str,
 ) -> None:
@@ -104,12 +110,16 @@ def test_default_prompt_versions_keep_subject_areas_out_of_downstream_inputs(
             PLACEHOLDER.findall(default["instruction_prompt"])
         )
         tools = set(default["agent_tool_names"] or [])
-        assert not any("subject_area" in name for name in placeholders | tools)
+        building = default["workflow_stage_code"] == "build_authoring"
+        # A Build call names its one Subject Area; nothing else reads Subject Areas.
+        assert {name for name in placeholders | tools if "subject_area" in name} == (
+            {"subject_area_context"} if building else set()
+        )
         if workflow == "dimensional":
-            if default["workflow_execution_mode"] == "tool_assisted":
-                assert "get_selected_logical_entities" in tools
-            else:
-                assert "selected_logical_entities" in placeholders
+            assert "get_selected_logical_entities" in tools or (
+                default["workflow_execution_mode"] == "one_shot"
+                and ("selected_logical_entities" in placeholders or not building)
+            )
 
 
 def _seed_super_admin(postgres_database: DisposablePostgres) -> int:
@@ -227,7 +237,7 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
     assert len(stage_identities) == len(set(stage_identities))
     assert set(stage_identities) == EXPECTED_AGENTIC_STAGES
     expected_count = len(EXPECTED_AGENTIC_STAGES)
-    assert expected_count == 14
+    assert expected_count == 18
     assert len({row["prompt_template_id"] for row in first}) == expected_count
     assert len({row["prompt_template_version_id"] for row in first}) == expected_count
     assert len({row["prompt_assignment_id"] for row in first}) == expected_count

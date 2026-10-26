@@ -386,12 +386,14 @@ function Read-SnapshotRoot([string]$SnapshotRoot, [string]$Session, $State, $Own
         if ($area -ceq 'project' -and (Get-Property $section 'name') -ceq 'project_binding') { Fail 'Legacy Project Snapshot contract; fetch a new Entity-owned Project Snapshot.' }
         foreach ($dataset in @($section.datasets)) {
             if ($area -ceq 'project') {
-                if (@('project_object_binding', 'project_attribute_binding', 'mapping_dependency') -ccontains $dataset.name) { Fail 'Legacy Project Snapshot contract; fetch a new Entity-owned Project Snapshot.' }
+                # Retired datasets mark a Snapshot from before the current record contract.
+                if (@('project_object_binding', 'project_attribute_binding', 'mapping_dependency', 'logical_submodel', 'dimensional_submodel') -ccontains $dataset.name) { Fail 'Legacy Project Snapshot contract; fetch a new Entity-owned Project Snapshot.' }
                 $required = @()
                 if (@('mapping_object', 'mapping_attribute', 'generated_code', 'generated_code_source_system') -ccontains $dataset.name) { $required = @('modeled_entity_schema_name') }
                 foreach ($layer in @('logical', 'dimensional')) {
                     if (@(($layer + '_entity'), ($layer + '_attribute')) -ccontains $dataset.name) { $required = @($layer + '_entity_schema_name') }
-                    if ($dataset.name -ceq ($layer + '_relationship')) { $required = @(('from_' + $layer + '_entity_schema_name'), ('to_' + $layer + '_entity_schema_name')) }
+                    # Child -> parent: the child's foreign-key Attribute alone identifies a Relationship.
+                    if ($dataset.name -ceq ($layer + '_relationship')) { $required = @('from_' + $layer + '_entity_schema_name') }
                 }
                 foreach ($field in $required) { if (@($dataset.canonical_key) -cnotcontains $field) { Fail 'Legacy Project Snapshot contract; fetch a new Entity-owned Project Snapshot.' } }
             }

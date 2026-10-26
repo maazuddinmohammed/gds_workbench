@@ -14,6 +14,7 @@ import {
 } from "./MappingLedgers";
 import { MappingExportDialog } from "./MappingExportDialog";
 import { MappingRunDialog } from "./MappingRunDialog";
+import { RefreshButton } from "../../shared/ui";
 
 export function MappingScreen({
   api,
@@ -119,9 +120,7 @@ export function MappingScreen({
           <WorkflowCommandTools />
           <WorkflowMenu><button type="button" className="button button-secondary button-small"
             onClick={() => setExportOpen(true)}>Export</button></WorkflowMenu>
-          <button ref={refreshButton} className="button button-secondary button-small" type="button" onClick={() => void refresh()}>
-            Refresh
-          </button>
+          <RefreshButton ref={refreshButton} refreshing={false} onClick={() => void refresh()} />
           <button
             ref={commandButton}
             className="button button-primary button-small"

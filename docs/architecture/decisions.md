@@ -144,16 +144,36 @@ populated-database migration.
 ## Partial authoring and protected work
 
 Subject Areas replace the former Conceptual model. An area is a named business
-capability over the active Bronze Input Scope; a table may belong to several. Areas
-decide which tables a Logical Build works on and are never modeling evidence: no
-Logical or Dimensional prompt variable, reader or Atlas task input carries them, and
-they are not a prerequisite or an overview quality warning. A Subject Area run always
-covers the whole Bronze scope (the backend rejects a partial selection), answers with
-table ids, and the backend checks every id, keeps locks, accounts for every table and
-caps each area at `max_subject_area_columns` (300, `config/subject_areas.json`) so one
-Logical Build fits one answer. Unassigned tables are worked out, not stored. Human edits
-use one save command per area that applies at once; a rename keeps the old area inactive.
-Logical uses physical inputs; Dimensional continues to consume Logical outputs.
+capability over the active Bronze Input Scope; an Object may belong to several. Areas
+decide which Objects each Logical or Dimensional Build call works on and are never
+modeling evidence: a Build prompt names only its current area (`subject_area_context`),
+and no reader returns areas. A Subject Area run covers all or selected active Bronze
+Scope Objects. Objects left out keep their memberships, and an area that still holds
+in-scope Objects outside the run cannot be retired in it. The answer cites table ids;
+the backend checks every id, keeps locks and accounts for every Object in the run.
+Areas have no size limit; the prompt aims for about 5 to 12 tables and a few hundred
+columns per area, so one Build call can design it well. Unassigned Objects are worked
+out, not stored. Human edits use one save command per
+area that applies at once; a rename keeps the old area inactive.
+
+Logical and Dimensional Runs are a Build or an Optimize (`workflow_run.workflow_operation`).
+A Build stores its ordered areas (`workflow_run_subject_area_selection`) and derives the
+selection server-side: the areas' eligible Objects (Logical) or the active Logical
+Entities built from them (Dimensional). The backend runs one agent call per area,
+validates each answer against the snapshot plus earlier areas' staged work, and hands
+off one draft; a failed area keeps earlier areas' work in a rejected draft. Each call
+sees its area's evidence, the Entities already built from it, neighbours and a one-line
+directory of the rest, never the whole model. An Optimize is one call over the whole
+applied model with backend findings (unlinked Analysis edges, conformance candidates,
+type conflicts, name variants) and needs an applied model. Builds measure coverage per
+area; the run reports the overall result as a warning. Validate is not built yet.
+
+Model records have no Submodels and no status text: `is_active` is the lifecycle, and
+retiring an Entity retires its Attributes and the Relationships that use them.
+Relationships run child to parent and are identified by the child's foreign-key
+Attribute; Dimensional optionality is that Attribute's nullability. Entity and fact
+types are reference lists that a DBA maintains; a new or changed record needs an
+active code. Logical uses physical inputs; Dimensional continues to consume Logical outputs.
 The complete snapshot stays private for final graph validation. Logical candidates
 default to 70% coverage of distinct physical Objects selected for the run through active
 source mappings on active Entities across the proposed and retained Project.

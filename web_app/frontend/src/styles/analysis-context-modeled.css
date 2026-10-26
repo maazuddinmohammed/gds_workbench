@@ -225,11 +225,8 @@ fieldset.agent-run-grid {
   grid-template-columns: minmax(13rem, 1.5fr) minmax(10rem, 0.75fr) minmax(9rem, 0.65fr) auto;
 }
 
-.dimensional-filterbar.has-entity-filter {
-  grid-template-columns: minmax(11rem, 1.25fr) minmax(7rem, 0.55fr) minmax(8rem, 0.7fr) minmax(8rem, 0.65fr) auto;
-}
-
-.logical-entity-filterbar {
+.logical-entity-filterbar,
+.dimensional-entity-filterbar {
   grid-template-columns: minmax(10rem, 1.2fr) minmax(10rem, 1fr) minmax(8rem, 0.75fr) minmax(8rem, 0.65fr) auto;
 }
 
@@ -700,7 +697,6 @@ fieldset.agent-run-grid {
 .modeled-source-mappings table { min-width: 40rem; }
 .modeled-source-mappings td { vertical-align: top; }
 .modeled-source-mappings td:first-child { min-width: 11rem; max-width: 20rem; overflow-wrap: anywhere; }
-.modeled-source-mappings :is(th, td).modeled-source-order { width: 4rem; min-width: 4rem; text-align: center; font-variant-numeric: tabular-nums; }
 .modeled-source-mappings .modeled-source-rationale { min-width: 16rem; max-width: 34rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .modeled-source-role { display: block; color: var(--muted); margin-top: 0.3rem; font-size: 0.72rem; }
 .modeled-source-detail { min-width: 6rem; }
@@ -744,6 +740,7 @@ fieldset.agent-run-grid {
 }
 .modeled-detail-fields dd { color: var(--ink); font-size: 0.8rem; font-weight: 400; white-space: pre-wrap; overflow-wrap: anywhere; }
 .modeled-detail-fields .is-definition dd { font-size: 0.85rem; font-weight: 500; }
+.entity-subject-areas { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; margin: 0; padding: 0; list-style: none; }
 .modeled-detail-page .detail-section > h3 { margin: 1.25rem 0 0.65rem; }
 .modeled-detail-page .table-scroll {
   min-width: 0; max-width: 100%; border: 1px solid var(--line-strong); border-radius: var(--radius-small);

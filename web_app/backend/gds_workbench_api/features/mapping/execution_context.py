@@ -43,6 +43,13 @@ from gds_workbench_api.features.workflows.authoring.tool_configuration import (
 
 from .preparation_contracts import MappingModeledEntity, MappingPreparation
 
+# Dimensional links store only their endpoints (child -> parent). Their kind comes from
+# the two Entity types; anything else is a plain reference.
+_DIMENSIONAL_LINK_KINDS = {
+    ("fact", "dimension"): "fact_dimension",
+    ("bridge", "dimension"): "bridge_dimension",
+    ("dimension", "dimension"): "dimension_outrigger",
+}
 _CONTEXT_FRAGMENT_KEY = "__gds_context_fragment__"
 _CONTEXT_FRAGMENT_ENCODING = "canonical_json"
 _PAGE_SIZE_SENTINEL = 9_999_999_999
@@ -357,12 +364,12 @@ def _mapping_support(preparation: MappingPreparation) -> dict[str, Any]:
         if (
             getattr(attribute, f"{layer}_entity_name").casefold() != entity_name
             or getattr(attribute, f"{layer}_entity_schema_name").casefold() != entity_schema
-            or getattr(attribute, f"{layer}_attribute_status") != "active"
+            or not getattr(attribute, f"{layer}_attribute_is_active")
         ):
             continue
         sources: list[dict[str, Any]] = []
         for source in attribute.sources:
-            if source.status != "active":
+            if not source.is_active:
                 continue
             if (
                 source.support_source_type == "context_record"
@@ -379,7 +386,7 @@ def _mapping_support(preparation: MappingPreparation) -> dict[str, Any]:
                     in logical_keys
                 )
             ):
-                sources.append(source.model_dump(mode="json", exclude={"status", "is_locked"}))
+                sources.append(source.model_dump(mode="json", exclude={"is_active", "is_locked"}))
         result["attribute_lineage"].append(
             {
                 "modeled_attribute_name": getattr(attribute, f"{layer}_attribute_name"),
@@ -391,25 +398,52 @@ def _mapping_support(preparation: MappingPreparation) -> dict[str, Any]:
                 },
             }
         )
+    dimensional = layer == "dimensional"
+    entity_types = {
+        (row.dimensional_entity_schema_name.casefold(), row.dimensional_entity_name.casefold()): (
+            row.dimensional_entity_type
+        )
+        for row in (snapshot.dimensional.entities if dimensional else ())
+    }
+    nullable_columns = {
+        (
+            row.dimensional_entity_schema_name.casefold(),
+            row.dimensional_entity_name.casefold(),
+            row.dimensional_attribute_name.casefold(),
+        ): row.dimensional_attribute_is_nullable
+        for row in (snapshot.dimensional.attributes if dimensional else ())
+    }
     for relationship in section.relationships:
         row = relationship.model_dump(mode="json")
-        if row[f"{layer}_relationship_status"] == "active" and (entity_schema, entity_name) in {
-            (
-                row[f"from_{layer}_entity_schema_name"].casefold(),
-                row[f"from_{layer}_entity_name"].casefold(),
-            ),
-            (
-                row[f"to_{layer}_entity_schema_name"].casefold(),
-                row[f"to_{layer}_entity_name"].casefold(),
-            ),
+        child = (
+            row[f"from_{layer}_entity_schema_name"].casefold(),
+            row[f"from_{layer}_entity_name"].casefold(),
+        )
+        parent = (
+            row[f"to_{layer}_entity_schema_name"].casefold(),
+            row[f"to_{layer}_entity_name"].casefold(),
+        )
+        if not row[f"{layer}_relationship_is_active"] or (entity_schema, entity_name) not in {
+            child,
+            parent,
         }:
-            result["modeled_relationships"].append(
-                {
-                    key: value
-                    for key, value in row.items()
-                    if not key.endswith(("_is_locked", "_status"))
-                }
+            continue
+        evidence = {
+            key: value
+            for key, value in row.items()
+            if not key.endswith(("_is_locked", "_is_active"))
+        }
+        if dimensional:
+            # Worked out, never stored: kind from the Entity types, optional from the
+            # foreign key's nullability, and always many-to-one.
+            evidence["dimensional_relationship_kind"] = _DIMENSIONAL_LINK_KINDS.get(
+                (entity_types.get(child, ""), entity_types.get(parent, "")), "reference"
             )
+            evidence["dimensional_relationship_cardinality"] = "many_to_one"
+            evidence["dimensional_relationship_is_optional"] = nullable_columns.get(
+                (*child, row["from_dimensional_attribute_name"].casefold()), True
+            )
+        result["modeled_relationships"].append(evidence)
     for relationship in snapshot.analysis.relationships:
         row = relationship.model_dump(mode="json")
         if row["analysis_result_status"] == "active" and all(
@@ -502,12 +536,12 @@ def _mapping_support_records(
     }
     for entity in snapshot.logical.entities:
         key = (entity.logical_entity_schema_name.casefold(), entity.logical_entity_name.casefold())
-        if key not in logical_keys or entity.logical_entity_status != "active":
+        if key not in logical_keys or not entity.logical_entity_is_active:
             continue
         row = entity.model_dump(mode="json")
         row["sources"] = []
         for source in entity.sources:
-            if source.status != "active":
+            if not source.is_active:
                 continue
             if source.support_source_type == "object":
                 physical_key = natural_key(source.source_object.model_dump())
@@ -525,13 +559,13 @@ def _mapping_support_records(
             attribute.logical_entity_schema_name.casefold(),
             attribute.logical_entity_name.casefold(),
         )
-        if key not in logical_keys or attribute.logical_attribute_status != "active":
+        if key not in logical_keys or not attribute.logical_attribute_is_active:
             continue
         selected_attributes.add((*key, attribute.logical_attribute_name.casefold()))
         row = attribute.model_dump(mode="json")
         row["sources"] = []
         for source in attribute.sources:
-            if source.status != "active":
+            if not source.is_active:
                 continue
             if source.support_source_type == "attribute":
                 physical_key = (
@@ -550,7 +584,7 @@ def _mapping_support_records(
         records.append({"evidence_type": "source_logical_attribute", "record": row})
     for relationship in snapshot.logical.relationships:
         row = relationship.model_dump(mode="json")
-        if relationship.logical_relationship_status == "active" and all(
+        if relationship.logical_relationship_is_active and all(
             (
                 row[f"{side}_logical_entity_schema_name"].casefold(),
                 row[f"{side}_logical_entity_name"].casefold(),

@@ -573,7 +573,7 @@ describe("Project overview", () => {
     expect(within(workspaceNavigation).queryByRole("link", { name: "Mapping" })).not.toBeInTheDocument();
     expect(within(projectSections).getAllByRole("link").map((item) => item.getAttribute("aria-label"))).toEqual([
       "Overview", "Settings", "Project Input Scope", "Context", "Profiling", "Metadata enrichment",
-      "Analysis", "Subject areas", "Logical", "Dimensional", "Mapping", "Code generation", "Validation",
+      "Analysis", "Subject Areas", "Logical", "Dimensional", "Mapping", "Code generation", "Validation",
     ]);
     await user.click(within(workspaceNavigation).getByRole("button", { name: "Collapse workspace navigation" }));
     expect(workspaceNavigation).toHaveAttribute("data-collapsed", "true");

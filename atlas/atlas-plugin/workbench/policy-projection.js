@@ -112,7 +112,7 @@
     const projected = [];
     const ordered = [...entities.values()].sort((left, right) => compareKeys(keys.entity(left), keys.entity(right)));
     for (const entity of ordered) {
-      if (entity.logical_entity_status !== "active") continue;
+      if (entity.logical_entity_is_active !== true) continue;
       const entityKey = keys.entity(entity);
       const ownedBy = () => [...attributes.values()].filter((record) => compareKeys(keys.attribute(record).slice(0, 2), entityKey) === 0);
       let entityAttributes = ownedBy();
@@ -131,7 +131,7 @@
             logical_attribute_name: name, logical_attribute_definition: `Generated identifier for ${entity.logical_entity_name}.`,
             logical_attribute_data_type: "BIGINT", logical_attribute_is_nullable: false, logical_attribute_is_natural_key: false,
             logical_attribute_is_surrogate_key: true, logical_attribute_ordinal_position: 1, logical_attribute_is_audit_column: false,
-            logical_attribute_status: "active", logical_attribute_is_locked: false, sources: [],
+            logical_attribute_is_active: true, logical_attribute_is_locked: false, sources: [],
           };
         }
         const surrogateKey = keys.text(keys.attribute(surrogate));
@@ -160,7 +160,7 @@
           logical_attribute_data_type: column.data_type, logical_attribute_is_nullable: column.nullable,
           logical_attribute_is_natural_key: existing ? existing.logical_attribute_is_natural_key : false,
           logical_attribute_is_surrogate_key: false, logical_attribute_ordinal_position: nextOrdinal + offset,
-          logical_attribute_is_audit_column: true, logical_attribute_status: "active",
+          logical_attribute_is_audit_column: true, logical_attribute_is_active: true,
           logical_attribute_is_locked: existing ? existing.logical_attribute_is_locked : false, sources: existing ? existing.sources : [],
         };
         if (existing?.logical_attribute_is_locked && !same(existing, desired)) throw new Error("A locked Logical audit column cannot be projected.");
@@ -198,7 +198,7 @@
     const projected = [];
     const ordered = [...entities.values()].sort((left, right) => compareKeys(keys.entity(left), keys.entity(right)));
     for (const entity of ordered) {
-      if (entity.dimensional_entity_status !== "active") continue;
+      if (entity.dimensional_entity_is_active !== true) continue;
       const entityKey = keys.entity(entity);
       const ownedBy = () => [...attributes.values()].filter((record) => compareKeys(keys.attribute(record).slice(0, 2), entityKey) === 0);
       let entityAttributes = ownedBy();
@@ -250,7 +250,7 @@
           dimensional_attribute_data_type: column.data_type, dimensional_attribute_is_nullable: column.nullable,
           dimensional_attribute_ordinal_position: ordinal, dimensional_attribute_is_natural_key: false,
           dimensional_attribute_is_surrogate_key: keyRole === "surrogate", dimensional_attribute_is_audit_column: role === "audit",
-          dimensional_attribute_status: "active",
+          dimensional_attribute_is_active: true,
           dimensional_attribute_is_locked: existing ? existing.dimensional_attribute_is_locked : false, sources: existing ? existing.sources : [],
         };
         if (existing?.dimensional_attribute_is_locked && !same(existing, desired)) throw new Error("A locked Gold policy column cannot be projected.");

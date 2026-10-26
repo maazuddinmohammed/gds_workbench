@@ -10,14 +10,15 @@ from gds_etl_workbench.domain.snapshots.project import (
     DimensionalSection,
     LogicalSection,
 )
+from pydantic import JsonValue
+from tests.mcp.project_test_fixtures import LOGICAL_ENTITY_TYPES
+from tests.web_backend import test_dimensional_candidate as dimensional
+from tests.web_backend import test_logical_candidate as logical
+
 from gds_workbench_api.features.dimensional.candidate import (
     DimensionalCandidateValidator,
 )
 from gds_workbench_api.features.logical.candidate import LogicalCandidateValidator
-from pydantic import JsonValue
-
-from tests.web_backend import test_dimensional_candidate as dimensional
-from tests.web_backend import test_logical_candidate as logical
 
 
 def _logical_answer(*entities: tuple[str, list[str]]) -> dict[str, Any]:
@@ -71,11 +72,10 @@ async def test_distinct_support_threshold_rounds_up(
             selected_attribute_keys=(logical._attribute(),),
             context_record_ids=(),
             applied=None,
+            entity_types=LOGICAL_ENTITY_TYPES,
         )
         # One output Entity may consolidate many input sources.
-        candidate = _logical_answer(
-            ("Customer", [f"t{index}" for index in range(1, covered + 1)])
-        )
+        candidate = _logical_answer(("Customer", [f"t{index}" for index in range(1, covered + 1)]))
         refs = [
             {"table": f"t{index}", **item.model_dump(mode="json")}
             for index, item in enumerate(inputs, start=1)
@@ -96,12 +96,7 @@ async def test_distinct_support_threshold_rounds_up(
         source = candidate["entities"][0]["sources"][0]
         # One output Entity may consolidate many input sources.
         candidate["entities"][0]["sources"] = [
-            {
-                **deepcopy(source),
-                "source_logical_entity": ref,
-                "source_order": index + 1,
-            }
-            for index, ref in enumerate(refs[:covered])
+            {**deepcopy(source), "source_logical_entity": ref} for ref in refs[:covered]
         ]
 
     assert (await validator.validate(cast(JsonValue, candidate))).issues == ()
@@ -111,14 +106,10 @@ async def test_distinct_support_threshold_rounds_up(
         assert f"{covered}/{total}" in issues[0].message
         assert f"{70 if layer == 'logical' else 60}%" in issues[0].message
         feedback = issues[0].model_dump(mode="json")
-        assert sorted(feedback["source_refs"], key=str) == sorted(
-            refs[covered:], key=str
-        )
+        assert sorted(feedback["source_refs"], key=str) == sorted(refs[covered:], key=str)
 
 
-async def test_logical_retained_and_new_support_counts_once_and_excludes_retired() -> (
-    None
-):
+async def test_logical_retained_and_new_support_counts_once_and_excludes_retired() -> None:
     inputs = (
         logical._object(),
         *(logical._object(f"source_{i}") for i in range(1, 10)),
@@ -131,12 +122,11 @@ async def test_logical_retained_and_new_support_counts_once_and_excludes_retired
             selected_attribute_keys=(),
             context_record_ids=(),
             applied=None,
+            entity_types=LOGICAL_ENTITY_TYPES,
         ).parse_validated(
             cast(
                 JsonValue,
-                _logical_answer(
-                    ("Retained", ["t1", "t2", "t3", "t4", "t5", "t6", "t11"])
-                ),
+                _logical_answer(("Retained", ["t1", "t2", "t3", "t4", "t5", "t6", "t11"])),
             )
         )
     }
@@ -147,18 +137,16 @@ async def test_logical_retained_and_new_support_counts_once_and_excludes_retired
         applied=LogicalSection.model_validate_json(
             json.dumps(
                 {
-                    "submodels": [],
                     "entities": saved_records["logical_entity"],
                     "attributes": saved_records["logical_attribute"],
                     "relationships": [],
                 }
             )
         ),
+        entity_types=LOGICAL_ENTITY_TYPES,
     )
     # Both new Entities name t1 and t7; with the saved t1-t6 that is 7 distinct inputs.
-    candidate = _logical_answer(
-        ("Customer", ["t1", "t7"]), ("SameSupport", ["t1", "t7"])
-    )
+    candidate = _logical_answer(("Customer", ["t1", "t7"]), ("SameSupport", ["t1", "t7"]))
     assert (await validator.validate(cast(JsonValue, candidate))).issues == ()
     assert validator.validate_coverage(cast(JsonValue, candidate)) == ()
     # A retired source stops contributing; so does a source the answer no longer adds.
@@ -190,21 +178,13 @@ async def test_retained_and_new_support_counts_once_and_excludes_inactive_or_uns
     retained_entity = retained["entities"][0]
     retained_entity[f"{layer}_entity_name"] = "Retained"
     retained_entity["sources"] = [
-        {**deepcopy(source), source_field: ref, "source_order": i + 1}
-        for i, ref in enumerate(
-            [
-                *refs[: required - 1],
-                factory._object("outside_this_run").model_dump(mode="json"),
-            ]
-        )
+        {**deepcopy(source), source_field: ref}
+        for ref in [
+            *refs[: required - 1],
+            factory._object("outside_this_run").model_dump(mode="json"),
+        ]
     ]
-    entity["sources"].append(
-        {
-            **deepcopy(source),
-            source_field: refs[required - 1],
-            "source_order": 2,
-        }
-    )
+    entity["sources"].append({**deepcopy(source), source_field: refs[required - 1]})
     duplicate = deepcopy(entity)
     duplicate[f"{layer}_entity_name"] = "SameSupport"
     candidate["entities"].append(duplicate)
@@ -226,8 +206,8 @@ async def test_retained_and_new_support_counts_once_and_excludes_inactive_or_uns
     assert validator.validate_coverage(cast(JsonValue, candidate)) == ()
     # Both output Entities name the same input; it counts once. Inactive support
     # and a mapping on an inactive Entity must stop contributing entirely.
-    entity["sources"][1]["status"] = "inactive"
-    duplicate[f"{layer}_entity_status"] = "inactive"
+    entity["sources"][1]["is_active"] = False
+    duplicate[f"{layer}_entity_is_active"] = False
     issues = validator.validate_coverage(cast(JsonValue, candidate))
     assert len(issues) == 1
     assert f"{required - 1}/10" in issues[0].message
@@ -241,14 +221,10 @@ def test_missing_source_feedback_is_bounded_and_preserves_complete_identity() ->
         context_record_ids=(),
         applied=None,
     )
-    issues = validator.validate_coverage(
-        {"entities": [], "relationships": [], "retire": []}
-    )
+    issues = validator.validate_coverage({"entities": [], "relationships": [], "retire": []})
     assert "0/70" in issues[0].message
     assert len(issues[0].source_refs) == 50
-    assert all(
-        set(ref) == {"table", *objects[0].model_dump()} for ref in issues[0].source_refs
-    )
+    assert all(set(ref) == {"table", *objects[0].model_dump()} for ref in issues[0].source_refs)
     assert "source_" not in repr(issues[0])
 
 
@@ -270,20 +246,14 @@ def test_custom_project_threshold_controls_validation_and_prompt(
     factory = logical if layer == "logical" else dimensional
     inputs = tuple(factory._object("source_" + str(index)) for index in range(100))
     if layer == "logical":
-        candidate = _logical_answer(
-            ("Customer", [f"t{index}" for index in range(1, covered + 1)])
-        )
+        candidate = _logical_answer(("Customer", [f"t{index}" for index in range(1, covered + 1)]))
     else:
         candidate = cast(dict[str, Any], dimensional._candidate())
         candidate["attributes"] = []
         source = candidate["entities"][0]["sources"][0]
         candidate["entities"][0]["sources"] = [
-            {
-                **deepcopy(source),
-                "source_logical_entity": item.model_dump(mode="json"),
-                "source_order": index + 1,
-            }
-            for index, item in enumerate(inputs[:covered])
+            {**deepcopy(source), "source_logical_entity": item.model_dump(mode="json")}
+            for item in inputs[:covered]
         ]
     if layer == "logical":
         validator = LogicalCandidateValidator(
@@ -291,6 +261,7 @@ def test_custom_project_threshold_controls_validation_and_prompt(
             selected_attribute_keys=(),
             context_record_ids=(),
             applied=None,
+            entity_types=LOGICAL_ENTITY_TYPES,
             coverage_threshold_percent=threshold,
         )
     else:

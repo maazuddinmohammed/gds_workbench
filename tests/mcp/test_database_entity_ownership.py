@@ -106,7 +106,7 @@ def test_entity_schema_identity_and_direct_lineage(
         ).fetchone()
         assert dimensional is not None
         connection.execute(
-            "INSERT INTO workflow.dimensional_entity_source_mapping (project_id,dimensional_entity_id,support_source_type,source_logical_entity_id,dimensional_entity_source_mapping_rationale) VALUES (%s,%s,'logical_entity',%s,'Source meaning')",
+            "INSERT INTO workflow.dimensional_entity_source_mapping (project_id,dimensional_entity_id,source_logical_entity_id,dimensional_entity_source_mapping_rationale) VALUES (%s,%s,%s,'Source meaning')",
             (
                 project_id,
                 dimensional["dimensional_entity_id"],
@@ -118,7 +118,7 @@ def test_entity_schema_identity_and_direct_lineage(
         ).fetchone() == {"removed": True}
         with pytest.raises(ForeignKeyViolation), connection.transaction():
             connection.execute(
-                "INSERT INTO workflow.dimensional_entity_source_mapping (project_id,dimensional_entity_id,support_source_type,source_logical_entity_id,dimensional_entity_source_mapping_rationale) VALUES (%s,%s,'logical_entity',9223372036854775807,'Invalid source')",
+                "INSERT INTO workflow.dimensional_entity_source_mapping (project_id,dimensional_entity_id,source_logical_entity_id,dimensional_entity_source_mapping_rationale) VALUES (%s,%s,9223372036854775807,'Invalid source')",
                 (project_id, dimensional["dimensional_entity_id"]),
             )
         system_type = connection.execute(

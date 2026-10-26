@@ -16,6 +16,7 @@ import {
   type WorkflowDraftReview,
   type WorkflowRunDetail,
   type WorkflowRunMonitorApi,
+  type WorkflowRunRecord,
 } from "./api";
 import {
   isActiveRun,
@@ -368,7 +369,7 @@ export function WorkflowRunMonitor({
                   >
                     <span>
                       <strong>Run {item.workflow_run_id}</strong>
-                      <small>{runKind(item.workflow_execution_mode, workflow)}</small>
+                      <small>{runKind(item, workflow)}</small>
                       <small>{formatDateTime(item.created_at)} · {workflowRunDuration(item)}</small>
                     </span>
                     <RunStateBadge state={item.workflow_run_state} partial={isPartialMappingRun(item)} />
@@ -450,7 +451,7 @@ export function WorkflowRunMonitor({
 
       {confirmApply && validatedDraft && canApply ? (
         <ApplyDraftConfirmation
-          label={label}
+          label={modelRunName(workflow, validatedDraft.workflow_operation) ?? label}
           runId={validatedDraft.workflow_run_id}
           draftRevision={validatedDraft.draft_revision}
           failedMappingPairs={isPartialMappingRun(validatedDraft)
@@ -536,7 +537,7 @@ function WorkflowRunDetailView({
       <header className="workflow-run-detail-header">
         <div>
           <small>Run {run.workflow_run_id}</small>
-          <strong>{runKind(run.workflow_execution_mode, run.project_workflow)}</strong>
+          <strong>{runKind(run, run.project_workflow)}</strong>
         </div>
         <RunStateBadge state={run.workflow_run_state} partial={partialMapping} />
       </header>
@@ -550,7 +551,7 @@ function WorkflowRunDetailView({
       <dl className="workflow-run-facts">
         <div><dt>Created</dt><dd>{formatDateTime(run.created_at)}</dd></div>
         <div><dt>Actor</dt><dd>{run.actor_display_name}</dd></div>
-        <div><dt>{run.project_workflow === "validation" ? "Systems" : "Objects"}</dt><dd>{run.selected_scope_count}</dd></div>
+        <div><dt>{run.project_workflow === "validation" ? "Systems" : run.project_workflow === "dimensional" ? "Entities" : "Objects"}</dt><dd>{run.selected_scope_count}</dd></div>
         <div><dt>Mode</dt><dd>{run.workflow_execution_mode?.replaceAll("_", " ") ?? (["code_generation", "validation"].includes(run.project_workflow) ? "Configured generator" : "Deterministic")}</dd></div>
       </dl>
 
@@ -994,11 +995,20 @@ function workflowLabel(workflow: DraftWorkflow): string {
   return workflow.charAt(0).toUpperCase() + workflow.slice(1);
 }
 
-function runKind(mode: WorkflowRunDetail["workflow_execution_mode"], workflow: ProjectWorkflow): string {
+/** Logical and Dimensional runs are named by operation, such as "Logical Build". */
+function modelRunName(workflow: ProjectWorkflow, operation: WorkflowRunRecord["workflow_operation"]): string | null {
+  if ((workflow !== "logical" && workflow !== "dimensional") || !operation) return null;
+  return `${workflow === "logical" ? "Logical" : "Dimensional"} ${operation === "build" ? "Build" : "Optimize"}`;
+}
+
+function runKind(run: Pick<WorkflowRunRecord, "workflow_execution_mode" | "workflow_operation">, workflow: ProjectWorkflow): string {
+  const mode = run.workflow_execution_mode;
   if (workflow === "metadata_enrichment") return "Physical metadata enrichment";
   if (workflow === "code_generation") return "SQL generation";
   if (workflow === "validation") return "Validation authoring";
   if (workflow === "analysis" && mode === null) return "Deterministic validation";
+  const modelRun = modelRunName(workflow, run.workflow_operation);
+  if (modelRun) return mode ? `${modelRun} · ${mode.replaceAll("_", " ")}` : modelRun;
   return mode ? `${mode.replaceAll("_", " ")} authoring` : "Deterministic run";
 }
 

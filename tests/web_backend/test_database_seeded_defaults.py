@@ -16,6 +16,24 @@ from uuid import uuid4
 import pytest
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
+from jsonschema import Draft202012Validator
+from tests.mcp.conftest import DisposablePostgres
+from tests.mcp.conftest import (
+    bootstrap_postgres_database as bootstrap_postgres_database,
+)
+from tests.mcp.database_test_support import require_row
+from tests.mcp.test_database_global_prompt_seed import (
+    REFERENCE_SEED,
+    _apply_sql,
+    _render_seed,
+    _seed_super_admin,
+    _snapshot,
+)
+from tests.web_backend import test_analysis_executor as analysis
+from tests.web_backend import test_dimensional_executor as dimensional
+from tests.web_backend import test_logical_executor as logical
+from tests.web_backend.test_database_project_change_sets import _seed_profile_project
+
 from gds_workbench_api.capabilities import load_default_agent_capabilities
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.subject_areas.service import SubjectAreaWorkflow
@@ -54,24 +72,6 @@ from gds_workbench_api.prompt_rendering import (
     PromptComponentTemplates,
     PromptVariableDefinition,
 )
-from jsonschema import Draft202012Validator
-
-from tests.mcp.conftest import DisposablePostgres
-from tests.mcp.conftest import (
-    bootstrap_postgres_database as bootstrap_postgres_database,
-)
-from tests.mcp.database_test_support import require_row
-from tests.mcp.test_database_global_prompt_seed import (
-    REFERENCE_SEED,
-    _apply_sql,
-    _render_seed,
-    _seed_super_admin,
-    _snapshot,
-)
-from tests.web_backend import test_analysis_executor as analysis
-from tests.web_backend import test_dimensional_executor as dimensional
-from tests.web_backend import test_logical_executor as logical
-from tests.web_backend.test_database_project_change_sets import _seed_profile_project
 
 type StageIdentity = tuple[str, str | None, str]
 type SeedStages = dict[tuple[str, str | None], tuple[FrozenAgentStage, ...]]
@@ -152,7 +152,8 @@ def installed_stages(bootstrap_postgres_database: DisposablePostgres) -> SeedSta
             ),
         )
         stages.setdefault((identity[0], identity[1]), []).append(stage)
-    assert sum(len(value) for value in stages.values()) == 12
+    # Logical and Dimensional have a Build and an Optimize stage per mode.
+    assert sum(len(value) for value in stages.values()) == 16
     return {
         key: tuple(sorted(value, key=lambda item: item.stage_order))
         for key, value in stages.items()
@@ -175,9 +176,11 @@ def prompt_fingerprint(system: str, instruction: str, tool: str | None) -> str:
         ("logical", "one_shot"),
         ("logical", "tool_assisted"),
         ("logical", "repair"),
+        ("logical", "optimize"),
         ("dimensional", "one_shot"),
         ("dimensional", "tool_assisted"),
         ("dimensional", "repair"),
+        ("dimensional", "optimize"),
     ],
 )
 async def test_installed_defaults_execute_inside_real_authoring_paths(
@@ -262,7 +265,13 @@ async def test_installed_defaults_execute_inside_real_authoring_paths(
         original_plan = plan or module._plan()
         mode = original_plan.workflow_execution_mode
         assert mode is not None
-        selected = installed_stages[(original_plan.project_workflow, mode)]
+        # A Build or Optimize run freezes only its own installed stage.
+        operation = original_plan.workflow_operation
+        selected = tuple(
+            stage
+            for stage in installed_stages[(original_plan.project_workflow, mode)]
+            if operation is None or stage.stage_code == f"{operation}_authoring"
+        )
         # Replace only frozen installed Prompt stages, before the real executor loads its plan.
         seeded = original_plan.model_copy(update={"stages": selected})
         assert seeded.stages is selected
@@ -282,6 +291,28 @@ async def test_installed_defaults_execute_inside_real_authoring_paths(
             await logical.test_validation_repair_keeps_original_context_then_hands_off_once()
         else:
             await dimensional.test_validation_repair_keeps_original_context_then_hands_off_once()
+    elif case == "optimize":
+        # Each mode's installed Optimize stage renders over the whole-model context.
+        factory_module: Any = module
+        empty: dict[str, list[object]] = (
+            {"entities": [], "relationships": [], "retire": []}
+            if family == "logical"
+            else {"entities": [], "attributes": [], "relationships": []}
+        )
+        for optimize_mode in ("one_shot", "tool_assisted"):
+            agent = factory_module._AgentExecutor(responses=[empty])
+            service, _, _, handoff, lifecycle = factory_module._service(
+                agent=agent, plan=factory_module._plan(mode=optimize_mode, operation="optimize")
+            )
+            await service.execute_started(
+                factory_module._principal(),
+                tenant_id=7,
+                project_id=18,
+                workflow_run_id=1048,
+                expected_project_revision=7,
+                workflow_run_claim_token=factory_module._CLAIM_TOKEN,
+            )
+            assert handoff.calls == [] and lifecycle.failed is None
     else:
         factory_module: Any = module
         agent = factory_module._AgentExecutor(responses=[factory_module._candidate()])
@@ -298,8 +329,15 @@ async def test_installed_defaults_execute_inside_real_authoring_paths(
         )
         assert len(handoff.calls) == 1 and lifecycle.failed is None
         assert bool(agent.requests[0].allowed_tool_names) == (case == "tool_assisted")
-    mode = "one_shot" if case == "repair" else case
-    expected = {(family, mode, stage.stage_code) for stage in installed_stages[(family, mode)]}
+    if case == "optimize":
+        expected = {(family, mode, "optimize_authoring") for mode in ("one_shot", "tool_assisted")}
+    else:
+        mode = "one_shot" if case == "repair" else case
+        expected = {
+            (family, mode, stage.stage_code)
+            for stage in installed_stages[(family, mode)]
+            if family == "analysis" or stage.stage_code == "build_authoring"
+        }
     assert seen == expected
     if case == "repair":
         assert repaired
@@ -517,14 +555,14 @@ async def test_installed_sql_defaults_with_repository_projection(
     monkeypatch: pytest.MonkeyPatch,
     repair: bool,
 ) -> None:
-    from gds_workbench_api.features.code_generation.context import (
-        _assemble_context,
-    )
-
     from tests.web_backend import test_code_generation_executor as code
     from tests.web_backend.test_code_generation_context import _row
     from tests.web_backend.test_database_mapping_source_context import (
         _seed_mapping_scope,
+    )
+
+    from gds_workbench_api.features.code_generation.context import (
+        _assemble_context,
     )
 
     scope = _seed_mapping_scope(web_postgres_database, dimensional=False)
@@ -640,13 +678,13 @@ async def test_installed_validation_defaults_with_repository_context(
     monkeypatch: pytest.MonkeyPatch,
     with_code: bool,
 ) -> None:
-    from gds_workbench_api.features.validation.context import _assemble_context
-
     from tests.web_backend import test_validation_executor as validation
     from tests.web_backend.test_database_mapping_source_context import (
         _seed_mapping_scope,
     )
     from tests.web_backend.test_validation_context import _applied_row
+
+    from gds_workbench_api.features.validation.context import _assemble_context
 
     scope = _seed_mapping_scope(web_postgres_database, dimensional=False)
     with web_postgres_database.connect_owner() as connection:

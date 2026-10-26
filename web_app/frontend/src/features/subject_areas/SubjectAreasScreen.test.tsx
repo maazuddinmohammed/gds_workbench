@@ -7,17 +7,22 @@ import { createApiClient } from "../../api";
 import { WorkbenchApp, createWorkbenchRouter } from "../../app";
 
 describe("Project Subject Areas", () => {
-  it("lists areas with table counts and column capacity", async () => {
+  it("lists areas with plain Object and Attribute counts and an Open button", async () => {
     renderAt("/tenants/7/projects/18/subject-areas", subjectAreaFetchStub());
     const ledger = await screen.findByRole("table", { name: "Subject Areas" });
+    expect(within(ledger).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+      "", "Subject Area", "Objects", "Attributes", "Status", "Lock", "Updated", "Actions",
+    ]);
     const sales = within(ledger).getByRole("row", { name: /Sales/ });
-    expect(within(sales).getByRole("link", { name: "Sales" })).toHaveAttribute(
+    expect(within(sales).queryByRole("link", { name: "Sales" })).not.toBeInTheDocument();
+    expect(within(sales).getByRole("link", { name: "Open Sales" })).toHaveAttribute(
       "href", "/tenants/7/projects/18/subject-areas/41",
     );
     expect(within(sales).getByText("Orders and customers from capture to invoice.")).toBeVisible();
-    expect(within(sales).getByText("120 / 300")).toBeVisible();
-    expect(within(ledger).getByText("320 / 300 · over limit")).toBeVisible();
-    expect(screen.getByText(/of 4 Bronze Input Scope tables are in an area/)).toBeVisible();
+    expect(within(sales).getByText("120")).toBeVisible();
+    expect(within(ledger).getByText("320")).toBeVisible();
+    expect(screen.queryByText(/limit|\/ 300/)).not.toBeInTheDocument();
+    expect(screen.getByText(/of 4 Bronze Input Scope Objects are in an area/)).toBeVisible();
     expect(screen.getByRole("button", { name: /Unassigned/ })).toHaveTextContent("1");
   });
 
@@ -27,7 +32,7 @@ describe("Project Subject Areas", () => {
     expect(screen.getAllByRole("button", { name: "New area" }).length).toBeGreaterThan(0);
   });
 
-  it("creates an area with tables chosen from the Input Scope", async () => {
+  it("creates an area with Objects chosen from the Input Scope", async () => {
     const fetcher = subjectAreaFetchStub();
     const user = userEvent.setup();
     renderAt("/tenants/7/projects/18/subject-areas", fetcher);
@@ -36,12 +41,15 @@ describe("Project Subject Areas", () => {
     const dialog = await screen.findByRole("dialog", { name: "New Subject Area" });
     await user.type(within(dialog).getByLabelText("Name"), " Billing ");
     await user.type(within(dialog).getByLabelText("Definition"), "Invoices and payments.");
-    const picker = await within(dialog).findByRole("table", { name: "Input Scope tables" });
+    const picker = await within(dialog).findByRole("table", { name: "Input Scope Objects" });
+    expect(within(picker).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+      "", "System", "Object schema", "Object name", "Attributes", "Subject Areas",
+    ]);
     expect(within(picker).getAllByRole("row")).toHaveLength(5);
-    await user.type(within(dialog).getByLabelText("Search tables"), "order");
+    await user.type(within(dialog).getByLabelText("Search Objects"), "order");
     expect(within(picker).getAllByRole("row")).toHaveLength(2);
     await user.click(within(picker).getByRole("checkbox", { name: "Choose bronze.order_raw" }));
-    expect(within(dialog).getByText("80 / 300")).toBeVisible();
+    expect(within(dialog).getByText("1 Object selected")).toBeVisible();
     await user.click(within(dialog).getByRole("button", { name: "Create area" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "New Subject Area" })).not.toBeInTheDocument());
     const save = savedCommands(fetcher);
@@ -67,34 +75,37 @@ describe("Project Subject Areas", () => {
     expect(within(dialog).getByLabelText("Name")).toHaveValue("Sales");
   });
 
-  it("adds unassigned tables to an existing area", async () => {
+  it("adds unassigned Objects to an existing area", async () => {
     const fetcher = subjectAreaFetchStub();
     const user = userEvent.setup();
     renderAt("/tenants/7/projects/18/subject-areas", fetcher);
     await screen.findByRole("table", { name: "Subject Areas" });
     await user.click(screen.getByRole("button", { name: /Unassigned/ }));
-    const ledger = await screen.findByRole("table", { name: "Unassigned tables" });
+    const ledger = await screen.findByRole("table", { name: "Unassigned Objects" });
+    expect(within(ledger).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+      "", "System", "Object schema", "Object name", "Attributes", "Description", "Subject Areas",
+    ]);
     expect(within(ledger).getAllByRole("row")).toHaveLength(2);
     await user.click(within(ledger).getByRole("checkbox", { name: "Select bronze.audit_log" }));
     await user.click(screen.getByRole("button", { name: "Add to area…" }));
     const dialog = await screen.findByRole("dialog", { name: "Add to Subject Area" });
     expect(within(dialog).getByLabelText("Subject Area")).toHaveValue("41");
-    expect(within(dialog).getByText("132 / 300")).toBeVisible();
-    await user.click(within(dialog).getByRole("button", { name: "Add tables" }));
+    expect(within(dialog).getByRole("option", { name: "Sales (2 Objects)" })).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Add Objects" }));
     await waitFor(() => expect(savedCommands(fetcher)).toEqual([{
       expected_project_revision: 18, subject_area_id: 41, add_object_ids: [504],
     }]));
   });
 
-  it("runs Subject Areas over the whole Bronze Input Scope", async () => {
+  it("runs Subject Areas over all Bronze Objects, or only the selected ones", async () => {
     const fetcher = subjectAreaFetchStub();
     const user = userEvent.setup();
     renderAt("/tenants/7/projects/18/subject-areas", fetcher);
     await screen.findByRole("table", { name: "Subject Areas" });
     await user.click(screen.getByRole("button", { name: "Run Subject Areas" }));
     const dialog = await screen.findByRole("dialog", { name: "Configure Subject Areas run" });
-    expect(await within(dialog).findByText(/always covers the whole Scope/)).toBeVisible();
-    expect(within(dialog).queryByRole("radio", { name: /Selected/ })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("radio", { name: /All Objects/ })).toBeChecked();
+    expect(within(dialog).getByRole("radio", { name: /Selected Objects/ })).not.toBeChecked();
     expect(within(dialog).queryByLabelText("Batch ID (optional)")).not.toBeInTheDocument();
     const submit = within(dialog).getByRole("button", { name: "Create and run Subject Areas" });
     await waitFor(() => expect(submit).toBeEnabled());
@@ -109,6 +120,30 @@ describe("Project Subject Areas", () => {
     });
   });
 
+  it("runs Subject Areas on the selected unassigned Objects", async () => {
+    const fetcher = subjectAreaFetchStub();
+    const user = userEvent.setup();
+    renderAt("/tenants/7/projects/18/subject-areas", fetcher);
+    await screen.findByRole("table", { name: "Subject Areas" });
+    await user.click(screen.getByRole("button", { name: /Unassigned/ }));
+    const ledger = await screen.findByRole("table", { name: "Unassigned Objects" });
+    await user.click(within(ledger).getByRole("checkbox", { name: "Select bronze.audit_log" }));
+    await user.click(screen.getByRole("button", { name: "Run on selected…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Configure Subject Areas run" });
+    expect(within(dialog).getByRole("radio", { name: /Selected Objects/ })).toBeChecked();
+    const submit = within(dialog).getByRole("button", { name: "Create and run Subject Areas" });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await user.click(submit);
+    await waitFor(() => expect(fetcher).toHaveBeenCalledWith(
+      "/api/v1/tenants/7/projects/18/subject-areas/runs/1150/execute",
+      expect.objectContaining({ method: "POST" }),
+    ));
+    const create = fetcher.mock.calls.find(([input]) => String(input) === "/api/v1/tenants/7/projects/18/runs");
+    expect(JSON.parse(String(create?.[1]?.body))).toMatchObject({
+      project_workflow: "subject_area", selected_object_ids: [504],
+    });
+  });
+
   it("disables changes without the Tenant Lock", async () => {
     renderAt("/tenants/7/projects/18/subject-areas", subjectAreaFetchStub({ hasLock: false }));
     await screen.findByRole("table", { name: "Subject Areas" });
@@ -119,39 +154,42 @@ describe("Project Subject Areas", () => {
     }
   });
 
-  it("shows an area's tables and removes only unlocked ones", async () => {
+  it("shows an area's Objects and removes only unlocked ones", async () => {
     const fetcher = subjectAreaFetchStub();
     const user = userEvent.setup();
     renderAt("/tenants/7/projects/18/subject-areas/41", fetcher);
     const heading = await screen.findByRole("heading", { level: 1, name: "Sales" });
     await waitFor(() => expect(heading).toHaveFocus());
-    const tables = screen.getByRole("table", { name: "Subject Area tables" });
+    expect(screen.getByText("120")).toBeVisible();
+    const tables = screen.getByRole("table", { name: "Subject Area Objects" });
+    expect(within(tables).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+      "", "System", "Object schema", "Object name", "Attributes", "Description", "Also in", "Lock",
+    ]);
     const customer = within(tables).getByRole("row", { name: /customer_raw/ });
     expect(within(customer).getByText("Support")).toBeVisible();
     expect(within(customer).getByText("Locked")).toBeVisible();
-    await user.click(within(tables).getByRole("checkbox", { name: "Select all tables in this area" }));
+    await user.click(within(tables).getByRole("checkbox", { name: "Select all Objects in this area" }));
     await user.click(screen.getByRole("button", { name: "Remove from area" }));
     await waitFor(() => expect(savedCommands(fetcher)).toEqual([{
       expected_project_revision: 18, subject_area_id: 41, remove_object_ids: [502],
     }]));
   });
 
-  it("adds tables to an area with its members shown as already chosen", async () => {
+  it("adds Objects to an area with its members shown as already chosen", async () => {
     const fetcher = subjectAreaFetchStub();
     const user = userEvent.setup();
     renderAt("/tenants/7/projects/18/subject-areas/41", fetcher);
     await screen.findByRole("heading", { level: 1, name: "Sales" });
-    await user.click(screen.getByRole("button", { name: "Add tables" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add tables" });
-    const picker = await within(dialog).findByRole("table", { name: "Input Scope tables" });
+    await user.click(screen.getByRole("button", { name: "Add Objects" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add Objects" });
+    const picker = await within(dialog).findByRole("table", { name: "Input Scope Objects" });
     const member = within(picker).getByRole("checkbox", { name: "Choose bronze.order_raw" });
     expect(member).toBeChecked();
     expect(member).toBeDisabled();
     await user.click(within(dialog).getByRole("radio", { name: "Unassigned" }));
     expect(within(picker).getAllByRole("row")).toHaveLength(2);
     await user.click(within(picker).getByRole("checkbox", { name: "Choose bronze.audit_log" }));
-    expect(within(dialog).getByText("132 / 300")).toBeVisible();
-    await user.click(within(dialog).getByRole("button", { name: "Add tables" }));
+    await user.click(within(dialog).getByRole("button", { name: "Add Objects" }));
     await waitFor(() => expect(savedCommands(fetcher)).toEqual([{
       expected_project_revision: 18, subject_area_id: 41, add_object_ids: [504],
     }]));
@@ -187,7 +225,7 @@ function subjectAreaFetchStub(options: { empty?: boolean; hasLock?: boolean; sav
     }
     if (url === "/api/v1/tenants/7/projects/18/subject-areas/41") {
       return jsonResponse({
-        ...areaPage.items[0], project_id: 18, project_revision: 18, max_subject_area_columns: 300,
+        ...areaPage.items[0], project_id: 18, project_revision: 18,
         tables: scopeTables.filter((table) => table.areas.some((area) => area.subject_area_id === 41)),
       });
     }
@@ -249,19 +287,18 @@ function scopeObject(item: (typeof scopeTables)[number]) {
 const areaPage = {
   project_id: 18,
   project_revision: 18,
-  max_subject_area_columns: 300,
   scope_table_count: 4,
   unassigned_table_count: 1,
   items: [
     {
       subject_area_id: 41, workflow_run_id: 1048, subject_area_name: "Sales",
-      subject_area_definition: "Orders and customers from capture to invoice.", subject_area_status: "active",
-      subject_area_is_locked: false, table_count: 2, column_count: 120, updated_at: "2026-08-24T14:30:00Z",
+      subject_area_definition: "Orders and customers from capture to invoice.", subject_area_is_active: true,
+      subject_area_is_locked: false, table_count: 2, shared_table_count: 1, column_count: 120, updated_at: "2026-08-24T14:30:00Z",
     },
     {
       subject_area_id: 42, workflow_run_id: null, subject_area_name: "Support",
-      subject_area_definition: "Customer tickets and resolutions.", subject_area_status: "active",
-      subject_area_is_locked: false, table_count: 2, column_count: 320, updated_at: "2026-08-24T14:40:00Z",
+      subject_area_definition: "Customer tickets and resolutions.", subject_area_is_active: true,
+      subject_area_is_locked: false, table_count: 2, shared_table_count: 1, column_count: 320, updated_at: "2026-08-24T14:40:00Z",
     },
   ],
 };

@@ -1,8 +1,9 @@
-import type { LogicalTransport, LogicalEntity } from "../logical/api";
 import type { ProjectInputScopeApi, ProjectInputScopeDetail } from "../project_input_scope/api";
+import { subjectAreaQueryKeys, type SubjectAreaSummary, type SubjectAreaTransport } from "../subject_areas/api";
 import { EnrichmentAttributeSelection, type EnrichmentAttributeSelectionValue } from "../metadata_enrichment/EnrichmentAttributeSelection";
 import type { MetadataEnrichmentTransport, ReviewEnrichmentCommand, ReviewEnrichmentResult } from "../metadata_enrichment/api";
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useForm, useStore } from "@tanstack/react-form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
@@ -10,7 +11,7 @@ import { ApiError } from "../../core/http";
 import { SelectAllCheckbox } from "../../shared/ui";
 import { useWorkflowRunSubmission } from "./useWorkflowRunSubmission";
 import type { ProjectDetail } from "../projects/api";
-import type { CreateWorkflowRunCommand } from "./api";
+import type { CreateWorkflowRunCommand, WorkflowOperation } from "./api";
 import {
   findAgentExecutionProfile,
   listCompatibleExecutionModes,
@@ -38,7 +39,8 @@ export function WorkflowRunDialog({
   workflow = "analysis",
   executeCreated,
   enrichmentObject,
-  logicalEntitySource,
+  workflowOperation = "build",
+  subjectAreaSource,
   enrichmentTarget,
   readEnrichmentObject,
   reviewEnrichment,
@@ -54,7 +56,9 @@ export function WorkflowRunDialog({
   kind: AnalysisRunKind;
   workflow?: AgenticWorkflow;
   enrichmentObject?: ProjectInputScopeDetail;
-  logicalEntitySource?: Pick<LogicalTransport, "listLogicalEntities">;
+  /** Logical and Dimensional only: Build chosen Subject Areas or Optimize the whole model. */
+  workflowOperation?: WorkflowOperation;
+  subjectAreaSource?: Pick<SubjectAreaTransport, "listSubjectAreas">;
   enrichmentTarget?: "object" | "attribute";
   readEnrichmentObject?: ProjectInputScopeApi["readProjectInputScopeObject"];
   reviewEnrichment?: MetadataEnrichmentTransport["reviewEnrichment"];
@@ -108,47 +112,49 @@ export function WorkflowRunDialog({
   const isAttributeEnrichment = isEnrichment && (enrichmentTarget === "attribute" || enrichmentObject !== undefined);
   const [attributeSelection, setAttributeSelection] = useState<EnrichmentAttributeSelectionValue>({ targets: [], ready: false });
   const isDimensional = workflow === "dimensional";
-  // Subject Areas group the whole Bronze Input Scope, so their runs have no picker.
+  // Logical and Dimensional runs have no record picker: Build chooses Subject Areas,
+  // and Optimize reviews the whole model.
+  const isModelRun = workflow === "logical" || isDimensional;
+  const isBuild = isModelRun && workflowOperation === "build";
+  // Subject Areas group all or selected Bronze Input Scope Objects; other Objects keep their areas.
   const isSubjectArea = workflow === "subject_area";
   const authoringWorkflowName = isEnrichment ? "Metadata enrichment" : isSubjectArea
     ? "Subject Areas"
-    : workflow === "logical"
-      ? "Logical"
-      : "Dimensional";
+    : `${workflow === "logical" ? "Logical" : "Dimensional"} ${workflowOperation === "optimize" ? "Optimize" : "Build"}`;
   const workflowName = workflow === "analysis" ? "Analysis" : authoringWorkflowName;
-  const scopeZoneName = isEnrichment ? "Source and Bronze" : isDimensional ? "Logical Entity" : "Bronze";
+  const scopeZoneName = isEnrichment ? "Source and Bronze" : "Bronze";
   const scopeQuery = useQuery({
     queryKey: isEnrichment
       ? workflowCreationQueryKeys.enrichmentScope(tenantId, project.project_id)
       : workflowCreationQueryKeys.bronzeScope(tenantId, project.project_id),
-    enabled: !isDimensional,
+    enabled: !isModelRun,
     queryFn: () => loadWorkflowScope(
       api, tenantId, project.project_id, isEnrichment ? "enrichment" : "bronze",
     ),
   });
-  const entityQuery = useQuery({
-    queryKey: ["dimensional-logical-inputs", tenantId, project.project_id],
-    enabled: isDimensional,
-    queryFn: async () => {
-      if (!logicalEntitySource) throw new Error("Logical Entity selection unavailable.");
-      const items: LogicalEntity[] = [];
-      const cursors = new Set<string>();
-      let cursor: string | undefined;
-      let projectRevision: number | undefined;
-      for (;;) {
-        const page = await logicalEntitySource.listLogicalEntities(tenantId, project.project_id, { status: "active" }, 200, cursor);
-        if (projectRevision !== undefined && page.project_revision !== projectRevision) throw new Error("Project changed while loading Entities.");
-        projectRevision = page.project_revision;
-        items.push(...page.items);
-        if (!page.next_cursor) return { items, projectRevision };
-        if (cursors.has(page.next_cursor)) throw new Error("Entity cursor repeated.");
-        cursors.add(page.next_cursor);
-        cursor = page.next_cursor;
-      }
+  // Same cache entry as the Subject Areas screen.
+  const areasQuery = useQuery({
+    queryKey: subjectAreaQueryKeys.areas(tenantId, project.project_id),
+    enabled: isBuild,
+    queryFn: () => {
+      if (!subjectAreaSource) throw new Error("Subject Areas are unavailable.");
+      return subjectAreaSource.listSubjectAreas(tenantId, project.project_id);
     },
   });
-  const selectionQuery = isDimensional ? entityQuery : scopeQuery;
-  const scopeRows = isDimensional ? (entityQuery.data?.items ?? []).map((item) => ({ id: item.logical_entity_id, objectId: item.logical_entity_id, attributeId: null as number | null, name: item.logical_entity_name, context: item.logical_entity_schema_name, revision: "" })) : enrichmentObject
+  // Default build order: areas whose Objects are shared with other areas go first, so later
+  // areas can reuse what they produce; then larger areas; then name.
+  const buildAreas = (areasQuery.data?.items ?? [])
+    .filter((area) => area.subject_area_is_active && area.table_count > 0)
+    .sort((left, right) => right.shared_table_count - left.shared_table_count
+      || right.table_count - left.table_count
+      || left.subject_area_name.localeCompare(right.subject_area_name));
+  // The user's order once they move an area, and the areas they unchecked.
+  const [areaOrder, setAreaOrder] = useState<number[] | null>(null);
+  const [skippedAreaIds, setSkippedAreaIds] = useState<ReadonlySet<number>>(new Set());
+  const orderedAreas = areaOrder === null ? buildAreas
+    : areaOrder.flatMap((areaId) => buildAreas.filter((area) => area.subject_area_id === areaId));
+  const buildAreaIds = orderedAreas.map((area) => area.subject_area_id).filter((areaId) => !skippedAreaIds.has(areaId));
+  const scopeRows = enrichmentObject
     ? (enrichmentObject.is_locked || enrichmentObject.source_tenant_id !== tenantId ? [] : enrichmentObject.attributes
       .filter((item) => item.is_active && !item.is_locked && /^[0-9a-f]{64}$/.test(item.review_revision ?? ""))
       .map((item) => ({ id: item.attribute_id, objectId: enrichmentObject.object_id, attributeId: item.attribute_id as number | null,
@@ -156,7 +162,7 @@ export function WorkflowRunDialog({
     : (scopeQuery.data?.items ?? []).filter((item) => !isEnrichment || (!item.is_locked && item.source_tenant_id === tenantId && /^[0-9a-f]{64}$/.test(item.review_revision ?? "")))
       .map((item) => ({ id: item.object_id, objectId: item.object_id, attributeId: null as number | null, name: item.object_name,
         context: isEnrichment ? `${item.object_schema ?? ""} · ${item.zone_code}` : `${item.system_code} · ${item.source_tenant_code}`, revision: item.review_revision ?? "" }));
-  const recordName = isAttributeEnrichment ? "Attributes" : isDimensional ? "Entities" : "Objects";
+  const recordName = isAttributeEnrichment ? "Attributes" : "Objects";
   const capabilitiesQuery = useQuery({
     queryKey: workflowCreationQueryKeys.capabilities,
     queryFn: api.readAgentCapabilities,
@@ -182,6 +188,23 @@ export function WorkflowRunDialog({
         return;
       }
       if (!isMetadataImport && kind === "inference" && !agentSelectionValid) return;
+      if (isModelRun) {
+        if (revisionChanged || (isBuild && buildAreaIds.length === 0)) return;
+        // The backend derives the selected Objects or Logical Entities from the operation.
+        runMutation.mutate({
+          expected_project_revision: project.project_revision,
+          project_workflow: workflow,
+          workflow_execution_mode: value.executionMode,
+          workflow_operation: workflowOperation,
+          ...(isBuild ? { subject_area_ids: buildAreaIds } : {}),
+          selected_object_ids: [],
+          ...(isDimensional ? { modeled_entity_type: "logical_entity" as const } : {}),
+          requested_batch_id: null,
+          agent,
+          prompt_overrides: {},
+        });
+        return;
+      }
       if (isAttributeEnrichment && (!attributeSelection.ready || scopeQuery.isFetching || scopeQuery.isError || revisionChanged)) return;
       const selectedRows = value.scopeMode === "all" ? scopeRows : scopeRows.filter((item) => value.selectedObjectIds.includes(item.id));
       const descriptionTargets = isAttributeEnrichment ? attributeSelection.targets
@@ -213,9 +236,8 @@ export function WorkflowRunDialog({
         expected_project_revision: project.project_revision,
         project_workflow: workflow,
         workflow_execution_mode: kind === "inference" ? value.executionMode : null,
-        selected_object_ids: isDimensional ? [] : selectedObjectIds,
-        ...(isDimensional ? { selected_entity_ids: selectedObjectIds, modeled_entity_type: "logical_entity" as const } : {}),
-        requested_batch_id: isEnrichment || isDimensional || isSubjectArea ? null : value.requestedBatchId.trim() || null,
+        selected_object_ids: selectedObjectIds,
+        requested_batch_id: isEnrichment || isSubjectArea ? null : value.requestedBatchId.trim() || null,
         agent: kind === "inference" ? agent : null,
         prompt_overrides: {},
         ...(isEnrichment ? { description_targets: descriptionTargets } : {}),
@@ -232,8 +254,9 @@ export function WorkflowRunDialog({
   const effectiveObjects = scopeQuery.data?.items.filter((item) => effectiveRows.some((row) => row.objectId === item.object_id)) ?? [];
   const batchSystems = new Set(effectiveObjects.map((item) => item.system_id));
   const batchIsIncoherent = Boolean(requestedBatchId.trim()) && batchSystems.size > 1;
-  const revisionChanged = selectionQuery.data?.projectRevision !== undefined
-    && selectionQuery.data.projectRevision !== project.project_revision;
+  const revisionChanged = isBuild
+    ? areasQuery.data !== undefined && areasQuery.data.project_revision !== project.project_revision
+    : scopeQuery.data !== undefined && scopeQuery.data.projectRevision !== project.project_revision;
   const { mutation: runMutation, pendingRunId: pendingStart } = useWorkflowRunSubmission({
     api,
     tenantId,
@@ -308,7 +331,7 @@ export function WorkflowRunDialog({
   ]);
   const title = isEnrichment ? `Enrich ${recordName.toLowerCase()}` : workflow === "analysis"
     ? `Configure Analysis ${kind}`
-    : `Configure ${authoringWorkflowName} run`;
+    : isModelRun ? `Configure ${authoringWorkflowName}` : `Configure ${authoringWorkflowName} run`;
 
   return (
     <div className="dialog-scrim" role="presentation">
@@ -437,15 +460,23 @@ export function WorkflowRunDialog({
                 initialSelectedIds={initialSelectedIds} disabled={selectionDisabled || scopeQuery.isFetching || revisionChanged}
                 onChange={setAttributeSelection} />
                 : <p className="inline-error" role="alert">Attribute selection is unavailable.</p>
-            : isSubjectArea ? <section className="run-object-selection" aria-labelledby="workflow-run-scope-heading">
-              <header>
-                <strong id="workflow-run-scope-heading">Active Bronze Scope</strong>
-                <span>{scopeRows.length} table{scopeRows.length === 1 ? "" : "s"}</span>
-              </header>
-              {scopeQuery.isPending ? <div className="surface-state compact" aria-busy="true">Loading active Scope…</div>
-                : scopeQuery.isError ? <div className="surface-state is-error compact" role="alert">Active Scope could not be loaded.</div>
-                  : <p className="run-kind-note">Subject Areas group every active Bronze table in the Input Scope, so this run always covers the whole Scope. Locked areas and locked tables stay as saved.</p>}
-            </section>
+            : isBuild ? <>
+              <p className="run-kind-note">
+                {isDimensional
+                  ? "Builds the checked Subject Areas one after another into one draft, using the active Logical Entities sourced from each area's Objects."
+                  : "Builds the checked Subject Areas one after another into one draft. Objects shared by several areas are included once."}
+                {" "}Default order: most shared Objects first, then most Objects. Locked records stay as saved.
+              </p>
+              <BuildAreaOrder areas={orderedAreas} skippedIds={skippedAreaIds} isPending={areasQuery.isPending}
+                isError={areasQuery.isError} disabled={selectionDisabled}
+                onSkippedChange={setSkippedAreaIds} onOrderChange={setAreaOrder} />
+            </>
+            : isModelRun ? <p className="run-kind-note">
+              Optimize reviews the whole {isDimensional ? "Dimensional" : "Logical"} model in one run, with no Subject Area
+              selection. It drafts fixes that span Subject Areas, such as merging duplicate Entities by retiring the
+              extra one. Build first: Optimize needs active {isDimensional ? "Dimensional" : "Logical"} Entities.
+              Locked records stay as saved.
+            </p>
             : <><fieldset className="scope-mode-options" disabled={selectionDisabled}>
             <legend>{recordName}</legend>
             <form.Field name="scopeMode">
@@ -460,7 +491,7 @@ export function WorkflowRunDialog({
                     />
                     <span>
                       <strong>All {isEnrichment ? "unlocked " : ""}{recordName}</strong>
-                      {!isEnrichment ? <small>Every active {scopeZoneName}{isDimensional ? "" : " Object in Scope"}</small> : null}
+                      {!isEnrichment ? <small>Every active {scopeZoneName} Object in Scope</small> : null}
                     </span>
                   </label>
                   <label>
@@ -482,9 +513,9 @@ export function WorkflowRunDialog({
               <strong id="workflow-run-scope-heading">{isEnrichment ? `Unlocked ${recordName}` : `Active ${scopeZoneName} Scope`}</strong>
               <span>{effectiveRows.length} selected</span>
             </header>
-            {selectionQuery.isPending ? (
+            {scopeQuery.isPending ? (
               <div className="surface-state compact" aria-busy="true">Loading active Scope…</div>
-            ) : selectionQuery.isError ? (
+            ) : scopeQuery.isError ? (
               <div className="surface-state is-error compact" role="alert">
                 Active Scope could not be loaded.
               </div>
@@ -525,7 +556,7 @@ export function WorkflowRunDialog({
           </section></>}
 
 
-          {!isEnrichment && !isDimensional && !isSubjectArea ? <form.Field name="requestedBatchId">
+          {!isEnrichment && !isModelRun && !isSubjectArea ? <form.Field name="requestedBatchId">
             {(field) => (
               <label className="batch-input">
                 <span>Batch ID (optional)</span>
@@ -594,14 +625,16 @@ export function WorkflowRunDialog({
                 type="submit"
                 disabled={
                   isMetadataImport ? submitting || importRefreshRequired || (!uncertainImport && (
-                    !reviewEnrichment || selectionQuery.isPending || selectionQuery.isError || scopeQuery.isFetching
+                    !reviewEnrichment || scopeQuery.isPending || scopeQuery.isError || scopeQuery.isFetching
                     || revisionChanged || importingCount === 0 || importingCount > 200
                     || (isAttributeEnrichment && !attributeSelection.ready)
                   )) : runMutation.isPending
                   || (pendingStart === null && (
-                    selectionQuery.isPending
-                    || selectionQuery.isError
-                    || (isAttributeEnrichment ? !attributeSelection.ready || scopeQuery.isFetching : effectiveRows.length === 0)
+                    (isModelRun
+                      ? isBuild && (areasQuery.isPending || areasQuery.isError || buildAreaIds.length === 0)
+                      : scopeQuery.isPending
+                        || scopeQuery.isError
+                        || (isAttributeEnrichment ? !attributeSelection.ready || scopeQuery.isFetching : effectiveRows.length === 0))
                     || batchIsIncoherent
                     || revisionChanged
                     || (kind === "inference" && (capabilitiesQuery.isPending || !agentSelectionValid))
@@ -629,6 +662,89 @@ export function WorkflowRunDialog({
       </section>
     </div>
   );
+}
+
+/**
+ * Build checks and orders Subject Areas; the backend builds the checked areas one after
+ * another into one draft. Unchecked areas are skipped.
+ */
+function BuildAreaOrder({ areas, skippedIds, isPending, isError, disabled, onSkippedChange, onOrderChange }: {
+  areas: SubjectAreaSummary[];
+  skippedIds: ReadonlySet<number>;
+  isPending: boolean;
+  isError: boolean;
+  disabled: boolean;
+  onSkippedChange: (ids: ReadonlySet<number>) => void;
+  onOrderChange: (ids: number[]) => void;
+}) {
+  const [announcement, setAnnouncement] = useState("");
+  const checked = areas.filter((area) => !skippedIds.has(area.subject_area_id));
+  const move = (index: number, offset: -1 | 1, button: HTMLButtonElement) => {
+    const ids = areas.map((area) => area.subject_area_id);
+    const [moved] = ids.splice(index, 1);
+    ids.splice(index + offset, 0, moved!);
+    flushSync(() => onOrderChange(ids));
+    setAnnouncement(`${areas[index]!.subject_area_name} moved to position ${index + offset + 1} of ${areas.length}.`);
+    // Moving a row re-inserts it, which drops focus, so return focus to the row's move buttons.
+    const target = button.disabled
+      ? button.parentElement?.querySelector<HTMLButtonElement>("button:not(:disabled)")
+      : button;
+    target?.focus();
+  };
+  return <section className="run-object-selection run-build-areas" aria-labelledby="workflow-run-scope-heading">
+    <header>
+      <strong id="workflow-run-scope-heading">Subject Areas to build</strong>
+      <span>{checked.length} of {areas.length} selected</span>
+    </header>
+    {isPending ? <div className="surface-state compact" aria-busy="true">Loading Subject Areas…</div>
+      : isError ? <div className="surface-state is-error compact" role="alert">Subject Areas could not be loaded. Close this dialog and retry.</div>
+        : areas.length === 0 ? <div className="empty-state compact">
+          No active Subject Area has Objects. Add Objects to a Subject Area, then build.
+        </div>
+          : <div className="workflow-table-scroll run-build-area-scroll">
+            <table className="enrichment-selection-table run-build-area-table" aria-label="Subject Areas to build">
+              <thead><tr>
+                <th className="selection-cell"><SelectAllCheckbox label="Select all Subject Areas" selectedCount={checked.length}
+                  totalCount={areas.length} disabled={disabled}
+                  onChange={(all) => onSkippedChange(all ? new Set() : new Set(areas.map((area) => area.subject_area_id)))} /></th>
+                <th>Order</th>
+                <th>Subject Area</th>
+                <th className="is-numeric">Objects</th>
+                <th className="is-numeric">Shared Objects</th>
+                <th><span className="sr-only">Move</span></th>
+              </tr></thead>
+              <tbody>{areas.map((area, index) => {
+                const skipped = skippedIds.has(area.subject_area_id);
+                return <tr key={area.subject_area_id} className={skipped ? "is-skipped" : undefined}>
+                  <td className="selection-cell"><input type="checkbox" aria-label={`Select ${area.subject_area_name}`}
+                    checked={!skipped} disabled={disabled} onChange={(event) => {
+                      const next = new Set(skippedIds);
+                      if (event.target.checked) next.delete(area.subject_area_id);
+                      else next.add(area.subject_area_id);
+                      onSkippedChange(next);
+                    }} /></td>
+                  <td>{skipped ? "Skipped" : checked.indexOf(area) + 1}</td>
+                  <th scope="row">{area.subject_area_name}</th>
+                  <td className="is-numeric">{area.table_count}</td>
+                  <td className="is-numeric">{area.shared_table_count}</td>
+                  <td><span className="run-build-area-move">
+                    <button className="button button-secondary button-small" type="button"
+                      aria-label={`Move ${area.subject_area_name} up`} disabled={disabled || index === 0}
+                      onClick={(event) => move(index, -1, event.currentTarget)}>
+                      <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m7 14 5-5 5 5" /></svg>
+                    </button>
+                    <button className="button button-secondary button-small" type="button"
+                      aria-label={`Move ${area.subject_area_name} down`} disabled={disabled || index === areas.length - 1}
+                      onClick={(event) => move(index, 1, event.currentTarget)}>
+                      <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5" /></svg>
+                    </button>
+                  </span></td>
+                </tr>;
+              })}</tbody>
+            </table>
+          </div>}
+    <p className="sr-only" role="status">{announcement}</p>
+  </section>;
 }
 
 function SelectField({

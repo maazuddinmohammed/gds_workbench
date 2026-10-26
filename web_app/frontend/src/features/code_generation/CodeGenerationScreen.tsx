@@ -23,6 +23,7 @@ import {
   CodeGenerationRunDialog,
   type CodeGenerationCoverage,
 } from "./CodeGenerationRunDialog";
+import { RefreshButton } from "../../shared/ui";
 
 interface OpenRunDialog {
   coverage: CodeGenerationCoverage;
@@ -136,14 +137,7 @@ export function CodeGenerationScreen({
               title="All active SQL files for this layer, including stale files; ignores table filters."
             >{download.isPending ? "Preparing SQL download…" : "Download all SQL"}</button>
           </WorkflowMenu>
-          <button
-            className="button button-secondary button-small"
-            type="button"
-            disabled={targetsQuery.isFetching}
-            onClick={() => void refresh()}
-          >
-            {targetsQuery.isFetching ? "Refreshing…" : "Refresh"}
-          </button>
+          <RefreshButton refreshing={targetsQuery.isFetching} onClick={() => void refresh()} />
           <button
             className="button button-primary button-small"
             type="button"

@@ -34,6 +34,7 @@ type WorkflowExecutionMode = Literal[
     "tool_assisted",
 ]
 type ModeledEntityType = Literal["logical_entity", "dimensional_entity"]
+type WorkflowOperation = Literal["build", "optimize"]
 
 
 class AgentRunPlanTransaction(Protocol):
@@ -51,6 +52,7 @@ SELECT run.workflow_run_id,
        run.project_revision,
        run.project_workflow,
        run.workflow_execution_mode,
+       run.workflow_operation,
        run.modeled_entity_type,
        run.code_generation_coverage_mode,
        run.code_generation_file_layout,
@@ -153,6 +155,30 @@ SELECT selection.modeled_entity_id, selection.selection_order
  ORDER BY selection.selection_order
 """
 
+# A Build processes its Subject Areas in this frozen order. The run's Project revision is
+# fenced, so each area's name, definition and members are as they were at creation.
+_RUN_SUBJECT_AREA_SQL: LiteralString = """
+SELECT selection.selection_order,
+       area.subject_area_id,
+       area.subject_area_name,
+       area.subject_area_definition
+  FROM application.workflow_run_subject_area_selection AS selection
+  JOIN workflow.subject_area AS area
+    ON area.subject_area_id = selection.subject_area_id
+   AND area.project_id = selection.project_id
+  JOIN application.workflow_run AS run
+    ON run.workflow_run_id = selection.workflow_run_id
+   AND run.project_id = selection.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = run.project_id
+   AND target_project.tenant_id = %s
+   AND target_project.is_active
+ WHERE selection.project_id = %s
+   AND selection.workflow_run_id = %s
+   AND run.workflow_run_state = 'running'
+ ORDER BY selection.selection_order
+"""
+
 _RUN_SYSTEM_SELECTION_SQL: LiteralString = """
 SELECT selection.system_code,
        selection.selection_order
@@ -203,6 +229,14 @@ class FrozenAgentStage(BaseModel):
         return self
 
 
+class PlannedSubjectArea(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    subject_area_id: int = Field(gt=0)
+    subject_area_name: str = Field(min_length=1, max_length=255)
+    subject_area_definition: str = Field(min_length=1)
+
+
 class AgentRunPlan(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -212,6 +246,9 @@ class AgentRunPlan(BaseModel):
     project_revision: int = Field(ge=0)
     project_workflow: ProjectWorkflow
     workflow_execution_mode: WorkflowExecutionMode | None
+    workflow_operation: WorkflowOperation | None = None
+    # Build only: the selected Subject Areas in processing order.
+    subject_areas: tuple[PlannedSubjectArea, ...] = ()
     modeled_entity_type: ModeledEntityType | None
     code_generation_coverage_mode: (
         Literal[
@@ -230,6 +267,12 @@ class AgentRunPlan(BaseModel):
 
     @model_validator(mode="after")
     def validate_plan(self) -> AgentRunPlan:
+        if (self.project_workflow in {"logical", "dimensional"}) != (
+            self.workflow_operation is not None
+        ) or (self.workflow_operation == "build") != bool(self.subject_areas):
+            raise ValueError("Build and Optimize plans do not match the workflow")
+        if len({area.subject_area_id for area in self.subject_areas}) != len(self.subject_areas):
+            raise ValueError("Selected Subject Areas must be unique")
         if self.project_workflow == "metadata_enrichment" and (
             self.workflow_execution_mode != "one_shot"
         ):
@@ -309,11 +352,17 @@ class PostgresAgentRunPlanRepository:
             if rows and rows[0].get("project_workflow") == "validation"
             else []
         )
+        subject_area_rows = (
+            await transaction.fetch_all(_RUN_SUBJECT_AREA_SQL, parameters)
+            if rows and rows[0].get("workflow_operation") == "build"
+            else []
+        )
         try:
             return _assemble_plan(
                 rows=rows,
                 selection_rows=selection_rows,
                 system_selection_rows=system_selection_rows,
+                subject_area_rows=subject_area_rows,
             )
         except AgentRunPlanUnavailableError:
             raise
@@ -326,6 +375,7 @@ def _assemble_plan(
     rows: Sequence[dict[str, Any]],
     selection_rows: Sequence[dict[str, Any]],
     system_selection_rows: Sequence[dict[str, Any]] = (),
+    subject_area_rows: Sequence[dict[str, Any]] = (),
 ) -> AgentRunPlan:
     if not rows:
         raise AgentRunPlanUnavailableError()
@@ -379,6 +429,7 @@ def _assemble_plan(
         "project_revision",
         "project_workflow",
         "workflow_execution_mode",
+        "workflow_operation",
         "modeled_entity_type",
         "code_generation_coverage_mode",
         "code_generation_file_layout",
@@ -493,6 +544,17 @@ def _assemble_plan(
             )
         )
     stages.sort(key=lambda stage: (stage.stage_order, stage.workflow_stage_id))
+    subject_areas: list[PlannedSubjectArea] = []
+    for expected_order, row in enumerate(subject_area_rows, start=1):
+        if _required_int(row, "selection_order") != expected_order:
+            raise AgentRunPlanUnavailableError()
+        subject_areas.append(
+            PlannedSubjectArea(
+                subject_area_id=_required_int(row, "subject_area_id"),
+                subject_area_name=_required_str(row, "subject_area_name"),
+                subject_area_definition=_required_str(row, "subject_area_definition"),
+            )
+        )
 
     return AgentRunPlan(
         workflow_run_id=_required_int(first, "workflow_run_id"),
@@ -504,6 +566,10 @@ def _assemble_plan(
             WorkflowExecutionMode | None,
             _optional_str(first, "workflow_execution_mode"),
         ),
+        workflow_operation=cast(
+            WorkflowOperation | None, _optional_str(first, "workflow_operation")
+        ),
+        subject_areas=tuple(subject_areas),
         modeled_entity_type=cast(
             ModeledEntityType | None,
             _optional_str(first, "modeled_entity_type"),

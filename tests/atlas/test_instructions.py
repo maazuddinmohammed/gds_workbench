@@ -66,6 +66,17 @@ STALE_PHRASES = (
     "cannot read/write the web workflow's Project-owned enrichment",
     "EffectiveFrom",
     "IsCurrent`",
+    # Retired with the Subject Area Build redesign: no Submodels, ordered sources, type
+    # details, named Relationships or status values on model records.
+    "Submodel",
+    "submodel",
+    '"source_order"',
+    "logical_entity_type_detail",
+    "_relationship_name",
+    "cardinality_basis",
+    "membership_status",
+    "logical_entity_status",
+    "dimensional_entity_status",
 )
 
 

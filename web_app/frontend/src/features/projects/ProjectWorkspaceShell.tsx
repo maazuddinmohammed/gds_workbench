@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Link, useSearch } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { ProjectIcon } from "../../shared/ui";
+import { ProjectIcon, RefreshIcon } from "../../shared/ui";
 import type { TenantLockState } from "../tenant_locks/api";
 import type { ProjectDetail, ProjectsApi, ProjectSectionState } from "./api";
 
@@ -19,7 +19,7 @@ const stages = [
   { id: "profiling", label: "Profiling", to: "/tenants/$tenantId/projects/$projectId/profiling" },
   { id: "metadata-enrichment", label: "Enrichment", to: "/tenants/$tenantId/projects/$projectId/metadata-enrichment", accessibleName: "Metadata enrichment" },
   { id: "analysis", label: "Analysis", to: "/tenants/$tenantId/projects/$projectId/analysis" },
-  { id: "subject-area", label: "Subject areas", to: "/tenants/$tenantId/projects/$projectId/subject-areas" },
+  { id: "subject-area", label: "Subject Areas", to: "/tenants/$tenantId/projects/$projectId/subject-areas" },
   { id: "logical", label: "Logical", to: "/tenants/$tenantId/projects/$projectId/logical" },
   { id: "dimensional", label: "Dimensional", to: "/tenants/$tenantId/projects/$projectId/dimensional" },
   { id: "mapping", label: "Mapping", to: "/tenants/$tenantId/mapping/projects/$projectId" },
@@ -127,7 +127,7 @@ export function ProjectWorkspaceShell({ api, project, activeStage, tenantLock, l
               overview.refetch(), client.invalidateQueries({ queryKey: ["project", project.tenant_id, project.project_id] }),
               client.invalidateQueries({ queryKey: ["tenant-home", project.tenant_id] }),
             ])}>
-            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5M5.5 8a7 7 0 0 1 11.7-3L20 8M4 16l2.8 3A7 7 0 0 0 18.5 16" /></svg>
+            <RefreshIcon />
           </button>
         </div>
       </header>

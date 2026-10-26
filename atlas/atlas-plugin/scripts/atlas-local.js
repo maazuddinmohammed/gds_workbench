@@ -590,8 +590,11 @@ function policyApply(options) {
 
 // Selected-input coverage with the web workflow's rule: Logical counts distinct applied Input
 // Scope Objects supported by active Entity sources; Dimensional counts applied Logical Entities.
+// --subject-area selects like a web Build of one applied area: its active member Objects, or the
+// active Logical Entities with an active Object source among those members.
 function coverageReport(options) {
   if (!["logical", "dimensional"].includes(options.layer)) fail("--layer must be logical or dimensional.");
+  if (options.select !== undefined && options["subject-area"] !== undefined) fail("Use --select or --subject-area, not both.");
   const snapshot = locateSnapshot({session: options.session, area: "project"});
   const directory = path.join(snapshot.session, "project-change-set");
   const pending = fs.existsSync(directory) ? readPending({...snapshot, directory}) : {};
@@ -604,11 +607,22 @@ function coverageReport(options) {
   const logical = ["logical_entity_schema_name", "logical_entity_name"];
   const label = (record, fields) => fields.map((field) => record[field]).join(".");
   const key = (record, fields) => stableStringify(fields.map((field) => normalizedValue("project", field, record?.[field])));
-  const isActive = (record, field) => record[field] === "active" || record.is_active === true;
   const [fields, inputs, entityDataset, sourceType, sourceField] = layer === "logical"
     ? [physical, applied("project_input_scope").filter((row) => row.is_active === true), "logical_entity", "object", "source_object"]
-    : [logical, applied("logical_entity").filter((row) => isActive(row, "logical_entity_status")), "dimensional_entity", "logical_entity", "source_logical_entity"];
-  let selected = inputs;
+    : [logical, applied("logical_entity").filter((row) => row.logical_entity_is_active === true), "dimensional_entity", "logical_entity", "source_logical_entity"];
+  let selected = inputs, area = null;
+  if (options["subject-area"] !== undefined) {
+    const areaKey = normalizedValue("project", "subject_area_name", options["subject-area"]);
+    area = applied("subject_area").find((row) => row.subject_area_is_active === true &&
+      normalizedValue("project", "subject_area_name", row.subject_area_name) === areaKey);
+    if (!area) fail("--subject-area names no active applied Subject Area.");
+    const members = new Set(applied("subject_area_table").filter((row) => row.subject_area_table_is_active === true &&
+      normalizedValue("project", "subject_area_name", row.subject_area_name) === areaKey).map((row) => key(row, physical)));
+    selected = layer === "logical"
+      ? inputs.filter((row) => members.has(key(row, physical)))
+      : inputs.filter((row) => (row.sources ?? []).some((source) => source.support_source_type === "object" &&
+        source.is_active === true && members.has(key(source.source_object, physical))));
+  }
   if (options.select !== undefined) {
     let requested;
     try { requested = JSON.parse(options.select); } catch { fail("--select must be a JSON array of input identities."); }
@@ -620,14 +634,15 @@ function coverageReport(options) {
     if (selected.length !== wanted.size) fail("--select names an input outside the applied eligible inputs.");
   }
   const covered = new Set();
-  for (const entity of effective(entityDataset).filter((row) => isActive(row, `${entityDataset}_status`))) {
+  for (const entity of effective(entityDataset).filter((row) => row[`${entityDataset}_is_active`] === true)) {
     for (const source of entity.sources ?? []) {
-      if (source.support_source_type === sourceType && source.status === "active") covered.add(key(source[sourceField], fields));
+      if (source.support_source_type === sourceType && source.is_active === true) covered.add(key(source[sourceField], fields));
     }
   }
   const missing = selected.filter((row) => !covered.has(key(row, fields))).map((row) => label(row, fields));
   const total = selected.length, coveredCount = total - missing.length, required = Math.floor((total * percent + 99) / 100);
-  return {layer, threshold_percent: percent, enforced: details[`${layer}_enforce_coverage_threshold`] === true,
+  return {layer, ...(area ? {subject_area: area.subject_area_name} : {}), threshold_percent: percent,
+    enforced: details[`${layer}_enforce_coverage_threshold`] === true,
     total, covered: coveredCount, required, meets_target: coveredCount >= required,
     missing_count: missing.length, missing: missing.slice(0, 50)};
 }
@@ -657,12 +672,6 @@ function discardRecord(options) {
   return { dataset: dataset.name, count: records.length, digest: workspaceDigest(context) };
 }
 
-function recordActive(record) {
-  if (typeof record.is_active === "boolean") return record.is_active;
-  if (typeof record.status === "string") return record.status === "active";
-  return null;
-}
-
 function reviewChangeSet(options) {
   const context = changeSetContext(options);
   const pending = readPending(context);
@@ -689,8 +698,8 @@ function reviewChangeSet(options) {
       let action;
       if (!original) action = "added";
       else if (stableStringify(original) === stableStringify(record)) action = "unchanged";
-      else if (recordActive(original) === true && recordActive(record) === false) action = "deactivated";
-      else if (recordActive(original) === false && recordActive(record) === true) action = "reactivated";
+      else if (workbenchCore.active(original) === true && workbenchCore.active(record) === false) action = "deactivated";
+      else if (workbenchCore.active(original) === false && workbenchCore.active(record) === true) action = "reactivated";
       else action = "changed";
       counts[action] += 1;
       counts.total += 1;
@@ -747,11 +756,9 @@ function sameAppliedRecord(local, server, schema, root = schema, recordType = ""
   if (Array.isArray(local) || Array.isArray(server)) {
     if (!Array.isArray(local) || !Array.isArray(server) || local.length !== server.length) return false;
     if (collection) {
-      // SQL emits these owned collections by database ID/name. Explicit source_order stays compared.
+      // SQL emits owned sources by database ID; match each source by its identity instead.
       const identity = (item) => {
         if (!item || Array.isArray(item) || typeof item !== "object") return null;
-        if (collection === "submodels") return typeof item.submodel_name === "string"
-          ? stableStringify(["submodel", item.submodel_name]) : null;
         const field = {object: "source_object", attribute: "source_attribute", logical_entity: "source_logical_entity", logical_attribute: "source_logical_attribute", context_record: "context_record"}[item.support_source_type];
         return field && item[field] && typeof item[field] === "object" && !Array.isArray(item[field])
           ? stableStringify([item.support_source_type, item[field]]) : null;
@@ -778,9 +785,8 @@ function sameAppliedRecord(local, server, schema, root = schema, recordType = ""
     const hasLocal = Object.hasOwn(local, field), hasServer = Object.hasOwn(server, field);
     if ((!hasLocal || !hasServer) && (!child || !Object.hasOwn(child, "default") ||
         schema.required?.includes(field))) return false;
-    const ownedCollection = schema === root && (
-      (field === "sources" && ["logical_entity", "logical_attribute", "dimensional_entity", "dimensional_attribute"].includes(recordType)) ||
-      (field === "submodels" && ["logical_entity", "dimensional_entity"].includes(recordType))) ? field : "";
+    const ownedCollection = schema === root && field === "sources" &&
+      ["logical_entity", "logical_attribute", "dimensional_entity", "dimensional_attribute"].includes(recordType) ? field : "";
     if (!sameAppliedRecord(hasLocal ? local[field] : child.default,
       hasServer ? server[field] : child.default, child, root, recordType, ownedCollection)) return false;
   }

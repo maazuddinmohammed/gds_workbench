@@ -44,7 +44,7 @@ SELECT entity.modeled_entity_id AS entity_id, entity.modeled_entity_type AS enti
   FROM project.project AS target_project
   JOIN workflow.modeled_entity AS entity ON entity.project_id = target_project.project_id
  WHERE target_project.tenant_id = %s AND target_project.project_id = %s AND target_project.is_active
-   AND entity.modeled_entity_type = %s AND entity.status = 'active'
+   AND entity.modeled_entity_type = %s AND entity.is_active
 """
 
 
@@ -107,7 +107,7 @@ SELECT targets.*, jsonb_build_object('system_id', source_system.system_id, 'syst
           attribute.modeled_attribute_id
     WHERE attribute.project_id = entity.project_id AND attribute.modeled_entity_type =
         entity.modeled_entity_type
-      AND attribute.modeled_entity_id = entity.modeled_entity_id AND attribute.status = 'active'
+      AND attribute.modeled_entity_id = entity.modeled_entity_id AND attribute.is_active
  ) AS attributes
  ORDER BY source_system.system_code, object_order, targets.entity_schema_name,
      targets.entity_name, targets.entity_id
@@ -147,7 +147,7 @@ MAPPING_OBJECTS_SQL: LiteralString = (
         AND modeled_attribute.modeled_entity_id = entity.modeled_entity_id
         AND modeled_attribute.modeled_attribute_id = coalesce(
             mapped_attribute.logical_attribute_id, mapped_attribute.dimensional_attribute_id)
-        AND modeled_attribute.status = 'active'
+        AND modeled_attribute.is_active
        WHERE mapped_attribute.mapping_object_id = mapping.mapping_object_id
          AND mapped_attribute.attribute_mapping_status = 'active'
          AND mapped_attribute.attribute_mapping_transformation_document IS NOT NULL
@@ -226,7 +226,7 @@ MAPPING_ATTRIBUTES_SQL: LiteralString = (
     + _ATTRIBUTE_BASE_SQL
     + """
  WHERE target_project.tenant_id = %s AND target_project.project_id = %s AND target_project.is_active
-   AND (attribute.status = 'active' OR attribute_mapping.mapping_attribute_id IS NOT NULL)
+   AND (attribute.is_active OR attribute_mapping.mapping_attribute_id IS NOT NULL)
    AND (%s::VARCHAR IS NULL OR entity.modeled_entity_type = %s)
    AND (%s::BIGINT IS NULL OR source_system.system_id = %s)
    AND (%s::VARCHAR IS NULL OR lower(btrim(source_system.system_code)) = %s)

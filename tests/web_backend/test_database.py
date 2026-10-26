@@ -4,10 +4,11 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import ClassVar
 
-import gds_workbench_api.database as database_module
 import pytest
-from gds_workbench_api.database import WebPostgresDatabase
 from psycopg.errors import InsufficientPrivilege
+
+import gds_workbench_api.database as database_module
+from gds_workbench_api.database import WebPostgresDatabase
 
 
 class Result:
@@ -137,8 +138,8 @@ async def test_readiness_checks_the_web_schema_and_role(
     assert "mcp.get_databricks_sql_connection_values" in readiness_sql
     assert "uq_workflow_run_running_tenant" in readiness_sql
     assert "fk_workflow_run_project" in readiness_sql
-    assert "count(*) = 26" in readiness_sql
-    assert "count(*) = 176" in readiness_sql
+    assert "count(*) = 30" in readiness_sql
+    assert "count(*) = 262" in readiness_sql
     assert "pg_auth_members" in readiness_sql
     assert "mcp.project_change_set" in readiness_sql
     assert "workflow.subject_area" in readiness_sql

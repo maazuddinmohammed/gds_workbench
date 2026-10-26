@@ -43,10 +43,11 @@ Entities own Mapping and Code directly. Physical target registration is an optio
 later Metadata handoff. Code consumes applied Mapping; Validation consumes complete
 Mapping and relevant current Code. Apply stores definitions, not execution results.
 
-Subject Areas group the Bronze Input Scope into business capabilities so each
-Logical Build works on a manageable set of tables. They are never evidence: Logical and
-Dimensional authoring exclude them from prompt variables, readers and Atlas task
-inputs. Logical uses physical evidence; Dimensional consumes Logical. Full Project snapshots still
+Subject Areas group the Bronze Input Scope into business capabilities. A Logical or
+Dimensional Build makes one agent call per selected area, so each call sees a manageable
+slice plus short summaries of the rest; an Optimize then reviews the whole model once.
+Areas are never evidence: a Build prompt only names its current area. Logical uses
+physical evidence; Dimensional consumes Logical. Full Project snapshots still
 preserve every section for browsing and governed validation.
 
 The web worker claims a durable Run before execution. Run creation freezes its

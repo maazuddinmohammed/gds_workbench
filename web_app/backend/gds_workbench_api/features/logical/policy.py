@@ -34,7 +34,7 @@ def project_logical_audit_policy(
     """Add the configured audit columns to every effective active Logical Entity."""
 
     policy = _parse_policy(effective_audit_template(raw_template))
-    baseline = applied or LogicalSection(submodels=(), entities=(), attributes=(), relationships=())
+    baseline = applied or LogicalSection(entities=(), attributes=(), relationships=())
     changes_by_dataset = {change.dataset: change for change in changes}
     if len(changes_by_dataset) != len(changes) or any(
         not change.dataset.startswith("logical_") for change in changes
@@ -58,7 +58,7 @@ def project_logical_audit_policy(
 
     projected: list[LogicalAttributeRecord] = []
     for entity_key, entity in sorted(entities.items()):
-        if entity.logical_entity_status != "active":
+        if not entity.logical_entity_is_active:
             continue
         entity_attributes: list[LogicalAttributeRecord] = [
             record for key, record in attributes.items() if key[:2] == entity_key
@@ -99,7 +99,7 @@ def project_logical_audit_policy(
                     logical_attribute_is_surrogate_key=True,
                     logical_attribute_ordinal_position=1,
                     logical_attribute_is_audit_column=False,
-                    logical_attribute_status="active",
+                    logical_attribute_is_active=True,
                     logical_attribute_is_locked=False,
                     sources=(),
                 )
@@ -148,12 +148,7 @@ def project_logical_audit_policy(
     }
 
     output: list[StageProjectChange] = []
-    for dataset in (
-        "logical_submodel",
-        "logical_entity",
-        "logical_attribute",
-        "logical_relationship",
-    ):
+    for dataset in ("logical_entity", "logical_attribute", "logical_relationship"):
         if dataset == "logical_attribute":
             records = [
                 record.model_dump(mode="json")
@@ -229,7 +224,7 @@ def _policy_attribute(
         logical_attribute_is_surrogate_key=False,
         logical_attribute_ordinal_position=ordinal,
         logical_attribute_is_audit_column=True,
-        logical_attribute_status="active",
+        logical_attribute_is_active=True,
         logical_attribute_is_locked=(
             existing.logical_attribute_is_locked if existing is not None else False
         ),

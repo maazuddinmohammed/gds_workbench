@@ -6,7 +6,7 @@ import { ContextEditor } from "./ContextEditor";
 import { ContextRecordsLedger } from "./ContextLedgers";
 import { ProjectRecordReview } from "../project_record_review/ProjectRecordReview";
 import { WorkflowCommandCenter, WorkflowCommandTools, WorkflowMenu } from "../workflows/WorkflowCommandCenter";
-import { Fact, WorkspaceToolbar } from "../../shared/ui";
+import { Fact, RefreshButton, WorkspaceToolbar } from "../../shared/ui";
 import { formatRequiredDateTime as formatDateTime } from "../../shared/presentation";
 
 type DetailProps = { api: ContextApi; tenantId: number; projectId: number; projectRevision: number; hasTenantLock: boolean; authoringDisabledReason?: string | undefined };
@@ -42,7 +42,7 @@ export function ContextGroupDetailPage({ api, tenantId, projectId, groupId, proj
     <WorkspaceToolbar actions={<><WorkflowCommandTools />
       <button className="button button-primary button-small" type="button" disabled={Boolean(addBlockedReason) || query.isFetching} title={addBlockedReason} onClick={() => setEditor("record")}>Add record</button>
       <WorkflowMenu><button className="button button-secondary button-small" type="button" disabled={Boolean(editBlockedReason) || query.isFetching} title={editBlockedReason} onClick={() => setEditor("group")}>Edit group</button>
-      <button className="button button-secondary button-small" type="button" onClick={async () => { setSelectedIds(new Set()); await Promise.all([query.refetch(), records.refetch(), queryClient.invalidateQueries({ queryKey: ["project", tenantId, projectId] }), queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] })]); }}>Refresh</button>
+      <RefreshButton refreshing={query.isFetching || records.isFetching} disabled={false} onClick={async () => { setSelectedIds(new Set()); await Promise.all([query.refetch(), records.refetch(), queryClient.invalidateQueries({ queryKey: ["project", tenantId, projectId] }), queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] })]); }} />
       </WorkflowMenu></>}><div className="workspace-record-heading">
       <Link className="text-action" to="/tenants/$tenantId/projects/$projectId/context" params={{ tenantId: String(tenantId), projectId: String(projectId) }}>← Context groups</Link>
       <h1>{group.context_group_name}</h1><p>{group.context_type.context_type_name} · {group.source_system?.system_code ?? "Entire Project"} · {group.is_active ? "Active" : "Inactive"}</p>
@@ -77,7 +77,7 @@ export function ContextRecordDetailPage({ api, tenantId, projectId, recordId, pr
       <button className="button button-primary button-small" type="button" disabled={Boolean(editBlockedReason) || query.isFetching} title={editBlockedReason} onClick={() => setEditing(true)}>Edit record</button>
       <ProjectRecordReview api={api} tenantId={tenantId} projectId={projectId} projectRevision={projectRevision} dataset="context_record" selectedIds={new Set([recordId])} hasTenantLock={hasTenantLock} disabled={query.isFetching} onApplied={saved}
         presentation="record" actions={[record.is_locked ? "unlock" : "lock", record.status === "active" ? "deactivate" : "reactivate"]}
-        menuActions={<button className="button button-secondary button-small" type="button" disabled={query.isFetching} onClick={async () => { await Promise.all([query.refetch(), queryClient.invalidateQueries({ queryKey: ["project", tenantId, projectId] }), queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] })]); }}>Refresh</button>} />
+        menuActions={<RefreshButton refreshing={query.isFetching} onClick={async () => { await Promise.all([query.refetch(), queryClient.invalidateQueries({ queryKey: ["project", tenantId, projectId] }), queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] })]); }} />} />
     </>}><div className="workspace-record-heading">
       <Link className="text-action" to="/tenants/$tenantId/projects/$projectId/context/groups/$groupId" params={{ tenantId: String(tenantId), projectId: String(projectId), groupId: String(record.group.context_group_id) }}>← {record.group.context_group_name}</Link>
       <h1>Context record</h1><p>{record.group.context_type.context_type_name}</p>

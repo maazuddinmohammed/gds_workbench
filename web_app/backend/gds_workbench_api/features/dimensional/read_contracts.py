@@ -7,12 +7,11 @@ from gds_etl_workbench.domain.errors import WorkbenchError
 from pydantic import Field
 
 from gds_workbench_api.features.logical import (
-    Cardinality,
     ContextRecordReference,
     ContractModel,
+    EntitySubjectArea,
     ModeledFilters,
     ModeledListQuery,
-    ModeledStatus,
 )
 
 MAX_DETAIL_ROWS = 2000
@@ -21,23 +20,22 @@ MAX_DETAIL_ROWS = 2000
 DimensionalFilters = ModeledFilters
 
 
+class DimensionalObjectFilters(ModeledFilters):
+    # Entities whose active Logical sources have an active Object among the area's
+    # active member Objects.
+    subject_area_id: int | None = Field(default=None, gt=0)
+
+
 class DimensionalObjectSummary(ContractModel):
     dimensional_entity_id: int = Field(gt=0)
     workflow_run_id: int | None = Field(default=None, gt=0)
     dimensional_entity_schema_name: str = Field(min_length=1, max_length=400)
     dimensional_entity_name: str = Field(min_length=1, max_length=255)
     dimensional_entity_type: Literal["fact", "dimension", "bridge"]
-    dimensional_fact_type: (
-        Literal[
-            "transaction",
-            "periodic_snapshot",
-            "accumulating_snapshot",
-            "factless",
-        ]
-        | None
-    ) = None
+    # A code from reference.dimensional_fact_type; only facts have one.
+    dimensional_fact_type: str | None = Field(default=None, min_length=1, max_length=50)
     dimensional_entity_dependency_order: int = Field(ge=0)
-    dimensional_entity_status: ModeledStatus
+    dimensional_entity_is_active: bool
     dimensional_entity_is_locked: bool
     updated_at: datetime
 
@@ -49,23 +47,11 @@ class DimensionalObjectPage(ContractModel):
     next_cursor: str | None = Field(default=None, max_length=2048)
 
 
-class DimensionalSubmodelMembership(ContractModel):
-    dimensional_entity_submodel_id: int = Field(gt=0)
-    workflow_run_id: int | None = Field(default=None, gt=0)
-    dimensional_submodel_id: int = Field(gt=0)
-    dimensional_submodel_name: str = Field(min_length=1, max_length=255)
-    membership_status: ModeledStatus
-    membership_is_locked: bool
-    created_at: datetime
-    updated_at: datetime
-
-
 class DimensionalObjectSourceBase(ContractModel):
     dimensional_entity_source_mapping_id: int = Field(gt=0)
     workflow_run_id: int | None = Field(default=None, gt=0)
-    source_order: int | None = Field(default=None, gt=0)
-    rationale: str = Field(min_length=1)
-    status: ModeledStatus
+    rationale: str | None = Field(default=None, min_length=1)
+    is_active: bool
     is_locked: bool
     created_at: datetime
     updated_at: datetime
@@ -102,7 +88,7 @@ class DimensionalObjectDetail(DimensionalObjectSummary):
     dimensional_entity_definition: str = Field(min_length=1)
     dimensional_entity_grain_definition: str | None = Field(default=None, min_length=1)
     created_at: datetime
-    submodels: tuple[DimensionalSubmodelMembership, ...] = Field(max_length=MAX_DETAIL_ROWS)
+    subject_areas: tuple[EntitySubjectArea, ...] = Field(max_length=MAX_DETAIL_ROWS)
     sources: tuple[DimensionalObjectSource, ...] = Field(max_length=MAX_DETAIL_ROWS)
 
 
@@ -123,7 +109,7 @@ class DimensionalAttributeSummary(ContractModel):
     dimensional_attribute_is_natural_key: bool
     dimensional_attribute_is_surrogate_key: bool
     dimensional_attribute_is_audit_column: bool
-    dimensional_attribute_status: ModeledStatus
+    dimensional_attribute_is_active: bool
     dimensional_attribute_is_locked: bool
     updated_at: datetime
 
@@ -138,9 +124,8 @@ class DimensionalAttributePage(ContractModel):
 class DimensionalAttributeSourceBase(ContractModel):
     dimensional_attribute_source_mapping_id: int = Field(gt=0)
     workflow_run_id: int | None = Field(default=None, gt=0)
-    source_order: int | None = Field(default=None, gt=0)
-    rationale: str = Field(min_length=1)
-    status: ModeledStatus
+    rationale: str | None = Field(default=None, min_length=1)
+    is_active: bool
     is_locked: bool
     created_at: datetime
     updated_at: datetime
@@ -174,6 +159,11 @@ class DimensionalRelationshipFilters(ModeledFilters):
 
 
 class DimensionalRelationshipSummary(ContractModel):
+    """Child -> parent: a fact, bridge or outrigger foreign key -> the dimension's key.
+
+    Relationships have no name; name filters match the from (foreign-key) Attribute.
+    """
+
     dimensional_relationship_id: int = Field(gt=0)
     workflow_run_id: int | None = Field(default=None, gt=0)
     from_dimensional_entity_id: int = Field(gt=0)
@@ -186,16 +176,13 @@ class DimensionalRelationshipSummary(ContractModel):
     to_dimensional_entity_name: str = Field(min_length=1, max_length=255)
     to_dimensional_attribute_id: int = Field(gt=0)
     to_dimensional_attribute_name: str = Field(min_length=1, max_length=255)
-    dimensional_relationship_name: str = Field(min_length=1, max_length=255)
-    dimensional_relationship_kind: str = Field(min_length=1, max_length=50)
-    dimensional_relationship_cardinality: Cardinality
-    dimensional_relationship_is_optional: bool
+    # Set only for role-playing references, such as OrderDate and ShipDate.
     dimensional_relationship_role_name: str | None = Field(
         default=None,
         min_length=1,
         max_length=255,
     )
-    dimensional_relationship_status: ModeledStatus
+    dimensional_relationship_is_active: bool
     dimensional_relationship_is_locked: bool
     updated_at: datetime
 
@@ -208,9 +195,8 @@ class DimensionalRelationshipPage(ContractModel):
 
 
 class DimensionalRelationshipDetail(DimensionalRelationshipSummary):
-    dimensional_relationship_definition: str = Field(min_length=1)
-    dimensional_relationship_basis: str = Field(min_length=1)
-    dimensional_relationship_cardinality_basis: str = Field(min_length=1)
+    # Needed only when the link does not follow a Logical Relationship.
+    dimensional_relationship_basis: str | None = Field(default=None, min_length=1)
     created_at: datetime
 
 
@@ -244,6 +230,10 @@ class DimensionalDetailLimitExceededError(WorkbenchError):
             code="dimensional_detail_limit_exceeded",
             message="The Dimensional artifact has too many related rows to return safely.",
         )
+
+
+class DimensionalObjectListQuery(ModeledListQuery):
+    subject_area_id: int | None = Field(default=None, gt=0)
 
 
 class DimensionalAttributeListQuery(ModeledListQuery):

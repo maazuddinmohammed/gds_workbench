@@ -108,19 +108,23 @@ edits shared physical metadata.
 ### Build the models
 
 Each layer builds on applied work: a dimensional model needs an applied logical
-model. Subject areas group the scoped tables by business capability so each logical
-build works on a manageable set; they are optional and never evidence.
+model. Subject Areas group the scoped tables by business capability. A build works
+on one Subject Area at a time, reusing what earlier areas built, while the Project
+keeps one model per layer. Areas are optional focus windows, never evidence. To
+improve what is already built, ask Atlas to optimize the model instead.
 
 ```text
-Build the logical model from the current scope. SQL policy: Never.
+Group the scoped tables into Subject Areas. Subject Areas only.
+Build the logical model for the [Order Capture] Subject Area. SQL policy: Never.
+Optimize the logical model: review grain and relationships. SQL policy: Never.
 Build the dimension [Dim Customer] from the applied logical entity [Customer]. Dimension only.
 Grill me on the [Order] grain.
-Group the scoped tables into subject areas. Subject areas only.
 ```
 
-For a logical model, Atlas checks coverage of the scoped tables and columns,
-lineage back to sources, normalization, naming standards, column order and
-relationships. Say **Grill me** to settle design questions together, one at a time.
+For a logical model, Atlas checks coverage of the scoped tables and columns (per
+Subject Area when you build one), lineage back to sources, normalization, naming
+standards, column order and relationships, which point from each child's foreign
+key to its parent. Say **Grill me** to settle design questions together, one at a time.
 
 ### Map and generate code
 
@@ -168,7 +172,7 @@ Atlas opens Atlas Local Workbench in your browser when changes are ready.
 | **Save changes** | Saves your own edit to the local draft files |
 | **Reload local files** | Shows Atlas's latest local edits; it doesn't download server records |
 | **Validate locally** | Checks the local changes and lists findings |
-| **Generate DBML** | Exports a diagram description of the whole local Project |
+| **Generate DBML** | Exports diagram descriptions of the whole local Project, plus one file per Subject Area |
 
 To change something, ask Atlas in chat, then select **Reload local files**. If
 you edit a record yourself, select **Save changes** and tell Atlas what you

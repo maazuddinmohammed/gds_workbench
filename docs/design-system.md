@@ -104,16 +104,20 @@ screens. Manual sections have neutral indicators. Workflow statuses come from ex
 backend section states, not record counts or guesses. Distinguish Completed from
 Results available; loading/conflicts never imply Not run. Keep every section clickable.
 Separate neutral setup sections from three navigation groups:
-Profiling / Enrichment / Analysis; Subject areas / Logical / Dimensional;
-Mapping / Code generation / Validation. These groups organize navigation, not workflow
-prerequisites: Subject areas only choose tables; Dimensional consumes Logical. Gaps between
-groups interrupt the connector line without interrupting keyboard navigation.
+Profiling / Enrichment / Analysis; Subject Areas / Logical / Dimensional;
+Mapping / Code generation / Validation. These groups organize navigation: Subject Areas
+group Objects, Logical and Dimensional Build use those areas, and Dimensional consumes
+Logical. Gaps between groups interrupt the connector line without interrupting keyboard
+navigation.
 Profiling stays before Enrichment.
 
 Use one compact command bar, recent runs, filters, then the results ledger. Drawers
 inspect without losing context; dialogs make bounded decisions. Keep one primary
-command per decision area. Preserve unsaved input after errors and request explicit
-discard before refreshing dirty forms.
+command per decision area; Logical and Dimensional put Build and Optimize in one primary
+Run menu (Run Logical, Run Dimensional), like the Analysis and Enrichment Run menus.
+Refresh is the shared icon-only `RefreshButton` (the project header's arrows), named
+Refresh for screen readers and tooltips. Preserve unsaved input after errors and request
+explicit discard before refreshing dirty forms.
 Record details keep identity and actions in one compact header. Edit stays visible;
 lifecycle actions belong in More, with applicable state-specific choices when known.
 Selection actions appear only after records are selected. Keep supporting facts aligned
@@ -231,10 +235,26 @@ correlation reference; never expose raw provider diagnostics or model payloads.
 - Analysis separates inference from measured validation. Missing, zero and unavailable
   measurements have distinct labels; zero denominators are N/A. Cardinality differences
   are review warnings. Percentages use their actual measured denominators.
-- Logical/Dimensional ledgers separate schema and Entity name. Provenance uses shared
-  structured source/rationale/status views. Export is an optional Metadata handoff.
-  Both layers use Entities, Relationships and Submodels. Attributes belong inside
-  Entity details; retain addressable Attribute routes for references and back navigation.
+- Logical/Dimensional ledgers separate schema and Entity name and show Active/Inactive.
+  Provenance uses shared structured source/rationale/status views; sources have no order
+  and may have no rationale. Export is an optional Metadata handoff.
+  Both layers show Subject Areas, Entities and Relationships tabs; there are no Submodels.
+  The Subject Areas tab lists active areas with their Objects and the layer's Entities;
+  opening one lists its Entities, which open the usual Entity page. Entity ledgers filter
+  by Subject Area, and Entity details list their Subject Areas read-only (derived from
+  Object sources). Attributes belong inside Entity details; retain addressable
+  Attribute routes for references and back navigation. Relationships point child to
+  parent: From (Entity + foreign-key Attribute) → To (parent Entity + key Attribute).
+  Logical adds cardinality (Many to one or One to one) and a basis; Dimensional adds an
+  optional role name and basis.
+- Logical and Dimensional runs: Build lists active Subject Areas with Objects (name,
+  Objects, shared Objects), all checked, most shared Objects first, then most Objects,
+  then name. Per-row checkboxes, select-all/clear and named Move up/Move down buttons
+  set what is built, one area after another into one draft; focus stays on the moved
+  row. Optimize has no selection and reviews the whole model (cross-area fixes, merges
+  by retiring duplicates). Both keep execution mode, model and reasoning settings, and
+  run history names them Logical Build, Logical Optimize, Dimensional Build or
+  Dimensional Optimize.
 - Mapping has Entity/System detail pages: Object logic once above a spreadsheet of
   all active modeled Attributes. Missing transformations stay blank. Preserve custom
   fields/nested values and whole source identifiers. Missing records have no selectable

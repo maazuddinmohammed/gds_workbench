@@ -87,12 +87,14 @@
     for (const section of catalog.sections) {
       if (section?.name === "project_binding" || !Array.isArray(section?.datasets)) return false;
       for (const dataset of section.datasets) {
-        if (["project_object_binding", "project_attribute_binding", "mapping_dependency"].includes(dataset?.name)) return false;
+        // Retired datasets mark a Snapshot from before the current record contract.
+        if (["project_object_binding", "project_attribute_binding", "mapping_dependency", "logical_submodel", "dimensional_submodel"].includes(dataset?.name)) return false;
         let required = [];
         if (["mapping_object", "mapping_attribute", "generated_code", "generated_code_source_system"].includes(dataset?.name)) required = ["modeled_entity_schema_name"];
         for (const layer of ["logical", "dimensional"]) {
           if ([`${layer}_entity`, `${layer}_attribute`].includes(dataset?.name)) required = [`${layer}_entity_schema_name`];
-          if (dataset?.name === `${layer}_relationship`) required = [`from_${layer}_entity_schema_name`, `to_${layer}_entity_schema_name`];
+          // Child -> parent: the child's foreign-key Attribute alone identifies a Relationship.
+          if (dataset?.name === `${layer}_relationship`) required = [`from_${layer}_entity_schema_name`];
         }
         if (required.some(field => !Array.isArray(dataset.canonical_key) || !dataset.canonical_key.includes(field))) return false;
       }
@@ -114,12 +116,16 @@
     });
   }
 
+  // Model records use `<prefix>_is_active`; nested sources and Metadata use `is_active`;
+  // Context, Mapping and Code keep a named status. Some datasets have none.
   function active(record) {
     if (typeof record.is_active === "boolean") return record.is_active;
     if (typeof record.status === "string") return record.status === "active";
-    const statusField = Object.keys(record).find((field) => field.endsWith("_status"));
-    if (statusField && typeof record[statusField] === "string") {
-      return record[statusField] === "active";
+    for (const [field, value] of Object.entries(record)) {
+      if (field.endsWith("_is_active") && typeof value === "boolean") return value;
+    }
+    for (const [field, value] of Object.entries(record)) {
+      if (field.endsWith("_status") && typeof value === "string") return value === "active";
     }
     return null;
   }

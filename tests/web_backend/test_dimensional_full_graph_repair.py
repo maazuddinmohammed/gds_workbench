@@ -9,21 +9,9 @@ import pytest
 from gds_etl_workbench.application.change_sets.project_validation import (
     validate_future_graph,
 )
-from gds_workbench_api.features.dimensional.service import (
-    _candidate_validator,
-    _project_dimensional_changes,
-)
-from gds_workbench_api.features.workflows.authoring.context import (
-    AgentContextBundle,
-    InMemoryAgentContextToolCatalog,
-    modeled_layer_dependencies,
-)
-from gds_workbench_api.features.workflows.authoring.repair import (
-    AgentCandidateValidationError,
-)
 from pydantic import JsonValue
-
 from tests.mcp.project_test_fixtures import (
+    DIMENSIONAL_FACT_TYPES,
     complete_physical_scope,
     complete_project_graph,
     snapshot_from_graph,
@@ -38,6 +26,18 @@ from tests.web_backend.test_dimensional_executor import (
     _service,
 )
 
+from gds_workbench_api.features.dimensional.service import (
+    _candidate_validator,
+    _project_dimensional_changes,
+)
+from gds_workbench_api.features.workflows.authoring.context import (
+    AgentContextBundle,
+    modeled_layer_dependencies,
+)
+from gds_workbench_api.features.workflows.authoring.repair import (
+    AgentCandidateValidationError,
+)
+
 
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
 async def test_sixty_percent_coverage_hands_off_without_retrying_remaining_gaps(
@@ -47,9 +47,7 @@ async def test_sixty_percent_coverage_hands_off_without_retrying_remaining_gaps(
     first = bundle.context.selected_logical_entities[0]
     second = first.model_copy(
         update={
-            "entity": first.entity.model_copy(
-                update={"logical_entity_name": "Other Entity"}
-            ),
+            "entity": first.entity.model_copy(update={"logical_entity_name": "Other Entity"}),
             "attributes": tuple(
                 attribute.model_copy(update={"logical_entity_name": "Other Entity"})
                 for attribute in first.attributes
@@ -58,32 +56,16 @@ async def test_sixty_percent_coverage_hands_off_without_retrying_remaining_gaps(
     )
     third = first.model_copy(
         update={
-            "entity": first.entity.model_copy(
-                update={"logical_entity_name": "Third Entity"}
-            ),
+            "entity": first.entity.model_copy(update={"logical_entity_name": "Third Entity"}),
             "attributes": (),
         }
     )
-    context = bundle.context.model_copy(
-        update={"selected_logical_entities": (first, second, third)}
-    )
-    catalog = (
-        InMemoryAgentContextToolCatalog(
-            context=context,
-            max_result_bytes=128 * 1024,
-            max_catalog_bytes=128 * 1024,
-            max_page_records=20,
-        )
-        if mode == "tool_assisted"
-        else None
-    )
+    # All three are built from the Sales area's table, so one Build call sees them.
     bundle = replace(
         bundle,
-        context=context,
-        tool_catalog=catalog,
-        embedded_context=catalog.manifest
-        if catalog
-        else cast(JsonValue, context.model_dump(mode="json")),
+        context=bundle.context.model_copy(
+            update={"selected_logical_entities": (first, second, third)}
+        ),
     )
     candidate = cast(dict[str, Any], _candidate())
     sources = candidate["entities"][0]["sources"]
@@ -94,7 +76,6 @@ async def test_sixty_percent_coverage_hands_off_without_retrying_remaining_gaps(
                 "logical_entity_schema_name": second.entity.logical_entity_schema_name,
                 "logical_entity_name": second.entity.logical_entity_name,
             },
-            "source_order": 2,
         }
     )
     agent = _AgentExecutor(responses=[cast(JsonValue, candidate)])
@@ -118,7 +99,6 @@ async def test_sixty_percent_coverage_hands_off_without_retrying_remaining_gaps(
 
 def _complete_project_candidate() -> dict[str, JsonValue]:
     full = cast(dict[str, JsonValue], deepcopy(_candidate()))
-    submodel = cast(list[JsonValue], full["submodels"])[0]
     entity = cast(list[JsonValue], full["entities"])[0]
     attributes = cast(list[dict[str, JsonValue]], full["attributes"])
     customer_id = attributes[0]
@@ -144,19 +124,15 @@ def _complete_project_candidate() -> dict[str, JsonValue]:
             "sources": [
                 {
                     "support_source_type": "context_record",
-                    "context_record": {
-                        "context_record_id": "1cdbab8d-73b2-5b3f-a650-6d5579728c83"
-                    },
-                    "source_order": 1,
+                    "context_record": {"context_record_id": "1cdbab8d-73b2-5b3f-a650-6d5579728c83"},
                     "rationale": "Governed customer-segmentation Context record.",
-                    "status": "active",
+                    "is_active": True,
                     "is_locked": False,
                 }
             ],
         }
     )
     return {
-        "submodels": [submodel],
         "entities": [entity],
         "attributes": [customer_id, sale_customer_id, customer_segment],
         "relationships": [],
@@ -168,9 +144,7 @@ def _logical_sources(value: Any) -> Any:
         return [_logical_sources(item) for item in cast(list[Any], value)]
     if not isinstance(value, dict):
         return value
-    result = {
-        key: _logical_sources(item) for key, item in cast(dict[str, Any], value).items()
-    }
+    result = {key: _logical_sources(item) for key, item in cast(dict[str, Any], value).items()}
     if result.get("logical_entity_name") == "sales_customer":
         result.update(logical_entity_schema_name="silver", logical_entity_name="Order")
         if "logical_attribute_name" in result:
@@ -199,20 +173,14 @@ def _bundle(*, mapped: bool) -> tuple[AgentContextBundle, dict[str, Any]]:
                 if record.get("modeled_entity_type") != "dimensional_entity"
             ]
     graph["project_details"] = [context.project_details.model_dump(mode="json")]
-    graph["context_group"].extend(
-        item.model_dump(mode="json") for item in context.context.groups
-    )
-    graph["context_record"].extend(
-        item.model_dump(mode="json") for item in context.context.records
-    )
+    graph["context_group"].extend(item.model_dump(mode="json") for item in context.context.groups)
+    graph["context_record"].extend(item.model_dump(mode="json") for item in context.context.records)
     scope = complete_physical_scope()
     snapshot = snapshot_from_graph(graph)
-    assert validate_future_graph(
-        snapshot=snapshot, staged_documents={}, physical_scope=scope
-    ).valid
+    assert validate_future_graph(snapshot=snapshot, staged_documents={}, physical_scope=scope).valid
     candidate = cast(dict[str, Any], _logical_sources(_complete_project_candidate()))
     bundle = replace(initial, context=context, snapshot=snapshot, physical_scope=scope)
-    validator = _candidate_validator(bundle)
+    validator = _candidate_validator(bundle, fact_types=DIMENSIONAL_FACT_TYPES)
     projected = _project_dimensional_changes(
         validator=validator, candidate=cast(JsonValue, candidate), context=bundle
     )
@@ -224,9 +192,7 @@ def _bundle(*, mapped: bool) -> tuple[AgentContextBundle, dict[str, Any]]:
     if mapped:
         for item in projected:
             graph[item.dataset] = item.records
-        target_schema = str(
-            graph["dimensional_entity"][0]["dimensional_entity_schema_name"]
-        )
+        target_schema = str(graph["dimensional_entity"][0]["dimensional_entity_schema_name"])
         graph["mapping_object"].append(
             {
                 "modeled_entity_type": "dimensional_entity",
@@ -235,9 +201,7 @@ def _bundle(*, mapped: bool) -> tuple[AgentContextBundle, dict[str, Any]]:
                 "source_system_code": "ERP",
                 "output_template_code": None,
                 "object_dependency_order": 0,
-                "mapping_transformation_document": {
-                    "steps": ["Populate the Dimension."]
-                },
+                "mapping_transformation_document": {"steps": ["Populate the Dimension."]},
                 "object_mapping_status": "active",
                 "object_mapping_is_locked": False,
             }
@@ -264,27 +228,21 @@ def _bundle(*, mapped: bool) -> tuple[AgentContextBundle, dict[str, Any]]:
         ).valid
         context = context.model_copy(
             update={
-                "applied": context.applied.model_copy(
-                    update={"dimensional": snapshot.dimensional}
-                )
+                "applied": context.applied.model_copy(update={"dimensional": snapshot.dimensional})
             }
         )
-        bundle = replace(
-            bundle, context=context, snapshot=snapshot, physical_scope=scope
-        )
+        bundle = replace(bundle, context=context, snapshot=snapshot, physical_scope=scope)
     return bundle, candidate
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mapped", [False, True], ids=["new_unmapped", "retained_mapped"]
-)
-async def test_local_status_passes_but_complete_graph_rejects_active_children(
+@pytest.mark.parametrize("mapped", [False, True], ids=["new_unmapped", "retained_mapped"])
+async def test_local_check_passes_but_complete_graph_rejects_active_children(
     mapped: bool,
 ) -> None:
     bundle, candidate = _bundle(mapped=mapped)
-    candidate["entities"][0]["dimensional_entity_status"] = "inactive"
-    validator = _candidate_validator(bundle)
+    candidate["entities"][0]["dimensional_entity_is_active"] = False
+    validator = _candidate_validator(bundle, fact_types=DIMENSIONAL_FACT_TYPES)
     assert not (await validator.validate(cast(JsonValue, candidate))).issues
     assert bundle.snapshot is not None and bundle.physical_scope is not None
     projected = _project_dimensional_changes(
@@ -315,7 +273,7 @@ async def test_type_2_projection_preserves_valid_partial_mapping_coverage() -> N
             }
         ),
     )
-    validator = _candidate_validator(bundle)
+    validator = _candidate_validator(bundle, fact_types=DIMENSIONAL_FACT_TYPES)
     assert not (await validator.validate(cast(JsonValue, candidate))).issues
     assert bundle.snapshot is not None and bundle.physical_scope is not None
     raw = validator.parse_validated(cast(JsonValue, candidate))
@@ -370,32 +328,16 @@ async def test_dimensional_projection_and_graph_failures_enter_bounded_repair(
             ),
         }
     )
-    catalog = (
-        InMemoryAgentContextToolCatalog(
-            context=context,
-            max_result_bytes=128 * 1024,
-            max_catalog_bytes=128 * 1024,
-            max_page_records=20,
-        )
-        if mode == "tool_assisted"
-        else None
-    )
-    bundle = replace(
-        bundle,
-        context=context,
-        tool_catalog=catalog,
-        embedded_context=catalog.manifest
-        if catalog
-        else cast(JsonValue, context.model_dump(mode="json")),
-    )
+    # The Build focuses and packages this context for its Subject Area.
+    bundle = replace(bundle, context=context)
     invalid = deepcopy(valid)
     if fault == "inactive_parent":
-        invalid["entities"][0]["dimensional_entity_status"] = "inactive"
+        invalid["entities"][0]["dimensional_entity_is_active"] = False
         expected_code = "active_dependency_invalid"
     elif fault == "mapped_inactive_attribute":
-        invalid["attributes"][2]["dimensional_attribute_status"] = "inactive"
+        invalid["attributes"][2]["dimensional_attribute_is_active"] = False
         for source in invalid["attributes"][2]["sources"]:
-            source["status"] = "inactive"
+            source["is_active"] = False
         expected_code = "active_dependency_invalid"
         assert {item.dataset for item in context.read_only_dependencies} == {
             "mapping_object",
@@ -405,7 +347,7 @@ async def test_dimensional_projection_and_graph_failures_enter_bounded_repair(
         # reference an inactive modeled Attribute. This is a full-graph constraint.
         assert bundle.snapshot is not None and bundle.physical_scope is not None
         projected = _project_dimensional_changes(
-            validator=_candidate_validator(bundle),
+            validator=_candidate_validator(bundle, fact_types=DIMENSIONAL_FACT_TYPES),
             candidate=cast(JsonValue, invalid),
             context=bundle,
         )
@@ -424,7 +366,9 @@ async def test_dimensional_projection_and_graph_failures_enter_bounded_repair(
             attribute["dimensional_entity_name"] = "D" * 253
         expected_code = "gold_projection_conflict"
     assert not (
-        await _candidate_validator(bundle).validate(cast(JsonValue, invalid))
+        await _candidate_validator(bundle, fact_types=DIMENSIONAL_FACT_TYPES).validate(
+            cast(JsonValue, invalid)
+        )
     ).issues
     # Ensure the corrected mapped candidate changes something, rather than becoming a no-op.
     valid["entities"][0]["dimensional_entity_definition"] = (
@@ -435,11 +379,7 @@ async def test_dimensional_projection_and_graph_failures_enter_bounded_repair(
             cast(JsonValue, invalid),
             cast(
                 JsonValue,
-                valid
-                if outcome == "repair"
-                else invalid
-                if outcome == "exhaust"
-                else None,
+                valid if outcome == "repair" else invalid if outcome == "exhaust" else None,
             ),
         ]
     )
@@ -462,8 +402,7 @@ async def test_dimensional_projection_and_graph_failures_enter_bounded_repair(
         assert len(handoff.calls) == 1 and not handoff.retained
         assert bundle.snapshot is not None and bundle.physical_scope is not None
         assert (
-            handoff.final_events[-1].attempt == 2
-            and handoff.final_events[-1].status == "warning"
+            handoff.final_events[-1].attempt == 2 and handoff.final_events[-1].status == "warning"
         )
         assert validate_future_graph(
             snapshot=bundle.snapshot,
@@ -476,10 +415,6 @@ async def test_dimensional_projection_and_graph_failures_enter_bounded_repair(
         assert not handoff.calls and len(handoff.retained) == 1
         assert handoff.retained[0]["issues"][0].code == expected_code
     assert len(agent.requests) == 2 and lifecycle.failed is None
-    first, second = [
-        cast(dict[str, Any], request.context) for request in agent.requests
-    ]
+    first, second = [cast(dict[str, Any], request.context) for request in agent.requests]
     assert first["original_context"] == second["original_context"]
-    assert (
-        second["repair"]["validation_issues"][0]["code"] == "candidate." + expected_code
-    )
+    assert second["repair"]["validation_issues"][0]["code"] == "candidate." + expected_code
