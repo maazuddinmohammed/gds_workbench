@@ -328,6 +328,7 @@ function failureMessage(error: Error, retryable: boolean): string {
     if (error.status === 403) return "Review was not authorized. Check your role and owned Tenant Lock.";
     if (error.code === "project_locked") return "The Project is locked. A human must unlock it before changing records.";
     if (error.code === "record_locked") return "Unlock the selected or required records before changing their status.";
+    if (error.code === "mapping_branch_unavailable") return "A Mapping can be activated only for a System its Entity's sources come from (Dimensional: one with complete Logical Mapping).";
     if (error.code === "tenant_workflow_conflict") return "A Workflow Run is active. Refresh after it finishes, then preview again.";
     if (error.status === 409 || error.code === "project_record_not_found") return "The records or review plan changed. Close this preview and refresh before reviewing again.";
   }

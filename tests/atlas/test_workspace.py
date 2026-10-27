@@ -2091,6 +2091,7 @@ def test_next_error_returns_one_recovery_action_per_server_code(tmp_path: Path) 
         "project_locked": "stop",
         "authorization_denied": "stop",
         "object_locked": "author",
+        "mapping_branch_unavailable": "author",
         "internal_error": "stop",
         "something_new": "stop",
         # No bound operation yet, so there is no draft to validate or inspect.

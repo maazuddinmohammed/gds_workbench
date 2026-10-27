@@ -125,6 +125,19 @@ class AttributeLockedError(WorkbenchError):
         )
 
 
+class MappingBranchUnavailableError(WorkbenchError):
+    def __init__(self, record_number: int) -> None:
+        super().__init__(
+            code="mapping_branch_unavailable",
+            message=(
+                f"mapping_object record {record_number} makes a Mapping active for a System "
+                "that is not one of its Entity's Mapping branches. A Logical Entity maps only "
+                "from its source tables' Systems; a Dimensional Entity only from Systems where "
+                "a supporting Logical Entity has complete Mapping."
+            ),
+        )
+
+
 class CandidateDigestConflictError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(

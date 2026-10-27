@@ -16,7 +16,7 @@ from gds_etl_workbench.application.modeling.modeled_layer import (
     LayerConfig,
 )
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import InvalidRequestError
+from gds_etl_workbench.domain.errors import InvalidRequestError, MappingBranchUnavailableError
 from gds_etl_workbench.domain.modeling_records import (
     AnalysisResultRecord,
     ContextGroupRecord,
@@ -419,13 +419,18 @@ SELECT output_template_id
 """
 
 _FIND_MAPPING_OBJECT_SQL: LiteralString = """
-SELECT mapping_object_id
+SELECT mapping_object_id, object_mapping_status
   FROM workflow.mapping_object
  WHERE project_id = %s
    AND modeled_entity_type = %s
    AND coalesce(logical_entity_id, dimensional_entity_id) = %s
    AND source_system_id = %s
  FOR UPDATE
+"""
+
+_MAPPING_BRANCHES_SQL: LiteralString = """
+SELECT modeled_entity_id, source_system_id
+  FROM workflow.list_mapping_branches(%s, %s)
 """
 
 _INSERT_MAPPING_OBJECT_SQL: LiteralString = """
@@ -1867,14 +1872,31 @@ SELECT attribute.{config.attribute_id}
 
     async def _apply_mapping(self, records: dict[str, tuple[ModelingRecord, ...]]) -> int:
         action_count = 0
-        for raw in records.get("mapping_object", ()):
+        opened: dict[int, tuple[str, int, int]] = {}
+        for record_number, raw in enumerate(records.get("mapping_object", ()), start=1):
             record = _as(raw, MappingObjectRecord)
-            await self._upsert_mapping_object(record)
+            pair = await self._upsert_mapping_object(record)
+            if pair is not None:
+                opened[record_number] = pair
             action_count += 1
         for raw in records.get("mapping_attribute", ()):
             record = _as(raw, MappingAttributeRecord)
             await self._upsert_mapping_attribute(record)
             action_count += 1
+        # A pair this Change Set makes active must be a Mapping branch; already active pairs
+        # stay editable. Checked last, so the Change Set's own sources and Mapping count: a
+        # Dimensional branch needs its Logical source's complete Mapping.
+        branches: dict[str, set[tuple[int, int]]] = {}
+        for record_number, (entity_type, entity_id, source_system_id) in opened.items():
+            if entity_type not in branches:
+                rows = await self.transaction.fetch_all(
+                    _MAPPING_BRANCHES_SQL, (self.project_id, entity_type)
+                )
+                branches[entity_type] = {
+                    (row["modeled_entity_id"], row["source_system_id"]) for row in rows
+                }
+            if (entity_id, source_system_id) not in branches[entity_type]:
+                raise MappingBranchUnavailableError(record_number)
         return action_count
 
     async def _apply_generated_code(self, records: tuple[ModelingRecord, ...]) -> int:
@@ -2215,7 +2237,10 @@ SELECT attribute.{config.attribute_id}
         self._validation_group_ids[key] = row["validation_group_id"]
         return row["validation_group_id"]
 
-    async def _upsert_mapping_object(self, record: MappingObjectRecord) -> int:
+    async def _upsert_mapping_object(
+        self, record: MappingObjectRecord
+    ) -> tuple[str, int, int] | None:
+        """Upsert one pair; return it when this makes it active, as it must then be a branch."""
         config = LOGICAL if record.modeled_entity_type == "logical_entity" else DIMENSIONAL
         entity_id = await self.resolve_entity(
             config, record.modeled_entity_schema_name, record.modeled_entity_name
@@ -2274,7 +2299,10 @@ SELECT attribute.{config.attribute_id}
             raise InvalidRequestError("Mapping Object could not be materialized.")
         key = _mapping_key(record)
         self._mapping_object_ids[key] = row["mapping_object_id"]
-        return row["mapping_object_id"]
+        opens = record.object_mapping_status == "active" and (
+            existing is None or existing["object_mapping_status"] != "active"
+        )
+        return (record.modeled_entity_type, entity_id, source_system_id) if opens else None
 
     async def _upsert_mapping_attribute(self, record: MappingAttributeRecord) -> int:
         mapping_object_id = await self.resolve_mapping_object(record)

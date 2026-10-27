@@ -186,6 +186,12 @@ async def test_mapping_materializes_direct_typed_entity_and_attribute_ownership(
                 "INSERT INTO workflow.mapping_attribute",
                 {"mapping_attribute_id": 302},
             ),
+            # The new active pair is checked against the branches after its Attributes.
+            ExpectedCall(
+                "all",
+                "workflow.list_mapping_branches",
+                [{"modeled_entity_id": 101, "source_system_id": 55}],
+            ),
         ]
     )
     materializer = _materializer(transaction)
@@ -232,6 +238,11 @@ async def test_workflow_mapping_policy_overrides_record_template() -> None:
             ExpectedCall("one", "SELECT mapping_object_id", None),
             ExpectedCall(
                 "one", "INSERT INTO workflow.mapping_object", {"mapping_object_id": 301}
+            ),
+            ExpectedCall(
+                "all",
+                "workflow.list_mapping_branches",
+                [{"modeled_entity_id": 101, "source_system_id": 55}],
             ),
         ]
     )

@@ -923,6 +923,21 @@ describe("Workflow Run monitor", () => {
     expect(api.applyWorkflowDraft.mock.calls[0]?.[6]).not.toBe(api.applyWorkflowDraft.mock.calls[1]?.[6]);
   });
 
+  it("explains a Mapping that is no longer one of its Entity's branches", async () => {
+    const api = monitorApi();
+    api.applyWorkflowDraft.mockReset();
+    api.applyWorkflowDraft.mockRejectedValueOnce(new ApiError(400, "mapping_branch_unavailable", null));
+    const user = userEvent.setup();
+    renderMonitor(api, vi.fn(async () => undefined));
+
+    await user.click(await screen.findByRole("button", { name: "Apply validated draft" }));
+    const confirmation = await screen.findByRole("dialog", { name: "Apply validated Subject Areas draft?" });
+    await user.click(within(confirmation).getByRole("button", { name: "Apply exact draft" }));
+    expect(await within(confirmation).findByRole("alert")).toHaveTextContent(
+      "A System in this draft is no longer one of its Entity's Mapping branches; its sources or Logical Mapping changed. Start a new Mapping run.",
+    );
+  });
+
   it("disables Apply when the authoritative draft review has expired", async () => {
     const api = monitorApi({ expiredReview: true });
     renderMonitor(api, vi.fn(async () => undefined));

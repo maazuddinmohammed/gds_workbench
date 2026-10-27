@@ -196,6 +196,18 @@ describe("Project record review", () => {
     expect(trigger).toHaveFocus();
   });
 
+  it("explains why a Mapping outside its Entity's branches cannot be activated", async () => {
+    const { api, renderReview } = fixture();
+    api.applyProjectRecordReview.mockRejectedValueOnce(new ApiError(400, "mapping_branch_unavailable", null));
+    render(renderReview());
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Activate selected" }));
+    await user.click(await screen.findByRole("button", { name: "Apply these 2 changes" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "A Mapping can be activated only for a System its Entity's sources come from (Dimensional: one with complete Logical Mapping).",
+    );
+  });
+
   it("blocks missing locks, stale ledgers, empty selections, and oversized selections", () => {
     const { renderReview } = fixture();
     const view = render(renderReview({ hasTenantLock: false }));

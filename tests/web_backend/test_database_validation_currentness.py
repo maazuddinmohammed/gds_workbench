@@ -2,6 +2,7 @@
 
 # Existing builders and SQL readers operate only against disposable fixtures.
 # pyright: reportPrivateUsage=false
+from typing import cast
 from uuid import uuid4
 
 import pytest
@@ -43,6 +44,25 @@ async def test_newly_applied_validation_is_current_even_when_old_code_is_stale(
             "modeled_entity_schema_name": "gold",
             "modeled_entity_name": "CustomerDimension",
         }
+        # A Gold Mapping needs a Logical source with complete Mapping from its System.
+        customer = next(
+            row
+            for row in graph["dimensional_entity"]
+            if row["dimensional_entity_name"] == "CustomerDimension"
+        )
+        customer["sources"] = [
+            *cast(list[object], customer["sources"]),
+            {
+                "support_source_type": "logical_entity",
+                "source_logical_entity": {
+                    "logical_entity_schema_name": "silver",
+                    "logical_entity_name": "Order",
+                },
+                "rationale": "Customers who placed applied Orders.",
+                "is_active": True,
+                "is_locked": False,
+            },
+        ]
         graph["mapping_object"].append(
             {**graph["mapping_object"][0], **dimensional_key}
         )

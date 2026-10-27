@@ -22,6 +22,9 @@ from gds_workbench_api.features.mapping.preparation_contracts import (
 from gds_workbench_api.features.mapping.preparation_repository import (
     PostgresMappingRunContextRepository,
 )
+from gds_etl_workbench.application.change_sets.project_apply import ProjectMaterializer
+from gds_etl_workbench.domain.errors import MappingBranchUnavailableError
+from gds_etl_workbench.domain.modeling_records import MappingAttributeRecord, MappingObjectRecord
 from psycopg import sql
 
 from tests.mcp.conftest import DisposablePostgres
@@ -615,6 +618,145 @@ def test_dimensional_branches_need_complete_applied_logical_mapping(
             (project_id, scope.logical_entity_id),
         )
         assert _branches(connection, project_id, "dimensional_entity") == set()
+
+
+def _mapping_pair(
+    entity_type: str, schema: str, name: str, system_code: str, status: str = "active"
+) -> MappingObjectRecord:
+    return MappingObjectRecord.model_validate(
+        {
+            "modeled_entity_type": entity_type,
+            "modeled_entity_schema_name": schema,
+            "modeled_entity_name": name,
+            "source_system_code": system_code,
+            "output_template_code": None,
+            "object_dependency_order": 0,
+            "mapping_transformation_document": None,
+            "object_mapping_status": status,
+            "object_mapping_is_locked": False,
+        }
+    )
+
+
+async def _apply_change_set(
+    database: DisposablePostgres, project_id: int, records: dict[str, tuple[Any, ...]]
+) -> None:
+    runtime = database.create_runtime_adapter()
+    await runtime.open()
+    try:
+        async with runtime.write_transaction() as transaction:
+            await ProjectMaterializer(transaction, project_id, "a" * 64).apply(records)
+    finally:
+        await runtime.close()
+
+
+async def test_change_sets_make_mappings_active_only_for_branches(
+    web_postgres_database: DisposablePostgres,
+) -> None:
+    scope = _seed_mapping_scope(web_postgres_database, dimensional=False, create_run=False)
+    project_id, entity_id = scope.plan.project_id, scope.logical_entity_id
+    with web_postgres_database.connect_owner() as connection:
+        billing_id, billing_object_id = _add_scope_source_table(connection, scope, "BILLING")
+        codes = {
+            row["system_id"]: row["system_code"]
+            for row in connection.execute(
+                "SELECT system_id, system_code FROM core.system WHERE system_id = ANY(%s)",
+                ([scope.source_system_id, billing_id, scope.other_system_id],),
+            ).fetchall()
+        }
+        # An older active Mapping from the lake's own System, which is no branch.
+        connection.execute(
+            "INSERT INTO workflow.mapping_object (project_id, logical_entity_id, "
+            "modeled_entity_type, source_system_id, object_mapping_status) "
+            "VALUES (%s, %s, 'logical_entity', %s, 'active')",
+            (project_id, entity_id, scope.other_system_id),
+        )
+
+    def pair(system_id: int, status: str = "active") -> MappingObjectRecord:
+        return _mapping_pair("logical_entity", "silver", "order", codes[system_id], status)
+
+    def apply(*pairs: MappingObjectRecord):
+        return _apply_change_set(web_postgres_database, project_id, {"mapping_object": pairs})
+
+    # BILLING is in Input Scope, but none of the Entity's tables come from it.
+    with pytest.raises(MappingBranchUnavailableError, match="mapping_object record 2"):
+        await apply(pair(scope.source_system_id), pair(billing_id))
+    # An inactive pair is no Mapping in use; making it active is checked.
+    await apply(pair(billing_id, "inactive"))
+    with pytest.raises(MappingBranchUnavailableError, match="mapping_object record 1"):
+        await apply(pair(billing_id))
+    # An already active pair stays editable and can be retired.
+    edited = pair(scope.other_system_id).model_copy(
+        update={"mapping_transformation_document": {"steps": ["Older rule."]}}
+    )
+    await apply(edited)
+    await apply(pair(scope.other_system_id, "inactive"))
+    with web_postgres_database.connect_owner() as connection:
+        connection.execute(
+            "INSERT INTO workflow.logical_entity_source_mapping (project_id, logical_entity_id, "
+            "source_object_id, logical_entity_source_mapping_rationale) "
+            "VALUES (%s, %s, %s, 'Billing also supplies this Entity.')",
+            (project_id, entity_id, billing_object_id),
+        )
+    await apply(pair(billing_id))
+    with web_postgres_database.connect_owner() as connection:
+        statuses = {
+            row["source_system_id"]: row["object_mapping_status"]
+            for row in connection.execute(
+                "SELECT source_system_id, object_mapping_status FROM workflow.mapping_object "
+                "WHERE project_id = %s AND logical_entity_id = %s",
+                (project_id, entity_id),
+            ).fetchall()
+        }
+    assert statuses == {
+        scope.source_system_id: "active",
+        billing_id: "active",
+        scope.other_system_id: "inactive",
+    }
+
+
+async def test_change_set_gold_mapping_counts_its_own_logical_mapping(
+    web_postgres_database: DisposablePostgres,
+) -> None:
+    scope = _seed_mapping_scope(web_postgres_database, create_run=False)
+    project_id = scope.plan.project_id
+    with web_postgres_database.connect_owner() as connection:
+        system = connection.execute(
+            "SELECT system_code FROM core.system WHERE system_id = %s", (scope.source_system_id,)
+        ).fetchone()
+        assert system is not None
+        # The supporting Logical Mapping lacks its only Attribute rule.
+        connection.execute(
+            "UPDATE workflow.mapping_attribute SET attribute_mapping_transformation_document = NULL "
+            "WHERE project_id = %s AND logical_entity_id = %s",
+            (project_id, scope.logical_entity_id),
+        )
+    gold = _mapping_pair("dimensional_entity", "gold", "Customer", system["system_code"])
+    rule = MappingAttributeRecord.model_validate(
+        {
+            "modeled_entity_type": "logical_entity",
+            "modeled_entity_schema_name": "silver",
+            "modeled_entity_name": "order",
+            "modeled_attribute_name": "customer_id",
+            "source_system_code": system["system_code"],
+            "output_template_code": None,
+            "attribute_mapping_transformation_document": {"transformation": "customer_id"},
+            "attribute_mapping_status": "active",
+            "attribute_mapping_is_locked": False,
+        }
+    )
+    with pytest.raises(MappingBranchUnavailableError, match="mapping_object record 1"):
+        await _apply_change_set(web_postgres_database, project_id, {"mapping_object": (gold,)})
+    # The same Change Set completes the Logical Mapping, so the Gold branch exists.
+    await _apply_change_set(
+        web_postgres_database,
+        project_id,
+        {"mapping_object": (gold,), "mapping_attribute": (rule,)},
+    )
+    with web_postgres_database.connect_owner() as connection:
+        assert _branches(connection, project_id, "dimensional_entity") == {
+            (scope.plan.pair.modeled_entity_id, scope.source_system_id)
+        }
 
 
 async def test_dimensional_mapping_uses_logical_entities_without_registered_targets(

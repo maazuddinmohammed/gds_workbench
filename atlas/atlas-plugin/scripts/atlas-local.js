@@ -1389,6 +1389,9 @@ function nextForArea(root, state, area, owner, explicit, errorCode) {
       case "attribute_locked":
         return recover("A changed record is locked on the server.", {kind: "author",
           instructions: "Discard local changes to the locked Objects or Attributes, then validate, review and accept again."}, ["Run next again."]);
+      case "mapping_branch_unavailable":
+        return recover("A Mapping would map an Entity from a System that is not one of its Mapping branches.", {kind: "author",
+          instructions: "The failed call's message names the mapping_object record. Remove it and its mapping_attribute records, or apply the Entity's source change first: map only from the Systems the Entity's sources come from (Dimensional: Systems where a supporting Logical Entity has complete Mapping). Then validate, review and accept again."}, ["Run next again."]);
       case "draft_revision_conflict":
       case `${area}_change_set_not_active`:
       case `${area}_change_set_not_found`:
