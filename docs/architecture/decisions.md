@@ -230,6 +230,15 @@ It then validates the expanded records exactly like any Logical change. The Chan
 Snapshot and Stage contracts keep complete records; only the provider answer is
 compact, which keeps one answer far below the output limit.
 
+Several Systems often hold the same kind of table, and the model is one shared
+operational model. Subject Areas keep one subject from different Systems in one area
+(each table lists its source Systems); Logical builds one Entity for it with the source
+namespace in its key, never one Entity per System; Logical Optimize also groups Entity
+names that differ only by a source System code so per-System copies can merge;
+Dimensional builds one Dimension or Fact from such a multi-System Logical Entity; and
+Analysis never links a table to its look-alike in another System. These are default
+prompt and input rules; the backend does not reject per-System Entities.
+
 Mapping operates on frozen Entity/System pairs (branches). `workflow.list_mapping_branches`
 is the one rule for generation targets, Run creation and manual Mapping: a Logical
 Entity's branches are the Systems of its active source tables (Bronze resolves to its
