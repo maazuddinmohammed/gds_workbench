@@ -522,8 +522,9 @@ INPUT_SHAPES: dict[str, Any] = {
     },
     "scope_tables": {
         "description": "One entry per table in this run, by table_index id: its Project "
-        "description, zone, the largest profiled row count (null when unprofiled), column "
-        "count and column names.",
+        "description, the source Systems its data comes from (a Bronze table's through "
+        "ingestion lineage; empty when unknown), zone, the largest profiled row count (null "
+        "when unprofiled), column count and column names.",
         "schema": {
             "type": "array",
             "items": {"$ref": "#/$defs/scope_table_entry"},
@@ -533,6 +534,10 @@ INPUT_SHAPES: dict[str, Any] = {
                     "properties": {
                         "table": {"type": "string", "pattern": "^t[1-9][0-9]*$"},
                         "description": {"type": ["string", "null"]},
+                        "source_systems": {
+                            "type": "array",
+                            "items": {"type": "string", "minLength": 1},
+                        },
                         "zone_code": {"type": "string", "minLength": 1},
                         "row_count": {"type": ["integer", "null"], "minimum": 0},
                         "column_count": {"type": "integer", "minimum": 0},
@@ -544,6 +549,7 @@ INPUT_SHAPES: dict[str, Any] = {
                     "required": [
                         "table",
                         "description",
+                        "source_systems",
                         "zone_code",
                         "row_count",
                         "column_count",
@@ -1391,8 +1397,9 @@ INPUT_SHAPES.update(
         },
         "logical.name_variants": {
             "description": "Entity or Attribute names that differ only by case, separators or "
-            "a plural s. Each group may be one thing named twice: merge or rename when the "
-            "evidence agrees.",
+            "a plural s, and Entity names that differ only by a source System code "
+            "(CRMCustomer, Customer_ERP). Each group may be one thing named twice: merge or "
+            "rename when the evidence agrees.",
             "schema": _NAME_VARIANTS,
         },
         "logical.entity_details": {
@@ -1540,7 +1547,8 @@ INPUT_SHAPES.update(
         },
         "dimensional.name_variants": {
             "description": "Dimensional Entity or Attribute names that differ only by case, "
-            "separators or a plural s.",
+            "separators or a plural s, and Entity names that differ only by a source System "
+            "code (CustomerCRM, Customer_ERP).",
             "schema": _NAME_VARIANTS,
         },
         "dimensional.entity_details": {
@@ -2612,6 +2620,7 @@ INPUT_EXAMPLES["subject_area"] = {
         {
             "table": f"t{position}",
             "description": entry["object_description"],
+            "source_systems": ["ERP"],
             "zone_code": entry["zone_code"],
             "row_count": None,
             "column_count": len(group["attributes"]),
@@ -2846,6 +2855,7 @@ _TABLE_PROPERTIES: dict[str, Any] = {
     **{name: {"type": "string", "minLength": 1} for name in _TABLE_KEY_FIELDS},
     "object_description": {"type": ["string", "null"]},
     "zone_code": {"type": "string", "minLength": 1},
+    "source_systems": {"type": "array", "items": {"type": "string", "minLength": 1}},
 }
 _COUNT = {"type": ["integer", "null"], "minimum": 0}
 _KEY_PROFILE_FIELDS = (
@@ -2929,8 +2939,10 @@ INPUT_SHAPES["analysis.focus_table"] = {
     },
 }
 INPUT_SHAPES["analysis.key_directory"] = {
-    "description": "Every selected table of this run, the focus table included, by short id. "
-    "key_columns are the columns other tables can point to: a registered or Project key "
+    "description": "Every selected table of this run, the focus table included, by short id, "
+    "with the source_systems its data comes from (a Bronze table's through ingestion "
+    "lineage; empty when unknown). key_columns are the columns other tables can point to: "
+    "a registered or Project key "
     "flag, or a saved Profile in which every non-null value is distinct (operational "
     "columns only when flagged). A table without such a column lists every eligible column "
     "with both data types in other_columns instead.",
@@ -3022,6 +3034,7 @@ _orders, _customers = (
             for name, value in entry.items()
             if name in (*_TABLE_KEY_FIELDS, "object_description", "zone_code")
         },
+        "source_systems": ["ERP"],
     }
     for table, entry in zip(("t1", "t2"), INPUT_EXAMPLES["analysis"]["object_context"], strict=True)
 )

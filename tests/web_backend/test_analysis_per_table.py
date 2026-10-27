@@ -137,6 +137,9 @@ def test_each_table_gets_its_inputs_and_the_shared_key_directory() -> None:
     assert key_column["attribute_inferred_data_type"] == "VARCHAR"
     assert key_column["profile"]["distinct_count"] == key_column["profile"]["non_null_count"]
     assert directory["t2"]["other_columns"] == []
+    # Each Bronze table names the System its data comes from, through its lineage.
+    assert [entry["source_systems"] for entry in orders["key_directory"]] == [["ERP"], ["ERP"]]
+    assert orders["focus_table"]["source_systems"] == ["ERP"]
     # Lineage and saved findings are cut to the focus table.
     assert [entry["target"]["object_name"] for entry in orders["ingestion_mapping"]] == ["Orders"]
     assert [entry["target"]["object_name"] for entry in customers["ingestion_mapping"]] == [

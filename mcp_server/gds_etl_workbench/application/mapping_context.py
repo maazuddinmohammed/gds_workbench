@@ -116,11 +116,16 @@ def project_mapping_inputs(context: dict[str, Any], *, workflow: str | None) -> 
         if "is_surrogate_key" not in attribute:
             continue  # Preserve compatibility with previously frozen workflow contexts.
         name = attribute["attribute_name"].strip().casefold()
+        # Audit and Type 2 columns are policy-materialized audit columns, also when the
+        # Project uses shared default templates; only SourceSystemID is Mapping-owned.
+        framework_owned = name in framework or (
+            bool(attribute.get("is_meta_data")) and name != "sourcesystemid"
+        )
         attribute["population"] = (
             "database"
             if attribute["is_surrogate_key"]
             else "framework"
-            if name in framework
+            if framework_owned
             else "mapping"
         )
     used_template_codes = {row["output_template_code"] for row in (*object_mappings, *attributes)}

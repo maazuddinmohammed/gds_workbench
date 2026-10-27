@@ -310,6 +310,34 @@ def test_mapping_population_and_source_system_value_survive_id_stripping():
     ]
 
 
+def test_policy_audit_columns_are_framework_owned_under_shared_default_templates():
+    value = context()
+    # A Project on shared defaults stores no template; its audit columns are still flagged.
+    value["target"]["audit_columns_template"] = None
+    value["target"]["attributes"] = [
+        {"attribute_name": name, "is_active": True, "is_surrogate_key": generated,
+         "is_meta_data": audit}
+        for name, generated, audit in (
+            ("CustomerID", True, False),
+            ("Name", False, False),
+            ("SourceSystemID", False, True),
+            ("IsDataValid", False, True),
+            ("RecordStartTime", False, True),
+        )
+    ]
+    projected = project_mapping_inputs(value, workflow="code_generation")
+    assert {
+        row["attribute_name"]: row["population"]
+        for row in projected["target_metadata"]["attributes"]
+    } == {
+        "CustomerID": "database",
+        "Name": "mapping",
+        "SourceSystemID": "mapping",
+        "IsDataValid": "framework",
+        "RecordStartTime": "framework",
+    }
+
+
 def test_legacy_mapping_templates_are_explicitly_unavailable():
     projected = project_mapping_inputs(context(), workflow="code_generation")
     assert projected["mapping_templates"] == []

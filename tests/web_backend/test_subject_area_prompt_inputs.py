@@ -125,6 +125,20 @@ def _context() -> AgentAuthoringContext:
     return AgentAuthoringContext.model_validate(
         {
             **context,
+            # customer_raw is ingested from the CRM System; order_raw has no lineage.
+            "ingestion_mapping": [
+                {
+                    "source": {
+                        "tenant_code": "NWA",
+                        "system_code": "CRM_ORIGIN",
+                        "connection_code": "CRM_DB",
+                        "object_schema": "sales",
+                        "object_name": "customer",
+                        "object_description": None,
+                    },
+                    "target": {**_KEY, "object_name": "customer_raw"},
+                }
+            ],
             "profiles": [
                 _profile("customer_raw", "customer_id", 10),
                 _profile("customer_raw", "customer_name", 12),
@@ -156,11 +170,13 @@ def test_inputs_compact_the_run_tables_by_table_id() -> None:
         {"table": "t1", **_KEY, "object_name": "customer_raw"},
         {"table": "t2", **_KEY, "object_name": "order_raw"},
     ]
-    # row_count is the largest profiled count; null when a table is unprofiled.
+    # row_count is the largest profiled count; null when a table is unprofiled. A Bronze
+    # table's source_systems come from ingestion lineage, empty when there is none.
     assert values["scope_tables"] == [
         {
             "table": "t1",
             "description": "customer_raw source metadata.",
+            "source_systems": ["CRM_ORIGIN"],
             "zone_code": "bronze",
             "row_count": 12,
             "column_count": 2,
@@ -169,6 +185,7 @@ def test_inputs_compact_the_run_tables_by_table_id() -> None:
         {
             "table": "t2",
             "description": "order_raw source metadata.",
+            "source_systems": [],
             "zone_code": "bronze",
             "row_count": None,
             "column_count": 3,
