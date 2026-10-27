@@ -66,6 +66,7 @@ export function LogicalSubjectAreaPage({ api, tenantId, projectId, projectRevisi
   const area = areasQuery.data.items.find((item) => item.subject_area_id === subjectAreaId);
   if (!area) return <DetailState label="This Subject Area is not active. Return to Logical and refresh." error />;
   return <ModelSubjectAreaView layer="logical" tenantId={tenantId} projectId={projectId} area={area}
+    projectRevision={projectRevision} quickView={{ layer: "logical", api }}
     entities={(entitiesQuery.data?.pages.flatMap((page) => page.items) ?? []).map((entity) => ({
       id: entity.logical_entity_id,
       schema: entity.logical_entity_schema_name,

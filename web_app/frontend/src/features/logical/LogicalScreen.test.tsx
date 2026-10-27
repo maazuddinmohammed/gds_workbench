@@ -73,6 +73,50 @@ describe("Project Logical", () => {
       .toHaveAttribute("aria-pressed", "true");
   });
 
+  it("opens an Entity's quick view beside its Subject Area, keeping Show details", async () => {
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({
+      api: createApiClient(logicalFetchStub()),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/logical/subject-areas/41"] }),
+    })} />);
+    const entities = await screen.findByRole("table", { name: "Sales Logical Entities" });
+    expect(within(entities).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+      "Schema", "Entity name", "Status", "Lock", "Updated", "Quick view", "",
+    ]);
+    expect(within(entities).getByRole("link", { name: "Open Logical Entity 71" })).toBeVisible();
+    const trigger = within(entities).getByRole("button", { name: "Quick view of customer_account" });
+    expect(trigger).toHaveAttribute("title", "Quick view");
+    await user.click(trigger);
+
+    const panel = await screen.findByRole("complementary", { name: "Quick view of customer_account" });
+    expect(within(panel).getByRole("heading", { name: "customer_account" })).toBeVisible();
+    expect(within(panel).getByText("silver · Core")).toBeVisible();
+    expect(await within(panel).findByText("A governed customer identity used by downstream projects.")).toBeVisible();
+    const fact = (label: string) => within(panel).getByText(label, { selector: "dt" }).nextElementSibling;
+    expect(fact("Grain")).toHaveTextContent("One row per recognized customer.");
+    expect(fact("Type")).toHaveTextContent("Core");
+    expect(fact("Subject Areas")).toHaveTextContent("Sales, Support");
+    expect(fact("Sources")).toHaveTextContent("bronze.customer_raw, 1 Context record");
+    const attributes = await within(panel).findByRole("table", { name: "customer_account Attributes" });
+    expect(within(attributes).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+      "Attribute", "Data type", "Nullable", "Role",
+    ]);
+    expect(within(attributes).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
+      "customer_id", "bigint", "No", "Surrogate key",
+    ]);
+    expect(within(panel).getByRole("link", { name: "Show details" })).toHaveAttribute("href", "/tenants/7/projects/18/logical/entities/71");
+    expect(within(panel).getByRole("button", { name: "Close quick view" })).toHaveFocus();
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(within(entities).getByRole("row", { name: /customer_account/ })).toHaveClass("is-active");
+
+    await user.click(within(panel).getByRole("button", { name: "Expand quick view" }));
+    expect(panel).toHaveClass("is-wide");
+    expect(within(panel).getByRole("button", { name: "Reduce quick view" })).toBeVisible();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("complementary", { name: /Quick view/ })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
   it("reviews a Logical Entity with its derived Subject Areas and sources on a detail page", async () => {
     const fetcher = logicalFetchStub();
     const user = userEvent.setup();

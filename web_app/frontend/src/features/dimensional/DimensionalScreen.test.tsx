@@ -171,6 +171,30 @@ describe("Project Dimensional", () => {
     expect(screen.getByText("Basis", { selector: "dt" }).nextElementSibling).toHaveTextContent("Not recorded");
   });
 
+  it("opens a Dimensional Entity's quick view with its Logical sources and Attributes", async () => {
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({
+      api: createApiClient(dimensionalFetchStub()),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/dimensional/subject-areas/41"] }),
+    })} />);
+    const entities = await screen.findByRole("table", { name: "Sales Dimensional Entities" });
+    await user.click(within(entities).getByRole("button", { name: "Quick view of sales_fact" }));
+
+    const panel = await screen.findByRole("complementary", { name: "Quick view of sales_fact" });
+    expect(within(panel).getByText("gold · Fact · Transaction")).toBeVisible();
+    expect(await within(panel).findByText("Transaction-grain sales activity for analytical reporting.")).toBeVisible();
+    const fact = (label: string) => within(panel).getByText(label, { selector: "dt" }).nextElementSibling;
+    expect(fact("Grain")).toHaveTextContent("One row per completed order line.");
+    expect(fact("Sources")).toHaveTextContent("silver.sales_order, 1 Context record");
+    const attributes = await within(panel).findByRole("table", { name: "sales_fact Attributes" });
+    expect(within(attributes).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
+      "sales_amount", "decimal(18,2)", "No", "—",
+    ]);
+    expect(within(panel).getByRole("link", { name: "Show details" })).toHaveAttribute("href", "/tenants/7/projects/18/dimensional/objects/301");
+    await user.click(within(panel).getByRole("button", { name: "Close quick view" }));
+    expect(screen.queryByRole("complementary", { name: /Quick view/ })).not.toBeInTheDocument();
+  });
+
   it.each(["natural", "surrogate"] as const)("shows %s key flags on Dimensional Attributes", async (keyAttribute) => {
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(dimensionalFetchStub({ keyAttribute })),

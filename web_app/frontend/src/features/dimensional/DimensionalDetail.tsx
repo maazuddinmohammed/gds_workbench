@@ -74,6 +74,7 @@ export function DimensionalSubjectAreaPage({ api, tenantId, projectId, projectRe
   const area = areasQuery.data.items.find((item) => item.subject_area_id === subjectAreaId);
   if (!area) return <DetailState label="This Subject Area is not active. Return to Dimensional and refresh." error />;
   return <ModelSubjectAreaView layer="dimensional" tenantId={tenantId} projectId={projectId} area={area}
+    projectRevision={projectRevision} quickView={{ layer: "dimensional", api }}
     entities={(entitiesQuery.data?.pages.flatMap((page) => page.items) ?? []).map((entity) => ({
       id: entity.dimensional_entity_id,
       schema: entity.dimensional_entity_schema_name,

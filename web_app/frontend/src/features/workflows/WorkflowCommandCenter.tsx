@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+import { SidePanel } from "../../shared/SidePanel";
+
 // Presentation state only. Existing screens still own queries and governed commands.
 export const WorkflowCommandContext = createContext<{
   filtersOpen: boolean;
@@ -77,12 +79,10 @@ export function WorkflowActivityPanel({ label, open, onOpenChange, actions, chil
   const context = useContext(WorkflowCommandContext);
   const panelId = useId();
   const trigger = useRef<HTMLButtonElement>(null);
-  const close = useRef<HTMLButtonElement>(null);
-  const [wide, setWide] = useState(false);
+  // The panel focuses Close when it opens; closing it returns focus to the Activity button.
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement;
-    close.current?.focus({ preventScroll: true });
     return () => {
       const target = trigger.current ?? previous;
       if (target instanceof HTMLElement && target.isConnected) target.focus({ preventScroll: true });
@@ -95,21 +95,10 @@ export function WorkflowActivityPanel({ label, open, onOpenChange, actions, chil
   </button>;
   return <>
     {context?.activityHost ? createPortal(toggle, context.activityHost) : toggle}
-    {open ? <aside id={panelId} className={`workflow-activity-panel${wide ? " is-wide" : ""}`}
-      aria-label={`${label} activity`} onKeyDown={(event) => {
-        if (event.key === "Escape" && !(event.target as HTMLElement).closest('[role="dialog"]')) {
-          event.stopPropagation(); onOpenChange(false);
-        }
-      }}>
-      <header className="workflow-activity-heading">
-        <div><h2>{label} activity</h2><span>Run history and details</span></div>
-        <div className="workflow-activity-actions">{actions}
-          <button type="button" className="button button-secondary button-small" aria-label={wide ? "Reduce activity panel" : "Expand activity panel"}
-            onClick={() => setWide(!wide)}>{wide ? "Reduce" : "Expand"}</button>
-          <button ref={close} type="button" className="panel-close" aria-label="Close activity" onClick={() => onOpenChange(false)}>×</button>
-        </div>
-      </header>
-      <div className="workflow-activity-body">{children}</div>
-    </aside> : null}
+    {open ? <SidePanel id={panelId} title={`${label} activity`} subtitle="Run history and details" actions={actions}
+      labels={{ panel: `${label} activity`, close: "Close activity", expand: "Expand activity panel", reduce: "Reduce activity panel" }}
+      onClose={() => onOpenChange(false)}>
+      {children}
+    </SidePanel> : null}
   </>;
 }
