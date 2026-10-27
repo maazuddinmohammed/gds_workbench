@@ -236,6 +236,10 @@ Entity's branches are the Systems of its active source tables (Bronze resolves t
 originating System through ingestion lineage); a Dimensional Entity's are the Systems
 where a supporting Logical Entity has complete applied Mapping. Every Input Scope
 System is no longer paired with every Entity, and Context never adds a branch.
+Every Project Change Set Apply (Atlas, web review and Workflow Runs) enforces it too:
+a pair the Change Set makes active (new or reactivated) must be a branch, judged after
+the Change Set's own sources and Mapping are written, or Apply fails with
+`mapping_branch_unavailable`. Already active pairs stay editable and can be retired.
 Supported partial documents are
 useful progress. Omitted selected, unlocked transformations clear on regeneration;
 locked/unselected content stays protected. Protect parent rowset logic when any

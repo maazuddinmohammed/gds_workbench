@@ -1030,6 +1030,9 @@ function draftStatus(run: WorkflowRunDetail): string {
 }
 
 function safeApplyFailure(error: Error): string {
+  if (error instanceof ApiError && error.code === "mapping_branch_unavailable") {
+    return "A System in this draft is no longer one of its Entity's Mapping branches; its sources or Logical Mapping changed. Start a new Mapping run.";
+  }
   if (error instanceof ApiError && error.status === 409) {
     return "The Project or draft changed before Apply. Refresh the run and review the latest draft.";
   }
