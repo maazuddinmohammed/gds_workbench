@@ -1395,12 +1395,14 @@ async def test_projected_inputs_keep_actual_keys_profiles_and_scoped_relationshi
         assert cast(Any, Draft202012Validator(spec["schema"])).is_valid(values[name]), name
     assert values["source_context"][0]["connection_description"] == "Source application"
     if project_workflow == "subject_area":
-        # Subject Areas cite the selected tables by id, sized by profiles and columns.
+        # Subject Areas cite the selected tables by id, sized by profiles and columns; the
+        # Bronze table's source System comes from its ingestion lineage.
         assert values["table_index"] == [{"table": "t1", **_object_key("customers")}]
         assert values["scope_tables"] == [
             {
                 "table": "t1",
                 "description": "sensitive physical description",
+                "source_systems": ["ERP"],
                 "zone_code": "bronze",
                 "row_count": 10,
                 "column_count": 1,

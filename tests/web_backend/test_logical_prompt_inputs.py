@@ -230,3 +230,41 @@ def test_optimize_context_adds_records_only_the_detailed_entities_cite() -> None
         "Customers",
     ]
     assert [row["context_record_id"] for row in values["context_records"]] == [shown]
+
+
+def test_optimize_flags_one_subject_named_once_per_source_system() -> None:
+    def entity(name: str) -> dict[str, Any]:
+        return {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": name,
+            "logical_entity_type": "core",
+            "logical_entity_definition": f"One {name}.",
+            "logical_entity_grain": f"One row per {name}.",
+            "logical_entity_is_active": True,
+            "logical_entity_is_locked": False,
+            "sources": [],
+        }
+
+    context: dict[str, Any] = {
+        "applied": {
+            "logical": {
+                "entities": [entity("CRMCustomer"), entity("Customer_ERP"), entity("Product")],
+                "attributes": [],
+                "relationships": [],
+                "entity_types": [],
+            }
+        },
+        "analysis_relationships": [],
+        "source_context": [{"system_code": "CRM"}, {"system_code": "ERP"}],
+        "context": {"types": [], "groups": [], "records": []},
+    }
+
+    values = _logical_optimize_inputs(context, {}, [])
+
+    assert values["name_variants"] == [
+        {"kind": "entity", "names": ["silver.CRMCustomer", "silver.Customer_ERP"]}
+    ]
+    assert [row["name"] for row in values["entity_details"]["entities"]] == [
+        "CRMCustomer",
+        "Customer_ERP",
+    ]

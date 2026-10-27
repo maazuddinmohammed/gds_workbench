@@ -522,8 +522,9 @@ INPUT_SHAPES: dict[str, Any] = {
     },
     "scope_tables": {
         "description": "One entry per table in this run, by table_index id: its Project "
-        "description, zone, the largest profiled row count (null when unprofiled), column "
-        "count and column names.",
+        "description, the source Systems its data comes from (a Bronze table's through "
+        "ingestion lineage; empty when unknown), zone, the largest profiled row count (null "
+        "when unprofiled), column count and column names.",
         "schema": {
             "type": "array",
             "items": {"$ref": "#/$defs/scope_table_entry"},
@@ -533,6 +534,10 @@ INPUT_SHAPES: dict[str, Any] = {
                     "properties": {
                         "table": {"type": "string", "pattern": "^t[1-9][0-9]*$"},
                         "description": {"type": ["string", "null"]},
+                        "source_systems": {
+                            "type": "array",
+                            "items": {"type": "string", "minLength": 1},
+                        },
                         "zone_code": {"type": "string", "minLength": 1},
                         "row_count": {"type": ["integer", "null"], "minimum": 0},
                         "column_count": {"type": "integer", "minimum": 0},
@@ -544,6 +549,7 @@ INPUT_SHAPES: dict[str, Any] = {
                     "required": [
                         "table",
                         "description",
+                        "source_systems",
                         "zone_code",
                         "row_count",
                         "column_count",
@@ -1391,8 +1397,9 @@ INPUT_SHAPES.update(
         },
         "logical.name_variants": {
             "description": "Entity or Attribute names that differ only by case, separators or "
-            "a plural s. Each group may be one thing named twice: merge or rename when the "
-            "evidence agrees.",
+            "a plural s, and Entity names that differ only by a source System code "
+            "(CRMCustomer, Customer_ERP). Each group may be one thing named twice: merge or "
+            "rename when the evidence agrees.",
             "schema": _NAME_VARIANTS,
         },
         "logical.entity_details": {
@@ -2612,6 +2619,7 @@ INPUT_EXAMPLES["subject_area"] = {
         {
             "table": f"t{position}",
             "description": entry["object_description"],
+            "source_systems": ["ERP"],
             "zone_code": entry["zone_code"],
             "row_count": None,
             "column_count": len(group["attributes"]),

@@ -298,10 +298,12 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
         assert values[prefix + "source_context"] and values[prefix + "gds_context"]
         if workflow == "subject_area":
             # Compact table evidence only; a self-reference is not a link between tables.
+            # The Bronze table's source System comes from its ingestion lineage.
             assert values[prefix + "scope_tables"] == [
                 {
                     "table": "t1",
                     "description": "Project object description",
+                    "source_systems": ["DEMO_CUSTOMER_SYSTEM"],
                     "zone_code": "bronze",
                     "row_count": 2,
                     "column_count": 2,

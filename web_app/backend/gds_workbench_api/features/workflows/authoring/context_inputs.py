@@ -401,11 +401,22 @@ def _subject_area_inputs(context: Mapping[str, Any]) -> dict[str, Any]:
     def ordered(ids: list[str]) -> list[str]:
         return sorted(ids, key=lambda table: int(table[1:]))
 
+    # Where each table's data comes from: a source table's own System, a Bronze table's
+    # through ingestion lineage. One subject from several Systems belongs in one area.
+    origins: dict[tuple[Any, ...], set[str]] = {}
+    for link in context.get("ingestion_mapping", []):
+        origins.setdefault(natural_key(link["target"]), set()).add(link["source"]["system_code"])
+
     return {
         "scope_tables": [
             {
                 "table": table_ids[natural_key(item["object"])],
                 "description": item["object"]["object_description"],
+                "source_systems": sorted(
+                    {item["object"]["system_code"]}
+                    if item["object"]["zone_code"] == "source"
+                    else origins.get(natural_key(item["object"]), set())
+                ),
                 "zone_code": item["object"]["zone_code"],
                 "row_count": row_counts.get(natural_key(item["object"])),
                 "column_count": len(item["attributes"]),
@@ -749,16 +760,37 @@ def _active_types(context: Mapping[str, Any], family: str, prefix: str) -> list[
     ]
 
 
-def _normalized_name(name: str) -> str:
-    folded = "".join(character for character in name.casefold() if character.isalnum())
+def _folded(name: str) -> str:
+    return "".join(character for character in name.casefold() if character.isalnum())
+
+
+def _normalized_name(name: str, system_codes: Sequence[str] = ()) -> str:
+    folded = _folded(name)
+    # One subject named once per source System (CRMCustomer, Customer_ERP) is one name.
+    for code in system_codes:
+        if len(folded) > len(code) and folded.startswith(code):
+            folded = folded[len(code) :]
+            break
+        if len(folded) > len(code) and folded.endswith(code):
+            folded = folded[: -len(code)]
+            break
     return folded[:-1] if folded.endswith("s") and len(folded) > 3 else folded
 
 
-def _name_variants(labels: Sequence[tuple[str, str]], kind: str) -> list[dict[str, Any]]:
-    """Group labels whose last name part differs only by case, separators or a plural s."""
+def _source_system_codes(context: Mapping[str, Any]) -> list[str]:
+    """Folded source System codes, longest first, so per-System names group together."""
+    codes = {_folded(str(source["system_code"])) for source in context.get("source_context", [])}
+    return sorted((code for code in codes if len(code) > 1), key=len, reverse=True)
+
+
+def _name_variants(
+    labels: Sequence[tuple[str, str]], kind: str, system_codes: Sequence[str] = ()
+) -> list[dict[str, Any]]:
+    """Group labels whose last name part differs only by case, separators, a plural s or a
+    leading or trailing source System code from system_codes."""
     groups: dict[str, set[str]] = {}
     for label, name in labels:
-        groups.setdefault(_normalized_name(name), set()).add(label)
+        groups.setdefault(_normalized_name(name, system_codes), set()).add(label)
     return [
         {"kind": kind, "names": sorted(names)}
         for names in groups.values()
@@ -888,7 +920,9 @@ def _logical_optimize_inputs(
         )
     type_conflicts = _type_conflicts(attributes, labels, model["relationships"], "logical")
     name_variants = _name_variants(
-        [(label, entities[key]["logical_entity_name"]) for key, label in labels.items()], "entity"
+        [(label, entities[key]["logical_entity_name"]) for key, label in labels.items()],
+        "entity",
+        _source_system_codes(context),
     ) + _name_variants(
         [
             (f"{labels[key]}.{row['logical_attribute_name']}", row["logical_attribute_name"])
