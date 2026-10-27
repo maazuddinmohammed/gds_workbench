@@ -1109,6 +1109,7 @@ def _dimensional_optimize_inputs(
     name_variants = _name_variants(
         [(label, entities[key]["dimensional_entity_name"]) for key, label in labels.items()],
         "entity",
+        _source_system_codes(context),
     )
     conformance = [
         {"reason": "same_logical_source", "dimensions": sorted(names)}

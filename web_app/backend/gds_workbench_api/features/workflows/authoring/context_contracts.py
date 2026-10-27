@@ -1547,7 +1547,8 @@ INPUT_SHAPES.update(
         },
         "dimensional.name_variants": {
             "description": "Dimensional Entity or Attribute names that differ only by case, "
-            "separators or a plural s.",
+            "separators or a plural s, and Entity names that differ only by a source System "
+            "code (CustomerCRM, Customer_ERP).",
             "schema": _NAME_VARIANTS,
         },
         "dimensional.entity_details": {
