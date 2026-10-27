@@ -33,7 +33,8 @@ export function EntityQuickView({ source, tenantId, projectId, projectRevision, 
   onClose: () => void;
 }) {
   const detailQuery = useQuery({
-    queryKey: ["entity-quick-view", source.layer, tenantId, projectId, entity.id],
+    // Tenant second, like every key, so a review apply that refreshes the Tenant also refreshes this.
+    queryKey: ["entity-quick-view", tenantId, projectId, source.layer, entity.id],
     queryFn: async (): Promise<QuickViewDetail> => {
       if (source.layer === "logical") {
         const detail = await source.api.readLogicalEntity(tenantId, projectId, entity.id);
@@ -56,7 +57,7 @@ export function EntityQuickView({ source, tenantId, projectId, projectRevision, 
     },
   });
   const attributesQuery = useQuery({
-    queryKey: ["entity-quick-view-attributes", source.layer, tenantId, projectId, entity.id],
+    queryKey: ["entity-quick-view-attributes", tenantId, projectId, source.layer, entity.id],
     queryFn: async () => {
       if (source.layer === "logical") {
         const page = await source.api.listLogicalAttributes(tenantId, projectId, { logicalEntityId: entity.id, active: true }, 200);
