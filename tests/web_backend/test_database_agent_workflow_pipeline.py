@@ -28,7 +28,6 @@ from tests.mcp.test_database_mapping_output_template_seed import (
 )
 from tests.web_backend.test_database_mapping_source_context import (
     MappingScope,
-    _seed_context_mapping_target,
     _seed_mapping_scope,
 )
 
@@ -246,8 +245,6 @@ async def test_worker_completes_validated_mapping_after_its_initial_lease_expire
         ("complete", True),
         ("multi_system", False),
         ("multi_system", True),
-        ("context", False),
-        ("context", True),
         ("object_only", False),
         ("object_only", True),
         ("attribute_only", False),
@@ -275,9 +272,7 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
         "partial_attributes",
         "empty",
     }
-    if bulk == "context":
-        _seed_context_mapping_target(fixture, scope, dimensional=dimensional)
-    elif bulk != "single":
+    if bulk != "single":
         _add_mapping_target(
             fixture,
             project_id,
@@ -501,7 +496,8 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
             page_size=200,
             cursor=None,
         )
-        eligible = [row for row in targets.items if row.has_sources]
+        # Generation targets are already the Entity/System branches.
+        eligible = list(targets.items)
         expected_pair_count = (
             1 if bulk == "single" else 4 if bulk == "multi_system" or partial_shape else 2
         )

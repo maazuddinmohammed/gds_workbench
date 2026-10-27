@@ -53,7 +53,6 @@ export interface ProjectDetail {
   default_reasoning_effort_code: string | null;
   default_max_turns: number | null;
   default_validation_retry_count: number | null;
-  default_mapping_source_system_id?: number | null;
   is_active: boolean;
   updated_at: string;
 }
@@ -131,7 +130,6 @@ export interface CreateProjectCommand {
   default_reasoning_effort_code: string | null;
   default_max_turns: number | null;
   default_validation_retry_count: number | null;
-  default_mapping_source_system_id?: number | null;
 }
 
 export interface ProjectCommandResult {

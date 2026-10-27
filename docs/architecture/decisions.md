@@ -73,6 +73,14 @@ rather than one unchecked polymorphic ID. Requirements express desired behavior;
 they do not prove source availability. Analysis likewise separates inferred
 cardinality from measured validation instead of overwriting one with the other.
 
+Context reaches a workflow prompt only when its Type is routed there
+(`reference.context_type_workflow`, global like the Types). Group System scoping
+still applies, and records an Entity cites as support always pass. Code Generation's
+context carries Types routed to Code Generation or Validation, each tagged with its
+workflows; the Code and Validation prompts each keep only their own, so Code input
+digests change when either kind changes. Routing trims prompts only; it never
+changes what may be cited.
+
 ## Project, Lane and portable Context contracts
 
 `project.project` owns modeling work. `core.lane` groups Tenants; its foreign keys
@@ -91,8 +99,9 @@ catalog exposes read-only `context_type` alongside writable `context_group` and
 references retain `context_record_id`. Portable UUID identity is explicit schema
 metadata, while internal numeric ownership/audit IDs remain excluded. Types have
 no per-Project override. Group type and record ownership are validated server-side.
-There is no second record key or classification, stored layer restriction,
-confidence field or JSON import/detail metadata. Consumers assess relevance and
+There is no second record key or classification, per-record layer restriction,
+confidence field or JSON import/detail metadata; read-only `context_type` carries its
+routed `context_type_workflows`. Consumers assess relevance and
 active evidence without treating a Context Record as proof of physical lineage.
 
 ## Logical-style Dimensional fields and evidence
@@ -218,7 +227,13 @@ It then validates the expanded records exactly like any Logical change. The Chan
 Snapshot and Stage contracts keep complete records; only the provider answer is
 compact, which keeps one answer far below the output limit.
 
-Mapping operates on frozen Entity/System pairs. Supported partial documents are
+Mapping operates on frozen Entity/System pairs (branches). `workflow.list_mapping_branches`
+is the one rule for generation targets, Run creation and manual Mapping: a Logical
+Entity's branches are the Systems of its active source tables (Bronze resolves to its
+originating System through ingestion lineage); a Dimensional Entity's are the Systems
+where a supporting Logical Entity has complete applied Mapping. Every Input Scope
+System is no longer paired with every Entity, and Context never adds a branch.
+Supported partial documents are
 useful progress. Omitted selected, unlocked transformations clear on regeneration;
 locked/unselected content stays protected. Protect parent rowset logic when any
 child is protected. True failures leave their pair unchanged, distinct from a valid
@@ -228,8 +243,8 @@ Code may use partial applied Mapping with explicit typed-null/zero-row placehold
 and warnings. Missing rules cannot justify invented joins or business logic.
 Validation and executable modeled-source lookups still require complete Mapping.
 Input-currentness digests describe consistency, not production execution readiness.
-A configured default Mapping System applies only to eligible Context-only Entities;
-it cannot relabel real lineage or bypass missing upstream Mapping.
+An Entity supported only by Context has no branch and therefore no Mapping; there
+is no default Mapping System.
 
 Output Templates are advisory JSON field guidance. Preserve custom documents intact
 and interpret fields using their saved template definitions. Default-template field

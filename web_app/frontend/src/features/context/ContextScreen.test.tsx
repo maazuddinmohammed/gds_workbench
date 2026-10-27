@@ -120,7 +120,10 @@ describe("Project Context", () => {
     const dialog = screen.getByRole("dialog", { name: "Create context group" });
     await user.type(within(dialog).getByLabelText("Context Group Name"), "Coding standards");
     await user.selectOptions(within(dialog).getByLabelText("Context type"), "12");
-    expect(within(dialog).getByLabelText("Context type")).toHaveAccessibleDescription("Coding conventions");
+    // Workflows follow the ribbon order, not the server's alphabetical order.
+    expect(within(dialog).getByLabelText("Context type")).toHaveAccessibleDescription(
+      "Coding conventions Used in Code generation, Validation.",
+    );
     await user.type(within(dialog).getByLabelText("Context Group Description (optional)"), "SQL conventions");
     await user.selectOptions(within(dialog).getByLabelText("Source System (optional)"), "11");
     expect(within(dialog).queryByText("Custom type")).not.toBeInTheDocument();
@@ -313,7 +316,7 @@ function contextFetchStub(options: { empty?: boolean; multipleRecords?: boolean;
     if (url.startsWith(`${base}/context/source-systems?`)) return jsonResponse({ items: [sourceSystem], next_cursor: null });
     if (url === `${base}/context/types`) {
       if (options.failTypes && typeReads++ < options.failTypes) return jsonResponse({ error: { code: "unavailable" } }, 503);
-      return jsonResponse({ items: [businessType, { context_type_id: 12, context_type_name: "Code Context", context_type_description: "Coding conventions" }] });
+      return jsonResponse({ items: [businessType, { context_type_id: 12, context_type_name: "Code Context", context_type_description: "Coding conventions", context_type_workflows: ["validation", "code_generation"] }] });
     }
     if (url.startsWith(`${base}/context/groups?`)) return options.error ? jsonResponse({ error: { code: "unavailable" } }, 503) : jsonResponse({ project_id: 18, project_revision: options.revision ?? 18, items: options.empty ? [] : [group], next_cursor: null });
     if (url === `${base}/context/groups/31`) return jsonResponse(group);

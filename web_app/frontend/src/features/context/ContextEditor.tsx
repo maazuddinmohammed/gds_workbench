@@ -2,7 +2,13 @@ import { useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ApiError } from "../../core/http";
 import { trapDialogFocus, useDialogFocus } from "../../shared/dialog";
-import { loadContextSystems, contextQueryKeys, type ContextApi, type ContextGroupDetail, type ContextGroupReference, type ContextRecordDetail, type SaveContextGroupCommand, type SaveContextRecordCommand } from "./api";
+import { loadContextSystems, contextQueryKeys, type ContextApi, type ContextGroupDetail, type ContextGroupReference, type ContextRecordDetail, type ContextWorkflow, type SaveContextGroupCommand, type SaveContextRecordCommand } from "./api";
+
+// In workflow order, as the Project ribbon names them.
+const WORKFLOW_NAMES: [ContextWorkflow, string][] = [
+  ["analysis", "Analysis"], ["subject_area", "Subject Areas"], ["logical", "Logical"], ["dimensional", "Dimensional"],
+  ["mapping", "Mapping"], ["code_generation", "Code generation"], ["validation", "Validation"],
+];
 
 type EditorProps = {
   api: ContextApi; tenantId: number; projectId: number; projectRevision: number; hasTenantLock: boolean;
@@ -51,7 +57,10 @@ export function ContextEditor(props: EditorProps) {
   const groupProtected = props.kind === "group" && (props.group?.locked_record_count ?? 0) > 0;
   const blocked = !hasTenantLock || groupProtected || (props.kind === "record" && (!group?.is_active || record?.is_locked));
   const unavailable = props.kind === "group" && (!types.isSuccess || !types.data.items.length || !systems.isSuccess);
-  const typeDescription = types.data?.items.find((type) => String(type.context_type_id) === typeId)?.context_type_description;
+  const selectedType = types.data?.items.find((type) => String(type.context_type_id) === typeId);
+  const typeWorkflows = WORKFLOW_NAMES.filter(([code]) => selectedType?.context_type_workflows?.includes(code)).map(([, name]) => name);
+  const typeDescription = [selectedType?.context_type_description, typeWorkflows.length ? `Used in ${typeWorkflows.join(", ")}.` : null]
+    .filter(Boolean).join(" ");
   const disabled = Boolean(blocked || mutation.isPending || (!uncertain && (stale || unavailable)));
   function requestClose() {
     if (busy) return;

@@ -10,23 +10,6 @@
   min-width: 0;
 }
 
-.create-project-fields.project-mapping-default {
-  display: grid;
-  gap: 0.4rem;
-  min-width: 0;
-  padding: 0.25rem 0;
-}
-
-.project-mapping-default > label {
-  max-width: 28rem;
-}
-
-.project-mapping-default > .field-help {
-  color: var(--muted);
-  font-size: 0.74rem;
-  line-height: 1.45;
-}
-
 .project-definition-form .create-project-settings > summary {
   padding: 0.65rem 0;
   font-size: 0.78rem;

@@ -270,6 +270,13 @@ correlation reference; never expose raw provider diagnostics or model payloads.
   Draft waiting, dashed blue ring running, red mark failed, grey ring not built. In
   tables the circle stands alone, with its words and time on hover and for screen
   readers; the area page prints them. The backend decides the state.
+- Mapping shows System tabs (`workspace-tabs`) under the Logical/Dimensional switch:
+  All Systems, then each branch System or System with saved Mappings, with its Mapping
+  count. The selected tab is the `system` search param, so detail pages and back links
+  return to it; under a System tab the ledger drops its System column, the Filters panel
+  keeps only status and lock, and Export and Generate mappings start on that System.
+  Generate mappings lists only the backend's Entity/System branches and says how many
+  Entities have no source System. No coverage summary is shown.
 - Mapping has Entity/System detail pages: Object logic once above a spreadsheet of
   all active modeled Attributes. Missing transformations stay blank. Preserve custom
   fields/nested values and whole source identifiers. Missing records have no selectable
@@ -306,7 +313,8 @@ correlation reference; never expose raw provider diagnostics or model payloads.
   review actions. Retain addressable detail routes for references and reading long
   values, but do not require a detail-page visit for ordinary editing. Generate
   record UUIDs once when creating drafts; never ask users to invent or edit them.
-  Keep status and lock behavior visible. Relevance is assessed by each workflow.
+  Keep status and lock behavior visible. The group editor names the workflows its
+  Type is routed to after the Type description; each workflow still assesses relevance.
   Use Context Group Name, Context Group Description and Context Record Text as the
   visible field labels. One group can contain many entries; show each as a separate
   table row. Source references remain plain text and bounded previews indicate truncation.

@@ -2,10 +2,13 @@ import type { ProjectRecordReviewApi } from "../project_record_review/api";
 import type { HttpRequest } from "../../core/http";
 import type { ReviewStatus } from "../../shared/contracts";
 
+export type ContextWorkflow = "analysis" | "subject_area" | "logical" | "dimensional" | "mapping" | "code_generation" | "validation";
 export interface ContextType {
   context_type_id: number;
   context_type_name: string;
   context_type_description: string | null;
+  /** Workflows whose prompts receive this Type's records; only the type list carries it. */
+  context_type_workflows?: ContextWorkflow[];
 }
 export interface ContextSourceSystem { system_id: number; system_code: string; system_name: string }
 export interface ContextGroupReference {

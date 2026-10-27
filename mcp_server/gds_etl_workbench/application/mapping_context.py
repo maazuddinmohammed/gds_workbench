@@ -42,7 +42,8 @@ def without_internal_fields(value: Any) -> Any:
     }
 
 
-def project_mapping_inputs(context: dict[str, Any]) -> dict[str, Any]:
+def project_mapping_inputs(context: dict[str, Any], *, workflow: str) -> dict[str, Any]:
+    """Project one Code context for `workflow` (code_generation or validation)."""
     systems = {row["source_system_id"]: row["system_code"] for row in context["source_systems"]}
     objects = {row["mapping_object_id"]: row for row in context["object_mappings"]}
     sources: list[dict[str, Any]] = []
@@ -55,13 +56,31 @@ def project_mapping_inputs(context: dict[str, Any]) -> dict[str, Any]:
         )
     object_mappings: list[dict[str, Any]] = []
     for row in context["object_mappings"]:
-        object_mappings.append(
-            {
-                **without_internal_fields(row),
-                "output_template_code": row.get("output_template_code"),
-                "source_system_code": systems[row["source_system_id"]],
-            }
+        projected = {
+            **without_internal_fields(row),
+            "output_template_code": row.get("output_template_code"),
+            "source_system_code": systems[row["source_system_id"]],
+        }
+        # The context carries Context routed to Code Generation or Validation; keep this
+        # workflow's records. Contexts frozen before routing have no workflow list.
+        entity = projected.get("entity")
+        records = (
+            cast(dict[str, Any], entity).get("context_records")
+            if isinstance(entity, dict)
+            else None
         )
+        if isinstance(records, list):
+            routed: list[Any] = []
+            for record in cast(list[Any], records):
+                workflows = (
+                    cast(dict[str, Any], record).pop("context_type_workflows", None)
+                    if isinstance(record, dict)
+                    else None
+                )
+                if workflows is None or workflow in workflows:
+                    routed.append(record)
+            cast(dict[str, Any], entity)["context_records"] = routed
+        object_mappings.append(projected)
     attributes: list[dict[str, Any]] = []
     for row in context["attribute_mappings"]:
         entity = objects[row["mapping_object_id"]]["entity"]

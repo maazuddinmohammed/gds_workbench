@@ -14,7 +14,6 @@ from gds_etl_workbench.domain.authorization import (
 from gds_etl_workbench.domain.errors import (
     AuthorizationDeniedError,
     DependencyUnavailableError,
-    InvalidRequestError,
     TenantLockedError,
     TenantLockRequiredError,
     TenantNotFoundError,
@@ -45,7 +44,7 @@ SELECT created.project_id,
        created.updated_time AS updated_at
   FROM application.create_project(
        %s, %s, %s, %s, %s, %s, %s, %s, %s,
-       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
   ) AS created
 """
 
@@ -65,7 +64,7 @@ SELECT updated.project_id,
        updated.updated_time AS updated_at
   FROM application.update_project(
        %s, %s, %s, %s, %s, %s, %s, %s, %s,
-       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
   ) AS updated
 """
 
@@ -314,7 +313,6 @@ def _complete_project_parameters(request: CompleteProjectRequest) -> tuple[objec
         request.default_reasoning_effort_code,
         request.default_max_turns,
         request.default_validation_retry_count,
-        request.default_mapping_source_system_id,
         request.logical_entity_scd_type,
         request.dimensional_entity_scd_type,
         request.logical_coverage_threshold_percent,
@@ -345,10 +343,6 @@ def _raise_safe_command_error(error: Exception) -> Never:
         raise ProjectRevisionConflictError() from error
     if message == "A referenced Project schema cannot be removed or renamed":
         raise ProjectSchemaConflictError() from error
-    if message == "Default Mapping System is unavailable for this Tenant":
-        raise InvalidRequestError(
-            "Choose an active default Mapping System with a Connection in this Tenant."
-        ) from error
     if message == "Project is unavailable":
         raise ProjectNotFoundError() from error
     denial_code = _controlled_denial_code(message)

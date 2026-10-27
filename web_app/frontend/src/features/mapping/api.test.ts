@@ -4,7 +4,7 @@ import { createHttpRequest } from "../../core/http";
 import {
   createMappingApi,
   loadActiveMappingOutputTemplates,
-  loadMappingFilterSystems,
+  loadMappingSystems,
   loadMappingGenerationTargets,
   type MappingApi,
   type MappingGenerationTarget,
@@ -160,12 +160,14 @@ describe("Mapping target loader", () => {
         project_id: 18,
         project_revision: 4,
         items: [],
+        unsupplied_entity_count: 2,
         next_cursor: "next",
       })
       .mockResolvedValueOnce({
         project_id: 18,
         project_revision: 4,
         items: [],
+        unsupplied_entity_count: 2,
         next_cursor: null,
       });
 
@@ -177,6 +179,7 @@ describe("Mapping target loader", () => {
     )).resolves.toEqual({
       projectRevision: 4,
       items: [],
+      unsuppliedEntityCount: 2,
     });
     expect(listMappingGenerationTargets.mock.calls).toEqual([
       [7, 18, "logical_entity", 200, undefined],
@@ -187,6 +190,7 @@ describe("Mapping target loader", () => {
       project_id: 18,
       project_revision: 4,
       items: [],
+      unsupplied_entity_count: 0,
       next_cursor: "same",
     });
     await expect(loadMappingGenerationTargets(
@@ -200,26 +204,26 @@ describe("Mapping target loader", () => {
   });
 });
 
-describe("Mapping filter System loader", () => {
+describe("Mapping System tab loader", () => {
   const target: MappingGenerationTarget = {
     entity_type: "logical_entity", entity_id: 701, entity_schema_name: "silver", entity_name: "customer",
     source_system: { system_id: 2, system_code: "ERP", system_name: "ERP" },
-    mapping_object_id: null, object_order: 0, is_locked: false, has_sources: true, attributes: [],
+    mapping_object_id: null, object_order: 0, is_locked: false, attributes: [],
   };
   const saved: MappingObject = {
     mapping_object_id: 81, workflow_run_id: 1048, target,
     source_system: { system_id: 3, system_code: "RETIRED", system_name: "Retained System" },
     dependency_order: 0, status: "inactive", is_locked: true, updated_at: "2026-09-27T00:00:00Z",
   };
-  const targetPage = { project_id: 18, project_revision: 4, items: [target], next_cursor: null };
+  const targetPage = { project_id: 18, project_revision: 4, items: [target], unsupplied_entity_count: 0, next_cursor: null };
   const savedPage = { project_id: 18, project_revision: 4, items: [saved], next_cursor: null };
 
-  it("unions every target and retained Mapping page, including fallback Systems, without duplicate codes", async () => {
+  it("unions every branch System and retained Mapping page, counting saved Mappings per System", async () => {
     const listMappingGenerationTargets = vi.fn<MappingApi["listMappingGenerationTargets"]>()
       .mockResolvedValueOnce({ ...targetPage, next_cursor: "targets-next" })
       .mockResolvedValueOnce({ ...targetPage, items: [{
-        ...target, entity_id: 702, has_sources: false,
-        source_system: { system_id: 4, system_code: "CONTEXT", system_name: "Context fallback" },
+        ...target, entity_id: 702,
+        source_system: { system_id: 4, system_code: "ECOM", system_name: "Web store" },
       }] });
     const listMappingObjects = vi.fn<MappingApi["listMappingObjects"]>()
       .mockResolvedValueOnce({ ...savedPage, next_cursor: "saved-next" })
@@ -228,8 +232,10 @@ describe("Mapping filter System loader", () => {
         { ...saved, mapping_object_id: 83, source_system: { system_id: 5, system_code: "CRM", system_name: "CRM" } },
       ] });
 
-    await expect(loadMappingFilterSystems({ listMappingGenerationTargets, listMappingObjects }, 7, 18, "logical_entity"))
-      .resolves.toEqual({ projectRevision: 4, codes: ["CONTEXT", "CRM", "ERP", "RETIRED"] });
+    await expect(loadMappingSystems({ listMappingGenerationTargets, listMappingObjects }, 7, 18, "logical_entity"))
+      .resolves.toEqual({ projectRevision: 4, systems: [
+        { code: "CRM", mappings: 1 }, { code: "ECOM", mappings: 0 }, { code: "ERP", mappings: 1 }, { code: "RETIRED", mappings: 1 },
+      ] });
     expect(listMappingGenerationTargets.mock.calls).toEqual([
       [7, 18, "logical_entity", 200, undefined], [7, 18, "logical_entity", 200, "targets-next"],
     ]);
@@ -243,7 +249,7 @@ describe("Mapping filter System loader", () => {
     const listMappingGenerationTargets = vi.fn<MappingApi["listMappingGenerationTargets"]>().mockResolvedValue(targetPage);
     const listMappingObjects = vi.fn<MappingApi["listMappingObjects"]>().mockResolvedValue({ ...savedPage, next_cursor: "same" });
 
-    await expect(loadMappingFilterSystems({ listMappingGenerationTargets, listMappingObjects }, 7, 18, "logical_entity"))
+    await expect(loadMappingSystems({ listMappingGenerationTargets, listMappingObjects }, 7, 18, "logical_entity"))
       .rejects.toThrow("Mapping filter cursor repeated");
     expect(listMappingObjects).toHaveBeenCalledTimes(2);
   });
@@ -254,7 +260,7 @@ describe("Mapping filter System loader", () => {
       .mockResolvedValueOnce({ ...savedPage, project_revision: page === "first" ? 5 : 4, next_cursor: "saved-next" })
       .mockResolvedValueOnce({ ...savedPage, project_revision: 5 });
 
-    await expect(loadMappingFilterSystems({ listMappingGenerationTargets, listMappingObjects }, 7, 18, "logical_entity"))
+    await expect(loadMappingSystems({ listMappingGenerationTargets, listMappingObjects }, 7, 18, "logical_entity"))
       .rejects.toThrow("Mapping filter revision changed while loading");
     expect(listMappingObjects).toHaveBeenCalledTimes(page === "first" ? 1 : 2);
   });
@@ -265,7 +271,7 @@ describe("Mapping filter System loader", () => {
       .mockResolvedValueOnce({ ...targetPage, project_revision: 5 });
     const listMappingObjects = vi.fn<MappingApi["listMappingObjects"]>().mockResolvedValue(savedPage);
 
-    await expect(loadMappingFilterSystems({ listMappingGenerationTargets, listMappingObjects }, 7, 18, "logical_entity"))
+    await expect(loadMappingSystems({ listMappingGenerationTargets, listMappingObjects }, 7, 18, "logical_entity"))
       .rejects.toThrow("Mapping target revision changed while loading");
     expect(listMappingObjects).not.toHaveBeenCalled();
   });
@@ -279,7 +285,7 @@ describe("Mapping filter System loader", () => {
       .mockResolvedValueOnce({ ...savedPage, next_cursor: "saved-next" })
       .mockRejectedValueOnce(failure);
 
-    await expect(loadMappingFilterSystems({ listMappingGenerationTargets, listMappingObjects }, 7, 18, "logical_entity"))
+    await expect(loadMappingSystems({ listMappingGenerationTargets, listMappingObjects }, 7, 18, "logical_entity"))
       .rejects.toBe(failure);
     expect(listMappingObjects).toHaveBeenCalledTimes(collection === "targets" ? 0 : 2);
   });

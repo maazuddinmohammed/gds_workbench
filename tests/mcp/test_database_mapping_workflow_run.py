@@ -275,6 +275,36 @@ def _seed_mapping_context(
                 (workflow.project_id, f"MappingEntity{suffix}"),
             ).fetchone()
         )["logical_entity_id"]
+        # A Mapping branch needs the System to supply the Entity: the Logical Entity is
+        # built from the scoped Object; the Dimensional one from that mapped Logical Entity.
+        connection.execute(
+            """
+            INSERT INTO workflow.logical_entity_source_mapping (
+                project_id, logical_entity_id, source_object_id,
+                logical_entity_source_mapping_rationale
+            ) VALUES (%s, %s, %s, 'Mapping fixture source.')
+            """,
+            (workflow.project_id, entity_id, workflow.selected_object_ids[0]),
+        )
+        if dimensional_entity_id is not None:
+            connection.execute(
+                """
+                INSERT INTO workflow.mapping_object (
+                    project_id, modeled_entity_type, logical_entity_id, source_system_id,
+                    mapping_transformation_document
+                ) VALUES (%s, 'logical_entity', %s, %s, '{"steps":["Read source."]}'::JSONB)
+                """,
+                (workflow.project_id, entity_id, physical["system_id"]),
+            )
+            connection.execute(
+                """
+                INSERT INTO workflow.dimensional_entity_source_mapping (
+                    project_id, dimensional_entity_id, source_logical_entity_id,
+                    dimensional_entity_source_mapping_rationale
+                ) VALUES (%s, %s, %s, 'Mapping fixture Logical source.')
+                """,
+                (workflow.project_id, dimensional_entity_id, entity_id),
+            )
         _seed_mapping_prompt(connection, workflow)
 
     return MappingRunContext(

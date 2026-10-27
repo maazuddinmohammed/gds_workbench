@@ -382,7 +382,7 @@ def test_code_context_returns_one_server_derived_input_digest(
         )
         document = connection.execute(
             "INSERT INTO project.context_group (project_id, context_type_id, name) "
-            "VALUES (%s, (SELECT context_type_id FROM reference.context_type WHERE name='Reporting Requirement'), 'Customer reporting') RETURNING context_group_id",
+            "VALUES (%s, (SELECT context_type_id FROM reference.context_type WHERE name='Technical Requirement'), 'Customer reporting') RETURNING context_group_id",
             (project["project_id"],),
         ).fetchone()
         assert document is not None
@@ -394,7 +394,7 @@ def test_code_context_returns_one_server_derived_input_digest(
             (project["project_id"], document["context_group_id"]),
         ).fetchone()
         assert requirement is not None
-        # Scoped Context reach SQL/Validation without a source-mapping link or layer match.
+        # Context routed to Code Generation reaches SQL/Validation without a source link.
         first = connection.execute(
             """
             SELECT *
@@ -471,6 +471,7 @@ def test_code_context_returns_one_server_derived_input_digest(
         == "00000000-0000-4000-8000-000000000001"
     )
     assert context_records[0]["context_text"] == "Segment at event time"
+    assert context_records[0]["context_type_workflows"] == ["code_generation"]
     assert "context_group_id" not in context_records[0]
     assert (
         inactive["source_context"]["object_mappings"][0]["entity"]["context_records"]

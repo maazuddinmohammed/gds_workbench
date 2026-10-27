@@ -8,7 +8,10 @@ from typing import Any
 
 from gds_etl_workbench.domain.modeling_records import normalize_project_key_value
 
-from gds_workbench_api.features.context.context import select_context_records
+from gds_workbench_api.features.context.context import (
+    select_context_records,
+    with_cited_context_records,
+)
 
 from .audit_policy import effective_audit_template
 from .context_contracts import WORKFLOW_INPUTS
@@ -159,6 +162,7 @@ def project_context_inputs(
             *context.get("source_context", []),
             *(item["object"] for item in physical_objects),
         ],
+        workflow=workflow,
     )
     for family in ("logical", "dimensional") if workflow == "dimensional" else ("logical",):
         section = context["applied"].get(family)
@@ -648,38 +652,6 @@ def _neighbors_and_directory(
     return neighbors, directory
 
 
-def _with_cited_context(
-    context: Mapping[str, Any], records: list[dict[str, Any]], cited: set[str]
-) -> list[dict[str, Any]]:
-    """Add Context records the shown Entities cite, even outside this area's Systems."""
-    present = {normalize_project_key_value(record["context_record_id"]) for record in records}
-    groups = {
-        normalize_project_key_value(group["context_group_name"]): group
-        for group in context["context"]["groups"]
-        if group["is_active"]
-    }
-    extra: list[dict[str, Any]] = []
-    for record in context["context"]["records"]:
-        record_id = normalize_project_key_value(record["context_record_id"])
-        group = groups.get(normalize_project_key_value(record["context_group_name"]))
-        if (
-            record_id in cited
-            and record_id not in present
-            and group
-            and record["status"] == "active"
-        ):
-            extra.append(
-                {
-                    "context_record_id": record["context_record_id"],
-                    "context_group_name": group["context_group_name"],
-                    "context_type_name": group["context_type_name"],
-                    "context_text": record["context_text"],
-                    "source_reference": record["source_reference"],
-                }
-            )
-    return [*records, *extra]
-
-
 def _logical_build_inputs(
     context: Mapping[str, Any],
     table_ids: Mapping[_Key, str],
@@ -750,7 +722,7 @@ def _logical_build_inputs(
         "neighbor_entities": neighbors,
         "entity_directory": directory,
         "logical_entity_types": _active_types(context, "logical", "logical_entity_type"),
-        "context_records": _with_cited_context(context, context_records, cited),
+        "context_records": with_cited_context_records(context["context"], context_records, cited),
     }
 
 

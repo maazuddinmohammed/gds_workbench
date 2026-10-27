@@ -39,9 +39,6 @@ SELECT project.project_id,
        project.dimensional_coverage_threshold_percent,
        project.logical_enforce_coverage_threshold,
        project.dimensional_enforce_coverage_threshold,
-       (SELECT system_code FROM core.system
-         WHERE system_id = project.default_mapping_source_system_id)
-           AS default_mapping_source_system_code,
        project.silver_model_naming_instructions,
        project.silver_model_audit_columns_template,
        project.gold_model_naming_instructions,
@@ -79,7 +76,6 @@ class ProjectDetails(ContractModel):
     dimensional_coverage_threshold_percent: int = Field(default=60, ge=1, le=100, strict=True)
     logical_enforce_coverage_threshold: bool = Field(default=False, strict=True)
     dimensional_enforce_coverage_threshold: bool = Field(default=False, strict=True)
-    default_mapping_source_system_code: str | None = None
     silver_model_naming_instructions: str | None = Field(default=None, max_length=32768)
     silver_model_audit_columns_template: dict[str, JsonValue] | None
     gold_model_naming_instructions: str | None = Field(default=None, max_length=32768)

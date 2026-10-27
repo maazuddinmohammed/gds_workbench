@@ -219,7 +219,7 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
            'application.create_project(uuid,uuid,character varying,bigint,'
            'character varying,character varying,jsonb,jsonb,text,jsonb,text,jsonb,jsonb,'
            'character varying,character varying,character varying,'
-           'character varying,integer,integer,bigint,character varying,character varying,'
+           'character varying,integer,integer,character varying,character varying,'
            'integer,integer,boolean,boolean)'),
            'EXECUTE'
        ), FALSE)
@@ -257,8 +257,7 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        )
        AND coalesce(has_function_privilege(
            'gds_web_write',
-           to_regprocedure('workflow.is_context_only_mapping_target('
-               'bigint,bigint,character varying)'),
+           to_regprocedure('workflow.list_mapping_branches(bigint,character varying)'),
            'EXECUTE'
        ), FALSE)
        AND has_function_privilege(

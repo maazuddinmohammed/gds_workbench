@@ -120,8 +120,10 @@ async def test_readiness_checks_the_web_schema_and_role(
     assert "workflow.generated_code" in readiness_sql
     assert "application.generated_sql_artifact" not in readiness_sql
     assert "application.create_project" in readiness_sql
+    assert "workflow.list_mapping_branches(bigint,character varying)" in readiness_sql
+    assert "is_context_only_mapping_target" not in readiness_sql
     assert (
-        "character varying,integer,integer,bigint,character varying,character varying,"
+        "character varying,integer,integer,character varying,character varying,"
         in readiness_sql
     )
     assert "'integer,integer,boolean,boolean)'" in readiness_sql

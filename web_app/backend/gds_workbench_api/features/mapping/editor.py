@@ -33,19 +33,15 @@ NEW_MAPPING_TARGET_SQL: LiteralString = """
 SELECT entity.modeled_entity_schema_name, entity.modeled_entity_name,
        entity.dependency_order, system.system_code
   FROM workflow.modeled_entity AS entity
-  JOIN project.project AS project ON project.project_id = entity.project_id
   JOIN core.system AS system ON system.system_id = %s AND system.is_active
  WHERE entity.project_id = %s AND entity.modeled_entity_id = %s
    AND entity.modeled_entity_type = %s AND entity.is_active
-   AND (EXISTS (
-       SELECT 1 FROM workflow.list_mapping_source_objects(entity.project_id,
-           entity.modeled_entity_id, entity.modeled_entity_type, system.system_id)
-   ) OR (project.default_mapping_source_system_id = system.system_id
-       AND workflow.is_context_only_mapping_target(entity.project_id,
-           entity.modeled_entity_id, entity.modeled_entity_type)
-       AND EXISTS (SELECT 1 FROM core.connection AS connection
-           WHERE connection.tenant_id = project.tenant_id
-             AND connection.system_id = system.system_id AND connection.is_active)))
+   AND EXISTS (
+       SELECT 1 FROM workflow.list_mapping_branches(entity.project_id, entity.modeled_entity_type)
+           AS branch
+        WHERE branch.modeled_entity_id = entity.modeled_entity_id
+          AND branch.source_system_id = system.system_id
+   )
    AND NOT EXISTS (SELECT 1 FROM workflow.mapping_object AS mapping
        WHERE mapping.project_id = entity.project_id
          AND mapping.modeled_entity_type = entity.modeled_entity_type

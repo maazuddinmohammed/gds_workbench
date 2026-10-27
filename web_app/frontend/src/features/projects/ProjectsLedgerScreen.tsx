@@ -74,7 +74,6 @@ export function ProjectsLedgerScreen({
           api={api}
           tenantId={tenantId}
           hasTenantLock={homeQuery.data.lock.owned_by_current_principal === true}
-          systems={homeQuery.data.systems}
           onClose={() => setCreating(false)}
           onCreated={(created) => {
             setCreating(false);

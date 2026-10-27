@@ -19,6 +19,7 @@ export function MappingObjectDetailPage({
   mappingObjectId,
   projectRevision,
   hasTenantLock,
+  systemCode,
 }: {
   api: MappingApi;
   tenantId: number;
@@ -26,6 +27,8 @@ export function MappingObjectDetailPage({
   mappingObjectId: number;
   projectRevision: number;
   hasTenantLock: boolean;
+  /** The System tab the user came from; back links return to it. */
+  systemCode?: string | undefined;
 }) {
   const query = useQuery({
     queryKey: mappingQueryKeys.object(tenantId, projectId, mappingObjectId),
@@ -34,7 +37,7 @@ export function MappingObjectDetailPage({
   if (query.isPending) return <DetailState label="Loading Object Mapping…" />;
   if (query.isError) return <DetailState label={detailError(query.error, "Object")} error />;
   return (
-    <MappingObjectDetailView tenantId={tenantId} projectId={projectId} detail={query.data}
+    <MappingObjectDetailView tenantId={tenantId} projectId={projectId} detail={query.data} systemCode={systemCode}
       editor={<div className="workflow-command-actions mapping-edit-actions">
         <MappingEditor mode="object" api={api} tenantId={tenantId} projectId={projectId} mappingObjectId={mappingObjectId}
           projectRevision={projectRevision} hasTenantLock={hasTenantLock} />
@@ -52,11 +55,13 @@ export function MappingAttributeDetailPage({
   tenantId,
   projectId,
   mappingAttributeId,
+  systemCode,
 }: {
   api: MappingApi;
   tenantId: number;
   projectId: number;
   mappingAttributeId: number;
+  systemCode?: string | undefined;
 }) {
   const query = useQuery({
     queryKey: mappingQueryKeys.attribute(tenantId, projectId, mappingAttributeId),
@@ -64,18 +69,20 @@ export function MappingAttributeDetailPage({
   });
   if (query.isPending) return <DetailState label="Loading Attribute Mapping…" />;
   if (query.isError) return <DetailState label={detailError(query.error, "Attribute")} error />;
-  return <MappingAttributeDetailView tenantId={tenantId} projectId={projectId} detail={query.data} />;
+  return <MappingAttributeDetailView tenantId={tenantId} projectId={projectId} detail={query.data} systemCode={systemCode} />;
 }
 
 function MappingObjectDetailView({
   tenantId,
   projectId,
   detail,
+  systemCode,
   children, editor,
 }: {
   tenantId: number;
   projectId: number;
   detail: MappingObjectDetail;
+  systemCode?: string | undefined;
   children: ReactNode; editor?: ReactNode;
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
@@ -86,6 +93,7 @@ function MappingObjectDetailView({
         tenantId={tenantId}
         projectId={projectId}
         layer={detail.target.entity_type === "logical_entity" ? "logical" : "dimensional"}
+        systemCode={systemCode}
         title={detail.target.entity_name}
         status={detail.status}
         locked={detail.is_locked}
@@ -122,10 +130,12 @@ function MappingAttributeDetailView({
   tenantId,
   projectId,
   detail,
+  systemCode,
 }: {
   tenantId: number;
   projectId: number;
   detail: MappingAttributeDetail;
+  systemCode?: string | undefined;
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
@@ -137,6 +147,7 @@ function MappingAttributeDetailView({
         projectId={projectId}
         parentObjectId={detail.parent_object_mapping.mapping_object_id}
         layer={target.entity.entity_type === "logical_entity" ? "logical" : "dimensional"}
+        systemCode={systemCode}
         title={`${target.entity.entity_schema_name}.${target.entity.entity_name}.${target.attribute_name}`}
         status={detail.status}
         locked={detail.is_locked}
@@ -166,7 +177,10 @@ function MappingAttributeDetailView({
         <dl className="detail-fact-grid">
           <div><dt>Object Mapping</dt><dd>
             <Link className="text-action" to="/tenants/$tenantId/mapping/projects/$projectId/objects/$mappingObjectId"
-              search={{ layer: target.entity.entity_type === "logical_entity" ? "logical" : "dimensional" }}
+              search={{
+                layer: target.entity.entity_type === "logical_entity" ? "logical" : "dimensional",
+                ...(systemCode ? { system: systemCode } : {}),
+              }}
               params={{ tenantId: String(tenantId), projectId: String(projectId), mappingObjectId: String(detail.parent_object_mapping.mapping_object_id) }}>
               Object Mapping {detail.parent_object_mapping.mapping_object_id}
             </Link>
@@ -185,6 +199,7 @@ function DetailHeader({
   projectId,
   parentObjectId,
   layer,
+  systemCode,
   title,
   status,
   locked,
@@ -196,6 +211,7 @@ function DetailHeader({
   projectId: number;
   parentObjectId?: number;
   layer?: "logical" | "dimensional";
+  systemCode?: string | undefined;
   title: string;
   status: string;
   locked: boolean;
@@ -213,7 +229,7 @@ function DetailHeader({
             : "/tenants/$tenantId/mapping/projects/$projectId"}
           params={{ tenantId: String(tenantId), projectId: String(projectId),
             ...(parentObjectId ? { mappingObjectId: String(parentObjectId) } : {}) }}
-          search={layer ? { layer } : {}}
+          search={{ ...(layer ? { layer } : {}), ...(systemCode ? { system: systemCode } : {}) }}
         >
           ← {parentObjectId ? "Back to Object Mapping" : "Back to Object mappings"}
         </Link>

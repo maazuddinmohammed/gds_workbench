@@ -65,12 +65,12 @@ export interface MappingGenerationTarget extends MappingModeledEntity {
   mapping_object_id: number | null;
   object_order: number;
   is_locked: boolean;
-  has_sources: boolean;
   attributes: { attribute_id: number; attribute_name: string; modeled_attribute_name: string; ordinal_position: number; is_locked: boolean; is_authored: boolean }[];
 }
 
 export interface MappingGenerationPage {
-  project_id: number; project_revision: number; items: MappingGenerationTarget[]; next_cursor: string | null;
+  project_id: number; project_revision: number; items: MappingGenerationTarget[];
+  unsupplied_entity_count: number; next_cursor: string | null;
 }
 
 export interface MappingObject {
@@ -309,7 +309,7 @@ export async function loadMappingGenerationTargets(
   tenantId: number,
   projectId: number,
   entityType: MappingEntityType,
-): Promise<{ projectRevision: number; items: MappingGenerationTarget[] }> {
+): Promise<{ projectRevision: number; items: MappingGenerationTarget[]; unsuppliedEntityCount: number }> {
   const items: MappingGenerationTarget[] = [];
   const seenCursors = new Set<string>();
   let cursor: string | undefined;
@@ -322,7 +322,7 @@ export async function loadMappingGenerationTargets(
     }
     projectRevision = response.project_revision;
     items.push(...response.items);
-    if (!response.next_cursor) return { projectRevision, items };
+    if (!response.next_cursor) return { projectRevision, items, unsuppliedEntityCount: response.unsupplied_entity_count };
     if (seenCursors.has(response.next_cursor)) {
       throw new Error("Mapping target cursor repeated");
     }
@@ -331,21 +331,29 @@ export async function loadMappingGenerationTargets(
   }
 }
 
-export async function loadMappingFilterSystems(
+/** Systems for the layer's System tabs: every branch System plus Systems with saved Mappings. */
+export async function loadMappingSystems(
   api: Pick<MappingTransport, "listMappingGenerationTargets" | "listMappingObjects">,
   tenantId: number,
   projectId: number,
   entityType: MappingEntityType,
-): Promise<{ projectRevision: number; codes: string[] }> {
+): Promise<{ projectRevision: number; systems: { code: string; mappings: number }[] }> {
   const targets = await loadMappingGenerationTargets(api, tenantId, projectId, entityType);
-  const codes = new Map(targets.items.map((item) => [item.source_system.system_code.toLowerCase(), item.source_system.system_code]));
+  const systems = new Map(targets.items.map((item) => [item.source_system.system_code.toLowerCase(),
+    { code: item.source_system.system_code, mappings: 0 }]));
   const cursors = new Set<string>();
   let cursor: string | undefined;
   for (let page = 0; page < 250; page += 1) {
     const saved = await api.listMappingObjects(tenantId, projectId, { entityType }, 200, cursor);
     if (saved.project_revision !== targets.projectRevision) throw new Error("Mapping filter revision changed while loading");
-    for (const row of saved.items) codes.set(row.source_system.system_code.toLowerCase(), row.source_system.system_code);
-    if (!saved.next_cursor) return { projectRevision: targets.projectRevision, codes: [...codes.values()].sort((a, b) => a.localeCompare(b)) };
+    for (const row of saved.items) {
+      const key = row.source_system.system_code.toLowerCase();
+      const system = systems.get(key) ?? { code: row.source_system.system_code, mappings: 0 };
+      systems.set(key, { ...system, mappings: system.mappings + 1 });
+    }
+    if (!saved.next_cursor) {
+      return { projectRevision: targets.projectRevision, systems: [...systems.values()].sort((a, b) => a.code.localeCompare(b.code)) };
+    }
     if (cursors.has(saved.next_cursor)) throw new Error("Mapping filter cursor repeated");
     cursors.add(saved.next_cursor); cursor = saved.next_cursor;
   }

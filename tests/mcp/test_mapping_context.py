@@ -296,7 +296,7 @@ def test_missing_attribute_rows_report_incomplete_coverage_without_inventing_rul
 
 
 def test_mapping_population_and_source_system_value_survive_id_stripping():
-    projected = project_mapping_inputs(context())
+    projected = project_mapping_inputs(context(), workflow="code_generation")
     assert projected["source_systems"] == [
         {"system_code": "CRM", "source_system_value": 10}
     ]
@@ -311,7 +311,7 @@ def test_mapping_population_and_source_system_value_survive_id_stripping():
 
 
 def test_legacy_mapping_templates_are_explicitly_unavailable():
-    projected = project_mapping_inputs(context())
+    projected = project_mapping_inputs(context(), workflow="code_generation")
     assert projected["mapping_templates"] == []
     assert projected["object_transformations"][0]["output_template_code"] is None
     assert all(
@@ -340,7 +340,7 @@ def test_template_projection_preserves_custom_documents_examples_and_saved_inact
         )
     ]
     original = deepcopy(value)
-    projected = project_mapping_inputs(value)
+    projected = project_mapping_inputs(value, workflow="code_generation")
     assert [item["code"] for item in projected["mapping_templates"]] == [
         "custom.object",
         "custom.attribute",

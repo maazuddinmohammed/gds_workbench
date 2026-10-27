@@ -163,7 +163,7 @@ async def test_logical_peer_lookup_metadata_is_authorized_and_invalidates_code(
             return row
 
         initial = await current()
-        projected = project_mapping_inputs(initial["source_context"])
+        projected = project_mapping_inputs(initial["source_context"], workflow="code_generation")
         for name, value in projected.items():
             validator = cast(
                 Any,
@@ -304,7 +304,7 @@ async def test_dimensional_peer_lookup_uses_gold_schema_and_tracks_changes(
             return row
 
         initial = await current()
-        projected = project_mapping_inputs(initial["source_context"])
+        projected = project_mapping_inputs(initial["source_context"], workflow="code_generation")
         for name, value in projected.items():
             validator = cast(
                 Any,

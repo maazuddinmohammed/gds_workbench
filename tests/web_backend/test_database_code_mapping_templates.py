@@ -192,7 +192,7 @@ def test_applied_mapping_documents_keep_their_exact_template_semantics(
                 "source_columns",
             ],
         }
-    projected = project_mapping_inputs(source)
+    projected = project_mapping_inputs(source, workflow="code_generation")
     assert projected["mapping_templates"] == definitions
     assert projected["object_transformations"][0]["transformation"] == object_document
     assert (

@@ -8,7 +8,7 @@ Use [Project Change Sets](change-sets.md), [record state](../record-state.md) an
 
 | Dataset | Identity | Fields |
 |---|---|---|
-| `context_type` | `context_type_name` | `context_type_name`, `context_type_description`; read-only global vocabulary. |
+| `context_type` | `context_type_name` | `context_type_name`, `context_type_description`, `context_type_workflows`; read-only global vocabulary. |
 | `context_group` | `context_group_name` within Project | `context_group_name`, `context_type_name`, `context_group_description`, `source_system_code`, `is_active`. |
 | `context_record` | `context_record_id` UUID | `context_record_id`, `context_group_name`, `context_text`, `source_reference`, `status`, `is_locked`. |
 
@@ -22,7 +22,9 @@ Only this published UUID is carried as a database identity in portable Context p
 
 ## Meaning and evidence
 
-Preserve the statement's source, qualifications and uncertainty. An assumption or proposed decision must remain identifiable as such; do not disguise agent inference as confirmed business evidence. Context is reusable across workflows without a stored layer restriction. Consumers still check relevance, current active group/record and contradictions. A locked record is immutable, not necessarily true.
+Preserve the statement's source, qualifications and uncertainty. An assumption or proposed decision must remain identifiable as such; do not disguise agent inference as confirmed business evidence. A locked record is immutable, not necessarily true.
+
+Each Context Type lists the workflows that read its records in `context_type_workflows` (`analysis`, `subject_area`, `logical`, `dimensional`, `mapping`, `code_generation`, `validation`). For a task, read only active records whose group's type lists that workflow, from groups with no Source System or with the task's System, plus any record an Entity in scope already cites as support. Workflow-only types such as Logical Requirement or Mapping Requirement reach only their own workflow. Consumers still check relevance, current active group/record and contradictions. Routing narrows what a workflow reads; it does not change which records may be cited.
 
 A Context Record can support a modeled concept or rule through `support_source_type:"context_record"` and `context_record:{context_record_id:"..."}`. The consumer's other required fields remain unchanged: Logical and Dimensional use rationale/status/lock/source order. Read the relevant [Logical](logical.md) or [Dimensional](dimensional.md) schema. Do not add evidence fields to unrelated datasets.
 

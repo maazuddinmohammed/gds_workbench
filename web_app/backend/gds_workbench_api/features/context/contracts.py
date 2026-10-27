@@ -8,7 +8,7 @@ from gds_etl_workbench.domain.context_safety import (
     CONTEXT_SOURCE_REFERENCE_MAX_BYTES,
 )
 from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_etl_workbench.domain.modeling_records import ContextRecordId
+from gds_etl_workbench.domain.modeling_records import ContextRecordId, ContextWorkflow
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 type ContextStatus = Literal["active", "inactive", "deprecated"]
@@ -22,6 +22,8 @@ class ContextType(ContractModel):
     context_type_id: int = Field(gt=0)
     context_type_name: str = Field(min_length=1, max_length=200)
     context_type_description: str | None = Field(default=None, max_length=2000)
+    # Workflows whose prompts receive this Type's records; only the type list carries it.
+    context_type_workflows: tuple[ContextWorkflow, ...] = ()
 
 
 class ContextTypeCollection(ContractModel):

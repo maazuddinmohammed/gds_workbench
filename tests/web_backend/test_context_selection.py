@@ -8,7 +8,10 @@ from gds_etl_workbench.domain.snapshots.project import ContextSection
 from tests.mcp.project_test_fixtures import complete_project_graph
 from tests.web_backend.mapping_fixtures import mapping_preparation
 
-from gds_workbench_api.features.context.context import select_context_records
+from gds_workbench_api.features.context.context import (
+    select_context_records,
+    with_cited_context_records,
+)
 from gds_workbench_api.features.mapping.execution_context import (
     build_mapping_execution_context,
 )
@@ -18,7 +21,18 @@ from gds_workbench_api.features.workflows.authoring.downstream_inputs import (
 )
 
 
-def section() -> dict[str, Any]:
+ALL_WORKFLOWS = (
+    "analysis",
+    "subject_area",
+    "logical",
+    "dimensional",
+    "mapping",
+    "code_generation",
+    "validation",
+)
+
+
+def section(workflows: tuple[str, ...] = ALL_WORKFLOWS) -> dict[str, Any]:
     graph = complete_project_graph()
     group = {**graph["context_group"][0], "source_system_code": None}
     record = {
@@ -30,6 +44,7 @@ def section() -> dict[str, Any]:
             {
                 "context_type_name": "Business Requirement",
                 "context_type_description": None,
+                "context_type_workflows": list(workflows),
             }
         ],
         "groups": [group],
@@ -43,18 +58,41 @@ def test_requirements_are_filtered_by_activity_and_authorized_source_system_scop
         {"tenant_code": "ACME", "system_code": "ERP"},
         {"tenant_code": "OTHER", "system_code": "CRM"},
     ]
-    assert select_context_records(data, source_scope=scope)
-    assert select_context_records(data, source_scope=scope)
+    assert select_context_records(data, source_scope=scope, workflow="mapping")
+    assert select_context_records(data, source_scope=scope, workflow="mapping")
     document = data["groups"][0]
     document.update(source_system_code="erp")
-    assert select_context_records(data, source_scope=scope)
+    assert select_context_records(data, source_scope=scope, workflow="mapping")
     document["source_system_code"] = "UNKNOWN"
-    assert not select_context_records(data, source_scope=scope)
+    assert not select_context_records(data, source_scope=scope, workflow="mapping")
     document.update(source_system_code="ERP", is_active=False)
-    assert not select_context_records(data, source_scope=scope)
+    assert not select_context_records(data, source_scope=scope, workflow="mapping")
     document["is_active"] = True
     data["records"][0]["status"] = "inactive"
-    assert not select_context_records(data, source_scope=scope)
+    assert not select_context_records(data, source_scope=scope, workflow="mapping")
+
+
+def test_records_reach_only_the_workflows_their_type_is_routed_to() -> None:
+    data = section(("mapping", "validation"))
+    scope = [{"tenant_code": "ACME", "system_code": "ERP"}]
+    assert select_context_records(data, source_scope=scope, workflow="mapping")
+    assert not select_context_records(data, source_scope=scope, workflow="logical")
+    data["types"][0]["context_type_workflows"] = []
+    assert not select_context_records(data, source_scope=scope, workflow="mapping")
+
+
+def test_cited_records_pass_whatever_their_type_or_system() -> None:
+    data = section(("code_generation",))
+    data["groups"][0]["source_system_code"] = "CRM"
+    record_id = data["records"][0]["context_record_id"]
+    scope = [{"tenant_code": "ACME", "system_code": "ERP"}]
+    routed = select_context_records(data, source_scope=scope, workflow="logical")
+    assert routed == []
+    cited = with_cited_context_records(data, routed, {record_id.upper()})
+    assert [record["context_record_id"] for record in cited] == [record_id]
+    assert with_cited_context_records(data, cited, {record_id}) == cited
+    data["records"][0]["status"] = "inactive"
+    assert with_cited_context_records(data, [], {record_id}) == []
 
 
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])

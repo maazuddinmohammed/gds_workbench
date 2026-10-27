@@ -90,7 +90,7 @@ def test_code_system_sort_is_not_entity_order_or_runtime_precedence(
         assert all(
             row["transformation"] == precedence for row in raw["object_mappings"]
         )
-        public = project_mapping_inputs(raw)
+        public = project_mapping_inputs(raw, workflow="code_generation")
         assert [row["system_code"] for row in public["source_systems"]] == [
             a_code,
             z_code,

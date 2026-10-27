@@ -53,7 +53,6 @@ async def test_project_enrichment_settings_round_trip_and_lock_fences(
     details.update(
         logical_entity_scd_type="type_2",
         dimensional_entity_scd_type="type_1",
-        default_mapping_source_system_code=f"{code_prefix}_ERP",
     )
     proposals = {
         name: graph[name]
@@ -159,16 +158,14 @@ async def test_project_enrichment_settings_round_trip_and_lock_fences(
                     proposals[dataset] = saved
             with postgres_database.connect_owner() as connection:
                 row = connection.execute(
-                    "SELECT project_name, logical_entity_scd_type, dimensional_entity_scd_type, "
-                    "system_code FROM project.project LEFT JOIN core.system ON "
-                    "system_id=default_mapping_source_system_id WHERE project_id=%s",
+                    "SELECT project_name, logical_entity_scd_type, dimensional_entity_scd_type "
+                    "FROM project.project WHERE project_id=%s",
                     (project_id,),
                 ).fetchone()
                 assert row == {
                     "project_name": "Project Tool Round Trip",
                     "logical_entity_scd_type": "type_2",
                     "dimensional_entity_scd_type": "type_1",
-                    "system_code": f"{code_prefix}_ERP",
                 }
                 assert connection.execute(
                     "SELECT count(*) AS n FROM core.object WHERE source_tenant_id=%s "

@@ -314,19 +314,6 @@ def validate_future_graph(
                 ("project_name",),
                 "Project name is immutable in Change Sets; preserve the Snapshot identity.",
             )
-        system_code = changed.default_mapping_source_system_code
-        if (
-            system_code is not None
-            and system_code != previous.default_mapping_source_system_code
-            and normalize_project_key_value(system_code) not in physical_scope.active_system_codes
-        ):
-            _issue(
-                scope_issues,
-                "default_mapping_source_system_unavailable",
-                "project_details",
-                ("default_mapping_source_system_code",),
-                "Default Mapping source must identify an active registered System code.",
-            )
     _validate_project_details(future, physical_scope, scope_issues)
     _validate_physical_scope(
         future,

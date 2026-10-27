@@ -292,8 +292,14 @@ describe("Mapping journey", () => {
 
     expect(within(screen.getByRole("navigation", { name: "Mapping layer" })).getByRole("link", { name: "Logical" })).toHaveAttribute("aria-current", "page");
     expect(screen.queryByLabelText("Entity type")).not.toBeInTheDocument();
+    const systemTabs = screen.getByRole("navigation", { name: "Mapping Systems" });
+    expect(within(systemTabs).getByRole("link", { name: "All Systems" })).toHaveAttribute("aria-current", "page");
+    await user.click(await within(systemTabs).findByRole("link", { name: "CRM, 1 Mapping" }));
+    expect(within(systemTabs).getByRole("link", { name: "CRM, 1 Mapping" })).toHaveAttribute("aria-current", "page");
+    expect(within(systemTabs).getByRole("link", { name: "All Systems" })).not.toHaveAttribute("aria-current");
+    expect(within(screen.getByRole("table", { name: "Object Mappings" })).queryByRole("columnheader", { name: "System" })).not.toBeInTheDocument();
     if (screen.getByRole("button", { name: /^Filters/ }).getAttribute("aria-expanded") === "false") await user.click(screen.getByRole("button", { name: /^Filters/ }));
-    await user.selectOptions(screen.getByLabelText("Source System code"), "CRM");
+    expect(screen.queryByLabelText("Source System code")).not.toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText("Mapping status"), "inactive");
     await user.selectOptions(screen.getByLabelText("Mapping lock"), "false");
     await user.click(screen.getByRole("button", { name: "Apply Mapping filters" }));
@@ -594,7 +600,7 @@ describe("Mapping journey", () => {
     expect(screen.getByRole("option", {
       name: "Broken Object Mapping · Schema invalid",
     })).toBeDisabled();
-    await user.selectOptions(screen.getByLabelText("Source System"), "2");
+    await user.selectOptions(screen.getByLabelText("Source System"), "CRM");
     await user.selectOptions(screen.getByLabelText("Object Mapping Output Template"), "801");
     await user.selectOptions(screen.getByLabelText("Attribute Mapping Output Template"), "802");
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Generate mappings" }));
@@ -654,7 +660,7 @@ describe("Mapping journey", () => {
     await user.click(await screen.findByRole("button", { name: "Generate mappings" }));
     await user.click(screen.getByText("Advanced settings"));
     await screen.findByRole("heading", { name: "Generate mappings" });
-    await user.selectOptions(screen.getByLabelText("Source System"), "2");
+    await user.selectOptions(screen.getByLabelText("Source System"), "CRM");
     const submit = await within(screen.getByRole("dialog")).findByRole("button", { name: "Generate mappings" });
     await waitFor(() => expect(submit).toBeEnabled());
     for (const label of ["Agent SDK", "Provider", "Maximum turns", "Validation retries"]) {
@@ -687,7 +693,7 @@ describe("Mapping journey", () => {
     await user.click(await screen.findByRole("button", { name: "Generate mappings" }));
     await user.click(screen.getByText("Advanced settings"));
     await screen.findByRole("heading", { name: "Generate mappings" });
-    await user.selectOptions(screen.getByLabelText("Source System"), "2");
+    await user.selectOptions(screen.getByLabelText("Source System"), "CRM");
     const createAndRun = within(screen.getByRole("dialog")).getByRole("button", { name: "Generate mappings" });
     await waitFor(() => expect(createAndRun).toBeEnabled());
     await user.click(createAndRun);
@@ -725,7 +731,7 @@ describe("Mapping journey", () => {
     await screen.findByRole("table", { name: "Object Mappings" });
     await user.click(await screen.findByRole("button", { name: "Generate mappings" }));
     await user.click(screen.getByText("Advanced settings"));
-    await user.selectOptions(screen.getByLabelText("Source System"), "2");
+    await user.selectOptions(screen.getByLabelText("Source System"), "CRM");
     const submit = within(screen.getByRole("dialog")).getByRole("button", { name: "Generate mappings" });
     await waitFor(() => expect(submit).toBeEnabled());
     await user.click(submit);
@@ -778,7 +784,7 @@ describe("Mapping journey", () => {
     expect(fetcher.mock.calls.some(([input]) => String(input).includes(`/output-templates?target_type=mapping_object&active=true&page_size=200&entity_type=${layer}`))).toBe(true);
     expect(fetcher.mock.calls.some(([input]) => String(input).includes(`/mapping/generation-targets?entity_type=${layer}`))).toBe(true);
     await within(dialog).findByRole("checkbox", { name: "Generate silver_nwa.customer from CRM" });
-    await user.selectOptions(screen.getByLabelText("Source System"), "2");
+    await user.selectOptions(screen.getByLabelText("Source System"), "CRM");
     if (customObject) {
       await user.selectOptions(screen.getByLabelText("Object Mapping Output Template"), "801");
     }
@@ -808,6 +814,7 @@ function mappingFetchStub(options: {
   executeGate?: Promise<void>;
   templatesUnavailable?: boolean;
   generationTargets?: Array<Record<string, unknown>>;
+  unsuppliedEntityCount?: number;
 } = {}) {
   let executeAttempts = 0;
   return vi.fn<typeof fetch>(async (input) => {
@@ -826,9 +833,10 @@ function mappingFetchStub(options: {
     }
     if (url === "/api/v1/tenants/7/projects/18") return jsonResponse(projectDetail);
     if (url.startsWith("/api/v1/tenants/7/projects/18/mapping/generation-targets?")) {
-      return jsonResponse({ project_id: 18, project_revision: 18, next_cursor: null, items: options.generationTargets ?? [{
+      return jsonResponse({ project_id: 18, project_revision: 18, next_cursor: null,
+        unsupplied_entity_count: options.unsuppliedEntityCount ?? 0, items: options.generationTargets ?? [{
         ...mappingTarget, source_system: sourceSystem, entity_name: "customer",
-        mapping_object_id: 81, object_order: 0, is_locked: false, has_sources: true,
+        mapping_object_id: 81, object_order: 0, is_locked: false,
         attributes: [{ attribute_id: 702, attribute_name: "customer_name", modeled_attribute_name: "CustomerName", ordinal_position: 1, is_locked: false, is_authored: true }],
       }] });
     }
@@ -1121,7 +1129,7 @@ it.each([["Object mappings", "mapping_object", 81], ["Attribute mappings", "mapp
 it("selects Objects with their unlocked Attributes and preserves explicit exclusions", async () => {
   const source = sourceSystem;
   const target = { ...mappingTarget, source_system: source, entity_name: "customer",
-    object_order: 0, has_sources: true, is_locked: false,
+    object_order: 0, is_locked: false,
     attributes: [
       { attribute_id: 702, attribute_name: "customer_name", modeled_attribute_name: "Name", ordinal_position: 1, is_locked: false, is_authored: true },
       { attribute_id: 703, attribute_name: "email", modeled_attribute_name: "Email", ordinal_position: 2, is_locked: false, is_authored: true },
@@ -1153,13 +1161,13 @@ it("selects Objects with their unlocked Attributes and preserves explicit exclus
   ]);
 });
 
-it("assesses every input System even without saved Entity source links", async () => {
+it("lists only the server's Entity/System branches and explains unsupplied Entities", async () => {
   const target = { ...mappingTarget, entity_name: "customer",
-    object_order: 0, has_sources: false, is_locked: false,
+    object_order: 0, is_locked: false,
     attributes: [{ attribute_id: 702, attribute_name: "customer_name", modeled_attribute_name: "Name",
       ordinal_position: 1, is_locked: false, is_authored: false }],
   };
-  const fetcher = mappingFetchStub({ generationTargets: ["CRM", "ERP", "BILLING"].map((system_code, index) => ({
+  const fetcher = mappingFetchStub({ unsuppliedEntityCount: 2, generationTargets: ["CRM", "ERP", "BILLING"].map((system_code, index) => ({
     ...target, source_system: { system_id: index + 2, system_code, system_name: system_code },
   })) });
   const user = userEvent.setup();
@@ -1171,6 +1179,9 @@ it("assesses every input System even without saved Entity source links", async (
   for (const system of ["CRM", "ERP", "BILLING"]) {
     expect(await dialog.findByRole("checkbox", { name: `Generate silver_nwa.customer from ${system}` })).toBeChecked();
   }
+  expect(dialog.getByText(/Each Entity is mapped only from the Systems its source tables come from\./)).toBeVisible();
+  expect(dialog.getByText("2 Logical Entities have no source tables, so they are not listed.")).toBeVisible();
+  expect(dialog.getByLabelText("Source System")).toHaveValue("");
   expect(dialog.queryByText("No eligible sources")).not.toBeInTheDocument();
   await user.click(dialog.getByRole("button", { name: "Generate mappings" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
@@ -1178,6 +1189,40 @@ it("assesses every input System even without saved Entity source links", async (
   expect(JSON.parse(String(call?.[1]?.body)).mapping_targets).toEqual([2, 3, 4].map((source_system_id) => ({
     modeled_entity_id: 701, source_system_id, selected_attribute_ids: [702],
   })));
+});
+
+it("keeps the System tab in the address through details, back links and Generate mappings", async () => {
+  const fetcher = mappingFetchStub({ generationTargets: [
+    { ...mappingTarget, source_system: sourceSystem, entity_name: "customer", mapping_object_id: 81, object_order: 0, is_locked: false,
+      attributes: [{ attribute_id: 702, attribute_name: "customer_name", modeled_attribute_name: "Name", ordinal_position: 1, is_locked: false, is_authored: true }] },
+    { ...mappingTarget, entity_id: 705, entity_name: "orders", source_system: { system_id: 3, system_code: "ERP", system_name: "ERP" },
+      mapping_object_id: null, object_order: 0, is_locked: false,
+      attributes: [{ attribute_id: 802, attribute_name: "order_id", modeled_attribute_name: "OrderID", ordinal_position: 1, is_locked: false, is_authored: false }] },
+  ] });
+  const user = userEvent.setup();
+  const router = createWorkbenchRouter({ api: createApiClient(fetcher),
+    history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18?layer=logical"] }) });
+  render(<WorkbenchApp router={router} />);
+  const tabs = await screen.findByRole("navigation", { name: "Mapping Systems" });
+  await waitFor(() => expect(within(tabs).getAllByRole("link").map((link) => link.getAttribute("aria-label") ?? link.textContent))
+    .toEqual(["All Systems", "CRM, 1 Mapping", "ERP, 0 Mappings"]));
+  await user.click(within(tabs).getByRole("link", { name: "CRM, 1 Mapping" }));
+  expect(router.state.location.search).toEqual({ layer: "logical", system: "CRM" });
+  expect(within(tabs).getByRole("link", { name: "All Systems" })).not.toHaveClass("active");
+  await waitFor(() => expect(fetcher).toHaveBeenCalledWith(
+    "/api/v1/tenants/7/projects/18/mapping/objects?entity_type=logical_entity&source_system_code=crm&page_size=200",
+    expect.anything(),
+  ));
+  await user.click(await screen.findByRole("link", { name: "Open Object Mapping 81" }));
+  expect(router.state.location.search).toEqual({ layer: "logical", system: "CRM" });
+  await user.click(await screen.findByRole("link", { name: "Back to Object mappings" }));
+  expect(router.state.location.pathname).toBe("/tenants/7/mapping/projects/18");
+  expect(router.state.location.search).toEqual({ layer: "logical", system: "CRM" });
+  await user.click(await screen.findByRole("button", { name: "Generate mappings" }));
+  const dialog = within(await screen.findByRole("dialog"));
+  expect(await dialog.findByRole("checkbox", { name: "Generate silver_nwa.customer from CRM" })).toBeChecked();
+  expect(dialog.getByLabelText("Source System")).toHaveValue("CRM");
+  expect(dialog.queryByRole("checkbox", { name: "Generate silver_nwa.orders from ERP" })).not.toBeInTheDocument();
 });
 
 it("keeps layer filters and detail navigation scoped to Dimensional", async () => {
@@ -1242,7 +1287,7 @@ it("retains the Dimensional layer across Mapping, Code generation, and Validatio
 
 it("retains Object and Attribute choices across scope modes, detail navigation and search", async () => {
   const target = { ...mappingTarget, source_system: sourceSystem, entity_name: "customer",
-    mapping_object_id: 81, object_order: 0, has_sources: true, is_locked: false,
+    mapping_object_id: 81, object_order: 0, is_locked: false,
     attributes: [
       { attribute_id: 702, attribute_name: "customer_name", modeled_attribute_name: "Name", ordinal_position: 1, is_locked: false, is_authored: true },
       { attribute_id: 703, attribute_name: "customer_id", modeled_attribute_name: "ID", ordinal_position: 2, is_locked: true, is_authored: true },
@@ -1299,7 +1344,7 @@ it("retains Object and Attribute choices across scope modes, detail navigation a
 it("selects unlocked Attributes across every page and permits excluded missing mappings", async () => {
   const fetcher = mappingFetchStub({ generationTargets: [{
     ...mappingTarget, source_system: sourceSystem, entity_name: "customer", mapping_object_id: 81,
-    object_order: 0, has_sources: true, is_locked: false,
+    object_order: 0, is_locked: false,
     attributes: Array.from({ length: 52 }, (_, index) => ({ attribute_id: 800 + index,
       attribute_name: `field_${index}`, modeled_attribute_name: `Field${index}`,
       ordinal_position: index + 1, is_locked: index === 0, is_authored: index !== 51 })),

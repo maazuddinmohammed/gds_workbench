@@ -17,7 +17,7 @@ Use shared key normalization; preserve existing spelling. Below, **name** means 
 
 ## Entity type list
 
-`logical_entity_type` holds `logical_entity_type_code`, `logical_entity_type_description` and `logical_entity_type_is_active`. It is a read-only reference list: read it from the Project Snapshot and choose an active code; never author or stage it. Current codes are `core`, `reference`, `transaction`, `event`, `association`, `history` and `snapshot`, but the installed list decides. A retired code stays valid on unchanged records; new or changed records need an active one.
+`logical_entity_type` holds `logical_entity_type_code`, `logical_entity_type_description` and `logical_entity_type_is_active`. It is a read-only reference list: read it from the Project Snapshot and choose an active code; never author or stage it. Current codes are `core`, `reference`, `transaction`, `transaction_line`, `event`, `association`, `history`, `snapshot`, `agreement`, `plan`, `hierarchy`, `subtype`, `list` and `other` (only when no listed type fits; the definition says what it is), but the installed list decides. A retired code stays valid on unchanged records; new or changed records need an active one.
 
 ## Logical Entity fields
 

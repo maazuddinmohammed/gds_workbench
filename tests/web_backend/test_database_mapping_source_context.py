@@ -4,6 +4,7 @@
 # pyright: reportPrivateUsage=false
 
 from dataclasses import dataclass, replace
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -350,13 +351,9 @@ def _seed_context_mapping_target(
     *,
     dimensional: bool,
 ) -> tuple[int, str]:
-    """An explicit generated reference Entity, using only disposable fixture state."""
+    """An Entity supported only by a Context record, using only disposable fixture state."""
     layer = "dimensional" if dimensional else "logical"
     with database.connect_owner() as connection:
-        connection.execute(
-            "UPDATE project.project SET default_mapping_source_system_id=%s WHERE project_id=%s",
-            (scope.source_system_id, scope.plan.project_id),
-        )
         context_group_id = _required_id(
             connection.execute(
                 """INSERT INTO project.context_group
@@ -434,104 +431,190 @@ def _seed_context_mapping_target(
     return entity_id, context_record_id
 
 
-@pytest.mark.parametrize("dimensional", [False, True])
-def test_context_fallback_has_one_pair_and_no_unrelated_candidate_sources(
-    web_postgres_database: DisposablePostgres,
-    dimensional: bool,
-) -> None:
+def _generation_targets(
+    connection: Any, scope: MappingScope, entity_type: str
+) -> list[dict[str, Any]]:
     from gds_workbench_api.features.mapping.read_service import (
         _MAPPING_GENERATION_TARGETS_SQL,
     )
 
-    scope = _seed_mapping_scope(
-        web_postgres_database, dimensional=False, create_run=False
+    return connection.execute(
+        _MAPPING_GENERATION_TARGETS_SQL,
+        (
+            scope.tenant_id,
+            scope.plan.project_id,
+            entity_type,
+            scope.tenant_id,
+            scope.plan.project_id,
+            entity_type,
+            200,
+            0,
+        ),
+    ).fetchall()
+
+
+def _branches(connection: Any, project_id: int, entity_type: str) -> set[tuple[int, int]]:
+    return {
+        (row["modeled_entity_id"], row["source_system_id"])
+        for row in connection.execute(
+            "SELECT * FROM workflow.list_mapping_branches(%s, %s)", (project_id, entity_type)
+        ).fetchall()
+    }
+
+
+def _add_scope_source_table(connection: Any, scope: MappingScope, code: str) -> tuple[int, int]:
+    """Another System with one Source table in the Project Input Scope."""
+    template = connection.execute(
+        """
+        SELECT object.object_type_id, object.zone_id, connection.connection_type_id,
+               system.system_type_id
+          FROM core.object AS object
+          JOIN core.connection AS connection USING (connection_id)
+          JOIN core.system AS system USING (system_id)
+         WHERE object.object_id = %s
+        """,
+        (scope.source_object_id,),
+    ).fetchone()
+    assert template is not None
+    system_id = _required_id(
+        connection.execute(
+            "INSERT INTO core.system (system_code, system_name, system_type_id) "
+            "VALUES (%s, %s, %s) RETURNING system_id",
+            (f"{code}_{scope.plan.project_id}", code, template["system_type_id"]),
+        ).fetchone(),
+        "system_id",
     )
+    connection_id = _required_id(
+        connection.execute(
+            "INSERT INTO core.connection (tenant_id, system_id, connection_code, "
+            "connection_name, connection_type_id) VALUES (%s, %s, %s, %s, %s) "
+            "RETURNING connection_id",
+            (scope.tenant_id, system_id, f"{code}_SOURCE", code, template["connection_type_id"]),
+        ).fetchone(),
+        "connection_id",
+    )
+    object_id = _required_id(
+        connection.execute(
+            "INSERT INTO core.object (connection_id, source_tenant_id, object_schema, "
+            "object_name, object_type_id, zone_id) VALUES (%s, %s, 'source', %s, %s, %s) "
+            "RETURNING object_id",
+            (
+                connection_id,
+                scope.tenant_id,
+                code.lower(),
+                template["object_type_id"],
+                template["zone_id"],
+            ),
+        ).fetchone(),
+        "object_id",
+    )
+    connection.execute(
+        "INSERT INTO project.project_input_scope (project_id, object_id) VALUES (%s, %s)",
+        (scope.plan.project_id, object_id),
+    )
+    return system_id, object_id
+
+
+@pytest.mark.parametrize("dimensional", [False, True])
+def test_context_never_adds_a_mapping_branch(
+    web_postgres_database: DisposablePostgres,
+    dimensional: bool,
+) -> None:
+    from gds_workbench_api.features.mapping.read_service import _UNSUPPLIED_ENTITY_COUNT_SQL
+
+    scope = _seed_mapping_scope(web_postgres_database, dimensional=False, create_run=False)
     entity_id, context_record_id = _seed_context_mapping_target(
-        web_postgres_database,
-        scope,
-        dimensional=dimensional,
+        web_postgres_database, scope, dimensional=dimensional
     )
     entity_type = "dimensional_entity" if dimensional else "logical_entity"
     with web_postgres_database.connect_owner() as connection:
-        assert connection.execute(
-            "SELECT workflow.is_context_only_mapping_target(%s,%s,%s) AS eligible",
-            (scope.plan.project_id, entity_id, entity_type),
-        ).fetchone() == {"eligible": True}
-        pairs = connection.execute(
-            _MAPPING_GENERATION_TARGETS_SQL,
-            (
-                scope.tenant_id,
-                scope.plan.project_id,
-                entity_type,
-                scope.tenant_id,
-                scope.plan.project_id,
-                200,
-                0,
-            ),
-        ).fetchall()
-        selected = [row for row in pairs if row["entity_id"] == entity_id]
-        assert len(selected) == 1
-        assert selected[0]["source_system"]["system_id"] == scope.source_system_id
-        assert selected[0]["has_sources"] is True
-        assert (
+        unsupplied = {
+            "unsupplied_entity_count": 1,
+        }
+        for system_id in (None, scope.source_system_id):
+            # Neither a project-wide nor a System-scoped Context Group creates a branch.
             connection.execute(
-                "SELECT * FROM workflow.list_mapping_source_objects(%s,%s,%s,%s)",
-                (scope.plan.project_id, entity_id, entity_type, scope.source_system_id),
-            ).fetchall()
-            == []
-        )
-        assert connection.execute(
-            "SELECT workflow.is_context_only_mapping_target(%s,%s,'logical_entity') AS eligible",
-            (scope.plan.project_id, scope.logical_entity_id),
-        ).fetchone() == {"eligible": False}
+                "UPDATE project.context_group SET source_system_id=%s WHERE "
+                "context_group_id=(SELECT context_group_id "
+                "FROM project.context_record WHERE context_record_id=%s)",
+                (system_id, context_record_id),
+            )
+            assert not any(
+                branch[0] == entity_id
+                for branch in _branches(connection, scope.plan.project_id, entity_type)
+            )
+            assert not any(
+                row["entity_id"] == entity_id
+                for row in _generation_targets(connection, scope, entity_type)
+            )
+            assert (
+                connection.execute(
+                    _UNSUPPLIED_ENTITY_COUNT_SQL,
+                    (
+                        scope.tenant_id,
+                        scope.plan.project_id,
+                        entity_type,
+                        scope.plan.project_id,
+                        entity_type,
+                    ),
+                ).fetchone()
+                == unsupplied
+            )
+
+
+def test_logical_branches_follow_each_entitys_own_source_systems(
+    web_postgres_database: DisposablePostgres,
+) -> None:
+    scope = _seed_mapping_scope(web_postgres_database, dimensional=False, create_run=False)
+    project_id, entity_id = scope.plan.project_id, scope.logical_entity_id
+    with web_postgres_database.connect_owner() as connection:
+        other_system_id, other_object_id = _add_scope_source_table(connection, scope, "BILLING")
+        # A System in Input Scope that none of the Entity's tables come from adds nothing;
+        # the Bronze table resolves to its originating System, not its lake placement.
+        assert _branches(connection, project_id, "logical_entity") == {
+            (entity_id, scope.source_system_id)
+        }
+        assert {
+            (row["entity_id"], row["source_system"]["system_id"])
+            for row in _generation_targets(connection, scope, "logical_entity")
+        } == {(entity_id, scope.source_system_id)}
         connection.execute(
-            "UPDATE project.context_group SET source_system_id=%s WHERE "
-            "context_group_id=(SELECT context_group_id "
-            "FROM project.context_record WHERE context_record_id=%s)",
-            (scope.other_system_id, context_record_id),
+            "INSERT INTO workflow.logical_entity_source_mapping (project_id, logical_entity_id, "
+            "source_object_id, logical_entity_source_mapping_rationale) "
+            "VALUES (%s, %s, %s, 'Billing also supplies this Entity.')",
+            (project_id, entity_id, other_object_id),
         )
-        assert connection.execute(
-            "SELECT workflow.is_context_only_mapping_target(%s,%s,%s) AS eligible",
-            (scope.plan.project_id, entity_id, entity_type),
-        ).fetchone() == {"eligible": False}
+        assert _branches(connection, project_id, "logical_entity") == {
+            (entity_id, scope.source_system_id),
+            (entity_id, other_system_id),
+        }
         connection.execute(
-            "UPDATE project.context_group SET source_system_id=NULL WHERE "
-            "context_group_id=(SELECT context_group_id "
-            "FROM project.context_record WHERE context_record_id=%s)",
-            (context_record_id,),
+            "UPDATE workflow.logical_entity_source_mapping "
+            "SET logical_entity_source_mapping_is_active = FALSE "
+            "WHERE project_id = %s AND logical_entity_id = %s AND source_object_id = %s",
+            (project_id, entity_id, other_object_id),
         )
+        assert _branches(connection, project_id, "logical_entity") == {
+            (entity_id, scope.source_system_id)
+        }
+
+
+def test_dimensional_branches_need_complete_applied_logical_mapping(
+    web_postgres_database: DisposablePostgres,
+) -> None:
+    scope = _seed_mapping_scope(web_postgres_database, create_run=False)
+    project_id = scope.plan.project_id
+    dimensional_id = scope.plan.pair.modeled_entity_id
+    with web_postgres_database.connect_owner() as connection:
+        assert _branches(connection, project_id, "dimensional_entity") == {
+            (dimensional_id, scope.source_system_id)
+        }
         connection.execute(
-            "UPDATE project.context_record "
-            "SET status='inactive' "
-            "WHERE context_record_id=%s",
-            (context_record_id,),
+            "UPDATE workflow.mapping_attribute SET attribute_mapping_transformation_document = NULL "
+            "WHERE project_id = %s AND logical_entity_id = %s",
+            (project_id, scope.logical_entity_id),
         )
-        assert connection.execute(
-            "SELECT workflow.is_context_only_mapping_target(%s,%s,%s) AS eligible",
-            (scope.plan.project_id, entity_id, entity_type),
-        ).fetchone() == {"eligible": False}
-        connection.execute(
-            "UPDATE project.context_record "
-            "SET status='active' WHERE context_record_id=%s",
-            (context_record_id,),
-        )
-        connection.execute(
-            "UPDATE core.connection SET is_active=FALSE WHERE tenant_id=%s AND system_id=%s",
-            (scope.tenant_id, scope.source_system_id),
-        )
-        pairs = connection.execute(
-            _MAPPING_GENERATION_TARGETS_SQL,
-            (
-                scope.tenant_id,
-                scope.plan.project_id,
-                entity_type,
-                scope.tenant_id,
-                scope.plan.project_id,
-                200,
-                0,
-            ),
-        ).fetchall()
-        assert not any(row["entity_id"] == entity_id for row in pairs)
+        assert _branches(connection, project_id, "dimensional_entity") == set()
 
 
 async def test_dimensional_mapping_uses_logical_entities_without_registered_targets(
@@ -602,24 +685,9 @@ async def test_mapping_pairs_do_not_require_registered_targets_or_dependency_row
     web_postgres_database: DisposablePostgres,
     dimensional: bool,
 ) -> None:
-    from gds_workbench_api.features.mapping.read_service import (
-        _MAPPING_GENERATION_TARGETS_SQL,
-    )
-
     scope = _seed_mapping_scope(web_postgres_database, dimensional=dimensional)
     with web_postgres_database.connect_owner() as connection:
-        pairs = connection.execute(
-            _MAPPING_GENERATION_TARGETS_SQL,
-            (
-                scope.tenant_id,
-                scope.plan.project_id,
-                scope.plan.modeled_entity_type,
-                scope.tenant_id,
-                scope.plan.project_id,
-                200,
-                0,
-            ),
-        ).fetchall()
+        pairs = _generation_targets(connection, scope, scope.plan.modeled_entity_type)
         assert {
             (row["entity_id"], row["source_system"]["system_id"]) for row in pairs
         } == {(scope.plan.pair.modeled_entity_id, scope.source_system_id)}

@@ -32,7 +32,7 @@ CREATE_PROJECT_SQL: LiteralString = """
           %s::VARCHAR, %s::VARCHAR, '[]'::JSONB, '[]'::JSONB, %s::TEXT, %s::JSONB,
           %s::TEXT, %s::JSONB, %s::JSONB,
           %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR,
-          %s::INTEGER, %s::INTEGER, %s::BIGINT, %s::VARCHAR, %s::VARCHAR
+          %s::INTEGER, %s::INTEGER, %s::VARCHAR, %s::VARCHAR
       )
 """
 
@@ -43,7 +43,7 @@ UPDATE_PROJECT_SQL: LiteralString = """
           %s::VARCHAR, %s::VARCHAR, '[]'::JSONB, '[]'::JSONB, %s::TEXT, %s::JSONB,
           %s::TEXT, %s::JSONB, %s::JSONB,
           %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR,
-          %s::INTEGER, %s::INTEGER, %s::BIGINT, %s::VARCHAR, %s::VARCHAR
+          %s::INTEGER, %s::INTEGER, %s::VARCHAR, %s::VARCHAR
       )
 """
 
@@ -147,7 +147,6 @@ def _connect_web(
 def _create_project(
     postgres_database: DisposablePostgres,
     context: ProjectMutationContext,
-    default_mapping_source_system_id: int | None = None,
     logical_entity_scd_type: str | None = None,
     dimensional_entity_scd_type: str | None = None,
 ) -> TestRow:
@@ -172,7 +171,6 @@ def _create_project(
                     "medium",
                     12,
                     2,
-                    default_mapping_source_system_id,
                     logical_entity_scd_type,
                     dimensional_entity_scd_type,
                 ),
@@ -207,7 +205,6 @@ def _update_parameters(
             created["default_reasoning_effort_code"],
             created["default_max_turns"],
             created["default_validation_retry_count"],
-            created["default_mapping_source_system_id"],
             created["logical_entity_scd_type"],
             created["dimensional_entity_scd_type"],
         )
@@ -223,7 +220,6 @@ def _update_parameters(
         "Prefer dimensional business terms.",
         '[{"name":"EffectiveDate","type":"date"}]',
         '[{"name":"UpdatedTime","type":"timestamp"}]',
-        None,
         None,
         None,
         None,
@@ -377,97 +373,6 @@ def test_web_role_has_no_direct_project_mutation(
             "INSERT INTO project.project (tenant_id, project_name) VALUES (%s, 'Direct')",
             (context.tenant_id,),
         )
-
-
-def test_default_mapping_system_must_have_an_active_owned_connection(
-    postgres_database: DisposablePostgres,
-) -> None:
-    context = _seed_context(postgres_database)
-    other = _seed_context(postgres_database)
-    suffix = uuid4().hex
-    with postgres_database.connect_owner() as connection:
-        system_type_id = require_row(
-            connection.execute(
-                "INSERT INTO reference.system_type (system_type_code, system_type_name) "
-                "VALUES (%s, %s) RETURNING system_type_id",
-                (suffix, suffix),
-            ).fetchone()
-        )["system_type_id"]
-        connection_type_id = require_row(
-            connection.execute(
-                "INSERT INTO reference.connection_type "
-                "(connection_type_code, connection_type_name) "
-                "VALUES (%s, %s) RETURNING connection_type_id",
-                (suffix, suffix),
-            ).fetchone()
-        )["connection_type_id"]
-        system_id = require_row(
-            connection.execute(
-                "INSERT INTO core.system (system_code, system_name, system_type_id) "
-                "VALUES (%s, %s, %s) RETURNING system_id",
-                (suffix, suffix, system_type_id),
-            ).fetchone()
-        )["system_id"]
-        connection_id = require_row(
-            connection.execute(
-                "INSERT INTO core.connection "
-                "(tenant_id, system_id, connection_code, connection_name, connection_type_id) "
-                "VALUES (%s, %s, %s, %s, %s) RETURNING connection_id",
-                (context.tenant_id, system_id, suffix, suffix, connection_type_id),
-            ).fetchone()
-        )["connection_id"]
-
-    created = _create_project(postgres_database, context, system_id)
-    assert created["default_mapping_source_system_id"] == system_id
-    with pytest.raises(RaiseException, match="Default Mapping System is unavailable"):
-        _create_project(postgres_database, other, system_id)
-
-    parameters = _update_parameters(
-        context,
-        created,
-        revision=created["project_revision"],
-        name=created["project_name"],
-        preserve_values=True,
-    )
-    with _connect_web(postgres_database) as connection:
-        unchanged = require_row(
-            connection.execute(UPDATE_PROJECT_SQL, parameters).fetchone()
-        )
-    assert unchanged["project_revision"] == created["project_revision"]
-
-    with postgres_database.connect_owner() as connection:
-        connection.execute(
-            "UPDATE core.connection SET is_active = FALSE WHERE connection_id = %s",
-            (connection_id,),
-        )
-    with (
-        _connect_web(postgres_database) as connection,
-        pytest.raises(RaiseException, match="Default Mapping System is unavailable"),
-    ):
-        connection.execute(UPDATE_PROJECT_SQL, parameters)
-    with postgres_database.connect_owner() as connection:
-        connection.execute(
-            "UPDATE core.connection SET is_active = TRUE WHERE connection_id = %s",
-            (connection_id,),
-        )
-        connection.execute(
-            "UPDATE core.system SET is_active = FALSE WHERE system_id = %s",
-            (system_id,),
-        )
-    with (
-        _connect_web(postgres_database) as connection,
-        pytest.raises(RaiseException, match="Default Mapping System is unavailable"),
-    ):
-        connection.execute(UPDATE_PROJECT_SQL, parameters)
-
-    with _connect_web(postgres_database) as connection:
-        cleared = require_row(
-            connection.execute(
-                UPDATE_PROJECT_SQL, parameters[:-3] + (None, *parameters[-2:])
-            ).fetchone()
-        )
-    assert cleared["default_mapping_source_system_id"] is None
-    assert cleared["project_revision"] == created["project_revision"] + 1
 
 
 def test_logical_scd_choice_persists_and_is_revision_fenced(

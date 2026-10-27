@@ -53,7 +53,6 @@ CREATE TABLE project.project (
     project_revision BIGINT NOT NULL DEFAULT 1,
     logical_schemas JSONB NOT NULL DEFAULT '[]'::JSONB,
     dimensional_schemas JSONB NOT NULL DEFAULT '[]'::JSONB,
-    default_mapping_source_system_id BIGINT,
     logical_entity_scd_type VARCHAR(10),
     dimensional_entity_scd_type VARCHAR(10),
     logical_coverage_threshold_percent INTEGER NOT NULL DEFAULT 70,
@@ -79,8 +78,6 @@ CREATE TABLE project.project (
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     CONSTRAINT fk_project_tenant FOREIGN KEY (tenant_id)
         REFERENCES core.tenant (tenant_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_project_default_mapping_system FOREIGN KEY (default_mapping_source_system_id)
-        REFERENCES core.system (system_id) ON DELETE NO ACTION,
     CONSTRAINT uq_project_id_tenant UNIQUE (project_id, tenant_id),
     CONSTRAINT ck_project_name CHECK (reference.is_nonblank(project_name)),
     CONSTRAINT ck_project_description CHECK (

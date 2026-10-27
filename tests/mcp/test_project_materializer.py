@@ -467,16 +467,13 @@ async def test_template_resolution_and_cache_are_scoped_to_mapping_layer() -> No
 
 
 @pytest.mark.asyncio
-async def test_project_settings_apply_resolves_system_and_preserves_identity() -> None:
+async def test_project_settings_apply_preserves_identity() -> None:
     from gds_etl_workbench.domain.modeling_records import ProjectDetailsRecord
 
     from tests.mcp.project_test_fixtures import project_details
 
     transaction = ScriptedTransaction(
-        [
-            ExpectedCall("one", "SELECT system_id", {"system_id": 5}),
-            ExpectedCall("one", "UPDATE project.project", {"project_id": 7}),
-        ]
+        [ExpectedCall("one", "UPDATE project.project", {"project_id": 7})]
     )
     record = ProjectDetailsRecord.model_validate_json(
         json.dumps(
@@ -486,7 +483,6 @@ async def test_project_settings_apply_resolves_system_and_preserves_identity() -
                 "dimensional_entity_scd_type": "type_1",
                 "logical_enforce_coverage_threshold": True,
                 "dimensional_enforce_coverage_threshold": False,
-                "default_mapping_source_system_code": "ERP",
             }
         )
     )
@@ -494,14 +490,13 @@ async def test_project_settings_apply_resolves_system_and_preserves_identity() -
     query, parameters = transaction.calls[-1][1:]
     assert "SET project_name" not in query
     assert "AND project_name = %s" in query
-    assert parameters[-9:] == (
+    assert parameters[-8:] == (
         "type_2",
         "type_1",
         70,
         60,
         True,
         False,
-        5,
         7,
         record.project_name,
     )
