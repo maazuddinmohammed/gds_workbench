@@ -342,7 +342,7 @@ export function ProjectForm({
                         defaultValue={initialProject?.[field] ?? ""} placeholder={String(defaultPercent)}
                         aria-invalid={validationError?.field === field}
                         aria-describedby={`${field}-help${validationError?.field === field ? " project-form-error" : ""}`} />
-                      <small id={`${field}-help`} className="field-help">Whole number from 1 to 100. Blank uses {defaultPercent}%. Counts distinct selected {layer === "logical" ? "tables" : "Logical entities"} with active supporting mappings.</small>
+                      <small id={`${field}-help`} className="field-help">Whole number from 1 to 100. Blank uses {defaultPercent}%. Checked for each Subject Area during Build: the share of its {layer === "logical" ? "tables" : "Logical Entities"} with an active supporting mapping.</small>
                     </label>
                     <label className="checkbox-field">
                       <input name={enforcementField} type="checkbox"

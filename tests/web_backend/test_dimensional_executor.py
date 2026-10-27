@@ -160,9 +160,9 @@ async def test_coverage_shortfall_uses_every_attempt_but_never_waives_other_erro
         assert handoff.retained == [] and lifecycle.failed is None
         event = handoff.final_events[-1]
         assert event.attempt == retries + 1 and event.status == "warning"
-        # The area's shortfall and the whole Run's coverage are both reported.
+        # A one-area Build reports its area's shortfall once, with no separate Run total.
         assert "Sales: Coverage 1/2 is below 60%" in event.message
-        assert "Run selection: Coverage 1/2 is below 60%" in event.message
+        assert "Run selection" not in event.message
         entities = next(
             change for change in handoff.calls[0] if change.dataset == "dimensional_entity"
         )

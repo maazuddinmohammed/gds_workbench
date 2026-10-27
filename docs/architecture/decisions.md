@@ -175,7 +175,8 @@ sees its area's evidence, the Entities already built from it, neighbours and a o
 directory of the rest, never the whole model. An Optimize is one call over the whole
 applied model with backend findings (unlinked Analysis edges, conformance candidates,
 type conflicts, name variants) and needs an applied model. Builds measure coverage per
-area; the run reports the overall result as a warning. Validate is not built yet.
+area; a Build over several areas also reports the overall result as a warning. Validate
+is not built yet.
 
 Model records have no Submodels and no status text: `is_active` is the lifecycle, and
 retiring an Entity retires its Attributes and the Relationships that use them.
