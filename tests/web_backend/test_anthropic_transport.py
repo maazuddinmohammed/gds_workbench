@@ -1,8 +1,10 @@
-"""Native Foundry Messages through the real Agents Runner; in-memory HTTP only."""
+"""Native Foundry Messages through the real Agents Runner; in-memory HTTP, except one
+loopback check of the real transport's socket options."""
 
 # pyright: reportPrivateUsage=false
 import asyncio
 import json
+import socket
 import time
 from collections.abc import Callable, Mapping
 from typing import Any, cast
@@ -93,9 +95,14 @@ def _router(
     authentication: RefreshingAuthentication | None = None,
     models: list[FoundryAnthropicModel] | None = None,
     clients: list[httpx2.AsyncClient] | None = None,
+    client_options: list[dict[str, Any]] | None = None,
 ) -> AgentExecutionRouter:
     def client_factory(**options: Any) -> httpx2.AsyncClient:
-        client = DefaultAsyncHttpxClient(transport=httpx2.MockTransport(handler), **options)
+        if client_options is not None:
+            client_options.append(dict(options))
+        # Every request reaches the handler instead of the adapter's network transport.
+        options.update(transport=httpx2.MockTransport(handler), mounts=None)
+        client = DefaultAsyncHttpxClient(**options)
         if clients is not None:
             clients.append(client)
         return client
@@ -694,3 +701,49 @@ async def test_native_malformed_json_enters_existing_repair_with_stable_usage_id
     assert [attempt for _, attempt in recorder.invocations] == [1, 2]
     assert recorder.invocations[0][0] == recorder.invocations[1][0]
     assert len(recorder.completed) == 2
+
+
+async def test_model_connections_send_keepalive_probes_and_keep_environment_proxies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A model call is silent until the answer, so a dropped connection must not hang it."""
+
+    async def serve(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        await reader.readuntil(b"\r\n\r\n")
+        writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}")
+        await writer.drain()
+        await reader.read()
+        writer.close()
+
+    server = await asyncio.start_server(serve, "127.0.0.1", 0)
+    address = f"http://127.0.0.1:{server.sockets[0].getsockname()[1]}"
+    # Plain HTTP goes through the environment proxy: the same local server.
+    for name in ("HTTP_PROXY", "http_proxy"):
+        monkeypatch.setenv(name, address)
+    for name in ("NO_PROXY", "no_proxy"):
+        monkeypatch.delenv(name, raising=False)
+    client_options: list[dict[str, Any]] = []
+    router = _router(
+        monkeypatch,
+        MemoryRecorder(),
+        lambda _: httpx2.Response(200, json=_response()),
+        client_options=client_options,
+    )
+    try:
+        await router.execute(_request(model_code=CLAUDE_CODE))
+    finally:
+        await router.close()
+
+    (options,) = client_options
+    idle = getattr(socket, "TCP_KEEPIDLE", getattr(socket, "TCP_KEEPALIVE", None))
+    async with server:
+        async with (
+            httpx2.AsyncClient(transport=options["transport"]) as client,
+            client.stream("GET", address) as response,
+        ):
+            connection = response.extensions["network_stream"].get_extra_info("socket")
+            assert connection.getsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE)
+            if idle is not None:
+                assert connection.getsockopt(socket.IPPROTO_TCP, idle) == 60
+        async with httpx2.AsyncClient(transport=options["mounts"]["http://"]) as client:
+            assert (await client.get("http://model.invalid/")).status_code == 200
