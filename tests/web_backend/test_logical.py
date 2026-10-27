@@ -36,6 +36,8 @@ from gds_workbench_api.features.logical import (
     ModelSubjectAreaPage,
     PhysicalAttributeReference,
     PhysicalObjectReference,
+    SubjectAreaBuild,
+    WaitingDraft,
     create_logical_router,
 )
 
@@ -56,9 +58,17 @@ class StaticLogicalService:
                     subject_area_name="Sales",
                     subject_area_definition="Customer orders.",
                     table_count=3,
+                    shared_table_count=1,
+                    modeled_table_count=2,
                     entity_count=2,
+                    build=SubjectAreaBuild(
+                        state="draft_waiting",
+                        workflow_run_id=1050,
+                        at=datetime(2026, 10, 26, 13, 20, tzinfo=UTC),
+                    ),
                 ),
             ),
+            waiting_draft=WaitingDraft(workflow_run_id=1050, workflow_operation="build"),
         )
 
     async def list_entities(
@@ -802,7 +812,15 @@ def test_logical_subject_areas_list_each_area_with_its_entity_count() -> None:
                 "subject_area_name": "Sales",
                 "subject_area_definition": "Customer orders.",
                 "table_count": 3,
+                "shared_table_count": 1,
+                "modeled_table_count": 2,
                 "entity_count": 2,
+                "build": {
+                    "state": "draft_waiting",
+                    "workflow_run_id": 1050,
+                    "at": "2026-10-26T13:20:00Z",
+                },
             }
         ],
+        "waiting_draft": {"workflow_run_id": 1050, "workflow_operation": "build"},
     }

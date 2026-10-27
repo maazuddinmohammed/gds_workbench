@@ -3,7 +3,7 @@
 from collections.abc import Mapping
 from contextlib import AbstractAsyncContextManager
 from hashlib import sha256
-from typing import LiteralString, Protocol
+from typing import Literal, LiteralString, Protocol
 
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.application.cursor import CursorCodec
@@ -37,6 +37,8 @@ from gds_workbench_api.features.logical.read_contracts import (
     ModeledFilters,
     ModelSubjectArea,
     ModelSubjectAreaPage,
+    SubjectAreaBuild,
+    WaitingDraft,
 )
 from gds_workbench_api.features.projects import ProjectNotFoundError
 
@@ -120,7 +122,8 @@ SELECT entity.logical_entity_id,
    AND entity.logical_entity_id = %s
 """
 
-# Active Subject Areas with their active Objects and the active Entities sourced from them.
+# Active Subject Areas with their active Objects, how many of those are shared with another
+# active area or modeled by an active Entity, and the active Entities sourced from them.
 _LOGICAL_SUBJECT_AREAS_SQL: LiteralString = """
 SELECT area.subject_area_id,
        area.subject_area_name,
@@ -132,6 +135,43 @@ SELECT area.subject_area_id,
               AND member.subject_area_id = area.subject_area_id
               AND member.subject_area_table_is_active
        ) AS table_count,
+       (
+           SELECT count(*)
+             FROM workflow.subject_area_table AS member
+            WHERE member.project_id = area.project_id
+              AND member.subject_area_id = area.subject_area_id
+              AND member.subject_area_table_is_active
+              AND EXISTS (
+                  SELECT 1
+                    FROM workflow.subject_area_table AS other_member
+                    JOIN workflow.subject_area AS other_area
+                      ON other_area.project_id = other_member.project_id
+                     AND other_area.subject_area_id = other_member.subject_area_id
+                     AND other_area.subject_area_is_active
+                   WHERE other_member.project_id = member.project_id
+                     AND other_member.object_id = member.object_id
+                     AND other_member.subject_area_id <> member.subject_area_id
+                     AND other_member.subject_area_table_is_active
+              )
+       ) AS shared_table_count,
+       (
+           SELECT count(*)
+             FROM workflow.subject_area_table AS member
+            WHERE member.project_id = area.project_id
+              AND member.subject_area_id = area.subject_area_id
+              AND member.subject_area_table_is_active
+              AND EXISTS (
+                  SELECT 1
+                    FROM workflow.logical_entity_source_mapping AS source
+                    JOIN workflow.logical_entity AS entity
+                      ON entity.project_id = source.project_id
+                     AND entity.logical_entity_id = source.logical_entity_id
+                     AND entity.logical_entity_is_active
+                   WHERE source.project_id = member.project_id
+                     AND source.source_object_id = member.object_id
+                     AND source.logical_entity_source_mapping_is_active
+              )
+       ) AS modeled_table_count,
        (
            SELECT count(*)
              FROM workflow.logical_entity AS entity
@@ -160,6 +200,61 @@ SELECT area.subject_area_id,
  ORDER BY lower(btrim(area.subject_area_name)),
           area.subject_area_id
  LIMIT 1001
+"""
+
+# Per area, the newest Build Run of one layer that decides its state. A cancelled Run, or a
+# completed one whose draft was discarded, superseded or expired, is skipped so the Run
+# before it decides.
+_SUBJECT_AREA_BUILDS_SQL: LiteralString = """
+SELECT DISTINCT ON (selection.subject_area_id)
+       selection.subject_area_id,
+       run.workflow_run_id,
+       run.workflow_run_state,
+       coalesce(run.started_time, run.created_time) AS started_time,
+       run.completed_time,
+       change_set.project_change_set_status,
+       change_set.validated_time,
+       change_set.applied_time
+  FROM application.workflow_run_subject_area_selection AS selection
+  JOIN application.workflow_run AS run
+    ON run.workflow_run_id = selection.workflow_run_id
+   AND run.project_id = selection.project_id
+  LEFT JOIN mcp.project_change_set AS change_set
+    ON change_set.workflow_run_id = run.workflow_run_id
+   AND change_set.project_id = run.project_id
+ WHERE run.tenant_id = %s
+   AND run.project_id = %s
+   AND run.project_workflow = %s
+   AND run.workflow_operation = 'build'
+   AND run.workflow_run_state <> 'cancelled'
+   AND NOT (
+       run.workflow_run_state IN ('completed', 'completed_with_repair')
+       AND change_set.project_change_set_id IS NOT NULL
+       AND change_set.project_change_set_status <> 'applied'
+       AND NOT (
+           change_set.project_change_set_status = 'validated'
+           AND change_set.expires_time > clock_timestamp()
+       )
+   )
+ ORDER BY selection.subject_area_id, run.workflow_run_id DESC
+"""
+
+# The layer's newest unexpired draft still waiting for Apply, from a Build or an Optimize.
+_WAITING_DRAFT_SQL: LiteralString = """
+SELECT run.workflow_run_id,
+       run.workflow_operation
+  FROM application.workflow_run AS run
+  JOIN mcp.project_change_set AS change_set
+    ON change_set.workflow_run_id = run.workflow_run_id
+   AND change_set.project_id = run.project_id
+ WHERE run.tenant_id = %s
+   AND run.project_id = %s
+   AND run.project_workflow = %s
+   AND run.workflow_run_state IN ('completed', 'completed_with_repair')
+   AND change_set.project_change_set_status = 'validated'
+   AND change_set.expires_time > clock_timestamp()
+ ORDER BY run.workflow_run_id DESC
+ LIMIT 1
 """
 
 # An Entity's Subject Areas are worked out from its active Object sources, never stored.
@@ -636,12 +731,21 @@ class DatabaseLogicalService:
             if header is None:
                 raise ProjectNotFoundError()
             rows = await transaction.fetch_all(_LOGICAL_SUBJECT_AREAS_SQL, (tenant_id, project_id))
+            builds, waiting_draft = await load_subject_area_builds(
+                transaction, tenant_id=tenant_id, project_id=project_id, workflow="logical"
+            )
         if len(rows) > 1_000:
             raise LogicalDetailLimitExceededError()
         return ModelSubjectAreaPage(
             project_id=project_id,
             project_revision=header["project_revision"],
-            items=tuple(ModelSubjectArea.model_validate(row) for row in rows),
+            items=tuple(
+                ModelSubjectArea.model_validate(
+                    {**row, "build": builds.get(row["subject_area_id"], NOT_BUILT)}
+                )
+                for row in rows
+            ),
+            waiting_draft=waiting_draft,
         )
 
     async def list_entities(
@@ -909,6 +1013,50 @@ class DatabaseLogicalService:
         if row is None:
             raise LogicalRelationshipNotFoundError()
         return LogicalRelationshipDetail.model_validate(row)
+
+
+NOT_BUILT = SubjectAreaBuild(state="not_built")
+
+
+async def load_subject_area_builds(
+    transaction: ReadTransaction,
+    *,
+    tenant_id: int,
+    project_id: int,
+    workflow: Literal["logical", "dimensional"],
+) -> tuple[dict[int, SubjectAreaBuild], WaitingDraft | None]:
+    """Each area's deciding Build in one layer, and the layer's draft waiting for Apply."""
+    builds: dict[int, SubjectAreaBuild] = {}
+    for row in await transaction.fetch_all(
+        _SUBJECT_AREA_BUILDS_SQL, (tenant_id, project_id, workflow)
+    ):
+        run_id = row["workflow_run_id"]
+        if row["workflow_run_state"] in ("queued", "running"):
+            build = SubjectAreaBuild(
+                state="running", workflow_run_id=run_id, at=row["started_time"]
+            )
+        elif row["workflow_run_state"] == "failed":
+            build = SubjectAreaBuild(
+                state="failed",
+                workflow_run_id=run_id,
+                at=row["completed_time"] or row["started_time"],
+            )
+        elif row["project_change_set_status"] == "validated":
+            build = SubjectAreaBuild(
+                state="draft_waiting",
+                workflow_run_id=run_id,
+                at=row["validated_time"] or row["completed_time"],
+            )
+        else:
+            # Its draft was applied, or the Build needed no change.
+            build = SubjectAreaBuild(
+                state="applied",
+                workflow_run_id=run_id,
+                at=row["applied_time"] or row["completed_time"],
+            )
+        builds[row["subject_area_id"]] = build
+    waiting = await transaction.fetch_one(_WAITING_DRAFT_SQL, (tenant_id, project_id, workflow))
+    return builds, WaitingDraft.model_validate(waiting) if waiting else None
 
 
 def _list_parameters(

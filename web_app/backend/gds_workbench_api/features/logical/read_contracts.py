@@ -86,20 +86,47 @@ class EntitySubjectArea(ContractModel):
     subject_area_name: str = Field(min_length=1, max_length=255)
 
 
+class SubjectAreaBuild(ContractModel):
+    """The area's newest Build in one layer that decides its state.
+
+    A cancelled Build, or one whose draft was discarded, superseded or expired, is skipped,
+    so the Build before it decides. `at` is when that Build started (running), its draft
+    was validated (draft_waiting), its draft was applied or it needed no change (applied),
+    or it failed.
+    """
+
+    state: Literal["not_built", "running", "draft_waiting", "applied", "failed"]
+    workflow_run_id: int | None = Field(default=None, gt=0)
+    at: datetime | None = None
+
+
 class ModelSubjectArea(ContractModel):
-    """An active Subject Area with how many active Entities of one layer it reaches."""
+    """An active Subject Area with how much of it one layer models, and its last Build."""
 
     subject_area_id: int = Field(gt=0)
     subject_area_name: str = Field(min_length=1, max_length=255)
     subject_area_definition: str = Field(min_length=1)
     table_count: int = Field(ge=0)
+    # Member Objects that are also members of another active area.
+    shared_table_count: int = Field(ge=0)
+    # Member Objects that reach an active Entity of this layer.
+    modeled_table_count: int = Field(ge=0)
     entity_count: int = Field(ge=0)
+    build: SubjectAreaBuild
+
+
+class WaitingDraft(ContractModel):
+    """The layer's newest unexpired Build or Optimize draft still waiting for Apply."""
+
+    workflow_run_id: int = Field(gt=0)
+    workflow_operation: Literal["build", "optimize"]
 
 
 class ModelSubjectAreaPage(ContractModel):
     project_id: int = Field(gt=0)
     project_revision: int = Field(gt=0)
     items: tuple[ModelSubjectArea, ...] = Field(max_length=1_000)
+    waiting_draft: WaitingDraft | None = None
 
 
 class LogicalEntitySourceBase(ContractModel):

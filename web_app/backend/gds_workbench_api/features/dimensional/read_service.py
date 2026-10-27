@@ -36,9 +36,11 @@ from gds_workbench_api.features.dimensional.read_contracts import (
     DimensionalRelationshipSummary,
 )
 from gds_workbench_api.features.logical import (
+    NOT_BUILT,
     ModeledFilters,
     ModelSubjectArea,
     ModelSubjectAreaPage,
+    load_subject_area_builds,
 )
 from gds_workbench_api.features.projects import ProjectNotFoundError
 
@@ -132,8 +134,10 @@ SELECT entity.dimensional_entity_id,
    AND entity.dimensional_entity_id = %s
 """
 
-# Active Subject Areas with their active Objects and the active Dimensional Entities that
-# reach them through active Logical sources, as the Subject Area filter does.
+# Active Subject Areas with their active Objects, how many of those are shared with another
+# active area or reach an active Dimensional Entity through an active Logical Entity, and the
+# active Dimensional Entities that reach them through active Logical sources, as the Subject
+# Area filter does.
 _DIMENSIONAL_SUBJECT_AREAS_SQL: LiteralString = """
 SELECT area.subject_area_id,
        area.subject_area_name,
@@ -145,6 +149,52 @@ SELECT area.subject_area_id,
               AND member.subject_area_id = area.subject_area_id
               AND member.subject_area_table_is_active
        ) AS table_count,
+       (
+           SELECT count(*)
+             FROM workflow.subject_area_table AS member
+            WHERE member.project_id = area.project_id
+              AND member.subject_area_id = area.subject_area_id
+              AND member.subject_area_table_is_active
+              AND EXISTS (
+                  SELECT 1
+                    FROM workflow.subject_area_table AS other_member
+                    JOIN workflow.subject_area AS other_area
+                      ON other_area.project_id = other_member.project_id
+                     AND other_area.subject_area_id = other_member.subject_area_id
+                     AND other_area.subject_area_is_active
+                   WHERE other_member.project_id = member.project_id
+                     AND other_member.object_id = member.object_id
+                     AND other_member.subject_area_id <> member.subject_area_id
+                     AND other_member.subject_area_table_is_active
+              )
+       ) AS shared_table_count,
+       (
+           SELECT count(*)
+             FROM workflow.subject_area_table AS member
+            WHERE member.project_id = area.project_id
+              AND member.subject_area_id = area.subject_area_id
+              AND member.subject_area_table_is_active
+              AND EXISTS (
+                  SELECT 1
+                    FROM workflow.logical_entity_source_mapping AS logical_source
+                    JOIN workflow.logical_entity AS logical
+                      ON logical.project_id = logical_source.project_id
+                     AND logical.logical_entity_id = logical_source.logical_entity_id
+                     AND logical.logical_entity_is_active
+                    JOIN workflow.dimensional_entity_source_mapping AS dimensional_source
+                      ON dimensional_source.project_id = logical.project_id
+                     AND dimensional_source.source_logical_entity_id = logical.logical_entity_id
+                     AND dimensional_source.dimensional_entity_source_mapping_is_active
+                    JOIN workflow.dimensional_entity AS dimensional
+                      ON dimensional.project_id = dimensional_source.project_id
+                     AND dimensional.dimensional_entity_id =
+                         dimensional_source.dimensional_entity_id
+                     AND dimensional.dimensional_entity_is_active
+                   WHERE logical_source.project_id = member.project_id
+                     AND logical_source.source_object_id = member.object_id
+                     AND logical_source.logical_entity_source_mapping_is_active
+              )
+       ) AS modeled_table_count,
        (
            SELECT count(*)
              FROM workflow.dimensional_entity AS entity
@@ -635,12 +685,21 @@ class DatabaseDimensionalService:
             rows = await transaction.fetch_all(
                 _DIMENSIONAL_SUBJECT_AREAS_SQL, (tenant_id, project_id)
             )
+            builds, waiting_draft = await load_subject_area_builds(
+                transaction, tenant_id=tenant_id, project_id=project_id, workflow="dimensional"
+            )
         if len(rows) > 1_000:
             raise DimensionalDetailLimitExceededError()
         return ModelSubjectAreaPage(
             project_id=project_id,
             project_revision=header["project_revision"],
-            items=tuple(ModelSubjectArea.model_validate(row) for row in rows),
+            items=tuple(
+                ModelSubjectArea.model_validate(
+                    {**row, "build": builds.get(row["subject_area_id"], NOT_BUILT)}
+                )
+                for row in rows
+            ),
+            waiting_draft=waiting_draft,
         )
 
     async def list_objects(

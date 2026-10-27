@@ -164,7 +164,13 @@ validates each answer against the snapshot plus earlier areas' staged work, and 
 off one draft; a failed area keeps earlier areas' work in a rejected draft. The web
 dialog builds one area per Run, because a Build reads only the applied model: applying
 each draft before the next area lets later areas reuse its Entities, and a failure costs
-one area. The backend still accepts several areas. Each call
+one area. The backend still accepts several areas. Each layer's Subject Area list
+reports per area the Objects shared with another active area, the Objects that reach an
+active Entity of that layer (Modeled), and the newest Build that decides its state:
+running, draft waiting, applied (draft applied or no change needed), failed or not
+built. Cancelled Builds and discarded, superseded or expired drafts are skipped. The
+list also names the layer's draft still waiting for Apply, from a Build or an Optimize;
+all of it is derived from Runs, drafts and Entity sources, never stored. Each call
 sees its area's evidence, the Entities already built from it, neighbours and a one-line
 directory of the rest, never the whole model. An Optimize is one call over the whole
 applied model with backend findings (unlinked Analysis edges, conformance candidates,
