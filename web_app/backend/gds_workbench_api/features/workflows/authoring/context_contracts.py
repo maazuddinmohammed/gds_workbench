@@ -2910,10 +2910,16 @@ _OTHER_COLUMN: dict[str, Any] = {
     "type": "object",
     "properties": {
         "attribute_name": {"type": "string", "minLength": 1},
+        "attribute_description": {"type": ["string", "null"]},
         "attribute_data_type": {"type": ["string", "null"]},
         "attribute_inferred_data_type": {"type": ["string", "null"]},
     },
-    "required": ["attribute_name", "attribute_data_type", "attribute_inferred_data_type"],
+    "required": [
+        "attribute_name",
+        "attribute_description",
+        "attribute_data_type",
+        "attribute_inferred_data_type",
+    ],
     "additionalProperties": False,
 }
 INPUT_SHAPES["analysis.focus_table"] = {
@@ -2945,7 +2951,7 @@ INPUT_SHAPES["analysis.key_directory"] = {
     "a registered or Project key "
     "flag, or a saved Profile in which every non-null value is distinct (operational "
     "columns only when flagged). A table without such a column lists every eligible column "
-    "with both data types in other_columns instead.",
+    "with its description and both data types in other_columns instead.",
     "schema": {
         "type": "array",
         "items": {
@@ -3050,6 +3056,7 @@ INPUT_EXAMPLES["analysis_per_table"] = {
             "other_columns": [
                 {
                     "attribute_name": "CustomerCode",
+                    "attribute_description": "ERP customer account that placed this order.",
                     "attribute_data_type": "VARCHAR",
                     "attribute_inferred_data_type": "VARCHAR",
                 }

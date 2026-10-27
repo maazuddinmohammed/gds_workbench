@@ -293,6 +293,8 @@ def analysis_table_inputs(context: Mapping[str, Any]) -> list[dict[str, Any]]:
             {
                 **table,
                 "key_columns": key_columns,
+                # Without a key flag or Profile, only a description can say which column
+                # identifies the table's rows, so the model needs it to point here.
                 "other_columns": []
                 if key_columns
                 else [
@@ -300,6 +302,7 @@ def analysis_table_inputs(context: Mapping[str, Any]) -> list[dict[str, Any]]:
                         name: attribute[name]
                         for name in (
                             "attribute_name",
+                            "attribute_description",
                             "attribute_data_type",
                             "attribute_inferred_data_type",
                         )

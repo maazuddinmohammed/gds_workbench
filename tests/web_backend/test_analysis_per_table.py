@@ -131,6 +131,11 @@ def test_each_table_gets_its_inputs_and_the_shared_key_directory() -> None:
     assert [column["attribute_name"] for column in directory["t1"]["other_columns"]] == [
         "CustomerCode"
     ]
+    # Without a key flag or Profile, only a description can say which column identifies
+    # the table's rows, so other_columns carry it.
+    assert directory["t1"]["other_columns"][0]["attribute_description"] == (
+        "ERP customer account that placed this order."
+    )
     key_column = directory["t2"]["key_columns"][0]
     assert key_column["attribute_name"] == "CustomerCode"
     assert key_column["attribute_data_type"] == "VARCHAR"
