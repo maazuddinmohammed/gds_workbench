@@ -345,7 +345,9 @@ class LogicalWorkflow:
                 for dataset, records in staged.items()
                 if records
             )
-            if operation == "build":
+            # A Build over several areas also reports coverage across the whole selection; a
+            # one-area Build already reported its area's shortfall.
+            if operation == "build" and len(calls) > 1:
                 coverage = _candidate_validator(context, entity_types=entity_types).coverage_of(
                     model.entities
                 )

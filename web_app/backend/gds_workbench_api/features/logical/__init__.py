@@ -40,14 +40,18 @@ from .read_contracts import (
     ModelSubjectAreaPage,
     PhysicalAttributeReference,
     PhysicalObjectReference,
+    SubjectAreaBuild,
+    WaitingDraft,
 )
 from .read_router import create_logical_router
 from .read_service import (
     LOGICAL_ATTRIBUTE_SOURCES_SQL,
     LOGICAL_ENTITY_SOURCES_SQL,
+    NOT_BUILT,
     DatabaseLogicalService,
     LogicalReadDatabase,
     LogicalService,
+    load_subject_area_builds,
 )
 from .router import LogicalWorkflowService, create_logical_workflow_router
 from .service import LogicalExecutionFailedError, LogicalWorkflow
@@ -98,8 +102,12 @@ __all__ = [
     "ModelSubjectArea",
     "ModelSubjectAreaPage",
     "ModelCardinality",
+    "NOT_BUILT",
     "PhysicalAttributeReference",
     "PhysicalObjectReference",
+    "SubjectAreaBuild",
+    "WaitingDraft",
     "create_logical_router",
     "create_logical_workflow_router",
+    "load_subject_area_builds",
 ]

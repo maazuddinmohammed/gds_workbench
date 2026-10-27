@@ -824,3 +824,50 @@ fieldset.agent-run-grid {
 .context-editor-fields .checkbox-label input { width: auto; min-height: auto; }
 @media (max-width: 58rem) { .context-group-filterbar { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 42rem) { .context-group-filterbar { grid-template-columns: minmax(0, 1fr); } }
+
+/* A Subject Area's last Build: the Project ribbon's status circle, with words on hover. */
+.build-status { display: inline-flex; align-items: center; gap: 0.4rem; vertical-align: middle; }
+.build-status-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--muted);
+  background: var(--surface);
+}
+.build-status-icon svg { width: 0.72rem; height: 0.72rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.build-status.is-complete .build-status-icon { border-color: var(--green); color: var(--green); background: var(--green-soft); }
+.build-status.is-waiting .build-status-icon { border-color: var(--amber); color: var(--amber); background: var(--amber-soft); }
+.build-status.is-running .build-status-icon { border-color: var(--accent); border-style: dashed; color: var(--accent); }
+.build-status.is-failed .build-status-icon { border-color: var(--red); color: var(--red); }
+
+/* Entity quick view: an eye icon before Show details opens one Entity beside its list. */
+.quick-view-cell { width: 2.75rem; }
+.quick-view-button {
+  display: inline-grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-small);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.quick-view-button:hover, .quick-view-button[aria-expanded="true"] { border-color: var(--line); color: var(--accent); background: var(--accent-soft); }
+.quick-view-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.quick-view-button svg { width: 1.1rem; height: 1.1rem; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.model-subject-area-entities tbody tr.is-active td { background: var(--accent-soft); }
+.model-subject-area-entities tbody tr.is-active td:first-child { box-shadow: inset 3px 0 var(--accent); }
+/* The panel body inherits 16px; match the working text of detail pages and tables. */
+.entity-quick-view-body { display: grid; align-content: start; gap: 1.1rem; padding: 1.25rem; font-size: .78rem; }
+.entity-quick-view-definition { margin: 0; font-size: .85rem; line-height: 1.55; }
+.entity-quick-view .entity-quick-view-facts { padding-top: 0; }
+.entity-quick-view-body h3 { display: flex; align-items: baseline; gap: .4rem; margin: 0 0 .5rem; font-size: .8rem; }
+.entity-quick-view-body h3 span { color: var(--muted); font-weight: inherit; }
+/* Shared tables are at least 48rem wide; four short columns fit the panel instead. */
+.entity-quick-view .entity-quick-view-attributes { width: 100%; min-width: 0; table-layout: auto; }

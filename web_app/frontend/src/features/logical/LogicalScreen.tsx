@@ -99,6 +99,8 @@ export function LogicalScreen({
   };
   const invalidateLedgers = async () => {
     await Promise.all([
+      // A Build or Optimize draft applied changes each Subject Area's Build status.
+      queryClient.invalidateQueries({ queryKey: logicalQueryKeys.subjectAreas(tenantId, project.project_id) }),
       queryClient.invalidateQueries({ queryKey: ["logical-entities", tenantId, project.project_id] }),
       queryClient.invalidateQueries({ queryKey: ["logical-attributes", tenantId, project.project_id] }),
       queryClient.invalidateQueries({ queryKey: ["logical-relationships", tenantId, project.project_id] }),
@@ -146,7 +148,7 @@ export function LogicalScreen({
               className="button button-secondary button-small"
               type="button"
               disabled={!hasTenantLock}
-              title={hasTenantLock ? "Model the chosen Subject Areas, one after another" : "Tenant Lock required"}
+              title={hasTenantLock ? "Model one Subject Area" : "Tenant Lock required"}
               onClick={() => setRunOperation("build")}
             >
               Build
@@ -231,7 +233,10 @@ export function LogicalScreen({
           kind="inference"
           workflow="logical"
           workflowOperation={runOperation}
-          subjectAreaSource={api}
+          buildAreasSource={{
+            queryKey: logicalQueryKeys.subjectAreas(tenantId, project.project_id),
+            load: () => api.listLogicalSubjectAreas(tenantId, project.project_id),
+          }}
           executeCreated={(workflowRunId, executionMode, expectedProjectRevision) => api.executeLogicalRun(
             tenantId,
             project.project_id,
@@ -243,6 +248,7 @@ export function LogicalScreen({
           onCreated={async (workflowRunId) => {
             setRecentRunId(workflowRunId);
             await Promise.all([
+              queryClient.invalidateQueries({ queryKey: logicalQueryKeys.subjectAreas(tenantId, project.project_id) }),
               queryClient.invalidateQueries({ queryKey: ["project", tenantId, project.project_id] }),
               queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
             ]);

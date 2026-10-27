@@ -49,12 +49,12 @@ describe("Project Dimensional", () => {
 
     const areas = await screen.findByRole("table", { name: "Dimensional Subject Areas" });
     expect(within(areas).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
-      "Subject Area", "Objects", "Dimensional Entities", "",
+      "Subject Area", "Objects", "Modeled", "Dimensional Entities", "Last build", "",
     ]);
     const row = within(areas).getByRole("row", { name: /Sales/ });
-    expect(within(row).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
-      "SalesCustomer orders.", "2", "1", "Show Entities",
-    ]);
+    const cells = within(row).getAllByRole("cell").map((cell) => cell.textContent);
+    expect([...cells.slice(0, 4), cells[5]]).toEqual(["SalesCustomer orders.", "2", "1", "1", "Show Entities"]);
+    expect(within(row).getByTitle(/^Applied · /)).toBeVisible();
     await user.click(within(row).getByRole("link", { name: "Show Sales Entities" }));
 
     expect(await screen.findByRole("heading", { name: "Sales", level: 1 })).toBeVisible();
@@ -171,6 +171,30 @@ describe("Project Dimensional", () => {
     expect(screen.getByText("Basis", { selector: "dt" }).nextElementSibling).toHaveTextContent("Not recorded");
   });
 
+  it("opens a Dimensional Entity's quick view with its Logical sources and Attributes", async () => {
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({
+      api: createApiClient(dimensionalFetchStub()),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/dimensional/subject-areas/41"] }),
+    })} />);
+    const entities = await screen.findByRole("table", { name: "Sales Dimensional Entities" });
+    await user.click(within(entities).getByRole("button", { name: "Quick view of sales_fact" }));
+
+    const panel = await screen.findByRole("complementary", { name: "Quick view of sales_fact" });
+    expect(within(panel).getByText("gold · Fact · Transaction")).toBeVisible();
+    expect(await within(panel).findByText("Transaction-grain sales activity for analytical reporting.")).toBeVisible();
+    const fact = (label: string) => within(panel).getByText(label, { selector: "dt" }).nextElementSibling;
+    expect(fact("Grain")).toHaveTextContent("One row per completed order line.");
+    expect(fact("Sources")).toHaveTextContent("silver.sales_order, 1 Context record");
+    const attributes = await within(panel).findByRole("table", { name: "sales_fact Attributes" });
+    expect(within(attributes).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
+      "sales_amount", "decimal(18,2)", "No", "—",
+    ]);
+    expect(within(panel).getByRole("link", { name: "Show details" })).toHaveAttribute("href", "/tenants/7/projects/18/dimensional/objects/301");
+    await user.click(within(panel).getByRole("button", { name: "Close quick view" }));
+    expect(screen.queryByRole("complementary", { name: /Quick view/ })).not.toBeInTheDocument();
+  });
+
   it.each(["natural", "surrogate"] as const)("shows %s key flags on Dimensional Attributes", async (keyAttribute) => {
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(dimensionalFetchStub({ keyAttribute })),
@@ -261,7 +285,7 @@ describe("Project Dimensional", () => {
     expect(screen.getByText("Run Dimensional", { selector: "summary" })).toBeVisible();
   });
 
-  it("builds checked Subject Areas without a Logical Entity picker, then starts the run", async () => {
+  it("builds one Subject Area without a Logical Entity picker, then starts the run", async () => {
     const fetcher = dimensionalFetchStub();
     const user = userEvent.setup();
     render(<WorkbenchApp router={dimensionalRouter(fetcher)} />);
@@ -270,12 +294,12 @@ describe("Project Dimensional", () => {
     await user.click(screen.getByText("Run Dimensional", { selector: "summary" }));
     await user.click(screen.getByRole("button", { name: "Build" }));
     const dialog = await screen.findByRole("dialog", { name: "Configure Dimensional Build" });
-    expect(within(dialog).getByText(/Logical Entities sourced from each area's Objects/)).toBeVisible();
-    const areas = await within(dialog).findByRole("table", { name: "Subject Areas to build" });
+    expect(within(dialog).getByText(/Logical Entities sourced from its Objects/)).toBeVisible();
+    const areas = await within(dialog).findByRole("table", { name: "Subject Area to build" });
     expect(within(areas).getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["Sales", "Finance"]);
-    expect(within(dialog).queryByRole("checkbox", { name: /Select all (Entities|Objects)/ })).not.toBeInTheDocument();
-    await user.click(within(areas).getByRole("button", { name: "Move Finance up" }));
-    expect(within(areas).getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["Finance", "Sales"]);
+    expect(within(dialog).queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Create and run Dimensional Build" })).toBeDisabled();
+    await user.click(within(areas).getByRole("radio", { name: "Build Finance" }));
     await user.click(within(dialog).getByRole("button", { name: "Create and run Dimensional Build" }));
 
     await waitFor(() => expect(createRunBody(fetcher)).toBeDefined());
@@ -284,7 +308,7 @@ describe("Project Dimensional", () => {
       project_workflow: "dimensional",
       workflow_execution_mode: "tool_assisted",
       workflow_operation: "build",
-      subject_area_ids: [43, 41],
+      subject_area_ids: [43],
       selected_object_ids: [],
       modeled_entity_type: "logical_entity",
       requested_batch_id: null,
@@ -411,10 +435,15 @@ function dimensionalFetchStub(options: {
       return jsonResponse({
         project_id: 18,
         project_revision: 18,
-        items: [{
-          subject_area_id: 41, subject_area_name: "Sales", subject_area_definition: "Customer orders.",
-          table_count: 2, entity_count: 1,
-        }],
+        items: [
+          { subject_area_id: 41, subject_area_name: "Sales", subject_area_definition: "Customer orders.",
+            table_count: 2, shared_table_count: 1, modeled_table_count: 1, entity_count: 1,
+            build: { state: "applied", workflow_run_id: 1240, at: "2026-10-25T11:32:00Z" } },
+          { subject_area_id: 43, subject_area_name: "Finance", subject_area_definition: "Invoices.",
+            table_count: 2, shared_table_count: 0, modeled_table_count: 0, entity_count: 0,
+            build: { state: "not_built", workflow_run_id: null, at: null } },
+        ],
+        waiting_draft: null,
       });
     }
     if (url === "/api/v1/config/agent-capabilities") {

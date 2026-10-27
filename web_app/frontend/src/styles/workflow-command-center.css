@@ -22,6 +22,9 @@
 .workflow-command-menu-content > button:hover:not(:disabled) { background: var(--soft); }
 .workflow-activity-panel { position: fixed; inset: 0 0 0 auto; z-index: 35; display: flex; flex-direction: column; width: min(57rem, calc(100vw - 2rem)); border-left: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow-float); animation: activity-arrive 160ms var(--ease-fluid); }
 .workflow-activity-panel.is-wide { width: calc(100vw - 2rem); }
+/* The Entity quick view shares the panel, narrower until Expand. */
+.workflow-activity-panel.entity-quick-view { width: min(36rem, calc(100vw - 2rem)); }
+.workflow-activity-panel.entity-quick-view.is-wide { width: min(57rem, calc(100vw - 2rem)); }
 .workflow-activity-heading { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.25rem; border-bottom: 1px solid var(--line); }
 .workflow-activity-heading h2 { margin: 0; font-size: 1rem; }
 .workflow-activity-heading span { color: var(--muted); font-size: .7rem; }
@@ -49,7 +52,8 @@
   .workflow-command-center .workflow-command-actions { width: auto; margin-left: auto; }
 }
 @media(max-width:42rem) {
-  .workflow-activity-panel,.workflow-activity-panel.is-wide { width: 100vw; }
+  .workflow-activity-panel,.workflow-activity-panel.is-wide,
+  .workflow-activity-panel.entity-quick-view,.workflow-activity-panel.entity-quick-view.is-wide { width: 100vw; }
   .workflow-activity-heading { flex-wrap: wrap; padding: 1rem; }
   .workflow-activity-body .workflow-run-monitor-layout { grid-template-columns: 1fr; }
   .workflow-activity-body > .workflow-run-monitor,.workflow-activity-body .workflow-run-monitor-body { height: auto; }
