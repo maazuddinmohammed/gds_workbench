@@ -340,8 +340,8 @@ async def test_record_rules_are_reported_at_the_answer_path_without_values() -> 
 
 async def test_entity_types_are_the_snapshot_reference_codes() -> None:
     answer = _answer()
-    # Retired codes such as "other" are no longer offered or accepted.
-    answer["entities"][1]["type"] = "other"
+    # A code outside the snapshot's reference list is neither offered nor accepted.
+    answer["entities"][1]["type"] = "lookup"
     validator = _validator()
     entity_schema = cast(dict[str, Any], validator.output_schema()["$defs"])["_CompactEntity"]
 

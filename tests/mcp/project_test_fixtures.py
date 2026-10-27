@@ -19,13 +19,20 @@ GOLD_SALES_FACT = ("GDS", "GDS", "LAKEHOUSE", "gold", "SalesFact")
 GOLD_CUSTOMER = ("GDS", "GDS", "LAKEHOUSE", "gold", "CustomerDimension")
 # Mirrors the seeded rows in database/01_reference.sql.
 LOGICAL_ENTITY_TYPES = (
+    "agreement",
     "association",
     "core",
     "event",
+    "hierarchy",
     "history",
+    "list",
+    "other",
+    "plan",
     "reference",
     "snapshot",
+    "subtype",
     "transaction",
+    "transaction_line",
 )
 DIMENSIONAL_FACT_TYPES = (
     "accumulating_snapshot",

@@ -3,6 +3,7 @@
 from copy import deepcopy
 from typing import Any, cast
 
+from gds_etl_workbench.domain.modeling_records import ContextTypeRecord
 from gds_etl_workbench.domain.snapshots.project import project_snapshot_records
 from gds_workbench_api.features.mapping.execution_context import (
     MappingExecutionContextLimits,
@@ -338,3 +339,75 @@ def test_gold_support_works_out_dimensional_link_kind_optionality_and_cardinalit
     assert link["dimensional_relationship_is_optional"] is True
     assert "dimensional_relationship_is_active" not in link
     assert "dimensional_relationship_is_locked" not in link
+
+
+def test_gold_support_keeps_context_an_upstream_logical_entity_cites_whatever_its_type() -> (
+    None
+):
+    preparation = mapping_preparation(modeled_entity_type="dimensional_entity")
+    assert preparation.snapshot is not None
+    graph = {
+        name: [row.model_dump(mode="json") for row in rows]
+        for name, rows in project_snapshot_records(preparation.snapshot).items()
+    }
+    record_id = "00000000-0000-4000-8000-000000000009"
+    # A Logical Requirement is routed to Logical only, never to Mapping.
+    graph["context_group"] = [
+        {
+            "context_group_name": "Silver rules",
+            "context_type_name": "Logical Requirement",
+            "source_system_code": None,
+            "context_group_description": None,
+            "is_active": True,
+        }
+    ]
+    graph["context_record"] = [
+        {
+            "context_record_id": record_id,
+            "context_group_name": "Silver rules",
+            "context_text": "Keep one Customer per CRM account.",
+            "source_reference": None,
+            "status": "active",
+            "is_locked": False,
+        }
+    ]
+    citation = {
+        "support_source_type": "context_record",
+        "context_record": {"context_record_id": record_id},
+        "rationale": "Silver rule.",
+        "is_active": True,
+        "is_locked": False,
+    }
+    graph["logical_entity"][0]["sources"].append(citation)
+    graph["logical_attribute"][0]["sources"].append(citation)
+    snapshot = snapshot_from_graph(cast(Any, graph))
+    snapshot = snapshot.model_copy(
+        update={
+            "context": snapshot.context.model_copy(
+                update={
+                    "types": (
+                        ContextTypeRecord(
+                            context_type_name="Logical Requirement",
+                            context_type_description="Silver model requirements.",
+                            context_type_workflows=("logical",),
+                        ),
+                    )
+                }
+            )
+        }
+    )
+    execution = build_mapping_execution_context(
+        preparation=preparation.model_copy(update={"snapshot": snapshot}),
+        execution_mode="one_shot",
+    )
+    values = cast(dict[str, Any], execution.embedded_context)["values"]
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for item in values["mapping_support_records"]:
+        grouped.setdefault(item["evidence_type"], []).append(item["record"])
+    assert [row["context_record_id"] for row in grouped["context_record"]] == [record_id]
+    for kind in ("source_logical_entity", "source_logical_attribute"):
+        assert [
+            source["context_record"]["context_record_id"]
+            for source in grouped[kind][0]["sources"]
+            if source["support_source_type"] == "context_record"
+        ] == [record_id]

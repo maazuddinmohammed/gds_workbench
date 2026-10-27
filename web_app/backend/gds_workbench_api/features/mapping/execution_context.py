@@ -372,6 +372,20 @@ def _mapping_support(preparation: MappingPreparation) -> dict[str, Any]:
         for source in entity.sources
         if source.is_active and source.support_source_type == "context_record"
     }
+    # So does Context an upstream Logical Entity cites: its evidence records keep the citation.
+    for upstream in (
+        *(row for row in snapshot.logical.entities if row.logical_entity_is_active),
+        *(row for row in snapshot.logical.attributes if row.logical_attribute_is_active),
+    ):
+        if (
+            upstream.logical_entity_schema_name.casefold(),
+            upstream.logical_entity_name.casefold(),
+        ) in logical_keys:
+            cited_context.update(
+                source.context_record.context_record_id
+                for source in upstream.sources
+                if source.is_active and source.support_source_type == "context_record"
+            )
     for attribute in section.attributes:
         if (
             getattr(attribute, f"{layer}_entity_name").casefold() != entity_name

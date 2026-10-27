@@ -214,7 +214,7 @@ const project = {
   project_revision: revision, is_locked: false, project_input_scope_object_count: objects.length,
   logical_schemas: [{ schema_name: "silver_retail", description: "Conformed entities" }],
   dimensional_schemas: [{ schema_name: "gold_sales", description: "Sales mart" }],
-  default_mapping_source_system_id: null, logical_entity_scd_type: "type_2", dimensional_entity_scd_type: "type_2",
+  logical_entity_scd_type: "type_2", dimensional_entity_scd_type: "type_2",
   logical_coverage_threshold_percent: 70, dimensional_coverage_threshold_percent: 60,
   logical_enforce_coverage_threshold: false, dimensional_enforce_coverage_threshold: false,
   silver_model_naming_instructions: "Use snake_case names and preserve stable business identifiers.",

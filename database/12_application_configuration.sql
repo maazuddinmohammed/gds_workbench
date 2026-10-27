@@ -2258,6 +2258,32 @@ AS $list_code_generation_target_context$
                      )
                 ))
            ))
+    ), cited_context AS MATERIALIZED (
+        -- Context a target Entity or one of its active Attributes cites as support.
+        SELECT s.logical_entity_id AS modeled_entity_id, s.context_record_id
+          FROM workflow.logical_entity_source_mapping AS s
+         WHERE p_modeled_entity_type = 'logical_entity' AND s.project_id = p_project_id
+           AND s.logical_entity_source_mapping_is_active AND s.context_record_id IS NOT NULL
+        UNION
+        SELECT s.logical_entity_id, s.context_record_id
+          FROM workflow.logical_attribute_source_mapping AS s
+          JOIN workflow.logical_attribute AS attribute ON attribute.project_id = s.project_id
+           AND attribute.logical_attribute_id = s.logical_attribute_id AND attribute.logical_attribute_is_active
+         WHERE p_modeled_entity_type = 'logical_entity' AND s.project_id = p_project_id
+           AND s.logical_attribute_source_mapping_is_active AND s.context_record_id IS NOT NULL
+        UNION
+        SELECT s.dimensional_entity_id, s.context_record_id
+          FROM workflow.dimensional_entity_source_mapping AS s
+         WHERE p_modeled_entity_type = 'dimensional_entity' AND s.project_id = p_project_id
+           AND s.dimensional_entity_source_mapping_is_active AND s.context_record_id IS NOT NULL
+        UNION
+        SELECT s.dimensional_entity_id, s.context_record_id
+          FROM workflow.dimensional_attribute_source_mapping AS s
+          JOIN workflow.dimensional_attribute AS attribute ON attribute.project_id = s.project_id
+           AND attribute.dimensional_attribute_id = s.dimensional_attribute_id
+           AND attribute.dimensional_attribute_is_active
+         WHERE p_modeled_entity_type = 'dimensional_entity' AND s.project_id = p_project_id
+           AND s.dimensional_attribute_source_mapping_is_active AND s.context_record_id IS NOT NULL
     ), assembled AS (
       SELECT target.project_id, target.modeled_entity_type, target.modeled_entity_id,
              target.modeled_entity_schema_name, target.modeled_entity_name,
@@ -2316,13 +2342,15 @@ AS $list_code_generation_target_context$
                    ORDER BY lower(m.source_system_code),m.source_system_id,m.object_dependency_order,m.mapping_object_id) AS documents
             FROM active_mapping AS m
             LEFT JOIN application.output_template AS template ON template.output_template_id = m.output_template_id
-            -- Context routed to Code Generation or Validation; each prompt keeps its own Types.
+            -- Context routed to Code Generation or Validation, each prompt keeping its own
+            -- Types, plus Context the target cites, which both keep whatever its Type or System.
             CROSS JOIN LATERAL (
               SELECT coalesce(jsonb_agg(jsonb_build_object(
                 'context_record_id',a.context_record_id,
                 'context_text',a.context_text, 'source_reference',a.source_reference,
                 'context_group_name',d.name, 'context_type_name',t.name,
-                'context_type_workflows',routing.workflows
+                'context_type_workflows',CASE WHEN cited.context_record_id IS NULL THEN routing.workflows
+                                              ELSE ARRAY['code_generation','validation'] END
               ) ORDER BY a.context_record_id),'[]'::JSONB) AS documents
               FROM project.context_record AS a JOIN project.context_group AS d
                 ON d.context_group_id = a.context_group_id AND d.project_id = a.project_id AND d.is_active
@@ -2333,9 +2361,12 @@ AS $list_code_generation_target_context$
                  WHERE w.context_type_id = t.context_type_id
                    AND w.project_workflow IN ('code_generation','validation')
               ) AS routing
+              LEFT JOIN cited_context AS cited ON cited.modeled_entity_id = target.modeled_entity_id
+               AND cited.context_record_id = a.context_record_id
               WHERE a.project_id = target.project_id AND a.status = 'active'
-                AND routing.workflows IS NOT NULL
-                AND (d.source_system_id IS NULL OR d.source_system_id = m.source_system_id)
+                AND (cited.context_record_id IS NOT NULL
+                     OR (routing.workflows IS NOT NULL
+                         AND (d.source_system_id IS NULL OR d.source_system_id = m.source_system_id)))
             ) AS project_context
            WHERE m.project_id = target.project_id AND m.modeled_entity_type = target.modeled_entity_type
              AND coalesce(m.logical_entity_id,m.dimensional_entity_id) = target.modeled_entity_id

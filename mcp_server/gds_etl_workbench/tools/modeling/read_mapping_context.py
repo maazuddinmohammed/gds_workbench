@@ -91,7 +91,7 @@ def mapping_context_page(
         raise InvalidRequestError(
             "Mapping context changed; refresh every component before continuing."
         )
-    values = project_mapping_inputs(context, workflow="code_generation")
+    values = project_mapping_inputs(context, workflow=None)
     wanted = {code.strip().casefold() for code in source_system_codes}
     available = {row["system_code"].strip().casefold() for row in values["source_systems"]}
     if wanted and not wanted <= available:

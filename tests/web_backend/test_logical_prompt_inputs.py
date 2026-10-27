@@ -25,6 +25,9 @@ from gds_workbench_api.features.workflows.authoring.context import (
     modeled_layer_dependencies,
 )
 from gds_workbench_api.features.workflows.authoring.context_contracts import WORKFLOW_INPUTS
+from gds_workbench_api.features.workflows.authoring.context_inputs import (
+    _logical_optimize_inputs,
+)
 from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
     list_prompt_input_contracts,
     project_prompt_input_values,
@@ -160,3 +163,70 @@ def test_logical_manifest_contains_actual_applied_and_downstream_datasets() -> N
     } <= set(datasets)
     # Subject Areas choose tables; they are not datasets of a Logical context.
     assert not {"subject_area", "subject_area_table"} & set(datasets)
+
+
+def test_optimize_context_adds_records_only_the_detailed_entities_cite() -> None:
+    shown, unshown = (f"00000000-0000-4000-8000-00000000000{n}" for n in (1, 2))
+
+    def entity(name: str, cites: str) -> dict[str, Any]:
+        return {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": name,
+            "logical_entity_type": "core",
+            "logical_entity_definition": f"One {name}.",
+            "logical_entity_grain": f"One row per {name}.",
+            "logical_entity_is_active": True,
+            "logical_entity_is_locked": False,
+            "sources": [
+                {
+                    "support_source_type": "context_record",
+                    "context_record": {"context_record_id": cites},
+                    "is_active": True,
+                }
+            ],
+        }
+
+    group = {
+        "context_group_name": "Rules",
+        "context_type_name": "Logical Requirement",
+        "source_system_code": None,
+        "is_active": True,
+    }
+    context: dict[str, Any] = {
+        "applied": {
+            "logical": {
+                # Customer and Customers are a name variant, so only they are detailed.
+                "entities": [
+                    entity("Customer", shown),
+                    entity("Customers", shown),
+                    entity("Product", unshown),
+                ],
+                "attributes": [],
+                "relationships": [],
+                "entity_types": [],
+            }
+        },
+        "analysis_relationships": [],
+        "context": {
+            "types": [{"context_type_name": "Logical Requirement", "context_type_workflows": []}],
+            "groups": [group],
+            "records": [
+                {
+                    "context_record_id": record_id,
+                    "context_group_name": "Rules",
+                    "context_text": "A rule.",
+                    "source_reference": None,
+                    "status": "active",
+                }
+                for record_id in (shown, unshown)
+            ],
+        },
+    }
+
+    values = _logical_optimize_inputs(context, {}, [])
+
+    assert [row["name"] for row in values["entity_details"]["entities"]] == [
+        "Customer",
+        "Customers",
+    ]
+    assert [row["context_record_id"] for row in values["context_records"]] == [shown]

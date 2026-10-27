@@ -2349,7 +2349,8 @@ _LOGICAL_TYPES = [
     {
         "code": "transaction",
         "description": (
-            "A business document or exchange, such as SalesOrder or Invoice, often with lines."
+            "A business document or exchange, such as SalesOrder or Invoice. "
+            "Its lines are transaction_line."
         ),
     },
 ]

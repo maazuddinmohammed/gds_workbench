@@ -73,7 +73,7 @@ Reuse the existing backend downstream projection where compatible:
 | `target_metadata` | Planned Entity schema/name and every modeled Attribute's name, type/capacity, nullability and ordinal. This is an executable projection of the design, not proof of physical registration. |
 | `source_metadata` | Actual permitted input identities, SQL coordinates/column names and relevant source types; distinguish originating System from GDS placement. |
 | `source_systems` | Selected originating Systems and their resolved IDs/names; list order is stable presentation only. |
-| `object_transformations` | Every selected nonempty System branch's Object document (possibly null), modeled identity and Object dependency order; use only authored grain, keys, branch policy and prerequisites. |
+| `object_transformations` | Every selected nonempty System branch's Object document (possibly null), modeled identity and Object dependency order; use only authored grain, keys, branch policy and prerequisites. Each Entity Context record lists `context_type_workflows`: Code reads `code_generation` records, SQL Validation reads `validation` records; a record the target cites lists both. |
 | `attribute_transformations` | Complete per-System modeled Attribute coverage, schema-qualified modeled target names and Attribute documents, including generated/framework rules. |
 
 This is a derived read view, not a fourth Change Set dataset, a second manually maintained mapping or a large prose handoff. It must preserve record boundaries and complete coverage when paged. Use one consistent approved revision/context; required target/source changes make the view stale and need reconciliation. Do not put internal IDs, credentials or physical rows into author instructions.

@@ -42,8 +42,12 @@ def without_internal_fields(value: Any) -> Any:
     }
 
 
-def project_mapping_inputs(context: dict[str, Any], *, workflow: str) -> dict[str, Any]:
-    """Project one Code context for `workflow` (code_generation or validation)."""
+def project_mapping_inputs(context: dict[str, Any], *, workflow: str | None) -> dict[str, Any]:
+    """Project one Code context for `workflow` (code_generation or validation).
+
+    None keeps the Context of both, each record tagged with `context_type_workflows`:
+    the MCP view serves Atlas Code and SQL Validation authoring alike.
+    """
     systems = {row["source_system_id"]: row["system_code"] for row in context["source_systems"]}
     objects = {row["mapping_object_id"]: row for row in context["object_mappings"]}
     sources: list[dict[str, Any]] = []
@@ -69,7 +73,7 @@ def project_mapping_inputs(context: dict[str, Any], *, workflow: str) -> dict[st
             if isinstance(entity, dict)
             else None
         )
-        if isinstance(records, list):
+        if workflow is not None and isinstance(records, list):
             routed: list[Any] = []
             for record in cast(list[Any], records):
                 workflows = (

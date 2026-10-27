@@ -1180,7 +1180,7 @@ it("lists only the server's Entity/System branches and explains unsupplied Entit
     expect(await dialog.findByRole("checkbox", { name: `Generate silver_nwa.customer from ${system}` })).toBeChecked();
   }
   expect(dialog.getByText(/Each Entity is mapped only from the Systems its source tables come from\./)).toBeVisible();
-  expect(dialog.getByText("2 Logical Entities have no source tables, so they are not listed.")).toBeVisible();
+  expect(dialog.getByText("2 Logical Entities have no source System, so they are not listed.")).toBeVisible();
   expect(dialog.getByLabelText("Source System")).toHaveValue("");
   expect(dialog.queryByText("No eligible sources")).not.toBeInTheDocument();
   await user.click(dialog.getByRole("button", { name: "Generate mappings" }));
@@ -1223,6 +1223,25 @@ it("keeps the System tab in the address through details, back links and Generate
   expect(await dialog.findByRole("checkbox", { name: "Generate silver_nwa.customer from CRM" })).toBeChecked();
   expect(dialog.getByLabelText("Source System")).toHaveValue("CRM");
   expect(dialog.queryByRole("checkbox", { name: "Generate silver_nwa.orders from ERP" })).not.toBeInTheDocument();
+});
+
+it("keeps a tab's System that sources nothing instead of generating for every System", async () => {
+  const fetcher = mappingFetchStub({ generationTargets: [
+    { ...mappingTarget, source_system: sourceSystem, entity_name: "customer", mapping_object_id: null, object_order: 0, is_locked: false,
+      attributes: [{ attribute_id: 702, attribute_name: "customer_name", modeled_attribute_name: "Name", ordinal_position: 1, is_locked: false, is_authored: false }] },
+  ] });
+  const user = userEvent.setup();
+  render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+    history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18?layer=logical&system=LEGACY"] }),
+  })} />);
+  await user.click(await screen.findByRole("button", { name: "Generate mappings" }));
+  const dialog = within(await screen.findByRole("dialog"));
+  expect(await dialog.findByText("No Entity has LEGACY as a source System in this layer.")).toBeVisible();
+  expect(dialog.getByLabelText("Source System")).toHaveValue("LEGACY");
+  expect(dialog.queryByRole("checkbox", { name: "Generate silver_nwa.customer from CRM" })).not.toBeInTheDocument();
+  expect(dialog.getByRole("button", { name: "Generate mappings" })).toBeDisabled();
+  await user.selectOptions(dialog.getByLabelText("Source System"), "");
+  expect(await dialog.findByRole("checkbox", { name: "Generate silver_nwa.customer from CRM" })).toBeChecked();
 });
 
 it("keeps layer filters and detail navigation scoped to Dimensional", async () => {

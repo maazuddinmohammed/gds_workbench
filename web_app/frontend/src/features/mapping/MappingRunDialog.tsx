@@ -70,8 +70,11 @@ export function MappingRunDialog({ api, tenantId, project, entityType, initialSy
   });
   const rows = useMemo(() => targets.data?.items ?? [], [targets.data?.items]);
   const systems = [...new Map(rows.map((row) => [row.source_system.system_code.toLowerCase(), row.source_system])).values()];
-  // A System with no branches in this layer (only older saved Mappings) falls back to all Systems.
-  const selectedSystem = systems.find((item) => item.system_code.toLowerCase() === system.toLowerCase())?.system_code ?? "";
+  // A tab's System may source nothing in this layer (only older saved Mappings); keep it
+  // selected, with nothing to map, rather than widen the run to every System.
+  const selectedSystem = systems.find((item) => item.system_code.toLowerCase() === system.toLowerCase())?.system_code ?? system;
+  const systemOptions: [string, string][] = [["", "All Systems"], ...systems.map((item): [string, string] => [item.system_code, item.system_code])];
+  if (selectedSystem && !systems.some((item) => item.system_code === selectedSystem)) systemOptions.push([selectedSystem, selectedSystem]);
   const scoped = rows.filter((row) => !selectedSystem || row.source_system.system_code === selectedSystem);
   const unsupplied = targets.data?.unsuppliedEntityCount ?? 0;
   // Search only narrows the list; it never silently removes a selected target from the run.
@@ -184,9 +187,7 @@ export function MappingRunDialog({ api, tenantId, project, entityType, initialSy
         <fieldset className="mapping-target-selection" disabled={selectionUnavailable}>
           <legend className="sr-only">Mapping selection</legend>
           {!viewed ? <div className="agent-run-grid mapping-scope-controls">
-            <SelectField label="Source System" value={selectedSystem}
-              options={[["", "All Systems"], ...systems.map((item) => [item.system_code, item.system_code] as [string, string])]}
-              onChange={setSystem} />
+            <SelectField label="Source System" value={selectedSystem} options={systemOptions} onChange={setSystem} />
           </div> : null}
           <fieldset className="scope-mode-options">
             <legend>Entities</legend>
@@ -203,8 +204,8 @@ export function MappingRunDialog({ api, tenantId, project, entityType, initialSy
             ? "Each Entity is mapped only from the Systems its source tables come from."
             : "Each Entity is mapped only from the Systems its Logical sources are mapped from."} Available transformations are retained; missing selected transformations stay blank. Locked and unselected mappings are preserved.</p>
           {unsupplied ? <p className="field-help">{unsupplied} {entityType === "logical_entity"
-            ? `Logical ${unsupplied === 1 ? "Entity has" : "Entities have"} no source tables`
-            : `Dimensional ${unsupplied === 1 ? "Entity has" : "Entities have"} no mapped Logical source yet`}, so {unsupplied === 1 ? "it is" : "they are"} not listed.</p> : null}
+            ? `Logical ${unsupplied === 1 ? "Entity has" : "Entities have"} no source System`
+            : `Dimensional ${unsupplied === 1 ? "Entity has" : "Entities have"} no Logical source with complete Mapping yet`}, so {unsupplied === 1 ? "it is" : "they are"} not listed.</p> : null}
           {targets.isPending ? <div className="surface-state" aria-busy="true">Loading all Mapping targets and Attributes…</div>
             : targets.isError ? <p className="inline-error" role="alert">Targets could not be fully loaded.</p>
             : revisionChanged ? <p className="inline-error" role="alert">The Project changed. Close this dialog and refresh.</p>
@@ -297,7 +298,9 @@ export function MappingRunDialog({ api, tenantId, project, entityType, initialSy
                     </tr>;
                   })}</tbody>
                 </table>
-                {!visible.length ? <p className="empty-state compact">No targets match. Each Entity needs an active source table in Project Input Scope (Dimensional: a mapped Logical source).</p> : null}
+                {!visible.length ? <p className="empty-state compact">{selectedSystem && !scoped.length
+                  ? `No Entity has ${selectedSystem} as a source System in this layer.`
+                  : "No targets match. Each Entity needs an active source table in Project Input Scope (Dimensional: a Logical source with complete Mapping)."}</p> : null}
               </div>
             </>}
         </fieldset>

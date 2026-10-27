@@ -75,11 +75,14 @@ cardinality from measured validation instead of overwriting one with the other.
 
 Context reaches a workflow prompt only when its Type is routed there
 (`reference.context_type_workflow`, global like the Types). Group System scoping
-still applies, and records an Entity cites as support always pass. Code Generation's
-context carries Types routed to Code Generation or Validation, each tagged with its
-workflows; the Code and Validation prompts each keep only their own, so Code input
-digests change when either kind changes. Routing trims prompts only; it never
-changes what may be cited.
+still applies, and records an Entity cites as support always pass, whatever their
+Type or System (in Mapping, also those its upstream Logical Entities cite). Code
+Generation's context carries Types routed to Code Generation or Validation, each tagged
+with its workflows, plus records the target cites, tagged with both; the Code and
+Validation prompts each keep only their own, so Code input digests change when either
+kind changes. The MCP `read_mapping_context` view serves Atlas Code and Validation, so
+it keeps every record with its tag. Routing trims prompts only; it never changes what
+may be cited.
 
 ## Project, Lane and portable Context contracts
 
