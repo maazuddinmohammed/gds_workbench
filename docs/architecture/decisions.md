@@ -277,7 +277,8 @@ Analysis run (`workflow_operation = 'per_table'`, one-shot only, stage
 - Each call sees the focus table in full and a key directory of every selected table by
   short id (`t1`, `t2`, ...): key-like columns (registered or Project key flags, or a
   profile where every non-null value is distinct; operational columns only when
-  flagged) with both data types, or every column for a table without one.
+  flagged) with both data types, or every column with its description for a table
+  without one, since only a description can then say which column identifies its rows.
 - Its answer holds only links that start in the focus table (`from_attribute_name`,
   `to` as `tN.column`, kind, cardinality); the backend expands them to full keys and
   checks them like a whole-selection answer. The prompt asks for sure links only.

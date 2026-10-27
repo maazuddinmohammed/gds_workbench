@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import socket
 from collections.abc import Mapping, Sequence
 from threading import Lock
 from typing import Any, cast
 
+import httpx2
 from agents import (
     Agent,
     FunctionTool,
@@ -25,6 +27,7 @@ from agents.exceptions import ModelRefusalError, ModelTimeoutError, ToolTimeoutE
 from azure.core.exceptions import ClientAuthenticationError
 from azure.identity.aio import ClientSecretCredential as AsyncClientSecretCredential
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
+from httpx2._utils import get_environment_proxies  # pyright: ignore[reportPrivateUsage]
 from openai import (
     APIConnectionError,
     APIStatusError,
@@ -66,6 +69,24 @@ from gds_workbench_api.integrations.agents.usage import ProviderUsageHooks
 
 _JSON_VALUE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 _JSON_OBJECT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
+# A model call sends no bytes until the model finishes. A network hop with an idle timeout
+# (a NAT gateway or load balancer) can drop such a connection without telling either end,
+# and the call then waits out its whole timeout. TCP keepalive probes keep those hops open
+# and detect a dead connection within minutes. These match the Anthropic SDK's defaults:
+# probe after 60 s idle, every 60 s, and give up after 5 unanswered probes.
+_KEEPALIVE_SOCKET_OPTIONS: list[tuple[int, int, int]] = [
+    (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1),
+    *(
+        (socket.IPPROTO_TCP, option, value)
+        for option, value in (
+            # macOS names the idle time TCP_KEEPALIVE.
+            (getattr(socket, "TCP_KEEPIDLE", getattr(socket, "TCP_KEEPALIVE", None)), 60),
+            (getattr(socket, "TCP_KEEPINTVL", None), 60),
+            (getattr(socket, "TCP_KEEPCNT", None), 5),
+        )
+        if option is not None
+    ),
+]
 
 
 class FoundryApiKeyAuthentication:
@@ -215,6 +236,14 @@ class OpenAIAgentsSdkAdapter:
             http_client = DefaultAsyncHttpxClient(
                 # Keep transport and model-call deadlines aligned.
                 timeout=connection.timeout_seconds,
+                transport=httpx2.AsyncHTTPTransport(socket_options=_KEEPALIVE_SOCKET_OPTIONS),
+                # A custom transport turns off environment proxies, so mount them again.
+                # httpcore does not pass socket options through a proxy; proxied calls keep
+                # the system's keepalive settings.
+                mounts={
+                    pattern: None if proxy is None else httpx2.AsyncHTTPTransport(proxy=proxy)
+                    for pattern, proxy in get_environment_proxies().items()
+                },
                 event_hooks={"request": [hooks.on_request], "response": [hooks.on_response]},
             )
             if connection.api_protocol == "anthropic_messages":

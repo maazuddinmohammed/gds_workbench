@@ -199,9 +199,9 @@ def _router(
     timeout_seconds: int = 480,
 ) -> AgentExecutionRouter:
     def client_factory(**options: Any) -> httpx2.AsyncClient:
-        return DefaultAsyncHttpxClient(
-            transport=httpx2.MockTransport(handler), **options
-        )
+        # Every request reaches the handler instead of the adapter's network transport.
+        options.update(transport=httpx2.MockTransport(handler), mounts=None)
+        return DefaultAsyncHttpxClient(**options)
 
     monkeypatch.setattr(adapters, "DefaultAsyncHttpxClient", client_factory)
     registry = load_default_agent_capabilities()
