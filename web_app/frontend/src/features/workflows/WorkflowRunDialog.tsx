@@ -159,6 +159,8 @@ export function WorkflowRunDialog({
   const waitingAreaNames = (areasQuery.data?.items ?? [])
     .filter((area) => area.build.state === "draft_waiting" && area.build.workflow_run_id === waitingDraft?.workflow_run_id)
     .map((area) => area.subject_area_name);
+  const waitingDraftName = waitingDraft?.workflow_operation === "optimize" ? "Optimize"
+    : waitingAreaNames.length ? `${waitingAreaNames.join(", ")} Build` : "Build";
   const scopeRows = enrichmentObject
     ? (enrichmentObject.is_locked || enrichmentObject.source_tenant_id !== tenantId ? [] : enrichmentObject.attributes
       .filter((item) => item.is_active && !item.is_locked && /^[0-9a-f]{64}$/.test(item.review_revision ?? ""))
@@ -474,10 +476,7 @@ export function WorkflowRunDialog({
                 Areas with the most shared Objects are listed first. Locked records stay as saved.
               </p>
               {waitingDraft ? <p className="drawer-warning run-build-waiting" role="status">
-                {waitingDraft.workflow_operation === "optimize" || waitingAreaNames.length === 0
-                  ? `The ${waitingDraft.workflow_operation === "optimize" ? "Optimize" : "Build"} draft`
-                  : `The ${waitingAreaNames.join(", ")} Build draft`}
-                {" "}is waiting for review. Apply or discard it in Activity, then build the next area.
+                The {waitingDraftName} draft is waiting for review. Apply or discard it in Activity, then build the next area.
               </p> : null}
               <BuildAreaPicker areas={buildAreas} pickedId={pickedAreaId} isPending={areasQuery.isPending}
                 isError={areasQuery.isError} disabled={selectionDisabled} onPick={setPickedAreaId} />
