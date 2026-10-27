@@ -1,5 +1,4 @@
 import type { ProjectInputScopeApi, ProjectInputScopeDetail } from "../project_input_scope/api";
-import { subjectAreaQueryKeys, type SubjectAreaSummary, type SubjectAreaTransport } from "../subject_areas/api";
 import { EnrichmentAttributeSelection, type EnrichmentAttributeSelectionValue } from "../metadata_enrichment/EnrichmentAttributeSelection";
 import type { MetadataEnrichmentTransport, ReviewEnrichmentCommand, ReviewEnrichmentResult } from "../metadata_enrichment/api";
 import { useEffect, useRef, useState } from "react";
@@ -7,7 +6,8 @@ import { useForm, useStore } from "@tanstack/react-form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { ApiError } from "../../core/http";
-import { SelectAllCheckbox } from "../../shared/ui";
+import type { ModelSubjectArea, ModelSubjectAreaPage } from "../../shared/contracts";
+import { BuildStatus, SelectAllCheckbox } from "../../shared/ui";
 import { useWorkflowRunSubmission } from "./useWorkflowRunSubmission";
 import type { ProjectDetail } from "../projects/api";
 import type { CreateWorkflowRunCommand, WorkflowOperation } from "./api";
@@ -39,7 +39,7 @@ export function WorkflowRunDialog({
   executeCreated,
   enrichmentObject,
   workflowOperation = "build",
-  subjectAreaSource,
+  buildAreasSource,
   enrichmentTarget,
   readEnrichmentObject,
   reviewEnrichment,
@@ -57,7 +57,8 @@ export function WorkflowRunDialog({
   enrichmentObject?: ProjectInputScopeDetail;
   /** Logical and Dimensional only: Build chosen Subject Areas or Optimize the whole model. */
   workflowOperation?: WorkflowOperation;
-  subjectAreaSource?: Pick<SubjectAreaTransport, "listSubjectAreas">;
+  /** Build only: the layer's Subject Area list, under the Subject Areas tab's cache key. */
+  buildAreasSource?: { queryKey: readonly unknown[]; load: () => Promise<ModelSubjectAreaPage> };
   enrichmentTarget?: "object" | "attribute";
   readEnrichmentObject?: ProjectInputScopeApi["readProjectInputScopeObject"];
   reviewEnrichment?: MetadataEnrichmentTransport["reviewEnrichment"];
@@ -131,19 +132,21 @@ export function WorkflowRunDialog({
       api, tenantId, project.project_id, isEnrichment ? "enrichment" : "bronze",
     ),
   });
-  // Same cache entry as the Subject Areas screen.
+  // Same cache entry as the layer's Subject Areas tab, read again on open: Build status and a
+  // waiting draft must be current before a Build starts.
   const areasQuery = useQuery({
-    queryKey: subjectAreaQueryKeys.areas(tenantId, project.project_id),
+    queryKey: buildAreasSource?.queryKey ?? ["build-subject-areas", tenantId, project.project_id],
     enabled: isBuild,
+    refetchOnMount: "always",
     queryFn: () => {
-      if (!subjectAreaSource) throw new Error("Subject Areas are unavailable.");
-      return subjectAreaSource.listSubjectAreas(tenantId, project.project_id);
+      if (!buildAreasSource) throw new Error("Subject Areas are unavailable.");
+      return buildAreasSource.load();
     },
   });
   // Areas whose Objects are shared with other areas are listed first, because building them
   // first lets later areas reuse their Entities; then larger areas; then name.
   const buildAreas = (areasQuery.data?.items ?? [])
-    .filter((area) => area.subject_area_is_active && area.table_count > 0)
+    .filter((area) => area.table_count > 0)
     .sort((left, right) => right.shared_table_count - left.shared_table_count
       || right.table_count - left.table_count
       || left.subject_area_name.localeCompare(right.subject_area_name));
@@ -151,6 +154,11 @@ export function WorkflowRunDialog({
   // on it. The backend still accepts several.
   const [pickedAreaId, setPickedAreaId] = useState<number | null>(null);
   const buildAreaIds = buildAreas.filter((area) => area.subject_area_id === pickedAreaId).map((area) => area.subject_area_id);
+  // A Build reads only the applied model, so a draft still waiting for Apply blocks the next one.
+  const waitingDraft = isBuild ? areasQuery.data?.waiting_draft ?? null : null;
+  const waitingAreaNames = (areasQuery.data?.items ?? [])
+    .filter((area) => area.build.state === "draft_waiting" && area.build.workflow_run_id === waitingDraft?.workflow_run_id)
+    .map((area) => area.subject_area_name);
   const scopeRows = enrichmentObject
     ? (enrichmentObject.is_locked || enrichmentObject.source_tenant_id !== tenantId ? [] : enrichmentObject.attributes
       .filter((item) => item.is_active && !item.is_locked && /^[0-9a-f]{64}$/.test(item.review_revision ?? ""))
@@ -186,7 +194,7 @@ export function WorkflowRunDialog({
       }
       if (!isMetadataImport && kind === "inference" && !agentSelectionValid) return;
       if (isModelRun) {
-        if (revisionChanged || (isBuild && buildAreaIds.length === 0)) return;
+        if (revisionChanged || (isBuild && (buildAreaIds.length === 0 || waitingDraft || areasQuery.isFetching))) return;
         // The backend derives the selected Objects or Logical Entities from the operation.
         runMutation.mutate({
           expected_project_revision: project.project_revision,
@@ -465,6 +473,12 @@ export function WorkflowRunDialog({
                 {" "}Apply or discard that draft before building the next area, so later areas reuse its Entities.
                 Areas with the most shared Objects are listed first. Locked records stay as saved.
               </p>
+              {waitingDraft ? <p className="drawer-warning run-build-waiting" role="status">
+                {waitingDraft.workflow_operation === "optimize" || waitingAreaNames.length === 0
+                  ? `The ${waitingDraft.workflow_operation === "optimize" ? "Optimize" : "Build"} draft`
+                  : `The ${waitingAreaNames.join(", ")} Build draft`}
+                {" "}is waiting for review. Apply or discard it in Activity, then build the next area.
+              </p> : null}
               <BuildAreaPicker areas={buildAreas} pickedId={pickedAreaId} isPending={areasQuery.isPending}
                 isError={areasQuery.isError} disabled={selectionDisabled} onPick={setPickedAreaId} />
             </>
@@ -628,7 +642,8 @@ export function WorkflowRunDialog({
                   )) : runMutation.isPending
                   || (pendingStart === null && (
                     (isModelRun
-                      ? isBuild && (areasQuery.isPending || areasQuery.isError || buildAreaIds.length === 0)
+                      ? isBuild && (areasQuery.isPending || areasQuery.isFetching || areasQuery.isError
+                        || buildAreaIds.length === 0 || waitingDraft !== null)
                       : scopeQuery.isPending
                         || scopeQuery.isError
                         || (isAttributeEnrichment ? !attributeSelection.ready || scopeQuery.isFetching : effectiveRows.length === 0))
@@ -663,7 +678,7 @@ export function WorkflowRunDialog({
 
 /** Build picks one Subject Area; rows keep the most-shared-first order. */
 function BuildAreaPicker({ areas, pickedId, isPending, isError, disabled, onPick }: {
-  areas: SubjectAreaSummary[];
+  areas: ModelSubjectArea[];
   pickedId: number | null;
   isPending: boolean;
   isError: boolean;
@@ -688,6 +703,8 @@ function BuildAreaPicker({ areas, pickedId, isPending, isError, disabled, onPick
                 <th>Subject Area</th>
                 <th className="is-numeric">Objects</th>
                 <th className="is-numeric">Shared Objects</th>
+                <th className="is-numeric"><span title="Objects that reach an active Entity of this layer">Modeled</span></th>
+                <th>Last build</th>
               </tr></thead>
               <tbody>{areas.map((area) => <tr key={area.subject_area_id} className={area.subject_area_id === pickedId ? "is-active" : undefined}>
                 <td className="selection-cell"><input type="radio" name="build-subject-area" aria-label={`Build ${area.subject_area_name}`}
@@ -695,6 +712,8 @@ function BuildAreaPicker({ areas, pickedId, isPending, isError, disabled, onPick
                 <th scope="row">{area.subject_area_name}</th>
                 <td className="is-numeric">{area.table_count}</td>
                 <td className="is-numeric">{area.shared_table_count}</td>
+                <td className="is-numeric">{area.modeled_table_count}</td>
+                <td><BuildStatus build={area.build} /></td>
               </tr>)}</tbody>
             </table>
           </div>}

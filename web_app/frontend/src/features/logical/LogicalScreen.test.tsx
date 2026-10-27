@@ -44,12 +44,15 @@ describe("Project Logical", () => {
 
     const areas = await screen.findByRole("table", { name: "Logical Subject Areas" });
     expect(within(areas).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
-      "Subject Area", "Objects", "Logical Entities", "",
+      "Subject Area", "Objects", "Modeled", "Logical Entities", "Last build", "",
     ]);
     const row = within(areas).getByRole("row", { name: /Sales/ });
-    expect(within(row).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
-      "SalesCustomer orders.", "2", "1", "Show Entities",
-    ]);
+    const cells = within(row).getAllByRole("cell").map((cell) => cell.textContent);
+    expect([...cells.slice(0, 4), cells[5]]).toEqual(["SalesCustomer orders.", "2", "2", "1", "Show Entities"]);
+    // The last Build is an icon; its words show on hover and to screen readers.
+    expect(within(row).getByTitle(/^Applied · /)).toHaveTextContent(/^Applied · /);
+    expect(within(within(areas).getByRole("row", { name: /Finance/ })).getByTitle(/^Last Build failed · /)).toBeVisible();
+    expect(within(within(areas).getByRole("row", { name: /Support/ })).getByTitle("Not built yet")).toBeVisible();
     await user.click(within(row).getByRole("link", { name: "Show Sales Entities" }));
 
     expect(await screen.findByRole("heading", { name: "Sales", level: 1 })).toBeVisible();
@@ -257,10 +260,12 @@ describe("Project Logical", () => {
     // Active areas with Objects: most shared Objects first, then most Objects, then name.
     expect(within(areas).getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["Support", "Marketing", "Sales", "Finance"]);
     expect(within(areas).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
-      "Choose", "Subject Area", "Objects", "Shared Objects",
+      "Choose", "Subject Area", "Objects", "Shared Objects", "Modeled", "Last build",
     ]);
     const support = within(areas).getByRole("row", { name: /Support/ });
-    expect([...support.querySelectorAll("td")].slice(1).map((cell) => cell.textContent)).toEqual(["3", "1"]);
+    expect([...support.querySelectorAll("td")].slice(1).map((cell) => cell.textContent)).toEqual(["3", "1", "0", "Not built yet"]);
+    expect(within(within(areas).getByRole("row", { name: /Sales/ })).getByTitle(/^Applied · /)).toBeVisible();
+    expect(within(dialog).queryByText(/draft is waiting for review/)).not.toBeInTheDocument();
     expect(within(areas).queryByRole("button", { name: /^Move / })).not.toBeInTheDocument();
     expect(within(dialog).getByText("None chosen")).toBeVisible();
     const start = within(dialog).getByRole("button", { name: "Create and run Logical Build" });
@@ -297,6 +302,25 @@ describe("Project Logical", () => {
         body: JSON.stringify({ execution_mode: "tool_assisted", expected_project_revision: 18 }),
       }),
     ));
+  });
+
+  it("blocks the next Build while a Build draft waits for Apply, naming its area", async () => {
+    const fetcher = logicalFetchStub({ waitingDraft: true });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={logicalRouter(fetcher)} />);
+    await screen.findByRole("table", { name: "Logical Entities" });
+    await user.click(screen.getByText("Run Logical", { selector: "summary" }));
+    await user.click(screen.getByRole("button", { name: "Build" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Configure Logical Build" });
+    expect(await within(dialog).findByText(
+      "The Marketing Build draft is waiting for review. Apply or discard it in Activity, then build the next area.",
+    )).toBeVisible();
+    const areas = within(dialog).getByRole("table", { name: "Subject Area to build" });
+    expect(within(within(areas).getByRole("row", { name: /Marketing/ })).getByTitle(/^Draft waiting for Apply · /)).toBeVisible();
+    await user.click(within(areas).getByRole("radio", { name: "Build Sales" }));
+    expect(within(dialog).getByRole("button", { name: "Create and run Logical Build" })).toBeDisabled();
+    expect(createRunBody(fetcher)).toBeUndefined();
   });
 
   it("optimizes the whole Logical model without a Subject Area or Object selection", async () => {
@@ -349,6 +373,7 @@ function logicalFetchStub(options: {
   error?: boolean;
   projectRevision?: number;
   hasLock?: boolean;
+  waitingDraft?: boolean;
 } = {}) {
   return vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input);
@@ -377,14 +402,7 @@ function logicalFetchStub(options: {
     }
     if (url === "/api/v1/tenants/7/projects/18/subject-areas") return jsonResponse(subjectAreaPagePayload);
     if (url === "/api/v1/tenants/7/projects/18/logical/subject-areas") {
-      return jsonResponse({
-        project_id: 18,
-        project_revision: 18,
-        items: [{
-          subject_area_id: 41, subject_area_name: "Sales", subject_area_definition: "Customer orders.",
-          table_count: 2, entity_count: 1,
-        }],
-      });
+      return jsonResponse(logicalSubjectAreasPayload(options.waitingDraft ?? false));
     }
     if (url.startsWith("/api/v1/tenants/7/projects/18/logical/attributes?")) {
       return jsonResponse({
@@ -488,6 +506,29 @@ const projectPayload = {
   is_active: true,
   updated_at: "2026-08-24T14:00:00Z",
 };
+
+// The Logical layer's areas: counts, the last Build of each, and a waiting Marketing draft.
+function logicalSubjectAreasPayload(waitingDraft: boolean) {
+  const area = (id: number, name: string, definition: string, tables: number, shared: number,
+    modeled: number, entities: number, build: Record<string, unknown>) => ({
+    subject_area_id: id, subject_area_name: name, subject_area_definition: definition, table_count: tables,
+    shared_table_count: shared, modeled_table_count: modeled, entity_count: entities, build,
+  });
+  const notBuilt = { state: "not_built", workflow_run_id: null, at: null };
+  return {
+    project_id: 18,
+    project_revision: 18,
+    items: [
+      area(41, "Sales", "Customer orders.", 2, 1, 2, 1, { state: "applied", workflow_run_id: 1040, at: "2026-10-25T11:32:00Z" }),
+      area(42, "Support", "Support capability.", 3, 1, 0, 0, notBuilt),
+      area(43, "Finance", "Finance capability.", 4, 0, 1, 1, { state: "failed", workflow_run_id: 1041, at: "2026-10-26T09:12:00Z" }),
+      area(45, "Empty", "Empty capability.", 0, 0, 0, 0, notBuilt),
+      area(46, "Marketing", "Marketing capability.", 2, 1, 0, 0, waitingDraft
+        ? { state: "draft_waiting", workflow_run_id: 1049, at: "2026-10-26T13:20:00Z" } : notBuilt),
+    ],
+    waiting_draft: waitingDraft ? { workflow_run_id: 1049, workflow_operation: "build" } : null,
+  };
+}
 
 function subjectArea(id: number, name: string, tables: number, shared: number, active = true) {
   return {

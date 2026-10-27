@@ -239,7 +239,8 @@ correlation reference; never expose raw provider diagnostics or model payloads.
   Provenance uses shared structured source/rationale/status views; sources have no order
   and may have no rationale. Export is an optional Metadata handoff.
   Both layers show Subject Areas, Entities and Relationships tabs; there are no Submodels.
-  The Subject Areas tab lists active areas with their Objects and the layer's Entities;
+  The Subject Areas tab lists active areas with their Objects, Modeled Objects (those
+  that reach an active Entity of the layer), the layer's Entities and Last build;
   opening one lists its Entities, which open the usual Entity page. Entity ledgers filter
   by Subject Area, and Entity details list their Subject Areas read-only (derived from
   Object sources). Attributes belong inside Entity details; retain addressable
@@ -251,11 +252,17 @@ correlation reference; never expose raw provider diagnostics or model payloads.
   Objects, shared Objects), most shared Objects first, then most Objects, then name,
   and builds the one area picked with a radio button; Start stays disabled until one
   is picked. One area per Build lets each draft be reviewed and applied before the next
-  area builds on it; the backend still accepts several areas.
+  area builds on it; the backend still accepts several areas. Rows also show Modeled
+  Objects and Last build. While the layer has a Build or Optimize draft waiting for
+  Apply, Build names it and keeps Start disabled until it is applied or discarded.
   Optimize has no selection and reviews the whole model (cross-area fixes, merges
   by retiring duplicates). Both keep execution mode, model and reasoning settings, and
   run history names them Logical Build, Logical Optimize, Dimensional Build or
   Dimensional Optimize.
+- Last build uses the Project ribbon's status circle: green check Applied, amber clock
+  Draft waiting, dashed blue ring running, red mark failed, grey ring not built. In
+  tables the circle stands alone, with its words and time on hover and for screen
+  readers; the area page prints them. The backend decides the state.
 - Mapping has Entity/System detail pages: Object logic once above a spreadsheet of
   all active modeled Attributes. Missing transformations stay blank. Preserve custom
   fields/nested values and whole source identifiers. Missing records have no selectable

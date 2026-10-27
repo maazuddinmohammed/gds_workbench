@@ -813,3 +813,4 @@
 .run-build-area-table tbody th { position: static; background: transparent; font-size: inherit; text-transform: none; letter-spacing: normal; white-space: normal; }
 .run-build-area-table :is(th, td).is-numeric { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .run-build-area-table tbody tr.is-active th { background: var(--accent-soft); }
+.run-build-waiting { margin: 0 0 1rem; }

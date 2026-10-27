@@ -824,3 +824,22 @@ fieldset.agent-run-grid {
 .context-editor-fields .checkbox-label input { width: auto; min-height: auto; }
 @media (max-width: 58rem) { .context-group-filterbar { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 42rem) { .context-group-filterbar { grid-template-columns: minmax(0, 1fr); } }
+
+/* A Subject Area's last Build: the Project ribbon's status circle, with words on hover. */
+.build-status { display: inline-flex; align-items: center; gap: 0.4rem; vertical-align: middle; }
+.build-status-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--muted);
+  background: var(--surface);
+}
+.build-status-icon svg { width: 0.72rem; height: 0.72rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.build-status.is-complete .build-status-icon { border-color: var(--green); color: var(--green); background: var(--green-soft); }
+.build-status.is-waiting .build-status-icon { border-color: var(--amber); color: var(--amber); background: var(--amber-soft); }
+.build-status.is-running .build-status-icon { border-color: var(--accent); border-style: dashed; color: var(--accent); }
+.build-status.is-failed .build-status-icon { border-color: var(--red); color: var(--red); }

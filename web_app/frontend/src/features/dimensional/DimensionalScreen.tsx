@@ -100,6 +100,8 @@ export function DimensionalScreen({
   };
   const invalidateLedgers = async () => {
     await Promise.all([
+      // A Build or Optimize draft applied changes each Subject Area's Build status.
+      queryClient.invalidateQueries({ queryKey: dimensionalQueryKeys.subjectAreas(tenantId, project.project_id) }),
       queryClient.invalidateQueries({
         queryKey: ["dimensional-objects", tenantId, project.project_id],
       }),
@@ -230,7 +232,10 @@ export function DimensionalScreen({
           kind="inference"
           workflow="dimensional"
           workflowOperation={runOperation}
-          subjectAreaSource={api}
+          buildAreasSource={{
+            queryKey: dimensionalQueryKeys.subjectAreas(tenantId, project.project_id),
+            load: () => api.listDimensionalSubjectAreas(tenantId, project.project_id),
+          }}
           executeCreated={(workflowRunId, executionMode, expectedProjectRevision) => api.executeDimensionalRun(
             tenantId,
             project.project_id,
@@ -242,6 +247,7 @@ export function DimensionalScreen({
           onCreated={async (workflowRunId) => {
             setRecentRunId(workflowRunId);
             await Promise.all([
+              queryClient.invalidateQueries({ queryKey: dimensionalQueryKeys.subjectAreas(tenantId, project.project_id) }),
               queryClient.invalidateQueries({ queryKey: ["project", tenantId, project.project_id] }),
               queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
             ]);

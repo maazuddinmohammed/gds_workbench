@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 
 import type { ModelSubjectArea } from "../../shared/contracts";
 import { formatRequiredDateTime as formatDateTime } from "../../shared/presentation";
-import { Fact } from "../../shared/ui";
+import { BuildStatus, Fact } from "../../shared/ui";
 
 type ModelLayer = "logical" | "dimensional";
 const LAYER_NAMES: Record<ModelLayer, string> = { logical: "Logical", dimensional: "Dimensional" };
@@ -49,14 +49,20 @@ export function ModelSubjectAreasLedger({ layer, tenantId, projectId, areas, sta
             : <div className="workflow-table-scroll table-scroll ledger-grid" tabIndex={0} role="region"
               aria-label={`Scrollable ${layerName} Subject Areas`}>
               <table className="model-subject-area-ledger" aria-label={`${layerName} Subject Areas`}>
-                <thead><tr><th>Subject Area</th><th>Objects</th><th>{layerName} Entities</th><th /></tr></thead>
+                <thead><tr>
+                  <th>Subject Area</th><th>Objects</th>
+                  <th><span title={`Objects that reach an active ${layerName} Entity`}>Modeled</span></th>
+                  <th>{layerName} Entities</th><th>Last build</th><th />
+                </tr></thead>
                 <tbody>{areas.map((area) => <tr key={area.subject_area_id}>
                   <td><span className="endpoint-cell">
                     <strong>{area.subject_area_name}</strong>
                     <span>{area.subject_area_definition}</span>
                   </span></td>
                   <td className="is-numeric">{area.table_count}</td>
+                  <td className="is-numeric">{area.modeled_table_count}</td>
                   <td className="is-numeric">{area.entity_count}</td>
+                  <td><BuildStatus build={area.build} /></td>
                   <td>{layer === "logical"
                     ? <Link className="text-action" aria-label={`Show ${area.subject_area_name} Entities`}
                       to="/tenants/$tenantId/projects/$projectId/logical/subject-areas/$subjectAreaId" params={params(area)}>
@@ -114,7 +120,9 @@ export function ModelSubjectAreaView({
       <dl className="modeled-detail-fields">
         <div className="is-definition"><dt>Definition</dt><dd>{area.subject_area_definition}</dd></div>
         <Fact label="Objects" value={String(area.table_count)} />
+        <Fact label="Modeled Objects" value={String(area.modeled_table_count)} />
         <Fact label={`${layerName} Entities`} value={String(area.entity_count)} />
+        <div><dt>Last build</dt><dd><BuildStatus build={area.build} showLabel /></dd></div>
       </dl>
     </section>
 

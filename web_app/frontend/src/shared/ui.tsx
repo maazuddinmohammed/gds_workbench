@@ -2,7 +2,8 @@ import type { ReactNode, Ref } from "react";
 import { Link } from "@tanstack/react-router";
 
 import atlasMarkUrl from "../../public/assets/atlas.svg?no-inline";
-import { initials } from "./presentation";
+import type { SubjectAreaBuild } from "./contracts";
+import { formatRequiredDateTime, initials } from "./presentation";
 
 export function SelectAllCheckbox({ label, selectedCount, totalCount, disabled, onChange }: {
   label: string;
@@ -81,6 +82,30 @@ export function StatusBadge({ value }: { value: string | null }) {
       ? "is-danger"
       : "is-neutral";
   return <span className={`status-badge ${tone}`}>{value.replaceAll("_", " ")}</span>;
+}
+
+// The Project ribbon's status circles, plus an amber clock for a draft waiting for Apply.
+const BUILD_STATES: Record<SubjectAreaBuild["state"], { label: string; tone: string; path: string | null }> = {
+  applied: { label: "Applied", tone: "is-complete", path: "m4 8 2.5 2.5L12 5" },
+  draft_waiting: { label: "Draft waiting for Apply", tone: "is-waiting", path: "M8 4.5V8l2.2 1.4" },
+  running: { label: "Build running", tone: "is-running", path: null },
+  failed: { label: "Last Build failed", tone: "is-failed", path: "M8 4v4M8 11v.2" },
+  not_built: { label: "Not built yet", tone: "is-neutral", path: null },
+};
+
+/**
+ * A Subject Area's last Build as one status circle. Its words show on hover and to screen
+ * readers; showLabel prints them where there is room, such as detail pages.
+ */
+export function BuildStatus({ build, showLabel = false }: { build: SubjectAreaBuild; showLabel?: boolean }) {
+  const state = BUILD_STATES[build.state];
+  const text = build.at ? `${state.label} · ${formatRequiredDateTime(build.at)}` : state.label;
+  return <span className={`build-status ${state.tone}`} title={text}>
+    <span className="build-status-icon" aria-hidden="true">
+      {state.path ? <svg viewBox="0 0 16 16"><path d={state.path} /></svg> : null}
+    </span>
+    <span className={showLabel ? undefined : "sr-only"}>{text}</span>
+  </span>;
 }
 
 export function Fact({ label, value, code = false }: { label: string; value: string; code?: boolean }) {
