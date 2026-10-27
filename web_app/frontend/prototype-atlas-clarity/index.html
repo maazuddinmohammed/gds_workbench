@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#00338d">
+  <title>Atlas clarity options</title>
+  <link rel="icon" type="image/svg+xml" href="../public/assets/atlas-favicon.svg">
+  <link rel="stylesheet" href="prototype.css">
+</head>
+<body>
+<!-- THROWAWAY: information-design options for the Atlas web app over one synthetic fixture.
+Question: how can Atlas show more information with less drilling down, and look cleaner?
+URL: ?option=a|b|c|rec&screen=overview|logical|mapping|analysis
+Isolated from the live app: no production imports, API calls or persistence.
+Run from the repository root: python3 -m http.server 4330 --bind 127.0.0.1 --directory web_app/frontend
+Open http://127.0.0.1:4330/prototype-atlas-clarity/ -->
+<div id="root"></div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script type="module" src="prototype.js"></script>
+</body>
+</html>
