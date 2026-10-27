@@ -942,11 +942,12 @@ class PostgresAgentContextRepository:
                     else []
                 ),
             )
-            # A Build is bounded per Subject Area once focus_subject_area narrows it, so its
-            # whole selection is neither size-checked nor packaged for a model here.
-            building = plan.workflow_operation == "build"
+            # A Build is bounded per Subject Area once focus_subject_area narrows it, and a
+            # per-table Analysis run sends one table per call, so neither whole selection is
+            # size-checked here. Per-table calls are cut from the projected prompt inputs.
+            per_call = plan.workflow_operation in ("build", "per_table")
             if (
-                not building
+                not per_call
                 and self._limits.max_total_records is not None
                 and _context_record_count(context) > self._limits.max_total_records
             ):
@@ -955,12 +956,14 @@ class PostgresAgentContextRepository:
             bundle = (
                 AgentContextBundle(
                     context=context,
-                    embedded_context={},
+                    embedded_context=(
+                        _provider_context(context) if plan.workflow_operation == "per_table" else {}
+                    ),
                     snapshot=snapshot,
                     physical_scope=physical_scope,
                     limits=self._limits,
                 )
-                if building
+                if per_call
                 else _context_bundle(
                     context,
                     plan=plan,

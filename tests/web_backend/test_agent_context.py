@@ -139,7 +139,6 @@ def _analysis(*, from_name: str, from_tenant: str = "SOURCE") -> dict[str, objec
         "to_object_name": "orders",
         "to_attribute_name": "customer_id",
         "relationship_kind": "foreign_key",
-        "relationship_basis": "Profile evidence.",
         "validation_policy_version": None,
         "validation_result": None,
         "validation_source_non_null_count": None,

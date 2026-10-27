@@ -245,8 +245,6 @@ SELECT result.analysis_result_id,
        to_attribute.attribute_data_type AS to_attribute_data_type,
        result.relationship_kind,
        result.inferred_cardinality,
-       left(result.relationship_basis, 8000) AS relationship_basis,
-       char_length(result.relationship_basis) > 8000 AS relationship_basis_truncated,
        CASE
            WHEN result.validation_result IS NULL THEN 'unvalidated'
            ELSE 'validated'
@@ -660,8 +658,6 @@ def _normalize_analysis_detail(row: dict[str, object]) -> AnalysisFindingDetail:
     return AnalysisFindingDetail.model_validate(
         {
             **summary.model_dump(),
-            "relationship_basis": row["relationship_basis"],
-            "relationship_basis_truncated": row["relationship_basis_truncated"],
             "evidence": evidence,
             "provenance": provenance,
             "created_at": row["created_at"],

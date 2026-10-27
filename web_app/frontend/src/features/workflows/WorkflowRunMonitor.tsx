@@ -1007,6 +1007,7 @@ function runKind(run: Pick<WorkflowRunRecord, "workflow_execution_mode" | "workf
   if (workflow === "code_generation") return "SQL generation";
   if (workflow === "validation") return "Validation authoring";
   if (workflow === "analysis" && mode === null) return "Deterministic validation";
+  if (workflow === "analysis" && run.workflow_operation === "per_table") return "One table per call · one shot";
   const modelRun = modelRunName(workflow, run.workflow_operation);
   if (modelRun) return mode ? `${modelRun} · ${mode.replaceAll("_", " ")}` : modelRun;
   return mode ? `${mode.replaceAll("_", " ")} authoring` : "Deterministic run";

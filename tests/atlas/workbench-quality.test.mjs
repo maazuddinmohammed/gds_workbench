@@ -109,7 +109,6 @@ test("surrogate foreign keys trace measured physical targets through natural-key
 test("metadata-only Analysis supports explicit inference without fabricated SQL counts", () => {
   const { graph, decisions, analysis } = sales();
   for (const field of Object.keys(analysis).filter((field) => field.startsWith("validation_"))) analysis[field] = null;
-  analysis.relationship_basis = "Order.CustomerCode identifies the referenced Customer business identifier; many orders may share one customer.";
   const result = evaluateQuality(graph, decisions, options);
   assert.equal(codes(result).includes("analysis_not_supported"), false);
   assert.ok(result.warnings.some(issue => issue.code === "analysis_inferred"));
@@ -452,7 +451,6 @@ test("shared validation checks Analysis counts and applied scope without a decis
   const { analysis } = sales();
   const measured = structuredClone(analysis);
   for (const field of Object.keys(analysis).filter(field => field.startsWith("validation_"))) analysis[field] = null;
-  analysis.relationship_basis = "Orders refer to Customer business identifiers; this is metadata inference, not a measured result.";
   const graph = project({ subject_area: [area("Sales")], subject_area_table: [member("Sales", "Order")], analysis_result: [analysis] });
   for (const value of graph.values()) value.schema = { "x-gds-change-set-eligible": true };
   graph.get("analysis_result").schema["x-gds-record-validation"] = { version: "1.0", rules: ["analysis_result"] };

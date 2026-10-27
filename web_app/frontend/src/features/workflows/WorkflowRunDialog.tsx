@@ -111,6 +111,7 @@ export function WorkflowRunDialog({
   const uncertainImport = importMutation.isError && pendingImport.current !== null;
   const isAttributeEnrichment = isEnrichment && (enrichmentTarget === "attribute" || enrichmentObject !== undefined);
   const [attributeSelection, setAttributeSelection] = useState<EnrichmentAttributeSelectionValue>({ targets: [], ready: false });
+  const isAnalysisInference = workflow === "analysis" && kind === "inference";
   const isDimensional = workflow === "dimensional";
   // Logical and Dimensional runs have no record picker: Build chooses Subject Areas,
   // and Optimize reviews the whole model.
@@ -179,7 +180,9 @@ export function WorkflowRunDialog({
     defaultValues: {
       scopeMode: (initialSelectedIds.length ? "selected" : "all") as "all" | "selected",
       selectedObjectIds: initialSelectedIds,
-      executionMode: (isEnrichment ? "one_shot" : "tool_assisted") as "one_shot" | "tool_assisted",
+      executionMode: (isEnrichment || isAnalysisInference ? "one_shot" : "tool_assisted") as "one_shot" | "tool_assisted",
+      // Analysis: one call per selected table (one-shot only), or one call for the whole selection.
+      analysisCalls: "per_table" as "per_table" | "whole" | "",
       requestedBatchId: "",
       modelCode: project.default_agent_model_code ?? "",
       reasoningEffortCode: project.default_reasoning_effort_code ?? "",
@@ -195,6 +198,7 @@ export function WorkflowRunDialog({
         return;
       }
       if (!isMetadataImport && kind === "inference" && !agentSelectionValid) return;
+      if (isAnalysisInference && value.analysisCalls === "") return;
       if (isModelRun) {
         if (revisionChanged || (isBuild && (buildAreaIds.length === 0 || waitingDraft || areasQuery.isFetching))) return;
         // The backend derives the selected Objects or Logical Entities from the operation.
@@ -248,6 +252,7 @@ export function WorkflowRunDialog({
         agent: kind === "inference" ? agent : null,
         prompt_overrides: {},
         ...(isEnrichment ? { description_targets: descriptionTargets } : {}),
+        ...(isAnalysisInference && value.analysisCalls === "per_table" ? { workflow_operation: "per_table" as const } : {}),
       });
     },
   });
@@ -257,6 +262,8 @@ export function WorkflowRunDialog({
   const requestedBatchId = useStore(form.store, (state) => state.values.requestedBatchId);
   const modelCode = useStore(form.store, (state) => state.values.modelCode);
   const reasoningEffortCode = useStore(form.store, (state) => state.values.reasoningEffortCode);
+  const analysisCalls = useStore(form.store, (state) => state.values.analysisCalls);
+  const oneShotOnly = isEnrichment || (isAnalysisInference && analysisCalls === "per_table");
   const effectiveRows = scopeMode === "all" ? scopeRows : scopeRows.filter((item) => selectedObjectIds.includes(item.id));
   const effectiveObjects = scopeQuery.data?.items.filter((item) => effectiveRows.some((row) => row.objectId === item.object_id)) ?? [];
   const batchSystems = new Set(effectiveObjects.map((item) => item.system_id));
@@ -283,7 +290,7 @@ export function WorkflowRunDialog({
   });
   const capabilities = capabilitiesQuery.data;
   const compatibleExecutionModes = capabilities
-    ? listCompatibleExecutionModes(capabilities).filter((mode) => !isEnrichment || mode === "one_shot")
+    ? listCompatibleExecutionModes(capabilities).filter((mode) => !oneShotOnly || mode === "one_shot")
     : [];
   const compatibleModels = capabilities?.models.filter((candidate) => (
     findAgentExecutionProfile(candidate, executionMode) !== undefined
@@ -318,7 +325,7 @@ export function WorkflowRunDialog({
     const resolved = resolveAgentProfileSelection(capabilities, executionMode, {
       modelCode,
       reasoningEffortCode,
-    }, isEnrichment ? ["one_shot"] : undefined);
+    }, oneShotOnly ? ["one_shot"] : undefined);
     if (!resolved) return;
     if (executionMode !== resolved.executionMode) {
       form.setFieldValue("executionMode", resolved.executionMode);
@@ -332,7 +339,7 @@ export function WorkflowRunDialog({
     executionMode,
     form,
     kind,
-    isEnrichment,
+    oneShotOnly,
     modelCode,
     reasoningEffortCode,
   ]);
@@ -410,8 +417,19 @@ export function WorkflowRunDialog({
               <header className={isEnrichment ? "sr-only" : undefined}>
                 <strong id="agent-run-heading">Run configuration</strong>
               </header>
-              <fieldset className={`agent-run-grid${isEnrichment ? " agent-run-grid-two" : ""}`} disabled={selectionDisabled}>
+              <fieldset className={`agent-run-grid${isEnrichment || isAnalysisInference ? " agent-run-grid-two" : ""}`} disabled={selectionDisabled}>
                 <legend className="sr-only">Run configuration</legend>
+                {isAnalysisInference ? <form.Field name="analysisCalls">
+                  {(field) => (
+                    <SelectField
+                      label="Analyze"
+                      value={field.state.value}
+                      options={[["per_table", "One table per call"], ["whole", "All tables in one call"]]}
+                      onBlur={field.handleBlur}
+                      onChange={(value) => field.handleChange(value as typeof field.state.value)}
+                    />
+                  )}
+                </form.Field> : null}
                 {isEnrichment ? null : <form.Field name="executionMode">
                   {(field) => (
                     <SelectField

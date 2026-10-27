@@ -351,7 +351,6 @@ class AnalysisResultRecord(ModelingRecord):
     to_attribute_name: Name400
     relationship_kind: Annotated[str, StringConstraints(min_length=1, max_length=100)]
     inferred_cardinality: InferredCardinality = "unknown"
-    relationship_basis: NonblankText
     validation_policy_version: DigestVersion | None = None
     validation_result: Literal["supported", "inconclusive", "unsupported"] | None = None
     validation_source_non_null_count: int | None = Field(default=None, ge=0)

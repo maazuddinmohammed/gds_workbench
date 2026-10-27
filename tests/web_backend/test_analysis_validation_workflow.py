@@ -69,7 +69,6 @@ def _relationship(
     return AnalysisValidationRelationship(
         analysis_result_id=analysis_result_id,
         relationship_kind="reference",
-        relationship_basis="Registered metadata and aggregate value evidence.",
         analysis_result_status="active",
         analysis_result_is_locked=analysis_result_id % 2 == 0,
         gds_connection_id=connection_id,
@@ -436,7 +435,6 @@ def _database_context_row() -> dict[str, object]:
         "requested_batch_id": "10428",
         "analysis_result_id": relationship.analysis_result_id,
         "relationship_kind": relationship.relationship_kind,
-        "relationship_basis": relationship.relationship_basis,
         "inferred_cardinality": relationship.inferred_cardinality,
         "analysis_result_status": relationship.analysis_result_status,
         "analysis_result_is_locked": relationship.analysis_result_is_locked,

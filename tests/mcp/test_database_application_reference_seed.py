@@ -27,6 +27,7 @@ EXPECTED_STAGES = {
     ("analysis", None, "relationship_validation", 10, False),
     ("analysis", "one_shot", "relationship_inference", 10, True),
     ("analysis", "tool_assisted", "relationship_inference", 10, True),
+    ("analysis", "one_shot", "per_table_authoring", 20, True),
     ("subject_area", None, "backend_validation", 100, False),
     ("subject_area", "one_shot", "candidate_authoring", 10, True),
     ("subject_area", "tool_assisted", "candidate_authoring", 10, True),
@@ -117,6 +118,16 @@ EXPECTED_NAMES: dict[str, set[str]] = {
     "metadata_enrichment_attribute": FOUNDATIONAL_NAMES
     - {"object_relationship_context", "context_records"},
     "analysis": FOUNDATIONAL_NAMES,
+    # One call per selected table: its own table in full plus the shared key directory.
+    "analysis.per_table_authoring": {
+        "source_context",
+        "gds_context",
+        "context_records",
+        "key_directory",
+        "focus_table",
+        "ingestion_mapping",
+        "saved_relationships",
+    },
     "subject_area": {
         "source_context",
         "gds_context",
@@ -300,7 +311,7 @@ def test_application_reference_seed_allowlists_exact_prompt_variables(
         ).fetchall()
 
     assert all(row["workflow_stage_variable_description"].strip() for row in rows)
-    assert sum(stage[4] for stage in EXPECTED_STAGES) == 18
+    assert sum(stage[4] for stage in EXPECTED_STAGES) == 19
     assert all(not row["workflow_stage_variable_is_required"] for row in rows)
     assert not {"stage_context", "read_only_dependencies", "available_tools"} & {
         row["workflow_stage_variable_name"] for row in rows

@@ -241,9 +241,9 @@ _ANALYSIS_INPUTS: dict[str, tuple[str, str, str, JsonValue]] = {
 
 
 # Authoring stages per workflow. Logical and Dimensional Build and Optimize share one
-# workflow; each stage reads its own input set.
+# workflow, as do whole-selection and per-table Analysis; each stage reads its own input set.
 _AUTHORING_STAGES: dict[str, tuple[str, ...]] = {
-    "analysis": ("relationship_inference",),
+    "analysis": ("relationship_inference", "per_table_authoring"),
     "subject_area": ("candidate_authoring",),
     "logical": ("build_authoring", "optimize_authoring"),
     "dimensional": ("build_authoring", "optimize_authoring"),
@@ -256,9 +256,11 @@ _AUTHORING_INPUTS = {"analysis": _ANALYSIS_INPUTS}
 
 def stage_input_set(project_workflow: str, stage_code: str) -> str:
     """The workflow_input_contracts key for one authoring stage."""
-    return (
-        f"{project_workflow}_optimize" if stage_code == "optimize_authoring" else project_workflow
-    )
+    if stage_code == "optimize_authoring":
+        return f"{project_workflow}_optimize"
+    if stage_code == "per_table_authoring":
+        return f"{project_workflow}_per_table"
+    return project_workflow
 
 
 class _DescriptionAttributeEvidence(_PromptInput):

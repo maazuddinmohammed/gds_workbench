@@ -831,7 +831,9 @@ def _service(
                 context_bundle
                 or _context_bundle(
                     mode=selected_plan.workflow_execution_mode or "one_shot",
-                    operation=selected_plan.workflow_operation or "build",
+                    operation=cast(
+                        Literal["build", "optimize"], selected_plan.workflow_operation or "build"
+                    ),
                 )
             ),
             context_policy=context_policy

@@ -310,7 +310,7 @@ BEGIN
     INSERT INTO workflow.analysis_result (
         project_id, validation_source_context_digest,
         from_object_id, from_attribute_id, to_object_id, to_attribute_id,
-        relationship_kind, relationship_basis,
+        relationship_kind,
         validation_policy_version, validation_policy_digest, validation_result,
         validation_source_non_null_count, validation_source_distinct_count,
         validation_target_non_null_count, validation_target_distinct_count,
@@ -321,7 +321,6 @@ BEGIN
         v_bronze_order_id, v_bronze_order_customer_id,
         v_bronze_customer_id, v_bronze_customer_key_id,
         'foreign_key',
-        'Order customer identifiers are contained in the unique Customer identifier set.',
         '1.0.0', repeat('c', 64), 'supported',
         842310, 124996, 125000, 125000, 0, 4, 0
     );

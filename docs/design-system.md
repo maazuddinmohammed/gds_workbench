@@ -234,7 +234,10 @@ correlation reference; never expose raw provider diagnostics or model payloads.
   dictionaries; retain unsaved edits on errors.
 - Analysis separates inference from measured validation. Missing, zero and unavailable
   measurements have distinct labels; zero denominators are N/A. Cardinality differences
-  are review warnings. Percentages use their actual measured denominators.
+  are review warnings. Percentages use their actual measured denominators. The Run
+  inference dialog's Analyze field picks One table per call (the default; Execution mode
+  then offers One-shot only) or All tables in one call; run history names the first
+  "One table per call · one shot".
 - Logical/Dimensional ledgers separate schema and Entity name and show Active/Inactive.
   Provenance uses shared structured source/rationale/status views; sources have no order
   and may have no rationale. Export is an optional Metadata handoff.

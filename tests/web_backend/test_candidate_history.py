@@ -49,7 +49,9 @@ def _case(
 ) -> tuple[CandidateValidator, dict[str, Any]]:
     if family == "analysis":
         history = analysis._applied(locked=locked)
-        candidate = {"relationships": [analysis._candidate(basis=history.relationship_basis)]}
+        candidate = {
+            "relationships": [analysis._candidate(cardinality=history.inferred_cardinality)]
+        }
         keys = (
             (
                 analysis._attribute(object_name="order_raw", attribute_name="customer_id"),
@@ -141,7 +143,7 @@ async def test_editing_history_content_still_requires_selected_evidence(
 ) -> None:
     validator, candidate = _case(family)
     if family == "analysis":
-        candidate["relationships"][0]["relationship_basis"] = "Changed evidence."
+        candidate["relationships"][0]["inferred_cardinality"] = "many_to_one"
     else:
         candidate["entities"][0][f"{family}_entity_definition"] = "Changed definition."
         candidate["attributes"][0][f"{family}_attribute_definition"] = "Changed definition."

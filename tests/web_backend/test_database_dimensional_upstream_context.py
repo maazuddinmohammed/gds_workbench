@@ -148,9 +148,9 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
         connection.execute(
             """INSERT INTO workflow.analysis_result (
                 project_id,from_object_id,from_attribute_id,to_object_id,to_attribute_id,
-                relationship_kind,relationship_basis)
+                relationship_kind)
                 SELECT %s,source.object_id,source.attribute_id,target.object_id,target.attribute_id,
-                       'reference','Stored source-to-Bronze relationship.'
+                       'reference'
                   FROM core.attribute source CROSS JOIN core.attribute target
                  WHERE source.object_id=%s AND target.object_id=%s""",
             (scope.plan.project_id, scope.source_object_id, scope.bronze_object_id),

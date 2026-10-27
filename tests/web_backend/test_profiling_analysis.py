@@ -260,7 +260,6 @@ class StaticProfilingReviewService:
         assert analysis_result_id == summary.analysis_result_id
         return AnalysisFindingDetail(
             **summary.model_dump(),
-            relationship_basis="Country code inclusion and target uniqueness were verified.",
             evidence=AnalysisEvidence(
                 validation_policy_version="1.0.0",
                 validation_policy_digest="b" * 64,
@@ -378,7 +377,6 @@ def test_analysis_ledger_keeps_from_and_to_filters_directional() -> None:
     assert item["from_endpoint"]["object_id"] == 501
     assert item["to_endpoint"]["object_id"] == 502
     assert item["validation_state"] == "validated"
-    assert "relationship_basis" not in item
 
 
 def test_analysis_detail_normalizes_endpoints_and_evidence() -> None:
@@ -498,10 +496,6 @@ class ReviewTransaction:
                 "to_attribute_data_type": "varchar",
                 "relationship_kind": "reference",
                 "inferred_cardinality": "many_to_one",
-                "relationship_basis": (
-                    "Country code inclusion and target uniqueness were verified."
-                ),
-                "relationship_basis_truncated": False,
                 "validation_state": "validated",
                 "validation_policy_version": "1.0.0",
                 "validation_policy_digest": "b" * 64,
@@ -1168,9 +1162,8 @@ async def test_database_review_labels_objects_from_source_tenant(
                 from_attribute_id,
                 to_object_id,
                 to_attribute_id,
-                relationship_kind,
-                relationship_basis
-            ) VALUES (%s, %s, %s, %s, %s, %s, 'Assigned endpoint')
+                relationship_kind
+            ) VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING analysis_result_id
             """,
             (
@@ -1190,9 +1183,8 @@ async def test_database_review_labels_objects_from_source_tenant(
                 from_attribute_id,
                 to_object_id,
                 to_attribute_id,
-                relationship_kind,
-                relationship_basis
-            ) VALUES (%s, %s, %s, %s, %s, %s, 'Unassigned endpoint')
+                relationship_kind
+            ) VALUES (%s, %s, %s, %s, %s, %s)
             """,
             (
                 project["project_id"],

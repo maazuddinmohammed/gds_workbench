@@ -276,7 +276,6 @@ def _candidate(*, to_name: str = "customer_raw") -> JsonValue:
                     "to_attribute_name": "customer_id",
                     "relationship_kind": "reference",
                     "inferred_cardinality": "unknown",
-                    "relationship_basis": "Metadata and profile evidence.",
                 }
             ]
         },

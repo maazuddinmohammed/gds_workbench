@@ -67,9 +67,8 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
         "Refresh and reconcile stale drafts before submission.",
     ),
     "analysis_result": (
-        "Set inferred_cardinality from business evidence, or unknown; explain it in "
-        "relationship_basis. Validation counts are separate observed evidence, "
-        "not a replacement for the inference.",
+        "Set inferred_cardinality from business evidence, or unknown. Validation counts "
+        "are separate observed evidence, not a replacement for the inference.",
         (
             "Each record relates exactly two physical Attributes; keep grain, identity, "
             "dependency and composite-key findings in task evidence, not invented fields."

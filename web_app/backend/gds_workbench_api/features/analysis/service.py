@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import cast
+from typing import Any, cast
 from uuid import UUID
 
 from gds_etl_workbench.application.authorization import AuthorizationService
@@ -16,6 +17,7 @@ from gds_etl_workbench.domain.modeling_records import (
 from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
 )
+from pydantic import JsonValue
 
 from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetFinalizer,
@@ -26,6 +28,9 @@ from gds_workbench_api.features.workflows.authoring.context import (
     AgentContextBundle,
     AgentContextRepository,
     PostgresAgentContextRepository,
+)
+from gds_workbench_api.features.workflows.authoring.context_inputs import (
+    analysis_table_inputs,
 )
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowLifecycle,
@@ -55,7 +60,11 @@ from gds_workbench_api.features.workflows.authoring.stage_runner import (
 )
 from gds_workbench_api.features.workflows.execution.contracts import WorkflowExecutionDatabase
 
-from .candidate import AnalysisInferenceCandidateValidator
+from .candidate import (
+    AnalysisInferenceCandidateValidator,
+    AnalysisTableCandidateValidator,
+    merge_table_findings,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -168,6 +177,7 @@ class AnalysisInferenceWorkflow:
 
             execution_mode = cast(WorkflowExecutionMode, plan.workflow_execution_mode)
             selected_object_count = len(context.context.selected_objects)
+            per_table = plan.workflow_operation == "per_table"
             progress = AgentWorkflowProgress(
                 lifecycle=self._lifecycle,
                 principal=principal,
@@ -180,7 +190,10 @@ class AnalysisInferenceWorkflow:
                 stage="analysis.relationship_inference",
                 status="running",
                 message=(
-                    f"Analysis relationship inference started for {selected_object_count} "
+                    f"Analysis started for {selected_object_count} selected Objects, "
+                    "one table per call."
+                    if per_table
+                    else f"Analysis relationship inference started for {selected_object_count} "
                     "selected Objects. The next persisted milestone follows bounded "
                     "agent response validation."
                 ),
@@ -192,39 +205,45 @@ class AnalysisInferenceWorkflow:
                 raise InvalidRequestError(
                     "The selected Analysis scope contains no Attributes to analyze."
                 )
-            validator = _candidate_validator(context)
-            resolver_key = f"workflow.analysis.{execution_mode}.relationship_inference.context"
-            outcome = await self._stage_runner.run(
-                plan=plan,
-                stage_code="relationship_inference",
-                resolver_values={
-                    resolver_key: context.embedded_context,
-                    "workflow.validation_failures": [],
-                },
-                context=context.embedded_context,
-                output_schema=validator.output_schema(),
-                allowed_tool_names=(
-                    context.tool_catalog.allowed_tool_names
-                    if context.tool_catalog is not None
-                    else ()
-                ),
-                local_tool_catalog=context.tool_catalog,
-                validator=validator,
-            )
-            candidate = outcome.candidate
-            final_attempt = outcome.attempt_count
-            changes = validator.parse_validated(candidate)
+            notes: list[str] = []
+            if per_table:
+                changes, final_attempt, notes, warning = await self._infer_by_table(
+                    plan=plan, context=context, progress=progress
+                )
+            else:
+                validator = _candidate_validator(context)
+                resolver_key = f"workflow.analysis.{execution_mode}.relationship_inference.context"
+                outcome = await self._stage_runner.run(
+                    plan=plan,
+                    stage_code="relationship_inference",
+                    resolver_values={
+                        resolver_key: context.embedded_context,
+                        "workflow.validation_failures": [],
+                    },
+                    context=context.embedded_context,
+                    output_schema=validator.output_schema(),
+                    allowed_tool_names=(
+                        context.tool_catalog.allowed_tool_names
+                        if context.tool_catalog is not None
+                        else ()
+                    ),
+                    local_tool_catalog=context.tool_catalog,
+                    validator=validator,
+                )
+                final_attempt = outcome.attempt_count
+                changes = validator.parse_validated(outcome.candidate)
+                warning = outcome.was_repaired or bool(outcome.warning_codes)
             finding_count = sum(len(change.records) for change in changes)
-            warning = outcome.was_repaired or bool(outcome.warning_codes)
+            summary = (
+                "Analysis inference completed without effective changes."
+                if not changes
+                else "Analysis findings are ready in a validated draft."
+            )
             final_event = progress.event(
                 attempt=final_attempt,
                 stage="analysis.backend_validation",
                 status="warning" if warning else "running",
-                message=(
-                    "Analysis inference completed without effective changes."
-                    if not changes
-                    else "Analysis findings are ready in a validated draft."
-                ),
+                message=f"{summary} {' '.join(notes)}"[:2000] if notes else summary,
                 current=1,
                 total=1,
                 finding_count=finding_count,
@@ -323,6 +342,105 @@ class AnalysisInferenceWorkflow:
                     )
             raise safe_error from None
 
+    async def _infer_by_table(
+        self,
+        *,
+        plan: AgentRunPlan,
+        context: AgentContextBundle,
+        progress: AgentWorkflowProgress,
+    ) -> tuple[tuple[StageProjectChange, ...], int, list[str], bool]:
+        """Make one call per selected table, two at a time, and join the answers in order.
+
+        Each call sees its table in full and the key directory of every selected table, and
+        returns only the links that start in its table. A table whose call still fails after
+        its repair attempts adds a warning; the other tables' findings are kept, and the run
+        fails only when no table could be analyzed. Findings on a pair of columns that is
+        already linked are dropped before the draft.
+        """
+        tables = analysis_table_inputs(cast(dict[str, Any], context.embedded_context))
+        selected_attribute_keys = _selected_attribute_keys(context)
+        applied = context.context.analysis_relationships
+        answers: list[tuple[StageProjectChange, ...]] = [() for _ in tables]
+        failures: list[WorkbenchError] = []
+        notes: list[str] = []
+        pending = iter(enumerate(tables))
+        progress_lock = asyncio.Lock()
+        # Progress every 6 tables; the final event reports completion.
+        progress_points = frozenset(range(6, len(tables), 6))
+        final_attempt = 1
+        completed = 0
+        repaired = False
+
+        async def analyze_tables() -> None:
+            nonlocal final_attempt, completed, repaired
+            # Taking the next table has no await, so two workers never share one.
+            for position, inputs in pending:
+                focus = inputs["focus_table"]
+                name = f"{focus['object_schema']}.{focus['object_name']}"
+                validator = AnalysisTableCandidateValidator(
+                    inputs=inputs,
+                    selected_attribute_keys=selected_attribute_keys,
+                    applied=applied,
+                )
+                attempt_count = 1
+                failure: WorkbenchError | None = None
+                try:
+                    outcome = await self._stage_runner.run(
+                        plan=plan,
+                        stage_code="per_table_authoring",
+                        resolver_values={"workflow.validation_failures": []},
+                        context=cast(JsonValue, {"prompt_inputs": inputs}),
+                        output_schema=validator.output_schema(),
+                        allowed_tool_names=(),
+                        validator=validator,
+                    )
+                    answers[position] = validator.parse_validated(outcome.candidate)
+                    attempt_count = outcome.attempt_count
+                    repaired = repaired or outcome.was_repaired or bool(outcome.warning_codes)
+                except WorkbenchError as error:
+                    failure = error
+                    failures.append(error)
+                    notes.append(f"{name} was not analyzed: {error.message}")
+                # Event order must stay sequential across the two workers. Failed tables are
+                # always reported; otherwise progress is reported every 6 tables.
+                async with progress_lock:
+                    final_attempt = max(final_attempt, attempt_count)
+                    completed += 1
+                    if failure is None and completed not in progress_points:
+                        continue
+                    await progress.append(
+                        attempt=final_attempt,
+                        stage="analysis.per_table_authoring",
+                        status="running" if failure is None else "warning",
+                        message=f"Analyzed {completed} of {len(tables)} tables."
+                        if failure is None
+                        else f"{name} was not analyzed ({failure.code}).",
+                        current=completed,
+                        total=len(tables),
+                        finding_count=sum(
+                            len(change.records) for answer in answers for change in answer
+                        ),
+                    )
+
+        workers = [asyncio.create_task(analyze_tables()) for _ in range(min(2, len(tables)))]
+        try:
+            await asyncio.gather(*workers)
+        finally:
+            # A lost claim, fatal error or cancellation stops the sibling worker too.
+            for worker in workers:
+                if not worker.done():
+                    worker.cancel()
+            await asyncio.gather(*workers, return_exceptions=True)
+        if failures and len(failures) == len(tables):
+            raise failures[0]
+        changes, dropped = merge_table_findings(answers, applied)
+        if dropped:
+            notes.append(
+                f"Dropped {dropped} {'finding' if dropped == 1 else 'findings'} on column "
+                "pairs that were already linked."
+            )
+        return changes, final_attempt, notes, repaired or bool(failures)
+
     @staticmethod
     def _validate_plan(
         plan: AgentRunPlan,
@@ -332,10 +450,15 @@ class AnalysisInferenceWorkflow:
         expected_project_revision: int,
     ) -> None:
         stage_codes = tuple(stage.stage_code for stage in plan.stages)
-        mode_path_is_valid = plan.workflow_execution_mode in (
-            "one_shot",
-            "tool_assisted",
-        ) and stage_codes == ("relationship_inference",)
+        mode_path_is_valid = (
+            plan.workflow_operation is None
+            and plan.workflow_execution_mode in ("one_shot", "tool_assisted")
+            and stage_codes == ("relationship_inference",)
+        ) or (
+            plan.workflow_operation == "per_table"
+            and plan.workflow_execution_mode == "one_shot"
+            and stage_codes == ("per_table_authoring",)
+        )
         if (
             plan.project_id != project_id
             or plan.workflow_run_id != workflow_run_id
@@ -352,7 +475,14 @@ class AnalysisInferenceWorkflow:
 def _candidate_validator(
     context: AgentContextBundle,
 ) -> AnalysisInferenceCandidateValidator:
-    selected_attributes = tuple(
+    return AnalysisInferenceCandidateValidator(
+        selected_attribute_keys=_selected_attribute_keys(context),
+        applied=context.context.analysis_relationships,
+    )
+
+
+def _selected_attribute_keys(context: AgentContextBundle) -> tuple[PhysicalAttributeKey, ...]:
+    return tuple(
         PhysicalAttributeKey(
             tenant_code=attribute.tenant_code,
             system_code=attribute.system_code,
@@ -363,10 +493,6 @@ def _candidate_validator(
         )
         for selected in context.context.selected_objects
         for attribute in selected.attributes
-    )
-    return AnalysisInferenceCandidateValidator(
-        selected_attribute_keys=selected_attributes,
-        applied=context.context.analysis_relationships,
     )
 
 

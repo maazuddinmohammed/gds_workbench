@@ -1,4 +1,5 @@
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, LiteralString, Protocol, cast
 from uuid import uuid4
@@ -20,6 +21,9 @@ from gds_workbench_api.features.workflows.authoring.context import (
     AgentContextBundle,
     PostgresAgentContextRepository,
     focus_subject_area,
+)
+from gds_workbench_api.features.workflows.authoring.context_inputs import (
+    analysis_table_inputs,
 )
 from gds_workbench_api.features.workflows.authoring.plan import (
     AgentRunPlan,
@@ -151,8 +155,8 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
         connection.execute(
             """INSERT INTO workflow.analysis_result (
                 project_id,from_object_id,from_attribute_id,to_object_id,to_attribute_id,
-                relationship_kind,relationship_basis,analysis_result_is_locked
-            ) VALUES (%s,%s,%s,%s,%s,'reference','Synthetic stored relationship.',TRUE)""",
+                relationship_kind,analysis_result_is_locked
+            ) VALUES (%s,%s,%s,%s,%s,'reference',TRUE)""",
             (
                 project_id,
                 object_id,
@@ -210,10 +214,17 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
     )
     stages = installed_stages[(workflow, mode)]
     # A Logical run freezes one stage: Build packages each area's call, Optimize the model.
+    # A per-table Analysis run freezes its own stage; a whole-selection run never does.
     runs = [
-        (stage.stage_code.removesuffix("_authoring") if workflow == "logical" else None, stage)
+        (
+            stage.stage_code.removesuffix("_authoring")
+            if workflow == "logical" or stage.stage_code == "per_table_authoring"
+            else None,
+            stage,
+        )
         for stage in stages
     ]
+    whole_selection = tuple(stage for stage in stages if stage.stage_code != "per_table_authoring")
     await database.open()
     try:
         loaded: list[tuple[AgentRunPlan, FrozenAgentStage, AgentContextBundle]] = []
@@ -226,7 +237,7 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
                     "workflow_execution_mode": mode,
                     "workflow_operation": operation,
                     "subject_areas": (area,) if operation == "build" else (),
-                    "stages": stages if operation is None else (stage,),
+                    "stages": whole_selection if operation is None else (stage,),
                 },
             )
             async with database.read_transaction(
@@ -244,6 +255,15 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
                 )
                 assert focused is not None
                 result = focused
+            if operation == "per_table":
+                # Each per-table call renders from its own table's inputs.
+                assert isinstance(result.embedded_context, dict)
+                result = replace(
+                    result,
+                    embedded_context={
+                        "prompt_inputs": analysis_table_inputs(result.embedded_context)[0]
+                    },
+                )
             loaded.append((plan, stage, result))
     finally:
         await database.close()
@@ -289,6 +309,24 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
                 }
             ]
             assert values[prefix + "table_links"] == []
+            continue
+        if stage.stage_code == "per_table_authoring":
+            focus = cast(dict[str, Any], values[prefix + "focus_table"])
+            assert focus["table"] == "t1"
+            assert [item["attribute_name"] for item in focus["attributes"]] == [
+                "customer_id",
+                "customer_name",
+            ]
+            assert focus["attributes"][0]["attribute_description"] == "Project attribute description"
+            (entry,) = cast(list[dict[str, Any]], values[prefix + "key_directory"])
+            assert [column["attribute_name"] for column in entry["key_columns"]] == ["customer_id"]
+            (saved,) = cast(list[dict[str, Any]], values[prefix + "saved_relationships"])
+            assert (saved["from"], saved["to"], saved["analysis_result_is_locked"]) == (
+                "t1.customer_id",
+                "t1.customer_name",
+                True,
+            )
+            assert values[prefix + "ingestion_mapping"]
             continue
         groups = cast(list[dict[str, Any]], values[prefix + "object_relationship_context"])
         for direction in ("incoming_relationships", "outgoing_relationships"):

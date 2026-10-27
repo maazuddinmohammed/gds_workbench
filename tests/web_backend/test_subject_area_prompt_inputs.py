@@ -74,7 +74,6 @@ def _edge(
             )
         },
         "relationship_kind": "reference",
-        "relationship_basis": "Matching key names.",
         "validation_policy_version": "1.0.0" if result else None,
         "validation_result": result,
         **dict(zip(ANALYSIS_VALIDATION_FIELDS[2:], counts, strict=True)),

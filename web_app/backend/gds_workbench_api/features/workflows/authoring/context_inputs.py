@@ -210,6 +210,137 @@ def project_context_inputs(
     return {name: values[name] for name in WORKFLOW_INPUTS[input_set]}
 
 
+_KEY_FLAGS = ("registered_is_natural_key", "is_surrogate_key", "is_natural_key", "is_primary_key")
+_KEY_PROFILE_FIELDS = (
+    "row_scope",
+    "row_count",
+    "non_null_count",
+    "null_count",
+    "distinct_count",
+    "min_data_length",
+    "max_data_length",
+)
+_SAVED_VALIDATION_FIELDS = (
+    "validation_result",
+    "validation_source_non_null_count",
+    "validation_source_distinct_count",
+    "validation_target_non_null_count",
+    "validation_target_distinct_count",
+    "validation_source_missing_target_count",
+    "validation_unused_target_count",
+    "validation_duplicate_target_key_count",
+)
+
+
+def analysis_table_inputs(context: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Prompt inputs for a per-table Analysis run: one set per selected table, in order.
+
+    Tables are cited by short ids (t1, t2, ...) in selection order. Every set shares the
+    source, placement and Context inputs and one key directory of all selected tables;
+    only the focus table, its lineage and the saved findings touching it differ.
+    """
+    shared = context.get("prompt_inputs") or project_context_inputs(context)
+    objects, groups = shared["object_context"], shared["object_attribute_context"]
+    table_ids = {
+        natural_key(item): f"t{position}" for position, item in enumerate(objects, start=1)
+    }
+    tables: list[tuple[str, dict[str, Any]]] = []
+    directory: list[dict[str, Any]] = []
+    for position, (item, group) in enumerate(zip(objects, groups, strict=True), start=1):
+        table_id = f"t{position}"
+        table = {
+            "table": table_id,
+            **{name: item[name] for name in (*OBJECT_FIELDS, "object_description", "zone_code")},
+        }
+        key_columns: list[dict[str, Any]] = []
+        for attribute in group["attributes"]:
+            profile = attribute["profile"]
+            # Every non-null value distinct; operational columns count only when flagged.
+            unique = bool(
+                profile
+                and profile["non_null_count"]
+                and profile["distinct_count"] == profile["non_null_count"]
+                and not attribute["is_meta_data"]
+            )
+            if unique or any(attribute.get(flag) for flag in _KEY_FLAGS):
+                key_columns.append(
+                    {
+                        "attribute_name": attribute["attribute_name"],
+                        "attribute_description": attribute["attribute_description"],
+                        "attribute_data_type": attribute["attribute_data_type"],
+                        "attribute_inferred_data_type": attribute["attribute_inferred_data_type"],
+                        **{flag: attribute.get(flag) for flag in _KEY_FLAGS},
+                        "profile": None
+                        if profile is None
+                        else {name: profile[name] for name in _KEY_PROFILE_FIELDS},
+                    }
+                )
+        directory.append(
+            {
+                **table,
+                "key_columns": key_columns,
+                "other_columns": []
+                if key_columns
+                else [
+                    {
+                        name: attribute[name]
+                        for name in (
+                            "attribute_name",
+                            "attribute_data_type",
+                            "attribute_inferred_data_type",
+                        )
+                    }
+                    for attribute in group["attributes"]
+                ],
+            }
+        )
+        tables.append((table_id, {**table, "attributes": group["attributes"]}))
+
+    saved: dict[str, list[dict[str, Any]]] = {table_id: [] for table_id, _ in tables}
+    for relationship in context["analysis_relationships"]:
+        source, target = (
+            table_ids.get(
+                natural_key({name: relationship[f"{side}_{name}"] for name in OBJECT_FIELDS})
+            )
+            for side in ("from", "to")
+        )
+        # A finding with an endpoint outside the run cannot change in it.
+        if source is None or target is None:
+            continue
+        finding = {
+            "from": f"{source}.{relationship['from_attribute_name']}",
+            "to": f"{target}.{relationship['to_attribute_name']}",
+            "relationship_kind": relationship["relationship_kind"],
+            "inferred_cardinality": relationship["inferred_cardinality"],
+            "analysis_result_status": relationship["analysis_result_status"],
+            "analysis_result_is_locked": relationship["analysis_result_is_locked"],
+            **{name: relationship[name] for name in _SAVED_VALIDATION_FIELDS},
+        }
+        saved[source].append(finding)
+        if target != source:
+            saved[target].append(finding)
+    return [
+        {
+            "source_context": shared["source_context"],
+            "gds_context": shared["gds_context"],
+            "context_records": shared["context_records"],
+            "key_directory": directory,
+            "focus_table": table,
+            "ingestion_mapping": [
+                entry
+                for entry in shared["ingestion_mapping"]
+                if table_id
+                in (
+                    table_ids.get(natural_key(entry["source"])),
+                    table_ids.get(natural_key(entry["target"])),
+                )
+            ],
+            "saved_relationships": saved[table_id],
+        }
+        for table_id, table in tables
+    ]
+
+
 # Strongest measured result first; null is unvalidated, not disproven.
 _VALIDATION_STRENGTH: dict[str | None, int] = {
     "supported": 3,

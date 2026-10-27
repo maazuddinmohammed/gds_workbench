@@ -34,7 +34,8 @@ class CreateWorkflowRunRequest(BaseModel):
     ] = Field(default_factory=list)
     modeled_entity_type: ModeledEntityType | None = None
     # Logical and Dimensional: Build the ordered Subject Areas, or Optimize the whole model.
-    workflow_operation: Literal["build", "optimize"] | None = None
+    # Analysis: per_table makes one call per selected table instead of one for the selection.
+    workflow_operation: Literal["build", "optimize", "per_table"] | None = None
     subject_area_ids: list[Annotated[int, Field(gt=0, strict=True)]] = Field(
         default_factory=list[int], max_length=1_000
     )
@@ -114,6 +115,11 @@ class CreateWorkflowRunRequest(BaseModel):
                 or len(self.subject_area_ids) != len(set(self.subject_area_ids))
             ):
                 raise ValueError("Build needs unique selected Subject Areas; Optimize takes none")
+        elif self.workflow_operation == "per_table":
+            if self.project_workflow != "analysis" or self.workflow_execution_mode != "one_shot":
+                raise ValueError("Per-table runs are available only for one-shot Analysis")
+            if self.subject_area_ids:
+                raise ValueError("Per-table Analysis takes selected Objects, not Subject Areas")
         elif self.workflow_operation is not None or self.subject_area_ids:
             raise ValueError("Build and Optimize are available only for Logical and Dimensional")
         entity_workflow = self.project_workflow in {"dimensional", "mapping", "code_generation"}
