@@ -20,7 +20,6 @@ const project: ProjectDetail = {
   default_agent_sdk_code: "openai_agents_sdk", default_agent_provider_code: "microsoft_foundry",
   default_agent_model_code: "foundry-primary", default_reasoning_effort_code: "medium",
   default_max_turns: 11, default_validation_retry_count: 2, is_active: true, updated_at: "2026-09-27T00:00:00Z",
-  default_mapping_source_system_id: null,
   logical_entity_scd_type: "type_2",
   dimensional_entity_scd_type: "type_1",
 };
@@ -315,24 +314,21 @@ describe("Project Settings", () => {
     expect(screen.getByRole("button", { name: "Save settings" })).toBeEnabled();
   });
 
-  it("saves and clears the default mapping System while preserving failed edits", async () => {
+  it("keeps a rejected settings edit and saves it on retry", async () => {
     const { fetcher } = setup({ failSave: "invalid_request", failSaveOnce: true });
     const user = userEvent.setup();
-    await user.click(await screen.findByText("Mapping settings", { exact: true }));
-    const system = await screen.findByRole("combobox", { name: /Default mapping System/ });
-    await user.selectOptions(system, "41");
+    await user.click(await screen.findByText("Silver settings", { exact: true }));
+    const scdType = await screen.findByRole("combobox", { name: "Logical entity SCD type" });
+    await user.selectOptions(scdType, "type_1");
     await user.click(screen.getByRole("button", { name: "Save settings" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Some settings are no longer valid.");
-    expect(system).toHaveValue("41");
+    expect(scdType).toHaveValue("type_1");
     await user.click(screen.getByRole("button", { name: "Save settings" }));
     await screen.findByText("Editing revision 9.");
-    await user.click(screen.getByText("Mapping settings", { exact: true }));
-    expect(screen.getByRole("combobox", { name: /Default mapping System/ })).toHaveValue("41");
-    await user.selectOptions(screen.getByRole("combobox", { name: /Default mapping System/ }), "");
-    await user.click(screen.getByRole("button", { name: "Save settings" }));
-    await waitFor(() => expect(fetcher.mock.calls.filter(([, init]) => init?.method === "PUT")).toHaveLength(3));
+    await waitFor(() => expect(fetcher.mock.calls.filter(([, init]) => init?.method === "PUT")).toHaveLength(2));
     const writes = fetcher.mock.calls.filter(([, init]) => init?.method === "PUT").map(([, init]) => JSON.parse(String(init?.body)));
-    expect(writes.map((command) => command.default_mapping_source_system_id)).toEqual([41, 41, null]);
+    expect(writes.map((command) => command.logical_entity_scd_type)).toEqual(["type_1", "type_1"]);
+    expect(writes.every((command) => !("default_mapping_source_system_id" in command))).toBe(true);
   });
 
   it("focuses a duplicate draft schema without changing the saved schema", async () => {

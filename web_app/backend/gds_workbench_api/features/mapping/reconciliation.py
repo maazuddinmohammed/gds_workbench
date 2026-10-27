@@ -49,10 +49,7 @@ class MappingCandidateReconciler:
         )
         if candidate.outcome == "no_applicable_source" and has_output:
             raise InvalidRequestError("A no-source outcome cannot contain transformations.")
-        if has_output and (
-            not self._preparation.context.sources
-            and not self._preparation.context.source_system.is_default
-        ):
+        if has_output and not self._preparation.context.sources:
             raise InvalidRequestError("No eligible source is available for this Mapping output.")
         if object_document is not None and not object_actionable:
             raise InvalidRequestError("Mapping output cannot replace preserved Object logic.")

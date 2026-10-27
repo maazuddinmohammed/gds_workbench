@@ -137,24 +137,33 @@ const tenantMappingRoute = createRoute({
   component: TenantMapping,
 });
 
+// Mapping pages remember the System tab, so detail pages can return to it.
+const mappingSearch = (search: Record<string, unknown>): ReturnType<typeof projectLayerSearch> & { system?: string | undefined } => {
+  const system = typeof search.system === "number" && Number.isFinite(search.system) ? String(search.system) : search.system;
+  return {
+    ...projectLayerSearch(search),
+    ...(typeof system === "string" && /\S/.test(system) && system.length <= 100 ? { system } : {}),
+  };
+};
+
 const tenantMappingProjectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/mapping/projects/$projectId",
-  validateSearch: projectLayerSearch,
+  validateSearch: mappingSearch,
   component: TenantMappingProject,
 });
 
 const tenantMappingObjectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/mapping/projects/$projectId/objects/$mappingObjectId",
-  validateSearch: projectLayerSearch,
+  validateSearch: mappingSearch,
   component: TenantMappingObject,
 });
 
 const tenantMappingAttributeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/mapping/projects/$projectId/attributes/$mappingAttributeId",
-  validateSearch: projectLayerSearch,
+  validateSearch: mappingSearch,
   component: TenantMappingAttribute,
 });
 
@@ -575,7 +584,7 @@ function TenantMappingProject() {
   const { tenantId, projectId } = tenantMappingProjectRoute.useParams();
   const numericTenantId = Number(tenantId);
   const numericProjectId = Number(projectId);
-  const { layer = "logical" } = tenantMappingProjectRoute.useSearch();
+  const { layer = "logical", system } = tenantMappingProjectRoute.useSearch();
   return (
     <ProjectRouteFrame
       tenantLockApi={api}
@@ -589,6 +598,7 @@ function TenantMappingProject() {
         <MappingScreen
           key={`${numericTenantId}:${numericProjectId}:${layer}`}
           layer={layer}
+          systemCode={system}
           api={api}
           tenantId={numericTenantId}
           project={project}
@@ -603,24 +613,28 @@ function TenantMappingProject() {
 function TenantMappingObject() {
   const { api } = rootRoute.useRouteContext();
   const { tenantId, projectId, mappingObjectId } = tenantMappingObjectRoute.useParams();
+  const { system } = tenantMappingObjectRoute.useSearch();
   return <TenantMappingDetail
     api={api}
     tenantId={Number(tenantId)}
     projectId={Number(projectId)}
     detailId={Number(mappingObjectId)}
     kind="object"
+    systemCode={system}
   />;
 }
 
 function TenantMappingAttribute() {
   const { api } = rootRoute.useRouteContext();
   const { tenantId, projectId, mappingAttributeId } = tenantMappingAttributeRoute.useParams();
+  const { system } = tenantMappingAttributeRoute.useSearch();
   return <TenantMappingDetail
     api={api}
     tenantId={Number(tenantId)}
     projectId={Number(projectId)}
     detailId={Number(mappingAttributeId)}
     kind="attribute"
+    systemCode={system}
   />;
 }
 
@@ -630,12 +644,14 @@ function TenantMappingDetail({
   projectId,
   detailId,
   kind,
+  systemCode,
 }: {
   api: WorkbenchApi;
   tenantId: number;
   projectId: number;
   detailId: number;
   kind: "object" | "attribute";
+  systemCode?: string | undefined;
 }) {
   if (!Number.isSafeInteger(detailId) || detailId <= 0) return <ErrorPage />;
   return (
@@ -651,11 +667,12 @@ function TenantMappingDetail({
         <div className="mapping-workspace">
           {kind === "object" ? (
             <MappingObjectDetailPage api={api} tenantId={tenantId} projectId={projectId} mappingObjectId={detailId}
-              projectRevision={project.project_revision}
+              projectRevision={project.project_revision} systemCode={systemCode}
               hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true && canAuthorProjects(home.tenant.effective_role)}
             />
           ) : (
-            <MappingAttributeDetailPage api={api} tenantId={tenantId} projectId={projectId} mappingAttributeId={detailId} />
+            <MappingAttributeDetailPage api={api} tenantId={tenantId} projectId={projectId} mappingAttributeId={detailId}
+              systemCode={systemCode} />
           )}
         </div>
       )}

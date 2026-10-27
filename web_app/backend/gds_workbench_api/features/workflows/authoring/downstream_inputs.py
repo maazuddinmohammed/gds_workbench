@@ -230,7 +230,7 @@ def project_downstream_inputs(workflow: str, context: dict[str, Any]) -> dict[st
         if workflow == "code_generation":
             target = context["targets"][0]
             return {
-                **_sql_inputs(target["context"]),
+                **_sql_inputs(target["context"], workflow="code_generation"),
                 "target_ref": target["target_ref"],
                 "artifact_requirements": deepcopy(target["context"]["artifact_requirements"]),
             }
@@ -240,7 +240,7 @@ def project_downstream_inputs(workflow: str, context: dict[str, Any]) -> dict[st
                     "modeled_entity_type": row["modeled_entity_type"],
                     "modeled_entity_schema_name": row["modeled_entity_schema_name"],
                     "modeled_entity_name": row["modeled_entity_name"],
-                    "context": _sql_inputs(row["context"]),
+                    "context": _sql_inputs(row["context"], workflow="validation"),
                 }
                 for row in context["mapping_targets"]
             ]

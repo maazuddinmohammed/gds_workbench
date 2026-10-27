@@ -4,7 +4,6 @@ import { Link } from "@tanstack/react-router";
 
 import { ApiError } from "../../core/http";
 import type { JsonObject } from "../../shared/contracts";
-import type { SystemRecord } from "../tenants/api";
 import { reasoningEffortDisplayName, type WorkflowsApi } from "../workflows/api";
 import type { CreateProjectCommand, ProjectEntityScdType, ProjectDetail, ProjectsApi } from "./api";
 import "./project-schemas.css";
@@ -22,7 +21,7 @@ const layerFields = [
 
 export function ProjectForm({
   api, tenantId, hasTenantLock, initialProject, disabledReason, isPending, error,
-  onSubmit, onCancel, onDirty, nameInput, systems = [],
+  onSubmit, onCancel, onDirty, nameInput,
 }: {
   api: Pick<WorkflowsApi, "readAgentCapabilities"> & Partial<Pick<ProjectsApi, "readProjectTemplates">>;
   tenantId: number;
@@ -35,7 +34,6 @@ export function ProjectForm({
   onCancel?: () => void;
   onDirty?: () => void;
   nameInput?: RefObject<HTMLInputElement | null>;
-  systems?: SystemRecord[];
 }) {
   const [logicalSchemas, setLogicalSchemas] = useState(() => initialProject
     ? initialProject.logical_schemas.map((row, index) => ({ ...row, description: row.description ?? "", key: index, editing: false }))
@@ -46,7 +44,6 @@ export function ProjectForm({
   const nextSchemaKey = useRef(Math.max(logicalSchemas.length, dimensionalSchemas.length));
   const schemaToFocus = useRef<string | null>(null);
   const [agentModelCode, setAgentModelCode] = useState(initialProject?.default_agent_model_code ?? "");
-  const [mappingSourceSystemId, setMappingSourceSystemId] = useState(initialProject?.default_mapping_source_system_id?.toString() ?? "");
   const [logicalScdType, setLogicalScdType] = useState<ProjectEntityScdType | "">(initialProject?.logical_entity_scd_type ?? "");
   const [dimensionalScdType, setDimensionalScdType] = useState<ProjectEntityScdType | "">(initialProject?.dimensional_entity_scd_type ?? "");
   const [reasoningCode, setReasoningCode] = useState(initialProject?.default_reasoning_effort_code ?? "");
@@ -109,7 +106,6 @@ export function ProjectForm({
       default_reasoning_effort_code: initialProject?.default_reasoning_effort_code ?? null,
       default_max_turns: initialProject?.default_max_turns ?? null,
       default_validation_retry_count: initialProject?.default_validation_retry_count ?? null,
-      default_mapping_source_system_id: mappingSourceSystemId ? Number(mappingSourceSystemId) : null,
     };
     if (!command.project_name || command.project_name.length > 255) {
       invalid("project_name", "Enter a Project name of 1–255 characters.");
@@ -285,23 +281,6 @@ export function ProjectForm({
                 </div>
               </details>
             ))}
-            <details className="create-project-settings">
-              <summary>Mapping settings</summary>
-              <div className="create-project-fields project-mapping-default">
-                <label>
-                  <span>Default mapping System</span>
-                  <select name="default_mapping_source_system_id" value={mappingSourceSystemId}
-                    aria-describedby="mapping-default-system-help"
-                    onChange={(event) => setMappingSourceSystemId(event.target.value)}>
-                    <option value="">No default System</option>
-                    {mappingSourceSystemId && !systems.some((system) => String(system.system_id) === mappingSourceSystemId)
-                      ? <option value={mappingSourceSystemId}>Saved System (unavailable)</option> : null}
-                    {systems.map((system) => <option key={system.system_id} value={system.system_id}>{system.system_code}</option>)}
-                  </select>
-                </label>
-                <p id="mapping-default-system-help" className="field-help">Used when an Entity has only Context sources.</p>
-              </div>
-            </details>
             {layerFields.map((group) => (
               <details key={group.title} className="create-project-settings">
                 <summary>{group.title}</summary>

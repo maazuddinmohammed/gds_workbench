@@ -35,7 +35,48 @@ INSERT INTO reference.context_type (name, description) VALUES
     ('Data Quality Rule', 'Rules describing acceptable data and quality expectations.'),
     ('Validation Criterion', 'Conditions and evidence used to determine correctness.'),
     ('Operational Guidance', 'Instructions for execution, monitoring, support, and recovery.'),
-    ('Code Context', 'Implementation knowledge, code behavior, dependencies, and coding guidance.');
+    ('Code Context', 'Implementation knowledge, code behavior, dependencies, and coding guidance.'),
+    ('Subject Area Requirement', 'Required Subject Areas, their boundaries and naming.'),
+    ('Logical Requirement', 'Requirements for the Logical (Silver) model: entities, keys, grain, relationships and history.'),
+    ('Dimensional Requirement', 'Requirements for the Dimensional (Gold) model: facts, dimensions, grain, measures and history.'),
+    ('Mapping Requirement', 'Requirements for source-to-target Mapping: transformation, derivation, filter and lookup rules.');
+
+-- A workflow prompt receives Context Records only of the Types listed for it here.
+-- Records an Entity cites as support always pass. Global, like the Types themselves.
+CREATE TABLE reference.context_type_workflow (
+    context_type_id BIGINT NOT NULL,
+    project_workflow VARCHAR(50) NOT NULL,
+    PRIMARY KEY (context_type_id, project_workflow),
+    CONSTRAINT fk_context_type_workflow_type FOREIGN KEY (context_type_id)
+        REFERENCES reference.context_type (context_type_id) ON DELETE NO ACTION,
+    CONSTRAINT ck_context_type_workflow_project_workflow CHECK (project_workflow IN (
+        'analysis', 'subject_area', 'logical', 'dimensional', 'mapping',
+        'code_generation', 'validation'
+    ))
+);
+
+INSERT INTO reference.context_type_workflow (context_type_id, project_workflow)
+SELECT context_type.context_type_id, workflow.project_workflow
+  FROM (VALUES
+      ('Business Requirement', ARRAY['subject_area', 'logical', 'dimensional', 'mapping']),
+      ('Technical Requirement', ARRAY['code_generation']),
+      ('Source Information', ARRAY['analysis', 'subject_area', 'logical', 'mapping']),
+      ('Source Requirement', ARRAY['analysis', 'logical', 'mapping']),
+      ('Reporting Requirement', ARRAY['subject_area', 'dimensional']),
+      ('Convention', ARRAY['logical', 'dimensional', 'mapping', 'code_generation']),
+      ('Decision', ARRAY['analysis', 'subject_area', 'logical', 'dimensional', 'mapping', 'code_generation']),
+      ('Assumption', ARRAY['analysis', 'subject_area', 'logical', 'dimensional', 'mapping', 'validation']),
+      ('Data Quality Rule', ARRAY['mapping', 'validation']),
+      ('Validation Criterion', ARRAY['validation']),
+      ('Operational Guidance', ARRAY['code_generation']),
+      ('Code Context', ARRAY['code_generation']),
+      ('Subject Area Requirement', ARRAY['subject_area']),
+      ('Logical Requirement', ARRAY['logical']),
+      ('Dimensional Requirement', ARRAY['dimensional']),
+      ('Mapping Requirement', ARRAY['mapping'])
+  ) AS routing (context_type_name, project_workflows)
+  JOIN reference.context_type AS context_type ON context_type.name = routing.context_type_name
+ CROSS JOIN LATERAL unnest(routing.project_workflows) AS workflow (project_workflow);
 
 -- Label lists the backend never branches on. Adding a value is one INSERT: prompts,
 -- validation and screens read the active rows. Retire a value with is_active = FALSE.
@@ -56,11 +97,18 @@ INSERT INTO reference.logical_entity_type (
 ) VALUES
     ('core', 'A main business thing with its own identity, such as Customer or Product.'),
     ('reference', 'A short list of codes and their meanings, such as Country or OrderStatus.'),
-    ('transaction', 'A business document or exchange, such as SalesOrder or Invoice, often with lines.'),
+    ('transaction', 'A business document or exchange, such as SalesOrder or Invoice. Its lines are transaction_line.'),
+    ('transaction_line', 'One line of a transaction, such as SalesOrderLine or InvoiceLine.'),
     ('event', 'Something that happened at a point in time, such as a login or a shipment scan.'),
     ('association', 'Links entities many-to-many, such as ProductCategory.'),
     ('history', 'Past versions of another entity''s values over time.'),
-    ('snapshot', 'The state of something at regular points in time, such as month-end balances.');
+    ('snapshot', 'The state of something at regular points in time, such as month-end balances.'),
+    ('agreement', 'A lasting arrangement with a start and end, such as a Contract, Subscription or Policy.'),
+    ('plan', 'Planned or target values, such as a Budget, Forecast or SalesQuota.'),
+    ('hierarchy', 'A parent-child or level structure, such as an org chart or account tree.'),
+    ('subtype', 'A specialization that shares another entity''s identity, such as IndividualCustomer of Customer.'),
+    ('list', 'A named, curated set of other entities, such as a Watchlist, MailingList or PriceList.'),
+    ('other', 'None of the listed types fits; the entity definition says what it is.');
 
 CREATE TABLE reference.dimensional_fact_type (
     dimensional_fact_type_code VARCHAR(50) PRIMARY KEY,

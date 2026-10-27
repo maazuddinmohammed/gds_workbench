@@ -58,6 +58,20 @@ _FACT_TYPES = [
 ]
 
 
+# The bundle's only Context record; its Type is routed to no workflow.
+_CITED = "1cdbab8d-73b2-5b3f-a650-6d5579728c83"
+
+
+def _citation(record_id: str) -> dict[str, Any]:
+    return {
+        "support_source_type": "context_record",
+        "context_record": {"context_record_id": record_id},
+        "rationale": "Cited requirement.",
+        "is_active": True,
+        "is_locked": False,
+    }
+
+
 def _model(*, fact_source: str) -> dict[str, Any]:
     """Saved Customer Dimension and Sales Fact (built from fact_source) and a Product Dimension."""
     model = _applied_dimensional_section().model_dump(mode="json")
@@ -141,7 +155,9 @@ def test_build_inputs_show_one_area_its_links_and_the_model_around_it(
         "to_logical_entity_name": "product",
         "to_logical_attribute_name": "product_id",
     }
-    model = DimensionalSection.model_validate(_model(fact_source="sales_order"), strict=False)
+    raw_model = _model(fact_source="sales_order")
+    raw_model["entities"][0]["sources"].append(_citation(_CITED))
+    model = DimensionalSection.model_validate(raw_model, strict=False)
     focused = focus_subject_area(
         bundle,
         plan=_plan(mode=mode),
@@ -207,6 +223,8 @@ def test_build_inputs_show_one_area_its_links_and_the_model_around_it(
     assert values["dimensional_fact_types"] == [
         {"code": "transaction", "description": "One row per business event."}
     ]
+    # Routed to no workflow, yet the shown Customer Dimension cites it.
+    assert [row["context_record_id"] for row in values["context_records"]] == [_CITED]
     # Optimize findings are not Build inputs.
     for name in ("model_summary", "conformance_candidates", "entity_details"):
         assert (
@@ -250,6 +268,13 @@ def test_optimize_inputs_summarize_the_whole_model_and_its_findings(
             "dimensional_entity_name": "Customer Dimensions",
             "dimensional_attribute_data_type": "string",
         }
+    )
+    # A detailed Entity's Attribute citation passes; the unshown Product Dimension's does not.
+    customer_id["sources"] = [*customer_id["sources"], _citation(_CITED)]
+    unshown = "00000000-0000-4000-8000-0000000000b2"
+    model["entities"][2]["sources"] = [_citation(unshown)]
+    raw["context"]["records"].append(
+        {**raw["context"]["records"][0], "context_record_id": unshown}
     )
     raw["applied"]["dimensional"] = model
     context = AgentAuthoringContext.model_validate(raw, strict=False)
@@ -305,6 +330,7 @@ def test_optimize_inputs_summarize_the_whole_model_and_its_findings(
     assert [row["from_dimensional_entity_name"] for row in details["relationships"]] == [
         "Sales Fact"
     ]
+    assert [row["context_record_id"] for row in values["context_records"]] == [_CITED]
     # Optimize works on no single area.
     assert "subject_area_context" not in workflow_input_contracts("dimensional_optimize")
 

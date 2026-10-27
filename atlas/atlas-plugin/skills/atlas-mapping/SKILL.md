@@ -21,7 +21,7 @@ Goal: per branch (one schema-qualified target Entity and source System), a trans
 ## Steps
 
 1. Read applied targets with `select --session <dir> --area project --dataset <name> --view snapshot` and existing Mapping with `--view effective`.
-2. Resolve [update scope](../../references/methods/change-impact.md): show affected target and System branches with reasons. Regenerate selected branches and keep compatible unchanged rules; a new Project revision alone is no reason to rebuild.
+2. Resolve [update scope](../../references/methods/change-impact.md): show affected branches with reasons, only for Systems the target's sources come from; Context never adds one. Regenerate selected branches, keeping compatible rules; a new Project revision alone is no reason to rebuild.
 3. Use the selected or configured template; verify installed template codes and show one representative result before writing many.
 4. For each branch, decide which inputs really supply it, including needed lookups; never copy every supporting Object or infer origin from the GDS System. Keep the agreed target grain and complete merge key; separate generated own keys from mapped foreign keys.
 5. Write ordered Object steps (reads, joins with exact predicates, filter placement, justified deduplication, output grain) and an Attribute rule for every active modeled column per System, including keys, audits, constants and generated fields. Reconcile types, formats, precision and nulls.

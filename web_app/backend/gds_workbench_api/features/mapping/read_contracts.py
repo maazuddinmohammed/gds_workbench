@@ -99,7 +99,6 @@ class MappingGenerationTarget(ModeledEntityReference):
     mapping_object_id: int | None
     object_order: int
     is_locked: bool
-    has_sources: bool
     attributes: tuple[MappingGenerationAttribute, ...]
 
 
@@ -107,6 +106,8 @@ class MappingGenerationPage(ContractModel):
     project_id: int
     project_revision: int
     items: tuple[MappingGenerationTarget, ...]
+    # Active Entities of this layer with no branch: no source System supplies them yet.
+    unsupplied_entity_count: int = Field(ge=0)
     next_cursor: str | None
 
 

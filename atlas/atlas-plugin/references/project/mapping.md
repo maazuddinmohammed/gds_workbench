@@ -11,7 +11,9 @@ Both datasets belong to Project section `mapping`. Read the current Snapshot cat
 | `mapping_object` | `modeled_entity_type` + `modeled_entity_schema_name` + `modeled_entity_name` + `source_system_code` |
 | `mapping_attribute` | `modeled_entity_type` + `modeled_entity_schema_name` + `modeled_entity_name` + `modeled_attribute_name` + `source_system_code` |
 
-Compare keys with the shared Project normalization; preserve actual names. One target receiving Systems A and B has separate Object Mapping records and Attribute Mapping sets for A and B. Partial transformations can be saved and used for reviewed Code authoring when the pair has at least one saved transformation. Empty pairs are excluded; Validation still requires complete Mapping. File grouping is a later Code Generation choice, absent from these keys.
+Compare keys with the shared Project normalization; preserve actual names. One target receiving Systems A and B has separate Object Mapping records and Attribute Mapping sets for A and B.
+
+Author a branch only for a System the target's own sources come from. A Logical Entity's Systems are those of its active source tables, with a Bronze table resolved to its originating System through ingestion lineage, never its lake placement. A Dimensional Entity's Systems are those where a supporting Logical Entity already has complete applied Mapping. Context never creates a branch: records whose type lists `mapping` in `context_type_workflows` only inform the transformation inside a branch. Partial transformations can be saved and used for reviewed Code authoring when the pair has at least one saved transformation. Empty pairs are excluded; Validation still requires complete Mapping. File grouping is a later Code Generation choice, absent from these keys.
 
 All fields below are required, with no record-schema defaults. Only the explicitly nullable fields accept JSON null. New completed records normally use `active` and unlocked; preserve existing state.
 

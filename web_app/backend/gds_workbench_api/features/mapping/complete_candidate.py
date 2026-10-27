@@ -79,7 +79,6 @@ class CompleteMappingCandidateValidator:
         )
         no_source_rowset = object_document is None or (
             object_document.get("source_tables") == []
-            and not context.source_system.is_default
             and not any(
                 object_document.get(key)
                 for key in (

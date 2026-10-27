@@ -12,7 +12,10 @@ from typing import Any, cast
 from gds_etl_workbench.application.mapping_context import without_internal_fields
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from gds_workbench_api.features.context.context import select_context_records
+from gds_workbench_api.features.context.context import (
+    select_context_records,
+    with_cited_context_records,
+)
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentContextToolResultTooLargeError,
     LocalAgentToolDefinition,
@@ -360,6 +363,29 @@ def _mapping_support(preparation: MappingPreparation) -> dict[str, Any]:
         if isinstance(item.object, MappingModeledEntity)
         and item.object.entity_type == "logical_entity"
     }
+    # Context the target cites as support reaches the prompt whatever its Type.
+    cited_context = {
+        source.context_record.context_record_id
+        for entity in section.entities
+        if getattr(entity, f"{layer}_entity_name").casefold() == entity_name
+        and getattr(entity, f"{layer}_entity_schema_name").casefold() == entity_schema
+        for source in entity.sources
+        if source.is_active and source.support_source_type == "context_record"
+    }
+    # So does Context an upstream Logical Entity cites: its evidence records keep the citation.
+    for upstream in (
+        *(row for row in snapshot.logical.entities if row.logical_entity_is_active),
+        *(row for row in snapshot.logical.attributes if row.logical_attribute_is_active),
+    ):
+        if (
+            upstream.logical_entity_schema_name.casefold(),
+            upstream.logical_entity_name.casefold(),
+        ) in logical_keys:
+            cited_context.update(
+                source.context_record.context_record_id
+                for source in upstream.sources
+                if source.is_active and source.support_source_type == "context_record"
+            )
     for attribute in section.attributes:
         if (
             getattr(attribute, f"{layer}_entity_name").casefold() != entity_name
@@ -371,6 +397,8 @@ def _mapping_support(preparation: MappingPreparation) -> dict[str, Any]:
         for source in attribute.sources:
             if not source.is_active:
                 continue
+            if source.support_source_type == "context_record":
+                cited_context.add(source.context_record.context_record_id)
             if (
                 source.support_source_type == "context_record"
                 or (
@@ -466,15 +494,21 @@ def _mapping_support(preparation: MappingPreparation) -> dict[str, Any]:
         row = profile.model_dump(mode="json")
         if natural_key(row) in source_keys:
             result["profiles"].append(row)
-    result["context_records"] = select_context_records(
-        snapshot.context.model_dump(mode="json"),
-        source_scope=[
-            {
-                "tenant_code": snapshot.project_tenant_code,
-                "system_code": preparation.context.source_system.system_code,
-            },
-            *(source.object.model_dump(mode="json") for source in preparation.context.sources),
-        ],
+    context_section = snapshot.context.model_dump(mode="json")
+    result["context_records"] = with_cited_context_records(
+        context_section,
+        select_context_records(
+            context_section,
+            source_scope=[
+                {
+                    "tenant_code": snapshot.project_tenant_code,
+                    "system_code": preparation.context.source_system.system_code,
+                },
+                *(source.object.model_dump(mode="json") for source in preparation.context.sources),
+            ],
+            workflow="mapping",
+        ),
+        cited_context,
     )
     return result
 

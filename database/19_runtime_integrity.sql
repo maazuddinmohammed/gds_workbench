@@ -299,7 +299,7 @@ GRANT EXECUTE ON FUNCTION workflow.list_project_object_eligibility(BIGINT)
 TO gds_app_write, gds_web_write;
 GRANT EXECUTE ON FUNCTION workflow.list_project_attribute_eligibility(BIGINT)
 TO gds_app_write, gds_web_write;
-GRANT EXECUTE ON FUNCTION workflow.is_context_only_mapping_target(BIGINT, BIGINT, VARCHAR)
+GRANT EXECUTE ON FUNCTION workflow.list_mapping_branches(BIGINT, VARCHAR)
 TO gds_app_write, gds_web_write;
 GRANT EXECUTE ON FUNCTION workflow.list_project_input_sources(BIGINT)
 TO gds_app_write, gds_web_write;
@@ -468,7 +468,6 @@ BEGIN
                        ('core.object', 'is_locked'),
                        ('project.project', 'logical_schemas'),
                        ('project.project', 'dimensional_schemas'),
-                       ('project.project', 'default_mapping_source_system_id'),
                        ('project.project', 'logical_entity_scd_type'),
                        ('project.project', 'dimensional_entity_scd_type'),
                        ('project.project', 'logical_coverage_threshold_percent'),
@@ -656,7 +655,7 @@ BEGIN
                        'bigint, bigint, character varying, bigint'
                    ),
                    ('workflow', 'list_project_input_sources', 'bigint'),
-                   ('workflow', 'is_context_only_mapping_target', 'bigint, bigint, character varying'),
+                   ('workflow', 'list_mapping_branches', 'bigint, character varying'),
                    ('mcp', 'get_databricks_sql_connection_values', 'bigint, text')
                ) AS required_function(
                    schema_name,
@@ -887,7 +886,7 @@ BEGIN
                    'workflow.list_project_object_eligibility(bigint)',
                    'workflow.list_project_attribute_eligibility(bigint)',
                    'workflow.list_project_input_sources(bigint)',
-                   'workflow.is_context_only_mapping_target(bigint,bigint,character varying)',
+                   'workflow.list_mapping_branches(bigint,character varying)',
                    'workflow.list_mapping_source_objects(bigint,bigint,character varying,bigint)',
                    'workflow.list_code_generation_target_context(bigint,character varying,character varying)',
                    'mcp.start_mcp_profiling_run(uuid,uuid,character varying,bigint,bigint,bigint[],text[],character varying,uuid)',
@@ -1105,6 +1104,12 @@ BEGIN
               );
 
             PERFORM 1
+              FROM workflow.list_mapping_branches(
+                  9223372036854775807,
+                  'logical_entity'
+              );
+
+            PERFORM 1
               FROM workflow.list_code_generation_target_context(
                   9223372036854775807,
                   'logical_entity'
@@ -1185,7 +1190,6 @@ GRANT INSERT, UPDATE ON
 TO gds_app_write;
 GRANT INSERT ON mcp.project_stage_chunk, mcp.project_stage_payload_chunk TO gds_app_write;
 GRANT UPDATE (
-    default_mapping_source_system_id,
     logical_entity_scd_type,
     dimensional_entity_scd_type,
     logical_coverage_threshold_percent,
@@ -1265,7 +1269,6 @@ GRANT INSERT ON
     mcp.project_change_set_event
 TO gds_web_write;
 GRANT UPDATE (
-    default_mapping_source_system_id,
     logical_entity_scd_type,
     dimensional_entity_scd_type,
     logical_coverage_threshold_percent,
@@ -1337,7 +1340,6 @@ GRANT EXECUTE ON FUNCTION application.create_project(
     VARCHAR,
     INTEGER,
     INTEGER,
-    BIGINT,
     VARCHAR,
     VARCHAR,
     INTEGER,
@@ -1366,7 +1368,6 @@ GRANT EXECUTE ON FUNCTION application.update_project(
     VARCHAR,
     INTEGER,
     INTEGER,
-    BIGINT,
     VARCHAR,
     VARCHAR,
     INTEGER,

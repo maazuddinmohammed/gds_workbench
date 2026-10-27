@@ -129,72 +129,65 @@ AS $list_project_input_sources$
 $list_project_input_sources$;
 REVOKE ALL ON FUNCTION workflow.list_project_input_sources(BIGINT) FROM PUBLIC;
 
--- Source evidence for an Entity/System pair. Logical inputs include physical
--- Objects and peer Logical lookups; Dimensional inputs are Logical Entities.
--- Modeled sources require an applied Mapping for the selected source System.
--- A configured default System may label Context-defined generated data, but
--- never replace a missing physical/Logical source or failed lineage prerequisite.
-CREATE FUNCTION workflow.is_context_only_mapping_target(
-    p_project_id BIGINT, p_target_entity_id BIGINT, p_modeled_entity_type VARCHAR(30)
+-- Entity/System pairs Mapping can author (branches). A Logical Entity maps from the
+-- Systems of its own source tables, with Bronze resolved to its origin System through
+-- ingestion lineage. A Dimensional Entity maps from the Systems where a supporting Logical
+-- Entity has complete applied Mapping. Context never adds a branch; it only informs the
+-- transformation inside one.
+CREATE FUNCTION workflow.list_mapping_branches(
+    p_project_id BIGINT, p_modeled_entity_type VARCHAR(30)
 )
-RETURNS BOOLEAN
+RETURNS TABLE (modeled_entity_id BIGINT, source_system_id BIGINT)
 LANGUAGE SQL STABLE SECURITY INVOKER SET search_path = pg_catalog
-AS $is_context_only_mapping_target$
-    WITH target AS MATERIALIZED (
-        SELECT * FROM workflow.modeled_entity AS entity
-         WHERE entity.project_id = p_project_id AND entity.modeled_entity_id = p_target_entity_id
-           AND entity.modeled_entity_type = p_modeled_entity_type AND entity.is_active
-    ), support AS (
-        SELECT source.context_record_id
-          FROM target JOIN workflow.logical_entity_source_mapping AS source
-            ON target.modeled_entity_type = 'logical_entity' AND source.project_id = target.project_id
-           AND source.logical_entity_id = target.modeled_entity_id
-         WHERE source.logical_entity_source_mapping_is_active
-        UNION ALL
-        SELECT source.context_record_id
-          FROM target JOIN workflow.logical_attribute_source_mapping AS source
-            ON target.modeled_entity_type = 'logical_entity' AND source.project_id = target.project_id
-           AND source.logical_entity_id = target.modeled_entity_id
-          JOIN workflow.logical_attribute AS attribute
-            ON attribute.logical_attribute_id = source.logical_attribute_id
-           AND attribute.project_id = target.project_id AND attribute.logical_attribute_is_active
-         WHERE source.logical_attribute_source_mapping_is_active
-        UNION ALL
-        SELECT source.context_record_id
-          FROM target JOIN workflow.dimensional_entity_source_mapping AS source
-            ON target.modeled_entity_type = 'dimensional_entity' AND source.project_id = target.project_id
-           AND source.dimensional_entity_id = target.modeled_entity_id
-         WHERE source.dimensional_entity_source_mapping_is_active
-        UNION ALL
-        SELECT source.context_record_id
-          FROM target JOIN workflow.dimensional_attribute_source_mapping AS source
-            ON target.modeled_entity_type = 'dimensional_entity' AND source.project_id = target.project_id
-           AND source.dimensional_entity_id = target.modeled_entity_id
-          JOIN workflow.dimensional_attribute AS attribute
-            ON attribute.dimensional_attribute_id = source.dimensional_attribute_id
-           AND attribute.project_id = target.project_id
-           AND attribute.dimensional_attribute_is_active
-         WHERE source.dimensional_attribute_source_mapping_is_active
-    ), context_records AS (
-        SELECT (document.source_system_id IS NULL OR document.source_system_id =
-                target_project.default_mapping_source_system_id) AS matches_default
-          FROM support
-          JOIN project.context_record AS context_record
-            ON context_record.project_id = p_project_id
-           AND context_record.context_record_id = support.context_record_id
-           AND context_record.status = 'active'
-          JOIN project.context_group AS document
-            ON document.context_group_id = context_record.context_group_id
-           AND document.is_active
-          JOIN project.project AS target_project ON target_project.project_id = p_project_id
-         WHERE support.context_record_id IS NOT NULL
-    )
-    SELECT EXISTS (SELECT 1 FROM context_records WHERE matches_default)
-       AND NOT EXISTS (SELECT 1 FROM context_records WHERE matches_default IS NOT TRUE)
-       AND NOT EXISTS (SELECT 1 FROM support WHERE context_record_id IS NULL);
-$is_context_only_mapping_target$;
-REVOKE ALL ON FUNCTION workflow.is_context_only_mapping_target(BIGINT, BIGINT, VARCHAR) FROM PUBLIC;
+AS $list_mapping_branches$
+    SELECT DISTINCT entity.logical_entity_id, input.source_system_id
+      FROM workflow.logical_entity AS entity
+      JOIN workflow.logical_entity_source_mapping AS support
+        ON support.project_id = entity.project_id
+       AND support.logical_entity_id = entity.logical_entity_id
+       AND support.logical_entity_source_mapping_is_active
+      JOIN workflow.list_project_input_sources(p_project_id) AS input
+        ON input.object_id = support.source_object_id
+     WHERE p_modeled_entity_type = 'logical_entity'
+       AND entity.project_id = p_project_id AND entity.logical_entity_is_active
+    UNION
+    SELECT entity.dimensional_entity_id, mapping.source_system_id
+      FROM workflow.dimensional_entity AS entity
+      JOIN workflow.dimensional_entity_source_mapping AS support
+        ON support.project_id = entity.project_id
+       AND support.dimensional_entity_id = entity.dimensional_entity_id
+       AND support.dimensional_entity_source_mapping_is_active
+      JOIN workflow.logical_entity AS source
+        ON source.project_id = entity.project_id
+       AND source.logical_entity_id = support.source_logical_entity_id
+       AND source.logical_entity_is_active
+      JOIN workflow.mapping_object AS mapping
+        ON mapping.project_id = entity.project_id AND mapping.modeled_entity_type = 'logical_entity'
+       AND mapping.logical_entity_id = source.logical_entity_id
+       AND mapping.object_mapping_status = 'active'
+       AND mapping.mapping_transformation_document IS NOT NULL
+      JOIN core.system AS system ON system.system_id = mapping.source_system_id AND system.is_active
+     WHERE p_modeled_entity_type = 'dimensional_entity'
+       AND entity.project_id = p_project_id AND entity.dimensional_entity_is_active
+       AND NOT EXISTS (
+           SELECT 1 FROM workflow.logical_attribute AS attribute
+            WHERE attribute.project_id = entity.project_id
+              AND attribute.logical_entity_id = source.logical_entity_id
+              AND attribute.logical_attribute_is_active
+              AND NOT EXISTS (
+                  SELECT 1 FROM workflow.mapping_attribute AS mapped
+                   WHERE mapped.mapping_object_id = mapping.mapping_object_id
+                     AND mapped.logical_attribute_id = attribute.logical_attribute_id
+                     AND mapped.attribute_mapping_status = 'active'
+                     AND mapped.attribute_mapping_transformation_document IS NOT NULL
+              )
+       );
+$list_mapping_branches$;
+REVOKE ALL ON FUNCTION workflow.list_mapping_branches(BIGINT, VARCHAR) FROM PUBLIC;
 
+-- Source evidence for one branch. Logical inputs include physical Objects and peer Logical
+-- lookups; Dimensional inputs are Logical Entities. Modeled sources require an applied
+-- Mapping for the selected source System.
 CREATE FUNCTION workflow.list_mapping_source_objects(
     p_project_id BIGINT, p_target_entity_id BIGINT,
     p_modeled_entity_type VARCHAR(30), p_source_system_id BIGINT
@@ -212,13 +205,6 @@ AS $list_mapping_source_objects$
          WHERE entity.project_id = p_project_id
            AND entity.modeled_entity_type = p_modeled_entity_type
            AND entity.modeled_entity_id = p_target_entity_id AND entity.is_active
-           AND NOT EXISTS (
-               SELECT 1 FROM project.project AS target_project
-                WHERE target_project.project_id = p_project_id
-                  AND target_project.default_mapping_source_system_id = p_source_system_id
-                  AND workflow.is_context_only_mapping_target(
-                      p_project_id, p_target_entity_id, p_modeled_entity_type)
-           )
     )
     SELECT support.logical_entity_source_mapping_id, target.modeled_entity_id,
            CASE WHEN support.logical_entity_source_mapping_id IS NULL THEN 'candidate' ELSE 'support' END,

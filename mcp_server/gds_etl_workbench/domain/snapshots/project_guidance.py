@@ -27,7 +27,6 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
         "Treat Project policy as authoritative when it differs from default naming guidance.",
         "Preserve project_name exactly; Project identity cannot change through Change Sets.",
         "Propose policy settings through project_details in the existing governed Change Set.",
-        "Use default_mapping_source_system_code for the registered System; never its database ID.",
         "Dimensional SCD is independent: type_1 overwrites mutable Dimension descriptors; "
         "type_2 historizes them. Stable identity stays fixed. Null leaves evidenced behavior. "
         "It applies to Dimensions, not Facts or Bridges; backend projects technical columns.",
@@ -74,7 +73,11 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
             "dependency and composite-key findings in task evidence, not invented fields."
         ),
     ),
-    "context_type": ("Read-only global vocabulary; select an existing type name for each group.",),
+    "context_type": (
+        "Read-only global vocabulary; select an existing type name for each group.",
+        "A workflow reads only records whose type lists it in context_type_workflows; "
+        "records an Entity cites as support are always read.",
+    ),
     "context_group": (
         "Group reusable project knowledge by a global Context Type; optionally scope it "
         "to a source System.",
@@ -190,6 +193,9 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
 
 _FIELD_GUIDANCE: dict[str, str] = {
     "context_record_id": ("Use the exact Context Record UUID from the current Project Snapshot."),
+    "context_type_workflows": (
+        "Read-only list of workflows whose prompts receive records of this Context Type."
+    ),
     "tenant_code": "Use the exact Tenant code from the current Snapshot.",
     "system_code": "Use the exact System code from the current Snapshot.",
     "connection_code": "Use the exact Connection code from the current Snapshot.",

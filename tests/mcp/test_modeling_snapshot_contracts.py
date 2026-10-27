@@ -303,13 +303,20 @@ def test_snapshot_exposes_the_read_only_type_lists() -> None:
     records = project_snapshot_records(snapshot_from_graph(complete_project_graph()))
 
     assert [record.logical_entity_type_code for record in records["logical_entity_type"]] == [
+        "agreement",
         "association",
         "core",
         "event",
+        "hierarchy",
         "history",
+        "list",
+        "other",
+        "plan",
         "reference",
         "snapshot",
+        "subtype",
         "transaction",
+        "transaction_line",
     ]
     assert [record.dimensional_fact_type_code for record in records["dimensional_fact_type"]] == [
         "accumulating_snapshot",

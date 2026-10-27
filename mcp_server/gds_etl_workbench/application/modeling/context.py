@@ -3,10 +3,16 @@
 from typing import LiteralString
 
 TYPES_SQL: LiteralString = """
-SELECT context_type_id, name AS context_type_name,
-       description AS context_type_description
+SELECT context_type.context_type_id, context_type.name AS context_type_name,
+       context_type.description AS context_type_description,
+       ARRAY(
+           SELECT routing.project_workflow::TEXT
+             FROM reference.context_type_workflow AS routing
+            WHERE routing.context_type_id = context_type.context_type_id
+            ORDER BY routing.project_workflow
+       ) AS context_type_workflows
   FROM reference.context_type
- ORDER BY lower(name), context_type_id
+ ORDER BY lower(context_type.name), context_type.context_type_id
  LIMIT %s OFFSET %s
 """
 

@@ -7,7 +7,6 @@ Use this guide for a requested policy/settings change. Read the effective `proje
 - `logical_schemas` / `dimensional_schemas`: arrays of `{"schema_name":"silver","description":"Normalized entities."}`. Description may be null. Names are nonblank (maximum 400 characters), unique ignoring case/surrounding spaces; maximum 100 schemas per layer. Do not remove schemas still used by retained entities.
 - `silver_model_naming_instructions` / `gold_model_naming_instructions`: nonblank text or null; maximum 32,768 UTF-8 bytes. Null selects defaults.
 - `logical_entity_scd_type` / `dimensional_entity_scd_type`: `"type_1"`, `"type_2"`, or null (unspecified). They are independent. Review affected design/history and downstream Mapping; changing a setting does not backfill or silently rebuild saved entities.
-- `default_mapping_source_system_code`: active registered System code, e.g. `"ERP"`, or null to clear the default. The backend resolves its ID. This default is not evidence that a System supplies a particular target.
 - Templates below are JSON objects or null. Maximum 262,144 JSON bytes each. No unknown properties. Read exact schemas through `describe_project_dataset` / the installed Project Snapshot.
 
 Web-agent provider/project/SDK/reasoning/turn/retry defaults, Project identity, Input Scope and lock administration are outside plugin authoring.

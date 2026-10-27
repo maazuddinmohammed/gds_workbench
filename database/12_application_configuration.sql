@@ -94,7 +94,6 @@ CREATE FUNCTION application.create_project(
     p_default_reasoning_effort_code VARCHAR(50),
     p_default_max_turns INTEGER,
     p_default_validation_retry_count INTEGER,
-    p_default_mapping_source_system_id BIGINT DEFAULT NULL,
     p_logical_entity_scd_type VARCHAR(10) DEFAULT NULL,
     p_dimensional_entity_scd_type VARCHAR(10) DEFAULT NULL,
     p_logical_coverage_threshold_percent INTEGER DEFAULT 70,
@@ -126,15 +125,6 @@ BEGIN
             coalesce(v_decision.denial_code, 'authorization_denied');
     END IF;
 
-    IF p_default_mapping_source_system_id IS NOT NULL AND NOT EXISTS (
-        SELECT 1 FROM core.connection AS connection
-        JOIN core.system AS system ON system.system_id = connection.system_id AND system.is_active
-        WHERE connection.tenant_id = p_tenant_id AND connection.is_active
-          AND system.system_id = p_default_mapping_source_system_id
-    ) THEN
-        RAISE EXCEPTION 'Default Mapping System is unavailable for this Tenant';
-    END IF;
-
     INSERT INTO project.project AS target_project (
         tenant_id,
         project_name,
@@ -152,7 +142,6 @@ BEGIN
         default_reasoning_effort_code,
         default_max_turns,
         default_validation_retry_count,
-        default_mapping_source_system_id,
         logical_entity_scd_type,
         dimensional_entity_scd_type,
         logical_coverage_threshold_percent,
@@ -176,7 +165,6 @@ BEGIN
         p_default_reasoning_effort_code,
         p_default_max_turns,
         p_default_validation_retry_count,
-        p_default_mapping_source_system_id,
         p_logical_entity_scd_type,
         p_dimensional_entity_scd_type,
         coalesce(p_logical_coverage_threshold_percent, 70),
@@ -218,7 +206,6 @@ REVOKE ALL ON FUNCTION application.create_project(
     VARCHAR,
     INTEGER,
     INTEGER,
-    BIGINT,
     VARCHAR,
     VARCHAR,
     INTEGER,
@@ -248,7 +235,6 @@ CREATE FUNCTION application.update_project(
     p_default_reasoning_effort_code VARCHAR(50),
     p_default_max_turns INTEGER,
     p_default_validation_retry_count INTEGER,
-    p_default_mapping_source_system_id BIGINT DEFAULT NULL,
     p_logical_entity_scd_type VARCHAR(10) DEFAULT NULL,
     p_dimensional_entity_scd_type VARCHAR(10) DEFAULT NULL,
     p_logical_coverage_threshold_percent INTEGER DEFAULT 70,
@@ -295,14 +281,6 @@ BEGIN
        OR v_existing.project_revision <> p_expected_project_revision THEN
         RAISE EXCEPTION 'stale_project_revision';
     END IF;
-    IF p_default_mapping_source_system_id IS NOT NULL AND NOT EXISTS (
-        SELECT 1 FROM core.connection AS connection
-        JOIN core.system AS system ON system.system_id = connection.system_id AND system.is_active
-        WHERE connection.tenant_id = v_existing.tenant_id AND connection.is_active
-          AND system.system_id = p_default_mapping_source_system_id
-    ) THEN
-        RAISE EXCEPTION 'Default Mapping System is unavailable for this Tenant';
-    END IF;
     IF ROW(
         v_existing.project_name,
         v_existing.project_description,
@@ -319,7 +297,6 @@ BEGIN
         v_existing.default_reasoning_effort_code,
         v_existing.default_max_turns,
         v_existing.default_validation_retry_count,
-        v_existing.default_mapping_source_system_id,
         v_existing.logical_entity_scd_type,
         v_existing.dimensional_entity_scd_type,
         v_existing.logical_coverage_threshold_percent,
@@ -342,7 +319,6 @@ BEGIN
         p_default_reasoning_effort_code,
         p_default_max_turns,
         p_default_validation_retry_count,
-        p_default_mapping_source_system_id,
         p_logical_entity_scd_type,
         p_dimensional_entity_scd_type,
         coalesce(p_logical_coverage_threshold_percent, 70),
@@ -378,7 +354,6 @@ BEGIN
            default_max_turns = p_default_max_turns,
            default_validation_retry_count =
                p_default_validation_retry_count,
-           default_mapping_source_system_id = p_default_mapping_source_system_id,
            logical_entity_scd_type = p_logical_entity_scd_type,
            dimensional_entity_scd_type = p_dimensional_entity_scd_type,
            logical_coverage_threshold_percent = coalesce(p_logical_coverage_threshold_percent, 70),
@@ -423,7 +398,6 @@ REVOKE ALL ON FUNCTION application.update_project(
     VARCHAR,
     INTEGER,
     INTEGER,
-    BIGINT,
     VARCHAR,
     VARCHAR,
     INTEGER,
@@ -2284,6 +2258,32 @@ AS $list_code_generation_target_context$
                      )
                 ))
            ))
+    ), cited_context AS MATERIALIZED (
+        -- Context a target Entity or one of its active Attributes cites as support.
+        SELECT s.logical_entity_id AS modeled_entity_id, s.context_record_id
+          FROM workflow.logical_entity_source_mapping AS s
+         WHERE p_modeled_entity_type = 'logical_entity' AND s.project_id = p_project_id
+           AND s.logical_entity_source_mapping_is_active AND s.context_record_id IS NOT NULL
+        UNION
+        SELECT s.logical_entity_id, s.context_record_id
+          FROM workflow.logical_attribute_source_mapping AS s
+          JOIN workflow.logical_attribute AS attribute ON attribute.project_id = s.project_id
+           AND attribute.logical_attribute_id = s.logical_attribute_id AND attribute.logical_attribute_is_active
+         WHERE p_modeled_entity_type = 'logical_entity' AND s.project_id = p_project_id
+           AND s.logical_attribute_source_mapping_is_active AND s.context_record_id IS NOT NULL
+        UNION
+        SELECT s.dimensional_entity_id, s.context_record_id
+          FROM workflow.dimensional_entity_source_mapping AS s
+         WHERE p_modeled_entity_type = 'dimensional_entity' AND s.project_id = p_project_id
+           AND s.dimensional_entity_source_mapping_is_active AND s.context_record_id IS NOT NULL
+        UNION
+        SELECT s.dimensional_entity_id, s.context_record_id
+          FROM workflow.dimensional_attribute_source_mapping AS s
+          JOIN workflow.dimensional_attribute AS attribute ON attribute.project_id = s.project_id
+           AND attribute.dimensional_attribute_id = s.dimensional_attribute_id
+           AND attribute.dimensional_attribute_is_active
+         WHERE p_modeled_entity_type = 'dimensional_entity' AND s.project_id = p_project_id
+           AND s.dimensional_attribute_source_mapping_is_active AND s.context_record_id IS NOT NULL
     ), assembled AS (
       SELECT target.project_id, target.modeled_entity_type, target.modeled_entity_id,
              target.modeled_entity_schema_name, target.modeled_entity_name,
@@ -2342,17 +2342,31 @@ AS $list_code_generation_target_context$
                    ORDER BY lower(m.source_system_code),m.source_system_id,m.object_dependency_order,m.mapping_object_id) AS documents
             FROM active_mapping AS m
             LEFT JOIN application.output_template AS template ON template.output_template_id = m.output_template_id
+            -- Context routed to Code Generation or Validation, each prompt keeping its own
+            -- Types, plus Context the target cites, which both keep whatever its Type or System.
             CROSS JOIN LATERAL (
               SELECT coalesce(jsonb_agg(jsonb_build_object(
                 'context_record_id',a.context_record_id,
                 'context_text',a.context_text, 'source_reference',a.source_reference,
-                'context_group_name',d.name, 'context_type_name',t.name
+                'context_group_name',d.name, 'context_type_name',t.name,
+                'context_type_workflows',CASE WHEN cited.context_record_id IS NULL THEN routing.workflows
+                                              ELSE ARRAY['code_generation','validation'] END
               ) ORDER BY a.context_record_id),'[]'::JSONB) AS documents
               FROM project.context_record AS a JOIN project.context_group AS d
                 ON d.context_group_id = a.context_group_id AND d.project_id = a.project_id AND d.is_active
               JOIN reference.context_type AS t ON t.context_type_id = d.context_type_id
+              CROSS JOIN LATERAL (
+                SELECT array_agg(w.project_workflow::TEXT ORDER BY w.project_workflow) AS workflows
+                  FROM reference.context_type_workflow AS w
+                 WHERE w.context_type_id = t.context_type_id
+                   AND w.project_workflow IN ('code_generation','validation')
+              ) AS routing
+              LEFT JOIN cited_context AS cited ON cited.modeled_entity_id = target.modeled_entity_id
+               AND cited.context_record_id = a.context_record_id
               WHERE a.project_id = target.project_id AND a.status = 'active'
-                AND (d.source_system_id IS NULL OR d.source_system_id = m.source_system_id)
+                AND (cited.context_record_id IS NOT NULL
+                     OR (routing.workflows IS NOT NULL
+                         AND (d.source_system_id IS NULL OR d.source_system_id = m.source_system_id)))
             ) AS project_context
            WHERE m.project_id = target.project_id AND m.modeled_entity_type = target.modeled_entity_type
              AND coalesce(m.logical_entity_id,m.dimensional_entity_id) = target.modeled_entity_id

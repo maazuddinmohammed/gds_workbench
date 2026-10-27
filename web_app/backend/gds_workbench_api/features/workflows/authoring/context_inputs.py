@@ -8,7 +8,10 @@ from typing import Any
 
 from gds_etl_workbench.domain.modeling_records import normalize_project_key_value
 
-from gds_workbench_api.features.context.context import select_context_records
+from gds_workbench_api.features.context.context import (
+    select_context_records,
+    with_cited_context_records,
+)
 
 from .audit_policy import effective_audit_template
 from .context_contracts import WORKFLOW_INPUTS
@@ -159,6 +162,7 @@ def project_context_inputs(
             *context.get("source_context", []),
             *(item["object"] for item in physical_objects),
         ],
+        workflow=workflow,
     )
     for family in ("logical", "dimensional") if workflow == "dimensional" else ("logical",):
         section = context["applied"].get(family)
@@ -178,14 +182,14 @@ def project_context_inputs(
             for position, selected in enumerate(context["selected_objects"], start=1)
         }
         if input_set == "logical_optimize":
-            values.update(_logical_optimize_inputs(context, table_ids))
+            values.update(_logical_optimize_inputs(context, table_ids, values["context_records"]))
         else:
             values.update(_logical_build_inputs(context, table_ids, values["context_records"]))
     if workflow == "dimensional":
         if input_set == "dimensional_optimize":
-            values.update(_dimensional_optimize_inputs(context))
+            values.update(_dimensional_optimize_inputs(context, values["context_records"]))
         else:
-            values.update(_dimensional_build_inputs(context))
+            values.update(_dimensional_build_inputs(context, values["context_records"]))
     details = context["project_details"]
     if workflow in ("logical", "dimensional"):
         layer = "silver" if workflow == "logical" else "gold"
@@ -648,38 +652,6 @@ def _neighbors_and_directory(
     return neighbors, directory
 
 
-def _with_cited_context(
-    context: Mapping[str, Any], records: list[dict[str, Any]], cited: set[str]
-) -> list[dict[str, Any]]:
-    """Add Context records the shown Entities cite, even outside this area's Systems."""
-    present = {normalize_project_key_value(record["context_record_id"]) for record in records}
-    groups = {
-        normalize_project_key_value(group["context_group_name"]): group
-        for group in context["context"]["groups"]
-        if group["is_active"]
-    }
-    extra: list[dict[str, Any]] = []
-    for record in context["context"]["records"]:
-        record_id = normalize_project_key_value(record["context_record_id"])
-        group = groups.get(normalize_project_key_value(record["context_group_name"]))
-        if (
-            record_id in cited
-            and record_id not in present
-            and group
-            and record["status"] == "active"
-        ):
-            extra.append(
-                {
-                    "context_record_id": record["context_record_id"],
-                    "context_group_name": group["context_group_name"],
-                    "context_type_name": group["context_type_name"],
-                    "context_text": record["context_text"],
-                    "source_reference": record["source_reference"],
-                }
-            )
-    return [*records, *extra]
-
-
 def _logical_build_inputs(
     context: Mapping[str, Any],
     table_ids: Mapping[_Key, str],
@@ -726,19 +698,6 @@ def _logical_build_inputs(
         grain_field="logical_entity_grain",
         type_field="logical_entity_type",
     )
-    cited = {
-        normalize_project_key_value(source["context_record"]["context_record_id"])
-        for entity in existing
-        for source in (
-            *entity["sources"],
-            *(
-                source
-                for attribute in attributes.get(_entity_key(entity, "logical"), [])
-                for source in attribute["sources"]
-            ),
-        )
-        if source["support_source_type"] == "context_record" and source["is_active"]
-    }
     area: Mapping[str, Any] = context.get("build_subject_area") or {}
     return {
         "subject_area_context": {
@@ -750,8 +709,34 @@ def _logical_build_inputs(
         "neighbor_entities": neighbors,
         "entity_directory": directory,
         "logical_entity_types": _active_types(context, "logical", "logical_entity_type"),
-        "context_records": _with_cited_context(context, context_records, cited),
+        "context_records": _with_cited_context(
+            context, context_records, existing, attributes, "logical"
+        ),
     }
+
+
+def _with_cited_context(
+    context: Mapping[str, Any],
+    context_records: list[dict[str, Any]],
+    shown: Sequence[Mapping[str, Any]],
+    attributes: Mapping[_Key, list[Mapping[str, Any]]],
+    family: str,
+) -> list[dict[str, Any]]:
+    """Routed records plus every active record the shown Entities or their Attributes cite."""
+    cited = {
+        source["context_record"]["context_record_id"]
+        for entity in shown
+        for source in (
+            *entity["sources"],
+            *(
+                source
+                for attribute in attributes.get(_entity_key(entity, family), [])
+                for source in attribute["sources"]
+            ),
+        )
+        if source["support_source_type"] == "context_record" and source["is_active"]
+    }
+    return with_cited_context_records(context["context"], context_records, cited)
 
 
 def _active_types(context: Mapping[str, Any], family: str, prefix: str) -> list[dict[str, Any]]:
@@ -852,7 +837,9 @@ def _type_conflicts(
 
 
 def _logical_optimize_inputs(
-    context: Mapping[str, Any], table_ids: Mapping[_Key, str]
+    context: Mapping[str, Any],
+    table_ids: Mapping[_Key, str],
+    context_records: list[dict[str, Any]],
 ) -> dict[str, Any]:
     model = _active_section(context, "logical")
     attributes = _attributes_by_entity(model["attributes"], "logical")
@@ -922,6 +909,7 @@ def _logical_optimize_inputs(
         }
     )
     detail_keys = [key for key, label in labels.items() if label in named]
+    details = [entities[key] for key in detail_keys]
     return {
         "model_summary": {
             "entities": [
@@ -957,7 +945,7 @@ def _logical_optimize_inputs(
         "type_conflicts": type_conflicts,
         "name_variants": name_variants,
         "entity_details": _compact_logical(
-            [entities[key] for key in detail_keys],
+            details,
             attributes,
             [
                 row
@@ -968,10 +956,15 @@ def _logical_optimize_inputs(
             table_ids,
         ),
         "logical_entity_types": _active_types(context, "logical", "logical_entity_type"),
+        "context_records": _with_cited_context(
+            context, context_records, details, attributes, "logical"
+        ),
     }
 
 
-def _dimensional_build_inputs(context: Mapping[str, Any]) -> dict[str, Any]:
+def _dimensional_build_inputs(
+    context: Mapping[str, Any], context_records: list[dict[str, Any]]
+) -> dict[str, Any]:
     model = _active_section(context, "dimensional")
     attributes = _attributes_by_entity(model["attributes"], "dimensional")
     area_logical = {
@@ -1037,10 +1030,15 @@ def _dimensional_build_inputs(context: Mapping[str, Any]) -> dict[str, Any]:
         "neighbor_entities": neighbors,
         "entity_directory": directory,
         "dimensional_fact_types": _active_types(context, "dimensional", "dimensional_fact_type"),
+        "context_records": _with_cited_context(
+            context, context_records, existing, attributes, "dimensional"
+        ),
     }
 
 
-def _dimensional_optimize_inputs(context: Mapping[str, Any]) -> dict[str, Any]:
+def _dimensional_optimize_inputs(
+    context: Mapping[str, Any], context_records: list[dict[str, Any]]
+) -> dict[str, Any]:
     model = _active_section(context, "dimensional")
     attributes = _attributes_by_entity(model["attributes"], "dimensional")
     entities = {_entity_key(entity, "dimensional"): entity for entity in model["entities"]}
@@ -1145,4 +1143,7 @@ def _dimensional_optimize_inputs(context: Mapping[str, Any]) -> dict[str, Any]:
             ],
         },
         "dimensional_fact_types": _active_types(context, "dimensional", "dimensional_fact_type"),
+        "context_records": _with_cited_context(
+            context, context_records, [entities[key] for key in detail], attributes, "dimensional"
+        ),
     }

@@ -2049,6 +2049,21 @@ BEGIN
     END IF;
 
     IF p_project_workflow = 'mapping' THEN
+      -- Each pair must be a branch: a System its source tables (or, for Gold, its mapped
+      -- Logical sources) come from. Branches are computed once for all selected pairs.
+      IF EXISTS (
+          WITH branch AS MATERIALIZED (
+              SELECT * FROM workflow.list_mapping_branches(p_project_id, p_modeled_entity_type)
+          )
+          SELECT 1 FROM jsonb_array_elements(v_mapping_targets) AS selected(target)
+           WHERE NOT EXISTS (
+               SELECT 1 FROM branch
+                WHERE branch.modeled_entity_id = (selected.target->>'modeled_entity_id')::BIGINT
+                  AND branch.source_system_id = (selected.target->>'source_system_id')::BIGINT
+           )
+      ) THEN
+          RAISE EXCEPTION 'Selected Mapping Entity or System is unavailable or locked';
+      END IF;
       FOR v_mapping_target IN SELECT value FROM jsonb_array_elements(v_mapping_targets) LOOP
         v_mapping_object_id := (v_mapping_target->>'modeled_entity_id')::BIGINT;
         v_mapping_system_id := (v_mapping_target->>'source_system_id')::BIGINT;
@@ -2056,30 +2071,6 @@ BEGIN
             SELECT 1 FROM workflow.modeled_entity AS entity
              WHERE entity.project_id = p_project_id AND entity.modeled_entity_type = p_modeled_entity_type
                AND entity.modeled_entity_id = v_mapping_object_id AND entity.is_active AND NOT entity.is_locked
-        ) OR NOT (EXISTS (
-            SELECT 1 FROM workflow.list_project_input_sources(p_project_id) AS input
-            JOIN core.system AS system ON system.system_id = input.source_system_id AND system.is_active
-             WHERE input.source_system_id = v_mapping_system_id
-        ) OR EXISTS (
-            SELECT 1 FROM project.project AS target_project
-            JOIN core.system AS system ON system.system_id = target_project.default_mapping_source_system_id
-              AND system.is_active
-             WHERE target_project.project_id = p_project_id
-               AND target_project.default_mapping_source_system_id = v_mapping_system_id
-               AND workflow.is_context_only_mapping_target(p_project_id,
-                   v_mapping_object_id, p_modeled_entity_type)
-        )) OR EXISTS (
-            SELECT 1 FROM project.project AS target_project
-             WHERE target_project.project_id = p_project_id
-               AND target_project.default_mapping_source_system_id = v_mapping_system_id
-               AND workflow.is_context_only_mapping_target(p_project_id,
-                   v_mapping_object_id, p_modeled_entity_type)
-               AND NOT EXISTS (
-                   SELECT 1 FROM core.connection AS owned_connection
-                    WHERE owned_connection.tenant_id = target_project.tenant_id
-                      AND owned_connection.system_id = v_mapping_system_id
-                      AND owned_connection.is_active
-               )
         ) OR EXISTS (
             SELECT 1 FROM workflow.mapping_object AS mapping
              WHERE mapping.project_id = p_project_id AND mapping.modeled_entity_type = p_modeled_entity_type

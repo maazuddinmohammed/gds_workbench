@@ -89,7 +89,6 @@ export function ProjectSettingsScreen({ api, home, project }: {
     {refreshFailed ? <p role="alert">Saved settings could not be loaded. Your edits are preserved. Retry Refresh saved settings.</p> : null}
     {savedRevision !== null ? <p role="status">Project settings saved at revision {savedRevision}.</p> : null}
     <ProjectForm key={`${projectId}:${formVersion}`} api={api} tenantId={tenantId} initialProject={initialProject}
-      systems={home.systems}
       hasTenantLock={hasTenantLock} disabledReason={disabledReason} isPending={busy} error={mutation.error}
       onDirty={() => { setDirty(true); setSavedRevision(null); }} onSubmit={(command) => mutation.mutate(command)} />
   </section>;

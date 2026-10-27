@@ -480,8 +480,8 @@ INPUT_SHAPES: dict[str, Any] = {
         },
     },
     "context_records": {
-        "description": "Active Context records from active groups in authorized "
-        "Project/Source System scope are reusable guidance for every workflow. "
+        "description": "Active Context records whose Context Type applies to this workflow, "
+        "from active groups in authorized Project/Source System scope, are reusable guidance. "
         "Each record has context_record_id (canonical UUID), context_group_name, "
         "context_type_name, context_text and nullable source_reference. The type "
         "classifies its purpose; context_text contains the requirement, decision, rule, "
@@ -2349,7 +2349,8 @@ _LOGICAL_TYPES = [
     {
         "code": "transaction",
         "description": (
-            "A business document or exchange, such as SalesOrder or Invoice, often with lines."
+            "A business document or exchange, such as SalesOrder or Invoice. "
+            "Its lines are transaction_line."
         ),
     },
 ]

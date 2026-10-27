@@ -147,7 +147,6 @@ class ProjectDetailsRecord(ModelingRecord):
     dimensional_coverage_threshold_percent: int = Field(default=60, ge=1, le=100, strict=True)
     logical_enforce_coverage_threshold: bool = Field(default=False, strict=True)
     dimensional_enforce_coverage_threshold: bool = Field(default=False, strict=True)
-    default_mapping_source_system_code: Code100 | None = None
 
     @model_validator(mode="after")
     def validate_policy_fields(self) -> ProjectDetailsRecord:
@@ -396,11 +395,18 @@ class AnalysisResultRecord(ModelingRecord):
         return self
 
 
+ContextWorkflow = Literal[
+    "analysis", "subject_area", "logical", "dimensional", "mapping", "code_generation", "validation"
+]
+
+
 class ContextTypeRecord(ModelingRecord):
     context_type_name: Annotated[
         str, StringConstraints(min_length=1, max_length=200, pattern=r"\S")
     ]
     context_type_description: str | None
+    # Workflows whose prompts receive this Type's records; read-only, from the server.
+    context_type_workflows: tuple[ContextWorkflow, ...] = ()
 
 
 class ContextGroupRecord(ModelingRecord):

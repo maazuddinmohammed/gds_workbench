@@ -1459,20 +1459,3 @@ def test_project_identity_cannot_be_renamed(name: str) -> None:
         physical_scope=complete_physical_scope(),
     )
     assert any(issue.code == "project_identity_read_only" for issue in result.issues)
-
-
-@pytest.mark.parametrize(
-    "code,valid", [("ERP", True), (" erp ", True), (None, True), ("UNKNOWN", False)]
-)
-def test_default_mapping_source_uses_registered_system_code(
-    code: str | None, valid: bool
-) -> None:
-    details = project_details()
-    result = validate_future_graph(
-        snapshot=snapshot_from_graph({"project_details": [details]}),
-        staged_documents={
-            "project_details": [{**details, "default_mapping_source_system_code": code}]
-        },
-        physical_scope=complete_physical_scope(),
-    )
-    assert result.valid is valid

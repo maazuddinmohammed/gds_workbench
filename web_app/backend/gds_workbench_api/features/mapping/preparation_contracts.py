@@ -158,7 +158,6 @@ class MappingSourceSystem(_FrozenProject):
     system_name: str = Field(min_length=1, max_length=200)
     system_description: str | None = None
     is_active: bool
-    is_default: bool = False
 
 
 class MappingTargetDependencyNode(_FrozenProject):

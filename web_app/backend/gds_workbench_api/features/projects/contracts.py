@@ -56,7 +56,6 @@ class ProjectDetail(BaseModel):
     project_input_scope_object_count: int = Field(ge=0)
     logical_schemas: tuple[ProjectSchemaDefinition, ...] = ()
     dimensional_schemas: tuple[ProjectSchemaDefinition, ...] = ()
-    default_mapping_source_system_id: int | None = Field(default=None, gt=0)
     logical_entity_scd_type: Literal["type_1", "type_2"] | None = None
     dimensional_entity_scd_type: Literal["type_1", "type_2"] | None = None
     logical_coverage_threshold_percent: int = Field(default=70, ge=1, le=100, strict=True)

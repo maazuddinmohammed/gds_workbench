@@ -16,12 +16,9 @@ import type {
   MappingApi,
 } from "./api";
 import "./mapping-ledger.css";
-import { SourceCodeFilter, SourceFilterNotice } from "../project_input_scope/scopeFilterChoices";
 import { MappingTransformationValue, useMappingAttributeDocuments } from "./MappingAttributeDocuments";
 import { Fact } from "../../shared/ui";
 import { formatRequiredDateTime } from "../../shared/presentation";
-
-interface MappingSourceChoices { codes: string[]; isLoading: boolean; isUnavailable: boolean }
 
 export interface MappingLedgerState {
   isLoading: boolean;
@@ -44,9 +41,9 @@ interface CommonLedgerProps {
 }
 
 export function MappingObjectsLedger({
-  sourceChoices,
   tenantId,
   projectId,
+  systemCode,
   selectedIds, onSelectionChange,
   items,
   filters,
@@ -54,11 +51,15 @@ export function MappingObjectsLedger({
   onApplyFilters,
   onLoadMore,
 }: CommonLedgerProps & {
-  items: MappingObject[]; sourceChoices: MappingSourceChoices;
+  items: MappingObject[];
+  /** The selected System tab; its rows all share the System, so the column is left out. */
+  systemCode?: string | undefined;
 }) {
   const columns = useMemo<ColumnDef<MappingObject>[]>(() => [
     reviewSelectionColumn(items, { selectedIds, onSelectionChange }, (item) => item.mapping_object_id, "Mapping Objects"),
-    { id: "source_system", header: "System", cell: ({ row }) => row.original.source_system.system_code },
+    ...(systemCode ? [] : [{
+      id: "source_system", header: "System", cell: ({ row }) => row.original.source_system.system_code,
+    } satisfies ColumnDef<MappingObject>]),
     { accessorKey: "dependency_order", header: "Entity order" },
     {
       id: "schema",
@@ -76,7 +77,10 @@ export function MappingObjectsLedger({
           className="text-action"
           aria-label={`Open Object Mapping ${row.original.mapping_object_id}`}
           to="/tenants/$tenantId/mapping/projects/$projectId/objects/$mappingObjectId"
-          search={{ layer: row.original.target.entity_type === "logical_entity" ? "logical" : "dimensional" }}
+          search={{
+            layer: row.original.target.entity_type === "logical_entity" ? "logical" : "dimensional",
+            ...(systemCode ? { system: systemCode } : {}),
+          }}
           params={{
             tenantId: String(tenantId),
             projectId: String(projectId),
@@ -87,13 +91,13 @@ export function MappingObjectsLedger({
         </Link></div>
       ),
     },
-  ], [items, selectedIds, onSelectionChange, projectId, tenantId]);
+  ], [items, selectedIds, onSelectionChange, projectId, tenantId, systemCode]);
   return (
     <MappingLedgerSurface
       label="Object Mappings"
       items={items}
       columns={columns}
-      filters={<MappingFilterBar filters={filters} onApplyFilters={onApplyFilters} sourceChoices={sourceChoices} />}
+      filters={<MappingFilterBar filters={filters} onApplyFilters={onApplyFilters} />}
       state={state}
       onLoadMore={onLoadMore}
     />
@@ -199,25 +203,22 @@ export function MappingAttributesLedger({
   );
 }
 
+// The System is chosen with the System tabs, so filters cover status and lock only.
 function MappingFilterBar({
-  sourceChoices,
   filters,
   onApplyFilters,
   objectScoped = false,
 }: {
-  sourceChoices?: MappingSourceChoices;
   filters: MappingFilters;
   onApplyFilters: (filters: MappingFilters) => void;
   objectScoped?: boolean;
 }) {
   const form = useForm({
     defaultValues: {
-      sourceSystemCode: filters.sourceSystemCode ?? "",
       status: filters.status ?? "",
       locked: filters.locked === undefined ? "" : String(filters.locked),
     },
     onSubmit: ({ value }) => onApplyFilters({
-      ...(value.sourceSystemCode ? { sourceSystemCode: value.sourceSystemCode } : {}),
       ...(value.status ? { status: value.status as NonNullable<MappingFilters["status"]> } : {}),
       ...(value.locked ? { locked: value.locked === "true" } : {}),
     }),
@@ -232,17 +233,6 @@ function MappingFilterBar({
         void form.handleSubmit();
       }}
     >
-      {!objectScoped ? (
-        <>
-          <form.Field name="sourceSystemCode">
-            {(field) => (
-              <SourceCodeFilter label="Source System code" value={field.state.value}
-                codes={sourceChoices?.codes ?? []} isLoading={sourceChoices?.isLoading ?? false}
-                isUnavailable={sourceChoices?.isUnavailable ?? false} onChange={field.handleChange} />
-            )}
-          </form.Field>
-        </>
-      ) : null}
       <form.Field name="status">
         {(field) => (
           <label>
@@ -281,7 +271,6 @@ function MappingFilterBar({
         </button>
         <button className="button button-secondary button-small" type="submit">Apply Mapping filters</button>
       </div>
-      <SourceFilterNotice unavailable={sourceChoices?.isUnavailable ?? false} />
     </form></WorkflowFilters>
   );
 }

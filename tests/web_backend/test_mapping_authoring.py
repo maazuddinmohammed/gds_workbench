@@ -362,18 +362,12 @@ async def test_empty_output_is_valid_with_attribute_lineage() -> None:
 
 
 @pytest.mark.parametrize("layer", ("logical_entity", "dimensional_entity"))
-async def test_context_default_system_accepts_partial_source_free_mapping(
+async def test_source_free_pair_rejects_transformations_but_accepts_no_source(
     layer: ModeledEntityType,
 ) -> None:
+    # Branches always come from a System; Context alone never justifies a transformation.
     preparation = mapping_preparation(modeled_entity_type=layer)
-    context = preparation.context.model_copy(
-        update={
-            "sources": (),
-            "source_system": preparation.context.source_system.model_copy(
-                update={"is_default": True}
-            ),
-        }
-    )
+    context = preparation.context.model_copy(update={"sources": ()})
     preparation = preparation.model_copy(
         update={
             "context": context,
@@ -383,9 +377,8 @@ async def test_context_default_system_accepts_partial_source_free_mapping(
         }
     )
     validator = CompleteMappingCandidateValidator(preparation=preparation)
-    complete = mapping_candidate()
-    assert not (await validator.validate(complete)).issues
-    assert len(validator.parse_validated(complete).changes) == 2
+    issues = (await validator.validate(mapping_candidate())).issues
+    assert [issue.code for issue in issues] == ["candidate.mapping_integrity_invalid"]
 
     skipped: dict[str, JsonValue] = {
         "schema_version": "1.0",
@@ -394,5 +387,3 @@ async def test_context_default_system_accepts_partial_source_free_mapping(
         "attribute_mappings": [],
     }
     assert not (await validator.validate(skipped)).issues
-    complete["attribute_mappings"] = []
-    assert not (await validator.validate(complete)).issues

@@ -43,7 +43,7 @@ Systems are independent. Internal numeric IDs are not business identifiers.
 | Ingestion Mapping | Registered Source-to-Bronze Object/Attribute lineage; source provenance cannot be guessed from names. |
 | Analysis Result | Inferred relationship between real physical Attributes: endpoints, kind and inferred cardinality, with no stored reasoning. Inferred cardinality and measured validation remain separate. |
 | Per-table Analysis | Analysis run that makes one one-shot call per selected table. Each call sees its table in full plus a key directory of every selected table, and returns only links that start in its table. A second link on an already linked column pair is dropped before the draft. |
-| Context Type | Global read-only classification shared across Projects; defined by name and description. |
+| Context Type | Global read-only classification shared across Projects; defined by name, description and the workflows that read its records (`reference.context_type_workflow`). Workflow-only Types (Subject Area, Logical, Dimensional, Mapping Requirement) reach one workflow. |
 | Context Group | Project-owned collection of related knowledge with one Context Type, optional description and source System. |
 | Context Record | Reusable requirement, source information, convention, decision or other knowledge. Contains a stable UUID, text, optional plain-text source reference, status and lock. Requirements are not proof that data exists. |
 | Subject Area | Named business capability, such as Sales or Billing, over active Bronze Input Scope Objects; an Object may belong to several. It chooses the Objects one Logical or Dimensional Build call works on and is never modeling evidence. Unassigned Objects have no active membership and are not stored. |
@@ -106,7 +106,10 @@ remains visible, and neither flag alone proves measured uniqueness.
 
 ## Mapping, Code and Validation
 
-**Mapping** belongs to a modeled Entity and contributing source System. Its Object
+**Mapping** belongs to a modeled Entity and contributing source System (a branch).
+A Logical Entity has a branch per System its own source tables come from (Bronze
+through ingestion lineage); a Dimensional Entity per System its Logical sources are
+completely mapped from. Context never creates a branch; it only informs one. Its Object
 transformation describes sources, rowset, filters and stages; Attribute documents
 describe field expressions and sources. Output Templates define advisory document
 fields. Custom documents remain opaque, complete JSON; their field names do not

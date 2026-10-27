@@ -106,7 +106,7 @@ def test_logical_attribute_editor_exposes_key_origins_and_audit_classification()
         {"logical_entity_is_active": False},
         {"sources": []},
         {"logical_entity_type": "invalid"},
-        {"logical_entity_type": "other"},
+        {"logical_entity_type": "lookup"},
         {"logical_entity_definition": "   "},
     ],
 )

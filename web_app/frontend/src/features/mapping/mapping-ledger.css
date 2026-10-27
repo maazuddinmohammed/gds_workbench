@@ -264,3 +264,15 @@
 .mapping-selected-sources { display: grid; gap: .5rem; list-style: none; padding: 0; margin: .8rem 0; }
 .mapping-selected-sources > li > span { overflow-wrap: anywhere; }
 .mapping-source-picker > div:not([hidden]) { display: grid; gap: .75rem; margin-top: .85rem; }
+
+/* System tabs reuse workspace-tabs; the bar only spaces them from the ledger. */
+.mapping-system-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem 1rem;
+  min-width: 0;
+  margin: 0 0 var(--workspace-content-gap);
+}
+.mapping-system-bar > .field-help { margin: 0; }
+.mapping-system-tabs > a small { color: var(--muted); font-size: .72rem; font-variant-numeric: tabular-nums; }

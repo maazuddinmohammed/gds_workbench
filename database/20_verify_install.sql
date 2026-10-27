@@ -20,8 +20,8 @@ DECLARE
         'application.add_project_input_scope_objects(uuid,uuid,bigint,bigint,bigint,bigint[])',
         'application.archive_project(uuid,uuid,character varying,bigint,bigint)',
         'application.set_principal_last_tenant(uuid,uuid,character varying,bigint)',
-        'application.create_project(uuid,uuid,character varying,bigint,character varying,character varying,jsonb,jsonb,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer,bigint,character varying,character varying,integer,integer,boolean,boolean)',
-        'application.update_project(uuid,uuid,character varying,bigint,bigint,character varying,character varying,jsonb,jsonb,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer,bigint,character varying,character varying,integer,integer,boolean,boolean)',
+        'application.create_project(uuid,uuid,character varying,bigint,character varying,character varying,jsonb,jsonb,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer,character varying,character varying,integer,integer,boolean,boolean)',
+        'application.update_project(uuid,uuid,character varying,bigint,bigint,character varying,character varying,jsonb,jsonb,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer,character varying,character varying,integer,integer,boolean,boolean)',
         'application.save_prompt_template(uuid,uuid,character varying,bigint,bigint,character varying,bigint,character varying,character varying,text,boolean,timestamp with time zone)',
         'application.save_prompt_template_draft(uuid,uuid,character varying,bigint,bigint,text,text,text,timestamp with time zone,text[])',
         'application.transition_prompt_template_version(uuid,uuid,character varying,bigint,character varying,character varying)',
@@ -368,9 +368,9 @@ BEGIN
           JOIN pg_catalog.pg_namespace AS namespace_record
             ON namespace_record.oid = function_record.pronamespace
          WHERE namespace_record.nspname = 'workflow'
-           AND function_record.proname = 'is_context_only_mapping_target'
+           AND function_record.proname = 'list_mapping_branches'
            AND oidvectortypes(function_record.proargtypes) =
-               'bigint, bigint, character varying'
+               'bigint, character varying'
            AND function_record.provolatile = 's'
            AND NOT function_record.prosecdef
            AND function_record.proconfig =
@@ -1291,7 +1291,6 @@ BEGIN
        OR EXISTS (
            SELECT 1
              FROM unnest(ARRAY[
-                      'default_mapping_source_system_id',
                       'logical_entity_scd_type',
                       'dimensional_entity_scd_type',
                       'logical_coverage_threshold_percent',
@@ -1578,7 +1577,7 @@ BEGIN
                    'workflow.list_project_object_eligibility(bigint)',
                    'workflow.list_project_attribute_eligibility(bigint)',
                    'workflow.list_project_input_sources(bigint)',
-                   'workflow.is_context_only_mapping_target(bigint,bigint,character varying)',
+                   'workflow.list_mapping_branches(bigint,character varying)',
                    'workflow.list_mapping_source_objects(bigint,bigint,character varying,bigint)',
                    'workflow.list_code_generation_target_context(bigint,character varying,character varying)'
                ]) AS web_workflow_function(signature)

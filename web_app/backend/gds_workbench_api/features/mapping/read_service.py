@@ -48,6 +48,20 @@ SELECT entity.modeled_entity_id AS entity_id, entity.modeled_entity_type AS enti
 """
 
 
+_UNSUPPLIED_ENTITY_COUNT_SQL: LiteralString = (
+    "WITH targets AS ("
+    + _MAPPING_TARGET_BASE_SQL
+    + """
+)
+SELECT count(*)::INTEGER AS unsupplied_entity_count
+  FROM targets
+ WHERE NOT EXISTS (
+     SELECT 1 FROM workflow.list_mapping_branches(%s, %s) AS branch
+      WHERE branch.modeled_entity_id = targets.entity_id
+ )
+"""
+)
+
 _MAPPING_GENERATION_TARGETS_SQL: LiteralString = (
     "WITH targets AS ("
     + _MAPPING_TARGET_BASE_SQL
@@ -58,10 +72,6 @@ SELECT targets.*, jsonb_build_object('system_id', source_system.system_id, 'syst
        mapping.mapping_object_id,
        coalesce(mapping.object_dependency_order, entity.dependency_order) AS object_order,
        entity.is_locked OR coalesce(mapping.object_mapping_is_locked, FALSE) AS is_locked,
-       input.is_default OR EXISTS (
-           SELECT 1 FROM workflow.list_mapping_source_objects(entity.project_id,
-               entity.modeled_entity_id, entity.modeled_entity_type, source_system.system_id)
-       ) AS has_sources,
        attributes.items AS attributes
   FROM targets
   JOIN project.project AS project
@@ -69,25 +79,11 @@ SELECT targets.*, jsonb_build_object('system_id', source_system.system_id, 'syst
   JOIN workflow.modeled_entity AS entity ON entity.project_id = project.project_id
    AND entity.modeled_entity_type = targets.entity_type AND entity.modeled_entity_id =
        targets.entity_id
- CROSS JOIN LATERAL (
-     SELECT project.default_mapping_source_system_id IS NOT NULL
-        AND workflow.is_context_only_mapping_target(project.project_id,
-            entity.modeled_entity_id, entity.modeled_entity_type) AS uses_default
- ) AS fallback
- CROSS JOIN LATERAL (
-     SELECT DISTINCT source_system_id, FALSE AS is_default
-       FROM workflow.list_project_input_sources(project.project_id)
-      WHERE NOT fallback.uses_default
-     UNION
-     SELECT project.default_mapping_source_system_id, TRUE WHERE fallback.uses_default
- ) AS input
-  JOIN core.system AS source_system ON source_system.system_id = input.source_system_id
+  -- Only the Systems this Entity's sources come from; never every Input Scope System.
+  JOIN workflow.list_mapping_branches(project.project_id, %s) AS branch
+    ON branch.modeled_entity_id = entity.modeled_entity_id
+  JOIN core.system AS source_system ON source_system.system_id = branch.source_system_id
    AND source_system.is_active
-   AND (NOT input.is_default OR EXISTS (
-       SELECT 1 FROM core.connection AS owned_connection
-        WHERE owned_connection.tenant_id = project.tenant_id
-          AND owned_connection.system_id = source_system.system_id AND owned_connection.is_active
-   ))
   LEFT JOIN workflow.mapping_object AS mapping ON mapping.project_id = entity.project_id
    AND mapping.modeled_entity_type = entity.modeled_entity_type
    AND coalesce(mapping.logical_entity_id, mapping.dimensional_entity_id) = entity.modeled_entity_id
@@ -388,7 +384,20 @@ class DatabaseMappingReviewService:
                 raise ProjectNotFoundError()
             rows = await transaction.fetch_all(
                 _MAPPING_GENERATION_TARGETS_SQL,
-                (tenant_id, project_id, entity_type, tenant_id, project_id, page_size + 1, offset),
+                (
+                    tenant_id,
+                    project_id,
+                    entity_type,
+                    tenant_id,
+                    project_id,
+                    entity_type,
+                    page_size + 1,
+                    offset,
+                ),
+            )
+            unsupplied = await transaction.fetch_one(
+                _UNSUPPLIED_ENTITY_COUNT_SQL,
+                (tenant_id, project_id, entity_type, project_id, entity_type),
             )
         next_cursor = (
             self._cursors.encode(collection=collection, offset=offset + page_size)
@@ -401,6 +410,9 @@ class DatabaseMappingReviewService:
             items=tuple(
                 MappingGenerationTarget.model_validate(row, strict=False)
                 for row in rows[:page_size]
+            ),
+            unsupplied_entity_count=(
+                0 if unsupplied is None else unsupplied["unsupplied_entity_count"]
             ),
             next_cursor=next_cursor,
         )

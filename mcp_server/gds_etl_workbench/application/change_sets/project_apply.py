@@ -61,7 +61,6 @@ UPDATE project.project
        dimensional_coverage_threshold_percent = %s,
        logical_enforce_coverage_threshold = %s,
        dimensional_enforce_coverage_threshold = %s,
-       default_mapping_source_system_id = %s,
        updated_time = CURRENT_TIMESTAMP,
        updated_by = CURRENT_USER
  WHERE project_id = %s
@@ -941,11 +940,6 @@ class ProjectMaterializer:
                     record.dimensional_coverage_threshold_percent,
                     record.logical_enforce_coverage_threshold,
                     record.dimensional_enforce_coverage_threshold,
-                    (
-                        None
-                        if record.default_mapping_source_system_code is None
-                        else await self.resolve_system(record.default_mapping_source_system_code)
-                    ),
                     self.project_id,
                     record.project_name,
                 ),
