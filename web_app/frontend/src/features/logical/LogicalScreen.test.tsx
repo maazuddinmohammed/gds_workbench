@@ -44,11 +44,11 @@ describe("Project Logical", () => {
 
     const areas = await screen.findByRole("table", { name: "Logical Subject Areas" });
     expect(within(areas).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
-      "Subject Area", "Objects", "Modeled", "Logical Entities", "Last build", "",
+      "Subject Area", "Objects", "Logical Entities", "Last build", "",
     ]);
     const row = within(areas).getByRole("row", { name: /Sales/ });
     const cells = within(row).getAllByRole("cell").map((cell) => cell.textContent);
-    expect([...cells.slice(0, 4), cells[5]]).toEqual(["SalesCustomer orders.", "2", "2", "1", "Show Entities"]);
+    expect([...cells.slice(0, 3), cells[4]]).toEqual(["SalesCustomer orders.", "2", "1", "Show Entities"]);
     // The last Build is an icon; its words show on hover and to screen readers.
     expect(within(row).getByTitle(/^Applied · /)).toHaveTextContent(/^Applied · /);
     expect(within(within(areas).getByRole("row", { name: /Finance/ })).getByTitle(/^Last Build failed · /)).toBeVisible();
@@ -58,6 +58,9 @@ describe("Project Logical", () => {
     expect(await screen.findByRole("heading", { name: "Sales", level: 1 })).toBeVisible();
     const entities = await screen.findByRole("table", { name: "Sales Logical Entities" });
     expect(within(entities).getByText("customer_account")).toBeVisible();
+    expect(screen.queryByText("Modeled Objects")).not.toBeInTheDocument();
+    // Fixed table layout sizes columns from the header row, so its quick view cell stays narrow too.
+    expect(within(entities).getByText("Quick view").closest("th")).toHaveClass("quick-view-cell");
     expect(fetcher.mock.calls.some(([input]) => String(input).includes("subject_area_id=41"))).toBe(true);
     expect(screen.getByRole("link", { name: "Edit Subject Area" })).toHaveAttribute(
       "href", "/tenants/7/projects/18/subject-areas/41",
@@ -138,6 +141,8 @@ describe("Project Logical", () => {
     const areas = definition.getByRole("list", { name: "Entity Subject Areas" });
     expect(within(areas).getAllByRole("link").map((link) => link.textContent)).toEqual(["Sales", "Support"]);
     expect(within(areas).getByRole("link", { name: "Sales" })).toHaveAttribute("href", "/tenants/7/projects/18/subject-areas/41");
+    // Each Subject Area shows as a clickable tag.
+    expect(within(areas).getAllByRole("link").every((link) => link.classList.contains("subject-area-tag"))).toBe(true);
     expect(await screen.findByRole("table", { name: "Entity Attributes" })).toBeVisible();
     const sources = screen.getByRole("table", { name: "Source mappings" });
     expect(within(sources).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
@@ -304,10 +309,10 @@ describe("Project Logical", () => {
     // Active areas with Objects: most shared Objects first, then most Objects, then name.
     expect(within(areas).getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["Support", "Marketing", "Sales", "Finance"]);
     expect(within(areas).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
-      "Choose", "Subject Area", "Objects", "Shared Objects", "Modeled", "Last build",
+      "Choose", "Subject Area", "Objects", "Shared Objects", "Last build",
     ]);
     const support = within(areas).getByRole("row", { name: /Support/ });
-    expect([...support.querySelectorAll("td")].slice(1).map((cell) => cell.textContent)).toEqual(["3", "1", "0", "Not built yet"]);
+    expect([...support.querySelectorAll("td")].slice(1).map((cell) => cell.textContent)).toEqual(["3", "1", "Not built yet"]);
     expect(within(within(areas).getByRole("row", { name: /Sales/ })).getByTitle(/^Applied · /)).toBeVisible();
     expect(within(dialog).queryByText(/draft is waiting for review/)).not.toBeInTheDocument();
     expect(within(areas).queryByRole("button", { name: /^Move / })).not.toBeInTheDocument();
@@ -554,20 +559,20 @@ const projectPayload = {
 // The Logical layer's areas: counts, the last Build of each, and a waiting Marketing draft.
 function logicalSubjectAreasPayload(waitingDraft: boolean) {
   const area = (id: number, name: string, definition: string, tables: number, shared: number,
-    modeled: number, entities: number, build: Record<string, unknown>) => ({
+    entities: number, build: Record<string, unknown>) => ({
     subject_area_id: id, subject_area_name: name, subject_area_definition: definition, table_count: tables,
-    shared_table_count: shared, modeled_table_count: modeled, entity_count: entities, build,
+    shared_table_count: shared, entity_count: entities, build,
   });
   const notBuilt = { state: "not_built", workflow_run_id: null, at: null };
   return {
     project_id: 18,
     project_revision: 18,
     items: [
-      area(41, "Sales", "Customer orders.", 2, 1, 2, 1, { state: "applied", workflow_run_id: 1040, at: "2026-10-25T11:32:00Z" }),
-      area(42, "Support", "Support capability.", 3, 1, 0, 0, notBuilt),
-      area(43, "Finance", "Finance capability.", 4, 0, 1, 1, { state: "failed", workflow_run_id: 1041, at: "2026-10-26T09:12:00Z" }),
-      area(45, "Empty", "Empty capability.", 0, 0, 0, 0, notBuilt),
-      area(46, "Marketing", "Marketing capability.", 2, 1, 0, 0, waitingDraft
+      area(41, "Sales", "Customer orders.", 2, 1, 1, { state: "applied", workflow_run_id: 1040, at: "2026-10-25T11:32:00Z" }),
+      area(42, "Support", "Support capability.", 3, 1, 0, notBuilt),
+      area(43, "Finance", "Finance capability.", 4, 0, 1, { state: "failed", workflow_run_id: 1041, at: "2026-10-26T09:12:00Z" }),
+      area(45, "Empty", "Empty capability.", 0, 0, 0, notBuilt),
+      area(46, "Marketing", "Marketing capability.", 2, 1, 0, waitingDraft
         ? { state: "draft_waiting", workflow_run_id: 1049, at: "2026-10-26T13:20:00Z" } : notBuilt),
     ],
     waiting_draft: waitingDraft ? { workflow_run_id: 1049, workflow_operation: "build" } : null,

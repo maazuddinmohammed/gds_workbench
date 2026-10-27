@@ -59,7 +59,6 @@ class StaticLogicalService:
                     subject_area_definition="Customer orders.",
                     table_count=3,
                     shared_table_count=1,
-                    modeled_table_count=2,
                     entity_count=2,
                     build=SubjectAreaBuild(
                         state="draft_waiting",
@@ -813,7 +812,6 @@ def test_logical_subject_areas_list_each_area_with_its_entity_count() -> None:
                 "subject_area_definition": "Customer orders.",
                 "table_count": 3,
                 "shared_table_count": 1,
-                "modeled_table_count": 2,
                 "entity_count": 2,
                 "build": {
                     "state": "draft_waiting",

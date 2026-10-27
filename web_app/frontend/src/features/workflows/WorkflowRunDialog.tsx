@@ -720,7 +720,6 @@ function BuildAreaPicker({ areas, pickedId, isPending, isError, disabled, onPick
                 <th>Subject Area</th>
                 <th className="is-numeric">Objects</th>
                 <th className="is-numeric">Shared Objects</th>
-                <th className="is-numeric"><span title="Objects that reach an active Entity of this layer">Modeled</span></th>
                 <th>Last build</th>
               </tr></thead>
               <tbody>{areas.map((area) => <tr key={area.subject_area_id} className={area.subject_area_id === pickedId ? "is-active" : undefined}>
@@ -729,7 +728,6 @@ function BuildAreaPicker({ areas, pickedId, isPending, isError, disabled, onPick
                 <th scope="row">{area.subject_area_name}</th>
                 <td className="is-numeric">{area.table_count}</td>
                 <td className="is-numeric">{area.shared_table_count}</td>
-                <td className="is-numeric">{area.modeled_table_count}</td>
                 <td><BuildStatus build={area.build} /></td>
               </tr>)}</tbody>
             </table>

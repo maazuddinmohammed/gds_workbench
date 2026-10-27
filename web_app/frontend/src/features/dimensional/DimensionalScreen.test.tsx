@@ -49,11 +49,11 @@ describe("Project Dimensional", () => {
 
     const areas = await screen.findByRole("table", { name: "Dimensional Subject Areas" });
     expect(within(areas).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
-      "Subject Area", "Objects", "Modeled", "Dimensional Entities", "Last build", "",
+      "Subject Area", "Objects", "Dimensional Entities", "Last build", "",
     ]);
     const row = within(areas).getByRole("row", { name: /Sales/ });
     const cells = within(row).getAllByRole("cell").map((cell) => cell.textContent);
-    expect([...cells.slice(0, 4), cells[5]]).toEqual(["SalesCustomer orders.", "2", "1", "1", "Show Entities"]);
+    expect([...cells.slice(0, 3), cells[4]]).toEqual(["SalesCustomer orders.", "2", "1", "Show Entities"]);
     expect(within(row).getByTitle(/^Applied · /)).toBeVisible();
     await user.click(within(row).getByRole("link", { name: "Show Sales Entities" }));
 
@@ -437,10 +437,10 @@ function dimensionalFetchStub(options: {
         project_revision: 18,
         items: [
           { subject_area_id: 41, subject_area_name: "Sales", subject_area_definition: "Customer orders.",
-            table_count: 2, shared_table_count: 1, modeled_table_count: 1, entity_count: 1,
+            table_count: 2, shared_table_count: 1, entity_count: 1,
             build: { state: "applied", workflow_run_id: 1240, at: "2026-10-25T11:32:00Z" } },
           { subject_area_id: 43, subject_area_name: "Finance", subject_area_definition: "Invoices.",
-            table_count: 2, shared_table_count: 0, modeled_table_count: 0, entity_count: 0,
+            table_count: 2, shared_table_count: 0, entity_count: 0,
             build: { state: "not_built", workflow_run_id: null, at: null } },
         ],
         waiting_draft: null,

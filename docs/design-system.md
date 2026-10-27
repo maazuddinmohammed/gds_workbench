@@ -242,15 +242,15 @@ correlation reference; never expose raw provider diagnostics or model payloads.
   Provenance uses shared structured source/rationale/status views; sources have no order
   and may have no rationale. Export is an optional Metadata handoff.
   Both layers show Subject Areas, Entities and Relationships tabs; there are no Submodels.
-  The Subject Areas tab lists active areas with their Objects, Modeled Objects (those
-  that reach an active Entity of the layer), the layer's Entities and Last build;
-  opening one lists its Entities, which open the usual Entity page. An eye icon before
-  Show details opens a quick view in the side panel Activity uses (name, schema and type,
+  The Subject Areas tab lists active areas with their Objects, the layer's Entities and
+  Last build; opening one lists its Entities, which open the usual Entity page. An eye
+  icon in a narrow column before Show details opens a quick view in the side panel
+  Activity uses (name, schema and type,
   then Show details, Expand/Reduce and Close): definition, Grain, Type, Subject Areas
   and Sources, then the active Attributes (Attribute, Data type, Nullable, Role). Escape
   or Close returns focus to the icon. Entity ledgers filter
   by Subject Area, and Entity details list their Subject Areas read-only (derived from
-  Object sources). Attributes belong inside Entity details; retain addressable
+  Object sources) as clickable tags: pale blue pills, each opening its area. Attributes belong inside Entity details; retain addressable
   Attribute routes for references and back navigation. Relationships point child to
   parent: From (Entity + foreign-key Attribute) → To (parent Entity + key Attribute).
   Logical adds cardinality (Many to one or One to one) and a basis; Dimensional adds an
@@ -259,8 +259,8 @@ correlation reference; never expose raw provider diagnostics or model payloads.
   Objects, shared Objects), most shared Objects first, then most Objects, then name,
   and builds the one area picked with a radio button; Start stays disabled until one
   is picked. One area per Build lets each draft be reviewed and applied before the next
-  area builds on it; the backend still accepts several areas. Rows also show Modeled
-  Objects and Last build. While the layer has a Build or Optimize draft waiting for
+  area builds on it; the backend still accepts several areas. Rows also show Last
+  build. While the layer has a Build or Optimize draft waiting for
   Apply, Build names it and keeps Start disabled until it is applied or discarded.
   Optimize has no selection and reviews the whole model (cross-area fixes, merges
   by retiring duplicates). Both keep execution mode, model and reasoning settings, and

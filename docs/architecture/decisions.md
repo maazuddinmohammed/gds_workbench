@@ -166,8 +166,8 @@ off one draft; a failed area keeps earlier areas' work in a rejected draft. The 
 dialog builds one area per Run, because a Build reads only the applied model: applying
 each draft before the next area lets later areas reuse its Entities, and a failure costs
 one area. The backend still accepts several areas. Each layer's Subject Area list
-reports per area the Objects shared with another active area, the Objects that reach an
-active Entity of that layer (Modeled), and the newest Build that decides its state:
+reports per area the Objects shared with another active area, the layer's Entities built
+from it, and the newest Build that decides its state:
 running, draft waiting, applied (draft applied or no change needed), failed or not
 built. Cancelled Builds and discarded, superseded or expired drafts are skipped. The
 list also names the layer's draft still waiting for Apply, from a Build or an Optimize;

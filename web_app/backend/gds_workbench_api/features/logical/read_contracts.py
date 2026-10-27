@@ -101,7 +101,7 @@ class SubjectAreaBuild(ContractModel):
 
 
 class ModelSubjectArea(ContractModel):
-    """An active Subject Area with how much of it one layer models, and its last Build."""
+    """An active Subject Area with its Objects, this layer's Entities and its last Build."""
 
     subject_area_id: int = Field(gt=0)
     subject_area_name: str = Field(min_length=1, max_length=255)
@@ -109,8 +109,6 @@ class ModelSubjectArea(ContractModel):
     table_count: int = Field(ge=0)
     # Member Objects that are also members of another active area.
     shared_table_count: int = Field(ge=0)
-    # Member Objects that reach an active Entity of this layer.
-    modeled_table_count: int = Field(ge=0)
     entity_count: int = Field(ge=0)
     build: SubjectAreaBuild
 
