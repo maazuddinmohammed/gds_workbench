@@ -134,7 +134,6 @@ class AnalysisValidationRelationship(BaseModel):
 
     analysis_result_id: int = Field(gt=0)
     relationship_kind: str = Field(min_length=1, max_length=100)
-    relationship_basis: str = Field(min_length=1, max_length=8_000)
     inferred_cardinality: InferredCardinality = "unknown"
     analysis_result_status: Literal["active"]
     analysis_result_is_locked: bool
@@ -146,7 +145,7 @@ class AnalysisValidationRelationship(BaseModel):
     from_endpoint: AnalysisValidationEndpoint
     to_endpoint: AnalysisValidationEndpoint
 
-    @field_validator("relationship_kind", "relationship_basis")
+    @field_validator("relationship_kind")
     @classmethod
     def validate_text(cls, value: str) -> str:
         if not value.strip() or "\x00" in value:

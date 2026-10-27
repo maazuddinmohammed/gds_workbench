@@ -97,8 +97,9 @@ active evidence without treating a Context Record as proof of physical lineage.
 
 ## Logical-style Dimensional fields and evidence
 
-Workflow records omit AI-assigned confidence fields. Analysis retains inference
-reasoning and independently measured validation.
+Workflow records omit AI-assigned confidence fields and AI reasoning text. An Analysis
+finding keeps its inferred cardinality and independently measured validation; it has no
+basis column, so reviewers judge it by its endpoints, kind, cardinality and measurement.
 
 Dimensional Attributes share Logical's natural-key, surrogate-key and audit flags.
 Natural and surrogate flags are mutually exclusive; either requires non-nullable
@@ -233,6 +234,29 @@ it cannot relabel real lineage or bypass missing upstream Mapping.
 Output Templates are advisory JSON field guidance. Preserve custom documents intact
 and interpret fields using their saved template definitions. Default-template field
 names alone never authorize interpreting arbitrary custom JSON as executable lineage.
+
+## Per-table Analysis
+
+A whole-selection Analysis call must read every selected table and answer every link at
+once, which fails for large scopes (about 600–900K prompt tokens for 91 tables). Subject
+Areas cannot split it: their runs read Analysis links, and links cross areas. A per-table
+Analysis run (`workflow_operation = 'per_table'`, one-shot only, stage
+`per_table_authoring`) instead makes one call per selected table, two at a time:
+
+- Each call sees the focus table in full and a key directory of every selected table by
+  short id (`t1`, `t2`, ...): key-like columns (registered or Project key flags, or a
+  profile where every non-null value is distinct; operational columns only when
+  flagged) with both data types, or every column for a table without one.
+- Its answer holds only links that start in the focus table (`from_attribute_name`,
+  `to` as `tN.column`, kind, cardinality); the backend expands them to full keys and
+  checks them like a whole-selection answer. The prompt asks for sure links only.
+- Every link starts at one column, so calls never overlap. Answers merge in table order;
+  a second link on an already linked column pair (either direction, any kind, saved or
+  earlier in the run) is dropped before the draft. A table whose call still fails after
+  repairs adds a warning; the other tables' findings stay in the one draft.
+
+The directory holds the run's selection, so both ends of a link must still be selected.
+The whole-selection mode stays until per-table runs are proven, then goes.
 
 ## Authoring versus execution
 

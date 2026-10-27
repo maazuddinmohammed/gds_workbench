@@ -89,11 +89,9 @@ def test_direct_project_writes_do_not_require_workflow_provenance(
                 from_attribute_id,
                 to_object_id,
                 to_attribute_id,
-                relationship_kind,
-                relationship_basis
+                relationship_kind
             )
-            VALUES (%s, NULL, NULL, NULL, %s, %s, %s, %s,
-                    'reference', 'Direct MCP-authored relationship evidence.')
+            VALUES (%s, NULL, NULL, NULL, %s, %s, %s, %s, 'reference')
             RETURNING analysis_result_id
             """,
                 (

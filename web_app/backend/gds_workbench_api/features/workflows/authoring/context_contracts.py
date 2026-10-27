@@ -398,7 +398,6 @@ INPUT_SHAPES: dict[str, Any] = {
                         "to_object_name": {"type": "string", "minLength": 1},
                         "to_attribute_name": {"type": "string", "minLength": 1},
                         "relationship_kind": {"type": "string", "minLength": 1},
-                        "relationship_basis": {"type": "string", "minLength": 1},
                         "inferred_cardinality": {
                             "enum": [
                                 "one_to_one",
@@ -462,7 +461,6 @@ INPUT_SHAPES: dict[str, Any] = {
                         "to_object_name",
                         "to_attribute_name",
                         "relationship_kind",
-                        "relationship_basis",
                         "inferred_cardinality",
                         "validation_policy_version",
                         "validation_result",
@@ -2659,7 +2657,6 @@ for _relationship_workflow in ("analysis", "logical"):
         "from_attribute_name": _relationship_attribute,
         "to_attribute_name": _relationship_attribute,
         "relationship_kind": "reference",
-        "relationship_basis": "The source definition identifies the order's customer account.",
         "inferred_cardinality": "many_to_one",
         "analysis_result_status": "active",
         "analysis_result_is_locked": False,
@@ -2830,3 +2827,256 @@ for _entry, _field, _project_field in (
         f"of the Project-owned {_project_field}.",
     }
     _entry["required"].append(_field)
+
+# Per-table Analysis makes one call per selected table. Every call sees the same key
+# directory of all selected tables by short id (t1, t2, ... in selection order) and its
+# own focus table in full; answers and saved findings cite columns as `t2.column`.
+_TABLE_ID = {"type": "string", "pattern": r"^t[1-9][0-9]*$"}
+_COLUMN_ID = {"type": "string", "pattern": r"^t[1-9][0-9]*\..+$"}
+_TABLE_KEY_FIELDS = (
+    "tenant_code",
+    "system_code",
+    "connection_code",
+    "object_schema",
+    "object_name",
+)
+_TABLE_PROPERTIES: dict[str, Any] = {
+    "table": _TABLE_ID,
+    **{name: {"type": "string", "minLength": 1} for name in _TABLE_KEY_FIELDS},
+    "object_description": {"type": ["string", "null"]},
+    "zone_code": {"type": "string", "minLength": 1},
+}
+_COUNT = {"type": ["integer", "null"], "minimum": 0}
+_KEY_PROFILE_FIELDS = (
+    "row_scope",
+    "row_count",
+    "non_null_count",
+    "null_count",
+    "distinct_count",
+    "min_data_length",
+    "max_data_length",
+)
+_KEY_COLUMN: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "attribute_name": {"type": "string", "minLength": 1},
+        "attribute_description": {"type": ["string", "null"]},
+        "attribute_data_type": {"type": ["string", "null"]},
+        "attribute_inferred_data_type": {"type": ["string", "null"]},
+        "registered_is_natural_key": {"type": "boolean"},
+        "is_surrogate_key": {"type": ["boolean", "null"]},
+        "is_natural_key": {"type": ["boolean", "null"]},
+        "is_primary_key": {"type": ["boolean", "null"]},
+        "profile": {
+            "anyOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "row_scope": {"enum": ["all_rows", "batch", None]},
+                        **{name: _COUNT for name in _KEY_PROFILE_FIELDS[1:]},
+                    },
+                    "required": list(_KEY_PROFILE_FIELDS),
+                    "additionalProperties": False,
+                },
+                {"type": "null"},
+            ]
+        },
+    },
+    "required": [
+        "attribute_name",
+        "attribute_description",
+        "attribute_data_type",
+        "attribute_inferred_data_type",
+        "registered_is_natural_key",
+        "is_surrogate_key",
+        "is_natural_key",
+        "is_primary_key",
+        "profile",
+    ],
+    "additionalProperties": False,
+}
+_OTHER_COLUMN: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "attribute_name": {"type": "string", "minLength": 1},
+        "attribute_data_type": {"type": ["string", "null"]},
+        "attribute_inferred_data_type": {"type": ["string", "null"]},
+    },
+    "required": ["attribute_name", "attribute_data_type", "attribute_inferred_data_type"],
+    "additionalProperties": False,
+}
+INPUT_SHAPES["analysis.focus_table"] = {
+    "description": "The one selected table this call analyzes, by its key_directory id, with "
+    "every eligible column in full: descriptions, registered attribute_data_type and Project "
+    "attribute_inferred_data_type, registered and Project key flags, and saved Profiles.",
+    "schema": {
+        "type": "object",
+        "properties": {
+            **deepcopy(_TABLE_PROPERTIES),
+            "attributes": {
+                "type": "array",
+                "minItems": 1,
+                "items": deepcopy(
+                    INPUT_SHAPES["object_attribute_context"]["schema"]["$defs"][
+                        "object_attribute_context_entry"
+                    ]["properties"]["attributes"]["items"]
+                ),
+            },
+        },
+        "required": [*_TABLE_PROPERTIES, "attributes"],
+        "additionalProperties": False,
+    },
+}
+INPUT_SHAPES["analysis.key_directory"] = {
+    "description": "Every selected table of this run, the focus table included, by short id. "
+    "key_columns are the columns other tables can point to: a registered or Project key "
+    "flag, or a saved Profile in which every non-null value is distinct (operational "
+    "columns only when flagged). A table without such a column lists every eligible column "
+    "with both data types in other_columns instead.",
+    "schema": {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": {
+                **deepcopy(_TABLE_PROPERTIES),
+                "key_columns": {"type": "array", "items": deepcopy(_KEY_COLUMN)},
+                "other_columns": {"type": "array", "items": deepcopy(_OTHER_COLUMN)},
+            },
+            "required": [*_TABLE_PROPERTIES, "key_columns", "other_columns"],
+            "additionalProperties": False,
+        },
+    },
+}
+INPUT_SHAPES["analysis.focus_ingestion_mapping"] = deepcopy(INPUT_SHAPES["ingestion_mapping"])
+INPUT_SHAPES["analysis.focus_ingestion_mapping"]["description"] = (
+    "Registered Object-level lineage into or out of the focus table only. It is "
+    "provenance: a table is never related to its own copy."
+)
+INPUT_SHAPES["analysis.saved_relationships"] = {
+    "description": "Saved Analysis findings between two tables of this run that touch the "
+    "focus table, cited as tN.column. Status, lock and the last measured validation are "
+    "read-only evidence.",
+    "schema": {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": {
+                "from": _COLUMN_ID,
+                "to": _COLUMN_ID,
+                "relationship_kind": {"type": "string", "minLength": 1},
+                "inferred_cardinality": {
+                    "enum": ["one_to_one", "one_to_many", "many_to_one", "many_to_many", "unknown"]
+                },
+                "analysis_result_status": {"enum": ["active", "inactive", "deprecated"]},
+                "analysis_result_is_locked": {"type": "boolean"},
+                "validation_result": {"enum": ["supported", "inconclusive", "unsupported", None]},
+                **{
+                    name: _COUNT
+                    for name in (
+                        "validation_source_non_null_count",
+                        "validation_source_distinct_count",
+                        "validation_target_non_null_count",
+                        "validation_target_distinct_count",
+                        "validation_source_missing_target_count",
+                        "validation_unused_target_count",
+                        "validation_duplicate_target_key_count",
+                    )
+                },
+            },
+            "required": [
+                "from",
+                "to",
+                "relationship_kind",
+                "inferred_cardinality",
+                "analysis_result_status",
+                "analysis_result_is_locked",
+                "validation_result",
+                "validation_source_non_null_count",
+                "validation_source_distinct_count",
+                "validation_target_non_null_count",
+                "validation_target_distinct_count",
+                "validation_source_missing_target_count",
+                "validation_unused_target_count",
+                "validation_duplicate_target_key_count",
+            ],
+            "additionalProperties": False,
+        },
+    },
+}
+# The shared inputs come first and are identical in every call of a run.
+WORKFLOW_INPUTS["analysis_per_table"] = {
+    "source_context": "source_context",
+    "gds_context": "gds_context",
+    "context_records": "context_records",
+    "key_directory": "analysis.key_directory",
+    "focus_table": "analysis.focus_table",
+    "ingestion_mapping": "analysis.focus_ingestion_mapping",
+    "saved_relationships": "analysis.saved_relationships",
+}
+_orders, _customers = (
+    {
+        "table": table,
+        **{
+            name: value
+            for name, value in entry.items()
+            if name in (*_TABLE_KEY_FIELDS, "object_description", "zone_code")
+        },
+    }
+    for table, entry in zip(("t1", "t2"), INPUT_EXAMPLES["analysis"]["object_context"], strict=True)
+)
+_customer_code = INPUT_EXAMPLES["analysis"]["object_attribute_context"][1]["attributes"][0]
+INPUT_EXAMPLES["analysis_per_table"] = {
+    "source_context": deepcopy(INPUT_EXAMPLES["analysis"]["source_context"]),
+    "gds_context": deepcopy(INPUT_EXAMPLES["analysis"]["gds_context"]),
+    "context_records": deepcopy(INPUT_EXAMPLES["analysis"]["context_records"]),
+    "key_directory": [
+        {
+            **_orders,
+            "key_columns": [],
+            "other_columns": [
+                {
+                    "attribute_name": "CustomerCode",
+                    "attribute_data_type": "VARCHAR",
+                    "attribute_inferred_data_type": "VARCHAR",
+                }
+            ],
+        },
+        {
+            **_customers,
+            "key_columns": [
+                {
+                    **{name: _customer_code[name] for name in _KEY_COLUMN["required"]},
+                    "profile": {
+                        name: _customer_code["profile"][name] for name in _KEY_PROFILE_FIELDS
+                    },
+                }
+            ],
+            "other_columns": [],
+        },
+    ],
+    "focus_table": {
+        **_orders,
+        "attributes": deepcopy(
+            INPUT_EXAMPLES["analysis"]["object_attribute_context"][0]["attributes"]
+        ),
+    },
+    "ingestion_mapping": deepcopy(INPUT_EXAMPLES["analysis"]["ingestion_mapping"][:1]),
+    "saved_relationships": [
+        {
+            "from": "t1.CustomerCode",
+            "to": "t2.CustomerCode",
+            "relationship_kind": "reference",
+            "inferred_cardinality": "many_to_one",
+            "analysis_result_status": "active",
+            "analysis_result_is_locked": False,
+            "validation_result": "supported",
+            "validation_source_non_null_count": 1000,
+            "validation_source_distinct_count": 100,
+            "validation_target_non_null_count": 100,
+            "validation_target_distinct_count": 100,
+            "validation_source_missing_target_count": 0,
+            "validation_unused_target_count": 0,
+            "validation_duplicate_target_key_count": 0,
+        }
+    ],
+}

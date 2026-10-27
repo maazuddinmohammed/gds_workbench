@@ -731,7 +731,6 @@
             "from_system_code": "DEMO_CUSTOMER_SYSTEM",
             "from_tenant_code": "DEMO_GDS_TENANT",
             "inferred_cardinality": "unknown",
-            "relationship_basis": "Order customer identifiers are contained in the unique Customer identifier set.",
             "relationship_kind": "foreign_key",
             "to_attribute_name": "customer_id",
             "to_connection_code": "DEMO_GDS",
@@ -790,16 +789,16 @@
         "records": [
           {
             "context_group_name": "Customer Orders business rules",
-            "context_record_id": "89a35618-8a8c-48b0-b50a-d8ee2f256909",
-            "context_text": "Every submitted Order belongs to exactly one Customer.",
+            "context_record_id": "5bd0ebec-0313-4f5c-a1f2-23e71ab7c638",
+            "context_text": "One Customer record represents one durable customer identity.",
             "is_locked": false,
             "source_reference": null,
             "status": "active"
           },
           {
             "context_group_name": "Customer Orders business rules",
-            "context_record_id": "9f766ffb-da04-4e2a-b194-e9afdb1e7321",
-            "context_text": "One Customer record represents one durable customer identity.",
+            "context_record_id": "c98165a7-6cf8-4a52-8b2c-5774caed5a9a",
+            "context_text": "Every submitted Order belongs to exactly one Customer.",
             "is_locked": false,
             "source_reference": null,
             "status": "active"
@@ -1834,7 +1833,7 @@
       "result": {
         "complete": true,
         "component": "target_metadata",
-        "context_digest": "319bf819e36d606ab6355b32dbea736e7b02d7fe96497679e35e34f55964d60c",
+        "context_digest": "6c516defc7ec9f7e5dcbac70a44338296b21494325aa77b4ed3ae80cd6e29f44",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -1905,7 +1904,7 @@
     {
       "arguments": {
         "component": "source_metadata",
-        "expected_context_digest": "319bf819e36d606ab6355b32dbea736e7b02d7fe96497679e35e34f55964d60c",
+        "expected_context_digest": "6c516defc7ec9f7e5dcbac70a44338296b21494325aa77b4ed3ae80cd6e29f44",
         "expected_project_revision": 1,
         "modeled_entity_name": "Dim Customer",
         "modeled_entity_schema_name": "gold_demo",
@@ -1916,7 +1915,7 @@
       "result": {
         "complete": true,
         "component": "source_metadata",
-        "context_digest": "319bf819e36d606ab6355b32dbea736e7b02d7fe96497679e35e34f55964d60c",
+        "context_digest": "6c516defc7ec9f7e5dcbac70a44338296b21494325aa77b4ed3ae80cd6e29f44",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -2193,7 +2192,7 @@
     {
       "arguments": {
         "component": "source_systems",
-        "expected_context_digest": "319bf819e36d606ab6355b32dbea736e7b02d7fe96497679e35e34f55964d60c",
+        "expected_context_digest": "6c516defc7ec9f7e5dcbac70a44338296b21494325aa77b4ed3ae80cd6e29f44",
         "expected_project_revision": 1,
         "modeled_entity_name": "Dim Customer",
         "modeled_entity_schema_name": "gold_demo",
@@ -2204,7 +2203,7 @@
       "result": {
         "complete": true,
         "component": "source_systems",
-        "context_digest": "319bf819e36d606ab6355b32dbea736e7b02d7fe96497679e35e34f55964d60c",
+        "context_digest": "6c516defc7ec9f7e5dcbac70a44338296b21494325aa77b4ed3ae80cd6e29f44",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -2223,7 +2222,7 @@
     {
       "arguments": {
         "component": "object_transformations",
-        "expected_context_digest": "319bf819e36d606ab6355b32dbea736e7b02d7fe96497679e35e34f55964d60c",
+        "expected_context_digest": "6c516defc7ec9f7e5dcbac70a44338296b21494325aa77b4ed3ae80cd6e29f44",
         "expected_project_revision": 1,
         "modeled_entity_name": "Dim Customer",
         "modeled_entity_schema_name": "gold_demo",
@@ -2234,7 +2233,7 @@
       "result": {
         "complete": true,
         "component": "object_transformations",
-        "context_digest": "319bf819e36d606ab6355b32dbea736e7b02d7fe96497679e35e34f55964d60c",
+        "context_digest": "6c516defc7ec9f7e5dcbac70a44338296b21494325aa77b4ed3ae80cd6e29f44",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -2246,15 +2245,15 @@
               "context_records": [
                 {
                   "context_group_name": "Customer Orders business rules",
-                  "context_record_id": "89a35618-8a8c-48b0-b50a-d8ee2f256909",
-                  "context_text": "Every submitted Order belongs to exactly one Customer.",
+                  "context_record_id": "5bd0ebec-0313-4f5c-a1f2-23e71ab7c638",
+                  "context_text": "One Customer record represents one durable customer identity.",
                   "context_type_name": "Business Requirement",
                   "source_reference": null
                 },
                 {
                   "context_group_name": "Customer Orders business rules",
-                  "context_record_id": "9f766ffb-da04-4e2a-b194-e9afdb1e7321",
-                  "context_text": "One Customer record represents one durable customer identity.",
+                  "context_record_id": "c98165a7-6cf8-4a52-8b2c-5774caed5a9a",
+                  "context_text": "Every submitted Order belongs to exactly one Customer.",
                   "context_type_name": "Business Requirement",
                   "source_reference": null
                 }
@@ -2288,7 +2287,7 @@
     {
       "arguments": {
         "component": "attribute_transformations",
-        "expected_context_digest": "319bf819e36d606ab6355b32dbea736e7b02d7fe96497679e35e34f55964d60c",
+        "expected_context_digest": "6c516defc7ec9f7e5dcbac70a44338296b21494325aa77b4ed3ae80cd6e29f44",
         "expected_project_revision": 1,
         "modeled_entity_name": "Dim Customer",
         "modeled_entity_schema_name": "gold_demo",
@@ -2299,7 +2298,7 @@
       "result": {
         "complete": true,
         "component": "attribute_transformations",
-        "context_digest": "319bf819e36d606ab6355b32dbea736e7b02d7fe96497679e35e34f55964d60c",
+        "context_digest": "6c516defc7ec9f7e5dcbac70a44338296b21494325aa77b4ed3ae80cd6e29f44",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -2367,7 +2366,7 @@
       "result": {
         "complete": true,
         "component": "target_metadata",
-        "context_digest": "0438141f518cc946737d03f4289284b11f2e85b4b93237e068f324bfd32a3ee8",
+        "context_digest": "7931ef0d7408c060c52d4a2a0e7cf3708706924b0c70c1ad258fd74f0a626862",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -2472,7 +2471,7 @@
     {
       "arguments": {
         "component": "source_metadata",
-        "expected_context_digest": "0438141f518cc946737d03f4289284b11f2e85b4b93237e068f324bfd32a3ee8",
+        "expected_context_digest": "7931ef0d7408c060c52d4a2a0e7cf3708706924b0c70c1ad258fd74f0a626862",
         "expected_project_revision": 1,
         "modeled_entity_name": "Fact Order",
         "modeled_entity_schema_name": "gold_demo",
@@ -2483,7 +2482,7 @@
       "result": {
         "complete": true,
         "component": "source_metadata",
-        "context_digest": "0438141f518cc946737d03f4289284b11f2e85b4b93237e068f324bfd32a3ee8",
+        "context_digest": "7931ef0d7408c060c52d4a2a0e7cf3708706924b0c70c1ad258fd74f0a626862",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -2726,7 +2725,7 @@
     {
       "arguments": {
         "component": "source_systems",
-        "expected_context_digest": "0438141f518cc946737d03f4289284b11f2e85b4b93237e068f324bfd32a3ee8",
+        "expected_context_digest": "7931ef0d7408c060c52d4a2a0e7cf3708706924b0c70c1ad258fd74f0a626862",
         "expected_project_revision": 1,
         "modeled_entity_name": "Fact Order",
         "modeled_entity_schema_name": "gold_demo",
@@ -2737,7 +2736,7 @@
       "result": {
         "complete": true,
         "component": "source_systems",
-        "context_digest": "0438141f518cc946737d03f4289284b11f2e85b4b93237e068f324bfd32a3ee8",
+        "context_digest": "7931ef0d7408c060c52d4a2a0e7cf3708706924b0c70c1ad258fd74f0a626862",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -2756,7 +2755,7 @@
     {
       "arguments": {
         "component": "object_transformations",
-        "expected_context_digest": "0438141f518cc946737d03f4289284b11f2e85b4b93237e068f324bfd32a3ee8",
+        "expected_context_digest": "7931ef0d7408c060c52d4a2a0e7cf3708706924b0c70c1ad258fd74f0a626862",
         "expected_project_revision": 1,
         "modeled_entity_name": "Fact Order",
         "modeled_entity_schema_name": "gold_demo",
@@ -2767,7 +2766,7 @@
       "result": {
         "complete": true,
         "component": "object_transformations",
-        "context_digest": "0438141f518cc946737d03f4289284b11f2e85b4b93237e068f324bfd32a3ee8",
+        "context_digest": "7931ef0d7408c060c52d4a2a0e7cf3708706924b0c70c1ad258fd74f0a626862",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -2779,15 +2778,15 @@
               "context_records": [
                 {
                   "context_group_name": "Customer Orders business rules",
-                  "context_record_id": "89a35618-8a8c-48b0-b50a-d8ee2f256909",
-                  "context_text": "Every submitted Order belongs to exactly one Customer.",
+                  "context_record_id": "5bd0ebec-0313-4f5c-a1f2-23e71ab7c638",
+                  "context_text": "One Customer record represents one durable customer identity.",
                   "context_type_name": "Business Requirement",
                   "source_reference": null
                 },
                 {
                   "context_group_name": "Customer Orders business rules",
-                  "context_record_id": "9f766ffb-da04-4e2a-b194-e9afdb1e7321",
-                  "context_text": "One Customer record represents one durable customer identity.",
+                  "context_record_id": "c98165a7-6cf8-4a52-8b2c-5774caed5a9a",
+                  "context_text": "Every submitted Order belongs to exactly one Customer.",
                   "context_type_name": "Business Requirement",
                   "source_reference": null
                 }
@@ -2821,7 +2820,7 @@
     {
       "arguments": {
         "component": "attribute_transformations",
-        "expected_context_digest": "0438141f518cc946737d03f4289284b11f2e85b4b93237e068f324bfd32a3ee8",
+        "expected_context_digest": "7931ef0d7408c060c52d4a2a0e7cf3708706924b0c70c1ad258fd74f0a626862",
         "expected_project_revision": 1,
         "modeled_entity_name": "Fact Order",
         "modeled_entity_schema_name": "gold_demo",
@@ -2832,7 +2831,7 @@
       "result": {
         "complete": true,
         "component": "attribute_transformations",
-        "context_digest": "0438141f518cc946737d03f4289284b11f2e85b4b93237e068f324bfd32a3ee8",
+        "context_digest": "7931ef0d7408c060c52d4a2a0e7cf3708706924b0c70c1ad258fd74f0a626862",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -2944,7 +2943,7 @@
       "result": {
         "complete": true,
         "component": "target_metadata",
-        "context_digest": "22d0da4c4ac01d3467bfe5698ab7472f577bc9bb9f1bbf02a454d5c9c71a5850",
+        "context_digest": "48511241519a9c96e94a8e3159473358fdce669f24f2045c854bf5c99f0d9e21",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -3015,7 +3014,7 @@
     {
       "arguments": {
         "component": "source_metadata",
-        "expected_context_digest": "22d0da4c4ac01d3467bfe5698ab7472f577bc9bb9f1bbf02a454d5c9c71a5850",
+        "expected_context_digest": "48511241519a9c96e94a8e3159473358fdce669f24f2045c854bf5c99f0d9e21",
         "expected_project_revision": 1,
         "modeled_entity_name": "Customer",
         "modeled_entity_schema_name": "silver_demo",
@@ -3026,7 +3025,7 @@
       "result": {
         "complete": true,
         "component": "source_metadata",
-        "context_digest": "22d0da4c4ac01d3467bfe5698ab7472f577bc9bb9f1bbf02a454d5c9c71a5850",
+        "context_digest": "48511241519a9c96e94a8e3159473358fdce669f24f2045c854bf5c99f0d9e21",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -3305,7 +3304,7 @@
     {
       "arguments": {
         "component": "source_systems",
-        "expected_context_digest": "22d0da4c4ac01d3467bfe5698ab7472f577bc9bb9f1bbf02a454d5c9c71a5850",
+        "expected_context_digest": "48511241519a9c96e94a8e3159473358fdce669f24f2045c854bf5c99f0d9e21",
         "expected_project_revision": 1,
         "modeled_entity_name": "Customer",
         "modeled_entity_schema_name": "silver_demo",
@@ -3316,7 +3315,7 @@
       "result": {
         "complete": true,
         "component": "source_systems",
-        "context_digest": "22d0da4c4ac01d3467bfe5698ab7472f577bc9bb9f1bbf02a454d5c9c71a5850",
+        "context_digest": "48511241519a9c96e94a8e3159473358fdce669f24f2045c854bf5c99f0d9e21",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -3335,7 +3334,7 @@
     {
       "arguments": {
         "component": "object_transformations",
-        "expected_context_digest": "22d0da4c4ac01d3467bfe5698ab7472f577bc9bb9f1bbf02a454d5c9c71a5850",
+        "expected_context_digest": "48511241519a9c96e94a8e3159473358fdce669f24f2045c854bf5c99f0d9e21",
         "expected_project_revision": 1,
         "modeled_entity_name": "Customer",
         "modeled_entity_schema_name": "silver_demo",
@@ -3346,7 +3345,7 @@
       "result": {
         "complete": true,
         "component": "object_transformations",
-        "context_digest": "22d0da4c4ac01d3467bfe5698ab7472f577bc9bb9f1bbf02a454d5c9c71a5850",
+        "context_digest": "48511241519a9c96e94a8e3159473358fdce669f24f2045c854bf5c99f0d9e21",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -3358,15 +3357,15 @@
               "context_records": [
                 {
                   "context_group_name": "Customer Orders business rules",
-                  "context_record_id": "89a35618-8a8c-48b0-b50a-d8ee2f256909",
-                  "context_text": "Every submitted Order belongs to exactly one Customer.",
+                  "context_record_id": "5bd0ebec-0313-4f5c-a1f2-23e71ab7c638",
+                  "context_text": "One Customer record represents one durable customer identity.",
                   "context_type_name": "Business Requirement",
                   "source_reference": null
                 },
                 {
                   "context_group_name": "Customer Orders business rules",
-                  "context_record_id": "9f766ffb-da04-4e2a-b194-e9afdb1e7321",
-                  "context_text": "One Customer record represents one durable customer identity.",
+                  "context_record_id": "c98165a7-6cf8-4a52-8b2c-5774caed5a9a",
+                  "context_text": "Every submitted Order belongs to exactly one Customer.",
                   "context_type_name": "Business Requirement",
                   "source_reference": null
                 }
@@ -3402,7 +3401,7 @@
     {
       "arguments": {
         "component": "attribute_transformations",
-        "expected_context_digest": "22d0da4c4ac01d3467bfe5698ab7472f577bc9bb9f1bbf02a454d5c9c71a5850",
+        "expected_context_digest": "48511241519a9c96e94a8e3159473358fdce669f24f2045c854bf5c99f0d9e21",
         "expected_project_revision": 1,
         "modeled_entity_name": "Customer",
         "modeled_entity_schema_name": "silver_demo",
@@ -3413,7 +3412,7 @@
       "result": {
         "complete": true,
         "component": "attribute_transformations",
-        "context_digest": "22d0da4c4ac01d3467bfe5698ab7472f577bc9bb9f1bbf02a454d5c9c71a5850",
+        "context_digest": "48511241519a9c96e94a8e3159473358fdce669f24f2045c854bf5c99f0d9e21",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -3485,7 +3484,7 @@
       "result": {
         "complete": true,
         "component": "target_metadata",
-        "context_digest": "c3231ed1b7872d64a8400299f685482b42c0e538d204cb2e446cf49350200f41",
+        "context_digest": "9202e4a33eb227fe4f2091985660b49e7caa017f3648bd777c00fe6297c46150",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -3590,7 +3589,7 @@
     {
       "arguments": {
         "component": "source_metadata",
-        "expected_context_digest": "c3231ed1b7872d64a8400299f685482b42c0e538d204cb2e446cf49350200f41",
+        "expected_context_digest": "9202e4a33eb227fe4f2091985660b49e7caa017f3648bd777c00fe6297c46150",
         "expected_project_revision": 1,
         "modeled_entity_name": "Order",
         "modeled_entity_schema_name": "silver_demo",
@@ -3601,7 +3600,7 @@
       "result": {
         "complete": true,
         "component": "source_metadata",
-        "context_digest": "c3231ed1b7872d64a8400299f685482b42c0e538d204cb2e446cf49350200f41",
+        "context_digest": "9202e4a33eb227fe4f2091985660b49e7caa017f3648bd777c00fe6297c46150",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -3846,7 +3845,7 @@
     {
       "arguments": {
         "component": "source_systems",
-        "expected_context_digest": "c3231ed1b7872d64a8400299f685482b42c0e538d204cb2e446cf49350200f41",
+        "expected_context_digest": "9202e4a33eb227fe4f2091985660b49e7caa017f3648bd777c00fe6297c46150",
         "expected_project_revision": 1,
         "modeled_entity_name": "Order",
         "modeled_entity_schema_name": "silver_demo",
@@ -3857,7 +3856,7 @@
       "result": {
         "complete": true,
         "component": "source_systems",
-        "context_digest": "c3231ed1b7872d64a8400299f685482b42c0e538d204cb2e446cf49350200f41",
+        "context_digest": "9202e4a33eb227fe4f2091985660b49e7caa017f3648bd777c00fe6297c46150",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -3876,7 +3875,7 @@
     {
       "arguments": {
         "component": "object_transformations",
-        "expected_context_digest": "c3231ed1b7872d64a8400299f685482b42c0e538d204cb2e446cf49350200f41",
+        "expected_context_digest": "9202e4a33eb227fe4f2091985660b49e7caa017f3648bd777c00fe6297c46150",
         "expected_project_revision": 1,
         "modeled_entity_name": "Order",
         "modeled_entity_schema_name": "silver_demo",
@@ -3887,7 +3886,7 @@
       "result": {
         "complete": true,
         "component": "object_transformations",
-        "context_digest": "c3231ed1b7872d64a8400299f685482b42c0e538d204cb2e446cf49350200f41",
+        "context_digest": "9202e4a33eb227fe4f2091985660b49e7caa017f3648bd777c00fe6297c46150",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -3899,15 +3898,15 @@
               "context_records": [
                 {
                   "context_group_name": "Customer Orders business rules",
-                  "context_record_id": "89a35618-8a8c-48b0-b50a-d8ee2f256909",
-                  "context_text": "Every submitted Order belongs to exactly one Customer.",
+                  "context_record_id": "5bd0ebec-0313-4f5c-a1f2-23e71ab7c638",
+                  "context_text": "One Customer record represents one durable customer identity.",
                   "context_type_name": "Business Requirement",
                   "source_reference": null
                 },
                 {
                   "context_group_name": "Customer Orders business rules",
-                  "context_record_id": "9f766ffb-da04-4e2a-b194-e9afdb1e7321",
-                  "context_text": "One Customer record represents one durable customer identity.",
+                  "context_record_id": "c98165a7-6cf8-4a52-8b2c-5774caed5a9a",
+                  "context_text": "Every submitted Order belongs to exactly one Customer.",
                   "context_type_name": "Business Requirement",
                   "source_reference": null
                 }
@@ -3943,7 +3942,7 @@
     {
       "arguments": {
         "component": "attribute_transformations",
-        "expected_context_digest": "c3231ed1b7872d64a8400299f685482b42c0e538d204cb2e446cf49350200f41",
+        "expected_context_digest": "9202e4a33eb227fe4f2091985660b49e7caa017f3648bd777c00fe6297c46150",
         "expected_project_revision": 1,
         "modeled_entity_name": "Order",
         "modeled_entity_schema_name": "silver_demo",
@@ -3954,7 +3953,7 @@
       "result": {
         "complete": true,
         "component": "attribute_transformations",
-        "context_digest": "c3231ed1b7872d64a8400299f685482b42c0e538d204cb2e446cf49350200f41",
+        "context_digest": "9202e4a33eb227fe4f2091985660b49e7caa017f3648bd777c00fe6297c46150",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -4068,11 +4067,11 @@
       "result": {
         "content_type": "application/zip",
         "download_url": "file:///atlas-eval-snapshot.zip",
-        "download_url_expires_at": "2026-10-26T02:32:18.940172Z",
+        "download_url_expires_at": "2026-10-27T01:59:58.515843Z",
         "schema_version": "3.0",
-        "sha256": "3061994a72b09120e6d6fd476f7bf3a55a6124d83f8e8a6bf66ec17517f89a07",
-        "size_bytes": 101181,
-        "snapshot_id": "6291ed59-26ea-468c-821f-9cc3cf4a0e5d",
+        "sha256": "a580754ea96e91c40e4d1f92013aff0503005d6da7353e8d0b6b2baa6f0671ee",
+        "size_bytes": 101183,
+        "snapshot_id": "45bfeb4e-5aa0-47f8-a065-ce1f5f28a26f",
         "snapshot_kind": "metadata",
         "status": "ready",
         "tenant_id": 1
@@ -4086,13 +4085,13 @@
       "result": {
         "content_type": "application/zip",
         "download_url": "file:///atlas-eval-snapshot.zip",
-        "download_url_expires_at": "2026-10-26T02:32:18.998344Z",
+        "download_url_expires_at": "2026-10-27T01:59:58.583290Z",
         "project_id": 1,
         "project_revision": 1,
         "schema_version": "3.0",
-        "sha256": "bc42543ab480999d085daef4f72ec6282260fad5881cf43f7422a70f95dc8d49",
-        "size_bytes": 64469,
-        "snapshot_id": "0f9c9bdf-00b7-4d6b-9e6b-4c4ccca61681",
+        "sha256": "d688ecb051b683bc97dce55f04ce0be39b9453e287c1fc8e1679bb130ec3224b",
+        "size_bytes": 64358,
+        "snapshot_id": "a9fffa7d-6df3-4a9c-823e-81ad3db85110",
         "snapshot_kind": "project",
         "status": "ready"
       },
@@ -4103,15 +4102,15 @@
   "snapshots": {
     "metadata": {
       "file": "metadata-snapshot.zip",
-      "sha256": "3061994a72b09120e6d6fd476f7bf3a55a6124d83f8e8a6bf66ec17517f89a07",
-      "size_bytes": 101181,
-      "snapshot_id": "6291ed59-26ea-468c-821f-9cc3cf4a0e5d"
+      "sha256": "a580754ea96e91c40e4d1f92013aff0503005d6da7353e8d0b6b2baa6f0671ee",
+      "size_bytes": 101183,
+      "snapshot_id": "45bfeb4e-5aa0-47f8-a065-ce1f5f28a26f"
     },
     "project": {
       "file": "project-snapshot.zip",
-      "sha256": "bc42543ab480999d085daef4f72ec6282260fad5881cf43f7422a70f95dc8d49",
-      "size_bytes": 64469,
-      "snapshot_id": "0f9c9bdf-00b7-4d6b-9e6b-4c4ccca61681"
+      "sha256": "d688ecb051b683bc97dce55f04ce0be39b9453e287c1fc8e1679bb130ec3224b",
+      "size_bytes": 64358,
+      "snapshot_id": "a9fffa7d-6df3-4a9c-823e-81ad3db85110"
     }
   },
   "tenant": {

@@ -163,7 +163,6 @@ CREATE TABLE workflow.analysis_result (
     to_attribute_id BIGINT NOT NULL,
     relationship_kind VARCHAR(100) NOT NULL,
     inferred_cardinality VARCHAR(20) NOT NULL DEFAULT 'unknown',
-    relationship_basis TEXT NOT NULL,
     validation_policy_version VARCHAR(50),
     validation_policy_digest CHAR(64),
     validation_result VARCHAR(30),
@@ -211,7 +210,6 @@ CREATE TABLE workflow.analysis_result (
             'one_to_one', 'one_to_many', 'many_to_one', 'many_to_many', 'unknown'
         )
     ),
-    CONSTRAINT ck_analysis_basis CHECK (reference.is_nonblank(relationship_basis)),
     CONSTRAINT ck_analysis_validation_payload CHECK (
         num_nonnulls(
             validation_policy_version,

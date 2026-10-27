@@ -1,0 +1,162 @@
+/* THROWAWAY prototype styles for Subject Area cards. Uses the app's tokens and loads after src/styles.css. */
+
+/* Lines up with the checkboxes inside the cards. */
+.app-shell .subject-area-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 0.65rem;
+  padding-left: calc(1.1rem + 1px);
+  color: var(--muted);
+  font-size: var(--workspace-text-size);
+  cursor: pointer;
+}
+
+/* One card per row. */
+.app-shell .subject-area-cards {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-shell .subject-area-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
+  padding: 0.95rem 1.25rem 0.95rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-medium);
+  background: var(--surface);
+  transition: border-color 160ms var(--ease-fluid), box-shadow 160ms var(--ease-fluid);
+}
+
+.app-shell .subject-area-card:hover {
+  border-color: var(--line-strong);
+  box-shadow: 0 4px 16px rgb(12 35 60 / 6%);
+}
+
+.app-shell .subject-area-card.is-selected {
+  border-color: var(--accent);
+  background: #fafcff;
+}
+
+/* The Open link covers the card; keyboard focus outlines the whole card. */
+.app-shell .subject-area-card:has(.subject-area-card-open:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.app-shell .subject-area-card-open {
+  flex: none;
+}
+
+.app-shell .subject-area-card-open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.app-shell .subject-area-card-open:focus-visible { outline: none; }
+
+/* The checkbox sits above the card-wide Open link. */
+.app-shell .subject-area-card-select {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  align-self: flex-start;
+  margin: 0.2rem 0 0;
+}
+
+.app-shell .subject-area-card-body {
+  display: grid;
+  flex: 1;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.app-shell .subject-area-card-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.app-shell .workspace .subject-area-card-name {
+  min-width: 0;
+  margin: 0;
+  color: var(--ink);
+  font-family: "Atlas Open Sans", Arial, sans-serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1.35;
+  text-transform: none;
+}
+
+.app-shell .subject-area-card-definition {
+  display: -webkit-box;
+  max-width: 90ch;
+  margin: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.app-shell .subject-area-card-counts {
+  margin: 0.15rem 0 0;
+  color: var(--ink-2);
+  font-size: var(--workspace-text-size);
+}
+
+/* Prototype control, outside the app design; it sits over the sidebar's empty corner. */
+.prototype-switch {
+  position: fixed;
+  left: 1rem;
+  bottom: 1rem;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.3rem;
+  border-radius: 0.6rem;
+  background: var(--ink);
+  box-shadow: 0 12px 32px rgb(12 35 60 / 25%);
+  font-family: "Atlas Open Sans", Arial, sans-serif;
+  font-size: 0.75rem;
+}
+
+.prototype-switch > button {
+  padding: 0.35rem 0.65rem;
+  border: 0;
+  border-radius: 0.4rem;
+  background: none;
+  color: #d9e5fb;
+  font: inherit;
+  cursor: pointer;
+}
+
+.prototype-switch > button.is-active {
+  background: #fff;
+  color: var(--ink);
+}
+
+.prototype-switch > button:focus-visible { outline: 2px solid #9ec1ff; outline-offset: 1px; }
+
+@media (max-width: 42rem) {
+  .app-shell .subject-area-card { gap: 0.75rem; padding: 0.85rem 1rem 0.85rem 0.9rem; }
+  .app-shell .subject-area-select-all { padding-left: calc(0.9rem + 1px); }
+  /* Keep the prototype switch above the app's phone navigation. */
+  .prototype-switch { right: 0.75rem; bottom: 5.25rem; left: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell .subject-area-card { transition: none; }
+}

@@ -1085,7 +1085,6 @@ async def test_local_fake_returns_bounded_analysis_inference_candidate(
                 "to_attribute_name": "customer_id",
                 "relationship_kind": "reference",
                 "inferred_cardinality": "unknown",
-                "relationship_basis": ("Selected Attribute metadata supports this candidate."),
             }
         ]
     }
@@ -1130,7 +1129,6 @@ async def test_local_fake_pages_tool_assisted_analysis_context(
                 "to_attribute_name": "customer_id",
                 "relationship_kind": "reference",
                 "inferred_cardinality": "unknown",
-                "relationship_basis": ("Selected Attribute metadata supports this candidate."),
             }
         ]
     }

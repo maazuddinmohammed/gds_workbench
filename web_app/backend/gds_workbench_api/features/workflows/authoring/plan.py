@@ -34,7 +34,8 @@ type WorkflowExecutionMode = Literal[
     "tool_assisted",
 ]
 type ModeledEntityType = Literal["logical_entity", "dimensional_entity"]
-type WorkflowOperation = Literal["build", "optimize"]
+# Logical and Dimensional Build or Optimize; per_table Analysis makes one call per table.
+type WorkflowOperation = Literal["build", "optimize", "per_table"]
 
 
 class AgentRunPlanTransaction(Protocol):
@@ -268,9 +269,13 @@ class AgentRunPlan(BaseModel):
     @model_validator(mode="after")
     def validate_plan(self) -> AgentRunPlan:
         if (self.project_workflow in {"logical", "dimensional"}) != (
-            self.workflow_operation is not None
+            self.workflow_operation in {"build", "optimize"}
         ) or (self.workflow_operation == "build") != bool(self.subject_areas):
             raise ValueError("Build and Optimize plans do not match the workflow")
+        if self.workflow_operation == "per_table" and (
+            self.project_workflow != "analysis" or self.workflow_execution_mode != "one_shot"
+        ):
+            raise ValueError("Per-table runs are one-shot Analysis runs")
         if len({area.subject_area_id for area in self.subject_areas}) != len(self.subject_areas):
             raise ValueError("Selected Subject Areas must be unique")
         if self.project_workflow == "metadata_enrichment" and (

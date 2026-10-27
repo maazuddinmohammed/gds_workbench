@@ -30,6 +30,7 @@ from tests.mcp.test_database_global_prompt_seed import (
     _snapshot,
 )
 from tests.web_backend import test_analysis_executor as analysis
+from tests.web_backend import test_analysis_per_table as per_table
 from tests.web_backend import test_dimensional_executor as dimensional
 from tests.web_backend import test_logical_executor as logical
 from tests.web_backend.test_database_project_change_sets import _seed_profile_project
@@ -152,8 +153,9 @@ def installed_stages(bootstrap_postgres_database: DisposablePostgres) -> SeedSta
             ),
         )
         stages.setdefault((identity[0], identity[1]), []).append(stage)
-    # Logical and Dimensional have a Build and an Optimize stage per mode.
-    assert sum(len(value) for value in stages.values()) == 16
+    # Logical and Dimensional have a Build and an Optimize stage per mode; one-shot
+    # Analysis also has its per-table stage.
+    assert sum(len(value) for value in stages.values()) == 17
     return {
         key: tuple(sorted(value, key=lambda item: item.stage_order))
         for key, value in stages.items()
@@ -173,6 +175,7 @@ def prompt_fingerprint(system: str, instruction: str, tool: str | None) -> str:
         ("analysis", "one_shot"),
         ("analysis", "tool_assisted"),
         ("analysis", "repair"),
+        ("analysis", "per_table"),
         ("logical", "one_shot"),
         ("logical", "tool_assisted"),
         ("logical", "repair"),
@@ -265,12 +268,17 @@ async def test_installed_defaults_execute_inside_real_authoring_paths(
         original_plan = plan or module._plan()
         mode = original_plan.workflow_execution_mode
         assert mode is not None
-        # A Build or Optimize run freezes only its own installed stage.
+        # A run with an operation freezes only its own installed stage; a whole-selection
+        # Analysis run never freezes the per-table stage.
         operation = original_plan.workflow_operation
         selected = tuple(
             stage
             for stage in installed_stages[(original_plan.project_workflow, mode)]
-            if operation is None or stage.stage_code == f"{operation}_authoring"
+            if (
+                stage.stage_code == f"{operation}_authoring"
+                if operation
+                else stage.stage_code != "per_table_authoring"
+            )
         )
         # Replace only frozen installed Prompt stages, before the real executor loads its plan.
         seeded = original_plan.model_copy(update={"stages": selected})
@@ -282,6 +290,8 @@ async def test_installed_defaults_execute_inside_real_authoring_paths(
     if family == "analysis":
         if case == "repair":
             await analysis.test_analysis_inference_repairs_against_immutable_context()
+        elif case == "per_table":
+            await per_table.test_per_table_run_makes_one_call_per_table_and_hands_off_one_draft()
         else:
             await analysis.test_analysis_inference_hands_off_one_validated_draft(
                 cast(WorkflowExecutionMode, case)
@@ -331,12 +341,14 @@ async def test_installed_defaults_execute_inside_real_authoring_paths(
         assert bool(agent.requests[0].allowed_tool_names) == (case == "tool_assisted")
     if case == "optimize":
         expected = {(family, mode, "optimize_authoring") for mode in ("one_shot", "tool_assisted")}
+    elif case == "per_table":
+        expected = {("analysis", "one_shot", "per_table_authoring")}
     else:
         mode = "one_shot" if case == "repair" else case
         expected = {
             (family, mode, stage.stage_code)
             for stage in installed_stages[(family, mode)]
-            if family == "analysis" or stage.stage_code == "build_authoring"
+            if stage.stage_code in ("relationship_inference", "build_authoring")
         }
     assert seen == expected
     if case == "repair":

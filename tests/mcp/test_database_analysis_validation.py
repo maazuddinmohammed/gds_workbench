@@ -79,7 +79,6 @@ SAFE_CONTEXT_COLUMNS = {
     "analysis_result_id",
     "relationship_kind",
     "inferred_cardinality",
-    "relationship_basis",
     "analysis_result_status",
     "analysis_result_is_locked",
     "gds_connection_id",
@@ -198,10 +197,7 @@ def _seed_analysis_validation(
             (endpoints[1], endpoints[2], "lookup", "active", True),
             (endpoints[0], endpoints[2], "inactive_test", "inactive", False),
         )
-        for position, (source, target, kind, status, is_locked) in enumerate(
-            relationships,
-            start=1,
-        ):
+        for source, target, kind, status, is_locked in relationships:
             result_id = require_row(
                 connection.execute(
                     """
@@ -213,10 +209,9 @@ def _seed_analysis_validation(
                         to_attribute_id,
                         relationship_kind,
                         inferred_cardinality,
-                        relationship_basis,
                         analysis_result_status,
                         analysis_result_is_locked
-                    ) VALUES (%s, %s, %s, %s, %s, %s, 'many_to_one', %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, 'many_to_one', %s, %s)
                     RETURNING analysis_result_id
                     """,
                     (
@@ -226,7 +221,6 @@ def _seed_analysis_validation(
                         target.object_id,
                         target.attribute_id,
                         kind,
-                        f"Analysis validation relationship {position}.",
                         status,
                         is_locked,
                     ),
@@ -424,10 +418,6 @@ def test_running_analysis_validation_context_is_safe_exact_and_lock_agnostic(
             "analysis_result_id": result_id,
             "relationship_kind": kind,
             "inferred_cardinality": "many_to_one",
-            "relationship_basis": (
-                "Analysis validation relationship "
-                f"{1 if result_id == seed.active_result_id else 2}."
-            ),
             "analysis_result_status": status,
             "analysis_result_is_locked": is_locked,
             "gds_connection_id": seed.execution.connection_id,
@@ -856,7 +846,6 @@ def test_analysis_validation_results_replace_only_validation_fields_and_replay(
                    validation_source_context_digest,
                    relationship_kind,
                    inferred_cardinality,
-                   relationship_basis,
                    validation_policy_version,
                    validation_policy_digest,
                    validation_result,
@@ -975,14 +964,12 @@ def test_analysis_validation_results_replace_only_validation_fields_and_replay(
     active = stored_by_id[seed.active_result_id]
     assert active["relationship_kind"] == "reference"
     assert active["inferred_cardinality"] == "many_to_one"
-    assert active["relationship_basis"] == "Analysis validation relationship 1."
     assert active["analysis_result_status"] == "active"
     assert active["analysis_result_is_locked"] is False
 
     locked = stored_by_id[seed.locked_result_id]
     assert locked["relationship_kind"] == "lookup"
     assert locked["inferred_cardinality"] == "many_to_one"
-    assert locked["relationship_basis"] == "Analysis validation relationship 2."
     assert locked["analysis_result_status"] == "active"
     assert locked["analysis_result_is_locked"] is True
 

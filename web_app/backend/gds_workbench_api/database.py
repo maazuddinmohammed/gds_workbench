@@ -448,14 +448,14 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
             WHERE table_schema = 'application' AND table_name = 'prompt_template_version'
               AND column_name = 'agent_tool_names' AND udt_name = '_text'
        ) AS workflow_guard_ready,
-       (SELECT count(*) = 30
+       (SELECT count(*) = 31
           FROM application.workflow_stage)
-       AND (SELECT count(*) = 30
+       AND (SELECT count(*) = 31
               FROM application.workflow_stage
              WHERE is_active)
-       AND (SELECT count(*) = 262
+       AND (SELECT count(*) = 269
               FROM application.workflow_stage_variable)
-       AND (SELECT count(*) = 262
+       AND (SELECT count(*) = 269
               FROM application.workflow_stage_variable
              WHERE is_active) AS application_reference_ready
 """

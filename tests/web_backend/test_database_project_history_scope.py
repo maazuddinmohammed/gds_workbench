@@ -46,9 +46,9 @@ async def test_owned_inactive_profile_history_survives_but_new_metrics_are_ineli
         connection.execute(
             """INSERT INTO workflow.analysis_result (
                 project_id, from_object_id, from_attribute_id, to_object_id, to_attribute_id,
-                relationship_kind, relationship_basis,
+                relationship_kind,
                 analysis_result_is_locked
-            ) VALUES (%s,%s,%s,%s,%s,'reference','Preserved prior evidence.',TRUE)""",
+            ) VALUES (%s,%s,%s,%s,%s,'reference',TRUE)""",
             (project_id, object_id, attribute_id, object_id, second["attribute_id"]),
         )
         connection.execute(

@@ -134,7 +134,6 @@ def complete_project_graph(
                 "to_attribute_name": "customer_id",
                 "relationship_kind": "foreign_key_candidate",
                 "inferred_cardinality": "many_to_one",
-                "relationship_basis": "Values overlap.",
                 "validation_policy_version": "1.0.0",
                 "validation_result": "supported",
                 "validation_source_non_null_count": 9,

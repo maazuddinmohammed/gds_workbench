@@ -88,8 +88,6 @@ export interface AnalysisEvidence {
 }
 
 export interface AnalysisFindingDetail extends AnalysisFinding {
-  relationship_basis: string;
-  relationship_basis_truncated: boolean;
   evidence: AnalysisEvidence | null;
   provenance: {
     agent_run_id: string | null;

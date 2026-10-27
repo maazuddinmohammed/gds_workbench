@@ -38,7 +38,7 @@ When querying, prepare bounded self-contained aggregate queries and expected-out
 
 ## Determine cardinality and meaning
 
-7. **Infer the business cardinality; distinguish measurements when present.** Set `inferred_cardinality` from the from endpoint to the to endpoint: `one_to_one`, `one_to_many`, `many_to_one`, `many_to_many` or `unknown`. Names, grain and business roles can establish a useful intended relationship without counting data. Explain the choice in `relationship_basis`; use `unknown` if multiplicity is unresolved. If measurements are used, describe observed multiplicity separately and count business occurrences rather than repeated load rows.
+7. **Infer the business cardinality; distinguish measurements when present.** Set `inferred_cardinality` from the from endpoint to the to endpoint: `one_to_one`, `one_to_many`, `many_to_one`, `many_to_many` or `unknown`. Names, grain and business roles can establish a useful intended relationship without counting data. Use `unknown` if multiplicity is unresolved. If measurements are used, describe observed multiplicity separately and count business occurrences rather than repeated load rows.
 
 | Evidence | Permitted conclusion |
 |---|---|
@@ -56,18 +56,18 @@ Infer mandatory participation only from applicable constraints or confirmed rule
 
 Declared Databricks PK/FK/unique constraints can support intended relationships as metadata. They do not certify stored-data compliance; that distinction does not require querying them before inference. Resolve known contradictions when present. [Databricks constraints](https://docs.databricks.com/aws/en/tables/constraints)
 
-8. **Decide and review.** Record the supported inference, rejected candidate or unresolved question with its basis. A relationship need not remain unresolved merely because SQL was not run; context can support a clear conclusion. Consider competing parents, identifier namespaces, code meanings and role distinctions. Equal IDs across independent Systems or equal categories with different meanings do not establish shared identity. Resolve material contradictions and explain remaining uncertainty.
+8. **Decide and review.** Record the supported inference, rejected candidate or unresolved question, with its reasoning in task evidence. A relationship need not remain unresolved merely because SQL was not run; context can support a clear conclusion. Consider competing parents, identifier namespaces, code meanings and role distinctions. Equal IDs across independent Systems or equal categories with different meanings do not establish shared identity. Resolve material contradictions and explain remaining uncertainty.
 
 ## Save findings and review coverage
 
-9. **Save the inference separately from measurements.** Use the shared Analysis record guide's 26 fields. Explicitly populate `inferred_cardinality`, explain the relationship and cardinality in `relationship_basis`. For unmeasured inference, leave all nine `validation_*` fields null. Preserve measured counts when present; a disagreement with inferred cardinality is a review warning, not permission to overwrite either. Record physical Attribute pairs only; keep composite tuples, domain suggestions and other unrepresentable findings in task evidence. Lifecycle status remains separate from the conclusion.
+9. **Save the inference separately from measurements.** Use the shared Analysis record guide's 25 fields. Explicitly populate `inferred_cardinality`; the record has no explanation field, so keep the reasoning in task evidence. For unmeasured inference, leave all nine `validation_*` fields null. Preserve measured counts when present; a disagreement with inferred cardinality is a review warning, not permission to overwrite either. Record physical Attribute pairs only; keep composite tuples, domain suggestions and other unrepresentable findings in task evidence. Lifecycle status remains separate from the conclusion.
 10. **Review coverage and hand off.** Confirm both discovery passes covered scoped Objects, including string classifications, differently named references, role links and hierarchies. Keep meaningful unresolved candidates visible; explain isolated Objects without inventing links. Validate record structure locally through the Project authoring guide; this does not require SQL relationship tests. Preserve locks/unrelated edits and follow the shared Change Set lifecycle when ready.
 
 SQL's directional validation verdict and the overall business conclusion remain distinct. A failed lookup on an incomplete parent batch does not by itself disprove the business relationship. A successful lookup does not establish meaning, required participation or future cardinality. Unsupported measurements must affect the conclusion or its limitations rather than being attached and ignored.
 
 ## Compact examples
 
-- **Order → Customer:** clear Object roles and Order.customer_id support an inferred many-to-one relationship without SQL. Record the metadata basis and leave validation fields null. Whether every order must have a customer is a separate optionality question.
+- **Order → Customer:** clear Object roles and Order.customer_id support an inferred many-to-one relationship without SQL. Keep the metadata reasoning in task evidence and leave validation fields null. Whether every order must have a customer is a separate optionality question.
 - **Product.product_type → ProductType.type_name:** compatible string classifications in the same documented business domain can form an inferred reference. Different names and nonnumeric types do not exclude it.
 - **Company + CustomerNumber:** known company-specific numbering requires both columns. Retain the tuple from context; query only when needed to resolve uncertainty. The current Analysis payload cannot express a composite edge.
 - **OrderStatus without a status Object:** record a business-domain suggestion, not a fabricated relationship or a mandatory normalization decision.
@@ -87,7 +87,7 @@ These checks and the procedure are a design synthesis from the cited definitions
 
 ## Analysis to modeled relationships
 
-Analysis stores `inferred_cardinality` independently of validation, with its reasoning in `relationship_basis`. Leave unmeasured validation fields null. Later Logical records assess cardinality for their own modeled grains. A category label can be a valid reference key; use `relationship_kind="reference"` for ordinary lookups and describe its category/domain semantics. Matching low-cardinality strings alone do not establish shared meaning or uniqueness.
+Analysis stores `inferred_cardinality` independently of validation. Leave unmeasured validation fields null. Later Logical records assess cardinality for their own modeled grains. A category label can be a valid reference key; use `relationship_kind="reference"` for ordinary lookups. Matching low-cardinality strings alone do not establish shared meaning or uniqueness.
 
 Analysis findings do not create Logical FKs. During Logical design, map relevant supported associations to the actual modeled grains and keys, then author explicit relationships under the [relationship and graph review](logical-design.md#relationship-and-graph-review). Do not mechanically copy every physical edge or infer a join from matching names alone. Review isolated Entities and disconnected components with the user before completing project work; intentional separation remains valid.
 

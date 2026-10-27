@@ -41,7 +41,8 @@ Systems are independent. Internal numeric IDs are not business identifiers.
 | Attribute Profile | Current saved measurements with time/row-scope provenance; refresh replaces current measurements. |
 | Metadata Enrichment | Runs after Profiling. Project-owned Object descriptions and Attribute descriptions, inferred types, natural/primary key, nullability and PII findings; human edits and locks stay Project-specific. Data Dictionary and Technical Data Dictionary export current saved results. |
 | Ingestion Mapping | Registered Source-to-Bronze Object/Attribute lineage; source provenance cannot be guessed from names. |
-| Analysis Result | Inferred relationship between real physical Attributes, including supporting reasoning. Inferred cardinality and measured validation remain separate. |
+| Analysis Result | Inferred relationship between real physical Attributes: endpoints, kind and inferred cardinality, with no stored reasoning. Inferred cardinality and measured validation remain separate. |
+| Per-table Analysis | Analysis run that makes one one-shot call per selected table. Each call sees its table in full plus a key directory of every selected table, and returns only links that start in its table. A second link on an already linked column pair is dropped before the draft. |
 | Context Type | Global read-only classification shared across Projects; defined by name and description. |
 | Context Group | Project-owned collection of related knowledge with one Context Type, optional description and source System. |
 | Context Record | Reusable requirement, source information, convention, decision or other knowledge. Contains a stable UUID, text, optional plain-text source reference, status and lock. Requirements are not proof that data exists. |

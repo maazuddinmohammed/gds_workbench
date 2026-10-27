@@ -220,11 +220,17 @@ CREATE TABLE application.workflow_run (
         )
     ),
     -- Logical and Dimensional runs either Build selected Subject Areas or Optimize the
-    -- whole model; each operation freezes only its own authoring stage.
+    -- whole model; each operation freezes only its own authoring stage. An Analysis run
+    -- without an operation infers over its whole selection in one call; per_table makes
+    -- one one-shot call per selected table.
     CONSTRAINT ck_workflow_run_operation CHECK (
         (
             project_workflow IN ('logical', 'dimensional')
             AND workflow_operation IN ('build', 'optimize')
+        ) OR (
+            project_workflow = 'analysis'
+            AND workflow_operation = 'per_table'
+            AND workflow_execution_mode = 'one_shot'
         ) OR (
             project_workflow NOT IN ('logical', 'dimensional')
             AND workflow_operation IS NULL
@@ -1072,7 +1078,9 @@ BEGIN
            AND stage.workflow_execution_mode IS NOT DISTINCT FROM
                v_run.workflow_execution_mode
            -- Build and Optimize share a workflow and mode; each freezes only its stage.
-           AND (v_run.workflow_operation IS NULL
+           -- A whole-selection Analysis run never freezes the per-table stage.
+           AND ((v_run.workflow_operation IS NULL
+                 AND stage.workflow_stage_code <> 'per_table_authoring')
                 OR stage.workflow_stage_code = v_run.workflow_operation || '_authoring')
            AND stage.workflow_stage_is_agentic
            AND stage.is_active
@@ -1326,6 +1334,11 @@ BEGIN
         END IF;
         p_selected_object_ids := ARRAY[]::BIGINT[];
         p_selected_entity_ids := CASE WHEN p_project_workflow = 'dimensional' THEN ARRAY[]::BIGINT[] END;
+    ELSIF p_project_workflow = 'analysis' AND p_workflow_operation IS NOT NULL THEN
+        IF p_workflow_operation <> 'per_table' OR p_subject_area_ids IS NOT NULL
+           OR p_workflow_execution_mode IS DISTINCT FROM 'one_shot' THEN
+            RAISE EXCEPTION 'Per-table Analysis runs are one-shot runs over selected Objects';
+        END IF;
     ELSIF p_workflow_operation IS NOT NULL OR p_subject_area_ids IS NOT NULL THEN
         RAISE EXCEPTION 'Build and Optimize apply only to Logical and Dimensional runs';
     END IF;
@@ -1436,7 +1449,8 @@ BEGIN
             RAISE EXCEPTION
                 'Code Generation inputs are unavailable for this Workflow Run';
         END IF;
-        IF cardinality(p_selected_object_ids) < 1 AND p_workflow_operation IS NULL THEN
+        IF cardinality(p_selected_object_ids) < 1
+           AND p_project_workflow NOT IN ('logical', 'dimensional') THEN
             RAISE EXCEPTION
                 'Selected Scope requires Objects';
         END IF;
@@ -1890,7 +1904,7 @@ BEGIN
                           AND source.dimensional_entity_source_mapping_is_active)
                END;
     END IF;
-    IF p_workflow_operation IS NOT NULL THEN
+    IF p_project_workflow IN ('logical', 'dimensional') THEN
         SELECT coalesce(array_agg(selected.id ORDER BY selected.id), ARRAY[]::BIGINT[])
           INTO v_selected_object_ids
           FROM unnest(v_selected_object_ids) AS selected(id);

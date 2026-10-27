@@ -110,8 +110,6 @@ class AnalysisWorkflowProvenance(ReviewContract):
 
 
 class AnalysisFindingDetail(AnalysisFindingSummary):
-    relationship_basis: str = Field(min_length=1, max_length=8000)
-    relationship_basis_truncated: bool = False
     evidence: AnalysisEvidence | None = None
     provenance: AnalysisWorkflowProvenance
     created_at: datetime

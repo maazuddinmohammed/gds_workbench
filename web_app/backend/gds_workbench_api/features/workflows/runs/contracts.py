@@ -78,8 +78,9 @@ class WorkflowRunLedgerRecord(BaseModel):
     workflow_run_id: int = Field(gt=0)
     project_workflow: ProjectWorkflow
     workflow_execution_mode: ExecutionMode | None = None
-    # Logical and Dimensional runs Build Subject Areas or Optimize the whole model.
-    workflow_operation: Literal["build", "optimize"] | None = None
+    # Logical and Dimensional runs Build Subject Areas or Optimize the whole model;
+    # per_table Analysis runs make one call per selected table.
+    workflow_operation: Literal["build", "optimize", "per_table"] | None = None
     modeled_entity_type: ModeledEntityType | None = None
     selected_scope_count: int = Field(gt=0)
     requested_batch_id: str | None = Field(default=None, max_length=500)

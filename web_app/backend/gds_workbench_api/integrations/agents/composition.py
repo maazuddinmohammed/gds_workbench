@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from typing import cast
+from typing import Any, cast
 
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from pydantic import JsonValue
@@ -251,6 +251,34 @@ class LocalFakeAgentAdapter:
                     ],
                 },
             )
+        elif request.workflow == "analysis_inference" and request.stage == "per_table_authoring":
+            # Link the focus table's first column to the first key another table offers.
+            inputs = cast(dict[str, Any], original_context(request.context)["prompt_inputs"])
+            focus = inputs["focus_table"]
+            target = next(
+                (
+                    f"{entry['table']}.{column['attribute_name']}"
+                    for entry in inputs["key_directory"]
+                    if entry["table"] != focus["table"]
+                    for column in entry["key_columns"]
+                ),
+                None,
+            )
+            candidate = cast(
+                JsonValue,
+                {
+                    "relationships": []
+                    if target is None
+                    else [
+                        {
+                            "from_attribute_name": focus["attributes"][0]["attribute_name"],
+                            "to": target,
+                            "relationship_kind": "reference",
+                            "inferred_cardinality": "unknown",
+                        }
+                    ]
+                },
+            )
         elif request.workflow == "analysis_inference" and request.stage == "relationship_inference":
             if request.execution_mode == "tool_assisted":
                 _source_objects, attributes, tool_call_count = tool_assisted_logical_sources(
@@ -271,9 +299,6 @@ class LocalFakeAgentAdapter:
                         **{f"to_{name}": value for name, value in target.items()},
                         "relationship_kind": "reference",
                         "inferred_cardinality": "unknown",
-                        "relationship_basis": (
-                            "Selected Attribute metadata supports this candidate."
-                        ),
                     }
                 )
             candidate = cast(JsonValue, {"relationships": relationships})

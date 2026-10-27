@@ -224,7 +224,6 @@ INSERT INTO workflow.analysis_result AS current_result (
     to_attribute_id,
     relationship_kind,
     inferred_cardinality,
-    relationship_basis,
     validation_policy_version,
     validation_policy_digest,
     validation_result,
@@ -239,7 +238,7 @@ INSERT INTO workflow.analysis_result AS current_result (
     analysis_result_is_locked
 )
 VALUES (
-    %s, NULL, %s, NULL, NULL, %s, %s, %s, %s, %s, %s, %s,
+    %s, NULL, %s, NULL, NULL, %s, %s, %s, %s, %s, %s,
     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
 )
 ON CONFLICT ON CONSTRAINT uq_analysis_result_identity DO UPDATE
@@ -257,7 +256,6 @@ ON CONFLICT ON CONSTRAINT uq_analysis_result_identity DO UPDATE
        from_object_id = EXCLUDED.from_object_id,
        to_object_id = EXCLUDED.to_object_id,
        inferred_cardinality = EXCLUDED.inferred_cardinality,
-       relationship_basis = EXCLUDED.relationship_basis,
        validation_policy_version = CASE
            WHEN EXCLUDED.inference_workflow_run_id IS NULL
            THEN EXCLUDED.validation_policy_version
@@ -1047,7 +1045,6 @@ class ProjectMaterializer:
                     to_attribute_id,
                     record.relationship_kind,
                     record.inferred_cardinality,
-                    record.relationship_basis,
                     record.validation_policy_version,
                     policy_digest,
                     record.validation_result,

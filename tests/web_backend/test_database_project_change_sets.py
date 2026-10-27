@@ -1093,8 +1093,11 @@ def _create_queued_analysis_run_with_prompt(
     entra_tenant_id: UUID,
     entra_object_id: UUID,
     execution_mode: Literal["one_shot", "tool_assisted"] = "one_shot",
+    per_table: bool = False,
 ) -> int:
+    """Queue an Analysis run; a per-table run selects every active Scope Object."""
     suffix = uuid4().hex
+    stage_code = "per_table_authoring" if per_table else "relationship_inference"
     with database.connect_owner() as connection:
         actor = connection.execute(
             """
@@ -1112,14 +1115,15 @@ def _create_queued_analysis_run_with_prompt(
              WHERE scope.project_id = %s
                AND scope.is_active
              ORDER BY scope.object_id
-             LIMIT 1
             """,
             (project_id,),
-        ).fetchone()
-        if actor is None or selected is None:
+        ).fetchall()
+        if actor is None or not selected:
             raise AssertionError("expected seeded Analysis run inputs")
         principal_id = _required_id(actor, "principal_id")
-        object_id = _required_id(selected, "object_id")
+        object_ids = [
+            _required_id(row, "object_id") for row in (selected if per_table else selected[:1])
+        ]
 
         stage = connection.execute(
             """
@@ -1127,9 +1131,9 @@ def _create_queued_analysis_run_with_prompt(
               FROM application.workflow_stage
              WHERE project_workflow = 'analysis'
                AND workflow_execution_mode = %s
-               AND workflow_stage_code = 'relationship_inference'
+               AND workflow_stage_code = %s
             """,
-            (execution_mode,),
+            (execution_mode, stage_code),
         ).fetchone()
         if stage is None:
             stage = connection.execute(
@@ -1142,22 +1146,31 @@ def _create_queued_analysis_run_with_prompt(
                     workflow_stage_order,
                     workflow_stage_is_agentic
                 ) VALUES (
-                    'analysis', %s, 'relationship_inference',
-                    'Relationship inference', 10, TRUE
+                    'analysis', %s, %s, 'Relationship inference', %s, TRUE
                 )
                 RETURNING workflow_stage_id
                 """,
-                (execution_mode,),
+                (execution_mode, stage_code, 20 if per_table else 10),
             ).fetchone()
         workflow_stage_id = _required_id(stage, "workflow_stage_id")
+        per_table_inputs = "workflow.analysis.common.per_table_authoring.inputs."
         variables = (
-            (
-                "stage_context",
-                f"workflow.analysis.{execution_mode}.relationship_inference.context",
-                "json",
-                True,
-                "Immutable bounded context for this Analysis run.",
-                10,
+            *(
+                (
+                    (name, per_table_inputs + name, "json", True, f"Per-table {name}.", order)
+                    for name, order in (("focus_table", 10), ("key_directory", 20))
+                )
+                if per_table
+                else (
+                    (
+                        "stage_context",
+                        f"workflow.analysis.{execution_mode}.relationship_inference.context",
+                        "json",
+                        True,
+                        "Immutable bounded context for this Analysis run.",
+                        10,
+                    ),
+                )
             ),
             (
                 "validation_failures",
@@ -1165,7 +1178,7 @@ def _create_queued_analysis_run_with_prompt(
                 "json",
                 False,
                 "Bounded validation failures for a repair attempt.",
-                20,
+                30 if per_table else 20,
             ),
         )
         for variable in variables:
@@ -1189,7 +1202,11 @@ def _create_queued_analysis_run_with_prompt(
             )
 
         system_prompt = "Infer the complete Analysis relationship candidate."
-        instruction_prompt = "Use the immutable context: {{stage_context}}."
+        instruction_prompt = (
+            "Analyze {{focus_table}} against {{key_directory}}."
+            if per_table
+            else "Use the immutable context: {{stage_context}}."
+        )
         digest_row = connection.execute(
             """
             SELECT encode(
@@ -1298,7 +1315,8 @@ def _create_queued_analysis_run_with_prompt(
                   NULL::VARCHAR,
                   NULL::VARCHAR,
                   %s::UUID,
-                  %s::JSONB
+                  %s::JSONB,
+                  p_workflow_operation => %s::VARCHAR
               )
             """,
             (
@@ -1306,9 +1324,10 @@ def _create_queued_analysis_run_with_prompt(
                 entra_object_id,
                 project_id,
                 execution_mode,
-                [object_id],
+                object_ids,
                 uuid4(),
                 Jsonb({str(workflow_stage_id): prompt_version_id}),
+                "per_table" if per_table else None,
             ),
         ).fetchone()
         if (
@@ -3204,7 +3223,7 @@ async def test_completed_analysis_draft_applies_once_and_preserves_validation(
                 to_object_id,
                 to_attribute_id,
                 relationship_kind,
-                relationship_basis,
+                inferred_cardinality,
                 validation_policy_version,
                 validation_policy_digest,
                 validation_result,
@@ -3219,7 +3238,7 @@ async def test_completed_analysis_draft_applies_once_and_preserves_validation(
                 analysis_result_is_locked
             ) VALUES (
                 %s, 'legacy-agent-run', NULL, %s, %s, %s, %s, %s, %s,
-                'reference', 'Prior inference basis.',
+                'reference', 'many_to_one',
                 %s, %s, 'supported', 9, 5, 10, 10, 0, 5, 0,
                 'active', FALSE
             )
@@ -3323,8 +3342,7 @@ async def test_completed_analysis_draft_applies_once_and_preserves_validation(
                 SELECT change_set.project_change_set_status,
                        target_project.project_revision,
                        result.agent_run_id,
-                       result.inference_workflow_run_id,
-                       result.relationship_basis
+                       result.inference_workflow_run_id
                   FROM mcp.project_change_set AS change_set
                   JOIN project.project AS target_project
                     ON target_project.project_id = change_set.project_id
@@ -3339,7 +3357,6 @@ async def test_completed_analysis_draft_applies_once_and_preserves_validation(
             "project_revision": 1,
             "agent_run_id": "legacy-agent-run",
             "inference_workflow_run_id": None,
-            "relationship_basis": "Prior inference basis.",
         }
 
         command = ApplyWorkflowDraftRequest(
@@ -3375,7 +3392,6 @@ async def test_completed_analysis_draft_applies_once_and_preserves_validation(
                    result.inference_workflow_run_id,
                    result.validation_workflow_run_id,
                    result.validation_source_context_digest,
-                   result.relationship_basis,
                    result.validation_policy_version,
                    result.validation_policy_digest,
                    result.validation_result,
@@ -3425,7 +3441,6 @@ async def test_completed_analysis_draft_applies_once_and_preserves_validation(
         "inference_workflow_run_id": workflow_run_id,
         "validation_workflow_run_id": validation_workflow_run_id,
         "validation_source_context_digest": validation_source_context_digest,
-        "relationship_basis": ("Selected Attribute metadata supports this candidate."),
         "validation_policy_version": validation_policy_version,
         "validation_policy_digest": validation_policy_digest,
         "validation_result": "supported",
@@ -3440,3 +3455,185 @@ async def test_completed_analysis_draft_applies_once_and_preserves_validation(
         "project_change_set_status": "applied",
         "applied_event_count": 1,
     }
+
+
+@pytest.mark.asyncio
+async def test_per_table_analysis_run_freezes_its_stage_and_hands_off_one_draft(
+    web_postgres_database: DisposablePostgresFixture,
+) -> None:
+    (
+        project_id,
+        tenant_id,
+        _attribute_id,
+        entra_tenant_id,
+        entra_object_id,
+        _profile,
+    ) = _seed_profile_project(web_postgres_database)
+    with web_postgres_database.connect_owner() as connection:
+        # A second table whose registered key the orders table can point to.
+        customers_id = _required_id(
+            connection.execute(
+                """
+                INSERT INTO core.object (
+                    connection_id, source_tenant_id, object_schema, object_name,
+                    object_type_id, zone_id
+                )
+                SELECT connection_id, source_tenant_id, object_schema, 'customers',
+                       object_type_id, zone_id
+                  FROM core.object
+                  JOIN project.project_input_scope AS scope USING (object_id)
+                 WHERE scope.project_id = %s
+                RETURNING object_id
+                """,
+                (project_id,),
+            ).fetchone(),
+            "object_id",
+        )
+        connection.execute(
+            """
+            INSERT INTO core.attribute (
+                object_id, attribute_name, attribute_ordinal_position,
+                attribute_data_type, attribute_nullability, is_natural_key
+            ) VALUES (%s, 'customer_id', 1, 'bigint', FALSE, TRUE)
+            """,
+            (customers_id,),
+        )
+        connection.execute(
+            "INSERT INTO project.project_input_scope (project_id, object_id) VALUES (%s, %s)",
+            (project_id, customers_id),
+        )
+        acquired = connection.execute(
+            """
+            SELECT acquired
+              FROM security.acquire_tenant_lock(
+                  %s, %s, 'user', %s, 60, 'Per-table Analysis test'
+              )
+            """,
+            (entra_tenant_id, entra_object_id, tenant_id),
+        ).fetchone()
+    assert acquired == {"acquired": True}
+
+    workflow_run_id = _create_queued_analysis_run_with_prompt(
+        web_postgres_database,
+        project_id=project_id,
+        tenant_id=tenant_id,
+        entra_tenant_id=entra_tenant_id,
+        entra_object_id=entra_object_id,
+        per_table=True,
+    )
+    with web_postgres_database.connect_owner() as connection:
+        frozen = connection.execute(
+            """
+            SELECT run.workflow_operation, stage.workflow_stage_code
+              FROM application.workflow_run AS run
+              JOIN application.workflow_run_prompt_snapshot AS snapshot
+                ON snapshot.workflow_run_id = run.workflow_run_id
+              JOIN application.workflow_stage AS stage
+                ON stage.workflow_stage_id = snapshot.workflow_stage_id
+             WHERE run.workflow_run_id = %s
+            """,
+            (workflow_run_id,),
+        ).fetchall()
+    assert frozen == [{"workflow_operation": "per_table", "workflow_stage_code": "per_table_authoring"}]
+
+    principal = RequestPrincipal(
+        actor_kind=ActorKind.HUMAN,
+        entra_tenant_id=entra_tenant_id,
+        entra_object_id=entra_object_id,
+    )
+    database = WebPostgresDatabase(
+        dsn=web_postgres_database.web_runtime_dsn(),
+        pool_min=1,
+        pool_max=1,
+        pool_timeout_seconds=5,
+    )
+    authorizer = AuthorizationService()
+    agent = RecordingFakeAgentAdapter()
+    workflow = AnalysisInferenceWorkflow(
+        database=database,
+        authorizer=authorizer,
+        agent_executor=agent,
+        handoff=WorkflowChangeSetHandoff(database=database, authorizer=authorizer),
+        no_op=DatabaseAuthoringNoOpService(database=database),
+        lifecycle=DatabaseAgentWorkflowLifecycle(database=database),
+    )
+    await database.open()
+    try:
+        await workflow.start(
+            principal,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            workflow_run_id=workflow_run_id,
+            expected_execution_mode="one_shot",
+            expected_project_revision=1,
+        )
+        claim = await DatabaseWorkflowClaimRepository(database=database).claim_next(
+            lease_duration_seconds=300
+        )
+        assert claim is not None
+        draft = await workflow.execute_started(
+            principal,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            workflow_run_id=workflow_run_id,
+            expected_project_revision=1,
+            workflow_run_claim_token=claim.workflow_run_claim_token,
+        )
+        assert draft is not None
+        applied = await DatabaseWorkflowDraftApplyService(
+            database=database, authorizer=authorizer
+        ).apply(
+            principal,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            workflow_run_id=workflow_run_id,
+            command=ApplyWorkflowDraftRequest(
+                expected_project_revision=1,
+                expected_draft_revision=draft.draft_revision,
+                expected_candidate_digest=draft.candidate_digest,
+            ),
+            idempotency_key=uuid4(),
+        )
+    finally:
+        await database.close()
+
+    assert applied.project_revision == 2
+    with web_postgres_database.connect_owner() as connection:
+        links = connection.execute(
+            """
+            SELECT from_object.object_name AS from_object, to_object.object_name AS to_object,
+                   result.relationship_kind, result.inference_workflow_run_id
+              FROM workflow.analysis_result AS result
+              JOIN core.object AS from_object ON from_object.object_id = result.from_object_id
+              JOIN core.object AS to_object ON to_object.object_id = result.to_object_id
+             WHERE result.project_id = %s
+            """,
+            (project_id,),
+        ).fetchall()
+    # Orders points at the customers key; customers has no other table's key to point at.
+    assert links == [
+        {
+            "from_object": "orders",
+            "to_object": "customers",
+            "relationship_kind": "reference",
+            "inference_workflow_run_id": workflow_run_id,
+        }
+    ]
+
+
+def test_per_table_analysis_runs_are_one_shot_only(
+    web_postgres_database: DisposablePostgresFixture,
+) -> None:
+    (project_id, tenant_id, _attribute, entra_tenant_id, entra_object_id, _profile) = (
+        _seed_profile_project(web_postgres_database)
+    )
+    with pytest.raises(Exception, match="Per-table Analysis runs are one-shot"):
+        _create_queued_analysis_run_with_prompt(
+            web_postgres_database,
+            project_id=project_id,
+            tenant_id=tenant_id,
+            entra_tenant_id=entra_tenant_id,
+            entra_object_id=entra_object_id,
+            execution_mode="tool_assisted",
+            per_table=True,
+        )

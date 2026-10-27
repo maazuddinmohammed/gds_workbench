@@ -200,10 +200,11 @@ describe("Project Analysis", () => {
       expect(within(inferenceDialog).queryByLabelText(label)).not.toBeInTheDocument();
     }
     const executionMode = within(inferenceDialog).getByLabelText("Execution mode");
+    await user.selectOptions(within(inferenceDialog).getByLabelText("Analyze"), "whole");
     expect(within(executionMode).getAllByRole("option").map((option) => (
       (option as HTMLOptionElement).value
     ))).toEqual(["", "one_shot", "tool_assisted"]);
-    expect(executionMode).toHaveValue("tool_assisted");
+    await user.selectOptions(executionMode, "tool_assisted");
     expect(within(inferenceDialog).queryByRole("option", {
       name: "One-shot-only deployment",
     })).not.toBeInTheDocument();
@@ -272,6 +273,8 @@ describe("Project Analysis", () => {
     const model = within(dialog).getByLabelText("Model");
     const reasoning = within(dialog).getByLabelText("Reasoning effort");
 
+    await user.selectOptions(within(dialog).getByLabelText("Analyze"), "whole");
+    await user.selectOptions(executionMode, "tool_assisted");
     expect(executionMode).toHaveValue("tool_assisted");
     expect(model).toHaveValue("foundry-primary");
     expect(reasoning).toHaveValue("medium");
@@ -291,6 +294,41 @@ describe("Project Analysis", () => {
         name: "One-shot-only deployment",
       })).not.toBeInTheDocument();
     });
+  });
+
+  it("analyzes one table per call by default, in one-shot mode", async () => {
+    const fetcher = analysisFetchStub();
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={analysisRouter(fetcher)} />);
+    await screen.findByRole("table", { name: "Analysis findings" });
+
+    if (!screen.getByText("Run", { selector: "summary" }).closest("details")?.open) await user.click(screen.getByText("Run", { selector: "summary" }));
+    await user.click(screen.getByRole("button", { name: "Run inference" }));
+    const dialog = await screen.findByRole("dialog", { name: "Configure Analysis inference" });
+    expect(within(dialog).getByLabelText("Analyze")).toHaveValue("per_table");
+    const executionMode = within(dialog).getByLabelText("Execution mode");
+    expect(within(executionMode).getAllByRole("option").map((option) => (
+      (option as HTMLOptionElement).value
+    ))).toEqual(["", "one_shot"]);
+    await waitFor(() => expect(executionMode).toHaveValue("one_shot"));
+    await user.click(within(dialog).getByRole("button", { name: "Create and run inference" }));
+
+    await waitFor(() => expect(fetcher).toHaveBeenCalledWith(
+      "/api/v1/tenants/7/projects/18/analysis/inference-runs/1051/execute",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ execution_mode: "one_shot", expected_project_revision: 18 }),
+      }),
+    ));
+    const createCall = fetcher.mock.calls.find(([input, init]) => (
+      String(input).endsWith("/projects/18/runs") && init?.method === "POST"
+    ));
+    expect(JSON.parse(String(createCall?.[1]?.body))).toEqual(expect.objectContaining({
+      project_workflow: "analysis",
+      workflow_execution_mode: "one_shot",
+      workflow_operation: "per_table",
+      selected_object_ids: [501, 502],
+    }));
   });
 
   it("retries a queued Analysis run without creating a duplicate", async () => {

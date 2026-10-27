@@ -87,7 +87,7 @@ Use these terms consistently. Load the affected [metadata table reference](metad
 | SQL environment | Selected registered execution environment: dev, qa, stg, prod. |
 | Query scope | Exact Objects, Attributes, environment, batch selections and measurement context used for evidence; governed by the shared [query-scope guide](query-scope.md). |
 | Relationship candidate | A possible connection supported by names, metadata or business context; it still needs evaluation. |
-| Inferred cardinality | Intended multiplicity from Analysis's from endpoint to its to endpoint, stored as `inferred_cardinality` and explained in `relationship_basis`. May be unknown; independent of measured counts. |
+| Inferred cardinality | Intended multiplicity from Analysis's from endpoint to its to endpoint, stored as `inferred_cardinality`. May be unknown; independent of measured counts. |
 | Observed cardinality | Multiplicity evidenced in the inspected population; distinguish it from the intended business rule and optional participation. See [finding relationships](logical-build/find-relationships.md). |
 | Tenant Lock | Server-governed write lease; distinct from Object/Attribute protection flags. |
 | Locked / unlocked | Content protection state; unlocked records still require valid authoring intent and eligibility. See [record state](record-state.md) for inherited protection and nested locks. |

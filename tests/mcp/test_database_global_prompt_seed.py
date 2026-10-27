@@ -32,6 +32,7 @@ EXPECTED_AGENTIC_STAGES: frozenset[StageIdentity] = frozenset(
         ("metadata_enrichment_attribute", "one_shot", "candidate_authoring"),
         ("analysis", "one_shot", "relationship_inference"),
         ("analysis", "tool_assisted", "relationship_inference"),
+        ("analysis", "one_shot", "per_table_authoring"),
         ("subject_area", "one_shot", "candidate_authoring"),
         ("subject_area", "tool_assisted", "candidate_authoring"),
         ("logical", "one_shot", "build_authoring"),
@@ -237,7 +238,7 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
     assert len(stage_identities) == len(set(stage_identities))
     assert set(stage_identities) == EXPECTED_AGENTIC_STAGES
     expected_count = len(EXPECTED_AGENTIC_STAGES)
-    assert expected_count == 18
+    assert expected_count == 19
     assert len({row["prompt_template_id"] for row in first}) == expected_count
     assert len({row["prompt_template_version_id"] for row in first}) == expected_count
     assert len({row["prompt_assignment_id"] for row in first}) == expected_count
@@ -583,22 +584,39 @@ def test_v2_prompt_seed_switches_global_defaults_and_v1_switches_back(
     _apply_sql(postgres_database, _render_seed())
     v1 = _snapshot(postgres_database)
     templates, versions = counts()
+    # A Prompt both files share, such as per-table Analysis, keeps its one version.
+    v1_payload = {
+        (
+            row["project_workflow"],
+            row["workflow_execution_mode"],
+            row["workflow_stage_code"],
+        ): row
+        for row in json.loads(
+            (SEED_ROOT / "05_global_prompt_defaults.template.sql")
+            .read_text(encoding="utf-8")
+            .split("$workflow_defaults$")[1]
+        )
+    }
+    changed = {identity for identity, row in payload.items() if row != v1_payload[identity]}
+    assert ("analysis", "one_shot", "per_table_authoring") not in changed
+    assert len(changed) == len(EXPECTED_AGENTIC_STAGES) - 1
 
     _apply_sql(postgres_database, _render_seed(v2_template))
     v2 = _snapshot(postgres_database)
-    # Same templates, one new published version each, now the active global default.
-    assert counts() == (templates, versions + len(EXPECTED_AGENTIC_STAGES))
+    # Same templates, one new published version per changed Prompt, now the active default.
+    assert counts() == (templates, versions + len(changed))
     assert len(v2) == len(EXPECTED_AGENTIC_STAGES)
     for before, after in zip(v1, v2, strict=True):
-        seeded = payload[
+        identity = (
             after["project_workflow"],
             after["workflow_execution_mode"],
             after["workflow_stage_code"],
-        ]
+        )
+        seeded = payload[identity]
         assert after["prompt_template_id"] == before["prompt_template_id"]
         assert after["prompt_template_code"] == before["prompt_template_code"]
         assert after["prompt_template_version_number"] == (
-            before["prompt_template_version_number"] + 1
+            before["prompt_template_version_number"] + (identity in changed)
         )
         assert after["prompt_template_version_status"] == "published"
         # Hash comparisons keep prompt bodies out of assertion failure output.
@@ -617,7 +635,7 @@ def test_v2_prompt_seed_switches_global_defaults_and_v1_switches_back(
 
     # Running v1 again reuses its published versions instead of adding new ones.
     _apply_sql(postgres_database, _render_seed())
-    assert counts() == (templates, versions + len(EXPECTED_AGENTIC_STAGES))
+    assert counts() == (templates, versions + len(changed))
     assert [
         row["prompt_template_version_id"] for row in _snapshot(postgres_database)
     ] == [row["prompt_template_version_id"] for row in v1]

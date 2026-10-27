@@ -28,7 +28,7 @@ def _attribute(*, object_name: str, attribute_name: str) -> PhysicalAttributeKey
 
 def _candidate(
     *,
-    basis: str = "Names and profile evidence suggest a relationship.",
+    cardinality: str = "unknown",
     extra: dict[str, JsonValue] | None = None,
 ) -> dict[str, JsonValue]:
     record: dict[str, JsonValue] = {
@@ -45,8 +45,7 @@ def _candidate(
         "to_object_name": "customer_raw",
         "to_attribute_name": "customer_id",
         "relationship_kind": "reference",
-        "inferred_cardinality": "unknown",
-        "relationship_basis": basis,
+        "inferred_cardinality": cardinality,
     }
     record.update(extra or {})
     return record
@@ -54,13 +53,12 @@ def _candidate(
 
 def _applied(
     *,
-    basis: str = "Original evidence.",
     locked: bool = False,
     relationship_kind: str = "reference",
 ) -> AnalysisResultRecord:
     return AnalysisResultRecord.model_validate(
         {
-            **_candidate(basis=basis),
+            **_candidate(),
             "relationship_kind": relationship_kind,
             "validation_policy_version": "1.0.0",
             "validation_result": "supported",
@@ -117,7 +115,7 @@ async def test_new_inference_normalizes_only_agent_owned_fields() -> None:
     fields = cast(
         dict[str, JsonValue], cast(dict[str, JsonValue], definition)["properties"]
     )
-    assert "relationship_basis" in fields
+    assert "relationship_basis" not in fields
     assert "validation_result" not in fields
     assert "analysis_result_status" not in fields
     assert "analysis_result_is_locked" not in fields
@@ -127,13 +125,13 @@ async def test_new_inference_normalizes_only_agent_owned_fields() -> None:
 async def test_inference_preserves_validation_lifecycle_and_lock_fields() -> None:
     validator = _validator(applied=(_applied(),))
     candidate: JsonValue = {
-        "relationships": [_candidate(basis="Updated inference evidence.")]
+        "relationships": [_candidate(cardinality="many_to_one")]
     }
 
     assert (await validator.validate(candidate)).issues == ()
     stored = validator.parse_validated(candidate)[0].records[0]
 
-    assert stored["relationship_basis"] == "Updated inference evidence."
+    assert stored["inferred_cardinality"] == "many_to_one"
     assert stored["validation_result"] == "supported"
     assert stored["validation_source_non_null_count"] == 10
     assert stored["analysis_result_status"] == "active"
@@ -144,7 +142,7 @@ async def test_inference_preserves_validation_lifecycle_and_lock_fields() -> Non
 async def test_locked_relationship_cannot_be_changed_by_inference() -> None:
     validator = _validator(applied=(_applied(locked=True),))
     candidate: JsonValue = {
-        "relationships": [_candidate(basis="Changed while locked.")]
+        "relationships": [_candidate(cardinality="many_to_one")]
     }
 
     validation = await validator.validate(candidate)
@@ -175,7 +173,7 @@ async def test_inference_rejects_unowned_fields_and_duplicate_identities() -> No
         "relationships": [_candidate(extra={"analysis_result_is_locked": True})]
     }
     duplicate: JsonValue = {
-        "relationships": [_candidate(), _candidate(basis="Duplicate identity.")]
+        "relationships": [_candidate(), _candidate(cardinality="many_to_one")]
     }
 
     assert [issue.code for issue in (await validator.validate(unowned)).issues] == [
@@ -195,7 +193,7 @@ async def test_empty_or_unchanged_inference_is_a_valid_noop() -> None:
     assert validator.parse_validated({"relationships": []}) == ()
     assert (
         validator.parse_validated(
-            {"relationships": [_candidate(basis="Original evidence.")]}
+            {"relationships": [_candidate()]}
         )
         == ()
     )
@@ -207,10 +205,7 @@ async def test_existing_canonical_identity_keeps_its_stored_relationship_kind() 
     validator = _validator(applied=(applied,))
     candidate: JsonValue = {
         "relationships": [
-            _candidate(
-                basis="Original evidence.",
-                extra={"relationship_kind": " reference "},
-            )
+            _candidate(extra={"relationship_kind": " reference "})
         ]
     }
 
@@ -242,8 +237,8 @@ async def test_duplicate_unchanged_locked_relationship_is_a_noop() -> None:
     validator = _validator(applied=(_applied(locked=True),))
     candidate: JsonValue = {
         "relationships": [
-            _candidate(basis="Original evidence."),
-            _candidate(basis="Original evidence."),
+            _candidate(),
+            _candidate(),
         ]
     }
 
@@ -252,12 +247,12 @@ async def test_duplicate_unchanged_locked_relationship_is_a_noop() -> None:
 
 
 @pytest.mark.asyncio
-async def test_duplicate_with_conflicting_basis_requires_correction() -> None:
+async def test_duplicate_with_conflicting_cardinality_requires_correction() -> None:
     validator = _validator()
     candidate: JsonValue = {
         "relationships": [
             _candidate(),
-            _candidate(basis="Different evidence."),
+            _candidate(cardinality="many_to_one"),
         ]
     }
 
@@ -294,7 +289,7 @@ async def test_lock_error_uses_original_index_after_duplicate_removal() -> None:
         "relationships": [
             _candidate(),
             _candidate(),
-            _candidate(extra={"relationship_kind": "association"}),
+            _candidate(cardinality="many_to_one", extra={"relationship_kind": "association"}),
         ]
     }
 
@@ -376,10 +371,7 @@ async def test_inference_requires_explicit_cardinality_and_rejects_conflicting_d
 async def test_cardinality_change_preserves_evidence_and_respects_lock() -> None:
     candidate: JsonValue = {
         "relationships": [
-            _candidate(
-                basis="Original evidence.",
-                extra={"inferred_cardinality": "many_to_one"},
-            )
+            _candidate(cardinality="many_to_one")
         ]
     }
     validator = _validator(applied=(_applied(),))
@@ -394,17 +386,17 @@ async def test_cardinality_change_preserves_evidence_and_respects_lock() -> None
 
 
 @pytest.mark.asyncio
-async def test_basis_longer_than_validation_run_limit_needs_repair() -> None:
+async def test_relationship_kind_longer_than_its_column_needs_repair() -> None:
     validator = _validator()
-    longest: JsonValue = {"relationships": [_candidate(basis="é" * 8_000)]}
-    overlong: JsonValue = {"relationships": [_candidate(basis="é" * 8_001)]}
+    longest: JsonValue = {"relationships": [_candidate(extra={"relationship_kind": "k" * 100})]}
+    overlong: JsonValue = {"relationships": [_candidate(extra={"relationship_kind": "k" * 101})]}
 
     # The repair runner checks this schema first and names the overlong field.
     schema = cast(Any, Draft202012Validator(validator.output_schema()))
     assert [
         (error.validator, tuple(error.absolute_path))
         for error in schema.iter_errors(overlong)
-    ] == [("maxLength", ("relationships", 0, "relationship_basis"))]
+    ] == [("maxLength", ("relationships", 0, "relationship_kind"))]
     assert not list(schema.iter_errors(longest))
     assert (await validator.validate(longest)).issues == ()
     assert [issue.code for issue in (await validator.validate(overlong)).issues] == [
