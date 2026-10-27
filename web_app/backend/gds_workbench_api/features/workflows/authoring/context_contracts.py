@@ -2854,6 +2854,7 @@ _TABLE_PROPERTIES: dict[str, Any] = {
     **{name: {"type": "string", "minLength": 1} for name in _TABLE_KEY_FIELDS},
     "object_description": {"type": ["string", "null"]},
     "zone_code": {"type": "string", "minLength": 1},
+    "source_systems": {"type": "array", "items": {"type": "string", "minLength": 1}},
 }
 _COUNT = {"type": ["integer", "null"], "minimum": 0}
 _KEY_PROFILE_FIELDS = (
@@ -2937,8 +2938,10 @@ INPUT_SHAPES["analysis.focus_table"] = {
     },
 }
 INPUT_SHAPES["analysis.key_directory"] = {
-    "description": "Every selected table of this run, the focus table included, by short id. "
-    "key_columns are the columns other tables can point to: a registered or Project key "
+    "description": "Every selected table of this run, the focus table included, by short id, "
+    "with the source_systems its data comes from (a Bronze table's through ingestion "
+    "lineage; empty when unknown). key_columns are the columns other tables can point to: "
+    "a registered or Project key "
     "flag, or a saved Profile in which every non-null value is distinct (operational "
     "columns only when flagged). A table without such a column lists every eligible column "
     "with both data types in other_columns instead.",
@@ -3030,6 +3033,7 @@ _orders, _customers = (
             for name, value in entry.items()
             if name in (*_TABLE_KEY_FIELDS, "object_description", "zone_code")
         },
+        "source_systems": ["ERP"],
     }
     for table, entry in zip(("t1", "t2"), INPUT_EXAMPLES["analysis"]["object_context"], strict=True)
 )

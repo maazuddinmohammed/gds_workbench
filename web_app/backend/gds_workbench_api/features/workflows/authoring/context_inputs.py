@@ -248,6 +248,11 @@ def analysis_table_inputs(context: Mapping[str, Any]) -> list[dict[str, Any]]:
     table_ids = {
         natural_key(item): f"t{position}" for position, item in enumerate(objects, start=1)
     }
+    # Where each table's data comes from: a source table's own System, a Bronze table's
+    # through ingestion lineage. Look-alike tables of different Systems are not related.
+    origins: dict[tuple[Any, ...], set[str]] = {}
+    for link in shared["ingestion_mapping"]:
+        origins.setdefault(natural_key(link["target"]), set()).add(link["source"]["system_code"])
     tables: list[tuple[str, dict[str, Any]]] = []
     directory: list[dict[str, Any]] = []
     for position, (item, group) in enumerate(zip(objects, groups, strict=True), start=1):
@@ -255,6 +260,11 @@ def analysis_table_inputs(context: Mapping[str, Any]) -> list[dict[str, Any]]:
         table = {
             "table": table_id,
             **{name: item[name] for name in (*OBJECT_FIELDS, "object_description", "zone_code")},
+            "source_systems": sorted(
+                {item["system_code"]}
+                if item["zone_code"] == "source"
+                else origins.get(natural_key(item), set())
+            ),
         }
         key_columns: list[dict[str, Any]] = []
         for attribute in group["attributes"]:
