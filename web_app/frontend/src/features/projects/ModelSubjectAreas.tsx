@@ -52,7 +52,6 @@ export function ModelSubjectAreasLedger({ layer, tenantId, projectId, areas, sta
               <table className="model-subject-area-ledger" aria-label={`${layerName} Subject Areas`}>
                 <thead><tr>
                   <th>Subject Area</th><th>Objects</th>
-                  <th><span title={`Objects that reach an active ${layerName} Entity`}>Modeled</span></th>
                   <th>{layerName} Entities</th><th>Last build</th><th />
                 </tr></thead>
                 <tbody>{areas.map((area) => <tr key={area.subject_area_id}>
@@ -61,7 +60,6 @@ export function ModelSubjectAreasLedger({ layer, tenantId, projectId, areas, sta
                     <span>{area.subject_area_definition}</span>
                   </span></td>
                   <td className="is-numeric">{area.table_count}</td>
-                  <td className="is-numeric">{area.modeled_table_count}</td>
                   <td className="is-numeric">{area.entity_count}</td>
                   <td><BuildStatus build={area.build} /></td>
                   <td>{layer === "logical"
@@ -133,7 +131,6 @@ export function ModelSubjectAreaView({
       <dl className="modeled-detail-fields">
         <div className="is-definition"><dt>Definition</dt><dd>{area.subject_area_definition}</dd></div>
         <Fact label="Objects" value={String(area.table_count)} />
-        <Fact label="Modeled Objects" value={String(area.modeled_table_count)} />
         <Fact label={`${layerName} Entities`} value={String(area.entity_count)} />
         <div><dt>Last build</dt><dd><BuildStatus build={area.build} showLabel /></dd></div>
       </dl>
@@ -153,7 +150,7 @@ export function ModelSubjectAreaView({
                 <table className="model-subject-area-entities" aria-label={`${area.subject_area_name} ${layerName} Entities`}>
                   <thead><tr>
                     <th>Schema</th><th>Entity name</th><th>Status</th><th>Lock</th><th>Updated</th>
-                    <th><span className="sr-only">Quick view</span></th><th />
+                    <th className="quick-view-cell"><span className="sr-only">Quick view</span></th><th />
                   </tr></thead>
                   <tbody>{entities.map((entity) => {
                     const entityParams = { ...projectParams, entityId: String(entity.id) };

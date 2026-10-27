@@ -59,7 +59,6 @@ class StaticDimensionalService:
                     subject_area_definition="Customer orders.",
                     table_count=3,
                     shared_table_count=0,
-                    modeled_table_count=0,
                     entity_count=2,
                     build=NOT_BUILT,
                 ),
@@ -524,7 +523,6 @@ def test_dimensional_subject_areas_list_each_area_with_its_entity_count() -> Non
                 "subject_area_definition": "Customer orders.",
                 "table_count": 3,
                 "shared_table_count": 0,
-                "modeled_table_count": 0,
                 "entity_count": 2,
                 "build": {"state": "not_built", "workflow_run_id": None, "at": None},
             }

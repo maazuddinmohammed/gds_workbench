@@ -16,7 +16,7 @@ export interface SubjectAreaBuild {
   at: string | null;
 }
 
-/** An active Subject Area with how much of it one model layer models, and its last Build. */
+/** An active Subject Area with its Objects, one model layer's Entities and its last Build. */
 export interface ModelSubjectArea {
   subject_area_id: number;
   subject_area_name: string;
@@ -24,8 +24,6 @@ export interface ModelSubjectArea {
   table_count: number;
   /** Member Objects that are also members of another active area. */
   shared_table_count: number;
-  /** Member Objects that reach an active Entity of this layer. */
-  modeled_table_count: number;
   entity_count: number;
   build: SubjectAreaBuild;
 }

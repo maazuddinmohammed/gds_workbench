@@ -1,8 +1,9 @@
 import { Link } from "@tanstack/react-router";
 
 /**
- * One definition row listing the Subject Areas an Entity belongs to. The backend derives
- * them from the Entity's active Object sources, so they are read-only here.
+ * One definition row listing the Subject Areas an Entity belongs to, as clickable tags that
+ * open each area. The backend derives them from the Entity's active Object sources, so they
+ * are read-only here.
  */
 export function EntitySubjectAreas({ tenantId, projectId, areas }: {
   tenantId: number;
@@ -13,7 +14,7 @@ export function EntitySubjectAreas({ tenantId, projectId, areas }: {
     <dt>Subject Areas</dt>
     <dd>{areas.length === 0 ? "None" : <ul className="entity-subject-areas" aria-label="Entity Subject Areas">
       {areas.map((area) => <li key={area.subject_area_id}>
-        <Link className="text-action" to="/tenants/$tenantId/projects/$projectId/subject-areas/$subjectAreaId"
+        <Link className="subject-area-tag" to="/tenants/$tenantId/projects/$projectId/subject-areas/$subjectAreaId"
           params={{ tenantId: String(tenantId), projectId: String(projectId), subjectAreaId: String(area.subject_area_id) }}>
           {area.subject_area_name}
         </Link>

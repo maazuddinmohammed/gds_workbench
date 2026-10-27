@@ -278,19 +278,18 @@ async def test_subject_area_lists_report_each_layers_build_state_and_counts(
             item.subject_area_name,
             item.table_count,
             item.shared_table_count,
-            item.modeled_table_count,
             item.build.state,
             item.build.workflow_run_id,
         )
         for item in logical_page.items
     ] == [
-        ("Applied", 1, 1, 1, "applied", applied_run),
-        ("Discarded", 0, 0, 0, "not_built", None),
-        ("Failed", 2, 1, 1, "failed", failed_run),
-        ("Paused", 0, 0, 0, "applied", no_change_run),
-        ("Running", 0, 0, 0, "running", running_run),
-        ("Untouched", 0, 0, 0, "not_built", None),
-        ("Waiting", 1, 0, 0, "draft_waiting", waiting_run),
+        ("Applied", 1, 1, "applied", applied_run),
+        ("Discarded", 0, 0, "not_built", None),
+        ("Failed", 2, 1, "failed", failed_run),
+        ("Paused", 0, 0, "applied", no_change_run),
+        ("Running", 0, 0, "running", running_run),
+        ("Untouched", 0, 0, "not_built", None),
+        ("Waiting", 1, 0, "draft_waiting", waiting_run),
     ]
     assert all(
         (item.build.at is None) == (item.build.state == "not_built") for item in logical_page.items
@@ -307,22 +306,21 @@ async def test_subject_area_lists_report_each_layers_build_state_and_counts(
         running,
     }
 
-    # Dimensional counts Objects that reach a Dimensional Entity and reads its own Builds.
+    # Dimensional reads its own Builds.
     assert [
         (
             item.subject_area_name,
-            item.modeled_table_count,
             item.build.state,
             item.build.workflow_run_id,
         )
         for item in dimensional_page.items
     ] == [
-        ("Applied", 1, "applied", dimensional_run),
-        ("Discarded", 0, "not_built", None),
-        ("Failed", 1, "not_built", None),
-        ("Paused", 0, "not_built", None),
-        ("Running", 0, "not_built", None),
-        ("Untouched", 0, "not_built", None),
-        ("Waiting", 0, "not_built", None),
+        ("Applied", "applied", dimensional_run),
+        ("Discarded", "not_built", None),
+        ("Failed", "not_built", None),
+        ("Paused", "not_built", None),
+        ("Running", "not_built", None),
+        ("Untouched", "not_built", None),
+        ("Waiting", "not_built", None),
     ]
     assert dimensional_page.waiting_draft is None

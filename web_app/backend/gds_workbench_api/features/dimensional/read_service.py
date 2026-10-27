@@ -170,33 +170,6 @@ SELECT area.subject_area_id,
        ) AS shared_table_count,
        (
            SELECT count(*)
-             FROM workflow.subject_area_table AS member
-            WHERE member.project_id = area.project_id
-              AND member.subject_area_id = area.subject_area_id
-              AND member.subject_area_table_is_active
-              AND EXISTS (
-                  SELECT 1
-                    FROM workflow.logical_entity_source_mapping AS logical_source
-                    JOIN workflow.logical_entity AS logical
-                      ON logical.project_id = logical_source.project_id
-                     AND logical.logical_entity_id = logical_source.logical_entity_id
-                     AND logical.logical_entity_is_active
-                    JOIN workflow.dimensional_entity_source_mapping AS dimensional_source
-                      ON dimensional_source.project_id = logical.project_id
-                     AND dimensional_source.source_logical_entity_id = logical.logical_entity_id
-                     AND dimensional_source.dimensional_entity_source_mapping_is_active
-                    JOIN workflow.dimensional_entity AS dimensional
-                      ON dimensional.project_id = dimensional_source.project_id
-                     AND dimensional.dimensional_entity_id =
-                         dimensional_source.dimensional_entity_id
-                     AND dimensional.dimensional_entity_is_active
-                   WHERE logical_source.project_id = member.project_id
-                     AND logical_source.source_object_id = member.object_id
-                     AND logical_source.logical_entity_source_mapping_is_active
-              )
-       ) AS modeled_table_count,
-       (
-           SELECT count(*)
              FROM workflow.dimensional_entity AS entity
             WHERE entity.project_id = area.project_id
               AND entity.dimensional_entity_is_active
