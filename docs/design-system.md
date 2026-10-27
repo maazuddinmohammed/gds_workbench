@@ -248,10 +248,11 @@ correlation reference; never expose raw provider diagnostics or model payloads.
   Logical adds cardinality (Many to one or One to one) and a basis; Dimensional adds an
   optional role name and basis.
 - Logical and Dimensional runs: Build lists active Subject Areas with Objects (name,
-  Objects, shared Objects), all checked, most shared Objects first, then most Objects,
-  then name. Per-row checkboxes, select-all/clear and named Move up/Move down buttons
-  set what is built, one area after another into one draft; focus stays on the moved
-  row. Optimize has no selection and reviews the whole model (cross-area fixes, merges
+  Objects, shared Objects), most shared Objects first, then most Objects, then name,
+  and builds the one area picked with a radio button; Start stays disabled until one
+  is picked. One area per Build lets each draft be reviewed and applied before the next
+  area builds on it; the backend still accepts several areas.
+  Optimize has no selection and reviews the whole model (cross-area fixes, merges
   by retiring duplicates). Both keep execution mode, model and reasoning settings, and
   run history names them Logical Build, Logical Optimize, Dimensional Build or
   Dimensional Optimize.

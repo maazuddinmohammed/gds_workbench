@@ -239,54 +239,40 @@ describe("Project Logical", () => {
     expect(screen.getByText("Run Logical", { selector: "summary" })).toBeVisible();
   });
 
-  it("builds checked Subject Areas in the default most-shared-first order, as reordered", async () => {
+  it("builds one Subject Area at a time, listed most-shared first", async () => {
     const fetcher = logicalFetchStub();
     const user = userEvent.setup();
     render(<WorkbenchApp router={logicalRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Logical Entities" });
     expect(screen.getByText("Tenant Lock held by you")).toBeVisible();
     await user.click(screen.getByText("Run Logical", { selector: "summary" }));
+    expect(screen.getByRole("button", { name: "Build" })).toHaveAttribute("title", "Model one Subject Area");
     await user.click(screen.getByRole("button", { name: "Build" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Configure Logical Build" });
-    expect(within(dialog).getByText(/one after another into one draft/)).toBeVisible();
-    expect(within(dialog).queryByRole("checkbox", { name: "Select all Objects" })).not.toBeInTheDocument();
-    const areas = await within(dialog).findByRole("table", { name: "Subject Areas to build" });
-    const rowNames = () => within(areas).getAllByRole("rowheader").map((cell) => cell.textContent);
+    expect(within(dialog).getByText(/Builds one Subject Area into a draft/)).toBeVisible();
+    expect(within(dialog).getByText(/Apply or discard that draft before building the next area/)).toBeVisible();
+    expect(within(dialog).queryByRole("checkbox")).not.toBeInTheDocument();
+    const areas = await within(dialog).findByRole("table", { name: "Subject Area to build" });
     // Active areas with Objects: most shared Objects first, then most Objects, then name.
-    expect(rowNames()).toEqual(["Support", "Marketing", "Sales", "Finance"]);
+    expect(within(areas).getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["Support", "Marketing", "Sales", "Finance"]);
     expect(within(areas).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
-      "", "Order", "Subject Area", "Objects", "Shared Objects", "Move",
+      "Choose", "Subject Area", "Objects", "Shared Objects",
     ]);
     const support = within(areas).getByRole("row", { name: /Support/ });
-    expect([...support.querySelectorAll("td")].slice(1, 4).map((cell) => cell.textContent)).toEqual(["1", "3", "1"]);
-    expect(within(dialog).getByText("4 of 4 selected")).toBeVisible();
-    expect(within(areas).getByRole("button", { name: "Move Support up" })).toBeDisabled();
-    expect(within(areas).getByRole("button", { name: "Move Finance down" })).toBeDisabled();
+    expect([...support.querySelectorAll("td")].slice(1).map((cell) => cell.textContent)).toEqual(["3", "1"]);
+    expect(within(areas).queryByRole("button", { name: /^Move / })).not.toBeInTheDocument();
+    expect(within(dialog).getByText("None chosen")).toBeVisible();
+    const start = within(dialog).getByRole("button", { name: "Create and run Logical Build" });
+    expect(start).toBeDisabled();
 
-    await user.click(within(areas).getByRole("button", { name: "Move Finance up" }));
-    expect(rowNames()).toEqual(["Support", "Marketing", "Finance", "Sales"]);
-    expect(within(areas).getByRole("button", { name: "Move Finance up" })).toHaveFocus();
-    await user.click(within(areas).getByRole("button", { name: "Move Marketing up" }));
-    expect(rowNames()).toEqual(["Marketing", "Support", "Finance", "Sales"]);
-    // The top row cannot move up, so focus stays on the same row's other move button.
-    expect(within(areas).getByRole("button", { name: "Move Marketing down" })).toHaveFocus();
-    expect(within(dialog).getByRole("status")).toHaveTextContent("Marketing moved to position 1 of 4.");
-
-    await user.click(within(areas).getByRole("checkbox", { name: "Select Support" }));
-    expect(within(areas).getByRole("row", { name: /Support/ })).toHaveTextContent("Skipped");
-    expect(within(areas).getByRole("row", { name: /Finance/ }).querySelectorAll("td")[1]).toHaveTextContent("2");
-    expect(within(dialog).getByText("3 of 4 selected")).toBeVisible();
-    const selectAll = within(areas).getByRole("checkbox", { name: "Select all Subject Areas" });
-    expect(selectAll).toBePartiallyChecked();
-    await user.click(selectAll);
-    expect(within(dialog).getByText("4 of 4 selected")).toBeVisible();
-    await user.click(selectAll);
-    expect(within(dialog).getByText("0 of 4 selected")).toBeVisible();
-    expect(within(dialog).getByRole("button", { name: "Create and run Logical Build" })).toBeDisabled();
-    for (const name of ["Marketing", "Finance", "Sales"]) {
-      await user.click(within(areas).getByRole("checkbox", { name: `Select ${name}` }));
-    }
+    await user.click(within(areas).getByRole("radio", { name: "Build Support" }));
+    await user.click(within(areas).getByRole("radio", { name: "Build Finance" }));
+    // Choosing another area replaces the first: one area per Build.
+    expect(within(areas).getByRole("radio", { name: "Build Support" })).not.toBeChecked();
+    expect(within(areas).getByRole("row", { name: /Finance/ })).toHaveClass("is-active");
+    expect(within(dialog).getByText("Finance", { selector: "span" })).toBeVisible();
+    expect(start).toBeEnabled();
 
     await user.click(within(dialog).getByRole("button", { name: "Create and run Logical Build" }));
     await waitFor(() => expect(createRunBody(fetcher)).toBeDefined());
@@ -296,7 +282,7 @@ describe("Project Logical", () => {
       project_workflow: "logical",
       workflow_execution_mode: "tool_assisted",
       workflow_operation: "build",
-      subject_area_ids: [46, 43, 41],
+      subject_area_ids: [43],
       selected_object_ids: [],
       requested_batch_id: null,
       prompt_overrides: {},

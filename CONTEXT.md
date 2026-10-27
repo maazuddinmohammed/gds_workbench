@@ -46,7 +46,7 @@ Systems are independent. Internal numeric IDs are not business identifiers.
 | Context Group | Project-owned collection of related knowledge with one Context Type, optional description and source System. |
 | Context Record | Reusable requirement, source information, convention, decision or other knowledge. Contains a stable UUID, text, optional plain-text source reference, status and lock. Requirements are not proof that data exists. |
 | Subject Area | Named business capability, such as Sales or Billing, over active Bronze Input Scope Objects; an Object may belong to several. It chooses the Objects one Logical or Dimensional Build call works on and is never modeling evidence. Unassigned Objects have no active membership and are not stored. |
-| Build | Logical or Dimensional Run over ordered Subject Areas: one agent call per area, each seeing earlier areas' work, into one draft. Default order: most-shared areas first. |
+| Build | Logical or Dimensional Run over ordered Subject Areas: one agent call per area, each seeing earlier areas' work, into one draft. The web app builds one area per Run, listing most-shared areas first; the backend accepts several. |
 | Optimize | Logical or Dimensional Run over the whole applied model: cross-area links, merges of duplicates and type or name fixes. |
 | Logical Model | Schema-qualified normalized Entities, Attributes and child-to-parent relationships supported by physical inputs or Context records. Entity types come from `reference.logical_entity_type`. |
 | Dimensional Model | Schema-qualified dimensions, facts and bridges supported by applied Logical Entities/Attributes or Context records. Fact types come from `reference.dimensional_fact_type`. |

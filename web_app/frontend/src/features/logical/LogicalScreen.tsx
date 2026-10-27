@@ -146,7 +146,7 @@ export function LogicalScreen({
               className="button button-secondary button-small"
               type="button"
               disabled={!hasTenantLock}
-              title={hasTenantLock ? "Model the chosen Subject Areas, one after another" : "Tenant Lock required"}
+              title={hasTenantLock ? "Model one Subject Area" : "Tenant Lock required"}
               onClick={() => setRunOperation("build")}
             >
               Build

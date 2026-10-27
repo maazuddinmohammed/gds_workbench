@@ -3,7 +3,6 @@ import { subjectAreaQueryKeys, type SubjectAreaSummary, type SubjectAreaTranspor
 import { EnrichmentAttributeSelection, type EnrichmentAttributeSelectionValue } from "../metadata_enrichment/EnrichmentAttributeSelection";
 import type { MetadataEnrichmentTransport, ReviewEnrichmentCommand, ReviewEnrichmentResult } from "../metadata_enrichment/api";
 import { useEffect, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import { useForm, useStore } from "@tanstack/react-form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
@@ -141,19 +140,17 @@ export function WorkflowRunDialog({
       return subjectAreaSource.listSubjectAreas(tenantId, project.project_id);
     },
   });
-  // Default build order: areas whose Objects are shared with other areas go first, so later
-  // areas can reuse what they produce; then larger areas; then name.
+  // Areas whose Objects are shared with other areas are listed first, because building them
+  // first lets later areas reuse their Entities; then larger areas; then name.
   const buildAreas = (areasQuery.data?.items ?? [])
     .filter((area) => area.subject_area_is_active && area.table_count > 0)
     .sort((left, right) => right.shared_table_count - left.shared_table_count
       || right.table_count - left.table_count
       || left.subject_area_name.localeCompare(right.subject_area_name));
-  // The user's order once they move an area, and the areas they unchecked.
-  const [areaOrder, setAreaOrder] = useState<number[] | null>(null);
-  const [skippedAreaIds, setSkippedAreaIds] = useState<ReadonlySet<number>>(new Set());
-  const orderedAreas = areaOrder === null ? buildAreas
-    : areaOrder.flatMap((areaId) => buildAreas.filter((area) => area.subject_area_id === areaId));
-  const buildAreaIds = orderedAreas.map((area) => area.subject_area_id).filter((areaId) => !skippedAreaIds.has(areaId));
+  // One area per Build, so its draft can be reviewed and applied before the next area builds
+  // on it. The backend still accepts several.
+  const [pickedAreaId, setPickedAreaId] = useState<number | null>(null);
+  const buildAreaIds = buildAreas.filter((area) => area.subject_area_id === pickedAreaId).map((area) => area.subject_area_id);
   const scopeRows = enrichmentObject
     ? (enrichmentObject.is_locked || enrichmentObject.source_tenant_id !== tenantId ? [] : enrichmentObject.attributes
       .filter((item) => item.is_active && !item.is_locked && /^[0-9a-f]{64}$/.test(item.review_revision ?? ""))
@@ -463,13 +460,13 @@ export function WorkflowRunDialog({
             : isBuild ? <>
               <p className="run-kind-note">
                 {isDimensional
-                  ? "Builds the checked Subject Areas one after another into one draft, using the active Logical Entities sourced from each area's Objects."
-                  : "Builds the checked Subject Areas one after another into one draft. Objects shared by several areas are included once."}
-                {" "}Default order: most shared Objects first, then most Objects. Locked records stay as saved.
+                  ? "Builds one Subject Area into a draft, using the active Logical Entities sourced from its Objects."
+                  : "Builds one Subject Area into a draft."}
+                {" "}Apply or discard that draft before building the next area, so later areas reuse its Entities.
+                Areas with the most shared Objects are listed first. Locked records stay as saved.
               </p>
-              <BuildAreaOrder areas={orderedAreas} skippedIds={skippedAreaIds} isPending={areasQuery.isPending}
-                isError={areasQuery.isError} disabled={selectionDisabled}
-                onSkippedChange={setSkippedAreaIds} onOrderChange={setAreaOrder} />
+              <BuildAreaPicker areas={buildAreas} pickedId={pickedAreaId} isPending={areasQuery.isPending}
+                isError={areasQuery.isError} disabled={selectionDisabled} onPick={setPickedAreaId} />
             </>
             : isModelRun ? <p className="run-kind-note">
               Optimize reviews the whole {isDimensional ? "Dimensional" : "Logical"} model in one run, with no Subject Area
@@ -664,37 +661,20 @@ export function WorkflowRunDialog({
   );
 }
 
-/**
- * Build checks and orders Subject Areas; the backend builds the checked areas one after
- * another into one draft. Unchecked areas are skipped.
- */
-function BuildAreaOrder({ areas, skippedIds, isPending, isError, disabled, onSkippedChange, onOrderChange }: {
+/** Build picks one Subject Area; rows keep the most-shared-first order. */
+function BuildAreaPicker({ areas, pickedId, isPending, isError, disabled, onPick }: {
   areas: SubjectAreaSummary[];
-  skippedIds: ReadonlySet<number>;
+  pickedId: number | null;
   isPending: boolean;
   isError: boolean;
   disabled: boolean;
-  onSkippedChange: (ids: ReadonlySet<number>) => void;
-  onOrderChange: (ids: number[]) => void;
+  onPick: (id: number) => void;
 }) {
-  const [announcement, setAnnouncement] = useState("");
-  const checked = areas.filter((area) => !skippedIds.has(area.subject_area_id));
-  const move = (index: number, offset: -1 | 1, button: HTMLButtonElement) => {
-    const ids = areas.map((area) => area.subject_area_id);
-    const [moved] = ids.splice(index, 1);
-    ids.splice(index + offset, 0, moved!);
-    flushSync(() => onOrderChange(ids));
-    setAnnouncement(`${areas[index]!.subject_area_name} moved to position ${index + offset + 1} of ${areas.length}.`);
-    // Moving a row re-inserts it, which drops focus, so return focus to the row's move buttons.
-    const target = button.disabled
-      ? button.parentElement?.querySelector<HTMLButtonElement>("button:not(:disabled)")
-      : button;
-    target?.focus();
-  };
+  const picked = areas.find((area) => area.subject_area_id === pickedId);
   return <section className="run-object-selection run-build-areas" aria-labelledby="workflow-run-scope-heading">
     <header>
-      <strong id="workflow-run-scope-heading">Subject Areas to build</strong>
-      <span>{checked.length} of {areas.length} selected</span>
+      <strong id="workflow-run-scope-heading">Subject Area to build</strong>
+      <span>{picked ? picked.subject_area_name : "None chosen"}</span>
     </header>
     {isPending ? <div className="surface-state compact" aria-busy="true">Loading Subject Areas…</div>
       : isError ? <div className="surface-state is-error compact" role="alert">Subject Areas could not be loaded. Close this dialog and retry.</div>
@@ -702,48 +682,22 @@ function BuildAreaOrder({ areas, skippedIds, isPending, isError, disabled, onSki
           No active Subject Area has Objects. Add Objects to a Subject Area, then build.
         </div>
           : <div className="workflow-table-scroll run-build-area-scroll">
-            <table className="enrichment-selection-table run-build-area-table" aria-label="Subject Areas to build">
+            <table className="enrichment-selection-table run-build-area-table" aria-label="Subject Area to build">
               <thead><tr>
-                <th className="selection-cell"><SelectAllCheckbox label="Select all Subject Areas" selectedCount={checked.length}
-                  totalCount={areas.length} disabled={disabled}
-                  onChange={(all) => onSkippedChange(all ? new Set() : new Set(areas.map((area) => area.subject_area_id)))} /></th>
-                <th>Order</th>
+                <th className="selection-cell"><span className="sr-only">Choose</span></th>
                 <th>Subject Area</th>
                 <th className="is-numeric">Objects</th>
                 <th className="is-numeric">Shared Objects</th>
-                <th><span className="sr-only">Move</span></th>
               </tr></thead>
-              <tbody>{areas.map((area, index) => {
-                const skipped = skippedIds.has(area.subject_area_id);
-                return <tr key={area.subject_area_id} className={skipped ? "is-skipped" : undefined}>
-                  <td className="selection-cell"><input type="checkbox" aria-label={`Select ${area.subject_area_name}`}
-                    checked={!skipped} disabled={disabled} onChange={(event) => {
-                      const next = new Set(skippedIds);
-                      if (event.target.checked) next.delete(area.subject_area_id);
-                      else next.add(area.subject_area_id);
-                      onSkippedChange(next);
-                    }} /></td>
-                  <td>{skipped ? "Skipped" : checked.indexOf(area) + 1}</td>
-                  <th scope="row">{area.subject_area_name}</th>
-                  <td className="is-numeric">{area.table_count}</td>
-                  <td className="is-numeric">{area.shared_table_count}</td>
-                  <td><span className="run-build-area-move">
-                    <button className="button button-secondary button-small" type="button"
-                      aria-label={`Move ${area.subject_area_name} up`} disabled={disabled || index === 0}
-                      onClick={(event) => move(index, -1, event.currentTarget)}>
-                      <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m7 14 5-5 5 5" /></svg>
-                    </button>
-                    <button className="button button-secondary button-small" type="button"
-                      aria-label={`Move ${area.subject_area_name} down`} disabled={disabled || index === areas.length - 1}
-                      onClick={(event) => move(index, 1, event.currentTarget)}>
-                      <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5" /></svg>
-                    </button>
-                  </span></td>
-                </tr>;
-              })}</tbody>
+              <tbody>{areas.map((area) => <tr key={area.subject_area_id} className={area.subject_area_id === pickedId ? "is-active" : undefined}>
+                <td className="selection-cell"><input type="radio" name="build-subject-area" aria-label={`Build ${area.subject_area_name}`}
+                  checked={area.subject_area_id === pickedId} disabled={disabled} onChange={() => onPick(area.subject_area_id)} /></td>
+                <th scope="row">{area.subject_area_name}</th>
+                <td className="is-numeric">{area.table_count}</td>
+                <td className="is-numeric">{area.shared_table_count}</td>
+              </tr>)}</tbody>
             </table>
           </div>}
-    <p className="sr-only" role="status">{announcement}</p>
   </section>;
 }
 
