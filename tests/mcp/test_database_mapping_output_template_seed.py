@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 SEED = (
     Path(__file__).parents[2]
-    / "database/seed/07_global_mapping_output_templates.template.sql"
+    / "database/seed/06_global_mapping_output_templates.template.sql"
 )
 
 

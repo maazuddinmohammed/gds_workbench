@@ -34,7 +34,7 @@ async def test_bulk_export_routes_preserve_active_stale_files_and_exact_scope(
     fixture = pipeline_database
     seed_root = Path(__file__).parents[2] / "database" / "seed"
     _apply_sql(fixture, (seed_root / "01_metadata_snapshot_demo.sql").read_text())
-    seed = (seed_root / "08_local_workbench_review.sql").read_text()
+    seed = (seed_root / "07_local_workbench_review.sql").read_text()
     local_guard = "current_database() !~ '^gds_local_[0-9a-f]{12}$'"
     assert seed.count(local_guard) == 1
     seed = seed.replace(local_guard, f"current_database() <> '{fixture.database}'")

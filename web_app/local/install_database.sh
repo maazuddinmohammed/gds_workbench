@@ -130,7 +130,7 @@ psql --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
 
 for global_seed_file in \
     05_global_prompt_defaults.template.sql \
-    07_global_mapping_output_templates.template.sql
+    06_global_mapping_output_templates.template.sql
 do
     sed \
         -e "s/__REPLACE_WITH_ENTRA_TENANT_ID__/${GDS_LOCAL_ENTRA_TENANT_ID}/g" \
@@ -144,4 +144,4 @@ done
 
 psql --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
     -X -v ON_ERROR_STOP=1 --single-transaction \
-    -f "$database_root/seed/08_local_workbench_review.sql"
+    -f "$database_root/seed/07_local_workbench_review.sql"

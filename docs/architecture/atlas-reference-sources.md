@@ -213,7 +213,7 @@ Current contract: `mcp_server/gds_etl_workbench/domain/modeling_records.py` (`An
 
 ## `references/project/subject-areas.md`
 
-Current field contracts: `mcp_server/gds_etl_workbench/domain/modeling_records.py` (`SubjectAreaRecord`, `SubjectAreaTableRecord`). Keys: `domain/snapshots/project.py`; scope/references/locks: `application/change_sets/project_validation.py`; upserts: `application/change_sets/project_apply.py`; database contracts: `database/06_workflow_subject_area.sql`. The grouping method mirrors the web Subject Area prompt in `database/seed/05_global_prompt_defaults.template*.sql` and the answer checks in `web_app/backend/gds_workbench_api/features/subject_areas/candidate.py`.
+Current field contracts: `mcp_server/gds_etl_workbench/domain/modeling_records.py` (`SubjectAreaRecord`, `SubjectAreaTableRecord`). Keys: `domain/snapshots/project.py`; scope/references/locks: `application/change_sets/project_validation.py`; upserts: `application/change_sets/project_apply.py`; database contracts: `database/06_workflow_subject_area.sql`. The grouping method mirrors the web Subject Area prompt in `database/seed/05_global_prompt_defaults.template.sql` and the answer checks in `web_app/backend/gds_workbench_api/features/subject_areas/candidate.py`.
 
 ## `references/project/dimensional.md`
 
@@ -231,11 +231,11 @@ Field/source contracts: `mcp_server/gds_etl_workbench/domain/modeling_records.py
 
 ## `references/project/mapping-documents.md`
 
-Exact template: `database/seed/07_global_mapping_output_templates.template.sql`. Record contract: [Mapping records](mapping.md). Runtime/code conventions: [SQL generation](../code-generation/sql.md). Complete-context projection: `web_app/backend/gds_workbench_api/features/workflows/authoring/downstream_inputs.py`; underlying eligibility projections: `database/11_workflow_eligibility.sql`.
+Exact template: `database/seed/06_global_mapping_output_templates.template.sql`. Record contract: [Mapping records](mapping.md). Runtime/code conventions: [SQL generation](../code-generation/sql.md). Complete-context projection: `web_app/backend/gds_workbench_api/features/workflows/authoring/downstream_inputs.py`; underlying eligibility projections: `database/11_workflow_eligibility.sql`.
 
 ## `references/project/mapping.md`
 
-Fields/JSON limits: `mcp_server/gds_etl_workbench/domain/modeling_records.py` (`MappingObjectRecord`, `MappingAttributeRecord`, `_json_size`); canonical keys/section: `domain/snapshots/project.py`; prerequisites: `tools/snapshots/project/archive.py`; active parents/coverage/locks/eligibility: `application/change_sets/project_validation.py`; active System catalog: `application/change_sets/project.py`; replacement/template resolution: `application/change_sets/project_apply.py`; database uniqueness/size: `database/09_workflow_mapping.sql`. Existing inner-template authority: `database/seed/07_global_mapping_output_templates.template.sql`.
+Fields/JSON limits: `mcp_server/gds_etl_workbench/domain/modeling_records.py` (`MappingObjectRecord`, `MappingAttributeRecord`, `_json_size`); canonical keys/section: `domain/snapshots/project.py`; prerequisites: `tools/snapshots/project/archive.py`; active parents/coverage/locks/eligibility: `application/change_sets/project_validation.py`; active System catalog: `application/change_sets/project.py`; replacement/template resolution: `application/change_sets/project_apply.py`; database uniqueness/size: `database/09_workflow_mapping.sql`. Existing inner-template authority: `database/seed/06_global_mapping_output_templates.template.sql`.
 
 ## `references/project/profiling-profile.md`
 

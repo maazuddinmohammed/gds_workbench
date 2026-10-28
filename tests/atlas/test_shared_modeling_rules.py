@@ -1,10 +1,9 @@
 """Modeling rules the web workflow prompts and Atlas both state.
 
-The web prompts (`database/seed/05_global_prompt_defaults.template.sql` and its `.v2.sql`
-second version) and the Atlas references are written for different agents, so
-their prose differs, but these rules must agree. Each row names the rule, the web workflows
-and Atlas file that state it, and a pattern each side must keep. When a rule changes, change
-both sides and this table.
+The web prompts (`database/seed/05_global_prompt_defaults.template.sql`) and the Atlas
+references are written for different agents, so their prose differs, but these rules
+must agree. Each row names the rule, the web workflows and Atlas file that state it, and
+a pattern each side must keep. When a rule changes, change both sides and this table.
 """
 
 from __future__ import annotations
@@ -17,16 +16,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN = ROOT / "atlas/atlas-plugin"
-SEEDS = {
-    "default": (
-        ROOT / "database/seed/05_global_prompt_defaults.template.sql",
-        "$workflow_defaults$",
-    ),
-    "v2": (
-        ROOT / "database/seed/05_global_prompt_defaults.template.v2.sql",
-        "$workflow_defaults$",
-    ),
-}
+SEED = ROOT / "database/seed/05_global_prompt_defaults.template.sql"
 
 
 def _flat(text: str) -> str:
@@ -46,7 +36,7 @@ def _web_prompts(seed: Path, payload_tag: str) -> dict[str, str]:
     return prompts
 
 
-WEB_SETS = {name: _web_prompts(*seed) for name, seed in SEEDS.items()}
+WEB = _web_prompts(SEED, "$workflow_defaults$")
 
 ZONE_WORKFLOWS = ("analysis", "code_generation", "mapping", "validation")
 # (rule, web workflows, web pattern, Atlas file, Atlas pattern)
@@ -140,9 +130,8 @@ SHARED_RULES = [
 def test_web_prompts_and_atlas_state_the_same_rule(
     rule: str, workflows: tuple[str, ...], web_pattern: str, atlas_file: str, atlas_pattern: str
 ) -> None:
-    for name, web in WEB_SETS.items():
-        for workflow in workflows:
-            assert re.search(web_pattern, web[workflow], re.DOTALL), (rule, name, workflow)
+    for workflow in workflows:
+        assert re.search(web_pattern, WEB[workflow], re.DOTALL), (rule, workflow)
     atlas = _flat((PLUGIN / atlas_file).read_text(encoding="utf-8"))
     assert re.search(atlas_pattern, atlas, re.DOTALL), (rule, atlas_file)
 
@@ -150,7 +139,6 @@ def test_web_prompts_and_atlas_state_the_same_rule(
 def test_zone_codes_match_on_both_sides() -> None:
     zones = ("source", "bronze", "silver", "gold")
     terminology = (PLUGIN / "references/terminology.md").read_text(encoding="utf-8")
-    for name, web in WEB_SETS.items():
-        for workflow in ZONE_WORKFLOWS:
-            assert all(f"`{zone}`" in web[workflow] for zone in zones), (name, workflow)
+    for workflow in ZONE_WORKFLOWS:
+        assert all(f"`{zone}`" in WEB[workflow] for zone in zones), workflow
     assert all(f"`{zone}`:" in terminology for zone in zones)

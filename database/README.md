@@ -50,7 +50,7 @@ manually counted schema list in docs.
 After verification, install [seed 04](seed/04_application_reference.sql), establish
 the approved active Super Admin identity, then apply prepared copies of prompt
 [seed 05](seed/05_global_prompt_defaults.template.sql) and Mapping-template
-[seed 07](seed/07_global_mapping_output_templates.template.sql). See the
+[seed 06](seed/06_global_mapping_output_templates.template.sql). See the
 [seed instructions](seed/README.md) for placeholders, replay behavior and optional
 identity/demo seeds. Seed replay does not upgrade a database schema.
 
