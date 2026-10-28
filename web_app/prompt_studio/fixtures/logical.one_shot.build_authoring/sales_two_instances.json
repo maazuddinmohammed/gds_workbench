@@ -1,0 +1,1853 @@
+{
+  "description": "Sales area over a two-instance order app with appended loads (source_instance, GDSBatchID) and a CRM opportunity table holding the ERP customer number. Tests one foreign key per reference column (no Source<Parent>ID twin), the order-line key exception, the instance column kept in each natural key and the batch column not modeled, one Entity per subject, and the cross-System foreign key.",
+  "values": {
+    "naming_instructions": "Use PascalCase for Logical entity, attribute, and relationship names. Identifier Attribute names end with ID, with both I and D uppercase.",
+    "schemas": [
+      {
+        "schema_name": "silver",
+        "description": "Logical model schema."
+      }
+    ],
+    "logical_entity_scd_type": "type_1",
+    "audit_columns": {
+      "schema_version": "1.0",
+      "columns": [
+        {
+          "semantic_name": "SourceSystemID",
+          "data_type": "BIGINT",
+          "nullable": true,
+          "definition": "Originating source System identifier."
+        },
+        {
+          "semantic_name": "IsDataValid",
+          "data_type": "BOOLEAN",
+          "nullable": true,
+          "definition": "Framework data validation flag."
+        },
+        {
+          "semantic_name": "HashKey",
+          "data_type": "STRING",
+          "nullable": true,
+          "definition": "Framework change-detection hash."
+        },
+        {
+          "semantic_name": "IsActive",
+          "data_type": "BOOLEAN",
+          "nullable": true,
+          "definition": "Framework active-record flag."
+        },
+        {
+          "semantic_name": "GDSBatchID",
+          "data_type": "BIGINT",
+          "nullable": true,
+          "definition": "Framework batch identifier."
+        },
+        {
+          "semantic_name": "PipelineRunID",
+          "data_type": "STRING",
+          "nullable": true,
+          "definition": "Framework pipeline run identifier."
+        },
+        {
+          "semantic_name": "CreatedDate",
+          "data_type": "TIMESTAMP",
+          "nullable": true,
+          "definition": "Framework record creation time."
+        },
+        {
+          "semantic_name": "UpdatedDate",
+          "data_type": "TIMESTAMP",
+          "nullable": true,
+          "definition": "Framework record update time."
+        },
+        {
+          "semantic_name": "CreatedBy",
+          "data_type": "STRING",
+          "nullable": true,
+          "definition": "Framework record creator."
+        },
+        {
+          "semantic_name": "UpdatedBy",
+          "data_type": "STRING",
+          "nullable": true,
+          "definition": "Framework record updater."
+        }
+      ]
+    },
+    "coverage_threshold_percent": 70,
+    "logical_entity_types": [
+      {
+        "code": "core",
+        "description": "A main business thing with its own identity, such as Customer or Product."
+      },
+      {
+        "code": "transaction",
+        "description": "A business document or exchange, such as SalesOrder or Invoice. Its lines are transaction_line."
+      },
+      {
+        "code": "transaction_line",
+        "description": "One line of a transaction, such as SalesOrderLine or InvoiceLine."
+      },
+      {
+        "code": "reference",
+        "description": "A short list of codes and their meanings, such as Country or OrderStatus."
+      },
+      {
+        "code": "association",
+        "description": "Links entities many-to-many, such as ProductCategory."
+      },
+      {
+        "code": "event",
+        "description": "Something that happened at a point in time, such as a login or a shipment scan."
+      },
+      {
+        "code": "history",
+        "description": "Past versions of another entity"
+      },
+      {
+        "code": "other",
+        "description": "None of the listed types fits; the entity definition says what it is."
+      }
+    ],
+    "subject_area_context": {
+      "name": "Sales",
+      "definition": "Customer orders and the sales pipeline, with the customers and departments they involve.",
+      "input_count": 5
+    },
+    "table_index": [
+      {
+        "table": "t1",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "orders_app",
+        "object_name": "customer"
+      },
+      {
+        "table": "t2",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "orders_app",
+        "object_name": "department"
+      },
+      {
+        "table": "t3",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "orders_app",
+        "object_name": "sales_order"
+      },
+      {
+        "table": "t4",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "orders_app",
+        "object_name": "sales_order_line"
+      },
+      {
+        "table": "t5",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "crm",
+        "object_name": "opportunity"
+      }
+    ],
+    "existing_entities": {
+      "entities": [],
+      "relationships": []
+    },
+    "neighbor_entities": [],
+    "entity_directory": [],
+    "source_context": [
+      {
+        "tenant_code": "NORTHWIND",
+        "tenant_description": "Industrial equipment distributor that sells to companies.",
+        "system_code": "ORDERS_APP",
+        "system_description": "Order-to-cash application: customers, orders and deliveries.",
+        "system_type_code": "SQL",
+        "system_type_description": "Relational database source read with SQL.",
+        "connection_code": "ORD_UK",
+        "connection_description": "UK production database.",
+        "connection_type_code": "SQL_SERVER",
+        "connection_type_description": "Connection to a Microsoft SQL Server database.",
+        "zone_code": "source",
+        "zone_description": "Originating source data."
+      },
+      {
+        "tenant_code": "NORTHWIND",
+        "tenant_description": "Industrial equipment distributor that sells to companies.",
+        "system_code": "ORDERS_APP",
+        "system_description": "Order-to-cash application: customers, orders and deliveries.",
+        "system_type_code": "SQL",
+        "system_type_description": "Relational database source read with SQL.",
+        "connection_code": "ORD_DE",
+        "connection_description": "German production database.",
+        "connection_type_code": "SQL_SERVER",
+        "connection_type_description": "Connection to a Microsoft SQL Server database.",
+        "zone_code": "source",
+        "zone_description": "Originating source data."
+      },
+      {
+        "tenant_code": "NORTHWIND",
+        "tenant_description": "Industrial equipment distributor that sells to companies.",
+        "system_code": "CRM",
+        "system_description": "Customer relationship management: accounts, contacts and opportunities.",
+        "system_type_code": "SQL",
+        "system_type_description": "Relational database source read with SQL.",
+        "connection_code": "CRM_PROD",
+        "connection_description": "Production CRM database.",
+        "connection_type_code": "SQL_SERVER",
+        "connection_type_description": "Connection to a Microsoft SQL Server database.",
+        "zone_code": "source",
+        "zone_description": "Originating source data."
+      }
+    ],
+    "gds_context": [
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "zone_code": "bronze",
+        "zone_description": "Raw copies of source tables in the lake."
+      }
+    ],
+    "object_context": [
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "orders_app",
+        "object_name": "customer",
+        "object_description": "Customer accounts from the UK and German order databases; loads append under GDSBatchID.",
+        "zone_code": "bronze"
+      },
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "orders_app",
+        "object_name": "department",
+        "object_description": "Sales departments from the UK and German order databases.",
+        "zone_code": "bronze"
+      },
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "orders_app",
+        "object_name": "sales_order",
+        "object_description": "Customer sales orders; one row per order per load.",
+        "zone_code": "bronze"
+      },
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "orders_app",
+        "object_name": "sales_order_line",
+        "object_description": "Lines of customer sales orders; one row per ordered product per load.",
+        "zone_code": "bronze"
+      },
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "crm",
+        "object_name": "opportunity",
+        "object_description": "CRM sales opportunities; one row per opportunity.",
+        "zone_code": "bronze"
+      }
+    ],
+    "object_attribute_context": [
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "orders_app",
+        "object_name": "customer",
+        "attributes": [
+          {
+            "attribute_name": "customer_no",
+            "attribute_description": "Customer account number.",
+            "attribute_data_type": "VARCHAR(10)",
+            "attribute_inferred_data_type": "VARCHAR(10)",
+            "attribute_nullability": false,
+            "is_natural_key": true,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": true,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "name",
+            "attribute_description": "Registered name of the customer company.",
+            "attribute_data_type": "VARCHAR(120)",
+            "attribute_inferred_data_type": "VARCHAR(120)",
+            "attribute_nullability": true,
+            "is_natural_key": null,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "department_id",
+            "attribute_description": "Sales department that manages this customer.",
+            "attribute_data_type": "INT",
+            "attribute_inferred_data_type": "INT",
+            "attribute_nullability": true,
+            "is_natural_key": null,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": {
+              "profiled_at": "2026-10-01T06:00:00Z",
+              "row_scope": "all_rows",
+              "batch_attribute_name": null,
+              "batch_id": null,
+              "row_count": 31000,
+              "non_null_count": 29800,
+              "null_count": 1200,
+              "blank_count": 0,
+              "distinct_count": 14,
+              "min_data_length": null,
+              "max_data_length": null,
+              "avg_data_length": null,
+              "percent_populated": 96.13,
+              "percent_duplicates": 99.95,
+              "percent_null": 3.87,
+              "percent_blank": 0,
+              "percent_distinct": 0.05
+            },
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "segment_code",
+            "attribute_description": "Customer segment code (A, B or C).",
+            "attribute_data_type": "CHAR(1)",
+            "attribute_inferred_data_type": "CHAR(1)",
+            "attribute_nullability": true,
+            "is_natural_key": null,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "source_instance",
+            "attribute_description": "Source database the row was loaded from (ORD_UK or ORD_DE).",
+            "attribute_data_type": "VARCHAR(10)",
+            "attribute_inferred_data_type": "VARCHAR(10)",
+            "attribute_nullability": false,
+            "is_natural_key": null,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "GDSBatchID",
+            "attribute_description": "Load batch identifier.",
+            "attribute_data_type": "BIGINT",
+            "attribute_inferred_data_type": "BIGINT",
+            "attribute_nullability": false,
+            "is_natural_key": null,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": true,
+            "profile": null,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          }
+        ],
+        "selected_attribute_names": [
+          "customer_no",
+          "name",
+          "department_id",
+          "segment_code",
+          "source_instance",
+          "GDSBatchID"
+        ]
+      },
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "orders_app",
+        "object_name": "department",
+        "attributes": [
+          {
+            "attribute_name": "department_id",
+            "attribute_description": "Identifier of the sales department.",
+            "attribute_data_type": "INT",
+            "attribute_inferred_data_type": "INT",
+            "attribute_nullability": false,
+            "is_natural_key": true,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": true,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "department_name",
+            "attribute_description": "Name of the sales department.",
+            "attribute_data_type": "VARCHAR(60)",
+            "attribute_inferred_data_type": "VARCHAR(60)",
+            "attribute_nullability": true,
+            "is_natural_key": null,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "source_instance",
+            "attribute_description": "Source database the row was loaded from (ORD_UK or ORD_DE).",
+            "attribute_data_type": "VARCHAR(10)",
+            "attribute_inferred_data_type": "VARCHAR(10)",
+            "attribute_nullability": false,
+            "is_natural_key": null,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "GDSBatchID",
+            "attribute_description": "Load batch identifier.",
+            "attribute_data_type": "BIGINT",
+            "attribute_inferred_data_type": "BIGINT",
+            "attribute_nullability": false,
+            "is_natural_key": null,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": true,
+            "profile": null,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          }
+        ],
+        "selected_attribute_names": [
+          "department_id",
+          "department_name",
+          "source_instance",
+          "GDSBatchID"
+        ]
+      },
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "orders_app",
+        "object_name": "sales_order",
+        "attributes": [
+          {
+            "attribute_name": "order_no",
+            "attribute_description": "Sales order number.",
+            "attribute_data_type": "VARCHAR(12)",
+            "attribute_inferred_data_type": "VARCHAR(12)",
+            "attribute_nullability": false,
+            "is_natural_key": true,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": true,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "customer_no",
+            "attribute_description": "Customer who placed the order.",
+            "attribute_data_type": "VARCHAR(10)",
+            "attribute_inferred_data_type": "VARCHAR(10)",
+            "attribute_nullability": false,
+            "is_natural_key": null,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "order_date",
+            "attribute_description": "Date the order was placed.",
+            "attribute_data_type": "DATE",
+            "attribute_inferred_data_type": "DATE",
+            "attribute_nullability": true,
+            "is_natural_key": null,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "total_amount",
+            "attribute_description": "Order total in the order currency.",
+            "attribute_data_type": "DECIMAL(14,2)",
+            "attribute_inferred_data_type": "DECIMAL(14,2)",
+            "attribute_nullability": true,
+            "is_natural_key": null,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "source_instance",
+            "attribute_description": "Source database the row was loaded from (ORD_UK or ORD_DE).",
+            "attribute_data_type": "VARCHAR(10)",
+            "attribute_inferred_data_type": "VARCHAR(10)",
+            "attribute_nullability": false,
+            "is_natural_key": null,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "GDSBatchID",
+            "attribute_description": "Load batch identifier.",
+            "attribute_data_type": "BIGINT",
+            "attribute_inferred_data_type": "BIGINT",
+            "attribute_nullability": false,
+            "is_natural_key": null,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": true,
+            "profile": null,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          }
+        ],
+        "selected_attribute_names": [
+          "order_no",
+          "customer_no",
+          "order_date",
+          "total_amount",
+          "source_instance",
+          "GDSBatchID"
+        ]
+      },
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "orders_app",
+        "object_name": "sales_order_line",
+        "attributes": [
+          {
+            "attribute_name": "order_no",
+            "attribute_description": "Number of the order this line belongs to.",
+            "attribute_data_type": "VARCHAR(12)",
+            "attribute_inferred_data_type": "VARCHAR(12)",
+            "attribute_nullability": false,
+            "is_natural_key": true,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": true,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "line_no",
+            "attribute_description": "Line number within the order.",
+            "attribute_data_type": "INT",
+            "attribute_inferred_data_type": "INT",
+            "attribute_nullability": false,
+            "is_natural_key": true,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": true,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "product_code",
+            "attribute_description": "Product sold on this line.",
+            "attribute_data_type": "VARCHAR(20)",
+            "attribute_inferred_data_type": "VARCHAR(20)",
+            "attribute_nullability": true,
+            "is_natural_key": null,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "quantity",
+            "attribute_description": "Quantity ordered.",
+            "attribute_data_type": "DECIMAL(12,3)",
+            "attribute_inferred_data_type": "DECIMAL(12,3)",
+            "attribute_nullability": true,
+            "is_natural_key": null,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "unit_price",
+            "attribute_description": "Net price per unit.",
+            "attribute_data_type": "DECIMAL(14,4)",
+            "attribute_inferred_data_type": "DECIMAL(14,4)",
+            "attribute_nullability": true,
+            "is_natural_key": null,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "source_instance",
+            "attribute_description": "Source database the row was loaded from (ORD_UK or ORD_DE).",
+            "attribute_data_type": "VARCHAR(10)",
+            "attribute_inferred_data_type": "VARCHAR(10)",
+            "attribute_nullability": false,
+            "is_natural_key": null,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "GDSBatchID",
+            "attribute_description": "Load batch identifier.",
+            "attribute_data_type": "BIGINT",
+            "attribute_inferred_data_type": "BIGINT",
+            "attribute_nullability": false,
+            "is_natural_key": null,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": true,
+            "profile": null,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          }
+        ],
+        "selected_attribute_names": [
+          "order_no",
+          "line_no",
+          "product_code",
+          "quantity",
+          "unit_price",
+          "source_instance",
+          "GDSBatchID"
+        ]
+      },
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "crm",
+        "object_name": "opportunity",
+        "attributes": [
+          {
+            "attribute_name": "opportunity_id",
+            "attribute_description": "Identifier of the CRM opportunity.",
+            "attribute_data_type": "VARCHAR(18)",
+            "attribute_inferred_data_type": "VARCHAR(18)",
+            "attribute_nullability": false,
+            "is_natural_key": true,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": true,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "erp_customer_no",
+            "attribute_description": "Customer account number of the opportunity's company in the UK order database.",
+            "attribute_data_type": "VARCHAR(10)",
+            "attribute_inferred_data_type": "VARCHAR(10)",
+            "attribute_nullability": true,
+            "is_natural_key": null,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "stage",
+            "attribute_description": "Sales stage of the opportunity.",
+            "attribute_data_type": "VARCHAR(30)",
+            "attribute_inferred_data_type": "VARCHAR(30)",
+            "attribute_nullability": true,
+            "is_natural_key": null,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "amount",
+            "attribute_description": "Expected deal value.",
+            "attribute_data_type": "DECIMAL(14,2)",
+            "attribute_inferred_data_type": "DECIMAL(14,2)",
+            "attribute_nullability": true,
+            "is_natural_key": null,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "close_date",
+            "attribute_description": "Expected close date.",
+            "attribute_data_type": "DATE",
+            "attribute_inferred_data_type": "DATE",
+            "attribute_nullability": true,
+            "is_natural_key": null,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          }
+        ],
+        "selected_attribute_names": [
+          "opportunity_id",
+          "erp_customer_no",
+          "stage",
+          "amount",
+          "close_date"
+        ]
+      }
+    ],
+    "ingestion_mapping": [
+      {
+        "source": {
+          "tenant_code": "NORTHWIND",
+          "system_code": "ORDERS_APP",
+          "connection_code": "ORD_UK",
+          "object_schema": "dbo",
+          "object_name": "CUSTOMER",
+          "object_description": null
+        },
+        "target": {
+          "tenant_code": "GDS",
+          "system_code": "GDS",
+          "connection_code": "GDS",
+          "object_schema": "orders_app",
+          "object_name": "customer"
+        }
+      },
+      {
+        "source": {
+          "tenant_code": "NORTHWIND",
+          "system_code": "ORDERS_APP",
+          "connection_code": "ORD_DE",
+          "object_schema": "dbo",
+          "object_name": "CUSTOMER",
+          "object_description": null
+        },
+        "target": {
+          "tenant_code": "GDS",
+          "system_code": "GDS",
+          "connection_code": "GDS",
+          "object_schema": "orders_app",
+          "object_name": "customer"
+        }
+      },
+      {
+        "source": {
+          "tenant_code": "NORTHWIND",
+          "system_code": "ORDERS_APP",
+          "connection_code": "ORD_UK",
+          "object_schema": "dbo",
+          "object_name": "DEPARTMENT",
+          "object_description": null
+        },
+        "target": {
+          "tenant_code": "GDS",
+          "system_code": "GDS",
+          "connection_code": "GDS",
+          "object_schema": "orders_app",
+          "object_name": "department"
+        }
+      },
+      {
+        "source": {
+          "tenant_code": "NORTHWIND",
+          "system_code": "ORDERS_APP",
+          "connection_code": "ORD_DE",
+          "object_schema": "dbo",
+          "object_name": "DEPARTMENT",
+          "object_description": null
+        },
+        "target": {
+          "tenant_code": "GDS",
+          "system_code": "GDS",
+          "connection_code": "GDS",
+          "object_schema": "orders_app",
+          "object_name": "department"
+        }
+      },
+      {
+        "source": {
+          "tenant_code": "NORTHWIND",
+          "system_code": "ORDERS_APP",
+          "connection_code": "ORD_UK",
+          "object_schema": "dbo",
+          "object_name": "SALES_ORDER",
+          "object_description": null
+        },
+        "target": {
+          "tenant_code": "GDS",
+          "system_code": "GDS",
+          "connection_code": "GDS",
+          "object_schema": "orders_app",
+          "object_name": "sales_order"
+        }
+      },
+      {
+        "source": {
+          "tenant_code": "NORTHWIND",
+          "system_code": "ORDERS_APP",
+          "connection_code": "ORD_DE",
+          "object_schema": "dbo",
+          "object_name": "SALES_ORDER",
+          "object_description": null
+        },
+        "target": {
+          "tenant_code": "GDS",
+          "system_code": "GDS",
+          "connection_code": "GDS",
+          "object_schema": "orders_app",
+          "object_name": "sales_order"
+        }
+      },
+      {
+        "source": {
+          "tenant_code": "NORTHWIND",
+          "system_code": "ORDERS_APP",
+          "connection_code": "ORD_UK",
+          "object_schema": "dbo",
+          "object_name": "SALES_ORDER_LINE",
+          "object_description": null
+        },
+        "target": {
+          "tenant_code": "GDS",
+          "system_code": "GDS",
+          "connection_code": "GDS",
+          "object_schema": "orders_app",
+          "object_name": "sales_order_line"
+        }
+      },
+      {
+        "source": {
+          "tenant_code": "NORTHWIND",
+          "system_code": "ORDERS_APP",
+          "connection_code": "ORD_DE",
+          "object_schema": "dbo",
+          "object_name": "SALES_ORDER_LINE",
+          "object_description": null
+        },
+        "target": {
+          "tenant_code": "GDS",
+          "system_code": "GDS",
+          "connection_code": "GDS",
+          "object_schema": "orders_app",
+          "object_name": "sales_order_line"
+        }
+      },
+      {
+        "source": {
+          "tenant_code": "NORTHWIND",
+          "system_code": "CRM",
+          "connection_code": "CRM_PROD",
+          "object_schema": "dbo",
+          "object_name": "OPPORTUNITY",
+          "object_description": null
+        },
+        "target": {
+          "tenant_code": "GDS",
+          "system_code": "GDS",
+          "connection_code": "GDS",
+          "object_schema": "crm",
+          "object_name": "opportunity"
+        }
+      }
+    ],
+    "object_relationship_context": [
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "orders_app",
+        "object_name": "customer",
+        "incoming_relationships": [
+          {
+            "from_tenant_code": "GDS",
+            "from_system_code": "GDS",
+            "from_connection_code": "GDS",
+            "from_object_schema": "orders_app",
+            "from_object_name": "sales_order",
+            "to_tenant_code": "GDS",
+            "to_system_code": "GDS",
+            "to_connection_code": "GDS",
+            "to_object_schema": "orders_app",
+            "to_object_name": "customer",
+            "from_attribute_name": "customer_no",
+            "to_attribute_name": "customer_no",
+            "relationship_kind": "reference",
+            "inferred_cardinality": "many_to_one",
+            "analysis_result_status": "active",
+            "analysis_result_is_locked": false,
+            "validation_policy_version": null,
+            "validation_result": null,
+            "validation_source_non_null_count": null,
+            "validation_source_distinct_count": null,
+            "validation_target_non_null_count": null,
+            "validation_target_distinct_count": null,
+            "validation_source_missing_target_count": null,
+            "validation_unused_target_count": null,
+            "validation_duplicate_target_key_count": null
+          },
+          {
+            "from_tenant_code": "GDS",
+            "from_system_code": "GDS",
+            "from_connection_code": "GDS",
+            "from_object_schema": "crm",
+            "from_object_name": "opportunity",
+            "to_tenant_code": "GDS",
+            "to_system_code": "GDS",
+            "to_connection_code": "GDS",
+            "to_object_schema": "orders_app",
+            "to_object_name": "customer",
+            "from_attribute_name": "erp_customer_no",
+            "to_attribute_name": "customer_no",
+            "relationship_kind": "reference",
+            "inferred_cardinality": "many_to_one",
+            "analysis_result_status": "active",
+            "analysis_result_is_locked": false,
+            "validation_policy_version": null,
+            "validation_result": null,
+            "validation_source_non_null_count": null,
+            "validation_source_distinct_count": null,
+            "validation_target_non_null_count": null,
+            "validation_target_distinct_count": null,
+            "validation_source_missing_target_count": null,
+            "validation_unused_target_count": null,
+            "validation_duplicate_target_key_count": null
+          }
+        ],
+        "outgoing_relationships": [
+          {
+            "from_tenant_code": "GDS",
+            "from_system_code": "GDS",
+            "from_connection_code": "GDS",
+            "from_object_schema": "orders_app",
+            "from_object_name": "customer",
+            "to_tenant_code": "GDS",
+            "to_system_code": "GDS",
+            "to_connection_code": "GDS",
+            "to_object_schema": "orders_app",
+            "to_object_name": "department",
+            "from_attribute_name": "department_id",
+            "to_attribute_name": "department_id",
+            "relationship_kind": "reference",
+            "inferred_cardinality": "many_to_one",
+            "analysis_result_status": "active",
+            "analysis_result_is_locked": false,
+            "validation_policy_version": null,
+            "validation_result": null,
+            "validation_source_non_null_count": null,
+            "validation_source_distinct_count": null,
+            "validation_target_non_null_count": null,
+            "validation_target_distinct_count": null,
+            "validation_source_missing_target_count": null,
+            "validation_unused_target_count": null,
+            "validation_duplicate_target_key_count": null
+          }
+        ]
+      },
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "orders_app",
+        "object_name": "department",
+        "incoming_relationships": [
+          {
+            "from_tenant_code": "GDS",
+            "from_system_code": "GDS",
+            "from_connection_code": "GDS",
+            "from_object_schema": "orders_app",
+            "from_object_name": "customer",
+            "to_tenant_code": "GDS",
+            "to_system_code": "GDS",
+            "to_connection_code": "GDS",
+            "to_object_schema": "orders_app",
+            "to_object_name": "department",
+            "from_attribute_name": "department_id",
+            "to_attribute_name": "department_id",
+            "relationship_kind": "reference",
+            "inferred_cardinality": "many_to_one",
+            "analysis_result_status": "active",
+            "analysis_result_is_locked": false,
+            "validation_policy_version": null,
+            "validation_result": null,
+            "validation_source_non_null_count": null,
+            "validation_source_distinct_count": null,
+            "validation_target_non_null_count": null,
+            "validation_target_distinct_count": null,
+            "validation_source_missing_target_count": null,
+            "validation_unused_target_count": null,
+            "validation_duplicate_target_key_count": null
+          }
+        ],
+        "outgoing_relationships": []
+      },
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "orders_app",
+        "object_name": "sales_order",
+        "incoming_relationships": [
+          {
+            "from_tenant_code": "GDS",
+            "from_system_code": "GDS",
+            "from_connection_code": "GDS",
+            "from_object_schema": "orders_app",
+            "from_object_name": "sales_order_line",
+            "to_tenant_code": "GDS",
+            "to_system_code": "GDS",
+            "to_connection_code": "GDS",
+            "to_object_schema": "orders_app",
+            "to_object_name": "sales_order",
+            "from_attribute_name": "order_no",
+            "to_attribute_name": "order_no",
+            "relationship_kind": "reference",
+            "inferred_cardinality": "many_to_one",
+            "analysis_result_status": "active",
+            "analysis_result_is_locked": false,
+            "validation_policy_version": null,
+            "validation_result": null,
+            "validation_source_non_null_count": null,
+            "validation_source_distinct_count": null,
+            "validation_target_non_null_count": null,
+            "validation_target_distinct_count": null,
+            "validation_source_missing_target_count": null,
+            "validation_unused_target_count": null,
+            "validation_duplicate_target_key_count": null
+          }
+        ],
+        "outgoing_relationships": [
+          {
+            "from_tenant_code": "GDS",
+            "from_system_code": "GDS",
+            "from_connection_code": "GDS",
+            "from_object_schema": "orders_app",
+            "from_object_name": "sales_order",
+            "to_tenant_code": "GDS",
+            "to_system_code": "GDS",
+            "to_connection_code": "GDS",
+            "to_object_schema": "orders_app",
+            "to_object_name": "customer",
+            "from_attribute_name": "customer_no",
+            "to_attribute_name": "customer_no",
+            "relationship_kind": "reference",
+            "inferred_cardinality": "many_to_one",
+            "analysis_result_status": "active",
+            "analysis_result_is_locked": false,
+            "validation_policy_version": null,
+            "validation_result": null,
+            "validation_source_non_null_count": null,
+            "validation_source_distinct_count": null,
+            "validation_target_non_null_count": null,
+            "validation_target_distinct_count": null,
+            "validation_source_missing_target_count": null,
+            "validation_unused_target_count": null,
+            "validation_duplicate_target_key_count": null
+          }
+        ]
+      },
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "orders_app",
+        "object_name": "sales_order_line",
+        "incoming_relationships": [],
+        "outgoing_relationships": [
+          {
+            "from_tenant_code": "GDS",
+            "from_system_code": "GDS",
+            "from_connection_code": "GDS",
+            "from_object_schema": "orders_app",
+            "from_object_name": "sales_order_line",
+            "to_tenant_code": "GDS",
+            "to_system_code": "GDS",
+            "to_connection_code": "GDS",
+            "to_object_schema": "orders_app",
+            "to_object_name": "sales_order",
+            "from_attribute_name": "order_no",
+            "to_attribute_name": "order_no",
+            "relationship_kind": "reference",
+            "inferred_cardinality": "many_to_one",
+            "analysis_result_status": "active",
+            "analysis_result_is_locked": false,
+            "validation_policy_version": null,
+            "validation_result": null,
+            "validation_source_non_null_count": null,
+            "validation_source_distinct_count": null,
+            "validation_target_non_null_count": null,
+            "validation_target_distinct_count": null,
+            "validation_source_missing_target_count": null,
+            "validation_unused_target_count": null,
+            "validation_duplicate_target_key_count": null
+          }
+        ]
+      },
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "crm",
+        "object_name": "opportunity",
+        "incoming_relationships": [],
+        "outgoing_relationships": [
+          {
+            "from_tenant_code": "GDS",
+            "from_system_code": "GDS",
+            "from_connection_code": "GDS",
+            "from_object_schema": "crm",
+            "from_object_name": "opportunity",
+            "to_tenant_code": "GDS",
+            "to_system_code": "GDS",
+            "to_connection_code": "GDS",
+            "to_object_schema": "orders_app",
+            "to_object_name": "customer",
+            "from_attribute_name": "erp_customer_no",
+            "to_attribute_name": "customer_no",
+            "relationship_kind": "reference",
+            "inferred_cardinality": "many_to_one",
+            "analysis_result_status": "active",
+            "analysis_result_is_locked": false,
+            "validation_policy_version": null,
+            "validation_result": null,
+            "validation_source_non_null_count": null,
+            "validation_source_distinct_count": null,
+            "validation_target_non_null_count": null,
+            "validation_target_distinct_count": null,
+            "validation_source_missing_target_count": null,
+            "validation_unused_target_count": null,
+            "validation_duplicate_target_key_count": null
+          }
+        ]
+      }
+    ],
+    "context_records": []
+  },
+  "output_schema": {
+    "$defs": {
+      "_AttributeRef": {
+        "additionalProperties": false,
+        "properties": {
+          "schema": {
+            "description": "The Entity's schema.",
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Schema",
+            "type": "string"
+          },
+          "entity": {
+            "description": "The Entity's name.",
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Entity",
+            "type": "string"
+          },
+          "attribute": {
+            "description": "The foreign-key Attribute of the child Entity.",
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Attribute",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "entity",
+          "attribute"
+        ],
+        "title": "_AttributeRef",
+        "type": "object"
+      },
+      "_ColumnSource": {
+        "additionalProperties": false,
+        "properties": {
+          "column": {
+            "description": "A table id, a dot, then the exact column name: t1.order_no.",
+            "maxLength": 420,
+            "pattern": "^t[1-9][0-9]{0,5}\\.\\S",
+            "title": "Column",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Short reason, only when the value is not a straight copy: a filter, lookup, derivation or combination of sources.",
+            "title": "Note"
+          }
+        },
+        "required": [
+          "column"
+        ],
+        "title": "_ColumnSource",
+        "type": "object"
+      },
+      "_CompactAttribute": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Business name, following naming_instructions.",
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Databricks SQL type. Required for a new Attribute; omit to keep a saved one.",
+            "title": "Type"
+          },
+          "nullable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Required for a new Attribute that is not a natural key; omit to keep a saved value. Natural keys are never nullable.",
+            "title": "Nullable"
+          },
+          "natural_key": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "True for every part of the business key. Omitted: false, or the saved value.",
+            "title": "Natural Key"
+          },
+          "from": {
+            "anyOf": [
+              {
+                "description": "A table id, a dot, then the exact column name: t1.order_no.",
+                "maxLength": 420,
+                "pattern": "^t[1-9][0-9]{0,5}\\.\\S",
+                "type": "string"
+              },
+              {
+                "$ref": "#/$defs/_ColumnSource"
+              },
+              {
+                "$ref": "#/$defs/_ContextSource"
+              },
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "description": "A table id, a dot, then the exact column name: t1.order_no.",
+                      "maxLength": 420,
+                      "pattern": "^t[1-9][0-9]{0,5}\\.\\S",
+                      "type": "string"
+                    },
+                    {
+                      "$ref": "#/$defs/_ColumnSource"
+                    },
+                    {
+                      "$ref": "#/$defs/_ContextSource"
+                    }
+                  ]
+                },
+                "maxItems": 100,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Source column(s) or Context record. Omit only for a derived value whose rule the definition states.",
+            "title": "From"
+          },
+          "definition": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Omit to use the single source column's Project description. Required when there is no single source column or it has no description.",
+            "title": "Definition"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Short reason, only when the value is not a straight copy: a filter, lookup, derivation or combination of sources.",
+            "title": "Note"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "_CompactAttribute",
+        "type": "object"
+      },
+      "_CompactEntity": {
+        "additionalProperties": false,
+        "properties": {
+          "schema": {
+            "description": "One schema_name from schemas.",
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Schema",
+            "type": "string"
+          },
+          "name": {
+            "description": "Singular Entity name, following naming_instructions.",
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "core",
+                  "transaction",
+                  "transaction_line",
+                  "reference",
+                  "association",
+                  "event",
+                  "history",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "A logical_entity_types code. Required for a new Entity; omit to keep a saved one."
+          },
+          "definition": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "What one row is, then what it means. Required for a new Entity.",
+            "title": "Definition"
+          },
+          "grain": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "One row per ...: the complete business identity. Required for a new Entity.",
+            "title": "Grain"
+          },
+          "sources": {
+            "default": [],
+            "description": "Tables or Context records this Entity is built from; saved ones are kept.",
+            "items": {
+              "anyOf": [
+                {
+                  "description": "A table id from table_index, such as t1.",
+                  "pattern": "^t[1-9][0-9]{0,5}$",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/_TableSource"
+                },
+                {
+                  "$ref": "#/$defs/_ContextSource"
+                }
+              ]
+            },
+            "maxItems": 1000,
+            "title": "Sources",
+            "type": "array"
+          },
+          "attributes": {
+            "default": [],
+            "description": "Business Attributes in column order. List only new or changed ones; saved ones are kept. Never list the generated <Entity>ID key or audit columns.",
+            "items": {
+              "$ref": "#/$defs/_CompactAttribute"
+            },
+            "maxItems": 20000,
+            "title": "Attributes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "schema",
+          "name"
+        ],
+        "title": "_CompactEntity",
+        "type": "object"
+      },
+      "_CompactRelationship": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "$ref": "#/$defs/_AttributeRef",
+            "description": "The child Entity and its foreign-key Attribute."
+          },
+          "to": {
+            "$ref": "#/$defs/_EntityRef",
+            "description": "The parent Entity; the backend references its key."
+          },
+          "cardinality": {
+            "description": "many_to_one, or one_to_one only when business meaning makes the foreign key unique.",
+            "enum": [
+              "many_to_one",
+              "one_to_one"
+            ],
+            "title": "Cardinality",
+            "type": "string"
+          },
+          "basis": {
+            "description": "Why the link and its cardinality hold, citing Analysis or Context.",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Basis",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "cardinality",
+          "basis"
+        ],
+        "title": "_CompactRelationship",
+        "type": "object"
+      },
+      "_ContextSource": {
+        "additionalProperties": false,
+        "properties": {
+          "context": {
+            "description": "A context_record_id from context_records.",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "title": "Context",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Short reason, only when the value is not a straight copy: a filter, lookup, derivation or combination of sources.",
+            "title": "Note"
+          }
+        },
+        "required": [
+          "context"
+        ],
+        "title": "_ContextSource",
+        "type": "object"
+      },
+      "_EntityRef": {
+        "additionalProperties": false,
+        "properties": {
+          "schema": {
+            "description": "The Entity's schema.",
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Schema",
+            "type": "string"
+          },
+          "entity": {
+            "description": "The Entity's name.",
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Entity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "entity"
+        ],
+        "title": "_EntityRef",
+        "type": "object"
+      },
+      "_Retirement": {
+        "additionalProperties": false,
+        "properties": {
+          "schema": {
+            "description": "Schema of the saved Entity.",
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Schema",
+            "type": "string"
+          },
+          "entity": {
+            "description": "The saved Entity, retired alone when nothing else is set.",
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Entity",
+            "type": "string"
+          },
+          "attribute": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "A saved Attribute of the Entity, retired with its links.",
+            "title": "Attribute"
+          },
+          "to": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/_EntityRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "With attribute: retire the Relationship from that Attribute to this parent."
+          },
+          "source": {
+            "anyOf": [
+              {
+                "maxLength": 420,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Retire one source: a table id (t1) of the Entity, a column (t1.code) of the Attribute, or a context_record_id.",
+            "title": "Source"
+          }
+        },
+        "required": [
+          "schema",
+          "entity"
+        ],
+        "title": "_Retirement",
+        "type": "object"
+      },
+      "_TableSource": {
+        "additionalProperties": false,
+        "properties": {
+          "table": {
+            "description": "A table id from table_index, such as t1.",
+            "pattern": "^t[1-9][0-9]{0,5}$",
+            "title": "Table",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Short reason, only when the value is not a straight copy: a filter, lookup, derivation or combination of sources.",
+            "title": "Note"
+          }
+        },
+        "required": [
+          "table"
+        ],
+        "title": "_TableSource",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "entities": {
+        "description": "New Entities, and saved Entities to change: identity plus changed fields.",
+        "items": {
+          "$ref": "#/$defs/_CompactEntity"
+        },
+        "maxItems": 20000,
+        "title": "Entities",
+        "type": "array"
+      },
+      "relationships": {
+        "description": "New or changed Relationships, each from a child foreign key to a parent.",
+        "items": {
+          "$ref": "#/$defs/_CompactRelationship"
+        },
+        "maxItems": 20000,
+        "title": "Relationships",
+        "type": "array"
+      },
+      "retire": {
+        "description": "Saved records to mark inactive. Nothing is deleted. Retiring an Entity also retires its Attributes and Relationships; retiring an Attribute retires its Relationships.",
+        "items": {
+          "$ref": "#/$defs/_Retirement"
+        },
+        "maxItems": 20000,
+        "title": "Retire",
+        "type": "array"
+      }
+    },
+    "required": [
+      "entities",
+      "relationships",
+      "retire"
+    ],
+    "title": "_CompactLogicalCandidate",
+    "type": "object",
+    "description": "Return only new or changed Logical records in the three arrays; omitted saved records stay as they are. Cite tables by table_index id (t1) and columns as t1.column. For a saved Entity or Attribute, send its identity plus only the fields you change. The backend adds each new Entity's <Entity>ID key, audit columns, column and dependency order, locks and the parent key of each Relationship, and copies a missing Attribute definition from its single source column's Project description. Relationships point from the child's foreign-key Attribute to the parent Entity. Retire saved records in retire; nothing is deleted. Coverage target is 70% of distinct selected Objects, rounded up, through active Entity sources, including unchanged saved records. On repair, fix every context.repair.validation_issues entry and return the complete corrected answer, not a patch."
+  },
+  "expect": {
+    "list": "relationships",
+    "key": [
+      "cardinality"
+    ],
+    "expected": [],
+    "forbidden": [
+      {
+        "cardinality": "(checked by logical_checks.py)"
+      }
+    ]
+  },
+  "logical_checks": {
+    "ids": {
+      "customer": "t1",
+      "department": "t2",
+      "sales_order": "t3",
+      "sales_order_line": "t4",
+      "opportunity": "t5"
+    },
+    "references": [
+      [
+        "t1",
+        "department_id",
+        "department"
+      ],
+      [
+        "t3",
+        "customer_no",
+        "customer"
+      ],
+      [
+        "t4",
+        "order_no",
+        "sales_order"
+      ],
+      [
+        "t5",
+        "erp_customer_no",
+        "customer"
+      ]
+    ],
+    "key_parts": [
+      [
+        "t4",
+        "order_no"
+      ]
+    ],
+    "technical_columns": [
+      "GDSBatchID"
+    ],
+    "expected_entities": 5,
+    "instance_column": "source_instance",
+    "instance_tables": [
+      "t1",
+      "t2",
+      "t3",
+      "t4"
+    ]
+  }
+}

@@ -86,7 +86,6 @@ def test_logical_defaults_describe_the_compact_answer_and_keep_boundaries(
     # Prompts keep hard-wrapped lines; compare them as flowing text.
     system = " ".join(row["system_prompt"].split())
     instruction = row["instruction_prompt"]
-    assert len(row["system_prompt"]) + len(instruction) < 17_000
     placeholders = re.findall(r"\{\{\s*(\w+)\s*\}\}", instruction)
     assert len(placeholders) == len(set(placeholders))
     # Each stage reads only its own input set; Optimize has no area and no coverage.

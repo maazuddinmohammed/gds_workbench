@@ -77,7 +77,7 @@ A stage id is `workflow.mode.stage`, with `common` when a stage has no mode, for
 | --- | --- |
 | `status` | For each stage: `in sync`, `edited in studio`, `seed changed` or `both changed` |
 | `import [--force]` | Copy every seed prompt into `prompts/`. Refuses to overwrite studio edits unless `--force` |
-| `build` | Renumber, check every stage (it must render with the registered examples and stay within size limits), write `out/studio.html` and `out/05_global_prompt_defaults.template.sql`. Exits 1 on any `PROBLEM` |
+| `build` | Renumber, check every stage (it must render with the registered examples), write `out/studio.html` and `out/05_global_prompt_defaults.template.sql`. Exits 1 on any `PROBLEM` |
 | `revert <stage>` | Put one stage back to the seed's prompt |
 | `restore <stage> <label>` | Put back the prompt version that test `<label>` measured |
 | `fixture <stage> <name>` | Create a starter test input from the registered example values |

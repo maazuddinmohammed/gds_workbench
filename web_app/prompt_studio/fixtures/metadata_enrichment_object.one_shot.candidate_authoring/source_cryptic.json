@@ -1,0 +1,308 @@
+{
+  "description": "Source table with a cryptic name and no descriptions anywhere; one column profiles unique. The only supported answer is null.",
+  "values": {
+    "source_context": [
+      {
+        "tenant_code": "NORTHWIND",
+        "tenant_description": "Industrial equipment distributor.",
+        "system_code": "LEGACY_MF",
+        "system_description": "Legacy mainframe kept for historical records.",
+        "system_type_code": "FILE",
+        "system_type_description": "Flat files exported from the source.",
+        "connection_code": "LMF_PROD",
+        "connection_description": null,
+        "connection_type_code": "SFTP",
+        "connection_type_description": "Files delivered over SFTP.",
+        "zone_code": "source",
+        "zone_description": "Originating source data."
+      }
+    ],
+    "gds_context": [],
+    "object_context": [
+      {
+        "tenant_code": "NORTHWIND",
+        "system_code": "LEGACY_MF",
+        "connection_code": "LMF_PROD",
+        "object_schema": "EXPORT",
+        "object_name": "ZX_118",
+        "zone_code": "source",
+        "registered_object_description": null,
+        "object_description": null
+      }
+    ],
+    "object_attribute_context": [
+      {
+        "tenant_code": "NORTHWIND",
+        "system_code": "LEGACY_MF",
+        "connection_code": "LMF_PROD",
+        "object_schema": "EXPORT",
+        "object_name": "ZX_118",
+        "selected_attribute_names": [],
+        "attributes": [
+          {
+            "attribute_name": "F01",
+            "attribute_data_type": "VARCHAR(8)",
+            "attribute_inferred_data_type": null,
+            "attribute_nullability": true,
+            "registered_attribute_description": null,
+            "attribute_description": null,
+            "registered_is_natural_key": false,
+            "is_surrogate_key": false,
+            "is_meta_data": false,
+            "is_masking_required": false,
+            "is_natural_key": null,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null,
+            "profile": {
+              "profiled_at": "2026-10-01T06:00:00Z",
+              "row_scope": "all_rows",
+              "batch_attribute_name": null,
+              "batch_id": null,
+              "row_count": 9120,
+              "non_null_count": 9120,
+              "null_count": 0,
+              "blank_count": 0,
+              "distinct_count": 9120,
+              "min_data_length": 8,
+              "max_data_length": 8,
+              "avg_data_length": 8,
+              "percent_populated": 100.0,
+              "percent_null": 0.0,
+              "percent_blank": 0,
+              "percent_distinct": 100.0,
+              "percent_duplicates": 0.0
+            }
+          },
+          {
+            "attribute_name": "F02",
+            "attribute_data_type": "DECIMAL(11,2)",
+            "attribute_inferred_data_type": null,
+            "attribute_nullability": true,
+            "registered_attribute_description": null,
+            "attribute_description": null,
+            "registered_is_natural_key": false,
+            "is_surrogate_key": false,
+            "is_meta_data": false,
+            "is_masking_required": false,
+            "is_natural_key": null,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null,
+            "profile": {
+              "profiled_at": "2026-10-01T06:00:00Z",
+              "row_scope": "all_rows",
+              "batch_attribute_name": null,
+              "batch_id": null,
+              "row_count": 9120,
+              "non_null_count": 9120,
+              "null_count": 0,
+              "blank_count": 0,
+              "distinct_count": 7311,
+              "min_data_length": null,
+              "max_data_length": null,
+              "avg_data_length": null,
+              "percent_populated": 100.0,
+              "percent_null": 0.0,
+              "percent_blank": 0,
+              "percent_distinct": 80.16,
+              "percent_duplicates": 19.84
+            }
+          },
+          {
+            "attribute_name": "F03",
+            "attribute_data_type": "DATE",
+            "attribute_inferred_data_type": null,
+            "attribute_nullability": true,
+            "registered_attribute_description": null,
+            "attribute_description": null,
+            "registered_is_natural_key": false,
+            "is_surrogate_key": false,
+            "is_meta_data": false,
+            "is_masking_required": false,
+            "is_natural_key": null,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null,
+            "profile": {
+              "profiled_at": "2026-10-01T06:00:00Z",
+              "row_scope": "all_rows",
+              "batch_attribute_name": null,
+              "batch_id": null,
+              "row_count": 9120,
+              "non_null_count": 9120,
+              "null_count": 0,
+              "blank_count": 0,
+              "distinct_count": 1460,
+              "min_data_length": null,
+              "max_data_length": null,
+              "avg_data_length": null,
+              "percent_populated": 100.0,
+              "percent_null": 0.0,
+              "percent_blank": 0,
+              "percent_distinct": 16.01,
+              "percent_duplicates": 83.99
+            }
+          },
+          {
+            "attribute_name": "F04",
+            "attribute_data_type": "CHAR(1)",
+            "attribute_inferred_data_type": null,
+            "attribute_nullability": true,
+            "registered_attribute_description": null,
+            "attribute_description": null,
+            "registered_is_natural_key": false,
+            "is_surrogate_key": false,
+            "is_meta_data": false,
+            "is_masking_required": false,
+            "is_natural_key": null,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null,
+            "profile": {
+              "profiled_at": "2026-10-01T06:00:00Z",
+              "row_scope": "all_rows",
+              "batch_attribute_name": null,
+              "batch_id": null,
+              "row_count": 9120,
+              "non_null_count": 9120,
+              "null_count": 0,
+              "blank_count": 0,
+              "distinct_count": 2,
+              "min_data_length": 1,
+              "max_data_length": 1,
+              "avg_data_length": 1,
+              "percent_populated": 100.0,
+              "percent_null": 0.0,
+              "percent_blank": 0,
+              "percent_distinct": 0.02,
+              "percent_duplicates": 99.98
+            }
+          },
+          {
+            "attribute_name": "F05",
+            "attribute_data_type": "VARCHAR(40)",
+            "attribute_inferred_data_type": null,
+            "attribute_nullability": true,
+            "registered_attribute_description": null,
+            "attribute_description": null,
+            "registered_is_natural_key": false,
+            "is_surrogate_key": false,
+            "is_meta_data": false,
+            "is_masking_required": false,
+            "is_natural_key": null,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null,
+            "profile": {
+              "profiled_at": "2026-10-01T06:00:00Z",
+              "row_scope": "all_rows",
+              "batch_attribute_name": null,
+              "batch_id": null,
+              "row_count": 9120,
+              "non_null_count": 8908,
+              "null_count": 212,
+              "blank_count": 0,
+              "distinct_count": 8833,
+              "min_data_length": 3,
+              "max_data_length": 40,
+              "avg_data_length": 17.2,
+              "percent_populated": 97.68,
+              "percent_null": 2.32,
+              "percent_blank": 0,
+              "percent_distinct": 99.16,
+              "percent_duplicates": 0.84
+            }
+          }
+        ]
+      }
+    ],
+    "ingestion_mapping": []
+  },
+  "output_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "descriptions"
+    ],
+    "properties": {
+      "descriptions": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "[\"NORTHWIND\",\"LEGACY_MF\",\"LMF_PROD\",\"EXPORT\",\"ZX_118\"]"
+        ],
+        "properties": {
+          "[\"NORTHWIND\",\"LEGACY_MF\",\"LMF_PROD\",\"EXPORT\",\"ZX_118\"]": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "expect": {
+    "list": "descriptions",
+    "key": [
+      "text"
+    ],
+    "expected": [],
+    "forbidden": [
+      {
+        "text": "(text answers are checked by text_checks, not by score)"
+      }
+    ]
+  },
+  "text_checks": {
+    "target": "[\"NORTHWIND\",\"LEGACY_MF\",\"LMF_PROD\",\"EXPORT\",\"ZX_118\"]",
+    "column_names": [
+      "F01",
+      "F02",
+      "F03",
+      "F04",
+      "F05"
+    ],
+    "landscape_words": [
+      "bronze",
+      "raw",
+      "landing",
+      "lake",
+      "lakehouse",
+      "gds",
+      "batch",
+      "batches",
+      "load",
+      "loaded",
+      "loads",
+      "nightly",
+      "ingest",
+      "ingested",
+      "copy",
+      "copies",
+      "staging",
+      "layer",
+      "zone",
+      "instance",
+      "instances"
+    ],
+    "hedges": [
+      "likely",
+      "appears",
+      "probably",
+      "seems",
+      "possibly",
+      "presumably",
+      "might",
+      "may contain"
+    ],
+    "expect_null": true
+  }
+}

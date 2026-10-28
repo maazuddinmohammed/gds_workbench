@@ -4,12 +4,13 @@ Use these terms consistently. Load the affected [metadata table reference](metad
 
 | Term | Meaning |
 |---|---|
-| Tenant | Ownership and authorization scope for metadata and Projects. |
-| Tenant Code | Stable human-readable Tenant key; distinct from Tenant name and database ID. |
+| Tenant | An organization that owns data, such as a company, line of business or department; the ownership and authorization scope for metadata and Projects. |
+| Tenant Code | Stable human-readable Tenant key, unique everywhere; distinct from Tenant name and database ID. |
 | Source Tenant | Owner of an Object's data/metadata, independent of physical storage placement. See [Object ownership](metadata/tables/object.md#ownership-and-physical-identity), including explicitly mixed targets. |
-| Physical placement | Registered Tenant/System/Connection and schema/name identifying where an Object resides. Endpoint Tenant codes use this identity; see [field distinctions](metadata/tables/object.md#ownership-and-physical-identity). |
-| System | Registered source/application context used by Connections and metadata groups. |
-| Connection | Registered access/placement definition; its key is Tenant Code + System Code + Connection Code. |
+| Physical placement | Registered Tenant/System/Connection and schema/name identifying where an Object resides. A schema and name are unique within their Connection, so all five parts name one Object. Endpoint Tenant codes use this identity; see [field distinctions](metadata/tables/object.md#ownership-and-physical-identity). |
+| System | One source application or database of one Tenant, such as its HR application, used by Connections and metadata groups. System Code is unique everywhere. `system_type_code` gives its kind of source, such as SQL, FILE or API. |
+| Connection | One running instance of a System, such as the HR database of one country, and its registered access/placement definition. Its key is Tenant Code + System Code + Connection Code; Connection Code is unique within its Tenant and System. `connection_type_code` gives its technology, such as SQL_SERVER or ORACLE. |
+| Instance | A Connection of a System. Instances have the same or very similar tables but their own rows and their own id numbering: employee 1001 in two countries' instances are different people. A reference points into its own instance. Different Systems number their own rows too, yet one System can refer to another's records, often a shared list. Judge that from the whole picture: what each System is, the names and descriptions of its Objects and Attributes, Context and the data. For example, when System RD is a file listing legal entities, `legal_entity_code` or `legal_entity_name` columns in other Systems refer to it. |
 | GDS Connection | The owner's explicitly configured Global Data Store Connection. A generic GDS flag alone does not select it. |
 | Object | A physical table/file/view or other registered Object Type at a Connection. |
 | Attribute | A field/column of an Object. |
@@ -19,7 +20,7 @@ Use these terms consistently. Load the affected [metadata table reference](metad
 | Project enrichment | Project-owned Object/Attribute descriptions, inferred types and natural-key, primary-key, nullability and PII findings (`object_enrichment`, `attribute_enrichment`). Written through Project Change Sets; never changes physical Metadata. The web app calls this workflow Metadata Enrichment. |
 | Custom SELECT expression | Attribute custom code replacing one complete SELECT item during SQL Source extraction or Bronze loading. Includes any required cast and output alias; blank code selects the column unchanged. See [Attribute rules](metadata/tables/attribute.md#custom-select-expressions). |
 | Output alias | Name produced by a SELECT expression; distinct from the registered Attribute name and its metadata identity. |
-| Zone | Registered layer classification. GDS means Global Data Store, the shared data lake/lakehouse. `source`: data in its originating system, before lake ingestion. `bronze`: raw ingested data retaining source-level meaning. `silver`: conformed data organized into modeled entities. `gold`: curated data for analytical or presentation use. |
+| Zone | Registered layer classification. GDS (Global Data Store) is the Databricks lakehouse. Its own codes (`GDS / GDS / GDS`) say only where a lake Object is stored; the data still belongs to its Source Tenant, and a Bronze Object's business System is the System of its source Objects. `source`: in its original system, outside the lake. `bronze`: a raw copy in the lake, with its source's meaning. `silver`: the Logical model: each kind of data in one clean design across Systems and instances. `gold`: the Dimensional model: facts and dimensions built from silver. |
 | Natural key | Complete business identifier used to match an ID-free record. Use the published normalization. |
 | Metadata Change Set | Tenant-owned pending physical metadata and Copy/Process configuration. It contains no Project records. |
 | Project | Tenant-owned governed aggregate containing scope, modeling sections, and revision. |
@@ -41,7 +42,8 @@ Use these terms consistently. Load the affected [metadata table reference](metad
 | Investigation | Read-only explanation, debugging or reverse engineering of existing data, models or code; handled by the investigate skill. Older workspaces may label it the Custom workflow. Grants no new permissions. |
 | Foundational metadata | Lane, Tenant, System, and Connection context; read-only through this change-set surface. |
 | Reference metadata | Registered classification/operation values used by editable records; read-only through this surface. |
-| Ingestion Object Mapping | Source-to-Bronze link used by Copy selection and provenance. Multiple Source Objects may share a Bronze target. |
+| Ingestion Object Mapping | Source-to-Bronze link used by Copy selection and provenance. Multiple Source Objects may share a Bronze target: when several instances load one Bronze Object, an id can repeat once per instance, and the load adds a column just before the technical columns whose values name the instance (an instance, database, member firm or file code or name). |
+| Batch column (`GDSBatchID`) | With `GDSBatchID`, each load appends its new and changed rows under a higher batch id, so one record can appear in several loads; its row with the highest `GDSBatchID` is current. A Bronze Object without it is replaced on each load and matches its source. |
 | Ingestion Attribute Mapping | Optional reference correspondence; usually empty and not used by the current framework to drive column selection or transformation. |
 | Bronze projection | Columns and expressions selected by Bronze metadata from landed data. May omit incoming fields, combine values, or add constants. |
 | Landing | Intermediate file stage between Source extraction/transfer and Bronze loading. It adds no Object Zone to the current metadata contract. |

@@ -1,0 +1,1162 @@
+{
+  "description": "Saved model with ERPCustomer and CRMCustomer (per-System copies of one subject, flagged in name_variants) and an unlinked edge Invoice t4.customer_no -> ERP customer, where Invoice already has a plain SourceCustomerNo from that column. Tests the merge, renaming the children's System-named foreign keys (both children are in entity_details), and one foreign key per column.",
+  "values": {
+    "naming_instructions": "Use PascalCase for Logical entity, attribute, and relationship names. Identifier Attribute names end with ID, with both I and D uppercase.",
+    "schemas": [
+      {
+        "schema_name": "silver",
+        "description": "Logical model schema."
+      }
+    ],
+    "logical_entity_scd_type": "type_1",
+    "audit_columns": {
+      "schema_version": "1.0",
+      "columns": [
+        {
+          "semantic_name": "SourceSystemID",
+          "data_type": "BIGINT",
+          "nullable": true,
+          "definition": "Originating source System identifier."
+        },
+        {
+          "semantic_name": "IsDataValid",
+          "data_type": "BOOLEAN",
+          "nullable": true,
+          "definition": "Framework data validation flag."
+        },
+        {
+          "semantic_name": "HashKey",
+          "data_type": "STRING",
+          "nullable": true,
+          "definition": "Framework change-detection hash."
+        },
+        {
+          "semantic_name": "IsActive",
+          "data_type": "BOOLEAN",
+          "nullable": true,
+          "definition": "Framework active-record flag."
+        },
+        {
+          "semantic_name": "GDSBatchID",
+          "data_type": "BIGINT",
+          "nullable": true,
+          "definition": "Framework batch identifier."
+        },
+        {
+          "semantic_name": "PipelineRunID",
+          "data_type": "STRING",
+          "nullable": true,
+          "definition": "Framework pipeline run identifier."
+        },
+        {
+          "semantic_name": "CreatedDate",
+          "data_type": "TIMESTAMP",
+          "nullable": true,
+          "definition": "Framework record creation time."
+        },
+        {
+          "semantic_name": "UpdatedDate",
+          "data_type": "TIMESTAMP",
+          "nullable": true,
+          "definition": "Framework record update time."
+        },
+        {
+          "semantic_name": "CreatedBy",
+          "data_type": "STRING",
+          "nullable": true,
+          "definition": "Framework record creator."
+        },
+        {
+          "semantic_name": "UpdatedBy",
+          "data_type": "STRING",
+          "nullable": true,
+          "definition": "Framework record updater."
+        }
+      ]
+    },
+    "logical_entity_types": [
+      {
+        "code": "core",
+        "description": "A main business thing with its own identity, such as Customer or Product."
+      },
+      {
+        "code": "transaction",
+        "description": "A business document or exchange, such as SalesOrder or Invoice. Its lines are transaction_line."
+      },
+      {
+        "code": "transaction_line",
+        "description": "One line of a transaction, such as SalesOrderLine or InvoiceLine."
+      },
+      {
+        "code": "reference",
+        "description": "A short list of codes and their meanings, such as Country or OrderStatus."
+      },
+      {
+        "code": "other",
+        "description": "None of the listed types fits; the entity definition says what it is."
+      }
+    ],
+    "table_index": [
+      {
+        "table": "t1",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "erp",
+        "object_name": "customer"
+      },
+      {
+        "table": "t2",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "crm",
+        "object_name": "account"
+      },
+      {
+        "table": "t3",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "erp",
+        "object_name": "sales_order"
+      },
+      {
+        "table": "t4",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "erp",
+        "object_name": "invoice"
+      },
+      {
+        "table": "t5",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "crm",
+        "object_name": "opportunity"
+      }
+    ],
+    "model_summary": {
+      "entities": [
+        {
+          "schema": "silver",
+          "name": "ERPCustomer",
+          "type": "core",
+          "grain": "One row per SourceCustomerNo.",
+          "subject_areas": [
+            "Sales"
+          ],
+          "keys": [
+            {
+              "name": "SourceCustomerNo",
+              "type": "STRING"
+            }
+          ],
+          "attribute_count": 4,
+          "sources": [
+            "t1"
+          ],
+          "is_locked": false
+        },
+        {
+          "schema": "silver",
+          "name": "CRMCustomer",
+          "type": "core",
+          "grain": "One row per SourceAccountID.",
+          "subject_areas": [
+            "Customer Relationship"
+          ],
+          "keys": [
+            {
+              "name": "SourceAccountID",
+              "type": "STRING"
+            }
+          ],
+          "attribute_count": 4,
+          "sources": [
+            "t2"
+          ],
+          "is_locked": false
+        },
+        {
+          "schema": "silver",
+          "name": "SalesOrder",
+          "type": "transaction",
+          "grain": "One row per SourceOrderNo.",
+          "subject_areas": [
+            "Sales"
+          ],
+          "keys": [
+            {
+              "name": "SourceOrderNo",
+              "type": "STRING"
+            }
+          ],
+          "attribute_count": 3,
+          "sources": [
+            "t3"
+          ],
+          "is_locked": false
+        },
+        {
+          "schema": "silver",
+          "name": "Invoice",
+          "type": "transaction",
+          "grain": "One row per SourceInvoiceNo.",
+          "subject_areas": [
+            "Finance"
+          ],
+          "keys": [
+            {
+              "name": "SourceInvoiceNo",
+              "type": "STRING"
+            }
+          ],
+          "attribute_count": 4,
+          "sources": [
+            "t4"
+          ],
+          "is_locked": false
+        },
+        {
+          "schema": "silver",
+          "name": "Opportunity",
+          "type": "transaction",
+          "grain": "One row per SourceOpportunityID.",
+          "subject_areas": [
+            "Customer Relationship"
+          ],
+          "keys": [
+            {
+              "name": "SourceOpportunityID",
+              "type": "STRING"
+            }
+          ],
+          "attribute_count": 3,
+          "sources": [
+            "t5"
+          ],
+          "is_locked": false
+        }
+      ],
+      "relationships": [
+        {
+          "from": "silver.SalesOrder.ERPCustomerID",
+          "to": "silver.ERPCustomer",
+          "cardinality": "many_to_one"
+        },
+        {
+          "from": "silver.Opportunity.CRMCustomerID",
+          "to": "silver.CRMCustomer",
+          "cardinality": "many_to_one"
+        }
+      ]
+    },
+    "unlinked_analysis_edges": [
+      {
+        "from": "t4.customer_no",
+        "to": "t1.customer_no",
+        "validation_result": null,
+        "from_entities": [
+          "silver.Invoice"
+        ],
+        "to_entities": [
+          "silver.ERPCustomer"
+        ]
+      }
+    ],
+    "type_conflicts": [],
+    "name_variants": [
+      {
+        "kind": "entity",
+        "names": [
+          "silver.CRMCustomer",
+          "silver.ERPCustomer"
+        ]
+      }
+    ],
+    "entity_details": {
+      "entities": [
+        {
+          "schema": "silver",
+          "name": "ERPCustomer",
+          "type": "core",
+          "definition": "One row per ERP customer account: a company that buys from us.",
+          "grain": "One row per SourceCustomerNo.",
+          "is_locked": false,
+          "sources": [
+            "t1"
+          ],
+          "other_source_count": 0,
+          "attributes": [
+            {
+              "name": "SourceCustomerNo",
+              "type": "STRING",
+              "nullable": false,
+              "natural_key": true,
+              "from": [
+                "t1.customer_no"
+              ],
+              "definition": "SourceCustomerNo from t1.customer_no.",
+              "is_locked": false
+            },
+            {
+              "name": "CustomerName",
+              "type": "STRING",
+              "nullable": false,
+              "natural_key": false,
+              "from": [
+                "t1.name"
+              ],
+              "definition": "CustomerName from t1.name.",
+              "is_locked": false
+            },
+            {
+              "name": "VatNo",
+              "type": "STRING",
+              "nullable": true,
+              "natural_key": false,
+              "from": [
+                "t1.vat_no"
+              ],
+              "definition": "VatNo from t1.vat_no.",
+              "is_locked": false
+            },
+            {
+              "name": "SegmentCode",
+              "type": "STRING",
+              "nullable": true,
+              "natural_key": false,
+              "from": [
+                "t1.segment_code"
+              ],
+              "definition": "SegmentCode from t1.segment_code.",
+              "is_locked": false
+            }
+          ]
+        },
+        {
+          "schema": "silver",
+          "name": "CRMCustomer",
+          "type": "core",
+          "definition": "One row per CRM account: a customer company managed by sales.",
+          "grain": "One row per SourceAccountID.",
+          "is_locked": false,
+          "sources": [
+            "t2"
+          ],
+          "other_source_count": 0,
+          "attributes": [
+            {
+              "name": "SourceAccountID",
+              "type": "STRING",
+              "nullable": false,
+              "natural_key": true,
+              "from": [
+                "t2.account_id"
+              ],
+              "definition": "SourceAccountID from t2.account_id.",
+              "is_locked": false
+            },
+            {
+              "name": "AccountName",
+              "type": "STRING",
+              "nullable": false,
+              "natural_key": false,
+              "from": [
+                "t2.name"
+              ],
+              "definition": "AccountName from t2.name.",
+              "is_locked": false
+            },
+            {
+              "name": "Industry",
+              "type": "STRING",
+              "nullable": true,
+              "natural_key": false,
+              "from": [
+                "t2.industry"
+              ],
+              "definition": "Industry from t2.industry.",
+              "is_locked": false
+            },
+            {
+              "name": "ErpCustomerNo",
+              "type": "STRING",
+              "nullable": true,
+              "natural_key": false,
+              "from": [
+                "t2.erp_customer_no"
+              ],
+              "definition": "ErpCustomerNo from t2.erp_customer_no.",
+              "is_locked": false
+            }
+          ]
+        },
+        {
+          "schema": "silver",
+          "name": "SalesOrder",
+          "type": "transaction",
+          "definition": "One row per customer sales order.",
+          "grain": "One row per SourceOrderNo.",
+          "is_locked": false,
+          "sources": [
+            "t3"
+          ],
+          "other_source_count": 0,
+          "attributes": [
+            {
+              "name": "SourceOrderNo",
+              "type": "STRING",
+              "nullable": false,
+              "natural_key": true,
+              "from": [
+                "t3.order_no"
+              ],
+              "definition": "SourceOrderNo from t3.order_no.",
+              "is_locked": false
+            },
+            {
+              "name": "ERPCustomerID",
+              "type": "BIGINT",
+              "nullable": false,
+              "natural_key": false,
+              "from": [
+                "t3.customer_no"
+              ],
+              "definition": "ERPCustomerID from t3.customer_no.",
+              "is_locked": false
+            },
+            {
+              "name": "OrderDate",
+              "type": "DATE",
+              "nullable": false,
+              "natural_key": false,
+              "from": [
+                "t3.order_date"
+              ],
+              "definition": "OrderDate from t3.order_date.",
+              "is_locked": false
+            }
+          ]
+        },
+        {
+          "schema": "silver",
+          "name": "Invoice",
+          "type": "transaction",
+          "definition": "One row per customer invoice.",
+          "grain": "One row per SourceInvoiceNo.",
+          "is_locked": false,
+          "sources": [
+            "t4"
+          ],
+          "other_source_count": 0,
+          "attributes": [
+            {
+              "name": "SourceInvoiceNo",
+              "type": "STRING",
+              "nullable": false,
+              "natural_key": true,
+              "from": [
+                "t4.invoice_no"
+              ],
+              "definition": "SourceInvoiceNo from t4.invoice_no.",
+              "is_locked": false
+            },
+            {
+              "name": "SourceCustomerNo",
+              "type": "STRING",
+              "nullable": false,
+              "natural_key": false,
+              "from": [
+                "t4.customer_no"
+              ],
+              "definition": "SourceCustomerNo from t4.customer_no.",
+              "is_locked": false
+            },
+            {
+              "name": "InvoiceDate",
+              "type": "DATE",
+              "nullable": false,
+              "natural_key": false,
+              "from": [
+                "t4.invoice_date"
+              ],
+              "definition": "InvoiceDate from t4.invoice_date.",
+              "is_locked": false
+            },
+            {
+              "name": "TotalAmount",
+              "type": "DECIMAL(14,2)",
+              "nullable": false,
+              "natural_key": false,
+              "from": [
+                "t4.total_amount"
+              ],
+              "definition": "TotalAmount from t4.total_amount.",
+              "is_locked": false
+            }
+          ]
+        },
+        {
+          "schema": "silver",
+          "name": "Opportunity",
+          "type": "transaction",
+          "definition": "One row per CRM sales opportunity.",
+          "grain": "One row per SourceOpportunityID.",
+          "is_locked": false,
+          "sources": [
+            "t5"
+          ],
+          "other_source_count": 0,
+          "attributes": [
+            {
+              "name": "SourceOpportunityID",
+              "type": "STRING",
+              "nullable": false,
+              "natural_key": true,
+              "from": [
+                "t5.opportunity_id"
+              ],
+              "definition": "SourceOpportunityID from t5.opportunity_id.",
+              "is_locked": false
+            },
+            {
+              "name": "CRMCustomerID",
+              "type": "BIGINT",
+              "nullable": false,
+              "natural_key": false,
+              "from": [
+                "t5.account_id"
+              ],
+              "definition": "CRMCustomerID from t5.account_id.",
+              "is_locked": false
+            },
+            {
+              "name": "Stage",
+              "type": "STRING",
+              "nullable": true,
+              "natural_key": false,
+              "from": [
+                "t5.stage"
+              ],
+              "definition": "Stage from t5.stage.",
+              "is_locked": false
+            }
+          ]
+        }
+      ],
+      "relationships": [
+        {
+          "from": {
+            "schema": "silver",
+            "entity": "SalesOrder",
+            "attribute": "ERPCustomerID"
+          },
+          "to": {
+            "schema": "silver",
+            "entity": "ERPCustomer"
+          },
+          "cardinality": "many_to_one",
+          "basis": "Analysis: t3.customer_no -> t1.customer_no.",
+          "is_locked": false
+        },
+        {
+          "from": {
+            "schema": "silver",
+            "entity": "Opportunity",
+            "attribute": "CRMCustomerID"
+          },
+          "to": {
+            "schema": "silver",
+            "entity": "CRMCustomer"
+          },
+          "cardinality": "many_to_one",
+          "basis": "Analysis: t5.account_id -> t2.account_id.",
+          "is_locked": false
+        }
+      ]
+    },
+    "context_records": []
+  },
+  "output_schema": {
+    "$defs": {
+      "_AttributeRef": {
+        "additionalProperties": false,
+        "properties": {
+          "schema": {
+            "description": "The Entity's schema.",
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Schema",
+            "type": "string"
+          },
+          "entity": {
+            "description": "The Entity's name.",
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Entity",
+            "type": "string"
+          },
+          "attribute": {
+            "description": "The foreign-key Attribute of the child Entity.",
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Attribute",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "entity",
+          "attribute"
+        ],
+        "title": "_AttributeRef",
+        "type": "object"
+      },
+      "_ColumnSource": {
+        "additionalProperties": false,
+        "properties": {
+          "column": {
+            "description": "A table id, a dot, then the exact column name: t1.order_no.",
+            "maxLength": 420,
+            "pattern": "^t[1-9][0-9]{0,5}\\.\\S",
+            "title": "Column",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Short reason, only when the value is not a straight copy: a filter, lookup, derivation or combination of sources.",
+            "title": "Note"
+          }
+        },
+        "required": [
+          "column"
+        ],
+        "title": "_ColumnSource",
+        "type": "object"
+      },
+      "_CompactAttribute": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Business name, following naming_instructions.",
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Databricks SQL type. Required for a new Attribute; omit to keep a saved one.",
+            "title": "Type"
+          },
+          "nullable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Required for a new Attribute that is not a natural key; omit to keep a saved value. Natural keys are never nullable.",
+            "title": "Nullable"
+          },
+          "natural_key": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "True for every part of the business key. Omitted: false, or the saved value.",
+            "title": "Natural Key"
+          },
+          "from": {
+            "anyOf": [
+              {
+                "description": "A table id, a dot, then the exact column name: t1.order_no.",
+                "maxLength": 420,
+                "pattern": "^t[1-9][0-9]{0,5}\\.\\S",
+                "type": "string"
+              },
+              {
+                "$ref": "#/$defs/_ColumnSource"
+              },
+              {
+                "$ref": "#/$defs/_ContextSource"
+              },
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "description": "A table id, a dot, then the exact column name: t1.order_no.",
+                      "maxLength": 420,
+                      "pattern": "^t[1-9][0-9]{0,5}\\.\\S",
+                      "type": "string"
+                    },
+                    {
+                      "$ref": "#/$defs/_ColumnSource"
+                    },
+                    {
+                      "$ref": "#/$defs/_ContextSource"
+                    }
+                  ]
+                },
+                "maxItems": 100,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Source column(s) or Context record. Omit only for a derived value whose rule the definition states.",
+            "title": "From"
+          },
+          "definition": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Omit to use the single source column's Project description. Required when there is no single source column or it has no description.",
+            "title": "Definition"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Short reason, only when the value is not a straight copy: a filter, lookup, derivation or combination of sources.",
+            "title": "Note"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "_CompactAttribute",
+        "type": "object"
+      },
+      "_CompactEntity": {
+        "additionalProperties": false,
+        "properties": {
+          "schema": {
+            "description": "One schema_name from schemas.",
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Schema",
+            "type": "string"
+          },
+          "name": {
+            "description": "Singular Entity name, following naming_instructions.",
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "core",
+                  "transaction",
+                  "transaction_line",
+                  "reference",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "A logical_entity_types code. Required for a new Entity; omit to keep a saved one."
+          },
+          "definition": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "What one row is, then what it means. Required for a new Entity.",
+            "title": "Definition"
+          },
+          "grain": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "One row per ...: the complete business identity. Required for a new Entity.",
+            "title": "Grain"
+          },
+          "sources": {
+            "default": [],
+            "description": "Tables or Context records this Entity is built from; saved ones are kept.",
+            "items": {
+              "anyOf": [
+                {
+                  "description": "A table id from table_index, such as t1.",
+                  "pattern": "^t[1-9][0-9]{0,5}$",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/_TableSource"
+                },
+                {
+                  "$ref": "#/$defs/_ContextSource"
+                }
+              ]
+            },
+            "maxItems": 1000,
+            "title": "Sources",
+            "type": "array"
+          },
+          "attributes": {
+            "default": [],
+            "description": "Business Attributes in column order. List only new or changed ones; saved ones are kept. Never list the generated <Entity>ID key or audit columns.",
+            "items": {
+              "$ref": "#/$defs/_CompactAttribute"
+            },
+            "maxItems": 20000,
+            "title": "Attributes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "schema",
+          "name"
+        ],
+        "title": "_CompactEntity",
+        "type": "object"
+      },
+      "_CompactRelationship": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "$ref": "#/$defs/_AttributeRef",
+            "description": "The child Entity and its foreign-key Attribute."
+          },
+          "to": {
+            "$ref": "#/$defs/_EntityRef",
+            "description": "The parent Entity; the backend references its key."
+          },
+          "cardinality": {
+            "description": "many_to_one, or one_to_one only when business meaning makes the foreign key unique.",
+            "enum": [
+              "many_to_one",
+              "one_to_one"
+            ],
+            "title": "Cardinality",
+            "type": "string"
+          },
+          "basis": {
+            "description": "Why the link and its cardinality hold, citing Analysis or Context.",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Basis",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "cardinality",
+          "basis"
+        ],
+        "title": "_CompactRelationship",
+        "type": "object"
+      },
+      "_ContextSource": {
+        "additionalProperties": false,
+        "properties": {
+          "context": {
+            "description": "A context_record_id from context_records.",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "title": "Context",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Short reason, only when the value is not a straight copy: a filter, lookup, derivation or combination of sources.",
+            "title": "Note"
+          }
+        },
+        "required": [
+          "context"
+        ],
+        "title": "_ContextSource",
+        "type": "object"
+      },
+      "_EntityRef": {
+        "additionalProperties": false,
+        "properties": {
+          "schema": {
+            "description": "The Entity's schema.",
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Schema",
+            "type": "string"
+          },
+          "entity": {
+            "description": "The Entity's name.",
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Entity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "entity"
+        ],
+        "title": "_EntityRef",
+        "type": "object"
+      },
+      "_Retirement": {
+        "additionalProperties": false,
+        "properties": {
+          "schema": {
+            "description": "Schema of the saved Entity.",
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Schema",
+            "type": "string"
+          },
+          "entity": {
+            "description": "The saved Entity, retired alone when nothing else is set.",
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Entity",
+            "type": "string"
+          },
+          "attribute": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "A saved Attribute of the Entity, retired with its links.",
+            "title": "Attribute"
+          },
+          "to": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/_EntityRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "With attribute: retire the Relationship from that Attribute to this parent."
+          },
+          "source": {
+            "anyOf": [
+              {
+                "maxLength": 420,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Retire one source: a table id (t1) of the Entity, a column (t1.code) of the Attribute, or a context_record_id.",
+            "title": "Source"
+          }
+        },
+        "required": [
+          "schema",
+          "entity"
+        ],
+        "title": "_Retirement",
+        "type": "object"
+      },
+      "_TableSource": {
+        "additionalProperties": false,
+        "properties": {
+          "table": {
+            "description": "A table id from table_index, such as t1.",
+            "pattern": "^t[1-9][0-9]{0,5}$",
+            "title": "Table",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Short reason, only when the value is not a straight copy: a filter, lookup, derivation or combination of sources.",
+            "title": "Note"
+          }
+        },
+        "required": [
+          "table"
+        ],
+        "title": "_TableSource",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "entities": {
+        "description": "New Entities, and saved Entities to change: identity plus changed fields.",
+        "items": {
+          "$ref": "#/$defs/_CompactEntity"
+        },
+        "maxItems": 20000,
+        "title": "Entities",
+        "type": "array"
+      },
+      "relationships": {
+        "description": "New or changed Relationships, each from a child foreign key to a parent.",
+        "items": {
+          "$ref": "#/$defs/_CompactRelationship"
+        },
+        "maxItems": 20000,
+        "title": "Relationships",
+        "type": "array"
+      },
+      "retire": {
+        "description": "Saved records to mark inactive. Nothing is deleted. Retiring an Entity also retires its Attributes and Relationships; retiring an Attribute retires its Relationships.",
+        "items": {
+          "$ref": "#/$defs/_Retirement"
+        },
+        "maxItems": 20000,
+        "title": "Retire",
+        "type": "array"
+      }
+    },
+    "required": [
+      "entities",
+      "relationships",
+      "retire"
+    ],
+    "title": "_CompactLogicalCandidate",
+    "type": "object",
+    "description": "Return only new or changed Logical records in the three arrays; omitted saved records stay as they are. Cite tables by table_index id (t1) and columns as t1.column. For a saved Entity or Attribute, send its identity plus only the fields you change. The backend adds each new Entity's <Entity>ID key, audit columns, column and dependency order, locks and the parent key of each Relationship, and copies a missing Attribute definition from its single source column's Project description. Relationships point from the child's foreign-key Attribute to the parent Entity. Retire saved records in retire; nothing is deleted. Coverage target is 70% of distinct selected Objects, rounded up, through active Entity sources, including unchanged saved records. On repair, fix every context.repair.validation_issues entry and return the complete corrected answer, not a patch."
+  },
+  "expect": {
+    "list": "relationships",
+    "key": [
+      "cardinality"
+    ],
+    "expected": [],
+    "forbidden": [
+      {
+        "cardinality": "(checked by opt_checks.py)"
+      }
+    ]
+  },
+  "opt_checks": {
+    "duplicates": [
+      "ERPCustomer",
+      "CRMCustomer"
+    ],
+    "repoint": [
+      [
+        "SalesOrder",
+        "ERPCustomerID"
+      ],
+      [
+        "Opportunity",
+        "CRMCustomerID"
+      ]
+    ],
+    "fk_child": "Invoice",
+    "fk_column": "t4.customer_no",
+    "plain_attribute": "SourceCustomerNo"
+  }
+}

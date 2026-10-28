@@ -1,0 +1,672 @@
+{
+  "description": "HR employees: legal_entity_name holds the name of a legal entity listed in the RD reference files (another System, a FILE), and cost_ctr is an undocumented code of RD's cost-center list. Both should link across Systems from the whole picture, with manager_id as a self-reference. Person names, emails, dates and status must not link.",
+  "values": {
+    "source_context": [
+      {
+        "tenant_code": "NORTHWIND",
+        "tenant_description": "Industrial equipment distributor that sells to companies.",
+        "system_code": "RD",
+        "system_description": "Reference data files maintained by group finance: the legal entities and cost centers of the group.",
+        "system_type_code": "FILE",
+        "system_type_description": "Flat files read from a folder.",
+        "connection_code": "RD_FILES",
+        "connection_description": "Shared folder of reference files.",
+        "connection_type_code": "FILE_SHARE",
+        "connection_type_description": "Network file share.",
+        "zone_code": "source",
+        "zone_description": "Originating source data."
+      },
+      {
+        "tenant_code": "NORTHWIND",
+        "tenant_description": "Industrial equipment distributor that sells to companies.",
+        "system_code": "HR",
+        "system_description": "Human resources application: employees, their contracts and organisation.",
+        "system_type_code": "SQL",
+        "system_type_description": "Relational database source read with SQL.",
+        "connection_code": "HR_PROD",
+        "connection_description": "Production HR database.",
+        "connection_type_code": "SQL_SERVER",
+        "connection_type_description": "Connection to a Microsoft SQL Server database.",
+        "zone_code": "source",
+        "zone_description": "Originating source data."
+      }
+    ],
+    "gds_context": [
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "zone_code": "bronze",
+        "zone_description": "Raw copies of source tables in the lake."
+      }
+    ],
+    "context_records": [],
+    "key_directory": [
+      {
+        "table": "t1",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "rd",
+        "object_name": "legal_entity",
+        "object_description": "Legal entities of the group, one row per legal entity.",
+        "zone_code": "bronze",
+        "source_systems": [
+          "RD"
+        ],
+        "batch_attribute_name": null,
+        "key_columns": [
+          {
+            "attribute_name": "legal_entity_code",
+            "attribute_description": "Code of the legal entity.",
+            "attribute_data_type": "VARCHAR(6)",
+            "attribute_inferred_data_type": "VARCHAR(6)",
+            "registered_is_natural_key": true,
+            "is_surrogate_key": false,
+            "is_natural_key": true,
+            "is_primary_key": null,
+            "profile": {
+              "row_scope": "all_rows",
+              "row_count": 14,
+              "non_null_count": 14,
+              "null_count": 0,
+              "distinct_count": 14,
+              "min_data_length": 6,
+              "max_data_length": 6
+            }
+          },
+          {
+            "attribute_name": "legal_entity_name",
+            "attribute_description": "Registered name of the legal entity.",
+            "attribute_data_type": "VARCHAR(80)",
+            "attribute_inferred_data_type": "VARCHAR(80)",
+            "registered_is_natural_key": false,
+            "is_surrogate_key": false,
+            "is_natural_key": null,
+            "is_primary_key": null,
+            "profile": {
+              "row_scope": "all_rows",
+              "row_count": 14,
+              "non_null_count": 14,
+              "null_count": 0,
+              "distinct_count": 14,
+              "min_data_length": 9,
+              "max_data_length": 38
+            }
+          }
+        ],
+        "other_columns": []
+      },
+      {
+        "table": "t2",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "rd",
+        "object_name": "cost_center",
+        "object_description": "Cost centers of the group, one row per cost center.",
+        "zone_code": "bronze",
+        "source_systems": [
+          "RD"
+        ],
+        "batch_attribute_name": null,
+        "key_columns": [
+          {
+            "attribute_name": "cost_center_code",
+            "attribute_description": "Code of the cost center.",
+            "attribute_data_type": "VARCHAR(8)",
+            "attribute_inferred_data_type": "VARCHAR(8)",
+            "registered_is_natural_key": true,
+            "is_surrogate_key": false,
+            "is_natural_key": true,
+            "is_primary_key": null,
+            "profile": {
+              "row_scope": "all_rows",
+              "row_count": 410,
+              "non_null_count": 410,
+              "null_count": 0,
+              "distinct_count": 410,
+              "min_data_length": 8,
+              "max_data_length": 8
+            }
+          }
+        ],
+        "other_columns": []
+      },
+      {
+        "table": "t3",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "hr",
+        "object_name": "contract",
+        "object_description": "Employment contracts; one row per contract.",
+        "zone_code": "bronze",
+        "source_systems": [
+          "HR"
+        ],
+        "batch_attribute_name": null,
+        "key_columns": [
+          {
+            "attribute_name": "contract_id",
+            "attribute_description": "Identifier of the contract.",
+            "attribute_data_type": "VARCHAR(10)",
+            "attribute_inferred_data_type": "VARCHAR(10)",
+            "registered_is_natural_key": true,
+            "is_surrogate_key": false,
+            "is_natural_key": true,
+            "is_primary_key": null,
+            "profile": {
+              "row_scope": "all_rows",
+              "row_count": 9100,
+              "non_null_count": 9100,
+              "null_count": 0,
+              "distinct_count": 9100,
+              "min_data_length": 10,
+              "max_data_length": 10
+            }
+          }
+        ],
+        "other_columns": []
+      },
+      {
+        "table": "t4",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "hr",
+        "object_name": "employee",
+        "object_description": "Employees of the group; one row per employee.",
+        "zone_code": "bronze",
+        "source_systems": [
+          "HR"
+        ],
+        "batch_attribute_name": null,
+        "key_columns": [
+          {
+            "attribute_name": "employee_id",
+            "attribute_description": "Identifier of the employee.",
+            "attribute_data_type": "VARCHAR(8)",
+            "attribute_inferred_data_type": "VARCHAR(8)",
+            "registered_is_natural_key": true,
+            "is_surrogate_key": false,
+            "is_natural_key": true,
+            "is_primary_key": null,
+            "profile": {
+              "row_scope": "all_rows",
+              "row_count": 8200,
+              "non_null_count": 8200,
+              "null_count": 0,
+              "distinct_count": 8200,
+              "min_data_length": 8,
+              "max_data_length": 8
+            }
+          }
+        ],
+        "other_columns": []
+      }
+    ],
+    "focus_table": {
+      "table": "t4",
+      "tenant_code": "GDS",
+      "system_code": "GDS",
+      "connection_code": "GDS",
+      "object_schema": "hr",
+      "object_name": "employee",
+      "object_description": "Employees of the group; one row per employee.",
+      "zone_code": "bronze",
+      "source_systems": [
+        "HR"
+      ],
+      "batch_attribute_name": null,
+      "attributes": [
+        {
+          "attribute_name": "employee_id",
+          "attribute_description": "Identifier of the employee.",
+          "attribute_data_type": "VARCHAR(8)",
+          "attribute_inferred_data_type": "VARCHAR(8)",
+          "attribute_nullability": false,
+          "is_natural_key": true,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": {
+            "profiled_at": "2026-10-01T06:00:00Z",
+            "row_scope": "all_rows",
+            "batch_attribute_name": null,
+            "batch_id": null,
+            "row_count": 8200,
+            "non_null_count": 8200,
+            "null_count": 0,
+            "blank_count": 0,
+            "distinct_count": 8200,
+            "min_data_length": 8,
+            "max_data_length": 8,
+            "avg_data_length": 8,
+            "percent_populated": 100.0,
+            "percent_duplicates": 0.0,
+            "percent_null": 0.0,
+            "percent_blank": 0,
+            "percent_distinct": 100.0
+          },
+          "registered_is_natural_key": true,
+          "is_primary_key": null,
+          "is_nullable": null,
+          "is_pii": null
+        },
+        {
+          "attribute_name": "full_name",
+          "attribute_description": "Full name of the employee.",
+          "attribute_data_type": "VARCHAR(120)",
+          "attribute_inferred_data_type": "VARCHAR(120)",
+          "attribute_nullability": true,
+          "is_natural_key": null,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": {
+            "profiled_at": "2026-10-01T06:00:00Z",
+            "row_scope": "all_rows",
+            "batch_attribute_name": null,
+            "batch_id": null,
+            "row_count": 8200,
+            "non_null_count": 8200,
+            "null_count": 0,
+            "blank_count": 0,
+            "distinct_count": 8150,
+            "min_data_length": 5,
+            "max_data_length": 60,
+            "avg_data_length": 60,
+            "percent_populated": 100.0,
+            "percent_duplicates": 0.6098,
+            "percent_null": 0.0,
+            "percent_blank": 0,
+            "percent_distinct": 99.3902
+          },
+          "registered_is_natural_key": false,
+          "is_primary_key": null,
+          "is_nullable": null,
+          "is_pii": null
+        },
+        {
+          "attribute_name": "email",
+          "attribute_description": "Work email address of the employee.",
+          "attribute_data_type": "VARCHAR(120)",
+          "attribute_inferred_data_type": "VARCHAR(120)",
+          "attribute_nullability": true,
+          "is_natural_key": null,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": {
+            "profiled_at": "2026-10-01T06:00:00Z",
+            "row_scope": "all_rows",
+            "batch_attribute_name": null,
+            "batch_id": null,
+            "row_count": 8200,
+            "non_null_count": 8200,
+            "null_count": 0,
+            "blank_count": 0,
+            "distinct_count": 8200,
+            "min_data_length": 12,
+            "max_data_length": 70,
+            "avg_data_length": 70,
+            "percent_populated": 100.0,
+            "percent_duplicates": 0.0,
+            "percent_null": 0.0,
+            "percent_blank": 0,
+            "percent_distinct": 100.0
+          },
+          "registered_is_natural_key": false,
+          "is_primary_key": null,
+          "is_nullable": null,
+          "is_pii": null
+        },
+        {
+          "attribute_name": "legal_entity_name",
+          "attribute_description": "Name of the legal entity that employs this person.",
+          "attribute_data_type": "VARCHAR(80)",
+          "attribute_inferred_data_type": "VARCHAR(80)",
+          "attribute_nullability": true,
+          "is_natural_key": null,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": {
+            "profiled_at": "2026-10-01T06:00:00Z",
+            "row_scope": "all_rows",
+            "batch_attribute_name": null,
+            "batch_id": null,
+            "row_count": 8200,
+            "non_null_count": 8200,
+            "null_count": 0,
+            "blank_count": 0,
+            "distinct_count": 12,
+            "min_data_length": 9,
+            "max_data_length": 38,
+            "avg_data_length": 38,
+            "percent_populated": 100.0,
+            "percent_duplicates": 99.8537,
+            "percent_null": 0.0,
+            "percent_blank": 0,
+            "percent_distinct": 0.1463
+          },
+          "registered_is_natural_key": false,
+          "is_primary_key": null,
+          "is_nullable": null,
+          "is_pii": null
+        },
+        {
+          "attribute_name": "cost_ctr",
+          "attribute_description": null,
+          "attribute_data_type": "VARCHAR(8)",
+          "attribute_inferred_data_type": "VARCHAR(8)",
+          "attribute_nullability": true,
+          "is_natural_key": null,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": {
+            "profiled_at": "2026-10-01T06:00:00Z",
+            "row_scope": "all_rows",
+            "batch_attribute_name": null,
+            "batch_id": null,
+            "row_count": 8200,
+            "non_null_count": 8200,
+            "null_count": 0,
+            "blank_count": 0,
+            "distinct_count": 380,
+            "min_data_length": 8,
+            "max_data_length": 8,
+            "avg_data_length": 8,
+            "percent_populated": 100.0,
+            "percent_duplicates": 95.3659,
+            "percent_null": 0.0,
+            "percent_blank": 0,
+            "percent_distinct": 4.6341
+          },
+          "registered_is_natural_key": false,
+          "is_primary_key": null,
+          "is_nullable": null,
+          "is_pii": null
+        },
+        {
+          "attribute_name": "manager_id",
+          "attribute_description": "Employee id of the line manager.",
+          "attribute_data_type": "VARCHAR(8)",
+          "attribute_inferred_data_type": "VARCHAR(8)",
+          "attribute_nullability": true,
+          "is_natural_key": null,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": {
+            "profiled_at": "2026-10-01T06:00:00Z",
+            "row_scope": "all_rows",
+            "batch_attribute_name": null,
+            "batch_id": null,
+            "row_count": 8200,
+            "non_null_count": 8188,
+            "null_count": 12,
+            "blank_count": 0,
+            "distinct_count": 900,
+            "min_data_length": 8,
+            "max_data_length": 8,
+            "avg_data_length": 8,
+            "percent_populated": 99.8537,
+            "percent_duplicates": 89.0083,
+            "percent_null": 0.1463,
+            "percent_blank": 0,
+            "percent_distinct": 10.9917
+          },
+          "registered_is_natural_key": false,
+          "is_primary_key": null,
+          "is_nullable": null,
+          "is_pii": null
+        },
+        {
+          "attribute_name": "hire_date",
+          "attribute_description": "Date the employee joined.",
+          "attribute_data_type": "DATE",
+          "attribute_inferred_data_type": "DATE",
+          "attribute_nullability": true,
+          "is_natural_key": null,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": {
+            "profiled_at": "2026-10-01T06:00:00Z",
+            "row_scope": "all_rows",
+            "batch_attribute_name": null,
+            "batch_id": null,
+            "row_count": 8200,
+            "non_null_count": 8200,
+            "null_count": 0,
+            "blank_count": 0,
+            "distinct_count": 3100,
+            "min_data_length": null,
+            "max_data_length": null,
+            "avg_data_length": null,
+            "percent_populated": 100.0,
+            "percent_duplicates": 62.1951,
+            "percent_null": 0.0,
+            "percent_blank": 0,
+            "percent_distinct": 37.8049
+          },
+          "registered_is_natural_key": false,
+          "is_primary_key": null,
+          "is_nullable": null,
+          "is_pii": null
+        },
+        {
+          "attribute_name": "country_code",
+          "attribute_description": "Country of the work location (ISO code).",
+          "attribute_data_type": "CHAR(2)",
+          "attribute_inferred_data_type": "CHAR(2)",
+          "attribute_nullability": true,
+          "is_natural_key": null,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": {
+            "profiled_at": "2026-10-01T06:00:00Z",
+            "row_scope": "all_rows",
+            "batch_attribute_name": null,
+            "batch_id": null,
+            "row_count": 8200,
+            "non_null_count": 8200,
+            "null_count": 0,
+            "blank_count": 0,
+            "distinct_count": 9,
+            "min_data_length": 2,
+            "max_data_length": 2,
+            "avg_data_length": 2,
+            "percent_populated": 100.0,
+            "percent_duplicates": 99.8902,
+            "percent_null": 0.0,
+            "percent_blank": 0,
+            "percent_distinct": 0.1098
+          },
+          "registered_is_natural_key": false,
+          "is_primary_key": null,
+          "is_nullable": null,
+          "is_pii": null
+        },
+        {
+          "attribute_name": "status",
+          "attribute_description": null,
+          "attribute_data_type": "CHAR(1)",
+          "attribute_inferred_data_type": "CHAR(1)",
+          "attribute_nullability": true,
+          "is_natural_key": null,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": {
+            "profiled_at": "2026-10-01T06:00:00Z",
+            "row_scope": "all_rows",
+            "batch_attribute_name": null,
+            "batch_id": null,
+            "row_count": 8200,
+            "non_null_count": 8200,
+            "null_count": 0,
+            "blank_count": 0,
+            "distinct_count": 3,
+            "min_data_length": 1,
+            "max_data_length": 1,
+            "avg_data_length": 1,
+            "percent_populated": 100.0,
+            "percent_duplicates": 99.9634,
+            "percent_null": 0.0,
+            "percent_blank": 0,
+            "percent_distinct": 0.0366
+          },
+          "registered_is_natural_key": false,
+          "is_primary_key": null,
+          "is_nullable": null,
+          "is_pii": null
+        }
+      ]
+    },
+    "ingestion_mapping": [
+      {
+        "source": {
+          "tenant_code": "NORTHWIND",
+          "system_code": "HR",
+          "connection_code": "HR_PROD",
+          "object_schema": "dbo",
+          "object_name": "EMPLOYEE",
+          "object_description": "Employees."
+        },
+        "target": {
+          "tenant_code": "GDS",
+          "system_code": "GDS",
+          "connection_code": "GDS",
+          "object_schema": "hr",
+          "object_name": "employee"
+        }
+      }
+    ],
+    "saved_relationships": []
+  },
+  "output_schema": {
+    "$defs": {
+      "AnalysisTableRelationship": {
+        "additionalProperties": false,
+        "description": "One per-table answer link: it starts at a focus-table column and cites `tN.column`.",
+        "properties": {
+          "from_attribute_name": {
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "From Attribute Name",
+            "type": "string"
+          },
+          "to": {
+            "maxLength": 430,
+            "minLength": 4,
+            "pattern": "^t[1-9][0-9]*\\.\\S",
+            "title": "To",
+            "type": "string"
+          },
+          "relationship_kind": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Relationship Kind",
+            "type": "string"
+          },
+          "inferred_cardinality": {
+            "anyOf": [
+              {
+                "enum": [
+                  "one_to_one",
+                  "one_to_many",
+                  "many_to_one",
+                  "many_to_many"
+                ],
+                "type": "string"
+              },
+              {
+                "const": "unknown",
+                "type": "string"
+              }
+            ],
+            "title": "Inferred Cardinality"
+          }
+        },
+        "required": [
+          "from_attribute_name",
+          "to",
+          "relationship_kind",
+          "inferred_cardinality"
+        ],
+        "title": "AnalysisTableRelationship",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "relationships": {
+        "items": {
+          "$ref": "#/$defs/AnalysisTableRelationship"
+        },
+        "maxItems": 2000,
+        "title": "Relationships",
+        "type": "array"
+      }
+    },
+    "required": [
+      "relationships"
+    ],
+    "title": "_AnalysisTableCandidate",
+    "type": "object"
+  },
+  "expect": {
+    "list": "relationships",
+    "key": [
+      "from_attribute_name",
+      "to"
+    ],
+    "expected": [
+      {
+        "from_attribute_name": "legal_entity_name",
+        "to": "t1.legal_entity_name"
+      },
+      {
+        "from_attribute_name": "cost_ctr",
+        "to": "t2.cost_center_code"
+      },
+      {
+        "from_attribute_name": "manager_id",
+        "to": "t4.employee_id"
+      }
+    ],
+    "forbidden": [
+      {
+        "from_attribute_name": "full_name",
+        "to": "t1.legal_entity_name"
+      },
+      {
+        "from_attribute_name": "legal_entity_name",
+        "to": "t1.legal_entity_code"
+      },
+      {
+        "from_attribute_name": "country_code",
+        "to": "t1.legal_entity_code"
+      },
+      {
+        "from_attribute_name": "status",
+        "to": "t2.cost_center_code"
+      },
+      {
+        "from_attribute_name": "employee_id",
+        "to": "t3.contract_id"
+      },
+      {
+        "from_attribute_name": "email",
+        "to": "t1.legal_entity_name"
+      }
+    ]
+  }
+}

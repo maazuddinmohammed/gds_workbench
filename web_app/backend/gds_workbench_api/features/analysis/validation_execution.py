@@ -287,19 +287,11 @@ def build_analysis_validation_query(
     *,
     requested_batch_id: str | None,
 ) -> AnalysisValidationQuery:
-    """Build one aggregate-only query for a registered relationship."""
-    source_type = _validated_scalar_type(
-        relationship.from_endpoint.attribute_data_type,
-        label="Analysis Attribute",
-    )
-    target_type = _validated_scalar_type(
-        relationship.to_endpoint.attribute_data_type,
-        label="Analysis Attribute",
-    )
-    if source_type != target_type:
-        raise InvalidRequestError(
-            "Analysis validation requires matching registered Attribute data types."
-        )
+    """Build one aggregate-only query for a registered relationship.
+
+    Endpoint data types are not checked: the warehouse compares the values,
+    and a query it cannot run is skipped by the workflow.
+    """
     if requested_batch_id is not None and (
         not requested_batch_id.strip()
         or "\x00" in requested_batch_id

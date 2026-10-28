@@ -357,7 +357,7 @@ async def test_empty_validation_context_skips_databricks_and_commits_empty() -> 
 
 
 @pytest.mark.asyncio
-async def test_validation_failure_is_safe_and_never_commits_partial_results() -> None:
+async def test_validation_skips_a_failing_relationship_and_commits_the_rest() -> None:
     lifecycle = _Lifecycle()
     repository = _Repository(
         context=AnalysisValidationExecutionContext(
@@ -366,6 +366,42 @@ async def test_validation_failure_is_safe_and_never_commits_partial_results() ->
             project_revision=4,
             requested_batch_id=None,
             targets=tuple(_target(result_id) for result_id in range(1, 6)),
+        )
+    )
+    workflow = AnalysisValidationWorkflow(
+        lifecycle=lifecycle,
+        repository=repository,
+        executor=_Executor(fail_result_id=3),
+        policy=_policy(),
+    )
+
+    await workflow.execute_started(
+        _principal(),
+        tenant_id=7,
+        project_id=18,
+        workflow_run_id=1048,
+        expected_project_revision=4,
+        workflow_run_claim_token=_CLAIM_TOKEN,
+    )
+
+    assert lifecycle.failure is None
+    assert [
+        [item["analysis_result_id"] for item in payload]
+        for payload in repository.commits
+    ] == [[1, 2, 4, 5]]
+    assert "1 of 5 relationships could not be checked" in lifecycle.events[-1].message
+
+
+@pytest.mark.asyncio
+async def test_validation_fails_safely_when_no_relationship_can_be_checked() -> None:
+    lifecycle = _Lifecycle()
+    repository = _Repository(
+        context=AnalysisValidationExecutionContext(
+            workflow_run_id=1048,
+            project_id=18,
+            project_revision=4,
+            requested_batch_id=None,
+            targets=(_target(3),),
         )
     )
     workflow = AnalysisValidationWorkflow(

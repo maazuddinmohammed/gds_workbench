@@ -23,6 +23,7 @@
         "object_description": "CDS HR extract: one row per employee per load.",
         "zone_code": "bronze",
         "source_systems": [],
+        "batch_attribute_name": "gds_batch_id",
         "key_columns": [
           {
             "attribute_name": "employeeid",
@@ -56,6 +57,7 @@
         "object_description": "CDS emergency contacts: one row per contact per load.",
         "zone_code": "bronze",
         "source_systems": [],
+        "batch_attribute_name": "gds_batch_id",
         "key_columns": [],
         "other_columns": [
           {
@@ -94,6 +96,7 @@
         "object_description": "CDS right-to-work documents: one row per document per load.",
         "zone_code": "bronze",
         "source_systems": [],
+        "batch_attribute_name": "gds_batch_id",
         "key_columns": [],
         "other_columns": [
           {
@@ -126,6 +129,7 @@
         "object_description": "CYM HR extract: one row per employee per load.",
         "zone_code": "bronze",
         "source_systems": [],
+        "batch_attribute_name": "gds_batch_id",
         "key_columns": [
           {
             "attribute_name": "employeeid",
@@ -159,6 +163,7 @@
         "object_description": "CYM emergency contacts: one row per contact per load.",
         "zone_code": "bronze",
         "source_systems": [],
+        "batch_attribute_name": "gds_batch_id",
         "key_columns": [],
         "other_columns": [
           {
@@ -197,6 +202,7 @@
         "object_description": "CYM right-to-work documents: one row per document per load.",
         "zone_code": "bronze",
         "source_systems": [],
+        "batch_attribute_name": "gds_batch_id",
         "key_columns": [],
         "other_columns": [
           {
@@ -230,6 +236,7 @@
       "object_description": "CDS emergency contacts: one row per contact per load.",
       "zone_code": "bronze",
       "source_systems": [],
+      "batch_attribute_name": "gds_batch_id",
       "attributes": [
         {
           "attribute_name": "employeeid",

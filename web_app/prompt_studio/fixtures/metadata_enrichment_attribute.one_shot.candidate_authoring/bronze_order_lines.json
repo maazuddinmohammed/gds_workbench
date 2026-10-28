@@ -1,0 +1,804 @@
+{
+  "description": "Bronze order lines loaded from two instances with GDSBatchID: the instance column joins the business key; business columns get no load or zone words; GDSBatchID is in no key; a plain status column described from its name.",
+  "values": {
+    "source_context": [
+      {
+        "tenant_code": "NORTHWIND",
+        "tenant_description": "Industrial equipment distributor.",
+        "system_code": "ORDERS_APP",
+        "system_description": "Order-to-cash application: customer orders, deliveries and invoices.",
+        "system_type_code": "SQL",
+        "system_type_description": "Relational database source read with SQL.",
+        "connection_code": "ORD_UK",
+        "connection_description": "UK production database.",
+        "connection_type_code": "SQL_SERVER",
+        "connection_type_description": "Connection to a Microsoft SQL Server database.",
+        "zone_code": "source",
+        "zone_description": "Originating source data."
+      },
+      {
+        "tenant_code": "NORTHWIND",
+        "tenant_description": "Industrial equipment distributor.",
+        "system_code": "ORDERS_APP",
+        "system_description": "Order-to-cash application: customer orders, deliveries and invoices.",
+        "system_type_code": "SQL",
+        "system_type_description": "Relational database source read with SQL.",
+        "connection_code": "ORD_DE",
+        "connection_description": "German production database.",
+        "connection_type_code": "SQL_SERVER",
+        "connection_type_description": "Connection to a Microsoft SQL Server database.",
+        "zone_code": "source",
+        "zone_description": "Originating source data."
+      }
+    ],
+    "gds_context": [
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "zone_code": "bronze",
+        "zone_description": "Raw copies of source tables in the lake."
+      }
+    ],
+    "object_context": [
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "orders_app",
+        "object_name": "so_line",
+        "zone_code": "bronze",
+        "registered_object_description": "Bronze copy of SO_LINE from the ORDERS_APP UK and DE databases, loaded nightly.",
+        "object_description": "Sales order lines: one row per product on a confirmed customer order, with quantity, net unit price and requested delivery date."
+      }
+    ],
+    "object_attribute_context": [
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "orders_app",
+        "object_name": "so_line",
+        "selected_attribute_names": [
+          "so_no",
+          "line_no",
+          "unit_price",
+          "line_status",
+          "source_instance",
+          "GDSBatchID"
+        ],
+        "attributes": [
+          {
+            "attribute_name": "so_no",
+            "attribute_data_type": "VARCHAR(12)",
+            "attribute_inferred_data_type": null,
+            "attribute_nullability": false,
+            "registered_attribute_description": "Sales order number.",
+            "attribute_description": "Number of the customer sales order this line belongs to.",
+            "registered_is_natural_key": true,
+            "is_surrogate_key": false,
+            "is_meta_data": false,
+            "is_masking_required": false,
+            "is_natural_key": true,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null,
+            "profile": {
+              "profiled_at": "2026-10-01T06:00:00Z",
+              "row_scope": "all_rows",
+              "batch_attribute_name": null,
+              "batch_id": null,
+              "row_count": 48210,
+              "non_null_count": 48210,
+              "null_count": 0,
+              "blank_count": 0,
+              "distinct_count": 15880,
+              "min_data_length": 10,
+              "max_data_length": 10,
+              "avg_data_length": 10,
+              "percent_populated": 100.0,
+              "percent_null": 0.0,
+              "percent_blank": 0,
+              "percent_distinct": 32.94,
+              "percent_duplicates": 67.06
+            }
+          },
+          {
+            "attribute_name": "line_no",
+            "attribute_data_type": "INT",
+            "attribute_inferred_data_type": null,
+            "attribute_nullability": false,
+            "registered_attribute_description": "Line number within the order.",
+            "attribute_description": null,
+            "registered_is_natural_key": true,
+            "is_surrogate_key": false,
+            "is_meta_data": false,
+            "is_masking_required": false,
+            "is_natural_key": true,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null,
+            "profile": {
+              "profiled_at": "2026-10-01T06:00:00Z",
+              "row_scope": "all_rows",
+              "batch_attribute_name": null,
+              "batch_id": null,
+              "row_count": 48210,
+              "non_null_count": 48210,
+              "null_count": 0,
+              "blank_count": 0,
+              "distinct_count": 42,
+              "min_data_length": null,
+              "max_data_length": null,
+              "avg_data_length": null,
+              "percent_populated": 100.0,
+              "percent_null": 0.0,
+              "percent_blank": 0,
+              "percent_distinct": 0.09,
+              "percent_duplicates": 99.91
+            }
+          },
+          {
+            "attribute_name": "item_code",
+            "attribute_data_type": "VARCHAR(20)",
+            "attribute_inferred_data_type": null,
+            "attribute_nullability": true,
+            "registered_attribute_description": "Item sold on this line.",
+            "attribute_description": "Product sold on this order line.",
+            "registered_is_natural_key": false,
+            "is_surrogate_key": false,
+            "is_meta_data": false,
+            "is_masking_required": false,
+            "is_natural_key": null,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null,
+            "profile": {
+              "profiled_at": "2026-10-01T06:00:00Z",
+              "row_scope": "all_rows",
+              "batch_attribute_name": null,
+              "batch_id": null,
+              "row_count": 48210,
+              "non_null_count": 48210,
+              "null_count": 0,
+              "blank_count": 0,
+              "distinct_count": 3120,
+              "min_data_length": 6,
+              "max_data_length": 14,
+              "avg_data_length": 9.4,
+              "percent_populated": 100.0,
+              "percent_null": 0.0,
+              "percent_blank": 0,
+              "percent_distinct": 6.47,
+              "percent_duplicates": 93.53
+            }
+          },
+          {
+            "attribute_name": "unit_price",
+            "attribute_data_type": "DECIMAL(14,4)",
+            "attribute_inferred_data_type": null,
+            "attribute_nullability": true,
+            "registered_attribute_description": "Net price per unit, in the order currency.",
+            "attribute_description": null,
+            "registered_is_natural_key": false,
+            "is_surrogate_key": false,
+            "is_meta_data": false,
+            "is_masking_required": false,
+            "is_natural_key": null,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null,
+            "profile": null
+          },
+          {
+            "attribute_name": "currency_code",
+            "attribute_data_type": "CHAR(3)",
+            "attribute_inferred_data_type": null,
+            "attribute_nullability": true,
+            "registered_attribute_description": "Order currency (ISO 4217 code).",
+            "attribute_description": null,
+            "registered_is_natural_key": false,
+            "is_surrogate_key": false,
+            "is_meta_data": false,
+            "is_masking_required": false,
+            "is_natural_key": null,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null,
+            "profile": null
+          },
+          {
+            "attribute_name": "line_status",
+            "attribute_data_type": "CHAR(1)",
+            "attribute_inferred_data_type": null,
+            "attribute_nullability": true,
+            "registered_attribute_description": null,
+            "attribute_description": null,
+            "registered_is_natural_key": false,
+            "is_surrogate_key": false,
+            "is_meta_data": false,
+            "is_masking_required": false,
+            "is_natural_key": null,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null,
+            "profile": {
+              "profiled_at": "2026-10-01T06:00:00Z",
+              "row_scope": "all_rows",
+              "batch_attribute_name": null,
+              "batch_id": null,
+              "row_count": 48210,
+              "non_null_count": 48210,
+              "null_count": 0,
+              "blank_count": 0,
+              "distinct_count": 3,
+              "min_data_length": 1,
+              "max_data_length": 1,
+              "avg_data_length": 1,
+              "percent_populated": 100.0,
+              "percent_null": 0.0,
+              "percent_blank": 0,
+              "percent_distinct": 0.01,
+              "percent_duplicates": 99.99
+            }
+          },
+          {
+            "attribute_name": "source_instance",
+            "attribute_data_type": "VARCHAR(10)",
+            "attribute_inferred_data_type": null,
+            "attribute_nullability": false,
+            "registered_attribute_description": "Source database the row was loaded from (ORD_UK or ORD_DE).",
+            "attribute_description": null,
+            "registered_is_natural_key": false,
+            "is_surrogate_key": false,
+            "is_meta_data": false,
+            "is_masking_required": false,
+            "is_natural_key": null,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null,
+            "profile": null
+          },
+          {
+            "attribute_name": "GDSBatchID",
+            "attribute_data_type": "BIGINT",
+            "attribute_inferred_data_type": null,
+            "attribute_nullability": false,
+            "registered_attribute_description": "Load batch identifier.",
+            "attribute_description": null,
+            "registered_is_natural_key": false,
+            "is_surrogate_key": false,
+            "is_meta_data": true,
+            "is_masking_required": false,
+            "is_natural_key": null,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null,
+            "profile": null
+          }
+        ]
+      }
+    ],
+    "ingestion_mapping": [
+      {
+        "source": {
+          "tenant_code": "NORTHWIND",
+          "system_code": "ORDERS_APP",
+          "connection_code": "ORD_UK",
+          "object_schema": "dbo",
+          "object_name": "SO_LINE",
+          "object_description": "Sales order lines; one row per ordered item."
+        },
+        "target": {
+          "tenant_code": "GDS",
+          "system_code": "GDS",
+          "connection_code": "GDS",
+          "object_schema": "orders_app",
+          "object_name": "so_line"
+        }
+      },
+      {
+        "source": {
+          "tenant_code": "NORTHWIND",
+          "system_code": "ORDERS_APP",
+          "connection_code": "ORD_DE",
+          "object_schema": "dbo",
+          "object_name": "SO_LINE",
+          "object_description": null
+        },
+        "target": {
+          "tenant_code": "GDS",
+          "system_code": "GDS",
+          "connection_code": "GDS",
+          "object_schema": "orders_app",
+          "object_name": "so_line"
+        }
+      }
+    ]
+  },
+  "output_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "descriptions",
+      "attributes"
+    ],
+    "properties": {
+      "descriptions": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"so_no\"]",
+          "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"line_no\"]",
+          "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"unit_price\"]",
+          "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"line_status\"]",
+          "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"source_instance\"]",
+          "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"GDSBatchID\"]"
+        ],
+        "properties": {
+          "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"so_no\"]": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"line_no\"]": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"unit_price\"]": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"line_status\"]": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"source_instance\"]": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"GDSBatchID\"]": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "attributes": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"so_no\"]",
+          "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"line_no\"]",
+          "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"unit_price\"]",
+          "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"line_status\"]",
+          "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"source_instance\"]",
+          "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"GDSBatchID\"]"
+        ],
+        "properties": {
+          "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"so_no\"]": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "is_natural_key",
+              "is_primary_key",
+              "is_nullable",
+              "is_pii"
+            ],
+            "properties": {
+              "is_natural_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_primary_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_nullable": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_pii": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            }
+          },
+          "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"line_no\"]": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "is_natural_key",
+              "is_primary_key",
+              "is_nullable",
+              "is_pii"
+            ],
+            "properties": {
+              "is_natural_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_primary_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_nullable": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_pii": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            }
+          },
+          "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"unit_price\"]": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "is_natural_key",
+              "is_primary_key",
+              "is_nullable",
+              "is_pii"
+            ],
+            "properties": {
+              "is_natural_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_primary_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_nullable": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_pii": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            }
+          },
+          "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"line_status\"]": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "is_natural_key",
+              "is_primary_key",
+              "is_nullable",
+              "is_pii"
+            ],
+            "properties": {
+              "is_natural_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_primary_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_nullable": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_pii": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            }
+          },
+          "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"source_instance\"]": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "is_natural_key",
+              "is_primary_key",
+              "is_nullable",
+              "is_pii"
+            ],
+            "properties": {
+              "is_natural_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_primary_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_nullable": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_pii": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            }
+          },
+          "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"GDSBatchID\"]": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "is_natural_key",
+              "is_primary_key",
+              "is_nullable",
+              "is_pii"
+            ],
+            "properties": {
+              "is_natural_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_primary_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_nullable": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_pii": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "description": "is_pii means personally identifiable information about a natural person. Judge each Attribute on its own meaning: documented, or plain from its name in its table. Set true when it identifies, contacts or locates an identifiable person, or holds a sensitive personal detail: personal names; a person's email, phone or address, business or private; government identifiers; identifiers whose values each point to one person, such as employee or contact numbers; date of birth; and person-linked medical or financial details. Set false when its meaning is non-personal, such as product codes, quantities, statuses, business dates, load timestamps, or company identifiers and names. Data type, uniqueness, key membership or a previous true finding alone does not establish PII. Set null only when the Attribute's meaning is unknown or the evidence conflicts. Never copy one finding across all columns. is_masking_required is separate and never changes. Never expose example personal values."
+  },
+  "expect": {
+    "list": "descriptions",
+    "key": [
+      "text"
+    ],
+    "expected": [],
+    "forbidden": [
+      {
+        "text": "(text answers are checked by text_checks, not by score)"
+      }
+    ]
+  },
+  "text_checks": {
+    "column_names": [
+      "so_no",
+      "line_no",
+      "item_code",
+      "unit_price",
+      "currency_code",
+      "line_status",
+      "source_instance",
+      "GDSBatchID"
+    ],
+    "landscape_words": [
+      "bronze",
+      "raw",
+      "landing",
+      "lake",
+      "lakehouse",
+      "gds",
+      "batch",
+      "batches",
+      "load",
+      "loaded",
+      "loads",
+      "nightly",
+      "ingest",
+      "ingested",
+      "copy",
+      "copies",
+      "staging",
+      "layer",
+      "zone",
+      "instance",
+      "instances"
+    ],
+    "hedges": [
+      "likely",
+      "appears",
+      "probably",
+      "seems",
+      "possibly",
+      "presumably",
+      "might",
+      "may contain"
+    ],
+    "targets": {
+      "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"so_no\"]": {
+        "flags": {
+          "is_natural_key": [
+            true
+          ],
+          "is_primary_key": [
+            true
+          ],
+          "is_nullable": [
+            false
+          ],
+          "is_pii": [
+            false
+          ]
+        }
+      },
+      "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"line_no\"]": {
+        "flags": {
+          "is_natural_key": [
+            true
+          ],
+          "is_primary_key": [
+            true
+          ],
+          "is_nullable": [
+            false
+          ],
+          "is_pii": [
+            false
+          ]
+        }
+      },
+      "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"unit_price\"]": {
+        "flags": {
+          "is_natural_key": [
+            false
+          ],
+          "is_primary_key": [
+            false
+          ],
+          "is_nullable": [
+            false,
+            true
+          ],
+          "is_pii": [
+            false
+          ]
+        }
+      },
+      "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"line_status\"]": {
+        "flags": {
+          "is_natural_key": [
+            false
+          ],
+          "is_primary_key": [
+            false
+          ],
+          "is_nullable": [
+            false
+          ],
+          "is_pii": [
+            false
+          ]
+        }
+      },
+      "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"source_instance\"]": {
+        "allow_landscape": true,
+        "flags": {
+          "is_natural_key": [
+            true
+          ],
+          "is_primary_key": [
+            true
+          ],
+          "is_nullable": [
+            false
+          ],
+          "is_pii": [
+            false
+          ]
+        }
+      },
+      "[\"GDS\",\"GDS\",\"GDS\",\"orders_app\",\"so_line\",\"GDSBatchID\"]": {
+        "allow_landscape": true,
+        "flags": {
+          "is_natural_key": [
+            false
+          ],
+          "is_primary_key": [
+            false
+          ],
+          "is_nullable": [
+            false
+          ],
+          "is_pii": [
+            false
+          ]
+        }
+      }
+    }
+  }
+}

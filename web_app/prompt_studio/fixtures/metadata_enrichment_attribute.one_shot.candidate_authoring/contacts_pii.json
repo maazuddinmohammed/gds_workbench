@@ -1,0 +1,798 @@
+{
+  "description": "CRM contact persons of a business-to-business seller: PII for names, email and contact number but not the company account; NOT NULL vs default nullability; a plain status column described from its name, not left null.",
+  "values": {
+    "source_context": [
+      {
+        "tenant_code": "NORTHWIND",
+        "tenant_description": "Industrial equipment distributor that sells to companies, not consumers.",
+        "system_code": "CRM",
+        "system_description": "Customer relationship management: customer companies, their contact persons and sales activities.",
+        "system_type_code": "SQL",
+        "system_type_description": "Relational database source read with SQL.",
+        "connection_code": "CRM_PROD",
+        "connection_description": "Production CRM database.",
+        "connection_type_code": "SQL_SERVER",
+        "connection_type_description": "Connection to a Microsoft SQL Server database.",
+        "zone_code": "source",
+        "zone_description": "Originating source data."
+      }
+    ],
+    "gds_context": [],
+    "object_context": [
+      {
+        "tenant_code": "NORTHWIND",
+        "system_code": "CRM",
+        "connection_code": "CRM_PROD",
+        "object_schema": "dbo",
+        "object_name": "CONTACT",
+        "zone_code": "source",
+        "registered_object_description": "Contact persons at customer companies; one row per contact.",
+        "object_description": "Contact persons at customer companies, one row per contact person."
+      }
+    ],
+    "object_attribute_context": [
+      {
+        "tenant_code": "NORTHWIND",
+        "system_code": "CRM",
+        "connection_code": "CRM_PROD",
+        "object_schema": "dbo",
+        "object_name": "CONTACT",
+        "selected_attribute_names": [
+          "CONTACT_NO",
+          "ACCOUNT_NO",
+          "FIRST_NAME",
+          "EMAIL",
+          "STATUS",
+          "CREATED_AT"
+        ],
+        "attributes": [
+          {
+            "attribute_name": "CONTACT_NO",
+            "attribute_data_type": "VARCHAR(10)",
+            "attribute_inferred_data_type": null,
+            "attribute_nullability": false,
+            "registered_attribute_description": "Contact number shown to users; unique per contact.",
+            "attribute_description": null,
+            "registered_is_natural_key": true,
+            "is_surrogate_key": false,
+            "is_meta_data": false,
+            "is_masking_required": false,
+            "is_natural_key": true,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null,
+            "profile": {
+              "profiled_at": "2026-10-01T06:00:00Z",
+              "row_scope": "all_rows",
+              "batch_attribute_name": null,
+              "batch_id": null,
+              "row_count": 5400,
+              "non_null_count": 5400,
+              "null_count": 0,
+              "blank_count": 0,
+              "distinct_count": 5400,
+              "min_data_length": 8,
+              "max_data_length": 8,
+              "avg_data_length": 8,
+              "percent_populated": 100.0,
+              "percent_null": 0.0,
+              "percent_blank": 0,
+              "percent_distinct": 100.0,
+              "percent_duplicates": 0.0
+            }
+          },
+          {
+            "attribute_name": "ACCOUNT_NO",
+            "attribute_data_type": "VARCHAR(10)",
+            "attribute_inferred_data_type": null,
+            "attribute_nullability": false,
+            "registered_attribute_description": "Account number of the customer company the contact works for.",
+            "attribute_description": null,
+            "registered_is_natural_key": false,
+            "is_surrogate_key": false,
+            "is_meta_data": false,
+            "is_masking_required": false,
+            "is_natural_key": null,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null,
+            "profile": {
+              "profiled_at": "2026-10-01T06:00:00Z",
+              "row_scope": "all_rows",
+              "batch_attribute_name": null,
+              "batch_id": null,
+              "row_count": 5400,
+              "non_null_count": 5400,
+              "null_count": 0,
+              "blank_count": 0,
+              "distinct_count": 1210,
+              "min_data_length": 8,
+              "max_data_length": 8,
+              "avg_data_length": 8,
+              "percent_populated": 100.0,
+              "percent_null": 0.0,
+              "percent_blank": 0,
+              "percent_distinct": 22.41,
+              "percent_duplicates": 77.59
+            }
+          },
+          {
+            "attribute_name": "FIRST_NAME",
+            "attribute_data_type": "VARCHAR(50)",
+            "attribute_inferred_data_type": null,
+            "attribute_nullability": true,
+            "registered_attribute_description": "First name of the contact.",
+            "attribute_description": null,
+            "registered_is_natural_key": false,
+            "is_surrogate_key": false,
+            "is_meta_data": false,
+            "is_masking_required": false,
+            "is_natural_key": null,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null,
+            "profile": {
+              "profiled_at": "2026-10-01T06:00:00Z",
+              "row_scope": "all_rows",
+              "batch_attribute_name": null,
+              "batch_id": null,
+              "row_count": 5400,
+              "non_null_count": 5400,
+              "null_count": 0,
+              "blank_count": 0,
+              "distinct_count": 1630,
+              "min_data_length": 2,
+              "max_data_length": 24,
+              "avg_data_length": 6.1,
+              "percent_populated": 100.0,
+              "percent_null": 0.0,
+              "percent_blank": 0,
+              "percent_distinct": 30.19,
+              "percent_duplicates": 69.81
+            }
+          },
+          {
+            "attribute_name": "LAST_NAME",
+            "attribute_data_type": "VARCHAR(80)",
+            "attribute_inferred_data_type": null,
+            "attribute_nullability": true,
+            "registered_attribute_description": "Last name of the contact.",
+            "attribute_description": null,
+            "registered_is_natural_key": false,
+            "is_surrogate_key": false,
+            "is_meta_data": false,
+            "is_masking_required": false,
+            "is_natural_key": null,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null,
+            "profile": {
+              "profiled_at": "2026-10-01T06:00:00Z",
+              "row_scope": "all_rows",
+              "batch_attribute_name": null,
+              "batch_id": null,
+              "row_count": 5400,
+              "non_null_count": 5400,
+              "null_count": 0,
+              "blank_count": 0,
+              "distinct_count": 3950,
+              "min_data_length": 2,
+              "max_data_length": 31,
+              "avg_data_length": 7.4,
+              "percent_populated": 100.0,
+              "percent_null": 0.0,
+              "percent_blank": 0,
+              "percent_distinct": 73.15,
+              "percent_duplicates": 26.85
+            }
+          },
+          {
+            "attribute_name": "EMAIL",
+            "attribute_data_type": "VARCHAR(120)",
+            "attribute_inferred_data_type": null,
+            "attribute_nullability": true,
+            "registered_attribute_description": "Business email address of the contact.",
+            "attribute_description": null,
+            "registered_is_natural_key": false,
+            "is_surrogate_key": false,
+            "is_meta_data": false,
+            "is_masking_required": false,
+            "is_natural_key": null,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null,
+            "profile": {
+              "profiled_at": "2026-10-01T06:00:00Z",
+              "row_scope": "all_rows",
+              "batch_attribute_name": null,
+              "batch_id": null,
+              "row_count": 5400,
+              "non_null_count": 5363,
+              "null_count": 37,
+              "blank_count": 0,
+              "distinct_count": 5363,
+              "min_data_length": 9,
+              "max_data_length": 64,
+              "avg_data_length": 24.0,
+              "percent_populated": 99.31,
+              "percent_null": 0.69,
+              "percent_blank": 0,
+              "percent_distinct": 100.0,
+              "percent_duplicates": 0.0
+            }
+          },
+          {
+            "attribute_name": "PHONE",
+            "attribute_data_type": "VARCHAR(30)",
+            "attribute_inferred_data_type": null,
+            "attribute_nullability": true,
+            "registered_attribute_description": "Direct phone number of the contact.",
+            "attribute_description": null,
+            "registered_is_natural_key": false,
+            "is_surrogate_key": false,
+            "is_meta_data": false,
+            "is_masking_required": false,
+            "is_natural_key": null,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null,
+            "profile": null
+          },
+          {
+            "attribute_name": "STATUS",
+            "attribute_data_type": "CHAR(1)",
+            "attribute_inferred_data_type": null,
+            "attribute_nullability": true,
+            "registered_attribute_description": null,
+            "attribute_description": null,
+            "registered_is_natural_key": false,
+            "is_surrogate_key": false,
+            "is_meta_data": false,
+            "is_masking_required": false,
+            "is_natural_key": null,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null,
+            "profile": {
+              "profiled_at": "2026-10-01T06:00:00Z",
+              "row_scope": "all_rows",
+              "batch_attribute_name": null,
+              "batch_id": null,
+              "row_count": 5400,
+              "non_null_count": 5400,
+              "null_count": 0,
+              "blank_count": 0,
+              "distinct_count": 2,
+              "min_data_length": 1,
+              "max_data_length": 1,
+              "avg_data_length": 1,
+              "percent_populated": 100.0,
+              "percent_null": 0.0,
+              "percent_blank": 0,
+              "percent_distinct": 0.04,
+              "percent_duplicates": 99.96
+            }
+          },
+          {
+            "attribute_name": "CREATED_AT",
+            "attribute_data_type": "TIMESTAMP",
+            "attribute_inferred_data_type": null,
+            "attribute_nullability": false,
+            "registered_attribute_description": "When the contact record was created in the CRM.",
+            "attribute_description": null,
+            "registered_is_natural_key": false,
+            "is_surrogate_key": false,
+            "is_meta_data": false,
+            "is_masking_required": false,
+            "is_natural_key": null,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null,
+            "profile": {
+              "profiled_at": "2026-10-01T06:00:00Z",
+              "row_scope": "all_rows",
+              "batch_attribute_name": null,
+              "batch_id": null,
+              "row_count": 5400,
+              "non_null_count": 5400,
+              "null_count": 0,
+              "blank_count": 0,
+              "distinct_count": 5391,
+              "min_data_length": null,
+              "max_data_length": null,
+              "avg_data_length": null,
+              "percent_populated": 100.0,
+              "percent_null": 0.0,
+              "percent_blank": 0,
+              "percent_distinct": 99.83,
+              "percent_duplicates": 0.17
+            }
+          }
+        ]
+      }
+    ],
+    "ingestion_mapping": []
+  },
+  "output_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "descriptions",
+      "attributes"
+    ],
+    "properties": {
+      "descriptions": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"CONTACT_NO\"]",
+          "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"ACCOUNT_NO\"]",
+          "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"FIRST_NAME\"]",
+          "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"EMAIL\"]",
+          "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"STATUS\"]",
+          "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"CREATED_AT\"]"
+        ],
+        "properties": {
+          "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"CONTACT_NO\"]": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"ACCOUNT_NO\"]": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"FIRST_NAME\"]": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"EMAIL\"]": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"STATUS\"]": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"CREATED_AT\"]": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "attributes": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"CONTACT_NO\"]",
+          "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"ACCOUNT_NO\"]",
+          "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"FIRST_NAME\"]",
+          "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"EMAIL\"]",
+          "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"STATUS\"]",
+          "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"CREATED_AT\"]"
+        ],
+        "properties": {
+          "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"CONTACT_NO\"]": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "is_natural_key",
+              "is_primary_key",
+              "is_nullable",
+              "is_pii"
+            ],
+            "properties": {
+              "is_natural_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_primary_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_nullable": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_pii": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            }
+          },
+          "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"ACCOUNT_NO\"]": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "is_natural_key",
+              "is_primary_key",
+              "is_nullable",
+              "is_pii"
+            ],
+            "properties": {
+              "is_natural_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_primary_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_nullable": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_pii": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            }
+          },
+          "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"FIRST_NAME\"]": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "is_natural_key",
+              "is_primary_key",
+              "is_nullable",
+              "is_pii"
+            ],
+            "properties": {
+              "is_natural_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_primary_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_nullable": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_pii": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            }
+          },
+          "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"EMAIL\"]": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "is_natural_key",
+              "is_primary_key",
+              "is_nullable",
+              "is_pii"
+            ],
+            "properties": {
+              "is_natural_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_primary_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_nullable": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_pii": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            }
+          },
+          "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"STATUS\"]": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "is_natural_key",
+              "is_primary_key",
+              "is_nullable",
+              "is_pii"
+            ],
+            "properties": {
+              "is_natural_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_primary_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_nullable": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_pii": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            }
+          },
+          "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"CREATED_AT\"]": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "is_natural_key",
+              "is_primary_key",
+              "is_nullable",
+              "is_pii"
+            ],
+            "properties": {
+              "is_natural_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_primary_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_nullable": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_pii": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "description": "is_pii means personally identifiable information about a natural person. Judge each Attribute on its own meaning: documented, or plain from its name in its table. Set true when it identifies, contacts or locates an identifiable person, or holds a sensitive personal detail: personal names; a person's email, phone or address, business or private; government identifiers; identifiers whose values each point to one person, such as employee or contact numbers; date of birth; and person-linked medical or financial details. Set false when its meaning is non-personal, such as product codes, quantities, statuses, business dates, load timestamps, or company identifiers and names. Data type, uniqueness, key membership or a previous true finding alone does not establish PII. Set null only when the Attribute's meaning is unknown or the evidence conflicts. Never copy one finding across all columns. is_masking_required is separate and never changes. Never expose example personal values."
+  },
+  "expect": {
+    "list": "descriptions",
+    "key": [
+      "text"
+    ],
+    "expected": [],
+    "forbidden": [
+      {
+        "text": "(text answers are checked by text_checks, not by score)"
+      }
+    ]
+  },
+  "text_checks": {
+    "column_names": [
+      "CONTACT_NO",
+      "ACCOUNT_NO",
+      "FIRST_NAME",
+      "LAST_NAME",
+      "EMAIL",
+      "PHONE",
+      "STATUS",
+      "CREATED_AT"
+    ],
+    "landscape_words": [
+      "bronze",
+      "raw",
+      "landing",
+      "lake",
+      "lakehouse",
+      "gds",
+      "batch",
+      "batches",
+      "load",
+      "loaded",
+      "loads",
+      "nightly",
+      "ingest",
+      "ingested",
+      "copy",
+      "copies",
+      "staging",
+      "layer",
+      "zone",
+      "instance",
+      "instances"
+    ],
+    "hedges": [
+      "likely",
+      "appears",
+      "probably",
+      "seems",
+      "possibly",
+      "presumably",
+      "might",
+      "may contain"
+    ],
+    "targets": {
+      "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"CONTACT_NO\"]": {
+        "flags": {
+          "is_natural_key": [
+            true
+          ],
+          "is_primary_key": [
+            true
+          ],
+          "is_nullable": [
+            false
+          ],
+          "is_pii": [
+            true
+          ]
+        }
+      },
+      "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"ACCOUNT_NO\"]": {
+        "flags": {
+          "is_natural_key": [
+            false
+          ],
+          "is_primary_key": [
+            false
+          ],
+          "is_nullable": [
+            false
+          ],
+          "is_pii": [
+            false
+          ]
+        }
+      },
+      "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"FIRST_NAME\"]": {
+        "flags": {
+          "is_natural_key": [
+            false
+          ],
+          "is_primary_key": [
+            false
+          ],
+          "is_nullable": [
+            false
+          ],
+          "is_pii": [
+            true
+          ]
+        }
+      },
+      "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"EMAIL\"]": {
+        "flags": {
+          "is_natural_key": [
+            false
+          ],
+          "is_primary_key": [
+            false
+          ],
+          "is_nullable": [
+            true
+          ],
+          "is_pii": [
+            true
+          ]
+        }
+      },
+      "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"STATUS\"]": {
+        "flags": {
+          "is_natural_key": [
+            false
+          ],
+          "is_primary_key": [
+            false
+          ],
+          "is_nullable": [
+            false
+          ],
+          "is_pii": [
+            false
+          ]
+        }
+      },
+      "[\"NORTHWIND\",\"CRM\",\"CRM_PROD\",\"dbo\",\"CONTACT\",\"CREATED_AT\"]": {
+        "flags": {
+          "is_natural_key": [
+            false
+          ],
+          "is_primary_key": [
+            false
+          ],
+          "is_nullable": [
+            false
+          ],
+          "is_pii": [
+            false
+          ]
+        }
+      }
+    }
+  }
+}

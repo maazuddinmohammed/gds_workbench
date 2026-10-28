@@ -1362,7 +1362,7 @@ INPUT_SHAPES.update(
             },
         },
         "logical.unlinked_analysis_edges": {
-            "description": "Analysis links, measured supported or not yet validated, between "
+            "description": "Active Analysis links, whatever their validation result, between "
             "two modeled tables whose Entities have no Relationship in either direction. "
             "Each is a candidate cross-area Relationship; add it only when the Entities' "
             "grain and keys support it.",
@@ -1403,8 +1403,9 @@ INPUT_SHAPES.update(
             "schema": _NAME_VARIANTS,
         },
         "logical.entity_details": {
-            "description": "Full compact records for the Entities named by the findings above, "
-            "so they can be changed or merged without reading the whole model.",
+            "description": "Full compact records for the Entities named by the findings above "
+            "and for the Entities whose foreign keys point at an Entity name variant, so they "
+            "can be changed, merged or renamed without reading the whole model.",
             "schema": _COMPACT_LOGICAL_MODEL,
         },
         "dimensional.existing_entities": {
@@ -1676,8 +1677,8 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "tenant_description": "Wholesale distribution business.",
                 "system_code": "ERP",
                 "system_description": "Manages sales orders and billing.",
-                "system_type_code": "ERP",
-                "system_type_description": "Systems for managing core business operations.",
+                "system_type_code": "SQL",
+                "system_type_description": "Relational database source read with SQL.",
                 "connection_code": "ERP_SOURCE",
                 "connection_description": None,
                 "connection_type_code": "SQL_SERVER",
@@ -1879,8 +1880,8 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "tenant_description": "Wholesale distribution business.",
                 "system_code": "ERP",
                 "system_description": "Manages sales orders and billing.",
-                "system_type_code": "ERP",
-                "system_type_description": "Systems for managing core business operations.",
+                "system_type_code": "SQL",
+                "system_type_description": "Relational database source read with SQL.",
                 "connection_code": "ERP_SOURCE",
                 "connection_description": None,
                 "connection_type_code": "SQL_SERVER",
@@ -2856,6 +2857,7 @@ _TABLE_PROPERTIES: dict[str, Any] = {
     "object_description": {"type": ["string", "null"]},
     "zone_code": {"type": "string", "minLength": 1},
     "source_systems": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "batch_attribute_name": {"type": ["string", "null"], "minLength": 1},
 }
 _COUNT = {"type": ["integer", "null"], "minimum": 0}
 _KEY_PROFILE_FIELDS = (
@@ -2947,7 +2949,9 @@ INPUT_SHAPES["analysis.focus_table"] = {
 INPUT_SHAPES["analysis.key_directory"] = {
     "description": "Every selected table of this run, the focus table included, by short id, "
     "with the source_systems its data comes from (a Bronze table's through ingestion "
-    "lineage; empty when unknown). key_columns are the columns other tables can point to: "
+    "lineage; empty when unknown) and its batch_attribute_name (the column that numbers "
+    "each appended load, such as GDSBatchID; null when each load replaces the table). "
+    "key_columns are the columns other tables can point to: "
     "a registered or Project key "
     "flag, or a saved Profile in which every non-null value is distinct (operational "
     "columns only when flagged). A table without such a column lists every eligible column "
@@ -3041,6 +3045,7 @@ _orders, _customers = (
             if name in (*_TABLE_KEY_FIELDS, "object_description", "zone_code")
         },
         "source_systems": ["ERP"],
+        "batch_attribute_name": None,
     }
     for table, entry in zip(("t1", "t2"), INPUT_EXAMPLES["analysis"]["object_context"], strict=True)
 )

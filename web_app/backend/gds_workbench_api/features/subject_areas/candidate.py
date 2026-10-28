@@ -53,7 +53,7 @@ class _Answer(BaseModel):
 
 
 class _AreaAnswer(_Answer):
-    name: _Name = Field(description="Business capability name, such as Sales or Support.")
+    name: _Name = Field(description="Business domain name, such as Sales or Human Resources.")
     definition: NonblankText | None = Field(
         default=None,
         description=(
@@ -77,7 +77,8 @@ class _SubjectAreaAnswer(_Answer):
     )
     unassigned: tuple[_TableId, ...] = Field(
         max_length=50_000,
-        description="Tables that fit no area yet. Every table is in an area or here.",
+        description="Technical tables only: staging, log, audit or control tables, even when "
+        "they hold business rows. Every table is in an area or here.",
     )
     retire: tuple[_Name, ...] = Field(
         max_length=1_000,
@@ -132,12 +133,13 @@ class SubjectAreaCandidateValidator:
     def output_schema(self) -> dict[str, JsonValue]:
         schema = cast(dict[str, JsonValue], deepcopy(_SubjectAreaAnswer.model_json_schema()))
         schema["description"] = (
-            "Group every table in table_index into Subject Areas: business capabilities that "
-            "each Logical Build call can model on its own. Cite tables by table_index id. "
+            "Group every table in table_index into Subject Areas: broad business domains, each "
+            "designed by one Logical Build call. Cite tables by table_index id. "
             "Return new areas and saved areas you change; a listed area's tables replace its "
             "saved unlocked tables from table_index, and its other tables stay. Put each "
-            "remaining table in unassigned. Retire saved areas by name; nothing is deleted. On "
-            "repair, fix every context.repair.validation_issues entry and return the complete "
+            "remaining technical table in unassigned. Retire saved areas by name; nothing is "
+            "deleted. On repair, fix every context.repair.validation_issues entry and return the "
+            "complete "
             "corrected answer, not a patch."
         )
         return schema

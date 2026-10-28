@@ -1,0 +1,1519 @@
+{
+  "description": "40 tables: ERP sales and finance, CRM, two HR look-alike groups (cds_/cym_) in one Connection, two technical tables. Tests area granularity, copies kept together, headers with lines, and only technical tables unassigned.",
+  "values": {
+    "source_context": [
+      {
+        "tenant_code": "NORTHWIND",
+        "tenant_description": "Industrial equipment distributor that sells to companies.",
+        "system_code": "ERP",
+        "system_description": "Order-to-cash and finance application: customers, sales, invoicing and the general ledger.",
+        "system_type_code": "SQL",
+        "system_type_description": "Relational database source read with SQL.",
+        "connection_code": "ERP_PROD",
+        "connection_description": null,
+        "connection_type_code": "SQL_SERVER",
+        "connection_type_description": "Connection to a Microsoft SQL Server database.",
+        "zone_code": "source",
+        "zone_description": "Originating source data."
+      },
+      {
+        "tenant_code": "NORTHWIND",
+        "tenant_description": "Industrial equipment distributor that sells to companies.",
+        "system_code": "CRM",
+        "system_description": "Customer relationship management: accounts, contacts, opportunities and campaigns.",
+        "system_type_code": "SQL",
+        "system_type_description": "Relational database source read with SQL.",
+        "connection_code": "CRM_PROD",
+        "connection_description": null,
+        "connection_type_code": "SQL_SERVER",
+        "connection_type_description": "Connection to a Microsoft SQL Server database.",
+        "zone_code": "source",
+        "zone_description": "Originating source data."
+      },
+      {
+        "tenant_code": "NORTHWIND",
+        "tenant_description": "Industrial equipment distributor that sells to companies.",
+        "system_code": "HR_SUITE",
+        "system_description": "HR application holding the employee records of two member firms, CDS and CYM, as separate table sets.",
+        "system_type_code": "SQL",
+        "system_type_description": "Relational database source read with SQL.",
+        "connection_code": "HR_MAIN",
+        "connection_description": null,
+        "connection_type_code": "SQL_SERVER",
+        "connection_type_description": "Connection to a Microsoft SQL Server database.",
+        "zone_code": "source",
+        "zone_description": "Originating source data."
+      }
+    ],
+    "gds_context": [
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "zone_code": "bronze",
+        "zone_description": "Raw copies of source tables in the lake."
+      }
+    ],
+    "table_index": [
+      {
+        "table": "t1",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "erp",
+        "object_name": "customer"
+      },
+      {
+        "table": "t2",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "erp",
+        "object_name": "customer_address"
+      },
+      {
+        "table": "t3",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "erp",
+        "object_name": "quote"
+      },
+      {
+        "table": "t4",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "erp",
+        "object_name": "quote_line"
+      },
+      {
+        "table": "t5",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "erp",
+        "object_name": "sales_order"
+      },
+      {
+        "table": "t6",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "erp",
+        "object_name": "sales_order_line"
+      },
+      {
+        "table": "t7",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "erp",
+        "object_name": "delivery"
+      },
+      {
+        "table": "t8",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "erp",
+        "object_name": "delivery_line"
+      },
+      {
+        "table": "t9",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "erp",
+        "object_name": "invoice"
+      },
+      {
+        "table": "t10",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "erp",
+        "object_name": "invoice_line"
+      },
+      {
+        "table": "t11",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "erp",
+        "object_name": "price_list"
+      },
+      {
+        "table": "t12",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "erp",
+        "object_name": "product"
+      },
+      {
+        "table": "t13",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "erp",
+        "object_name": "product_category"
+      },
+      {
+        "table": "t14",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "erp",
+        "object_name": "currency"
+      },
+      {
+        "table": "t15",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "erp",
+        "object_name": "payment_terms"
+      },
+      {
+        "table": "t16",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "erp",
+        "object_name": "gl_account"
+      },
+      {
+        "table": "t17",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "erp",
+        "object_name": "gl_journal"
+      },
+      {
+        "table": "t18",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "erp",
+        "object_name": "gl_journal_line"
+      },
+      {
+        "table": "t19",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "erp",
+        "object_name": "cost_center"
+      },
+      {
+        "table": "t20",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "erp",
+        "object_name": "fiscal_period"
+      },
+      {
+        "table": "t21",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "crm",
+        "object_name": "crm_account"
+      },
+      {
+        "table": "t22",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "crm",
+        "object_name": "crm_contact"
+      },
+      {
+        "table": "t23",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "crm",
+        "object_name": "crm_opportunity"
+      },
+      {
+        "table": "t24",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "crm",
+        "object_name": "crm_activity"
+      },
+      {
+        "table": "t25",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "crm",
+        "object_name": "crm_campaign"
+      },
+      {
+        "table": "t26",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "crm",
+        "object_name": "crm_lead"
+      },
+      {
+        "table": "t27",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "hr",
+        "object_name": "cds_employee"
+      },
+      {
+        "table": "t28",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "hr",
+        "object_name": "cds_employee_contact"
+      },
+      {
+        "table": "t29",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "hr",
+        "object_name": "cds_right_to_work"
+      },
+      {
+        "table": "t30",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "hr",
+        "object_name": "cds_department"
+      },
+      {
+        "table": "t31",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "hr",
+        "object_name": "cds_position"
+      },
+      {
+        "table": "t32",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "hr",
+        "object_name": "cds_leave_request"
+      },
+      {
+        "table": "t33",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "hr",
+        "object_name": "cym_employee"
+      },
+      {
+        "table": "t34",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "hr",
+        "object_name": "cym_employee_contact"
+      },
+      {
+        "table": "t35",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "hr",
+        "object_name": "cym_right_to_work"
+      },
+      {
+        "table": "t36",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "hr",
+        "object_name": "cym_department"
+      },
+      {
+        "table": "t37",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "hr",
+        "object_name": "cym_position"
+      },
+      {
+        "table": "t38",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "hr",
+        "object_name": "cym_leave_request"
+      },
+      {
+        "table": "t39",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "ops",
+        "object_name": "etl_load_log"
+      },
+      {
+        "table": "t40",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "ops",
+        "object_name": "stg_customer_tmp"
+      }
+    ],
+    "scope_tables": [
+      {
+        "table": "t1",
+        "description": "ERP customer accounts (companies); one row per customer account.",
+        "source_systems": [
+          "ERP"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 8,
+        "column_names": [
+          "customer_no",
+          "name",
+          "vat_no",
+          "segment_code",
+          "credit_limit",
+          "payment_terms_code",
+          "currency_code",
+          "created_at"
+        ]
+      },
+      {
+        "table": "t2",
+        "description": "Billing and delivery addresses of ERP customers; one row per address.",
+        "source_systems": [
+          "ERP"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 7,
+        "column_names": [
+          "customer_no",
+          "address_no",
+          "address_type",
+          "street",
+          "city",
+          "postcode",
+          "country_code"
+        ]
+      },
+      {
+        "table": "t3",
+        "description": "Sales quotes sent to customers; one row per quote.",
+        "source_systems": [
+          "ERP"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 7,
+        "column_names": [
+          "quote_no",
+          "customer_no",
+          "quote_date",
+          "valid_until",
+          "currency_code",
+          "status",
+          "total_amount"
+        ]
+      },
+      {
+        "table": "t4",
+        "description": "Lines of sales quotes; one row per quoted product.",
+        "source_systems": [
+          "ERP"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 6,
+        "column_names": [
+          "quote_no",
+          "line_no",
+          "product_code",
+          "quantity",
+          "unit_price",
+          "discount_pct"
+        ]
+      },
+      {
+        "table": "t5",
+        "description": "Customer sales orders; one row per order.",
+        "source_systems": [
+          "ERP"
+        ],
+        "zone_code": "bronze",
+        "row_count": 81000,
+        "column_count": 9,
+        "column_names": [
+          "order_no",
+          "customer_no",
+          "quote_no",
+          "order_date",
+          "requested_date",
+          "currency_code",
+          "payment_terms_code",
+          "status",
+          "total_amount"
+        ]
+      },
+      {
+        "table": "t6",
+        "description": "Lines of customer sales orders; one row per ordered product.",
+        "source_systems": [
+          "ERP"
+        ],
+        "zone_code": "bronze",
+        "row_count": 240000,
+        "column_count": 7,
+        "column_names": [
+          "order_no",
+          "line_no",
+          "product_code",
+          "quantity",
+          "unit_price",
+          "net_amount",
+          "requested_date"
+        ]
+      },
+      {
+        "table": "t7",
+        "description": "Deliveries shipped to customers; one row per delivery note.",
+        "source_systems": [
+          "ERP"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 6,
+        "column_names": [
+          "delivery_no",
+          "order_no",
+          "ship_date",
+          "carrier_code",
+          "tracking_no",
+          "status"
+        ]
+      },
+      {
+        "table": "t8",
+        "description": "Lines of deliveries; one row per shipped order line.",
+        "source_systems": [
+          "ERP"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 5,
+        "column_names": [
+          "delivery_no",
+          "line_no",
+          "order_no",
+          "order_line_no",
+          "quantity"
+        ]
+      },
+      {
+        "table": "t9",
+        "description": "Customer invoices; one row per invoice.",
+        "source_systems": [
+          "ERP"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 8,
+        "column_names": [
+          "invoice_no",
+          "customer_no",
+          "order_no",
+          "invoice_date",
+          "due_date",
+          "currency_code",
+          "payment_terms_code",
+          "total_amount"
+        ]
+      },
+      {
+        "table": "t10",
+        "description": "Lines of customer invoices; one row per invoiced product.",
+        "source_systems": [
+          "ERP"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 7,
+        "column_names": [
+          "invoice_no",
+          "line_no",
+          "product_code",
+          "quantity",
+          "unit_price",
+          "net_amount",
+          "tax_amount"
+        ]
+      },
+      {
+        "table": "t11",
+        "description": "Product prices by price list and validity period.",
+        "source_systems": [
+          "ERP"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 6,
+        "column_names": [
+          "price_list_code",
+          "product_code",
+          "valid_from",
+          "valid_to",
+          "unit_price",
+          "currency_code"
+        ]
+      },
+      {
+        "table": "t12",
+        "description": "Products sold; one row per product.",
+        "source_systems": [
+          "ERP"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 6,
+        "column_names": [
+          "product_code",
+          "name",
+          "category_code",
+          "unit_of_measure",
+          "list_price",
+          "is_active"
+        ]
+      },
+      {
+        "table": "t13",
+        "description": "Product categories; one row per category.",
+        "source_systems": [
+          "ERP"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 3,
+        "column_names": [
+          "category_code",
+          "name",
+          "parent_category_code"
+        ]
+      },
+      {
+        "table": "t14",
+        "description": "Currencies; one row per ISO currency code.",
+        "source_systems": [
+          "ERP"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 3,
+        "column_names": [
+          "currency_code",
+          "name",
+          "decimals"
+        ]
+      },
+      {
+        "table": "t15",
+        "description": "Payment terms offered to customers; one row per terms code.",
+        "source_systems": [
+          "ERP"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 5,
+        "column_names": [
+          "payment_terms_code",
+          "description",
+          "due_days",
+          "discount_days",
+          "discount_pct"
+        ]
+      },
+      {
+        "table": "t16",
+        "description": "General ledger accounts; one row per account.",
+        "source_systems": [
+          "ERP"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 5,
+        "column_names": [
+          "account_no",
+          "name",
+          "account_type",
+          "parent_account_no",
+          "is_active"
+        ]
+      },
+      {
+        "table": "t17",
+        "description": "General ledger journal entries; one row per journal entry.",
+        "source_systems": [
+          "ERP"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 5,
+        "column_names": [
+          "journal_no",
+          "posting_date",
+          "fiscal_period_code",
+          "source_document",
+          "description"
+        ]
+      },
+      {
+        "table": "t18",
+        "description": "Lines of journal entries; one row per posting line.",
+        "source_systems": [
+          "ERP"
+        ],
+        "zone_code": "bronze",
+        "row_count": 500000,
+        "column_count": 7,
+        "column_names": [
+          "journal_no",
+          "line_no",
+          "account_no",
+          "cost_center_code",
+          "debit_amount",
+          "credit_amount",
+          "currency_code"
+        ]
+      },
+      {
+        "table": "t19",
+        "description": "Cost centers; one row per cost center.",
+        "source_systems": [
+          "ERP"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 4,
+        "column_names": [
+          "cost_center_code",
+          "name",
+          "manager_name",
+          "parent_cost_center_code"
+        ]
+      },
+      {
+        "table": "t20",
+        "description": "Fiscal periods; one row per period.",
+        "source_systems": [
+          "ERP"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 4,
+        "column_names": [
+          "fiscal_period_code",
+          "start_date",
+          "end_date",
+          "is_closed"
+        ]
+      },
+      {
+        "table": "t21",
+        "description": "CRM customer accounts (companies) managed by sales; one row per account.",
+        "source_systems": [
+          "CRM"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 6,
+        "column_names": [
+          "account_id",
+          "name",
+          "erp_customer_no",
+          "industry",
+          "owner_user_id",
+          "created_at"
+        ]
+      },
+      {
+        "table": "t22",
+        "description": "Contact persons at CRM accounts; one row per contact.",
+        "source_systems": [
+          "CRM"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 7,
+        "column_names": [
+          "contact_id",
+          "account_id",
+          "first_name",
+          "last_name",
+          "email",
+          "phone",
+          "job_title"
+        ]
+      },
+      {
+        "table": "t23",
+        "description": "Sales opportunities with accounts; one row per opportunity.",
+        "source_systems": [
+          "CRM"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 7,
+        "column_names": [
+          "opportunity_id",
+          "account_id",
+          "name",
+          "stage",
+          "amount",
+          "close_date",
+          "owner_user_id"
+        ]
+      },
+      {
+        "table": "t24",
+        "description": "Calls, meetings and emails with contacts; one row per activity.",
+        "source_systems": [
+          "CRM"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 6,
+        "column_names": [
+          "activity_id",
+          "contact_id",
+          "opportunity_id",
+          "activity_type",
+          "activity_date",
+          "notes"
+        ]
+      },
+      {
+        "table": "t25",
+        "description": "Marketing campaigns; one row per campaign.",
+        "source_systems": [
+          "CRM"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 6,
+        "column_names": [
+          "campaign_id",
+          "name",
+          "channel",
+          "start_date",
+          "end_date",
+          "budget"
+        ]
+      },
+      {
+        "table": "t26",
+        "description": "Leads from campaigns; one row per lead.",
+        "source_systems": [
+          "CRM"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 6,
+        "column_names": [
+          "lead_id",
+          "campaign_id",
+          "company_name",
+          "contact_name",
+          "email",
+          "status"
+        ]
+      },
+      {
+        "table": "t27",
+        "description": "Employees of the CDS member firm; one row per employee per load.",
+        "source_systems": [
+          "HR_SUITE"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 7,
+        "column_names": [
+          "employeeid",
+          "firstname",
+          "lastname",
+          "department_code",
+          "position_code",
+          "hire_date",
+          "gds_batch_id"
+        ]
+      },
+      {
+        "table": "t28",
+        "description": "Emergency contacts of CDS member firm employees.",
+        "source_systems": [
+          "HR_SUITE"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 5,
+        "column_names": [
+          "employeeid",
+          "othercontactname",
+          "othercontactphone",
+          "relationship",
+          "gds_batch_id"
+        ]
+      },
+      {
+        "table": "t29",
+        "description": "Right-to-work documents of CDS member firm employees.",
+        "source_systems": [
+          "HR_SUITE"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 5,
+        "column_names": [
+          "employeeid",
+          "righttoworkdocid",
+          "doc_type",
+          "expiry_date",
+          "gds_batch_id"
+        ]
+      },
+      {
+        "table": "t30",
+        "description": "Departments of the CDS member firm.",
+        "source_systems": [
+          "HR_SUITE"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 4,
+        "column_names": [
+          "department_code",
+          "name",
+          "parent_department_code",
+          "gds_batch_id"
+        ]
+      },
+      {
+        "table": "t31",
+        "description": "Job positions of the CDS member firm.",
+        "source_systems": [
+          "HR_SUITE"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 4,
+        "column_names": [
+          "position_code",
+          "title",
+          "grade",
+          "gds_batch_id"
+        ]
+      },
+      {
+        "table": "t32",
+        "description": "Leave requests of CDS member firm employees; one row per request.",
+        "source_systems": [
+          "HR_SUITE"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 7,
+        "column_names": [
+          "leave_id",
+          "employeeid",
+          "leave_type",
+          "start_date",
+          "end_date",
+          "status",
+          "gds_batch_id"
+        ]
+      },
+      {
+        "table": "t33",
+        "description": "Employees of the CYM member firm; one row per employee per load.",
+        "source_systems": [
+          "HR_SUITE"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 7,
+        "column_names": [
+          "employeeid",
+          "firstname",
+          "lastname",
+          "department_code",
+          "position_code",
+          "hire_date",
+          "gds_batch_id"
+        ]
+      },
+      {
+        "table": "t34",
+        "description": "Emergency contacts of CYM member firm employees.",
+        "source_systems": [
+          "HR_SUITE"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 5,
+        "column_names": [
+          "employeeid",
+          "othercontactname",
+          "othercontactphone",
+          "relationship",
+          "gds_batch_id"
+        ]
+      },
+      {
+        "table": "t35",
+        "description": "Right-to-work documents of CYM member firm employees.",
+        "source_systems": [
+          "HR_SUITE"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 5,
+        "column_names": [
+          "employeeid",
+          "righttoworkdocid",
+          "doc_type",
+          "expiry_date",
+          "gds_batch_id"
+        ]
+      },
+      {
+        "table": "t36",
+        "description": "Departments of the CYM member firm.",
+        "source_systems": [
+          "HR_SUITE"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 4,
+        "column_names": [
+          "department_code",
+          "name",
+          "parent_department_code",
+          "gds_batch_id"
+        ]
+      },
+      {
+        "table": "t37",
+        "description": "Job positions of the CYM member firm.",
+        "source_systems": [
+          "HR_SUITE"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 4,
+        "column_names": [
+          "position_code",
+          "title",
+          "grade",
+          "gds_batch_id"
+        ]
+      },
+      {
+        "table": "t38",
+        "description": "Leave requests of CYM member firm employees; one row per request.",
+        "source_systems": [
+          "HR_SUITE"
+        ],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 7,
+        "column_names": [
+          "leave_id",
+          "employeeid",
+          "leave_type",
+          "start_date",
+          "end_date",
+          "status",
+          "gds_batch_id"
+        ]
+      },
+      {
+        "table": "t39",
+        "description": "Technical log of lake load jobs; one row per job run.",
+        "source_systems": [],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 6,
+        "column_names": [
+          "job_name",
+          "run_id",
+          "started_at",
+          "ended_at",
+          "status",
+          "rows_loaded"
+        ]
+      },
+      {
+        "table": "t40",
+        "description": "Temporary staging copy used while loading customers.",
+        "source_systems": [],
+        "zone_code": "bronze",
+        "row_count": 10000,
+        "column_count": 3,
+        "column_names": [
+          "customer_no",
+          "name",
+          "load_ts"
+        ]
+      }
+    ],
+    "table_links": [
+      {
+        "from": "t3",
+        "to": "t1",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t4",
+        "to": "t3",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t4",
+        "to": "t12",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t5",
+        "to": "t1",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t5",
+        "to": "t3",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t6",
+        "to": "t5",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t6",
+        "to": "t12",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t7",
+        "to": "t5",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t8",
+        "to": "t7",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t9",
+        "to": "t1",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t9",
+        "to": "t5",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t10",
+        "to": "t9",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t10",
+        "to": "t12",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t12",
+        "to": "t13",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t11",
+        "to": "t12",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t5",
+        "to": "t14",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t9",
+        "to": "t15",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t2",
+        "to": "t1",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t18",
+        "to": "t17",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t18",
+        "to": "t16",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t18",
+        "to": "t19",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t17",
+        "to": "t20",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t18",
+        "to": "t14",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t22",
+        "to": "t21",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t23",
+        "to": "t21",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t24",
+        "to": "t22",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t24",
+        "to": "t23",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t26",
+        "to": "t25",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t21",
+        "to": "t1",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t28",
+        "to": "t27",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t29",
+        "to": "t27",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t27",
+        "to": "t30",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t27",
+        "to": "t31",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t32",
+        "to": "t27",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t34",
+        "to": "t33",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t35",
+        "to": "t33",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t33",
+        "to": "t36",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t33",
+        "to": "t37",
+        "validation_result": null,
+        "edge_count": 1
+      },
+      {
+        "from": "t38",
+        "to": "t33",
+        "validation_result": null,
+        "edge_count": 1
+      }
+    ],
+    "existing_subject_areas": [],
+    "context_records": []
+  },
+  "output_schema": {
+    "$defs": {
+      "_AreaAnswer": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Business domain name, such as Sales or Human Resources.",
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Name",
+            "type": "string"
+          },
+          "definition": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "What the area covers, in one or two sentences. Required for a new area; omit to keep a saved one.",
+            "title": "Definition"
+          },
+          "tables": {
+            "description": "Every table that belongs in this area. The list replaces the area's saved tables; locked tables stay. A table may belong to several areas.",
+            "items": {
+              "description": "A table id from table_index, such as t1.",
+              "pattern": "^t[1-9][0-9]{0,5}$",
+              "type": "string"
+            },
+            "maxItems": 50000,
+            "title": "Tables",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "tables"
+        ],
+        "title": "_AreaAnswer",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "areas": {
+        "description": "New areas, and saved areas to change. Unlisted saved areas stay as saved.",
+        "items": {
+          "$ref": "#/$defs/_AreaAnswer"
+        },
+        "maxItems": 1000,
+        "title": "Areas",
+        "type": "array"
+      },
+      "unassigned": {
+        "description": "Tables with no business data, such as technical, staging or log tables. Every table is in an area or here.",
+        "items": {
+          "description": "A table id from table_index, such as t1.",
+          "pattern": "^t[1-9][0-9]{0,5}$",
+          "type": "string"
+        },
+        "maxItems": 50000,
+        "title": "Unassigned",
+        "type": "array"
+      },
+      "retire": {
+        "description": "Saved area names to mark inactive with their tables. Nothing is deleted.",
+        "items": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "maxItems": 1000,
+        "title": "Retire",
+        "type": "array"
+      }
+    },
+    "required": [
+      "areas",
+      "unassigned",
+      "retire"
+    ],
+    "title": "_SubjectAreaAnswer",
+    "type": "object",
+    "description": "Group every table in table_index into Subject Areas: broad business domains, each designed by one Logical Build call. Cite tables by table_index id. Return new areas and saved areas you change; a listed area's tables replace its saved unlocked tables from table_index, and its other tables stay. Put each remaining table in unassigned. Retire saved areas by name; nothing is deleted. On repair, fix every context.repair.validation_issues entry and return the complete corrected answer, not a patch."
+  },
+  "expect": {
+    "list": "areas",
+    "key": [
+      "name"
+    ],
+    "expected": [],
+    "forbidden": [
+      {
+        "name": "(areas are checked by sa_checks.py, not by score)"
+      }
+    ]
+  },
+  "sa_checks": {
+    "ids": {
+      "customer": "t1",
+      "customer_address": "t2",
+      "quote": "t3",
+      "quote_line": "t4",
+      "sales_order": "t5",
+      "sales_order_line": "t6",
+      "delivery": "t7",
+      "delivery_line": "t8",
+      "invoice": "t9",
+      "invoice_line": "t10",
+      "price_list": "t11",
+      "product": "t12",
+      "product_category": "t13",
+      "currency": "t14",
+      "payment_terms": "t15",
+      "gl_account": "t16",
+      "gl_journal": "t17",
+      "gl_journal_line": "t18",
+      "cost_center": "t19",
+      "fiscal_period": "t20",
+      "crm_account": "t21",
+      "crm_contact": "t22",
+      "crm_opportunity": "t23",
+      "crm_activity": "t24",
+      "crm_campaign": "t25",
+      "crm_lead": "t26",
+      "cds_employee": "t27",
+      "cds_employee_contact": "t28",
+      "cds_right_to_work": "t29",
+      "cds_department": "t30",
+      "cds_position": "t31",
+      "cds_leave_request": "t32",
+      "cym_employee": "t33",
+      "cym_employee_contact": "t34",
+      "cym_right_to_work": "t35",
+      "cym_department": "t36",
+      "cym_position": "t37",
+      "cym_leave_request": "t38",
+      "etl_load_log": "t39",
+      "stg_customer_tmp": "t40"
+    },
+    "hr_tables": [
+      "t27",
+      "t28",
+      "t29",
+      "t30",
+      "t31",
+      "t32",
+      "t33",
+      "t34",
+      "t35",
+      "t36",
+      "t37",
+      "t38"
+    ],
+    "pairs": [
+      [
+        "t3",
+        "t4"
+      ],
+      [
+        "t5",
+        "t6"
+      ],
+      [
+        "t7",
+        "t8"
+      ],
+      [
+        "t9",
+        "t10"
+      ],
+      [
+        "t17",
+        "t18"
+      ]
+    ],
+    "same_subject": [
+      [
+        "t21",
+        "t1"
+      ]
+    ],
+    "technical": [
+      "t39",
+      "t40"
+    ]
+  }
+}

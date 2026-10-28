@@ -320,14 +320,7 @@ class MappingWorkflow:
                                 )
                                 + "Missing selected transformations are blank."
                             )
-                        if result.warnings:
-                            pair_message = (
-                                pair_message
-                                + " "
-                                + " ".join(
-                                    dict.fromkeys(issue.message for issue in result.warnings)
-                                )
-                            )[:2000]
+                        # Reported issues stay in the draft; the event keeps only the counts.
                         pair_warning = result.is_partial or bool(result.warnings)
                         pair_attempt = outcome.attempt_count
                         warning |= (
