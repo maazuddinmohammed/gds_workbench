@@ -1,0 +1,2088 @@
+{
+  "description": "Fleet Maintenance area with a saved unprefixed Vehicle Dimension and a legacy unprefixed Date Dimension: new Entities need Dim/Fact/Bridge prefixes, saved ones keep their names.",
+  "values": {
+    "subject_area_context": {
+      "name": "Fleet Maintenance",
+      "definition": "Vehicle servicing: work orders raised at workshops, the parts they use and the vehicles they service.",
+      "input_count": 4
+    },
+    "selected_logical_entities": [
+      {
+        "selection_order": 1,
+        "entity": {
+          "logical_entity_schema_name": "silver",
+          "logical_entity_name": "Vehicle",
+          "logical_entity_definition": "One row per fleet vehicle.",
+          "logical_entity_type": "core",
+          "logical_entity_grain": "One row per vehicle_no.",
+          "logical_entity_dependency_order": 0,
+          "logical_entity_is_active": true,
+          "logical_entity_is_locked": false,
+          "sources": [
+            {
+              "support_source_type": "object",
+              "source_object": {
+                "tenant_code": "GDS",
+                "system_code": "FLEET",
+                "connection_code": "LAKE",
+                "object_schema": "bronze_fleet",
+                "object_name": "vehicle"
+              },
+              "rationale": null,
+              "is_active": true,
+              "is_locked": false
+            }
+          ]
+        },
+        "attributes": [
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "Vehicle",
+            "logical_attribute_name": "VehicleID",
+            "logical_attribute_definition": "Surrogate key for Vehicle.",
+            "logical_attribute_data_type": "BIGINT",
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": true,
+            "logical_attribute_ordinal_position": 1,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "Vehicle",
+            "logical_attribute_name": "VehicleNumber",
+            "logical_attribute_definition": "Fleet number painted on the vehicle; unique per vehicle.",
+            "logical_attribute_data_type": "STRING",
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_natural_key": true,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 2,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "Vehicle",
+            "logical_attribute_name": "RegistrationPlate",
+            "logical_attribute_definition": "Current registration plate.",
+            "logical_attribute_data_type": "STRING",
+            "logical_attribute_is_nullable": true,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 3,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "Vehicle",
+            "logical_attribute_name": "VehicleModel",
+            "logical_attribute_definition": "Manufacturer model name.",
+            "logical_attribute_data_type": "STRING",
+            "logical_attribute_is_nullable": true,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 4,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "Vehicle",
+            "logical_attribute_name": "CommissionedDate",
+            "logical_attribute_definition": "Date the vehicle entered service.",
+            "logical_attribute_data_type": "DATE",
+            "logical_attribute_is_nullable": true,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 5,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "Vehicle",
+            "logical_attribute_name": "SourceSystemID",
+            "logical_attribute_definition": "Originating source System identifier.",
+            "logical_attribute_data_type": "BIGINT",
+            "logical_attribute_is_nullable": true,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 6,
+            "logical_attribute_is_audit_column": true,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          }
+        ]
+      },
+      {
+        "selection_order": 2,
+        "entity": {
+          "logical_entity_schema_name": "silver",
+          "logical_entity_name": "Workshop",
+          "logical_entity_definition": "One row per maintenance workshop.",
+          "logical_entity_type": "core",
+          "logical_entity_grain": "One row per workshop_code.",
+          "logical_entity_dependency_order": 0,
+          "logical_entity_is_active": true,
+          "logical_entity_is_locked": false,
+          "sources": [
+            {
+              "support_source_type": "object",
+              "source_object": {
+                "tenant_code": "GDS",
+                "system_code": "FLEET",
+                "connection_code": "LAKE",
+                "object_schema": "bronze_fleet",
+                "object_name": "workshop"
+              },
+              "rationale": null,
+              "is_active": true,
+              "is_locked": false
+            }
+          ]
+        },
+        "attributes": [
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "Workshop",
+            "logical_attribute_name": "WorkshopID",
+            "logical_attribute_definition": "Surrogate key for Workshop.",
+            "logical_attribute_data_type": "BIGINT",
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": true,
+            "logical_attribute_ordinal_position": 1,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "Workshop",
+            "logical_attribute_name": "WorkshopCode",
+            "logical_attribute_definition": "Short code of the workshop.",
+            "logical_attribute_data_type": "STRING",
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_natural_key": true,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 2,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "Workshop",
+            "logical_attribute_name": "WorkshopName",
+            "logical_attribute_definition": "Workshop display name.",
+            "logical_attribute_data_type": "STRING",
+            "logical_attribute_is_nullable": true,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 3,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "Workshop",
+            "logical_attribute_name": "City",
+            "logical_attribute_definition": "City where the workshop is.",
+            "logical_attribute_data_type": "STRING",
+            "logical_attribute_is_nullable": true,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 4,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "Workshop",
+            "logical_attribute_name": "SourceSystemID",
+            "logical_attribute_definition": "Originating source System identifier.",
+            "logical_attribute_data_type": "BIGINT",
+            "logical_attribute_is_nullable": true,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 5,
+            "logical_attribute_is_audit_column": true,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          }
+        ]
+      },
+      {
+        "selection_order": 3,
+        "entity": {
+          "logical_entity_schema_name": "silver",
+          "logical_entity_name": "WorkOrder",
+          "logical_entity_definition": "One row per maintenance work order raised for a vehicle at a workshop.",
+          "logical_entity_type": "transaction",
+          "logical_entity_grain": "One row per work_order_no.",
+          "logical_entity_dependency_order": 1,
+          "logical_entity_is_active": true,
+          "logical_entity_is_locked": false,
+          "sources": [
+            {
+              "support_source_type": "object",
+              "source_object": {
+                "tenant_code": "GDS",
+                "system_code": "FLEET",
+                "connection_code": "LAKE",
+                "object_schema": "bronze_fleet",
+                "object_name": "work_order"
+              },
+              "rationale": null,
+              "is_active": true,
+              "is_locked": false
+            }
+          ]
+        },
+        "attributes": [
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "WorkOrder",
+            "logical_attribute_name": "WorkOrderID",
+            "logical_attribute_definition": "Surrogate key for WorkOrder.",
+            "logical_attribute_data_type": "BIGINT",
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": true,
+            "logical_attribute_ordinal_position": 1,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "WorkOrder",
+            "logical_attribute_name": "WorkOrderNumber",
+            "logical_attribute_definition": "Work order number from the fleet system.",
+            "logical_attribute_data_type": "STRING",
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_natural_key": true,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 2,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "WorkOrder",
+            "logical_attribute_name": "VehicleID",
+            "logical_attribute_definition": "The serviced vehicle.",
+            "logical_attribute_data_type": "BIGINT",
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 3,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "WorkOrder",
+            "logical_attribute_name": "WorkshopID",
+            "logical_attribute_definition": "The workshop doing the work.",
+            "logical_attribute_data_type": "BIGINT",
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 4,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "WorkOrder",
+            "logical_attribute_name": "OpenedDate",
+            "logical_attribute_definition": "Date the work order was opened.",
+            "logical_attribute_data_type": "DATE",
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 5,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "WorkOrder",
+            "logical_attribute_name": "ClosedDate",
+            "logical_attribute_definition": "Date the work order was closed; null while open.",
+            "logical_attribute_data_type": "DATE",
+            "logical_attribute_is_nullable": true,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 6,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "WorkOrder",
+            "logical_attribute_name": "LabourHours",
+            "logical_attribute_definition": "Hours of labour booked to the work order.",
+            "logical_attribute_data_type": "DECIMAL(9,2)",
+            "logical_attribute_is_nullable": true,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 7,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "WorkOrder",
+            "logical_attribute_name": "WorkOrderStatus",
+            "logical_attribute_definition": "OPEN, CLOSED or CANCELLED.",
+            "logical_attribute_data_type": "STRING",
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 8,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "WorkOrder",
+            "logical_attribute_name": "SourceSystemID",
+            "logical_attribute_definition": "Originating source System identifier.",
+            "logical_attribute_data_type": "BIGINT",
+            "logical_attribute_is_nullable": true,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 9,
+            "logical_attribute_is_audit_column": true,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          }
+        ]
+      },
+      {
+        "selection_order": 4,
+        "entity": {
+          "logical_entity_schema_name": "silver",
+          "logical_entity_name": "WorkOrderPart",
+          "logical_entity_definition": "One row per part line used on a work order.",
+          "logical_entity_type": "transaction_line",
+          "logical_entity_grain": "One row per work_order_no and line_no.",
+          "logical_entity_dependency_order": 1,
+          "logical_entity_is_active": true,
+          "logical_entity_is_locked": false,
+          "sources": [
+            {
+              "support_source_type": "object",
+              "source_object": {
+                "tenant_code": "GDS",
+                "system_code": "FLEET",
+                "connection_code": "LAKE",
+                "object_schema": "bronze_fleet",
+                "object_name": "work_order_part"
+              },
+              "rationale": null,
+              "is_active": true,
+              "is_locked": false
+            }
+          ]
+        },
+        "attributes": [
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "WorkOrderPart",
+            "logical_attribute_name": "WorkOrderPartID",
+            "logical_attribute_definition": "Surrogate key for WorkOrderPart.",
+            "logical_attribute_data_type": "BIGINT",
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": true,
+            "logical_attribute_ordinal_position": 1,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "WorkOrderPart",
+            "logical_attribute_name": "WorkOrderID",
+            "logical_attribute_definition": "The work order this line belongs to.",
+            "logical_attribute_data_type": "BIGINT",
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 2,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "WorkOrderPart",
+            "logical_attribute_name": "LineNumber",
+            "logical_attribute_definition": "Line number within the work order.",
+            "logical_attribute_data_type": "INT",
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_natural_key": true,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 3,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "WorkOrderPart",
+            "logical_attribute_name": "PartNumber",
+            "logical_attribute_definition": "Catalogue number of the part used.",
+            "logical_attribute_data_type": "STRING",
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 4,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "WorkOrderPart",
+            "logical_attribute_name": "Quantity",
+            "logical_attribute_definition": "Quantity of the part used.",
+            "logical_attribute_data_type": "DECIMAL(12,3)",
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 5,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "WorkOrderPart",
+            "logical_attribute_name": "UnitCost",
+            "logical_attribute_definition": "Cost of one unit in EUR.",
+            "logical_attribute_data_type": "DECIMAL(14,2)",
+            "logical_attribute_is_nullable": true,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 6,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "WorkOrderPart",
+            "logical_attribute_name": "LineCost",
+            "logical_attribute_definition": "Quantity times unit cost in EUR.",
+            "logical_attribute_data_type": "DECIMAL(14,2)",
+            "logical_attribute_is_nullable": true,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 7,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "WorkOrderPart",
+            "logical_attribute_name": "SourceSystemID",
+            "logical_attribute_definition": "Originating source System identifier.",
+            "logical_attribute_data_type": "BIGINT",
+            "logical_attribute_is_nullable": true,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 8,
+            "logical_attribute_is_audit_column": true,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          }
+        ]
+      }
+    ],
+    "logical_links": [
+      {
+        "from": "silver.WorkOrder.VehicleID",
+        "to": "silver.Vehicle",
+        "cardinality": "many_to_one"
+      },
+      {
+        "from": "silver.WorkOrder.WorkshopID",
+        "to": "silver.Workshop",
+        "cardinality": "many_to_one"
+      },
+      {
+        "from": "silver.WorkOrderPart.WorkOrderID",
+        "to": "silver.WorkOrder",
+        "cardinality": "many_to_one"
+      }
+    ],
+    "source_context": [
+      {
+        "tenant_code": "TRANSCO",
+        "tenant_description": "Regional haulage company.",
+        "system_code": "FLEET",
+        "system_description": "Fleet management application: vehicles, workshops, work orders and fuel.",
+        "system_type_code": "SQL",
+        "system_type_description": "Relational database source read with SQL.",
+        "connection_code": "FLEET_DB",
+        "connection_description": null,
+        "connection_type_code": "SQL_SERVER",
+        "connection_type_description": "Connection to a Microsoft SQL Server database.",
+        "zone_code": "source",
+        "zone_description": "Originating source data."
+      }
+    ],
+    "gds_context": [
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "zone_code": "gold",
+        "zone_description": "Dimensional model placement."
+      }
+    ],
+    "object_context": [
+      {
+        "tenant_code": "GDS",
+        "system_code": "FLEET",
+        "connection_code": "LAKE",
+        "object_schema": "bronze_fleet",
+        "object_name": "vehicle",
+        "object_description": "One row per fleet vehicle.",
+        "zone_code": "bronze"
+      },
+      {
+        "tenant_code": "GDS",
+        "system_code": "FLEET",
+        "connection_code": "LAKE",
+        "object_schema": "bronze_fleet",
+        "object_name": "workshop",
+        "object_description": "One row per maintenance workshop.",
+        "zone_code": "bronze"
+      },
+      {
+        "tenant_code": "GDS",
+        "system_code": "FLEET",
+        "connection_code": "LAKE",
+        "object_schema": "bronze_fleet",
+        "object_name": "work_order",
+        "object_description": "One row per maintenance work order raised for a vehicle at a workshop.",
+        "zone_code": "bronze"
+      },
+      {
+        "tenant_code": "GDS",
+        "system_code": "FLEET",
+        "connection_code": "LAKE",
+        "object_schema": "bronze_fleet",
+        "object_name": "work_order_part",
+        "object_description": "One row per part line used on a work order.",
+        "zone_code": "bronze"
+      },
+      {
+        "tenant_code": "GDS",
+        "system_code": "FLEET",
+        "connection_code": "LAKE",
+        "object_schema": "bronze_fleet",
+        "object_name": "fuel_purchase",
+        "object_description": "One row per fuel purchase receipt for a vehicle.",
+        "zone_code": "bronze"
+      }
+    ],
+    "object_attribute_context": [],
+    "ingestion_mapping": [],
+    "object_relationship_context": [],
+    "context_records": [
+      {
+        "context_record_id": "3f9a2c1e-7b4d-5e8f-9a0b-1c2d3e4f5a6b",
+        "context_group_name": "Fleet reporting",
+        "context_type_name": "Reporting Requirement",
+        "context_text": "Report labour hours and parts cost per vehicle, workshop and month the work order opened.",
+        "source_reference": null
+      }
+    ],
+    "existing_entities": {
+      "entities": [
+        {
+          "dimensional_entity_schema_name": "gold",
+          "dimensional_entity_name": "Vehicle",
+          "dimensional_entity_definition": "One row per fleet vehicle.",
+          "dimensional_entity_type": "dimension",
+          "dimensional_fact_type": null,
+          "dimensional_entity_grain_definition": "One row per VehicleNumber.",
+          "dimensional_entity_dependency_order": 0,
+          "dimensional_entity_is_active": true,
+          "dimensional_entity_is_locked": false,
+          "sources": [
+            {
+              "support_source_type": "logical_entity",
+              "source_logical_entity": {
+                "logical_entity_schema_name": "silver",
+                "logical_entity_name": "Vehicle"
+              },
+              "rationale": null,
+              "is_active": true,
+              "is_locked": false
+            }
+          ]
+        }
+      ],
+      "attributes": [
+        {
+          "dimensional_entity_schema_name": "gold",
+          "dimensional_entity_name": "Vehicle",
+          "dimensional_attribute_name": "VehicleKey",
+          "dimensional_attribute_definition": "Surrogate key for Vehicle.",
+          "dimensional_attribute_data_type": "BIGINT",
+          "dimensional_attribute_is_nullable": false,
+          "dimensional_attribute_ordinal_position": 1,
+          "dimensional_attribute_is_natural_key": false,
+          "dimensional_attribute_is_surrogate_key": true,
+          "dimensional_attribute_is_audit_column": false,
+          "dimensional_attribute_is_active": true,
+          "dimensional_attribute_is_locked": false,
+          "sources": []
+        },
+        {
+          "dimensional_entity_schema_name": "gold",
+          "dimensional_entity_name": "Vehicle",
+          "dimensional_attribute_name": "VehicleNumber",
+          "dimensional_attribute_definition": "Fleet number of the vehicle.",
+          "dimensional_attribute_data_type": "STRING",
+          "dimensional_attribute_is_nullable": false,
+          "dimensional_attribute_ordinal_position": 2,
+          "dimensional_attribute_is_natural_key": true,
+          "dimensional_attribute_is_surrogate_key": false,
+          "dimensional_attribute_is_audit_column": false,
+          "dimensional_attribute_is_active": true,
+          "dimensional_attribute_is_locked": false,
+          "sources": [
+            {
+              "support_source_type": "logical_attribute",
+              "source_logical_attribute": {
+                "logical_entity_schema_name": "silver",
+                "logical_entity_name": "Vehicle",
+                "logical_attribute_name": "VehicleNumber"
+              },
+              "rationale": null,
+              "is_active": true,
+              "is_locked": false
+            }
+          ]
+        },
+        {
+          "dimensional_entity_schema_name": "gold",
+          "dimensional_entity_name": "Vehicle",
+          "dimensional_attribute_name": "RegistrationPlate",
+          "dimensional_attribute_definition": "Current registration plate.",
+          "dimensional_attribute_data_type": "STRING",
+          "dimensional_attribute_is_nullable": true,
+          "dimensional_attribute_ordinal_position": 3,
+          "dimensional_attribute_is_natural_key": false,
+          "dimensional_attribute_is_surrogate_key": false,
+          "dimensional_attribute_is_audit_column": false,
+          "dimensional_attribute_is_active": true,
+          "dimensional_attribute_is_locked": false,
+          "sources": [
+            {
+              "support_source_type": "logical_attribute",
+              "source_logical_attribute": {
+                "logical_entity_schema_name": "silver",
+                "logical_entity_name": "Vehicle",
+                "logical_attribute_name": "RegistrationPlate"
+              },
+              "rationale": null,
+              "is_active": true,
+              "is_locked": false
+            }
+          ]
+        },
+        {
+          "dimensional_entity_schema_name": "gold",
+          "dimensional_entity_name": "Vehicle",
+          "dimensional_attribute_name": "VehicleModel",
+          "dimensional_attribute_definition": "Manufacturer model name.",
+          "dimensional_attribute_data_type": "STRING",
+          "dimensional_attribute_is_nullable": true,
+          "dimensional_attribute_ordinal_position": 4,
+          "dimensional_attribute_is_natural_key": false,
+          "dimensional_attribute_is_surrogate_key": false,
+          "dimensional_attribute_is_audit_column": false,
+          "dimensional_attribute_is_active": true,
+          "dimensional_attribute_is_locked": false,
+          "sources": [
+            {
+              "support_source_type": "logical_attribute",
+              "source_logical_attribute": {
+                "logical_entity_schema_name": "silver",
+                "logical_entity_name": "Vehicle",
+                "logical_attribute_name": "VehicleModel"
+              },
+              "rationale": null,
+              "is_active": true,
+              "is_locked": false
+            }
+          ]
+        },
+        {
+          "dimensional_entity_schema_name": "gold",
+          "dimensional_entity_name": "Vehicle",
+          "dimensional_attribute_name": "SourceSystemID",
+          "dimensional_attribute_definition": "Originating source System identifier.",
+          "dimensional_attribute_data_type": "BIGINT",
+          "dimensional_attribute_is_nullable": true,
+          "dimensional_attribute_ordinal_position": 5,
+          "dimensional_attribute_is_natural_key": false,
+          "dimensional_attribute_is_surrogate_key": false,
+          "dimensional_attribute_is_audit_column": true,
+          "dimensional_attribute_is_active": true,
+          "dimensional_attribute_is_locked": false,
+          "sources": []
+        },
+        {
+          "dimensional_entity_schema_name": "gold",
+          "dimensional_entity_name": "Vehicle",
+          "dimensional_attribute_name": "IsDataValid",
+          "dimensional_attribute_definition": "Framework data validation flag.",
+          "dimensional_attribute_data_type": "BOOLEAN",
+          "dimensional_attribute_is_nullable": true,
+          "dimensional_attribute_ordinal_position": 6,
+          "dimensional_attribute_is_natural_key": false,
+          "dimensional_attribute_is_surrogate_key": false,
+          "dimensional_attribute_is_audit_column": true,
+          "dimensional_attribute_is_active": true,
+          "dimensional_attribute_is_locked": false,
+          "sources": []
+        },
+        {
+          "dimensional_entity_schema_name": "gold",
+          "dimensional_entity_name": "Vehicle",
+          "dimensional_attribute_name": "HashKey",
+          "dimensional_attribute_definition": "Framework change-detection hash.",
+          "dimensional_attribute_data_type": "STRING",
+          "dimensional_attribute_is_nullable": true,
+          "dimensional_attribute_ordinal_position": 7,
+          "dimensional_attribute_is_natural_key": false,
+          "dimensional_attribute_is_surrogate_key": false,
+          "dimensional_attribute_is_audit_column": true,
+          "dimensional_attribute_is_active": true,
+          "dimensional_attribute_is_locked": false,
+          "sources": []
+        },
+        {
+          "dimensional_entity_schema_name": "gold",
+          "dimensional_entity_name": "Vehicle",
+          "dimensional_attribute_name": "IsActive",
+          "dimensional_attribute_definition": "Framework active-record flag.",
+          "dimensional_attribute_data_type": "BOOLEAN",
+          "dimensional_attribute_is_nullable": true,
+          "dimensional_attribute_ordinal_position": 8,
+          "dimensional_attribute_is_natural_key": false,
+          "dimensional_attribute_is_surrogate_key": false,
+          "dimensional_attribute_is_audit_column": true,
+          "dimensional_attribute_is_active": true,
+          "dimensional_attribute_is_locked": false,
+          "sources": []
+        },
+        {
+          "dimensional_entity_schema_name": "gold",
+          "dimensional_entity_name": "Vehicle",
+          "dimensional_attribute_name": "GDSBatchID",
+          "dimensional_attribute_definition": "Framework batch identifier.",
+          "dimensional_attribute_data_type": "BIGINT",
+          "dimensional_attribute_is_nullable": true,
+          "dimensional_attribute_ordinal_position": 9,
+          "dimensional_attribute_is_natural_key": false,
+          "dimensional_attribute_is_surrogate_key": false,
+          "dimensional_attribute_is_audit_column": true,
+          "dimensional_attribute_is_active": true,
+          "dimensional_attribute_is_locked": false,
+          "sources": []
+        },
+        {
+          "dimensional_entity_schema_name": "gold",
+          "dimensional_entity_name": "Vehicle",
+          "dimensional_attribute_name": "PipelineRunID",
+          "dimensional_attribute_definition": "Framework pipeline run identifier.",
+          "dimensional_attribute_data_type": "STRING",
+          "dimensional_attribute_is_nullable": true,
+          "dimensional_attribute_ordinal_position": 10,
+          "dimensional_attribute_is_natural_key": false,
+          "dimensional_attribute_is_surrogate_key": false,
+          "dimensional_attribute_is_audit_column": true,
+          "dimensional_attribute_is_active": true,
+          "dimensional_attribute_is_locked": false,
+          "sources": []
+        },
+        {
+          "dimensional_entity_schema_name": "gold",
+          "dimensional_entity_name": "Vehicle",
+          "dimensional_attribute_name": "CreatedDate",
+          "dimensional_attribute_definition": "Framework record creation time.",
+          "dimensional_attribute_data_type": "TIMESTAMP",
+          "dimensional_attribute_is_nullable": true,
+          "dimensional_attribute_ordinal_position": 11,
+          "dimensional_attribute_is_natural_key": false,
+          "dimensional_attribute_is_surrogate_key": false,
+          "dimensional_attribute_is_audit_column": true,
+          "dimensional_attribute_is_active": true,
+          "dimensional_attribute_is_locked": false,
+          "sources": []
+        },
+        {
+          "dimensional_entity_schema_name": "gold",
+          "dimensional_entity_name": "Vehicle",
+          "dimensional_attribute_name": "UpdatedDate",
+          "dimensional_attribute_definition": "Framework record update time.",
+          "dimensional_attribute_data_type": "TIMESTAMP",
+          "dimensional_attribute_is_nullable": true,
+          "dimensional_attribute_ordinal_position": 12,
+          "dimensional_attribute_is_natural_key": false,
+          "dimensional_attribute_is_surrogate_key": false,
+          "dimensional_attribute_is_audit_column": true,
+          "dimensional_attribute_is_active": true,
+          "dimensional_attribute_is_locked": false,
+          "sources": []
+        },
+        {
+          "dimensional_entity_schema_name": "gold",
+          "dimensional_entity_name": "Vehicle",
+          "dimensional_attribute_name": "CreatedBy",
+          "dimensional_attribute_definition": "Framework record creator.",
+          "dimensional_attribute_data_type": "STRING",
+          "dimensional_attribute_is_nullable": true,
+          "dimensional_attribute_ordinal_position": 13,
+          "dimensional_attribute_is_natural_key": false,
+          "dimensional_attribute_is_surrogate_key": false,
+          "dimensional_attribute_is_audit_column": true,
+          "dimensional_attribute_is_active": true,
+          "dimensional_attribute_is_locked": false,
+          "sources": []
+        },
+        {
+          "dimensional_entity_schema_name": "gold",
+          "dimensional_entity_name": "Vehicle",
+          "dimensional_attribute_name": "UpdatedBy",
+          "dimensional_attribute_definition": "Framework record updater.",
+          "dimensional_attribute_data_type": "STRING",
+          "dimensional_attribute_is_nullable": true,
+          "dimensional_attribute_ordinal_position": 14,
+          "dimensional_attribute_is_natural_key": false,
+          "dimensional_attribute_is_surrogate_key": false,
+          "dimensional_attribute_is_audit_column": true,
+          "dimensional_attribute_is_active": true,
+          "dimensional_attribute_is_locked": false,
+          "sources": []
+        }
+      ],
+      "relationships": []
+    },
+    "neighbor_entities": [],
+    "entity_directory": [
+      {
+        "schema": "gold",
+        "name": "Date",
+        "type": "dimension",
+        "summary": "One row per calendar date."
+      },
+      {
+        "schema": "gold",
+        "name": "DimSupplier",
+        "type": "dimension",
+        "summary": "One row per parts supplier."
+      }
+    ],
+    "dimensional_fact_types": [
+      {
+        "code": "transaction",
+        "description": "One row per business event at its lowest detail."
+      },
+      {
+        "code": "periodic_snapshot",
+        "description": "One row per thing per period, such as daily stock levels."
+      },
+      {
+        "code": "accumulating_snapshot",
+        "description": "One row per process instance, updated as its milestones happen."
+      }
+    ],
+    "naming_instructions": "Use PascalCase for Dimensional entity and attribute names. Start each Entity name with its type: Dim for a Dimension, Fact for a Fact, Bridge for a Bridge (DimCustomer, FactSalesOrder, BridgeCustomerGroup). Surrogate and foreign key names end with Key.",
+    "audit_columns": {
+      "schema_version": "1.0",
+      "columns": [
+        {
+          "semantic_name": "SourceSystemID",
+          "data_type": "BIGINT",
+          "nullable": true,
+          "definition": "Originating source System identifier."
+        },
+        {
+          "semantic_name": "IsDataValid",
+          "data_type": "BOOLEAN",
+          "nullable": true,
+          "definition": "Framework data validation flag."
+        },
+        {
+          "semantic_name": "HashKey",
+          "data_type": "STRING",
+          "nullable": true,
+          "definition": "Framework change-detection hash."
+        },
+        {
+          "semantic_name": "IsActive",
+          "data_type": "BOOLEAN",
+          "nullable": true,
+          "definition": "Framework active-record flag."
+        },
+        {
+          "semantic_name": "GDSBatchID",
+          "data_type": "BIGINT",
+          "nullable": true,
+          "definition": "Framework batch identifier."
+        },
+        {
+          "semantic_name": "PipelineRunID",
+          "data_type": "STRING",
+          "nullable": true,
+          "definition": "Framework pipeline run identifier."
+        },
+        {
+          "semantic_name": "CreatedDate",
+          "data_type": "TIMESTAMP",
+          "nullable": true,
+          "definition": "Framework record creation time."
+        },
+        {
+          "semantic_name": "UpdatedDate",
+          "data_type": "TIMESTAMP",
+          "nullable": true,
+          "definition": "Framework record update time."
+        },
+        {
+          "semantic_name": "CreatedBy",
+          "data_type": "STRING",
+          "nullable": true,
+          "definition": "Framework record creator."
+        },
+        {
+          "semantic_name": "UpdatedBy",
+          "data_type": "STRING",
+          "nullable": true,
+          "definition": "Framework record updater."
+        }
+      ]
+    },
+    "technical_columns": {
+      "schema_version": "1.0",
+      "dimension_surrogate_key": {
+        "semantic_name_template": "{entity_name}Key",
+        "data_type": "BIGINT",
+        "nullable": false,
+        "definition_template": "Surrogate key for {entity_name}."
+      },
+      "fact_bridge_foreign_key": {
+        "with_role_semantic_name_template": "{role_name}Key",
+        "without_role_semantic_name_template": "{entity_name}Key",
+        "definition_template": "Foreign key to {entity_name}."
+      },
+      "type_2": {
+        "effective_from": {
+          "semantic_name": "RecordStartTime",
+          "data_type": "TIMESTAMP",
+          "nullable": false,
+          "definition": "Inclusive start of this dimension version."
+        },
+        "effective_to": {
+          "semantic_name": "RecordEndTime",
+          "data_type": "TIMESTAMP",
+          "nullable": true,
+          "definition": "Exclusive end of this dimension version."
+        },
+        "is_current": {
+          "semantic_name": "IsCurrentRecord",
+          "data_type": "BOOLEAN",
+          "nullable": false,
+          "definition": "Whether this is the current dimension version."
+        }
+      }
+    },
+    "schemas": [
+      {
+        "schema_name": "gold",
+        "description": "Dimensional model schema."
+      }
+    ],
+    "dimensional_entity_scd_type": "type_1",
+    "coverage_threshold_percent": 60,
+    "logical_entities": [
+      {
+        "logical_entity_schema_name": "silver",
+        "logical_entity_name": "Customer",
+        "logical_entity_definition": "One row per ERP customer account.",
+        "logical_entity_type": "core",
+        "logical_entity_grain": "One row per customer_id.",
+        "logical_entity_dependency_order": 0,
+        "logical_entity_is_active": true,
+        "logical_entity_is_locked": false,
+        "sources": [
+          {
+            "support_source_type": "object",
+            "source_object": {
+              "tenant_code": "GDS",
+              "system_code": "WAREHOUSE",
+              "connection_code": "MAIN",
+              "object_schema": "bronze",
+              "object_name": "Customers"
+            },
+            "rationale": null,
+            "is_active": true,
+            "is_locked": false
+          }
+        ]
+      },
+      {
+        "logical_entity_schema_name": "silver",
+        "logical_entity_name": "SalesOrder",
+        "logical_entity_definition": "One row per order a customer places.",
+        "logical_entity_type": "transaction",
+        "logical_entity_grain": "One row per order_id.",
+        "logical_entity_dependency_order": 1,
+        "logical_entity_is_active": true,
+        "logical_entity_is_locked": false,
+        "sources": [
+          {
+            "support_source_type": "object",
+            "source_object": {
+              "tenant_code": "GDS",
+              "system_code": "WAREHOUSE",
+              "connection_code": "MAIN",
+              "object_schema": "bronze",
+              "object_name": "Orders"
+            },
+            "rationale": null,
+            "is_active": true,
+            "is_locked": false
+          }
+        ]
+      }
+    ],
+    "logical_attributes": [
+      {
+        "logical_entity_schema_name": "silver",
+        "logical_entity_name": "Customer",
+        "logical_attribute_name": "CustomerID",
+        "logical_attribute_definition": "Surrogate key for Customer.",
+        "logical_attribute_data_type": "BIGINT",
+        "logical_attribute_is_nullable": false,
+        "logical_attribute_is_natural_key": false,
+        "logical_attribute_is_surrogate_key": true,
+        "logical_attribute_ordinal_position": 1,
+        "logical_attribute_is_audit_column": false,
+        "logical_attribute_is_active": true,
+        "logical_attribute_is_locked": false,
+        "sources": []
+      },
+      {
+        "logical_entity_schema_name": "silver",
+        "logical_entity_name": "Customer",
+        "logical_attribute_name": "SourceCustomerNumber",
+        "logical_attribute_definition": "Business identifier of this ERP customer account.",
+        "logical_attribute_data_type": "BIGINT",
+        "logical_attribute_is_nullable": false,
+        "logical_attribute_is_natural_key": true,
+        "logical_attribute_is_surrogate_key": false,
+        "logical_attribute_ordinal_position": 2,
+        "logical_attribute_is_audit_column": false,
+        "logical_attribute_is_active": true,
+        "logical_attribute_is_locked": false,
+        "sources": [
+          {
+            "support_source_type": "attribute",
+            "source_attribute": {
+              "tenant_code": "GDS",
+              "system_code": "WAREHOUSE",
+              "connection_code": "MAIN",
+              "object_schema": "bronze",
+              "object_name": "Customers",
+              "attribute_name": "customer_id"
+            },
+            "rationale": null,
+            "is_active": true,
+            "is_locked": false
+          }
+        ]
+      },
+      {
+        "logical_entity_schema_name": "silver",
+        "logical_entity_name": "SalesOrder",
+        "logical_attribute_name": "SalesOrderID",
+        "logical_attribute_definition": "Surrogate key for SalesOrder.",
+        "logical_attribute_data_type": "BIGINT",
+        "logical_attribute_is_nullable": false,
+        "logical_attribute_is_natural_key": false,
+        "logical_attribute_is_surrogate_key": true,
+        "logical_attribute_ordinal_position": 1,
+        "logical_attribute_is_audit_column": false,
+        "logical_attribute_is_active": true,
+        "logical_attribute_is_locked": false,
+        "sources": []
+      },
+      {
+        "logical_entity_schema_name": "silver",
+        "logical_entity_name": "SalesOrder",
+        "logical_attribute_name": "CustomerID",
+        "logical_attribute_definition": "The Customer that placed this order.",
+        "logical_attribute_data_type": "BIGINT",
+        "logical_attribute_is_nullable": false,
+        "logical_attribute_is_natural_key": false,
+        "logical_attribute_is_surrogate_key": false,
+        "logical_attribute_ordinal_position": 2,
+        "logical_attribute_is_audit_column": false,
+        "logical_attribute_is_active": true,
+        "logical_attribute_is_locked": false,
+        "sources": [
+          {
+            "support_source_type": "attribute",
+            "source_attribute": {
+              "tenant_code": "GDS",
+              "system_code": "WAREHOUSE",
+              "connection_code": "MAIN",
+              "object_schema": "bronze",
+              "object_name": "Orders",
+              "attribute_name": "customer_id"
+            },
+            "rationale": null,
+            "is_active": true,
+            "is_locked": false
+          }
+        ]
+      }
+    ],
+    "logical_relationships": [
+      {
+        "from_logical_entity_schema_name": "silver",
+        "to_logical_entity_schema_name": "silver",
+        "from_logical_entity_name": "SalesOrder",
+        "from_logical_attribute_name": "CustomerID",
+        "to_logical_entity_name": "Customer",
+        "to_logical_attribute_name": "CustomerID",
+        "logical_relationship_cardinality": "many_to_one",
+        "logical_relationship_basis": "Analysis: Orders.customer_id -> Customers.customer_id, supported.",
+        "logical_relationship_is_active": true,
+        "logical_relationship_is_locked": false
+      }
+    ],
+    "dimensional_entities": [
+      {
+        "dimensional_entity_schema_name": "gold",
+        "dimensional_entity_name": "DimCustomer",
+        "dimensional_entity_definition": "One row per customer account.",
+        "dimensional_entity_type": "dimension",
+        "dimensional_fact_type": null,
+        "dimensional_entity_grain_definition": null,
+        "dimensional_entity_dependency_order": 0,
+        "dimensional_entity_is_active": true,
+        "dimensional_entity_is_locked": false,
+        "sources": [
+          {
+            "support_source_type": "logical_entity",
+            "source_logical_entity": {
+              "logical_entity_schema_name": "silver",
+              "logical_entity_name": "Customer"
+            },
+            "rationale": null,
+            "is_active": true,
+            "is_locked": false
+          }
+        ]
+      },
+      {
+        "dimensional_entity_schema_name": "gold",
+        "dimensional_entity_name": "FactSalesOrder",
+        "dimensional_entity_definition": "One row per order.",
+        "dimensional_entity_type": "fact",
+        "dimensional_fact_type": "transaction",
+        "dimensional_entity_grain_definition": "One row per order_id.",
+        "dimensional_entity_dependency_order": 1,
+        "dimensional_entity_is_active": true,
+        "dimensional_entity_is_locked": false,
+        "sources": [
+          {
+            "support_source_type": "logical_entity",
+            "source_logical_entity": {
+              "logical_entity_schema_name": "silver",
+              "logical_entity_name": "SalesOrder"
+            },
+            "rationale": null,
+            "is_active": true,
+            "is_locked": false
+          }
+        ]
+      }
+    ],
+    "dimensional_attributes": [
+      {
+        "dimensional_entity_schema_name": "gold",
+        "dimensional_entity_name": "DimCustomer",
+        "dimensional_attribute_name": "CustomerKey",
+        "dimensional_attribute_definition": "Surrogate key for DimCustomer.",
+        "dimensional_attribute_data_type": "BIGINT",
+        "dimensional_attribute_is_nullable": false,
+        "dimensional_attribute_ordinal_position": 1,
+        "dimensional_attribute_is_natural_key": false,
+        "dimensional_attribute_is_surrogate_key": true,
+        "dimensional_attribute_is_audit_column": false,
+        "dimensional_attribute_is_active": true,
+        "dimensional_attribute_is_locked": false,
+        "sources": []
+      },
+      {
+        "dimensional_entity_schema_name": "gold",
+        "dimensional_entity_name": "FactSalesOrder",
+        "dimensional_attribute_name": "CustomerKey",
+        "dimensional_attribute_definition": "Foreign key to DimCustomer.",
+        "dimensional_attribute_data_type": "BIGINT",
+        "dimensional_attribute_is_nullable": false,
+        "dimensional_attribute_ordinal_position": 1,
+        "dimensional_attribute_is_natural_key": false,
+        "dimensional_attribute_is_surrogate_key": false,
+        "dimensional_attribute_is_audit_column": false,
+        "dimensional_attribute_is_active": true,
+        "dimensional_attribute_is_locked": false,
+        "sources": []
+      }
+    ],
+    "dimensional_relationships": [
+      {
+        "from_dimensional_entity_schema_name": "gold",
+        "to_dimensional_entity_schema_name": "gold",
+        "from_dimensional_entity_name": "FactSalesOrder",
+        "from_dimensional_attribute_name": "CustomerKey",
+        "to_dimensional_entity_name": "DimCustomer",
+        "to_dimensional_attribute_name": "CustomerKey",
+        "dimensional_relationship_role_name": null,
+        "dimensional_relationship_basis": null,
+        "dimensional_relationship_is_active": true,
+        "dimensional_relationship_is_locked": false
+      }
+    ]
+  },
+  "output_schema": {
+    "$defs": {
+      "AttributeContextSourceRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "support_source_type": {
+            "const": "context_record",
+            "title": "Support Source Type",
+            "type": "string",
+            "description": "Populate support_source_type from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate support_source_type from current Snapshot evidence and the active workflow guide."
+          },
+          "context_record": {
+            "$ref": "#/$defs/ContextRecordReference",
+            "description": "Populate context_record from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate context_record from current Snapshot evidence and the active workflow guide."
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Rationale",
+            "description": "Populate rationale from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate rationale from current Snapshot evidence and the active workflow guide."
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean",
+            "description": "Use true for current records and false only for an intentional inactive replacement.",
+            "x-gds-population-guidance": "Use true for current records and false only for an intentional inactive replacement."
+          },
+          "is_locked": {
+            "title": "Is Locked",
+            "type": "boolean",
+            "const": false,
+            "description": "Populate is_locked from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate is_locked from current Snapshot evidence and the active workflow guide."
+          }
+        },
+        "required": [
+          "support_source_type",
+          "context_record",
+          "is_active",
+          "is_locked"
+        ],
+        "title": "AttributeContextSourceRecord",
+        "type": "object"
+      },
+      "AttributeLogicalSourceRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "support_source_type": {
+            "const": "logical_attribute",
+            "title": "Support Source Type",
+            "type": "string",
+            "description": "Populate support_source_type from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate support_source_type from current Snapshot evidence and the active workflow guide."
+          },
+          "source_logical_attribute": {
+            "$ref": "#/$defs/LogicalAttributeKey",
+            "description": "Populate source_logical_attribute from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate source_logical_attribute from current Snapshot evidence and the active workflow guide."
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Rationale",
+            "description": "Populate rationale from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate rationale from current Snapshot evidence and the active workflow guide."
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean",
+            "description": "Use true for current records and false only for an intentional inactive replacement.",
+            "x-gds-population-guidance": "Use true for current records and false only for an intentional inactive replacement."
+          },
+          "is_locked": {
+            "title": "Is Locked",
+            "type": "boolean",
+            "const": false,
+            "description": "Populate is_locked from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate is_locked from current Snapshot evidence and the active workflow guide."
+          }
+        },
+        "required": [
+          "support_source_type",
+          "source_logical_attribute",
+          "is_active",
+          "is_locked"
+        ],
+        "title": "AttributeLogicalSourceRecord",
+        "type": "object"
+      },
+      "ContextRecordReference": {
+        "additionalProperties": false,
+        "properties": {
+          "context_record_id": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "title": "Context Record Id",
+            "type": "string",
+            "description": "Use the exact Context Record UUID from the current Project Snapshot.",
+            "x-gds-population-guidance": "Use the exact Context Record UUID from the current Project Snapshot."
+          }
+        },
+        "required": [
+          "context_record_id"
+        ],
+        "title": "ContextRecordReference",
+        "type": "object"
+      },
+      "DimensionalAttributeRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "dimensional_entity_schema_name": {
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Dimensional Entity Schema Name",
+            "type": "string",
+            "description": "Use a schema from Project dimensional_schemas.",
+            "x-gds-population-guidance": "Use a schema from Project dimensional_schemas."
+          },
+          "dimensional_entity_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Dimensional Entity Name",
+            "type": "string",
+            "description": "Populate dimensional_entity_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_entity_name from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_attribute_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Dimensional Attribute Name",
+            "type": "string",
+            "description": "Populate dimensional_attribute_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_attribute_name from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_attribute_definition": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Dimensional Attribute Definition",
+            "type": "string",
+            "description": "Populate dimensional_attribute_definition from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_attribute_definition from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_attribute_data_type": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Dimensional Attribute Data Type",
+            "type": "string",
+            "description": "Populate dimensional_attribute_data_type from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_attribute_data_type from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_attribute_is_nullable": {
+            "title": "Dimensional Attribute Is Nullable",
+            "type": "boolean",
+            "description": "Populate dimensional_attribute_is_nullable from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_attribute_is_nullable from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_attribute_ordinal_position": {
+            "exclusiveMinimum": 0,
+            "title": "Dimensional Attribute Ordinal Position",
+            "type": "integer",
+            "description": "Populate dimensional_attribute_ordinal_position from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_attribute_ordinal_position from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_attribute_is_natural_key": {
+            "title": "Dimensional Attribute Is Natural Key",
+            "type": "boolean",
+            "description": "Populate dimensional_attribute_is_natural_key from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_attribute_is_natural_key from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_attribute_is_surrogate_key": {
+            "title": "Dimensional Attribute Is Surrogate Key",
+            "type": "boolean",
+            "description": "Populate dimensional_attribute_is_surrogate_key from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_attribute_is_surrogate_key from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_attribute_is_audit_column": {
+            "title": "Dimensional Attribute Is Audit Column",
+            "type": "boolean",
+            "description": "Populate dimensional_attribute_is_audit_column from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_attribute_is_audit_column from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_attribute_is_active": {
+            "title": "Dimensional Attribute Is Active",
+            "type": "boolean",
+            "description": "Populate dimensional_attribute_is_active from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_attribute_is_active from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_attribute_is_locked": {
+            "title": "Dimensional Attribute Is Locked",
+            "type": "boolean",
+            "const": false,
+            "description": "Populate dimensional_attribute_is_locked from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_attribute_is_locked from current Snapshot evidence and the active workflow guide."
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/$defs/DimensionalAttributeSourceRecord"
+            },
+            "title": "Sources",
+            "type": "array",
+            "description": "Populate sources from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate sources from current Snapshot evidence and the active workflow guide."
+          }
+        },
+        "required": [
+          "dimensional_entity_schema_name",
+          "dimensional_entity_name",
+          "dimensional_attribute_name",
+          "dimensional_attribute_definition",
+          "dimensional_attribute_data_type",
+          "dimensional_attribute_is_nullable",
+          "dimensional_attribute_ordinal_position",
+          "dimensional_attribute_is_natural_key",
+          "dimensional_attribute_is_surrogate_key",
+          "dimensional_attribute_is_audit_column",
+          "dimensional_attribute_is_active",
+          "dimensional_attribute_is_locked",
+          "sources"
+        ],
+        "title": "DimensionalAttributeRecord",
+        "type": "object",
+        "description": "One exact ID-free dimensional_attribute record shared by Project Snapshots and Project Change Sets.",
+        "x-gds-population-rules": [
+          "Use exact natural-key names from the current Snapshot; never database IDs.",
+          "Use only active, authorized records from this Project and its readable Source Tenants.",
+          "Retire instead of deleting: set is_active to false on model records, or status to inactive or deprecated where a record has status; resolve review questions locally.",
+          "Author business Attributes only; the backend projects surrogate-key, foreign-key, Type 2 and audit Attributes from Project policy.",
+          "Use PascalCase; surrogate and foreign keys end in Key unless user or Project policy overrides it."
+        ]
+      },
+      "DimensionalAttributeSourceRecord": {
+        "discriminator": {
+          "mapping": {
+            "context_record": "#/$defs/AttributeContextSourceRecord",
+            "logical_attribute": "#/$defs/AttributeLogicalSourceRecord"
+          },
+          "propertyName": "support_source_type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/AttributeLogicalSourceRecord"
+          },
+          {
+            "$ref": "#/$defs/AttributeContextSourceRecord"
+          }
+        ]
+      },
+      "DimensionalEntityRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "dimensional_entity_schema_name": {
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Dimensional Entity Schema Name",
+            "type": "string",
+            "description": "Use a schema from Project dimensional_schemas.",
+            "x-gds-population-guidance": "Use a schema from Project dimensional_schemas."
+          },
+          "dimensional_entity_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Dimensional Entity Name",
+            "type": "string",
+            "description": "Populate dimensional_entity_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_entity_name from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_entity_definition": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Dimensional Entity Definition",
+            "type": "string",
+            "description": "Populate dimensional_entity_definition from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_entity_definition from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_entity_type": {
+            "enum": [
+              "fact",
+              "dimension",
+              "bridge"
+            ],
+            "title": "Dimensional Entity Type",
+            "type": "string",
+            "description": "Populate dimensional_entity_type from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_entity_type from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_fact_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "transaction",
+                  "periodic_snapshot",
+                  "accumulating_snapshot"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An active fact type code for facts; null for dimensions and bridges."
+          },
+          "dimensional_entity_grain_definition": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dimensional Entity Grain Definition",
+            "description": "Populate dimensional_entity_grain_definition from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_entity_grain_definition from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_entity_dependency_order": {
+            "minimum": 0,
+            "title": "Dimensional Entity Dependency Order",
+            "type": "integer",
+            "description": "Populate dimensional_entity_dependency_order from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_entity_dependency_order from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_entity_is_active": {
+            "title": "Dimensional Entity Is Active",
+            "type": "boolean",
+            "description": "Populate dimensional_entity_is_active from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_entity_is_active from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_entity_is_locked": {
+            "title": "Dimensional Entity Is Locked",
+            "type": "boolean",
+            "const": false,
+            "description": "Populate dimensional_entity_is_locked from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_entity_is_locked from current Snapshot evidence and the active workflow guide."
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/$defs/DimensionalEntitySourceRecord"
+            },
+            "title": "Sources",
+            "type": "array",
+            "description": "Populate sources from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate sources from current Snapshot evidence and the active workflow guide."
+          }
+        },
+        "required": [
+          "dimensional_entity_schema_name",
+          "dimensional_entity_name",
+          "dimensional_entity_definition",
+          "dimensional_entity_type",
+          "dimensional_fact_type",
+          "dimensional_entity_grain_definition",
+          "dimensional_entity_dependency_order",
+          "dimensional_entity_is_active",
+          "dimensional_entity_is_locked",
+          "sources"
+        ],
+        "title": "DimensionalEntityRecord",
+        "type": "object",
+        "description": "One exact ID-free dimensional_entity record shared by Project Snapshots and Project Change Sets.",
+        "x-gds-population-rules": [
+          "Use exact natural-key names from the current Snapshot; never database IDs.",
+          "Use only active, authorized records from this Project and its readable Source Tenants.",
+          "Retire instead of deleting: set is_active to false on model records, or status to inactive or deprecated where a record has status; resolve review questions locally.",
+          "Choose dimensional_entity_schema_name from Project dimensional_schemas.",
+          "Use schema-qualified Logical Entities and Attributes as sources.",
+          "Follow the Kimball sequence: select the business process, declare fact grain, identify Dimensions, then identify Facts.",
+          "Use PascalCase and start each name with its type, Dim, Fact or Bridge, unless user or Project policy says otherwise."
+        ]
+      },
+      "DimensionalEntitySourceRecord": {
+        "discriminator": {
+          "mapping": {
+            "context_record": "#/$defs/LogicalContextSourceRecord",
+            "logical_entity": "#/$defs/DimensionalLogicalEntitySourceRecord"
+          },
+          "propertyName": "support_source_type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/DimensionalLogicalEntitySourceRecord"
+          },
+          {
+            "$ref": "#/$defs/LogicalContextSourceRecord"
+          }
+        ]
+      },
+      "DimensionalLogicalEntitySourceRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "support_source_type": {
+            "const": "logical_entity",
+            "title": "Support Source Type",
+            "type": "string",
+            "description": "Populate support_source_type from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate support_source_type from current Snapshot evidence and the active workflow guide."
+          },
+          "source_logical_entity": {
+            "$ref": "#/$defs/LogicalEntityKey",
+            "description": "Populate source_logical_entity from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate source_logical_entity from current Snapshot evidence and the active workflow guide."
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Rationale",
+            "description": "Populate rationale from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate rationale from current Snapshot evidence and the active workflow guide."
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean",
+            "description": "Use true for current records and false only for an intentional inactive replacement.",
+            "x-gds-population-guidance": "Use true for current records and false only for an intentional inactive replacement."
+          },
+          "is_locked": {
+            "title": "Is Locked",
+            "type": "boolean",
+            "const": false,
+            "description": "Populate is_locked from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate is_locked from current Snapshot evidence and the active workflow guide."
+          }
+        },
+        "required": [
+          "support_source_type",
+          "source_logical_entity",
+          "is_active",
+          "is_locked"
+        ],
+        "title": "DimensionalLogicalEntitySourceRecord",
+        "type": "object"
+      },
+      "DimensionalRelationshipRecord": {
+        "additionalProperties": false,
+        "description": "One exact ID-free dimensional_relationship record shared by Project Snapshots and Project Change Sets.",
+        "properties": {
+          "from_dimensional_entity_schema_name": {
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "From Dimensional Entity Schema Name",
+            "type": "string",
+            "description": "Populate from_dimensional_entity_schema_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate from_dimensional_entity_schema_name from current Snapshot evidence and the active workflow guide."
+          },
+          "to_dimensional_entity_schema_name": {
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "To Dimensional Entity Schema Name",
+            "type": "string",
+            "description": "Populate to_dimensional_entity_schema_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate to_dimensional_entity_schema_name from current Snapshot evidence and the active workflow guide."
+          },
+          "from_dimensional_entity_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "From Dimensional Entity Name",
+            "type": "string",
+            "description": "Populate from_dimensional_entity_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate from_dimensional_entity_name from current Snapshot evidence and the active workflow guide."
+          },
+          "from_dimensional_attribute_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "From Dimensional Attribute Name",
+            "type": "string",
+            "description": "Populate from_dimensional_attribute_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate from_dimensional_attribute_name from current Snapshot evidence and the active workflow guide."
+          },
+          "to_dimensional_entity_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "To Dimensional Entity Name",
+            "type": "string",
+            "description": "Populate to_dimensional_entity_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate to_dimensional_entity_name from current Snapshot evidence and the active workflow guide."
+          },
+          "to_dimensional_attribute_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "To Dimensional Attribute Name",
+            "type": "string",
+            "description": "Populate to_dimensional_attribute_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate to_dimensional_attribute_name from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_relationship_role_name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Dimensional Relationship Role Name",
+            "description": "Populate dimensional_relationship_role_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_relationship_role_name from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_relationship_basis": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Dimensional Relationship Basis",
+            "description": "Populate dimensional_relationship_basis from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_relationship_basis from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_relationship_is_active": {
+            "title": "Dimensional Relationship Is Active",
+            "type": "boolean",
+            "description": "Populate dimensional_relationship_is_active from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_relationship_is_active from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_relationship_is_locked": {
+            "title": "Dimensional Relationship Is Locked",
+            "type": "boolean",
+            "const": false,
+            "description": "Populate dimensional_relationship_is_locked from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_relationship_is_locked from current Snapshot evidence and the active workflow guide."
+          }
+        },
+        "required": [
+          "from_dimensional_entity_schema_name",
+          "to_dimensional_entity_schema_name",
+          "from_dimensional_entity_name",
+          "from_dimensional_attribute_name",
+          "to_dimensional_entity_name",
+          "to_dimensional_attribute_name",
+          "dimensional_relationship_is_active",
+          "dimensional_relationship_is_locked"
+        ],
+        "title": "DimensionalRelationshipRecord",
+        "type": "object",
+        "x-gds-population-rules": [
+          "Use exact natural-key names from the current Snapshot; never database IDs.",
+          "Use only active, authorized records from this Project and its readable Source Tenants.",
+          "Retire instead of deleting: set is_active to false on model records, or status to inactive or deprecated where a record has status; resolve review questions locally.",
+          "Point child -> parent: from a fact, bridge or outrigger foreign-key Attribute to the dimension's key Attribute. One foreign-key Attribute has one dimension.",
+          "Name a role only for role-playing dimensions; write a basis only when the link does not follow a Logical Relationship."
+        ]
+      },
+      "LogicalAttributeKey": {
+        "additionalProperties": false,
+        "properties": {
+          "logical_entity_schema_name": {
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Logical Entity Schema Name",
+            "type": "string",
+            "description": "Use an exact schema configured in Project logical_schemas.",
+            "x-gds-population-guidance": "Use an exact schema configured in Project logical_schemas."
+          },
+          "logical_entity_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Logical Entity Name",
+            "type": "string",
+            "description": "Populate logical_entity_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate logical_entity_name from current Snapshot evidence and the active workflow guide."
+          },
+          "logical_attribute_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Logical Attribute Name",
+            "type": "string",
+            "description": "Populate logical_attribute_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate logical_attribute_name from current Snapshot evidence and the active workflow guide."
+          }
+        },
+        "required": [
+          "logical_entity_schema_name",
+          "logical_entity_name",
+          "logical_attribute_name"
+        ],
+        "title": "LogicalAttributeKey",
+        "type": "object"
+      },
+      "LogicalContextSourceRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "support_source_type": {
+            "const": "context_record",
+            "title": "Support Source Type",
+            "type": "string",
+            "description": "Populate support_source_type from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate support_source_type from current Snapshot evidence and the active workflow guide."
+          },
+          "context_record": {
+            "$ref": "#/$defs/ContextRecordReference",
+            "description": "Populate context_record from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate context_record from current Snapshot evidence and the active workflow guide."
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Rationale",
+            "description": "Populate rationale from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate rationale from current Snapshot evidence and the active workflow guide."
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean",
+            "description": "Use true for current records and false only for an intentional inactive replacement.",
+            "x-gds-population-guidance": "Use true for current records and false only for an intentional inactive replacement."
+          },
+          "is_locked": {
+            "title": "Is Locked",
+            "type": "boolean",
+            "const": false,
+            "description": "Populate is_locked from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate is_locked from current Snapshot evidence and the active workflow guide."
+          }
+        },
+        "required": [
+          "support_source_type",
+          "context_record",
+          "is_active",
+          "is_locked"
+        ],
+        "title": "LogicalContextSourceRecord",
+        "type": "object"
+      },
+      "LogicalEntityKey": {
+        "additionalProperties": false,
+        "properties": {
+          "logical_entity_schema_name": {
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Logical Entity Schema Name",
+            "type": "string",
+            "description": "Use an exact schema configured in Project logical_schemas.",
+            "x-gds-population-guidance": "Use an exact schema configured in Project logical_schemas."
+          },
+          "logical_entity_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Logical Entity Name",
+            "type": "string",
+            "description": "Populate logical_entity_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate logical_entity_name from current Snapshot evidence and the active workflow guide."
+          }
+        },
+        "required": [
+          "logical_entity_schema_name",
+          "logical_entity_name"
+        ],
+        "title": "LogicalEntityKey",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "entities": {
+        "items": {
+          "$ref": "#/$defs/DimensionalEntityRecord"
+        },
+        "maxItems": 20000,
+        "title": "Entities",
+        "type": "array"
+      },
+      "attributes": {
+        "items": {
+          "$ref": "#/$defs/DimensionalAttributeRecord"
+        },
+        "maxItems": 20000,
+        "title": "Attributes",
+        "type": "array"
+      },
+      "relationships": {
+        "items": {
+          "$ref": "#/$defs/DimensionalRelationshipRecord"
+        },
+        "maxItems": 20000,
+        "title": "Relationships",
+        "type": "array"
+      }
+    },
+    "required": [
+      "entities",
+      "attributes",
+      "relationships"
+    ],
+    "title": "_DimensionalCandidate",
+    "type": "object",
+    "description": "Aim to cover all selected Logical Entities through active source mappings in the resulting Dimensional Model. The backend coverage target is 60% of distinct Logical Entities selected for this run, rounded up, including unchanged applied records. Below this target, use repair feedback to improve supported coverage. Repair source_refs lists up to 50 missing input identities per attempt. Consolidation is allowed when supported by grain and business meaning. Do not return a sample or invent source mappings merely to claim coverage. Dimensional Attributes may select and aggregate relevant Logical Attributes for the analytical design.\n\nCoverage repair instructions:\n1. Read context.repair.validation_issues. The coverage message states the covered/selected count, required count and number of additional distinct inputs needed. At the default 60% target, 15/30 requires 3 more Logical Entities to reach 18/30, not 3 more output dimensions/facts and not necessarily all 15 missing inputs.\n2. Each source_refs entry is a missing selected Logical Entity's complete schema/name identity. Match it to the supplied Logical design, source evidence and analytical requirements; use enabled readers when needed. Check whether its support is absent, inactive, on an inactive Entity or attached to the wrong identity. The list is bounded and may be shortened further when source_refs_truncated is true; do not treat it as the entire selection.\n3. Where the evidence supports an existing or proposed dimension, fact or bridge's analytical role and grain, add or correct its entities[].sources entry with support_source_type 'logical_entity', the exact source_logical_entity identity and is_active true; its parent dimensional_entity_is_active must also be true. Otherwise create a separate well-supported Entity with its required Attributes and valid references. Preserve locks and deliberate inactive records; never reactivate them, merge incompatible grains or invent links merely to increase coverage.\n4. Preserve valid work from repair.previous_candidate. Attempts are not automatically accumulated: return the complete corrected candidate, not a patch containing only the missing inputs. Unchanged applied records need not be repeated. If previous_candidate_omitted is true, rebuild from the rendered evidence and enabled readers.\n5. Recount distinct selected Logical Entities across active proposed and retained support, and resolve every other validation issue. Repeated references, unselected sources, Context-only support and Attribute-only mappings do not increase Entity coverage. Keep unsupported gaps unresolved using existing definition/rationale fields where appropriate. Return only the candidate JSON; do not add a coverage report or new output fields."
+  },
+  "expect": {
+    "list": "entities",
+    "key": [
+      "dimensional_entity_name"
+    ],
+    "expected": [
+      {
+        "dimensional_entity_name": "Vehicle"
+      }
+    ],
+    "forbidden": [
+      {
+        "dimensional_entity_name": "DimVehicle"
+      },
+      {
+        "dimensional_entity_name": "DimDate"
+      }
+    ]
+  }
+}

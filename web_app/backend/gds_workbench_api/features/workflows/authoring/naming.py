@@ -13,7 +13,9 @@ _DEFAULT_NAMING_INSTRUCTIONS: dict[NamingWorkflow, str] = {
     ),
     "dimensional": (
         "Use PascalCase for Dimensional entity and attribute names. "
-        "Dimensional key Attribute names end with Key."
+        "Start each Entity name with its type: Dim for a Dimension, Fact for a Fact, "
+        "Bridge for a Bridge (DimCustomer, FactSalesOrder, BridgeCustomerGroup). "
+        "Surrogate and foreign key names end with Key."
     ),
 }
 

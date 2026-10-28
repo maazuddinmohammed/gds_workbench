@@ -7,7 +7,7 @@ Confirmed shared defaults for Logical and Dimensional builds. Explicit user choi
 | Field | Default |
 |---|---|
 | Logical own surrogate | First Attribute, `<Entity>ID`, BIGINT, database-generated, non-null. |
-| Dimensional own surrogate | First Attribute, `<Entity>Key`, BIGINT, database-generated, non-null; applies to every newly created modeled table, including facts and bridges. |
+| Dimensional own surrogate | First Attribute, `<Entity>Key` (a dimension drops its `Dim` prefix: `DimCustomer` gets `CustomerKey`), BIGINT, database-generated, non-null; applies to every newly created modeled table, including facts and bridges. |
 | Foreign key | References the appropriate generated key with a compatible type. Its value comes from the required lookup/mapping; it is not another generated identity. Nullability follows the relationship. |
 | Natural/business identity | Separate from the surrogate; preserve the complete evidenced identifier or composite tuple. Qualify by System or other context when values are unique only within that context. |
 

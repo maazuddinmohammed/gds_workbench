@@ -276,9 +276,23 @@ function Invoke-AtlasDimensionalProjection($Candidate, $Baseline, $Technical, $A
         $kind = Get-Property $entity 'dimensional_entity_type'
         if ($kind -ceq 'dimension' -or $isNew) {
             $template = $Technical.dimension_surrogate_key
-            $surrogate = [ordered]@{semantic_name = ([string]$template.semantic_name_template).Replace('{entity_name}', [string]$entity.dimensional_entity_name);
+            $entityName = [string]$entity.dimensional_entity_name
+            # Generated key names drop a Dimension's Dim prefix: DimCustomer gets CustomerKey.
+            $keyName = if ($kind -ceq 'dimension' -and $entityName -cmatch '^Dim[A-Z]') { $entityName.Substring(3) } else { $entityName }
+            # A saved Entity keeps its surrogate's name, such as a DimCustomerKey saved before generated keys dropped the Dim prefix.
+            $semanticName = ([string]$template.semantic_name_template).Replace('{entity_name}', $keyName)
+            if (-not $isNew) {
+                foreach ($row in $entityAttributes) {
+                    if ((Get-Property $row 'dimensional_attribute_is_surrogate_key') -eq $true -and (Get-Property $row 'dimensional_attribute_is_active') -eq $true) {
+                        $savedName = [string](Get-Property $row 'dimensional_attribute_name')
+                        if ($savedName) { $semanticName = $savedName }
+                        break
+                    }
+                }
+            }
+            $surrogate = [ordered]@{semantic_name = $semanticName;
                 data_type = $template.data_type; nullable = $false;
-                definition = ([string]$template.definition_template).Replace('{entity_name}', [string]$entity.dimensional_entity_name)}
+                definition = ([string]$template.definition_template).Replace('{entity_name}', $entityName)}
             if (-not (Test-AtlasPolicyColumn $surrogate)) { Fail 'Policy projection rejected the dimensional draft: The Gold surrogate-key template produced an invalid column. Shorten the Entity name so the configured key name fits 255 characters and its definition fits 2000 characters. Preserve the frozen policy.' }
             [void]$specifications.Add(@($surrogate, 'technical', 'surrogate'))
             if ($kind -ceq 'dimension' -and $ScdType -ceq 'type_2') { [void]$history.Add($type2.is_current); [void]$history.Add($type2.effective_from); [void]$history.Add($type2.effective_to) }

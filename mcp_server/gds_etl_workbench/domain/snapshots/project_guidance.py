@@ -138,7 +138,10 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
             "Follow the Kimball sequence: select the business process, declare fact grain, "
             "identify Dimensions, then identify Facts."
         ),
-        "Use PascalCase by default unless user or Project policy says otherwise.",
+        (
+            "Use PascalCase and start each name with its type, Dim, Fact or Bridge, unless "
+            "user or Project policy says otherwise."
+        ),
     ),
     "dimensional_attribute": (
         (
@@ -146,7 +149,7 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
             "constant-valued Attributes."
         ),
         (
-            "Use PascalCase; dimensional key Attributes end in Key unless user or Project "
+            "Use PascalCase; surrogate and foreign keys end in Key unless user or Project "
             "policy overrides it."
         ),
     ),

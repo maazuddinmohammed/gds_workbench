@@ -706,10 +706,10 @@ INPUT_SHAPES: dict[str, Any] = {
     },
     "dimensional.naming_instructions": {
         "description": "Effective Gold naming override, otherwise "
-        "the existing Dimensional default: "
-        "PascalCase names and key Attributes "
-        "ending in Key. Preserve existing "
-        "identities.",
+        "the Dimensional default: PascalCase names, "
+        "Entity names starting with Dim, Fact or "
+        "Bridge, and surrogate and foreign keys ending "
+        "in Key. Preserve existing identities.",
         "schema": {"maxLength": 32768, "minLength": 1, "pattern": "\\S", "type": "string"},
     },
     "dimensional.audit_columns": {
@@ -1552,6 +1552,22 @@ INPUT_SHAPES.update(
             "code (CustomerCRM, Customer_ERP).",
             "schema": _NAME_VARIANTS,
         },
+        "dimensional.prefix_renames": {
+            "description": "Saved Entities whose PascalCase names lack their type prefix "
+            "(Dim, Fact or Bridge), each with its new name. Only Entities that no Mapping or "
+            "Code uses, no lock pins, no conformance group holds and whose new name is free; "
+            "at most 10 per run.",
+            "schema": {
+                "type": "array",
+                "maxItems": 10,
+                "items": {
+                    "type": "object",
+                    "properties": {"entity": _TEXT, "new_name": _TEXT},
+                    "required": ["entity", "new_name"],
+                    "additionalProperties": False,
+                },
+            },
+        },
         "dimensional.entity_details": {
             "description": "Saved records for the Dimensional Entities named by the findings "
             "above, with their Attributes and Relationships.",
@@ -1666,6 +1682,8 @@ WORKFLOW_INPUTS: dict[str, dict[str, str]] = {
         **_DIMENSIONAL_SETTINGS,
         **_LOGICAL_RECORDS,
         **_DIMENSIONAL_RECORDS,
+        # Last, so the seeded input order of the earlier inputs stays the same.
+        "prefix_renames": "dimensional.prefix_renames",
     },
 }
 
@@ -2109,7 +2127,9 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
             }
         ],
         "naming_instructions": "Use PascalCase for Dimensional entity and attribute "
-        "names. Dimensional key Attribute names end with Key.",
+        "names. Start each Entity name with its type: Dim for a Dimension, Fact for a "
+        "Fact, Bridge for a Bridge (DimCustomer, FactSalesOrder, BridgeCustomerGroup). "
+        "Surrogate and foreign key names end with Key.",
         "audit_columns": {
             "schema_version": "1.0",
             "columns": [
@@ -2727,6 +2747,7 @@ INPUT_EXAMPLES["dimensional_optimize"] = {
     ],
     "type_conflicts": [],
     "name_variants": [{"kind": "entity", "names": ["gold.DimCustomer", "gold.DimCustomers"]}],
+    "prefix_renames": [{"entity": "gold.Product", "new_name": "DimProduct"}],
     "entity_details": deepcopy(INPUT_EXAMPLES["dimensional"]["existing_entities"]),
 }
 

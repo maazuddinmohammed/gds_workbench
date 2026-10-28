@@ -8,9 +8,9 @@ Confirmed Atlas defaults for newly authored names. Reuse the selected Project's 
 | Logical Entity | PascalCase meaningful subject: `CustomerAccount`, `SalesOrder`. |
 | Logical Attribute | PascalCase: `CustomerName`, `OrderDate`, `TotalAmount`. Only identifiers take the `ID` suffix. |
 | Logical identifier / foreign key | Uppercase `ID`: `CustomerID`, `BillingCustomerID`; never default to `CustomerId` or `customer_id`. |
-| Dimensional Entity / Attribute | PascalCase; apply confirmed Project prefixes where present, such as `DimCustomer` or `FactSales`. Do not invent mandatory prefixes. |
+| Dimensional Entity / Attribute | PascalCase. A new Entity name starts with its type: `Dim` for a dimension, `Fact` for a fact, `Bridge` for a bridge (`DimCustomer`, `FactSalesOrder`, `BridgeCustomerGroup`), unless a confirmed Project override sets other prefixes. Saved Entities keep their names. |
 | Relationship | No name: the child's foreign-key Attribute names it. A Dimensional role name, set only for a role-playing dimension, is PascalCase: `OrderDate`, `ShipDate`. |
-| Dimensional surrogate / foreign key | End in `Key`: `CustomerKey`, `BillingCustomerKey`. Retained source/business identifiers may still end in `ID`. |
+| Dimensional surrogate / foreign key | End in `Key`: `CustomerKey`, `BillingCustomerKey`. Generated key names drop a dimension's `Dim` prefix (`DimCustomer` gets `CustomerKey`); facts and bridges keep their whole name (`FactSalesOrderKey`). Retained source/business identifiers may still end in `ID`. |
 | Audit fields | Preserve the exact confirmed spellings in [keys and audit columns](keys-and-audit.md), including `SourceSystemID`, `GDSBatchID` and `HashKey`. |
 
 ## Apply names without losing meaning

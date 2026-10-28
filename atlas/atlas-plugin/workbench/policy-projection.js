@@ -172,9 +172,12 @@
       .sort((left, right) => compareKeys(keys.attribute(left), keys.attribute(right)));
   }
 
-  function goldColumn(template, entityName) {
+  function goldColumn(template, entity, savedName) {
+    // Generated key names drop a Dimension's Dim prefix: DimCustomer gets CustomerKey.
+    const entityName = entity.dimensional_entity_name;
+    const keyName = entity.dimensional_entity_type === "dimension" && /^Dim[A-Z]/.test(entityName) ? entityName.slice(3) : entityName;
     const column = {
-      semantic_name: template.semantic_name_template.split("{entity_name}").join(entityName),
+      semantic_name: savedName || template.semantic_name_template.split("{entity_name}").join(keyName),
       data_type: template.data_type, nullable: false,
       definition: template.definition_template.split("{entity_name}").join(entityName),
     };
@@ -220,7 +223,9 @@
       const specifications = [];
       const history = [];
       if (entity.dimensional_entity_type === "dimension" || isNew) {
-        specifications.push([goldColumn(technical.dimension_surrogate_key, entity.dimensional_entity_name), "technical", "surrogate"]);
+        // A saved Entity keeps its surrogate's name, such as a DimCustomerKey saved before generated keys dropped the Dim prefix.
+        const saved = isNew ? undefined : entityAttributes.find((row) => row.dimensional_attribute_is_surrogate_key && row.dimensional_attribute_is_active === true);
+        specifications.push([goldColumn(technical.dimension_surrogate_key, entity, saved?.dimensional_attribute_name), "technical", "surrogate"]);
         if (entity.dimensional_entity_type === "dimension" && scdType === "type_2") history.push(type2.is_current, type2.effective_from, type2.effective_to);
       }
       // History belongs to the audit group, immediately after SourceSystemID.

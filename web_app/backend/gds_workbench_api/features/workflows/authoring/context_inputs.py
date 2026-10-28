@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from typing import Any
@@ -1136,9 +1137,53 @@ def _dimensional_optimize_inputs(
         if len(names) > 1
     ] + [{"reason": "name_variant", "dimensions": item["names"]} for item in name_variants]
     type_conflicts = _type_conflicts(attributes, labels, model["relationships"], "dimensional")
-    named = {name for item in conformance for name in item["dimensions"]} | {
-        value["entity"] for item in type_conflicts for value in item["values"]
+    # Gold Entity names start with their type. Optimize renames a saved PascalCase name that
+    # lacks its prefix as a new record plus a retired one, so offer only Entities that no
+    # Mapping or Code uses, that no lock pins, that no merge may retire and whose new name
+    # is free; ten per run keep the answer small.
+    used = {
+        _entity_key(item["record"], "modeled") for item in context.get("read_only_dependencies", [])
     }
+    saved: Mapping[str, Any] = context["applied"].get("dimensional") or {}
+    taken = {_entity_key(entity, "dimensional") for entity in saved.get("entities", [])}
+    locked_attributes = {
+        (
+            *_entity_key(row, "dimensional"),
+            normalize_project_key_value(row["dimensional_attribute_name"]),
+        )
+        for row in model["attributes"]
+        if row["dimensional_attribute_is_locked"]
+    }
+    pinned = {key for key, entity in entities.items() if entity["dimensional_entity_is_locked"]}
+    pinned |= {key[:2] for key in locked_attributes}
+    for row in model["relationships"]:
+        child = (
+            *_entity_key(row, "dimensional", "from_"),
+            normalize_project_key_value(row["from_dimensional_attribute_name"]),
+        )
+        # Re-pointing an edge rewrites its foreign key's definition.
+        if row["dimensional_relationship_is_locked"] or child in locked_attributes:
+            pinned |= {child[:2], _entity_key(row, "dimensional", "to_")}
+    prefix_renames: list[dict[str, str]] = []
+    for key, entity in entities.items():
+        name = entity["dimensional_entity_name"]
+        prefix = {"dimension": "Dim", "fact": "Fact", "bridge": "Bridge"}[
+            entity["dimensional_entity_type"]
+        ]
+        if (
+            len(prefix_renames) < 10
+            and re.fullmatch(r"[A-Z][A-Za-z0-9]*", name)
+            and not re.match(rf"{prefix}[A-Z]", name)
+            and key not in used | pinned
+            and not any(labels[key] in item["dimensions"] for item in conformance)
+            and (key[0], normalize_project_key_value(prefix + name)) not in taken
+        ):
+            prefix_renames.append({"entity": labels[key], "new_name": prefix + name})
+    named = (
+        {name for item in conformance for name in item["dimensions"]}
+        | {value["entity"] for item in type_conflicts for value in item["values"]}
+        | {item["entity"] for item in prefix_renames}
+    )
     # A list in model order, so every worker renders the same prompt.
     detail = [key for key, label in labels.items() if label in named]
 
@@ -1196,6 +1241,7 @@ def _dimensional_optimize_inputs(
             ],
             "attribute",
         ),
+        "prefix_renames": prefix_renames,
         "entity_details": {
             "entities": [deepcopy(entities[key]) for key in detail],
             "attributes": [deepcopy(row) for key in detail for row in attributes.get(key, [])],

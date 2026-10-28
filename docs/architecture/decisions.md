@@ -128,6 +128,13 @@ through configured templates and the effective relationship graph. Removing sche
 fields does not relax Project ownership, Tenant Locks, revisions or idempotency.
 These are fresh-install contract changes, not a populated-database migration.
 
+Gold Entity names start with their type: Dim, Fact or Bridge, unless a Project naming
+override sets other prefixes. Generated key names drop a Dimension's Dim prefix, so
+DimCustomer gets CustomerKey and Facts point to it with CustomerKey; a saved surrogate
+keeps its saved name. Builds keep saved names. Optimize renames a saved Entity that
+lacks its prefix as a new record plus a retired one, only when no Mapping or Code uses
+it, no lock pins it and no conformance group holds it, at most ten per run.
+
 ## Plugin settings and enrichment
 
 Project identity is immutable through Change Sets. Project description and allowed

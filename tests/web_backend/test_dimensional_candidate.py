@@ -25,6 +25,10 @@ from tests.web_backend.test_dimensional_policy import (
 from gds_workbench_api.features.dimensional.candidate import (
     DimensionalCandidateValidator,
 )
+from gds_workbench_api.features.dimensional.policy import (
+    project_dimensional_foreign_key_policy,
+    project_dimensional_gold_policy,
+)
 
 
 def _object(name: str = "dim_customer") -> LogicalEntityKey:
@@ -394,6 +398,74 @@ async def test_retiring_an_entity_retires_its_attributes_and_the_relationships_u
         for row in changes["dimensional_relationship"]
     ] == [("Sales Fact", "Bill To Customer key", False)]
 
+
+async def test_renaming_a_dimension_repoints_saved_fact_edges_to_the_new_record() -> None:
+    """Optimize adds a missing Dim prefix as a new record and retires the old one."""
+    baseline = _projected_baseline()
+    old = baseline.entities[0].model_dump(mode="json")
+    renamed = {**old, "dimensional_entity_name": "DimCustomer Dimension"}
+    retired = {**old, "dimensional_entity_is_active": False}
+    business = next(
+        row.model_dump(mode="json")
+        for row in baseline.attributes
+        if row.dimensional_attribute_name == "Customer Name"
+    )
+    # The saved Fact edge keeps its foreign key and changes only its parent.
+    edge = {
+        **baseline.relationships[0].model_dump(mode="json"),
+        "to_dimensional_entity_name": "DimCustomer Dimension",
+        "to_dimensional_attribute_name": "Customer Name",
+    }
+    candidate = cast(
+        JsonValue,
+        {
+            "entities": [renamed, retired],
+            "attributes": [{**business, "dimensional_entity_name": "DimCustomer Dimension"}],
+            "relationships": [edge],
+        },
+    )
+    validator = _validator(applied=baseline)
+    assert (await validator.validate(candidate)).issues == ()
+
+    projected = project_dimensional_foreign_key_policy(
+        changes=project_dimensional_gold_policy(
+            changes=validator.parse_validated(candidate),
+            applied=baseline,
+            raw_technical_template=_technical_template(),
+            raw_audit_template=_audit_template(),
+        ),
+        applied=baseline,
+        raw_technical_template=_technical_template(),
+    )
+    changes = {change.dataset: change.records for change in projected}
+
+    assert sorted(
+        (
+            row["dimensional_entity_name"],
+            row["dimensional_attribute_name"],
+            row["dimensional_attribute_is_active"],
+        )
+        for row in changes["dimensional_attribute"]
+    ) == [
+        ("Customer Dimension", "Customer Dimension key", False),
+        ("Customer Dimension", "Customer Name", False),
+        ("Customer Dimension", "Loaded At", False),
+        # Without its Dim prefix the new key keeps the old name, so the Fact keeps its key.
+        ("DimCustomer Dimension", "Customer Dimension key", True),
+        ("DimCustomer Dimension", "Customer Name", True),
+        ("DimCustomer Dimension", "Loaded At", True),
+        # Only its definition changes, to name the new parent.
+        ("Sales Fact", "Bill To Customer key", True),
+    ]
+    assert [
+        (
+            row["from_dimensional_attribute_name"],
+            row["to_dimensional_entity_name"],
+            row["to_dimensional_attribute_name"],
+            row["dimensional_relationship_is_active"],
+        )
+        for row in changes["dimensional_relationship"]
+    ] == [("Bill To Customer key", "DimCustomer Dimension", "Customer Dimension key", True)]
 
 async def test_retiring_a_saved_fact_edge_retires_its_projected_foreign_key() -> None:
     baseline = _projected_baseline()
