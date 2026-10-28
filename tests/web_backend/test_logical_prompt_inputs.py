@@ -268,3 +268,60 @@ def test_optimize_flags_one_subject_named_once_per_source_system() -> None:
         "CRMCustomer",
         "Customer_ERP",
     ]
+
+
+def test_optimize_details_children_of_entity_name_variants() -> None:
+    def entity(name: str) -> dict[str, Any]:
+        return {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": name,
+            "logical_entity_type": "core",
+            "logical_entity_definition": f"One {name}.",
+            "logical_entity_grain": f"One row per {name}.",
+            "logical_entity_is_active": True,
+            "logical_entity_is_locked": False,
+            "sources": [],
+        }
+
+    def link(child: str, parent: str) -> dict[str, Any]:
+        return {
+            "from_logical_entity_schema_name": "silver",
+            "from_logical_entity_name": child,
+            "from_logical_attribute_name": f"{parent}ID",
+            "to_logical_entity_schema_name": "silver",
+            "to_logical_entity_name": parent,
+            "to_logical_attribute_name": f"{parent}ID",
+            "logical_relationship_cardinality": "many_to_one",
+            "logical_relationship_basis": None,
+            "logical_relationship_is_active": True,
+            "logical_relationship_is_locked": False,
+        }
+
+    context: dict[str, Any] = {
+        "applied": {
+            "logical": {
+                "entities": [
+                    entity(name)
+                    for name in ("CRMCustomer", "Customer_ERP", "Invoice", "Product", "Sale")
+                ],
+                "attributes": [],
+                # Invoice must rename ERPCustomerID after a merge; Sale points elsewhere.
+                "relationships": [link("Invoice", "Customer_ERP"), link("Sale", "Product")],
+                "entity_types": [],
+            }
+        },
+        "analysis_relationships": [],
+        "source_context": [{"system_code": "CRM"}, {"system_code": "ERP"}],
+        "context": {"types": [], "groups": [], "records": []},
+    }
+
+    values = _logical_optimize_inputs(context, {}, [])
+
+    assert [row["name"] for row in values["entity_details"]["entities"]] == [
+        "CRMCustomer",
+        "Customer_ERP",
+        "Invoice",
+    ]
+    assert [row["from"]["entity"] for row in values["entity_details"]["relationships"]] == [
+        "Invoice"
+    ]

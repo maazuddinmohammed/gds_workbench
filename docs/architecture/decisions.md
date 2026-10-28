@@ -164,8 +164,10 @@ and no reader returns areas. A Subject Area run covers all or selected active Br
 Scope Objects. Objects left out keep their memberships, and an area that still holds
 in-scope Objects outside the run cannot be retired in it. The answer cites table ids;
 the backend checks every id, keeps locks and accounts for every Object in the run.
-Areas have no size limit; the prompt aims for about 5 to 12 tables and a few hundred
-columns per area, so one Build call can design it well. Unassigned Objects are worked
+Areas have no size limit or target count: the prompt finds business domains from the
+whole landscape (what the Tenant does, what each System is for, what each table
+records), shares master and reference tables, keeps copies together, and splits a
+domain only when one Build answer cannot design it (about 800 columns). Unassigned Objects are worked
 out, not stored. Human edits use one save command per
 area that applies at once; a rename keeps the old area inactive.
 
@@ -236,8 +238,28 @@ operational model. Subject Areas keep one subject from different Systems in one 
 namespace in its key, never one Entity per System; Logical Optimize also groups Entity
 names that differ only by a source System code so per-System copies can merge;
 Dimensional builds one Dimension or Fact from such a multi-System Logical Entity; and
-Analysis never links a table to its look-alike in another System. These are default
-prompt and input rules; the backend does not reject per-System Entities.
+Analysis never links a table to its look-alike in another System, while a column that
+holds another System's identifiers, such as a shared reference list, is linked when the
+whole picture (System purposes, names, descriptions, Context, data) shows it. These are
+default prompt and input rules; the backend does not reject per-System Entities.
+
+Model prompts give best-effort answers, because people review every draft: no
+validation result gates a link, Enrichment fills descriptions and flags where the
+meaning is plain, and Logical turns every active Analysis link into a foreign key unless
+it contradicts the designed grain or keys. A source instance column joins the natural
+key; load batch columns such as `GDSBatchID` are never key parts; foreign-key
+nullability follows business meaning. SourceSystemID has one value per System, not per
+instance, so an Entity that mixes instances of one System keeps an instance Attribute in
+its natural key. Build states the current-row rule of an appended-load table
+(highest `GDSBatchID` per key) as that table source's note; Mapping applies a row
+choice only when lineage, a source note or Context states it, and otherwise reports the
+missing rule. Optimize shows the Entities whose foreign keys
+point at a name-variant Entity in full, so a merge can rename those foreign keys.
+
+Mapping translates each target Attribute's saved lineage: its source columns and the
+Build's note (stored as the source `rationale`; null means a straight copy). A pair's
+Run event reports only how many Attributes were mapped; unresolved issues stay in the
+draft.
 
 Mapping operates on frozen Entity/System pairs (branches). `workflow.list_mapping_branches`
 is the one rule for generation targets, Run creation and manual Mapping: a Logical
@@ -281,7 +303,8 @@ Analysis run (`workflow_operation = 'per_table'`, one-shot only, stage
   without one, since only a description can then say which column identifies its rows.
 - Its answer holds only links that start in the focus table (`from_attribute_name`,
   `to` as `tN.column`, kind, cardinality); the backend expands them to full keys and
-  checks them like a whole-selection answer. The prompt asks for sure links only.
+  checks them like a whole-selection answer. The prompt asks for every plausible link;
+  people review the findings.
 - Every link starts at one column, so calls never overlap. Answers merge in table order;
   a second link on an already linked column pair (either direction, any kind, saved or
   earlier in the run) is dropped before the draft. A table whose call still fails after
@@ -289,6 +312,13 @@ Analysis run (`workflow_operation = 'per_table'`, one-shot only, stage
 
 The directory holds the run's selection, so both ends of a link must still be selected.
 The whole-selection mode stays until per-table runs are proven, then goes.
+
+Validate measures every active link with one aggregate query each and never blocks a
+link. A link it cannot measure (an endpoint outside the run's selection, metadata that
+no longer resolves, or a query the warehouse rejects, such as for incompatible types) is
+skipped and counted in the final event; checked links are saved and skipped ones keep
+their last result. A link across GDS Connections runs on its source endpoint's
+Connection. The run fails only when no link could be checked, with the first reason.
 
 ## Authoring versus execution
 

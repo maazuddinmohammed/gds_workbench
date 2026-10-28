@@ -585,42 +585,40 @@ def test_analysis_validation_context_requires_exact_run_entra_identity(
         ).fetchall()
 
 
-def test_analysis_validation_context_rejects_one_unselected_endpoint(
+def test_analysis_validation_context_skips_relationship_with_unselected_endpoint(
     postgres_database: DisposablePostgres,
 ) -> None:
     seed = _seed_analysis_validation(postgres_database, start=False)
-    one_object_run_id = _create_run(
+    two_object_run_id = _create_run(
         postgres_database,
         seed.execution.context,
         workflow="analysis",
-        selected_object_ids=(seed.endpoints[0].object_id,),
+        selected_object_ids=(
+            seed.endpoints[0].object_id,
+            seed.endpoints[1].object_id,
+        ),
     )
 
-    with (
-        psycopg.connect(
-            postgres_database.web_runtime_dsn(),
-            row_factory=dict_row,
-        ) as connection,
-        pytest.raises(
-            RaiseException,
-            match="analysis_validation_endpoint_not_selected",
-        ),
-        connection.transaction(),
-    ):
+    with psycopg.connect(
+        postgres_database.web_runtime_dsn(),
+        row_factory=dict_row,
+    ) as connection:
         connection.execute("SET ROLE gds_web_write")
-        connection.execute(
+        rows = connection.execute(
             GET_ANALYSIS_VALIDATION_EXECUTION_CONTEXT_SQL,
             (
                 seed.execution.context.entra_tenant_id,
                 seed.execution.context.entra_object_id,
-                one_object_run_id,
+                two_object_run_id,
                 seed.execution.context.project_revision,
                 seed.execution.environment_code,
             ),
         ).fetchall()
 
+    assert [row["analysis_result_id"] for row in rows] == [seed.active_result_id]
 
-def test_analysis_validation_context_rejects_cross_connection_relationship(
+
+def test_analysis_validation_context_runs_cross_connection_relationship_on_source(
     postgres_database: DisposablePostgres,
 ) -> None:
     seed = _seed_analysis_validation(postgres_database)
@@ -669,25 +667,23 @@ def test_analysis_validation_context_rejects_cross_connection_relationship(
             (second_connection_id, moved.object_id),
         )
 
-    with (
-        psycopg.connect(
-            postgres_database.web_runtime_dsn(),
-            row_factory=dict_row,
-        ) as connection,
-        pytest.raises(
-            RaiseException,
-            match="analysis_validation_cross_connection",
-        ),
-        connection.transaction(),
-    ):
+    with psycopg.connect(
+        postgres_database.web_runtime_dsn(),
+        row_factory=dict_row,
+    ) as connection:
         connection.execute("SET ROLE gds_web_write")
-        connection.execute(
+        rows = connection.execute(
             GET_ANALYSIS_VALIDATION_EXECUTION_CONTEXT_SQL,
             _analysis_execution_parameters(seed.execution),
         ).fetchall()
 
+    assert [(row["analysis_result_id"], row["gds_connection_id"]) for row in rows] == [
+        (seed.active_result_id, seed.execution.connection_id),
+        (seed.locked_result_id, second_connection_id),
+    ]
 
-def test_analysis_validation_context_rejects_blank_source_tenant_catalog(
+
+def test_analysis_validation_context_skips_blank_source_tenant_catalog(
     postgres_database: DisposablePostgres,
 ) -> None:
     seed = _seed_analysis_validation(postgres_database)
@@ -711,22 +707,20 @@ def test_analysis_validation_context_rejects_blank_source_tenant_catalog(
             (source_tenant_id,),
         )
 
-    with (
-        psycopg.connect(
-            postgres_database.web_runtime_dsn(),
-            row_factory=dict_row,
-        ) as connection,
-        pytest.raises(RaiseException, match="analysis_validation_context_changed"),
-        connection.transaction(),
-    ):
+    with psycopg.connect(
+        postgres_database.web_runtime_dsn(),
+        row_factory=dict_row,
+    ) as connection:
         connection.execute("SET ROLE gds_web_write")
-        connection.execute(
+        rows = connection.execute(
             GET_ANALYSIS_VALIDATION_EXECUTION_CONTEXT_SQL,
             _analysis_execution_parameters(seed.execution),
         ).fetchall()
 
+    assert rows == []
 
-def test_analysis_validation_context_rejects_blank_endpoint_data_type(
+
+def test_analysis_validation_context_skips_blank_endpoint_data_type(
     postgres_database: DisposablePostgres,
 ) -> None:
     seed = _seed_analysis_validation(postgres_database)
@@ -740,19 +734,17 @@ def test_analysis_validation_context_rejects_blank_endpoint_data_type(
             (seed.endpoints[0].attribute_id,),
         )
 
-    with (
-        psycopg.connect(
-            postgres_database.web_runtime_dsn(),
-            row_factory=dict_row,
-        ) as connection,
-        pytest.raises(RaiseException, match="analysis_validation_context_changed"),
-        connection.transaction(),
-    ):
+    with psycopg.connect(
+        postgres_database.web_runtime_dsn(),
+        row_factory=dict_row,
+    ) as connection:
         connection.execute("SET ROLE gds_web_write")
-        connection.execute(
+        rows = connection.execute(
             GET_ANALYSIS_VALIDATION_EXECUTION_CONTEXT_SQL,
             _analysis_execution_parameters(seed.execution),
         ).fetchall()
+
+    assert [row["analysis_result_id"] for row in rows] == [seed.locked_result_id]
 
 
 def test_analysis_validation_partial_connection_values_return_no_secrets(
@@ -1014,6 +1006,48 @@ def test_analysis_validation_results_allow_empty_exact_context(
         "submitted_result_count": 0,
         "changed_result_count": 0,
     }
+
+
+def test_analysis_validation_results_accept_checked_subset(
+    postgres_database: DisposablePostgres,
+) -> None:
+    seed = _seed_analysis_validation(postgres_database)
+    source_context_digests = _source_context_digests(postgres_database, seed)
+    checked = _validation_result(
+        seed.active_result_id,
+        source_context_digest=source_context_digests[seed.active_result_id],
+        digest_character="a",
+        count_base=100,
+    )
+
+    with psycopg.connect(
+        postgres_database.web_runtime_dsn(),
+        row_factory=dict_row,
+    ) as connection:
+        connection.execute("SET ROLE gds_web_write")
+        persisted = require_row(
+            connection.execute(
+                PERSIST_ANALYSIS_VALIDATION_RESULTS_SQL,
+                _persist_validation_parameters(seed, [checked]),
+            ).fetchone()
+        )
+
+    with postgres_database.connect_owner() as connection:
+        stored = {
+            int(row["analysis_result_id"]): row["validation_result"]
+            for row in connection.execute(
+                """
+                SELECT analysis_result_id, validation_result
+                  FROM workflow.analysis_result
+                 WHERE analysis_result_id = ANY(%s::BIGINT[])
+                """,
+                ([seed.active_result_id, seed.locked_result_id],),
+            ).fetchall()
+        }
+
+    assert persisted["submitted_result_count"] == 1
+    assert persisted["changed_result_count"] == 1
+    assert stored == {seed.active_result_id: "supported", seed.locked_result_id: None}
 
 
 def test_analysis_validation_persistence_rejects_stale_physical_context(
@@ -1428,9 +1462,8 @@ def test_analysis_validation_payload_is_exact_strict_and_atomic(
         count_base=30,
     )
     invalid_payloads = (
-        (valid[:1], "exactly cover"),
         ([valid[0], valid[0]], "IDs must be unique"),
-        ([valid[0], unknown], "exactly cover"),
+        ([valid[0], unknown], "belong to eligible Results"),
         ([missing_field, valid[1]], "payload shape is invalid"),
         ([extra_field, valid[1]], "payload shape is invalid"),
         ([invalid_version, valid[1]], "payload shape is invalid"),

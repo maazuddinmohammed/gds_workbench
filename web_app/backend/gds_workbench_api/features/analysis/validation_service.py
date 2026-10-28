@@ -379,7 +379,7 @@ class DatabaseAnalysisValidationRepository:
 
 
 class AnalysisValidationWorkflow:
-    """Run fixed aggregate validation without agent, fallback, or partial writes."""
+    """Run fixed aggregate validation without an agent; a failing link is skipped."""
 
     def __init__(
         self,
@@ -512,13 +512,24 @@ class AnalysisValidationWorkflow:
                 key=lambda target: target.relationship.analysis_result_id,
             )
         )
-        queries = tuple(
-            build_analysis_validation_query(
-                target.relationship,
-                requested_batch_id=context.requested_batch_id,
-            )
-            for target in targets
-        )
+
+        async def check(
+            target: AnalysisValidationExecutionTarget,
+        ) -> AnalysisValidationEvidence | Exception:
+            # One link that cannot be queried is skipped; the others still run.
+            try:
+                query = build_analysis_validation_query(
+                    target.relationship,
+                    requested_batch_id=context.requested_batch_id,
+                )
+                return await self._executor.execute(
+                    connection=target.connection,
+                    query=query,
+                    timeout_seconds=self._policy.statement_timeout_seconds,
+                )
+            except Exception as error:
+                return error
+
         thresholds = _progress_thresholds(
             len(targets),
             self._policy.max_progress_events - 1,
@@ -526,30 +537,25 @@ class AnalysisValidationWorkflow:
         threshold_index = 0
         sequence = 3
         evidence_by_id: dict[int, AnalysisValidationEvidence] = {}
+        failures: list[Exception] = []
         chunk_size = self._policy.max_parallel_queries
         for start in range(0, len(targets), chunk_size):
             target_chunk = targets[start : start + chunk_size]
-            query_chunk = queries[start : start + chunk_size]
-            evidence_chunk = await asyncio.gather(
-                *(
-                    self._executor.execute(
-                        connection=target.connection,
-                        query=query,
-                        timeout_seconds=self._policy.statement_timeout_seconds,
+            outcomes = await asyncio.gather(*(check(target) for target in target_chunk))
+            for target, outcome in zip(target_chunk, outcomes, strict=True):
+                result_id = target.relationship.analysis_result_id
+                if isinstance(outcome, Exception):
+                    failures.append(outcome)
+                    _logger.warning(
+                        "Analysis validation skipped one relationship.",
+                        extra={
+                            "workflow_run_id": workflow_run_id,
+                            "analysis_result_id": result_id,
+                            "failure_code": _safe_execution_error(outcome).code[:100],
+                        },
                     )
-                    for target, query in zip(
-                        target_chunk,
-                        query_chunk,
-                        strict=True,
-                    )
-                )
-            )
-            for target, evidence in zip(
-                target_chunk,
-                evidence_chunk,
-                strict=True,
-            ):
-                evidence_by_id[target.relationship.analysis_result_id] = evidence
+                else:
+                    evidence_by_id[result_id] = outcome
             completed = min(start + len(target_chunk), len(targets))
             if threshold_index < len(thresholds) and completed >= thresholds[threshold_index]:
                 while (
@@ -567,9 +573,15 @@ class AnalysisValidationWorkflow:
                         stage="analysis.relationship_validation",
                         status="running",
                         message=(
-                            "Analysis relationship validation completed."
-                            if completed == len(targets)
-                            else "Analysis relationship validation is running."
+                            "Analysis relationship validation is running."
+                            if completed < len(targets)
+                            else "Analysis relationship validation completed."
+                            if not failures
+                            else (
+                                "Analysis relationship validation completed; "
+                                f"{len(failures)} of {len(targets)} relationships "
+                                "could not be checked and were skipped."
+                            )
                         ),
                         current=completed,
                         total=len(targets),
@@ -578,6 +590,10 @@ class AnalysisValidationWorkflow:
                 )
                 sequence += 1
 
+        if failures and not evidence_by_id:
+            # Nothing could be checked, so report the first reason instead of
+            # completing with no results.
+            raise failures[0]
         policy_digest = self._policy.validation_policy_digest
         return [
             {
@@ -588,6 +604,7 @@ class AnalysisValidationWorkflow:
                 **evidence_by_id[target.relationship.analysis_result_id].model_dump(mode="python"),
             }
             for target in targets
+            if target.relationship.analysis_result_id in evidence_by_id
         ]
 
 

@@ -524,8 +524,10 @@ REVOKE ALL ON FUNCTION application.get_profiling_connection_values(
 
 -- Resolve the complete immutable physical input for one running deterministic
 -- Analysis validation Run. A relationship is eligible only when both endpoint
--- Objects are selected. Validation may refresh locked rows because it never
--- changes inference-owned or user-owned fields.
+-- Objects are selected and its physical metadata resolves; other relationships
+-- are skipped, not rejected. A relationship across GDS Connections runs on its
+-- source endpoint's Connection. Validation may refresh locked rows because it
+-- never changes inference-owned or user-owned fields.
 CREATE FUNCTION application.get_analysis_validation_execution_context(
     p_entra_tenant_id UUID,
     p_entra_object_id UUID,
@@ -577,10 +579,6 @@ DECLARE
     v_environment_id BIGINT;
     v_environment_code VARCHAR(100);
     v_selected_scope_count INTEGER;
-    v_partial_relationship_count INTEGER;
-    v_relationship_count INTEGER;
-    v_resolved_relationship_count INTEGER;
-    v_cross_connection_count INTEGER;
     v_context_snapshot JSONB;
 BEGIN
     IF p_workflow_run_id IS NULL
@@ -683,31 +681,23 @@ BEGIN
             'analysis_validation_scope_incomplete: Workflow Run Selected Scope is incomplete';
     END IF;
 
-    -- Resolve and serialize the complete relationship context in one SQL
-    -- statement. All subsequent checks and returned rows use this exact local
-    -- snapshot, so concurrent metadata changes cannot split validation from
-    -- execution input.
-    WITH relationship_membership AS MATERIALIZED (
-        SELECT result.*,
-               from_selection.object_id IS NOT NULL AS from_is_selected,
-               to_selection.object_id IS NOT NULL AS to_is_selected
+    -- Resolve and serialize the relationship context in one SQL statement.
+    -- All subsequent checks and returned rows use this exact local snapshot,
+    -- so concurrent metadata changes cannot split validation from execution
+    -- input.
+    WITH selected_relationship AS MATERIALIZED (
+        SELECT result.*
           FROM workflow.analysis_result AS result
-          LEFT JOIN application.workflow_run_object_selection
-               AS from_selection
+          JOIN application.workflow_run_object_selection AS from_selection
             ON from_selection.workflow_run_id = p_workflow_run_id
            AND from_selection.project_id = result.project_id
            AND from_selection.object_id = result.from_object_id
-          LEFT JOIN application.workflow_run_object_selection AS to_selection
+          JOIN application.workflow_run_object_selection AS to_selection
             ON to_selection.workflow_run_id = p_workflow_run_id
            AND to_selection.project_id = result.project_id
            AND to_selection.object_id = result.to_object_id
          WHERE result.project_id = v_run.project_id
            AND result.analysis_result_status = 'active'
-    ), selected_relationship AS MATERIALIZED (
-        SELECT membership.*
-          FROM relationship_membership AS membership
-         WHERE membership.from_is_selected
-           AND membership.to_is_selected
     ), resolved_relationship_input AS MATERIALIZED (
         SELECT result.analysis_result_id,
                result.relationship_kind,
@@ -933,35 +923,8 @@ BEGIN
                    'hex'
                )::CHAR(64) AS source_context_digest
           FROM resolved_relationship_input AS input
-    ), relationship_statistics AS (
-        SELECT (
-                   SELECT count(*)
-                     FROM relationship_membership AS membership
-                    WHERE membership.from_is_selected <>
-                          membership.to_is_selected
-               )::INTEGER AS partial_relationship_count,
-               (
-                   SELECT count(*)
-                     FROM selected_relationship
-               )::INTEGER AS relationship_count,
-               (
-                   SELECT count(DISTINCT resolved.analysis_result_id)
-                     FROM resolved_relationship AS resolved
-               )::INTEGER AS resolved_relationship_count,
-               (
-                   SELECT count(*)
-                     FROM resolved_relationship AS resolved
-                    WHERE resolved.from_connection_id <>
-                          resolved.to_connection_id
-               )::INTEGER AS cross_connection_count
     )
     SELECT jsonb_build_object(
-               'partial_relationship_count',
-               statistics.partial_relationship_count,
-               'relationship_count', statistics.relationship_count,
-               'resolved_relationship_count',
-               statistics.resolved_relationship_count,
-               'cross_connection_count', statistics.cross_connection_count,
                'rows', coalesce(
                    (
                        SELECT jsonb_agg(
@@ -1027,31 +990,9 @@ BEGIN
                    '[]'::JSONB
                )
            )
-      INTO v_context_snapshot
-      FROM relationship_statistics AS statistics;
+      INTO v_context_snapshot;
 
-    v_partial_relationship_count :=
-        (v_context_snapshot ->> 'partial_relationship_count')::INTEGER;
-    v_relationship_count :=
-        (v_context_snapshot ->> 'relationship_count')::INTEGER;
-    v_resolved_relationship_count :=
-        (v_context_snapshot ->> 'resolved_relationship_count')::INTEGER;
-    v_cross_connection_count :=
-        (v_context_snapshot ->> 'cross_connection_count')::INTEGER;
-
-    IF v_partial_relationship_count > 0 THEN
-        RAISE EXCEPTION
-            'analysis_validation_endpoint_not_selected: Every eligible relationship requires both endpoint Objects';
-    END IF;
-    IF v_cross_connection_count > 0 THEN
-        RAISE EXCEPTION
-            'analysis_validation_cross_connection: Relationship endpoints must use one GDS Connection';
-    END IF;
-    IF v_resolved_relationship_count <> v_relationship_count THEN
-        RAISE EXCEPTION
-            'analysis_validation_context_changed: Relationship physical metadata is incomplete';
-    END IF;
-    IF v_relationship_count > 50000 THEN
+    IF jsonb_array_length(v_context_snapshot -> 'rows') > 50000 THEN
         RAISE EXCEPTION
             'analysis_validation_context_too_large: Analysis validation exceeds 50000 relationships';
     END IF;
@@ -1318,9 +1259,10 @@ REVOKE ALL ON FUNCTION application.get_analysis_validation_connection_values(
     VARCHAR
 ) FROM PUBLIC;
 
--- Atomically replace only the validation-owned columns for the exact eligible
--- relationship set of one running deterministic Analysis Run. Inference,
--- status, and lock fields are never changed.
+-- Atomically replace only the validation-owned columns for the checked
+-- eligible relationships of one running deterministic Analysis Run. A
+-- relationship whose query failed is left out and keeps its last result.
+-- Inference, status, and lock fields are never changed.
 CREATE FUNCTION application.persist_analysis_validation_results(
     p_entra_tenant_id UUID,
     p_entra_object_id UUID,
@@ -1712,12 +1654,11 @@ BEGIN
                analysis_result_id BIGINT,
                source_context_digest CHAR(64)
            );
-    IF v_payload_result_ids IS DISTINCT FROM v_expected_result_ids THEN
+    IF NOT v_payload_result_ids <@ v_expected_result_ids THEN
         RAISE EXCEPTION
-            'Analysis validation results must exactly cover eligible Results';
+            'Analysis validation results must belong to eligible Results';
     END IF;
-    IF v_payload_context_digests IS DISTINCT FROM
-       v_expected_context_digests THEN
+    IF NOT v_expected_context_digests @> v_payload_context_digests THEN
         RAISE EXCEPTION
             'Analysis validation source context digest does not match current metadata';
     END IF;

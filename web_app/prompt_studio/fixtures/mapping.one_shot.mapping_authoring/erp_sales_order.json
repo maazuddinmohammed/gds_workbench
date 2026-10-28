@@ -1,0 +1,1752 @@
+{
+  "description": "ERP sales orders (two instances, appended loads) to a Logical SalesOrder: straight copies, a date parse and a status decode from lineage notes, a Customer lookup on number plus instance and SourceSystemID, a SalesRep foreign key with no lookup (must be reported, not guessed), the generated key, audit columns and SourceSystemID.",
+  "values": {
+    "mapping_route": "logical_to_silver",
+    "operation": "build",
+    "target_metadata": {
+      "entity_type": "logical_entity",
+      "entity_schema_name": "silver",
+      "entity_name": "SalesOrder",
+      "entity_kind": "transaction",
+      "entity_definition": "One row per sales order a customer places.",
+      "grain": "One row per sales order: SourceSystemID plus SourceInstanceCode plus SourceOrderNo.",
+      "dependency_order": 1,
+      "status": "active",
+      "is_locked": false,
+      "attributes": [
+        {
+          "attribute_name": "SalesOrderID",
+          "attribute_data_type": "BIGINT",
+          "attribute_definition": "Generated key of the sales order.",
+          "is_nullable": false,
+          "is_audit_column": false,
+          "is_surrogate_key": true,
+          "ordinal_position": 1,
+          "status": "active",
+          "is_locked": false
+        },
+        {
+          "attribute_name": "SourceOrderNo",
+          "attribute_data_type": "STRING",
+          "attribute_definition": "Sales order number in the source.",
+          "is_nullable": false,
+          "is_audit_column": false,
+          "is_surrogate_key": false,
+          "ordinal_position": 2,
+          "status": "active",
+          "is_locked": false
+        },
+        {
+          "attribute_name": "SourceInstanceCode",
+          "attribute_data_type": "STRING",
+          "attribute_definition": "Source instance of the order record.",
+          "is_nullable": false,
+          "is_audit_column": false,
+          "is_surrogate_key": false,
+          "ordinal_position": 3,
+          "status": "active",
+          "is_locked": false
+        },
+        {
+          "attribute_name": "CustomerID",
+          "attribute_data_type": "BIGINT",
+          "attribute_definition": "Customer that placed the order; every order has one.",
+          "is_nullable": false,
+          "is_audit_column": false,
+          "is_surrogate_key": false,
+          "ordinal_position": 4,
+          "status": "active",
+          "is_locked": false
+        },
+        {
+          "attribute_name": "SalesRepID",
+          "attribute_data_type": "BIGINT",
+          "attribute_definition": "Sales representative responsible for the order, when assigned.",
+          "is_nullable": true,
+          "is_audit_column": false,
+          "is_surrogate_key": false,
+          "ordinal_position": 5,
+          "status": "active",
+          "is_locked": false
+        },
+        {
+          "attribute_name": "OrderDate",
+          "attribute_data_type": "DATE",
+          "attribute_definition": "Date the order was placed.",
+          "is_nullable": false,
+          "is_audit_column": false,
+          "is_surrogate_key": false,
+          "ordinal_position": 6,
+          "status": "active",
+          "is_locked": false
+        },
+        {
+          "attribute_name": "OrderStatus",
+          "attribute_data_type": "STRING",
+          "attribute_definition": "Order status: Open, Closed or Cancelled.",
+          "is_nullable": true,
+          "is_audit_column": false,
+          "is_surrogate_key": false,
+          "ordinal_position": 7,
+          "status": "active",
+          "is_locked": false
+        },
+        {
+          "attribute_name": "TotalAmount",
+          "attribute_data_type": "DECIMAL(14,2)",
+          "attribute_definition": "Order total in the order currency.",
+          "is_nullable": true,
+          "is_audit_column": false,
+          "is_surrogate_key": false,
+          "ordinal_position": 8,
+          "status": "active",
+          "is_locked": false
+        },
+        {
+          "attribute_name": "CurrencyCode",
+          "attribute_data_type": "STRING",
+          "attribute_definition": "Order currency (ISO 4217).",
+          "is_nullable": true,
+          "is_audit_column": false,
+          "is_surrogate_key": false,
+          "ordinal_position": 9,
+          "status": "active",
+          "is_locked": false
+        },
+        {
+          "attribute_name": "SourceSystemID",
+          "attribute_data_type": "BIGINT",
+          "attribute_definition": "Originating source System identifier.",
+          "is_nullable": true,
+          "is_audit_column": true,
+          "is_surrogate_key": false,
+          "ordinal_position": 10,
+          "status": "active",
+          "is_locked": false
+        },
+        {
+          "attribute_name": "GDSBatchID",
+          "attribute_data_type": "BIGINT",
+          "attribute_definition": "Framework batch identifier.",
+          "is_nullable": true,
+          "is_audit_column": true,
+          "is_surrogate_key": false,
+          "ordinal_position": 11,
+          "status": "active",
+          "is_locked": false
+        },
+        {
+          "attribute_name": "CreatedDate",
+          "attribute_data_type": "TIMESTAMP",
+          "attribute_definition": "Framework record creation time.",
+          "is_nullable": true,
+          "is_audit_column": true,
+          "is_surrogate_key": false,
+          "ordinal_position": 12,
+          "status": "active",
+          "is_locked": false
+        },
+        {
+          "attribute_name": "UpdatedDate",
+          "attribute_data_type": "TIMESTAMP",
+          "attribute_definition": "Framework record update time.",
+          "is_nullable": true,
+          "is_audit_column": true,
+          "is_surrogate_key": false,
+          "ordinal_position": 13,
+          "status": "active",
+          "is_locked": false
+        }
+      ]
+    },
+    "source_evidence": [
+      {
+        "role": "support",
+        "rationale": "SalesOrder is built from the ERP sales orders.",
+        "is_locked": false,
+        "object": {
+          "tenant_code": "GDS",
+          "system_code": "GDS",
+          "connection_code": "GDS",
+          "object_schema": "erp",
+          "object_name": "sales_order",
+          "object_description": "Customer sales orders from the UK and German ERP databases; one row per order per load.",
+          "batch_attribute_name": "GDSBatchID",
+          "zone_code": "bronze",
+          "is_global_data_store": true,
+          "tenant_catalog": "northwind",
+          "tenant_is_active": true,
+          "system_is_active": true,
+          "connection_is_active": true,
+          "scope_is_active": true,
+          "scope_is_locked": false,
+          "is_active": true,
+          "is_locked": false,
+          "attributes": [
+            {
+              "attribute_name": "order_no",
+              "attribute_data_type": "STRING",
+              "attribute_description": "Sales order number.",
+              "attribute_inferred_data_type": "VARCHAR(12)",
+              "attribute_nullability": false,
+              "attribute_ordinal_position": 1,
+              "is_active": true,
+              "is_natural_key": true,
+              "is_primary_key": null,
+              "is_nullable": null,
+              "is_pii": false
+            },
+            {
+              "attribute_name": "customer_no",
+              "attribute_data_type": "STRING",
+              "attribute_description": "Customer account that placed the order.",
+              "attribute_inferred_data_type": "VARCHAR(10)",
+              "attribute_nullability": false,
+              "attribute_ordinal_position": 2,
+              "is_active": true,
+              "is_natural_key": null,
+              "is_primary_key": null,
+              "is_nullable": null,
+              "is_pii": false
+            },
+            {
+              "attribute_name": "sales_rep_code",
+              "attribute_data_type": "STRING",
+              "attribute_description": "Sales representative responsible for the order.",
+              "attribute_inferred_data_type": "VARCHAR(6)",
+              "attribute_nullability": true,
+              "attribute_ordinal_position": 3,
+              "is_active": true,
+              "is_natural_key": null,
+              "is_primary_key": null,
+              "is_nullable": null,
+              "is_pii": false
+            },
+            {
+              "attribute_name": "order_date",
+              "attribute_data_type": "STRING",
+              "attribute_description": "Date the order was placed, as text yyyy-MM-dd.",
+              "attribute_inferred_data_type": "DATE",
+              "attribute_nullability": false,
+              "attribute_ordinal_position": 4,
+              "is_active": true,
+              "is_natural_key": null,
+              "is_primary_key": null,
+              "is_nullable": null,
+              "is_pii": false
+            },
+            {
+              "attribute_name": "order_status",
+              "attribute_data_type": "STRING",
+              "attribute_description": "Order status code: O open, C closed, X cancelled.",
+              "attribute_inferred_data_type": "CHAR(1)",
+              "attribute_nullability": true,
+              "attribute_ordinal_position": 5,
+              "is_active": true,
+              "is_natural_key": null,
+              "is_primary_key": null,
+              "is_nullable": null,
+              "is_pii": false
+            },
+            {
+              "attribute_name": "total_amount",
+              "attribute_data_type": "STRING",
+              "attribute_description": "Order total in the order currency.",
+              "attribute_inferred_data_type": "DECIMAL(14,2)",
+              "attribute_nullability": true,
+              "attribute_ordinal_position": 6,
+              "is_active": true,
+              "is_natural_key": null,
+              "is_primary_key": null,
+              "is_nullable": null,
+              "is_pii": false
+            },
+            {
+              "attribute_name": "currency_code",
+              "attribute_data_type": "STRING",
+              "attribute_description": "Order currency (ISO 4217).",
+              "attribute_inferred_data_type": "CHAR(3)",
+              "attribute_nullability": true,
+              "attribute_ordinal_position": 7,
+              "is_active": true,
+              "is_natural_key": null,
+              "is_primary_key": null,
+              "is_nullable": null,
+              "is_pii": false
+            },
+            {
+              "attribute_name": "source_instance",
+              "attribute_data_type": "STRING",
+              "attribute_description": "ERP database the row came from (ERP_UK or ERP_DE).",
+              "attribute_inferred_data_type": "STRING",
+              "attribute_nullability": false,
+              "attribute_ordinal_position": 8,
+              "is_active": true,
+              "is_natural_key": true,
+              "is_primary_key": null,
+              "is_nullable": null,
+              "is_pii": false
+            },
+            {
+              "attribute_name": "GDSBatchID",
+              "attribute_data_type": "BIGINT",
+              "attribute_description": "Load batch identifier.",
+              "attribute_inferred_data_type": "BIGINT",
+              "attribute_nullability": false,
+              "attribute_ordinal_position": 9,
+              "is_active": true,
+              "is_natural_key": null,
+              "is_primary_key": null,
+              "is_nullable": null,
+              "is_pii": false
+            }
+          ]
+        }
+      },
+      {
+        "role": "candidate",
+        "rationale": "In the ERP input scope.",
+        "is_locked": false,
+        "object": {
+          "tenant_code": "GDS",
+          "system_code": "GDS",
+          "connection_code": "GDS",
+          "object_schema": "erp",
+          "object_name": "customer",
+          "object_description": "ERP customer accounts from the UK and German ERP databases.",
+          "batch_attribute_name": "GDSBatchID",
+          "zone_code": "bronze",
+          "is_global_data_store": true,
+          "tenant_catalog": "northwind",
+          "tenant_is_active": true,
+          "system_is_active": true,
+          "connection_is_active": true,
+          "scope_is_active": true,
+          "scope_is_locked": false,
+          "is_active": true,
+          "is_locked": false,
+          "attributes": [
+            {
+              "attribute_name": "customer_no",
+              "attribute_data_type": "STRING",
+              "attribute_description": "Customer account number.",
+              "attribute_inferred_data_type": "VARCHAR(10)",
+              "attribute_nullability": false,
+              "attribute_ordinal_position": 1,
+              "is_active": true,
+              "is_natural_key": true,
+              "is_primary_key": null,
+              "is_nullable": null,
+              "is_pii": false
+            },
+            {
+              "attribute_name": "name",
+              "attribute_data_type": "STRING",
+              "attribute_description": "Registered company name of the customer.",
+              "attribute_inferred_data_type": "VARCHAR(120)",
+              "attribute_nullability": true,
+              "attribute_ordinal_position": 2,
+              "is_active": true,
+              "is_natural_key": null,
+              "is_primary_key": null,
+              "is_nullable": null,
+              "is_pii": false
+            },
+            {
+              "attribute_name": "source_instance",
+              "attribute_data_type": "STRING",
+              "attribute_description": "ERP database the row came from (ERP_UK or ERP_DE).",
+              "attribute_inferred_data_type": "STRING",
+              "attribute_nullability": false,
+              "attribute_ordinal_position": 3,
+              "is_active": true,
+              "is_natural_key": true,
+              "is_primary_key": null,
+              "is_nullable": null,
+              "is_pii": false
+            },
+            {
+              "attribute_name": "GDSBatchID",
+              "attribute_data_type": "BIGINT",
+              "attribute_description": "Load batch identifier.",
+              "attribute_inferred_data_type": "BIGINT",
+              "attribute_nullability": false,
+              "attribute_ordinal_position": 4,
+              "is_active": true,
+              "is_natural_key": null,
+              "is_primary_key": null,
+              "is_nullable": null,
+              "is_pii": false
+            }
+          ]
+        }
+      },
+      {
+        "role": "lookup",
+        "rationale": "Customer has an applied ERP Mapping.",
+        "is_locked": false,
+        "object": {
+          "entity_type": "logical_entity",
+          "entity_schema_name": "silver",
+          "entity_name": "Customer",
+          "entity_kind": "core",
+          "entity_definition": "One row per customer account: a company that buys from us.",
+          "grain": "One row per customer: SourceSystemID plus SourceInstanceCode plus SourceCustomerNo.",
+          "dependency_order": 0,
+          "status": "active",
+          "is_locked": false,
+          "attributes": [
+            {
+              "attribute_name": "CustomerID",
+              "attribute_data_type": "BIGINT",
+              "attribute_definition": "Generated key of the customer.",
+              "is_nullable": false,
+              "is_audit_column": false,
+              "is_surrogate_key": true,
+              "ordinal_position": 1,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "SourceCustomerNo",
+              "attribute_data_type": "STRING",
+              "attribute_definition": "Customer account number in the source.",
+              "is_nullable": false,
+              "is_audit_column": false,
+              "is_surrogate_key": false,
+              "ordinal_position": 2,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "SourceInstanceCode",
+              "attribute_data_type": "STRING",
+              "attribute_definition": "Source instance of the customer record.",
+              "is_nullable": false,
+              "is_audit_column": false,
+              "is_surrogate_key": false,
+              "ordinal_position": 3,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "CustomerName",
+              "attribute_data_type": "STRING",
+              "attribute_definition": "Registered company name.",
+              "is_nullable": true,
+              "is_audit_column": false,
+              "is_surrogate_key": false,
+              "ordinal_position": 4,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "SourceSystemID",
+              "attribute_data_type": "BIGINT",
+              "attribute_definition": "Originating source System identifier.",
+              "is_nullable": true,
+              "is_audit_column": true,
+              "is_surrogate_key": false,
+              "ordinal_position": 5,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "GDSBatchID",
+              "attribute_data_type": "BIGINT",
+              "attribute_definition": "Framework batch identifier.",
+              "is_nullable": true,
+              "is_audit_column": true,
+              "is_surrogate_key": false,
+              "ordinal_position": 6,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "CreatedDate",
+              "attribute_data_type": "TIMESTAMP",
+              "attribute_definition": "Framework record creation time.",
+              "is_nullable": true,
+              "is_audit_column": true,
+              "is_surrogate_key": false,
+              "ordinal_position": 7,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "UpdatedDate",
+              "attribute_data_type": "TIMESTAMP",
+              "attribute_definition": "Framework record update time.",
+              "is_nullable": true,
+              "is_audit_column": true,
+              "is_surrogate_key": false,
+              "ordinal_position": 8,
+              "status": "active",
+              "is_locked": false
+            }
+          ]
+        }
+      }
+    ],
+    "existing_mapping": [
+      {
+        "modeled_entity": {
+          "entity_type": "logical_entity",
+          "entity_schema_name": "silver",
+          "entity_name": "SalesOrder",
+          "entity_kind": "transaction",
+          "entity_definition": "One row per sales order a customer places.",
+          "grain": "One row per sales order: SourceSystemID plus SourceInstanceCode plus SourceOrderNo.",
+          "dependency_order": 1,
+          "status": "active",
+          "is_locked": false,
+          "attributes": [
+            {
+              "attribute_name": "SalesOrderID",
+              "attribute_data_type": "BIGINT",
+              "attribute_definition": "Generated key of the sales order.",
+              "is_nullable": false,
+              "is_audit_column": false,
+              "is_surrogate_key": true,
+              "ordinal_position": 1,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "SourceOrderNo",
+              "attribute_data_type": "STRING",
+              "attribute_definition": "Sales order number in the source.",
+              "is_nullable": false,
+              "is_audit_column": false,
+              "is_surrogate_key": false,
+              "ordinal_position": 2,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "SourceInstanceCode",
+              "attribute_data_type": "STRING",
+              "attribute_definition": "Source instance of the order record.",
+              "is_nullable": false,
+              "is_audit_column": false,
+              "is_surrogate_key": false,
+              "ordinal_position": 3,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "CustomerID",
+              "attribute_data_type": "BIGINT",
+              "attribute_definition": "Customer that placed the order; every order has one.",
+              "is_nullable": false,
+              "is_audit_column": false,
+              "is_surrogate_key": false,
+              "ordinal_position": 4,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "SalesRepID",
+              "attribute_data_type": "BIGINT",
+              "attribute_definition": "Sales representative responsible for the order, when assigned.",
+              "is_nullable": true,
+              "is_audit_column": false,
+              "is_surrogate_key": false,
+              "ordinal_position": 5,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "OrderDate",
+              "attribute_data_type": "DATE",
+              "attribute_definition": "Date the order was placed.",
+              "is_nullable": false,
+              "is_audit_column": false,
+              "is_surrogate_key": false,
+              "ordinal_position": 6,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "OrderStatus",
+              "attribute_data_type": "STRING",
+              "attribute_definition": "Order status: Open, Closed or Cancelled.",
+              "is_nullable": true,
+              "is_audit_column": false,
+              "is_surrogate_key": false,
+              "ordinal_position": 7,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "TotalAmount",
+              "attribute_data_type": "DECIMAL(14,2)",
+              "attribute_definition": "Order total in the order currency.",
+              "is_nullable": true,
+              "is_audit_column": false,
+              "is_surrogate_key": false,
+              "ordinal_position": 8,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "CurrencyCode",
+              "attribute_data_type": "STRING",
+              "attribute_definition": "Order currency (ISO 4217).",
+              "is_nullable": true,
+              "is_audit_column": false,
+              "is_surrogate_key": false,
+              "ordinal_position": 9,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "SourceSystemID",
+              "attribute_data_type": "BIGINT",
+              "attribute_definition": "Originating source System identifier.",
+              "is_nullable": true,
+              "is_audit_column": true,
+              "is_surrogate_key": false,
+              "ordinal_position": 10,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "GDSBatchID",
+              "attribute_data_type": "BIGINT",
+              "attribute_definition": "Framework batch identifier.",
+              "is_nullable": true,
+              "is_audit_column": true,
+              "is_surrogate_key": false,
+              "ordinal_position": 11,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "CreatedDate",
+              "attribute_data_type": "TIMESTAMP",
+              "attribute_definition": "Framework record creation time.",
+              "is_nullable": true,
+              "is_audit_column": true,
+              "is_surrogate_key": false,
+              "ordinal_position": 12,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "UpdatedDate",
+              "attribute_data_type": "TIMESTAMP",
+              "attribute_definition": "Framework record update time.",
+              "is_nullable": true,
+              "is_audit_column": true,
+              "is_surrogate_key": false,
+              "ordinal_position": 13,
+              "status": "active",
+              "is_locked": false
+            }
+          ]
+        },
+        "object_dependency_order": 1,
+        "status": "active",
+        "is_locked": false,
+        "transformation_document": null,
+        "attribute_mappings": [
+          {
+            "modeled_attribute_name": "SalesOrderID",
+            "status": "active",
+            "is_locked": false,
+            "transformation_document": null
+          },
+          {
+            "modeled_attribute_name": "SourceOrderNo",
+            "status": "active",
+            "is_locked": false,
+            "transformation_document": null
+          },
+          {
+            "modeled_attribute_name": "SourceInstanceCode",
+            "status": "active",
+            "is_locked": false,
+            "transformation_document": null
+          },
+          {
+            "modeled_attribute_name": "CustomerID",
+            "status": "active",
+            "is_locked": false,
+            "transformation_document": null
+          },
+          {
+            "modeled_attribute_name": "SalesRepID",
+            "status": "active",
+            "is_locked": false,
+            "transformation_document": null
+          },
+          {
+            "modeled_attribute_name": "OrderDate",
+            "status": "active",
+            "is_locked": false,
+            "transformation_document": null
+          },
+          {
+            "modeled_attribute_name": "OrderStatus",
+            "status": "active",
+            "is_locked": false,
+            "transformation_document": null
+          },
+          {
+            "modeled_attribute_name": "TotalAmount",
+            "status": "active",
+            "is_locked": false,
+            "transformation_document": null
+          },
+          {
+            "modeled_attribute_name": "CurrencyCode",
+            "status": "active",
+            "is_locked": false,
+            "transformation_document": null
+          },
+          {
+            "modeled_attribute_name": "SourceSystemID",
+            "status": "active",
+            "is_locked": false,
+            "transformation_document": null
+          },
+          {
+            "modeled_attribute_name": "GDSBatchID",
+            "status": "active",
+            "is_locked": false,
+            "transformation_document": null
+          },
+          {
+            "modeled_attribute_name": "CreatedDate",
+            "status": "active",
+            "is_locked": false,
+            "transformation_document": null
+          },
+          {
+            "modeled_attribute_name": "UpdatedDate",
+            "status": "active",
+            "is_locked": false,
+            "transformation_document": null
+          }
+        ]
+      }
+    ],
+    "authoring_policy": {
+      "audit_columns_template": null,
+      "project_name": "Northwind Sales",
+      "logical_entity_scd_type": "type_1",
+      "dimensional_entity_scd_type": "type_1",
+      "naming_instructions": "Use PascalCase names.",
+      "technical_columns_template": null
+    },
+    "readiness": {
+      "operation": "build",
+      "ready": true,
+      "issues": [],
+      "headers": [
+        {
+          "action": "author",
+          "attribute_actions": [
+            {
+              "action": "author",
+              "modeled_attribute_name": "SalesOrderID"
+            },
+            {
+              "action": "author",
+              "modeled_attribute_name": "SourceOrderNo"
+            },
+            {
+              "action": "author",
+              "modeled_attribute_name": "SourceInstanceCode"
+            },
+            {
+              "action": "author",
+              "modeled_attribute_name": "CustomerID"
+            },
+            {
+              "action": "author",
+              "modeled_attribute_name": "SalesRepID"
+            },
+            {
+              "action": "author",
+              "modeled_attribute_name": "OrderDate"
+            },
+            {
+              "action": "author",
+              "modeled_attribute_name": "OrderStatus"
+            },
+            {
+              "action": "author",
+              "modeled_attribute_name": "TotalAmount"
+            },
+            {
+              "action": "author",
+              "modeled_attribute_name": "CurrencyCode"
+            },
+            {
+              "action": "author",
+              "modeled_attribute_name": "SourceSystemID"
+            },
+            {
+              "action": "author",
+              "modeled_attribute_name": "GDSBatchID"
+            },
+            {
+              "action": "author",
+              "modeled_attribute_name": "CreatedDate"
+            },
+            {
+              "action": "author",
+              "modeled_attribute_name": "UpdatedDate"
+            }
+          ]
+        }
+      ]
+    },
+    "source_system": {
+      "system_code": "ERP",
+      "system_name": "ERP",
+      "is_active": true,
+      "system_description": "Order-to-cash application: customer accounts, sales orders and invoices, run as one database per country (UK, DE)."
+    },
+    "object_output_template": {
+      "code": "mapping_logical_object_default",
+      "name": "Default Logical Object Mapping",
+      "description": "Logical Object Mapping using the agreed source, transformation and null-handling fields.",
+      "target_type": "mapping_object",
+      "modeled_entity_type": "logical_entity",
+      "is_active": true,
+      "fields": [
+        {
+          "name": "source_tables",
+          "description": "Required non-null array; [] is allowed. Each physical source has tenant_code, system_code, connection_code, object_schema, object_name. Logical lookup sources have entity_type=logical_entity, entity_schema_name, entity_name. Use only eligible frozen sources. No alias field is required; explain join roles in the sample query when needed.",
+          "data_type": "array",
+          "array_item_type": "object",
+          "is_required": true,
+          "order": 1,
+          "example": [
+            {
+              "tenant_code": "NWA",
+              "system_code": "GDS",
+              "connection_code": "lakehouse",
+              "object_schema": "bronze_crm",
+              "object_name": "customer"
+            }
+          ]
+        },
+        {
+          "name": "filter_criteria",
+          "description": "Required field, nullable text. Object-level filters; null when no filter applies.",
+          "data_type": "string",
+          "array_item_type": null,
+          "is_required": true,
+          "order": 2,
+          "example": "Keep active customer records."
+        },
+        {
+          "name": "sample_query",
+          "description": "Required field, nullable text. Pseudo-SQL illustrating supported source joins, predicates, filters and transformations. Null when unavailable; do not invent missing rules.",
+          "data_type": "string",
+          "array_item_type": null,
+          "is_required": true,
+          "order": 3,
+          "example": "SELECT * FROM bronze_crm.customer WHERE is_active = true"
+        }
+      ]
+    },
+    "attribute_output_template": {
+      "code": "mapping_logical_attribute_default",
+      "name": "Default Logical Attribute Mapping",
+      "description": "Logical Attribute Mapping using the agreed source, transformation and null-handling fields.",
+      "target_type": "mapping_attribute",
+      "modeled_entity_type": "logical_entity",
+      "is_active": true,
+      "fields": [
+        {
+          "name": "transformation_logic",
+          "description": "Required field, nullable text. Attribute-level natural-language or pseudocode transformation suitable for SQL generation; null when unsupported or not applicable.",
+          "data_type": "string",
+          "array_item_type": null,
+          "is_required": true,
+          "order": 1,
+          "example": "Trim whitespace from the source customer name."
+        },
+        {
+          "name": "default_record",
+          "description": "Required field, nullable text. Default value or fallback logic to use when the input is null. Null means do nothing; do not invent a replacement.",
+          "data_type": "string",
+          "array_item_type": null,
+          "is_required": true,
+          "order": 2,
+          "example": null
+        },
+        {
+          "name": "source_columns",
+          "description": "Required field, nullable array; [] is allowed. Each physical source has tenant_code, system_code, connection_code, object_schema, object_name. Logical lookup sources have entity_type=logical_entity, entity_schema_name, entity_name. Each source also has attribute_name. Use only eligible frozen Attributes. Null when not specified.",
+          "data_type": "array",
+          "array_item_type": "object",
+          "is_required": true,
+          "order": 3,
+          "example": [
+            {
+              "tenant_code": "NWA",
+              "system_code": "GDS",
+              "connection_code": "lakehouse",
+              "object_schema": "bronze_crm",
+              "object_name": "customer",
+              "attribute_name": "customer_name"
+            }
+          ]
+        }
+      ]
+    },
+    "mapping_support_records": [
+      {
+        "evidence_type": "target_attribute_lineage",
+        "record": {
+          "modeled_attribute_name": "SalesOrderID",
+          "sources": [],
+          "is_natural_key": false,
+          "is_primary_key": false,
+          "is_surrogate_key": true
+        }
+      },
+      {
+        "evidence_type": "target_attribute_lineage",
+        "record": {
+          "modeled_attribute_name": "SourceOrderNo",
+          "sources": [
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "GDS",
+                "system_code": "GDS",
+                "connection_code": "GDS",
+                "object_schema": "erp",
+                "object_name": "sales_order",
+                "attribute_name": "order_no"
+              },
+              "rationale": null
+            }
+          ],
+          "is_natural_key": true,
+          "is_primary_key": false,
+          "is_surrogate_key": false
+        }
+      },
+      {
+        "evidence_type": "target_attribute_lineage",
+        "record": {
+          "modeled_attribute_name": "SourceInstanceCode",
+          "sources": [
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "GDS",
+                "system_code": "GDS",
+                "connection_code": "GDS",
+                "object_schema": "erp",
+                "object_name": "sales_order",
+                "attribute_name": "source_instance"
+              },
+              "rationale": null
+            }
+          ],
+          "is_natural_key": true,
+          "is_primary_key": false,
+          "is_surrogate_key": false
+        }
+      },
+      {
+        "evidence_type": "target_attribute_lineage",
+        "record": {
+          "modeled_attribute_name": "CustomerID",
+          "sources": [
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "GDS",
+                "system_code": "GDS",
+                "connection_code": "GDS",
+                "object_schema": "erp",
+                "object_name": "sales_order",
+                "attribute_name": "customer_no"
+              },
+              "rationale": "Lookup of the Customer by its customer number within the same source instance (and SourceSystemID)."
+            },
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "GDS",
+                "system_code": "GDS",
+                "connection_code": "GDS",
+                "object_schema": "erp",
+                "object_name": "sales_order",
+                "attribute_name": "source_instance"
+              },
+              "rationale": "Lookup of the Customer by its customer number within the same source instance (and SourceSystemID)."
+            }
+          ],
+          "is_natural_key": false,
+          "is_primary_key": false,
+          "is_surrogate_key": false
+        }
+      },
+      {
+        "evidence_type": "target_attribute_lineage",
+        "record": {
+          "modeled_attribute_name": "SalesRepID",
+          "sources": [
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "GDS",
+                "system_code": "GDS",
+                "connection_code": "GDS",
+                "object_schema": "erp",
+                "object_name": "sales_order",
+                "attribute_name": "sales_rep_code"
+              },
+              "rationale": "Lookup of the sales representative by code."
+            }
+          ],
+          "is_natural_key": false,
+          "is_primary_key": false,
+          "is_surrogate_key": false
+        }
+      },
+      {
+        "evidence_type": "target_attribute_lineage",
+        "record": {
+          "modeled_attribute_name": "OrderDate",
+          "sources": [
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "GDS",
+                "system_code": "GDS",
+                "connection_code": "GDS",
+                "object_schema": "erp",
+                "object_name": "sales_order",
+                "attribute_name": "order_date"
+              },
+              "rationale": "Parsed from text in yyyy-MM-dd format."
+            }
+          ],
+          "is_natural_key": false,
+          "is_primary_key": false,
+          "is_surrogate_key": false
+        }
+      },
+      {
+        "evidence_type": "target_attribute_lineage",
+        "record": {
+          "modeled_attribute_name": "OrderStatus",
+          "sources": [
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "GDS",
+                "system_code": "GDS",
+                "connection_code": "GDS",
+                "object_schema": "erp",
+                "object_name": "sales_order",
+                "attribute_name": "order_status"
+              },
+              "rationale": "Decoded: O = Open, C = Closed, X = Cancelled."
+            }
+          ],
+          "is_natural_key": false,
+          "is_primary_key": false,
+          "is_surrogate_key": false
+        }
+      },
+      {
+        "evidence_type": "target_attribute_lineage",
+        "record": {
+          "modeled_attribute_name": "TotalAmount",
+          "sources": [
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "GDS",
+                "system_code": "GDS",
+                "connection_code": "GDS",
+                "object_schema": "erp",
+                "object_name": "sales_order",
+                "attribute_name": "total_amount"
+              },
+              "rationale": null
+            }
+          ],
+          "is_natural_key": false,
+          "is_primary_key": false,
+          "is_surrogate_key": false
+        }
+      },
+      {
+        "evidence_type": "target_attribute_lineage",
+        "record": {
+          "modeled_attribute_name": "CurrencyCode",
+          "sources": [
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "GDS",
+                "system_code": "GDS",
+                "connection_code": "GDS",
+                "object_schema": "erp",
+                "object_name": "sales_order",
+                "attribute_name": "currency_code"
+              },
+              "rationale": null
+            }
+          ],
+          "is_natural_key": false,
+          "is_primary_key": false,
+          "is_surrogate_key": false
+        }
+      },
+      {
+        "evidence_type": "target_attribute_lineage",
+        "record": {
+          "modeled_attribute_name": "SourceSystemID",
+          "sources": [],
+          "is_natural_key": false,
+          "is_primary_key": false,
+          "is_surrogate_key": false
+        }
+      },
+      {
+        "evidence_type": "target_attribute_lineage",
+        "record": {
+          "modeled_attribute_name": "GDSBatchID",
+          "sources": [],
+          "is_natural_key": false,
+          "is_primary_key": false,
+          "is_surrogate_key": false
+        }
+      },
+      {
+        "evidence_type": "target_attribute_lineage",
+        "record": {
+          "modeled_attribute_name": "CreatedDate",
+          "sources": [],
+          "is_natural_key": false,
+          "is_primary_key": false,
+          "is_surrogate_key": false
+        }
+      },
+      {
+        "evidence_type": "target_attribute_lineage",
+        "record": {
+          "modeled_attribute_name": "UpdatedDate",
+          "sources": [],
+          "is_natural_key": false,
+          "is_primary_key": false,
+          "is_surrogate_key": false
+        }
+      },
+      {
+        "evidence_type": "target_relationship",
+        "record": {
+          "from_logical_entity_schema_name": "silver",
+          "from_logical_entity_name": "SalesOrder",
+          "from_logical_attribute_name": "CustomerID",
+          "to_logical_entity_schema_name": "silver",
+          "to_logical_entity_name": "Customer",
+          "to_logical_attribute_name": "CustomerID",
+          "logical_relationship_cardinality": "many_to_one",
+          "logical_relationship_basis": "Analysis: sales_order.customer_no references customer.customer_no."
+        }
+      },
+      {
+        "evidence_type": "target_relationship",
+        "record": {
+          "from_logical_entity_schema_name": "silver",
+          "from_logical_entity_name": "SalesOrder",
+          "from_logical_attribute_name": "SalesRepID",
+          "to_logical_entity_schema_name": "silver",
+          "to_logical_entity_name": "SalesRep",
+          "to_logical_attribute_name": "SalesRepID",
+          "logical_relationship_cardinality": "many_to_one",
+          "logical_relationship_basis": "Context: every order names its sales representative."
+        }
+      },
+      {
+        "evidence_type": "source_logical_entity",
+        "record": {
+          "logical_entity_schema_name": "silver",
+          "logical_entity_name": "Customer",
+          "logical_entity_type": "core",
+          "logical_entity_definition": "One row per customer account: a company that buys from us.",
+          "logical_entity_grain": "One row per customer: SourceSystemID plus SourceInstanceCode plus SourceCustomerNo.",
+          "logical_entity_is_active": true,
+          "sources": [
+            {
+              "support_source_type": "object",
+              "source_object": {
+                "tenant_code": "GDS",
+                "system_code": "GDS",
+                "connection_code": "GDS",
+                "object_schema": "erp",
+                "object_name": "customer"
+              },
+              "rationale": null
+            }
+          ]
+        }
+      },
+      {
+        "evidence_type": "source_logical_attribute",
+        "record": {
+          "logical_entity_schema_name": "silver",
+          "logical_entity_name": "Customer",
+          "logical_attribute_name": "CustomerID",
+          "logical_attribute_data_type": "BIGINT",
+          "logical_attribute_is_natural_key": false,
+          "logical_attribute_is_surrogate_key": true,
+          "logical_attribute_is_active": true,
+          "sources": []
+        }
+      },
+      {
+        "evidence_type": "source_logical_attribute",
+        "record": {
+          "logical_entity_schema_name": "silver",
+          "logical_entity_name": "Customer",
+          "logical_attribute_name": "SourceCustomerNo",
+          "logical_attribute_data_type": "STRING",
+          "logical_attribute_is_natural_key": true,
+          "logical_attribute_is_surrogate_key": false,
+          "logical_attribute_is_active": true,
+          "sources": [
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "GDS",
+                "system_code": "GDS",
+                "connection_code": "GDS",
+                "object_schema": "erp",
+                "object_name": "customer",
+                "attribute_name": "customer_no"
+              },
+              "rationale": null
+            }
+          ]
+        }
+      },
+      {
+        "evidence_type": "source_logical_attribute",
+        "record": {
+          "logical_entity_schema_name": "silver",
+          "logical_entity_name": "Customer",
+          "logical_attribute_name": "SourceInstanceCode",
+          "logical_attribute_data_type": "STRING",
+          "logical_attribute_is_natural_key": true,
+          "logical_attribute_is_surrogate_key": false,
+          "logical_attribute_is_active": true,
+          "sources": [
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "GDS",
+                "system_code": "GDS",
+                "connection_code": "GDS",
+                "object_schema": "erp",
+                "object_name": "customer",
+                "attribute_name": "source_instance"
+              },
+              "rationale": null
+            }
+          ]
+        }
+      },
+      {
+        "evidence_type": "source_logical_attribute",
+        "record": {
+          "logical_entity_schema_name": "silver",
+          "logical_entity_name": "Customer",
+          "logical_attribute_name": "CustomerName",
+          "logical_attribute_data_type": "STRING",
+          "logical_attribute_is_natural_key": false,
+          "logical_attribute_is_surrogate_key": false,
+          "logical_attribute_is_active": true,
+          "sources": [
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "GDS",
+                "system_code": "GDS",
+                "connection_code": "GDS",
+                "object_schema": "erp",
+                "object_name": "customer",
+                "attribute_name": "name"
+              },
+              "rationale": null
+            }
+          ]
+        }
+      },
+      {
+        "evidence_type": "source_object_mapping",
+        "record": {
+          "modeled_entity_type": "logical_entity",
+          "modeled_entity_schema_name": "silver",
+          "modeled_entity_name": "Customer",
+          "source_system_code": "ERP",
+          "output_template_code": "mapping_logical_object_default",
+          "object_dependency_order": 0,
+          "mapping_transformation_document": {
+            "source_tables": [
+              {
+                "tenant_code": "GDS",
+                "system_code": "GDS",
+                "connection_code": "GDS",
+                "object_schema": "erp",
+                "object_name": "customer"
+              }
+            ],
+            "filter_criteria": null,
+            "sample_query": "SELECT CAST(c.customer_no AS STRING) AS SourceCustomerNo, CAST(c.source_instance AS STRING) AS SourceInstanceCode, TRIM(c.name) AS CustomerName, CAST(<ERP System ID> AS BIGINT) AS SourceSystemID FROM erp.customer AS c"
+          },
+          "object_mapping_status": "active"
+        }
+      },
+      {
+        "evidence_type": "source_attribute_mapping",
+        "record": {
+          "modeled_entity_type": "logical_entity",
+          "modeled_entity_schema_name": "silver",
+          "modeled_entity_name": "Customer",
+          "modeled_attribute_name": "SourceCustomerNo",
+          "source_system_code": "ERP",
+          "output_template_code": "mapping_logical_attribute_default",
+          "attribute_mapping_transformation_document": {
+            "transformation_logic": "CAST(c.customer_no AS STRING)",
+            "default_record": null,
+            "source_columns": [
+              {
+                "tenant_code": "GDS",
+                "system_code": "GDS",
+                "connection_code": "GDS",
+                "object_schema": "erp",
+                "object_name": "customer",
+                "attribute_name": "customer_no"
+              }
+            ]
+          },
+          "attribute_mapping_status": "active"
+        }
+      },
+      {
+        "evidence_type": "source_attribute_mapping",
+        "record": {
+          "modeled_entity_type": "logical_entity",
+          "modeled_entity_schema_name": "silver",
+          "modeled_entity_name": "Customer",
+          "modeled_attribute_name": "SourceInstanceCode",
+          "source_system_code": "ERP",
+          "output_template_code": "mapping_logical_attribute_default",
+          "attribute_mapping_transformation_document": {
+            "transformation_logic": "CAST(c.source_instance AS STRING)",
+            "default_record": null,
+            "source_columns": [
+              {
+                "tenant_code": "GDS",
+                "system_code": "GDS",
+                "connection_code": "GDS",
+                "object_schema": "erp",
+                "object_name": "customer",
+                "attribute_name": "source_instance"
+              }
+            ]
+          },
+          "attribute_mapping_status": "active"
+        }
+      },
+      {
+        "evidence_type": "context_record",
+        "record": {
+          "context_record_id": "6f1d2a3b-4c5d-4e6f-8a9b-0c1d2e3f4a5b",
+          "context_group_name": "ERP sales rules",
+          "context_type_name": "Mapping Requirement",
+          "source_reference": null,
+          "context_text": "Cancelled orders (status X) stay in the Logical model; reports filter them later."
+        }
+      },
+      {
+        "evidence_type": "source_mapping_template",
+        "record": {
+          "code": "mapping_logical_object_default",
+          "name": "Default Logical Object Mapping",
+          "description": "Logical Object Mapping using the agreed source, transformation and null-handling fields.",
+          "target_type": "mapping_object",
+          "modeled_entity_type": "logical_entity",
+          "is_active": true,
+          "fields": [
+            {
+              "name": "source_tables",
+              "description": "Required non-null array; [] is allowed. Each physical source has tenant_code, system_code, connection_code, object_schema, object_name. Logical lookup sources have entity_type=logical_entity, entity_schema_name, entity_name. Use only eligible frozen sources. No alias field is required; explain join roles in the sample query when needed.",
+              "data_type": "array",
+              "array_item_type": "object",
+              "is_required": true,
+              "order": 1,
+              "example": [
+                {
+                  "tenant_code": "NWA",
+                  "system_code": "GDS",
+                  "connection_code": "lakehouse",
+                  "object_schema": "bronze_crm",
+                  "object_name": "customer"
+                }
+              ]
+            },
+            {
+              "name": "filter_criteria",
+              "description": "Required field, nullable text. Object-level filters; null when no filter applies.",
+              "data_type": "string",
+              "array_item_type": null,
+              "is_required": true,
+              "order": 2,
+              "example": "Keep active customer records."
+            },
+            {
+              "name": "sample_query",
+              "description": "Required field, nullable text. Pseudo-SQL illustrating supported source joins, predicates, filters and transformations. Null when unavailable; do not invent missing rules.",
+              "data_type": "string",
+              "array_item_type": null,
+              "is_required": true,
+              "order": 3,
+              "example": "SELECT * FROM bronze_crm.customer WHERE is_active = true"
+            }
+          ]
+        }
+      },
+      {
+        "evidence_type": "source_mapping_template",
+        "record": {
+          "code": "mapping_logical_attribute_default",
+          "name": "Default Logical Attribute Mapping",
+          "description": "Logical Attribute Mapping using the agreed source, transformation and null-handling fields.",
+          "target_type": "mapping_attribute",
+          "modeled_entity_type": "logical_entity",
+          "is_active": true,
+          "fields": [
+            {
+              "name": "transformation_logic",
+              "description": "Required field, nullable text. Attribute-level natural-language or pseudocode transformation suitable for SQL generation; null when unsupported or not applicable.",
+              "data_type": "string",
+              "array_item_type": null,
+              "is_required": true,
+              "order": 1,
+              "example": "Trim whitespace from the source customer name."
+            },
+            {
+              "name": "default_record",
+              "description": "Required field, nullable text. Default value or fallback logic to use when the input is null. Null means do nothing; do not invent a replacement.",
+              "data_type": "string",
+              "array_item_type": null,
+              "is_required": true,
+              "order": 2,
+              "example": null
+            },
+            {
+              "name": "source_columns",
+              "description": "Required field, nullable array; [] is allowed. Each physical source has tenant_code, system_code, connection_code, object_schema, object_name. Logical lookup sources have entity_type=logical_entity, entity_schema_name, entity_name. Each source also has attribute_name. Use only eligible frozen Attributes. Null when not specified.",
+              "data_type": "array",
+              "array_item_type": "object",
+              "is_required": true,
+              "order": 3,
+              "example": [
+                {
+                  "tenant_code": "NWA",
+                  "system_code": "GDS",
+                  "connection_code": "lakehouse",
+                  "object_schema": "bronze_crm",
+                  "object_name": "customer",
+                  "attribute_name": "customer_name"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "output_schema": {
+    "$defs": {
+      "JsonObject": {
+        "additionalProperties": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "type": "object"
+      },
+      "JsonValue": {},
+      "MappingAttributeCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "modeled_attribute_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Modeled Attribute Name",
+            "type": "string"
+          },
+          "attribute_mapping_transformation_document": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/JsonObject"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "modeled_attribute_name",
+          "attribute_mapping_transformation_document"
+        ],
+        "title": "MappingAttributeCandidate",
+        "type": "object"
+      },
+      "MappingObjectCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "object_dependency_order": {
+            "minimum": 0,
+            "title": "Object Dependency Order",
+            "type": "integer"
+          },
+          "mapping_transformation_document": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/JsonObject"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "object_dependency_order",
+          "mapping_transformation_document"
+        ],
+        "title": "MappingObjectCandidate",
+        "type": "object"
+      },
+      "MappingUnresolvedIssue": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "enum": [
+              "missing_join_evidence",
+              "missing_transformation_rule",
+              "preserved_mapping_conflict"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "modeled_attribute_name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Modeled Attribute Name"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "MappingUnresolvedIssue",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "description": "Return only the Mapping transformation content. Identity, lifecycle status, templates and provenance are derived by the backend. Partial output is valid: return supported Object and Attribute transformations and leave unsupported documents null or omit them. Missing selected transformations are cleared; locked and unselected mappings are preserved. Return no transformations when nothing is supported. Never invent rules to fill blanks. A System contributes only when it supplies a supported business rowset or business Attribute transformation. Generated surrogate keys, audit/history population, and 'omit from load select' notes alone are not a contribution. For such a pair return outcome no_applicable_source, object_mapping null and attribute_mappings [].",
+    "properties": {
+      "schema_version": {
+        "const": "1.0",
+        "title": "Schema Version",
+        "type": "string"
+      },
+      "outcome": {
+        "default": "mapped",
+        "description": "Use no_applicable_source with no transformations when this System has no evidenced contribution. Generated keys and framework audit/history population alone never establish a Mapping. Preserve supported partial business output.",
+        "enum": [
+          "mapped",
+          "no_applicable_source"
+        ],
+        "title": "Outcome",
+        "type": "string"
+      },
+      "issues": {
+        "default": [],
+        "items": {
+          "$ref": "#/$defs/MappingUnresolvedIssue"
+        },
+        "maxItems": 200,
+        "title": "Issues",
+        "type": "array"
+      },
+      "object_mapping": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/MappingObjectCandidate"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "attribute_mappings": {
+        "items": {
+          "$ref": "#/$defs/MappingAttributeCandidate"
+        },
+        "maxItems": 5000,
+        "title": "Attribute Mappings",
+        "type": "array"
+      }
+    },
+    "required": [
+      "schema_version",
+      "object_mapping",
+      "attribute_mappings"
+    ],
+    "title": "CompleteMappingCandidateV1",
+    "type": "object",
+    "x-gds-output-template-guidance": {
+      "mapping_transformation_document": {
+        "template_code": "mapping_logical_object_default",
+        "description": "Logical Object Mapping using the agreed source, transformation and null-handling fields.",
+        "fields": [
+          {
+            "name": "source_tables",
+            "description": "Required non-null array; [] is allowed. Each physical source has tenant_code, system_code, connection_code, object_schema, object_name. Logical lookup sources have entity_type=logical_entity, entity_schema_name, entity_name. Use only eligible frozen sources. No alias field is required; explain join roles in the sample query when needed.",
+            "data_type": "array",
+            "array_item_type": "object",
+            "is_required": true,
+            "example": [
+              {
+                "tenant_code": "NWA",
+                "system_code": "GDS",
+                "connection_code": "lakehouse",
+                "object_schema": "bronze_crm",
+                "object_name": "customer"
+              }
+            ]
+          },
+          {
+            "name": "filter_criteria",
+            "description": "Required field, nullable text. Object-level filters; null when no filter applies.",
+            "data_type": "string",
+            "array_item_type": null,
+            "is_required": true,
+            "example": "Keep active customer records."
+          },
+          {
+            "name": "sample_query",
+            "description": "Required field, nullable text. Pseudo-SQL illustrating supported source joins, predicates, filters and transformations. Null when unavailable; do not invent missing rules.",
+            "data_type": "string",
+            "array_item_type": null,
+            "is_required": true,
+            "example": "SELECT * FROM bronze_crm.customer WHERE is_active = true"
+          }
+        ]
+      },
+      "attribute_mapping_transformation_document": {
+        "template_code": "mapping_logical_attribute_default",
+        "description": "Logical Attribute Mapping using the agreed source, transformation and null-handling fields.",
+        "fields": [
+          {
+            "name": "transformation_logic",
+            "description": "Required field, nullable text. Attribute-level natural-language or pseudocode transformation suitable for SQL generation; null when unsupported or not applicable.",
+            "data_type": "string",
+            "array_item_type": null,
+            "is_required": true,
+            "example": "Trim whitespace from the source customer name."
+          },
+          {
+            "name": "default_record",
+            "description": "Required field, nullable text. Default value or fallback logic to use when the input is null. Null means do nothing; do not invent a replacement.",
+            "data_type": "string",
+            "array_item_type": null,
+            "is_required": true,
+            "example": null
+          },
+          {
+            "name": "source_columns",
+            "description": "Required field, nullable array; [] is allowed. Each physical source has tenant_code, system_code, connection_code, object_schema, object_name. Logical lookup sources have entity_type=logical_entity, entity_schema_name, entity_name. Each source also has attribute_name. Use only eligible frozen Attributes. Null when not specified.",
+            "data_type": "array",
+            "array_item_type": "object",
+            "is_required": true,
+            "example": [
+              {
+                "tenant_code": "NWA",
+                "system_code": "GDS",
+                "connection_code": "lakehouse",
+                "object_schema": "bronze_crm",
+                "object_name": "customer",
+                "attribute_name": "customer_name"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "expect": {
+    "list": "attribute_mappings",
+    "key": [
+      "modeled_attribute_name"
+    ],
+    "expected": [
+      {
+        "modeled_attribute_name": "SalesOrderID"
+      },
+      {
+        "modeled_attribute_name": "SourceOrderNo"
+      },
+      {
+        "modeled_attribute_name": "SourceInstanceCode"
+      },
+      {
+        "modeled_attribute_name": "CustomerID"
+      },
+      {
+        "modeled_attribute_name": "OrderDate"
+      },
+      {
+        "modeled_attribute_name": "OrderStatus"
+      },
+      {
+        "modeled_attribute_name": "TotalAmount"
+      },
+      {
+        "modeled_attribute_name": "CurrencyCode"
+      },
+      {
+        "modeled_attribute_name": "SourceSystemID"
+      },
+      {
+        "modeled_attribute_name": "GDSBatchID"
+      },
+      {
+        "modeled_attribute_name": "CreatedDate"
+      },
+      {
+        "modeled_attribute_name": "UpdatedDate"
+      }
+    ],
+    "forbidden": []
+  }
+}

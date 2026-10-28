@@ -38,22 +38,58 @@ def _web_prompts(seed: Path, payload_tag: str) -> dict[str, str]:
 
 WEB = _web_prompts(SEED, "$workflow_defaults$")
 
-ZONE_WORKFLOWS = ("analysis", "code_generation", "mapping", "validation")
+# Every default prompt carries the shared "Data landscape" section.
+ZONE_WORKFLOWS = tuple(WEB)
 # (rule, web workflows, web pattern, Atlas file, Atlas pattern)
 SHARED_RULES = [
     (
         "GDS is the Global Data Store",
         ZONE_WORKFLOWS,
-        r"GDS means \*{0,2}Global Data Store",
+        r"GDS \(Global Data Store\) is the Databricks lakehouse",
         "references/terminology.md",
-        r"GDS means Global Data Store",
+        r"GDS \(Global Data Store\) is the Databricks lakehouse",
     ),
     (
         "zone meanings",
-        ("analysis",),
-        r"`source`: data in its originating system, before lake ingestion",
+        ZONE_WORKFLOWS,
+        r"`source`: in its original system, outside the lake",
         "references/terminology.md",
-        r"`source`: data in its originating system, before lake ingestion",
+        r"`source`: in its original system, outside the lake",
+    ),
+    (
+        "lake codes give placement only",
+        ZONE_WORKFLOWS,
+        r"say only where a lake table is stored",
+        "references/terminology.md",
+        r"say only where a lake Object is stored",
+    ),
+    (
+        "Connection code is unique within its Tenant and System",
+        ZONE_WORKFLOWS,
+        r"a Connection code is unique within its Tenant and System",
+        "references/terminology.md",
+        r"Connection Code is unique within its Tenant and System",
+    ),
+    (
+        "ids belong to one instance",
+        ZONE_WORKFLOWS,
+        r"Each instance numbers its own rows.*points into its own instance",
+        "references/terminology.md",
+        r"their own id numbering.*A reference points into its own instance",
+    ),
+    (
+        "instance column before the technical columns",
+        ZONE_WORKFLOWS,
+        r"just before the technical columns whose values name the instance",
+        "references/terminology.md",
+        r"just before the technical columns whose values name the instance",
+    ),
+    (
+        "GDSBatchID keeps every load",
+        ZONE_WORKFLOWS,
+        r"With `GDSBatchID`, each load appends its new and changed rows under a higher batch id",
+        "references/terminology.md",
+        r"With `GDSBatchID`, each load appends its new and changed rows under a higher batch id",
     ),
     (
         "null is unknown, not false or zero",

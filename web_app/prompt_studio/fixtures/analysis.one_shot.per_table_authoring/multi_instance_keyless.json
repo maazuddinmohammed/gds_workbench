@@ -1,0 +1,672 @@
+{
+  "description": "Order lines from two instances with appended loads; the orders and product parents have no key flags or profiles (keyless), and product_code has no description. order_no and product_code should link; the instance, batch, measure, date, status and generic id columns must not.",
+  "values": {
+    "source_context": [
+      {
+        "tenant_code": "NORTHWIND",
+        "tenant_description": "Industrial equipment distributor that sells to companies.",
+        "system_code": "ORDERS_APP",
+        "system_description": "Order-to-cash application: customer orders, deliveries and invoices.",
+        "system_type_code": "SQL",
+        "system_type_description": "Relational database source read with SQL.",
+        "connection_code": "ORD_UK",
+        "connection_description": "UK production database.",
+        "connection_type_code": "SQL_SERVER",
+        "connection_type_description": "Connection to a Microsoft SQL Server database.",
+        "zone_code": "source",
+        "zone_description": "Originating source data."
+      },
+      {
+        "tenant_code": "NORTHWIND",
+        "tenant_description": "Industrial equipment distributor that sells to companies.",
+        "system_code": "ORDERS_APP",
+        "system_description": "Order-to-cash application: customer orders, deliveries and invoices.",
+        "system_type_code": "SQL",
+        "system_type_description": "Relational database source read with SQL.",
+        "connection_code": "ORD_DE",
+        "connection_description": "German production database.",
+        "connection_type_code": "SQL_SERVER",
+        "connection_type_description": "Connection to a Microsoft SQL Server database.",
+        "zone_code": "source",
+        "zone_description": "Originating source data."
+      }
+    ],
+    "gds_context": [
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "zone_code": "bronze",
+        "zone_description": "Raw copies of source tables in the lake."
+      }
+    ],
+    "context_records": [],
+    "key_directory": [
+      {
+        "table": "t1",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "orders_app",
+        "object_name": "orders",
+        "object_description": "Customer sales orders from the UK and German order databases.",
+        "zone_code": "bronze",
+        "source_systems": [
+          "ORDERS_APP"
+        ],
+        "batch_attribute_name": "GDSBatchID",
+        "key_columns": [],
+        "other_columns": [
+          {
+            "attribute_name": "order_no",
+            "attribute_description": "Sales order number.",
+            "attribute_data_type": "VARCHAR(12)",
+            "attribute_inferred_data_type": "VARCHAR(12)"
+          },
+          {
+            "attribute_name": "order_date",
+            "attribute_description": "Date the order was placed.",
+            "attribute_data_type": "DATE",
+            "attribute_inferred_data_type": "DATE"
+          },
+          {
+            "attribute_name": "customer_no",
+            "attribute_description": "Customer who placed the order.",
+            "attribute_data_type": "VARCHAR(10)",
+            "attribute_inferred_data_type": "VARCHAR(10)"
+          },
+          {
+            "attribute_name": "total_amount",
+            "attribute_description": "Order total in the order currency.",
+            "attribute_data_type": "DECIMAL(14,2)",
+            "attribute_inferred_data_type": "DECIMAL(14,2)"
+          },
+          {
+            "attribute_name": "source_instance",
+            "attribute_description": "Source database the row was loaded from (ORD_UK or ORD_DE).",
+            "attribute_data_type": "VARCHAR(10)",
+            "attribute_inferred_data_type": "VARCHAR(10)"
+          },
+          {
+            "attribute_name": "GDSBatchID",
+            "attribute_description": "Load batch identifier.",
+            "attribute_data_type": "BIGINT",
+            "attribute_inferred_data_type": "BIGINT"
+          }
+        ]
+      },
+      {
+        "table": "t2",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "orders_app",
+        "object_name": "order_line",
+        "object_description": "Lines of customer sales orders; one row per ordered product.",
+        "zone_code": "bronze",
+        "source_systems": [
+          "ORDERS_APP"
+        ],
+        "batch_attribute_name": "GDSBatchID",
+        "key_columns": [],
+        "other_columns": []
+      },
+      {
+        "table": "t3",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "orders_app",
+        "object_name": "product",
+        "object_description": "Products sold, with their catalog details.",
+        "zone_code": "bronze",
+        "source_systems": [
+          "ORDERS_APP"
+        ],
+        "batch_attribute_name": "GDSBatchID",
+        "key_columns": [],
+        "other_columns": [
+          {
+            "attribute_name": "product_code",
+            "attribute_description": null,
+            "attribute_data_type": "VARCHAR(20)",
+            "attribute_inferred_data_type": "VARCHAR(20)"
+          },
+          {
+            "attribute_name": "product_name",
+            "attribute_description": "Product name shown to customers.",
+            "attribute_data_type": "VARCHAR(100)",
+            "attribute_inferred_data_type": "VARCHAR(100)"
+          },
+          {
+            "attribute_name": "list_price",
+            "attribute_description": "Catalog price per unit.",
+            "attribute_data_type": "DECIMAL(14,4)",
+            "attribute_inferred_data_type": "DECIMAL(14,4)"
+          },
+          {
+            "attribute_name": "source_instance",
+            "attribute_description": "Source database the row was loaded from (ORD_UK or ORD_DE).",
+            "attribute_data_type": "VARCHAR(10)",
+            "attribute_inferred_data_type": "VARCHAR(10)"
+          },
+          {
+            "attribute_name": "GDSBatchID",
+            "attribute_description": "Load batch identifier.",
+            "attribute_data_type": "BIGINT",
+            "attribute_inferred_data_type": "BIGINT"
+          }
+        ]
+      }
+    ],
+    "focus_table": {
+      "table": "t2",
+      "tenant_code": "GDS",
+      "system_code": "GDS",
+      "connection_code": "GDS",
+      "object_schema": "orders_app",
+      "object_name": "order_line",
+      "object_description": "Lines of customer sales orders; one row per ordered product.",
+      "zone_code": "bronze",
+      "source_systems": [
+        "ORDERS_APP"
+      ],
+      "batch_attribute_name": "GDSBatchID",
+      "attributes": [
+        {
+          "attribute_name": "id",
+          "attribute_description": "Technical row number.",
+          "attribute_data_type": "BIGINT",
+          "attribute_inferred_data_type": "BIGINT",
+          "attribute_nullability": false,
+          "is_natural_key": null,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": {
+            "profiled_at": "2026-10-01T06:00:00Z",
+            "row_scope": "all_rows",
+            "batch_attribute_name": null,
+            "batch_id": null,
+            "row_count": 240000,
+            "non_null_count": 240000,
+            "null_count": 0,
+            "blank_count": 0,
+            "distinct_count": 240000,
+            "min_data_length": null,
+            "max_data_length": null,
+            "avg_data_length": null,
+            "percent_populated": 100.0,
+            "percent_duplicates": 0.0,
+            "percent_null": 0.0,
+            "percent_blank": 0,
+            "percent_distinct": 100.0
+          },
+          "registered_is_natural_key": false,
+          "is_primary_key": null,
+          "is_nullable": null,
+          "is_pii": null
+        },
+        {
+          "attribute_name": "order_no",
+          "attribute_description": "Number of the order this line belongs to.",
+          "attribute_data_type": "VARCHAR(12)",
+          "attribute_inferred_data_type": "VARCHAR(12)",
+          "attribute_nullability": false,
+          "is_natural_key": null,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": {
+            "profiled_at": "2026-10-01T06:00:00Z",
+            "row_scope": "all_rows",
+            "batch_attribute_name": null,
+            "batch_id": null,
+            "row_count": 240000,
+            "non_null_count": 240000,
+            "null_count": 0,
+            "blank_count": 0,
+            "distinct_count": 61000,
+            "min_data_length": 12,
+            "max_data_length": 12,
+            "avg_data_length": 12,
+            "percent_populated": 100.0,
+            "percent_duplicates": 74.5833,
+            "percent_null": 0.0,
+            "percent_blank": 0,
+            "percent_distinct": 25.4167
+          },
+          "registered_is_natural_key": false,
+          "is_primary_key": null,
+          "is_nullable": null,
+          "is_pii": null
+        },
+        {
+          "attribute_name": "line_no",
+          "attribute_description": "Line number within the order.",
+          "attribute_data_type": "INT",
+          "attribute_inferred_data_type": "INT",
+          "attribute_nullability": false,
+          "is_natural_key": null,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": {
+            "profiled_at": "2026-10-01T06:00:00Z",
+            "row_scope": "all_rows",
+            "batch_attribute_name": null,
+            "batch_id": null,
+            "row_count": 240000,
+            "non_null_count": 240000,
+            "null_count": 0,
+            "blank_count": 0,
+            "distinct_count": 40,
+            "min_data_length": null,
+            "max_data_length": null,
+            "avg_data_length": null,
+            "percent_populated": 100.0,
+            "percent_duplicates": 99.9833,
+            "percent_null": 0.0,
+            "percent_blank": 0,
+            "percent_distinct": 0.0167
+          },
+          "registered_is_natural_key": false,
+          "is_primary_key": null,
+          "is_nullable": null,
+          "is_pii": null
+        },
+        {
+          "attribute_name": "product_code",
+          "attribute_description": "Product sold on this line.",
+          "attribute_data_type": "VARCHAR(20)",
+          "attribute_inferred_data_type": "VARCHAR(20)",
+          "attribute_nullability": true,
+          "is_natural_key": null,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": {
+            "profiled_at": "2026-10-01T06:00:00Z",
+            "row_scope": "all_rows",
+            "batch_attribute_name": null,
+            "batch_id": null,
+            "row_count": 240000,
+            "non_null_count": 240000,
+            "null_count": 0,
+            "blank_count": 0,
+            "distinct_count": 2900,
+            "min_data_length": 6,
+            "max_data_length": 14,
+            "avg_data_length": 14,
+            "percent_populated": 100.0,
+            "percent_duplicates": 98.7917,
+            "percent_null": 0.0,
+            "percent_blank": 0,
+            "percent_distinct": 1.2083
+          },
+          "registered_is_natural_key": false,
+          "is_primary_key": null,
+          "is_nullable": null,
+          "is_pii": null
+        },
+        {
+          "attribute_name": "quantity",
+          "attribute_description": "Quantity ordered.",
+          "attribute_data_type": "DECIMAL(12,3)",
+          "attribute_inferred_data_type": "DECIMAL(12,3)",
+          "attribute_nullability": true,
+          "is_natural_key": null,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": {
+            "profiled_at": "2026-10-01T06:00:00Z",
+            "row_scope": "all_rows",
+            "batch_attribute_name": null,
+            "batch_id": null,
+            "row_count": 240000,
+            "non_null_count": 240000,
+            "null_count": 0,
+            "blank_count": 0,
+            "distinct_count": 310,
+            "min_data_length": null,
+            "max_data_length": null,
+            "avg_data_length": null,
+            "percent_populated": 100.0,
+            "percent_duplicates": 99.8708,
+            "percent_null": 0.0,
+            "percent_blank": 0,
+            "percent_distinct": 0.1292
+          },
+          "registered_is_natural_key": false,
+          "is_primary_key": null,
+          "is_nullable": null,
+          "is_pii": null
+        },
+        {
+          "attribute_name": "net_amount",
+          "attribute_description": "Net line amount in the order currency.",
+          "attribute_data_type": "DECIMAL(14,2)",
+          "attribute_inferred_data_type": "DECIMAL(14,2)",
+          "attribute_nullability": true,
+          "is_natural_key": null,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": {
+            "profiled_at": "2026-10-01T06:00:00Z",
+            "row_scope": "all_rows",
+            "batch_attribute_name": null,
+            "batch_id": null,
+            "row_count": 240000,
+            "non_null_count": 240000,
+            "null_count": 0,
+            "blank_count": 0,
+            "distinct_count": 52000,
+            "min_data_length": null,
+            "max_data_length": null,
+            "avg_data_length": null,
+            "percent_populated": 100.0,
+            "percent_duplicates": 78.3333,
+            "percent_null": 0.0,
+            "percent_blank": 0,
+            "percent_distinct": 21.6667
+          },
+          "registered_is_natural_key": false,
+          "is_primary_key": null,
+          "is_nullable": null,
+          "is_pii": null
+        },
+        {
+          "attribute_name": "line_status",
+          "attribute_description": null,
+          "attribute_data_type": "CHAR(1)",
+          "attribute_inferred_data_type": "CHAR(1)",
+          "attribute_nullability": true,
+          "is_natural_key": null,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": {
+            "profiled_at": "2026-10-01T06:00:00Z",
+            "row_scope": "all_rows",
+            "batch_attribute_name": null,
+            "batch_id": null,
+            "row_count": 240000,
+            "non_null_count": 240000,
+            "null_count": 0,
+            "blank_count": 0,
+            "distinct_count": 3,
+            "min_data_length": 1,
+            "max_data_length": 1,
+            "avg_data_length": 1,
+            "percent_populated": 100.0,
+            "percent_duplicates": 99.9988,
+            "percent_null": 0.0,
+            "percent_blank": 0,
+            "percent_distinct": 0.0013
+          },
+          "registered_is_natural_key": false,
+          "is_primary_key": null,
+          "is_nullable": null,
+          "is_pii": null
+        },
+        {
+          "attribute_name": "delivery_date",
+          "attribute_description": "Date the line is due for delivery.",
+          "attribute_data_type": "DATE",
+          "attribute_inferred_data_type": "DATE",
+          "attribute_nullability": true,
+          "is_natural_key": null,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": {
+            "profiled_at": "2026-10-01T06:00:00Z",
+            "row_scope": "all_rows",
+            "batch_attribute_name": null,
+            "batch_id": null,
+            "row_count": 240000,
+            "non_null_count": 240000,
+            "null_count": 0,
+            "blank_count": 0,
+            "distinct_count": 700,
+            "min_data_length": null,
+            "max_data_length": null,
+            "avg_data_length": null,
+            "percent_populated": 100.0,
+            "percent_duplicates": 99.7083,
+            "percent_null": 0.0,
+            "percent_blank": 0,
+            "percent_distinct": 0.2917
+          },
+          "registered_is_natural_key": false,
+          "is_primary_key": null,
+          "is_nullable": null,
+          "is_pii": null
+        },
+        {
+          "attribute_name": "source_instance",
+          "attribute_description": "Source database the row was loaded from (ORD_UK or ORD_DE).",
+          "attribute_data_type": "VARCHAR(10)",
+          "attribute_inferred_data_type": "VARCHAR(10)",
+          "attribute_nullability": false,
+          "is_natural_key": null,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": {
+            "profiled_at": "2026-10-01T06:00:00Z",
+            "row_scope": "all_rows",
+            "batch_attribute_name": null,
+            "batch_id": null,
+            "row_count": 240000,
+            "non_null_count": 240000,
+            "null_count": 0,
+            "blank_count": 0,
+            "distinct_count": 2,
+            "min_data_length": 6,
+            "max_data_length": 6,
+            "avg_data_length": 6,
+            "percent_populated": 100.0,
+            "percent_duplicates": 99.9992,
+            "percent_null": 0.0,
+            "percent_blank": 0,
+            "percent_distinct": 0.0008
+          },
+          "registered_is_natural_key": false,
+          "is_primary_key": null,
+          "is_nullable": null,
+          "is_pii": null
+        },
+        {
+          "attribute_name": "GDSBatchID",
+          "attribute_description": "Load batch identifier.",
+          "attribute_data_type": "BIGINT",
+          "attribute_inferred_data_type": "BIGINT",
+          "attribute_nullability": false,
+          "is_natural_key": null,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": true,
+          "profile": {
+            "profiled_at": "2026-10-01T06:00:00Z",
+            "row_scope": "all_rows",
+            "batch_attribute_name": null,
+            "batch_id": null,
+            "row_count": 240000,
+            "non_null_count": 240000,
+            "null_count": 0,
+            "blank_count": 0,
+            "distinct_count": 31,
+            "min_data_length": null,
+            "max_data_length": null,
+            "avg_data_length": null,
+            "percent_populated": 100.0,
+            "percent_duplicates": 99.9871,
+            "percent_null": 0.0,
+            "percent_blank": 0,
+            "percent_distinct": 0.0129
+          },
+          "registered_is_natural_key": false,
+          "is_primary_key": null,
+          "is_nullable": null,
+          "is_pii": null
+        }
+      ]
+    },
+    "ingestion_mapping": [
+      {
+        "source": {
+          "tenant_code": "NORTHWIND",
+          "system_code": "ORDERS_APP",
+          "connection_code": "ORD_UK",
+          "object_schema": "dbo",
+          "object_name": "SO_LINE",
+          "object_description": "Sales order lines; one row per ordered item."
+        },
+        "target": {
+          "tenant_code": "GDS",
+          "system_code": "GDS",
+          "connection_code": "GDS",
+          "object_schema": "orders_app",
+          "object_name": "order_line"
+        }
+      },
+      {
+        "source": {
+          "tenant_code": "NORTHWIND",
+          "system_code": "ORDERS_APP",
+          "connection_code": "ORD_DE",
+          "object_schema": "dbo",
+          "object_name": "SO_LINE",
+          "object_description": null
+        },
+        "target": {
+          "tenant_code": "GDS",
+          "system_code": "GDS",
+          "connection_code": "GDS",
+          "object_schema": "orders_app",
+          "object_name": "order_line"
+        }
+      }
+    ],
+    "saved_relationships": []
+  },
+  "output_schema": {
+    "$defs": {
+      "AnalysisTableRelationship": {
+        "additionalProperties": false,
+        "description": "One per-table answer link: it starts at a focus-table column and cites `tN.column`.",
+        "properties": {
+          "from_attribute_name": {
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "From Attribute Name",
+            "type": "string"
+          },
+          "to": {
+            "maxLength": 430,
+            "minLength": 4,
+            "pattern": "^t[1-9][0-9]*\\.\\S",
+            "title": "To",
+            "type": "string"
+          },
+          "relationship_kind": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Relationship Kind",
+            "type": "string"
+          },
+          "inferred_cardinality": {
+            "anyOf": [
+              {
+                "enum": [
+                  "one_to_one",
+                  "one_to_many",
+                  "many_to_one",
+                  "many_to_many"
+                ],
+                "type": "string"
+              },
+              {
+                "const": "unknown",
+                "type": "string"
+              }
+            ],
+            "title": "Inferred Cardinality"
+          }
+        },
+        "required": [
+          "from_attribute_name",
+          "to",
+          "relationship_kind",
+          "inferred_cardinality"
+        ],
+        "title": "AnalysisTableRelationship",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "relationships": {
+        "items": {
+          "$ref": "#/$defs/AnalysisTableRelationship"
+        },
+        "maxItems": 2000,
+        "title": "Relationships",
+        "type": "array"
+      }
+    },
+    "required": [
+      "relationships"
+    ],
+    "title": "_AnalysisTableCandidate",
+    "type": "object"
+  },
+  "expect": {
+    "list": "relationships",
+    "key": [
+      "from_attribute_name",
+      "to"
+    ],
+    "expected": [
+      {
+        "from_attribute_name": "order_no",
+        "to": "t1.order_no"
+      },
+      {
+        "from_attribute_name": "product_code",
+        "to": "t3.product_code"
+      }
+    ],
+    "forbidden": [
+      {
+        "from_attribute_name": "source_instance",
+        "to": "t1.source_instance"
+      },
+      {
+        "from_attribute_name": "source_instance",
+        "to": "t3.source_instance"
+      },
+      {
+        "from_attribute_name": "GDSBatchID",
+        "to": "t1.GDSBatchID"
+      },
+      {
+        "from_attribute_name": "GDSBatchID",
+        "to": "t3.GDSBatchID"
+      },
+      {
+        "from_attribute_name": "id",
+        "to": "t1.order_no"
+      },
+      {
+        "from_attribute_name": "line_status",
+        "to": "t1.order_no"
+      }
+    ]
+  }
+}

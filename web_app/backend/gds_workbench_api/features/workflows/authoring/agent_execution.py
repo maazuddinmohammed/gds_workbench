@@ -85,11 +85,11 @@ AGENT_OUTPUT_CONTRACT_INSTRUCTION = (
     "field, omit fields forbidden by additionalProperties, and satisfy every declared "
     "JSON Schema constraint, including types, enum, const, format, patterns, and string, "
     "numeric, object, and array bounds. The current schema overrides incompatible "
-    "formatting instructions or examples in older prompts. Context identities and "
-    "manifests are read-only evidence; repeat them only where the schema asks. "
-    "The backend preserves existing locks; emit only the authoring values allowed "
-    "by the schema. When repair.previous_candidate_omitted is true, regenerate "
-    "from the rendered prompt evidence, enabled tools, and validation issues."
+    "formatting instructions or examples in older prompts. Evidence and record "
+    "identities are read-only; repeat them only where the schema asks. Records the "
+    "evidence marks as locked stay as saved; emit only the authoring values the schema allows. "
+    "When repair.previous_candidate_omitted is true, rebuild the answer from the "
+    "available evidence and the validation issues."
 )
 
 

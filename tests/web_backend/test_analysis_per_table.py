@@ -10,7 +10,10 @@ from uuid import UUID
 
 import pytest
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
-from gds_etl_workbench.domain.modeling_records import AnalysisResultRecord, PhysicalAttributeKey
+from gds_etl_workbench.domain.modeling_records import (
+    AnalysisResultRecord,
+    PhysicalAttributeKey,
+)
 from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.analysis.candidate import (
     AnalysisTableCandidateValidator,
@@ -121,16 +124,18 @@ def test_each_table_gets_its_inputs_and_the_shared_key_directory() -> None:
     for inputs in tables:
         assert list(inputs) == list(contracts)
         for name, spec in contracts.items():
-            assert cast(Any, Draft202012Validator(spec["schema"])).is_valid(inputs[name]), name
+            assert cast(Any, Draft202012Validator(spec["schema"])).is_valid(
+                inputs[name]
+            ), name
     orders, customers = tables
     # Every call sees the same directory, the focus table included.
     assert orders["key_directory"] == customers["key_directory"]
     directory = {entry["table"]: entry for entry in orders["key_directory"]}
     # Orders.CustomerCode repeats and has no key flag; Customers.CustomerCode is a key.
     assert directory["t1"]["key_columns"] == []
-    assert [column["attribute_name"] for column in directory["t1"]["other_columns"]] == [
-        "CustomerCode"
-    ]
+    assert [
+        column["attribute_name"] for column in directory["t1"]["other_columns"]
+    ] == ["CustomerCode"]
     # Without a key flag or Profile, only a description can say which column identifies
     # the table's rows, so other_columns carry it.
     assert directory["t1"]["other_columns"][0]["attribute_description"] == (
@@ -140,19 +145,51 @@ def test_each_table_gets_its_inputs_and_the_shared_key_directory() -> None:
     assert key_column["attribute_name"] == "CustomerCode"
     assert key_column["attribute_data_type"] == "VARCHAR"
     assert key_column["attribute_inferred_data_type"] == "VARCHAR"
-    assert key_column["profile"]["distinct_count"] == key_column["profile"]["non_null_count"]
+    assert (
+        key_column["profile"]["distinct_count"]
+        == key_column["profile"]["non_null_count"]
+    )
     assert directory["t2"]["other_columns"] == []
     # Each Bronze table names the System its data comes from, through its lineage.
-    assert [entry["source_systems"] for entry in orders["key_directory"]] == [["ERP"], ["ERP"]]
+    assert [entry["source_systems"] for entry in orders["key_directory"]] == [
+        ["ERP"],
+        ["ERP"],
+    ]
     assert orders["focus_table"]["source_systems"] == ["ERP"]
     # Lineage and saved findings are cut to the focus table.
-    assert [entry["target"]["object_name"] for entry in orders["ingestion_mapping"]] == ["Orders"]
-    assert [entry["target"]["object_name"] for entry in customers["ingestion_mapping"]] == [
-        "Customers"
-    ]
+    assert [
+        entry["target"]["object_name"] for entry in orders["ingestion_mapping"]
+    ] == ["Orders"]
+    assert [
+        entry["target"]["object_name"] for entry in customers["ingestion_mapping"]
+    ] == ["Customers"]
     assert orders["saved_relationships"] == customers["saved_relationships"]
     assert orders["saved_relationships"][0]["from"] == "t1.CustomerCode"
     assert orders["saved_relationships"][0]["to"] == "t2.CustomerCode"
+
+
+def test_a_table_that_keeps_every_load_names_its_batch_column() -> None:
+    context = _example_context()
+    # Customers keeps every load under GDSBatchID; Orders is replaced on each load.
+    context["selected_objects"] = [
+        {
+            "object": {
+                **entry,
+                "batch_attribute_name": "GDSBatchID"
+                if entry["object_name"] == "Customers"
+                else None,
+            }
+        }
+        for entry in context["prompt_inputs"]["object_context"]
+    ]
+    orders, customers = analysis_table_inputs(context)
+
+    assert [entry["batch_attribute_name"] for entry in orders["key_directory"]] == [
+        None,
+        "GDSBatchID",
+    ]
+    assert orders["focus_table"]["batch_attribute_name"] is None
+    assert customers["focus_table"]["batch_attribute_name"] == "GDSBatchID"
 
 
 def test_saved_finding_to_a_table_outside_the_run_is_left_out() -> None:
@@ -202,7 +239,10 @@ async def test_answer_must_start_in_the_focus_table_and_end_at_a_shown_column() 
 
     issues = (await validator.validate(candidate)).issues
     assert [(issue.code, issue.path) for issue in issues] == [
-        ("candidate.from_outside_focus_table", ("relationships", 0, "from_attribute_name")),
+        (
+            "candidate.from_outside_focus_table",
+            ("relationships", 0, "from_attribute_name"),
+        ),
         ("candidate.to_not_shown", ("relationships", 1, "to")),
         ("candidate.to_not_shown", ("relationships", 2, "to")),
         # A column cannot point at itself; the full-record check reports the original path.
@@ -224,7 +264,9 @@ async def test_locked_saved_finding_cannot_change_in_a_per_table_answer() -> Non
         selected_attribute_keys=_selected_keys(),
         applied=(AnalysisResultRecord.model_validate(saved),),
     )
-    issues = (await validator.validate({"relationships": [_link(cardinality="one_to_one")]})).issues
+    issues = (
+        await validator.validate({"relationships": [_link(cardinality="one_to_one")]})
+    ).issues
     assert [(issue.code, issue.path) for issue in issues] == [
         ("candidate.record_locked", ("relationships", 0))
     ]
@@ -246,14 +288,19 @@ def test_merge_keeps_one_finding_per_column_pair_in_table_order() -> None:
         {"relationships": [_link(kind="foreign_key", cardinality="one_to_one")]}
     )
     # Customers proposes the reverse of that pair under another kind: a duplicate.
-    customers = validators[1].parse_validated({"relationships": [_link(to="t1.CustomerCode")]})
+    customers = validators[1].parse_validated(
+        {"relationships": [_link(to="t1.CustomerCode")]}
+    )
 
     changes, dropped = merge_table_findings([orders, customers], (saved,))
 
     assert dropped == 1
     (change,) = changes
     (record,) = change.records
-    assert (record["from_object_name"], record["relationship_kind"]) == ("Orders", "foreign_key")
+    assert (record["from_object_name"], record["relationship_kind"]) == (
+        "Orders",
+        "foreign_key",
+    )
     assert record["inferred_cardinality"] == "one_to_one"
 
 
@@ -317,7 +364,11 @@ def _per_table_plan(
                                 data_type="json",
                                 is_required=True,
                             )
-                            for name in ("key_directory", "focus_table", "saved_relationships")
+                            for name in (
+                                "key_directory",
+                                "focus_table",
+                                "saved_relationships",
+                            )
                         ),
                         PromptVariableDefinition(
                             name="validation_failures",
@@ -344,7 +395,9 @@ class _TableAgent:
 
     async def execute(self, request: AgentExecutionRequest) -> AgentExecutionResult:
         self.requests.append(request)
-        inputs = cast(dict[str, Any], request.context)["original_context"]["prompt_inputs"]
+        inputs = cast(dict[str, Any], request.context)["original_context"][
+            "prompt_inputs"
+        ]
         answer = self.answers[inputs["focus_table"]["table"]].pop(0)
         return AgentExecutionResult(candidate=answer, turn_count=1, tool_call_count=0)
 
@@ -382,13 +435,18 @@ async def test_per_table_run_makes_one_call_per_table_and_hands_off_one_draft() 
 
     assert result is not None
     assert [
-        (request.workflow, request.stage, request.execution_mode, request.allowed_tool_names)
+        (
+            request.workflow,
+            request.stage,
+            request.execution_mode,
+            request.allowed_tool_names,
+        )
         for request in agent.requests
     ] == [("analysis_inference", "per_table_authoring", "one_shot", ())] * 2
     assert sorted(
-        cast(dict[str, Any], request.context)["original_context"]["prompt_inputs"]["focus_table"][
-            "object_name"
-        ]
+        cast(dict[str, Any], request.context)["original_context"]["prompt_inputs"][
+            "focus_table"
+        ]["object_name"]
         for request in agent.requests
     ) == ["customer_raw", "order_raw"]
     # Each prompt carries the whole key directory, not only its own table.
@@ -398,13 +456,20 @@ async def test_per_table_run_makes_one_call_per_table_and_hands_off_one_draft() 
     (changes,) = handoff.calls
     (change,) = changes
     (record,) = change.records
-    assert (record["from_object_name"], record["to_object_name"]) == ("order_raw", "customer_raw")
+    assert (record["from_object_name"], record["to_object_name"]) == (
+        "order_raw",
+        "customer_raw",
+    )
     # A dropped duplicate is reported, but it is not a warning.
     final = handoff.final_events[-1]
     assert final.status == "running"
-    assert "Dropped 1 finding on column pairs that were already linked." in final.message
+    assert (
+        "Dropped 1 finding on column pairs that were already linked." in final.message
+    )
     # Two tables are below the first progress checkpoint, so only the start is logged.
-    assert [event.stage for event in lifecycle.events] == ["analysis.relationship_inference"]
+    assert [event.stage for event in lifecycle.events] == [
+        "analysis.relationship_inference"
+    ]
     assert lifecycle.failed is None
 
 
@@ -414,7 +479,9 @@ async def test_failed_table_adds_a_note_and_keeps_the_other_tables() -> None:
     wrong: JsonValue = {"relationships": [_bundle_link("t9.customer_id")]}
     agent = _TableAgent(answers={"t1": [good], "t2": [wrong, wrong]})
     service, _database, _authorizer, handoff, lifecycle = executor._service(
-        agent=agent, plan=_per_table_plan(retry_count=1), context_bundle=_context_bundle()
+        agent=agent,
+        plan=_per_table_plan(retry_count=1),
+        context_bundle=_context_bundle(),
     )
 
     await service.execute_started(
@@ -427,7 +494,9 @@ async def test_failed_table_adds_a_note_and_keeps_the_other_tables() -> None:
     )
 
     (changes,) = handoff.calls
-    assert [record["from_object_name"] for record in changes[0].records] == ["order_raw"]
+    assert [record["from_object_name"] for record in changes[0].records] == [
+        "order_raw"
+    ]
     final = handoff.final_events[-1]
     assert final.status == "warning"
     assert "bronze.customer_raw was not analyzed" in final.message
@@ -442,7 +511,9 @@ async def test_run_fails_when_no_table_could_be_analyzed() -> None:
     wrong: JsonValue = {"relationships": [_bundle_link("t9.customer_id")]}
     agent = _TableAgent(answers={"t1": [wrong, wrong], "t2": [wrong, wrong]})
     service, _database, _authorizer, handoff, lifecycle = executor._service(
-        agent=agent, plan=_per_table_plan(retry_count=1), context_bundle=_context_bundle()
+        agent=agent,
+        plan=_per_table_plan(retry_count=1),
+        context_bundle=_context_bundle(),
     )
 
     with pytest.raises(WorkbenchError):
@@ -463,14 +534,16 @@ def _bundle_with_tables(count: int) -> AgentContextBundle:
         update={
             "selected_objects": tuple(
                 SelectedObjectContext.model_validate(
-                    executor._selected_object(f"table_{position}", position), strict=False
+                    executor._selected_object(f"table_{position}", position),
+                    strict=False,
                 )
                 for position in range(1, count + 1)
             )
         }
     )
     return AgentContextBundle(
-        context=context, embedded_context=cast(JsonValue, context.model_dump(mode="json"))
+        context=context,
+        embedded_context=cast(JsonValue, context.model_dump(mode="json")),
     )
 
 
@@ -494,7 +567,9 @@ async def test_progress_is_logged_every_six_tables() -> None:
     assert result is None and handoff.calls == []
     assert len(agent.requests) == 13
     # The start, then every 6 tables; completion has its own final event.
-    assert [(event.message, event.current, event.total) for event in lifecycle.events[1:]] == [
+    assert [
+        (event.message, event.current, event.total) for event in lifecycle.events[1:]
+    ] == [
         ("Analyzed 6 of 13 tables.", 6, 13),
         ("Analyzed 12 of 13 tables.", 12, 13),
     ]
@@ -524,6 +599,8 @@ async def test_per_table_run_needs_its_own_stage() -> None:
 def test_per_table_plans_are_one_shot_analysis_plans() -> None:
     plan = _per_table_plan().model_dump()
     with pytest.raises(ValueError, match="one-shot Analysis"):
-        AgentRunPlan.model_validate({**plan, "workflow_execution_mode": "tool_assisted"})
+        AgentRunPlan.model_validate(
+            {**plan, "workflow_execution_mode": "tool_assisted"}
+        )
     with pytest.raises(ValueError, match="Build and Optimize"):
         AgentRunPlan.model_validate({**plan, "project_workflow": "logical"})

@@ -37,24 +37,17 @@ type EnrichmentUnit = tuple[str, dict[str, JsonValue], dict[str, str], dict[str,
 
 PII_CLASSIFICATION_RULES = (
     "is_pii means personally identifiable information about a natural person. "
-    "Assess each Attribute independently using its own meaning and supplied evidence. "
-    "Set true only when evidence shows it identifies, contacts, locates or describes an "
-    "identifiable person, directly or through a supported linkage. Examples include personal "
-    "names, personal email/phone/address, government identifiers, person-linked customer or "
-    "employee IDs, date of birth, and person-linked medical or financial details. "
-    "An indirect identifier needs a concrete identifying role in the supplied context; "
-    "a hypothetical join or simply sharing a table with PII is insufficient. "
-    "Set false when the evidence establishes a non-personal business or technical meaning, "
-    "such as product codes, quantities, generic statuses, business calendar dates or ETL "
-    "timestamps. Dates are not automatically PII: date of birth can be true; an ordinary "
-    "order date, reporting date or load timestamp is not true without evidence of a "
-    "person-identifying role. Data type, uniqueness, key membership, a column name or a "
-    "previous true finding alone does not establish PII. Set null for insufficient or "
-    "conflicting evidence; uncertainty must not default to true or false. Never copy PII "
-    "classification across all columns. Before returning, recheck the specific personal "
-    "meaning supporting every true finding. Masking can protect non-personal sensitive "
-    "data too: is_masking_required is separate and must remain unchanged regardless of "
-    "is_pii. Never expose example personal values."
+    "Judge each Attribute on its own meaning: documented, or plain from its name in its table. "
+    "Set true when it identifies, contacts or locates an identifiable person, or holds a "
+    "sensitive personal detail: personal names; a person's email, phone or address, business "
+    "or private; government identifiers; identifiers whose values each point to one person, "
+    "such as employee or contact numbers; date of birth; and person-linked medical or "
+    "financial details. Set false when its meaning is non-personal, such as product codes, "
+    "quantities, statuses, business dates, load timestamps, or company identifiers and names. "
+    "Data type, uniqueness, key membership or a previous true finding alone does not "
+    "establish PII. Set null only when the Attribute's meaning is unknown or the evidence "
+    "conflicts. Never copy one finding across all columns. is_masking_required is separate "
+    "and never changes. Never expose example personal values."
 )
 
 
@@ -134,7 +127,7 @@ class DescriptionValidator:
                         path=("descriptions",),
                         message=(
                             "Return exactly the requested description references; "
-                            "use null for insufficient evidence."
+                            "use null only when the meaning is unknown."
                         ),
                     ),
                 )
@@ -157,7 +150,7 @@ class DescriptionValidator:
                         path=("descriptions", ref),
                         message=(
                             "Provide a meaningful description within 2000 UTF-8 bytes; "
-                            "use null when unknown."
+                            "use null only when the meaning is unknown."
                         ),
                     )
                 )

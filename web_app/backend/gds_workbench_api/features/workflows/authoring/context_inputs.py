@@ -253,6 +253,12 @@ def analysis_table_inputs(context: Mapping[str, Any]) -> list[dict[str, Any]]:
     origins: dict[tuple[Any, ...], set[str]] = {}
     for link in shared["ingestion_mapping"]:
         origins.setdefault(natural_key(link["target"]), set()).add(link["source"]["system_code"])
+    # A Bronze table that keeps every load names its batch column (GDSBatchID), so its
+    # business keys repeat once per load without being history.
+    batch_columns = {
+        natural_key(selected["object"]): selected["object"].get("batch_attribute_name")
+        for selected in context.get("selected_objects", [])
+    }
     tables: list[tuple[str, dict[str, Any]]] = []
     directory: list[dict[str, Any]] = []
     for position, (item, group) in enumerate(zip(objects, groups, strict=True), start=1):
@@ -265,6 +271,7 @@ def analysis_table_inputs(context: Mapping[str, Any]) -> list[dict[str, Any]]:
                 if item["zone_code"] == "source"
                 else origins.get(natural_key(item), set())
             ),
+            "batch_attribute_name": batch_columns.get(natural_key(item)),
         }
         key_columns: list[dict[str, Any]] = []
         for attribute in group["attributes"]:
@@ -898,9 +905,8 @@ def _logical_optimize_inputs(
     }
     unlinked: list[dict[str, Any]] = []
     for relationship in context["analysis_relationships"]:
-        if relationship["analysis_result_status"] != "active" or relationship[
-            "validation_result"
-        ] not in {"supported", "inconclusive", None}:
+        # People review links; a validation result never hides an active one.
+        if relationship["analysis_result_status"] != "active":
             continue
         ends = {
             side: natural_key({name: relationship[f"{side}_{name}"] for name in OBJECT_FIELDS})
@@ -955,6 +961,16 @@ def _logical_optimize_inputs(
             for name in item["names"]
         }
     )
+    # A merge also renames the children's foreign keys (ERPCustomerID -> CustomerID),
+    # so Entities that point at an Entity name variant are shown in full too.
+    variant_entities = {
+        name for item in name_variants if item["kind"] == "entity" for name in item["names"]
+    }
+    named |= {
+        _label(row, "logical", "from_")
+        for row in model["relationships"]
+        if _label(row, "logical", "to_") in variant_entities
+    }
     detail_keys = [key for key, label in labels.items() if label in named]
     details = [entities[key] for key in detail_keys]
     return {

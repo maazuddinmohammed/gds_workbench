@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from hashlib import sha256
@@ -256,18 +257,21 @@ def test_analysis_validation_query_uses_only_explicit_available_batch_filters(
         "TIMESTAMP_LTZ",
     ],
 )
-def test_analysis_validation_query_accepts_matching_scalar_types(
+def test_analysis_validation_query_accepts_supported_batch_types(
     data_type: str,
 ) -> None:
     query = build_analysis_validation_query(
-        _relationship(
-            from_type=data_type,
-            to_type=data_type.lower(),
-            from_batch_name=None,
-            from_batch_type=None,
-            to_batch_name=None,
-            to_batch_type=None,
-        ),
+        _relationship(from_batch_type=data_type, to_batch_type=data_type.lower()),
+        requested_batch_id="10428",
+    )
+
+    normalized = re.sub(r"\s+", "", data_type.upper())
+    assert query.sql.count(f"CAST(? AS {normalized})") == 2
+
+
+def test_analysis_validation_query_ignores_endpoint_data_types() -> None:
+    query = build_analysis_validation_query(
+        _relationship(from_type="BIGINT", to_type="ARRAY<STRING>"),
         requested_batch_id=None,
     )
 
@@ -292,44 +296,10 @@ def test_analysis_validation_query_normalizes_only_type_syntax_not_values() -> N
     assert "TRY_CAST(" not in query.sql
 
 
-@pytest.mark.parametrize(
-    ("relationship", "message"),
-    [
-        (
-            _relationship(
-                from_type="BIGINT",
-                to_type="STRING",
-                from_batch_name=None,
-                from_batch_type=None,
-                to_batch_name=None,
-                to_batch_type=None,
-            ),
-            "matching",
-        ),
-        (
-            _relationship(
-                from_type="ARRAY<BIGINT>",
-                to_type="ARRAY<BIGINT>",
-                from_batch_name=None,
-                from_batch_type=None,
-                to_batch_name=None,
-                to_batch_type=None,
-            ),
-            "scalar",
-        ),
-        (
-            _relationship(from_batch_type="ARRAY<BIGINT>"),
-            "Batch Attribute",
-        ),
-    ],
-)
-def test_analysis_validation_query_rejects_unsafe_type_or_batch_metadata(
-    relationship: AnalysisValidationRelationship,
-    message: str,
-) -> None:
-    with pytest.raises(InvalidRequestError, match=message):
+def test_analysis_validation_query_rejects_unsafe_batch_type() -> None:
+    with pytest.raises(InvalidRequestError, match="Batch Attribute"):
         build_analysis_validation_query(
-            relationship,
+            _relationship(from_batch_type="ARRAY<BIGINT>"),
             requested_batch_id="10428",
         )
 

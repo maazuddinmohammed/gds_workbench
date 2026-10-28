@@ -58,8 +58,6 @@ NUMBER = re.compile(r"^(#{2,3}) \[[SI]\d+(?:\.\d+)?\] ")
 SECTION = re.compile(r"^## \[([SI]\d+)\] (.*)$")
 JINJA = re.compile(r"{[{%](.*?)[}%]}", re.DOTALL)
 SQL_VALUE = re.compile(r"\s*(?:'((?:[^']|'')*)'(::jsonb)?|(NULL)|(-?\d+))\s*(?:,|$)")
-# Mirrors tests/web_backend/test_logical_prompt_guidance.py (system + instruction characters).
-SIZE_LIMITS = {"logical": 17_000}
 TESTABLE_MODE = "one_shot"
 
 
@@ -320,10 +318,6 @@ def stage_problems(item: dict[str, Any], variables: list[dict[str, Any]]) -> lis
         )
     except Exception as error:  # The renderer raises one safe message per failure.
         problems.append(f"Does not render: {getattr(error, 'message', error)}")
-    limit = SIZE_LIMITS.get(item["project_workflow"])
-    size = len(item["system_prompt"]) + len(item["instruction_prompt"])
-    if limit is not None and size >= limit:
-        problems.append(f"{size:,} characters; the limit is under {limit:,}.")
     return problems
 
 
