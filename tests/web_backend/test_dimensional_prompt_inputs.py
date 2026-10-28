@@ -336,6 +336,78 @@ def test_optimize_inputs_summarize_the_whole_model_and_its_findings(
 
 
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
+def test_optimize_offers_prefix_renames_only_for_free_unpinned_unused_entities(
+    mode: Literal["one_shot", "tool_assisted"],
+) -> None:
+    raw = _context_bundle(mode=mode, operation="optimize").context.model_dump(mode="json")
+    model = _model(fact_source="sales_customer")
+    template = model["entities"][0]
+
+    def entity(name: str, kind: str = "dimension", **changes: Any) -> dict[str, Any]:
+        return {
+            **template,
+            "dimensional_entity_name": name,
+            "dimensional_entity_type": kind,
+            "dimensional_fact_type": "transaction" if kind == "fact" else None,
+            "dimensional_entity_grain_definition": "One shipment." if kind == "fact" else None,
+            "sources": [],
+            **changes,
+        }
+
+    model["entities"] += [
+        entity("Product"),
+        entity("Shipment", "fact"),
+        entity("DimRegion"),
+        entity("Store", dimensional_entity_is_locked=True),
+        entity("Warehouse"),
+        entity("DimWarehouse", dimensional_entity_is_active=False),
+        entity("Supplier"),
+        entity("Carrier"),
+    ]
+    model["attributes"].append(
+        {
+            **model["attributes"][0],
+            "dimensional_entity_name": "Carrier",
+            "dimensional_attribute_is_locked": True,
+        }
+    )
+    raw["applied"]["dimensional"] = model
+    schema = template["dimensional_entity_schema_name"]
+    raw["read_only_dependencies"] = [
+        {
+            "dataset": "mapping_object",
+            "record": {
+                "modeled_entity_type": "dimensional_entity",
+                "modeled_entity_schema_name": schema,
+                "modeled_entity_name": "Supplier",
+            },
+        }
+    ]
+    context = AgentAuthoringContext.model_validate(raw, strict=False)
+    catalog = (
+        InMemoryAgentContextToolCatalog(
+            context=context, max_result_bytes=None, max_catalog_bytes=None, max_page_records=200
+        )
+        if mode == "tool_assisted"
+        else None
+    )
+    embedded = catalog.manifest if catalog else _provider_context(context)
+
+    _, values = _registered_values(
+        _plan(mode=mode, operation="optimize"), context=embedded, catalog=catalog
+    )
+
+    # Already prefixed, locked, pinned by a locked Attribute, used by Mapping or with a
+    # taken new name: none of those; names with spaces are not PascalCase.
+    assert values["prefix_renames"] == [
+        {"entity": f"{schema}.Product", "new_name": "DimProduct"},
+        {"entity": f"{schema}.Shipment", "new_name": "FactShipment"},
+    ]
+    assert {
+        row["dimensional_entity_name"] for row in values["entity_details"]["entities"]
+    } >= {"Product", "Shipment"}
+
+@pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
 def test_inconsistent_resolver_value_is_rejected(
     mode: Literal["one_shot", "tool_assisted"],
 ) -> None:

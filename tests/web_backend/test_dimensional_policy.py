@@ -615,6 +615,108 @@ def test_foreign_key_projection_uses_dimension_name_without_role() -> None:
     assert foreign_key["dimensional_attribute_is_nullable"] is False
 
 
+def test_generated_keys_drop_only_the_dimension_dim_prefix() -> None:
+    fact_reference = _fact_business_attribute().model_copy(
+        update={"dimensional_entity_name": "FactSalesOrder"}
+    )
+    relationship = _relationship(role_name=None).model_copy(
+        update={
+            "from_dimensional_entity_name": "FactSalesOrder",
+            "to_dimensional_entity_name": "DimCustomer",
+        }
+    )
+    projected = project_dimensional_gold_policy(
+        changes=(
+            StageProjectChange(
+                dataset="dimensional_entity",
+                records=[
+                    _entity("DimCustomer").model_dump(mode="json"),
+                    _entity("Dimension").model_dump(mode="json"),
+                    _fact("FactSalesOrder").model_dump(mode="json"),
+                ],
+            ),
+            StageProjectChange(
+                dataset="dimensional_attribute",
+                records=[
+                    _business_attribute("DimCustomer").model_dump(mode="json"),
+                    fact_reference.model_dump(mode="json"),
+                ],
+            ),
+            StageProjectChange(
+                dataset="dimensional_relationship",
+                records=[relationship.model_dump(mode="json")],
+            ),
+        ),
+        applied=None,
+        raw_technical_template=_technical_template(),
+        raw_audit_template=_audit_template(),
+    )
+    projected = project_dimensional_foreign_key_policy(
+        changes=projected,
+        applied=None,
+        raw_technical_template=_technical_template(),
+    )
+
+    keys = {
+        (item["dimensional_entity_name"], item["dimensional_attribute_name"]): item[
+            "dimensional_attribute_definition"
+        ]
+        for item in _attribute_records(projected)
+        if str(item["dimensional_attribute_name"]).endswith(" key")
+    }
+    assert keys == {
+        ("DimCustomer", "Customer key"): "Surrogate key for DimCustomer.",
+        ("Dimension", "Dimension key"): "Surrogate key for Dimension.",
+        ("FactSalesOrder", "FactSalesOrder key"): "Surrogate key for FactSalesOrder.",
+        ("FactSalesOrder", "Customer key"): "Foreign key to DimCustomer.",
+    }
+
+
+def test_saved_dimension_keeps_its_surrogate_name() -> None:
+    def saved(name: str, ordinal: int, **changes: object) -> DimensionalAttributeRecord:
+        return _business_attribute("DimCustomer").model_copy(
+            update={
+                "dimensional_attribute_name": name,
+                "dimensional_attribute_ordinal_position": ordinal,
+                **changes,
+            }
+        )
+
+    # Saved before generated keys dropped the Dim prefix.
+    applied = DimensionalSection(
+        entities=(_entity("DimCustomer"),),
+        attributes=(
+            saved(
+                "DimCustomer key",
+                1,
+                dimensional_attribute_definition="Surrogate key for DimCustomer.",
+                dimensional_attribute_data_type="bigint",
+                dimensional_attribute_is_nullable=False,
+                dimensional_attribute_is_surrogate_key=True,
+            ),
+            saved("Customer Name", 2),
+            saved(
+                "Loaded At",
+                3,
+                dimensional_attribute_definition="Warehouse load time.",
+                dimensional_attribute_data_type="TIMESTAMPTZ",
+                dimensional_attribute_is_nullable=False,
+                dimensional_attribute_is_audit_column=True,
+            ),
+        ),
+        relationships=(),
+    )
+
+    projected = project_dimensional_gold_policy(
+        changes=(),
+        applied=applied,
+        raw_technical_template=_technical_template(),
+        raw_audit_template=_audit_template(),
+    )
+
+    assert projected == ()
+
+
 def test_foreign_key_projection_rejects_reversed_fact_dimension_orientation() -> None:
     relationship = _relationship().model_copy(
         update={

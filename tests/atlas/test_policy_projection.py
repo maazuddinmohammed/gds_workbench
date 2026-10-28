@@ -8,6 +8,8 @@ same candidates and require identical records or the same rejection.
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -27,6 +29,7 @@ from gds_workbench_api.features.workflows.authoring.gold_policy import effective
 
 ROOT = Path(__file__).resolve().parents[2]
 MODULE = ROOT / "atlas/atlas-plugin/workbench/policy-projection.js"
+HELPER = ROOT / "atlas/atlas-plugin/scripts/atlas-local.ps1"
 SOURCE = {
     "support_source_type": "attribute",
     "source_attribute": {
@@ -367,6 +370,36 @@ DIMENSIONAL_CASES: dict[str, tuple[dict[str, Any], dict[str, Any], str | None]] 
         },
         None,
     ),
+    "keys drop only a Dimension's Dim prefix": (
+        {
+            "entities": [
+                _dimensional_entity("DimCustomer"),
+                _dimensional_entity("Dimension"),
+                _dimensional_entity("FactSales", "fact"),
+            ],
+            "attributes": [_dimensional_attribute("DimCustomer", "CustomerName", 1)],
+        },
+        {"entities": [], "attributes": []},
+        None,
+    ),
+    "saved dimension keeps its surrogate name": (
+        {"entities": [], "attributes": [_dimensional_attribute("DimStore", "StoreCity", 3)]},
+        {
+            "entities": [_dimensional_entity("DimStore")],
+            "attributes": [
+                _dimensional_attribute(
+                    "DimStore",
+                    "DimStoreKey",
+                    1,
+                    dimensional_attribute_data_type="BIGINT",
+                    dimensional_attribute_is_nullable=False,
+                    dimensional_attribute_is_surrogate_key=True,
+                ),
+                _dimensional_attribute("DimStore", "StoreName", 2),
+            ],
+        },
+        None,
+    ),
     "natural key cannot become a policy column": (
         {
             "entities": [_dimensional_entity("Customer")],
@@ -409,7 +442,96 @@ def test_dimensional_projection_matches_the_backend(case: str) -> None:
             "IsCurrentRecord",
             "RecordStartTime",
         ]
+    if case.startswith(("keys drop", "saved dimension")):
+        keys = {
+            (row["dimensional_entity_name"], row["dimensional_attribute_name"])
+            for row in actual["ok"]
+            if row["dimensional_attribute_is_surrogate_key"]
+        }
+        assert keys == (
+            {
+                ("DimCustomer", "CustomerKey"),
+                ("Dimension", "DimensionKey"),
+                ("FactSales", "FactSalesKey"),
+            }
+            if case.startswith("keys drop")
+            else {("DimStore", "DimStoreKey")}
+        )
 
+
+def test_native_dimensional_projection_matches_the_backend(tmp_path: Path) -> None:
+    powershell = (
+        os.environ.get("ATLAS_POWERSHELL")
+        or shutil.which("powershell.exe")
+        or shutil.which("pwsh")
+    )
+    if powershell is None:
+        pytest.skip("PowerShell is not installed")
+    technical, audit = effective_gold_templates(None, None)
+    suite = tmp_path / "cases.json"
+    suite.write_text(
+        json.dumps(
+            {
+                "technical": technical,
+                "audit": audit,
+                "cases": [
+                    {"candidate": candidate, "baseline": baseline, "scd": scd}
+                    for candidate, baseline, scd in DIMENSIONAL_CASES.values()
+                ],
+            }
+        )
+    )
+    # Load the production functions without running the public CLI dispatcher.
+    source = HELPER.read_text()
+    prefix = source[: source.rindex("\ntry {\n    $options = Parse-Options $RemainingArguments")]
+    library = tmp_path / "helper-library.ps1"
+    helper_root = str(HELPER.parent).replace("'", "''")
+    library.write_text(prefix.replace("$PSScriptRoot", f"'{helper_root}'"))
+    runner = tmp_path / "run.ps1"
+    runner.write_text("""
+param([string]$Library, [string]$SuitePath, [string]$Output)
+. $Library -Command 'test-library'
+$suite = ConvertFrom-GdsJson ([IO.File]::ReadAllText($SuitePath))
+$results = New-Object Collections.ArrayList
+foreach ($case in (Get-Property $suite 'cases')) {
+    $sides = @{}
+    foreach ($side in @('candidate', 'baseline')) {
+        $value = Get-Property $case $side
+        $sides[$side] = [pscustomobject]@{
+            entities = @(foreach ($record in (Get-Property $value 'entities')) { $record })
+            attributes = @(foreach ($record in (Get-Property $value 'attributes')) { $record })
+        }
+    }
+    $technical = Get-Property $suite 'technical'
+    $audit = Get-Property $suite 'audit'
+    try {
+        # Assign before @(): the helper returns one array object, as policy-apply reads it.
+        $records = Invoke-AtlasDimensionalProjection $sides.candidate $sides.baseline `
+            $technical $audit (Get-Property $case 'scd')
+        [void]$results.Add([ordered]@{ok = @($records)})
+    }
+    catch { [void]$results.Add([ordered]@{error = $_.Exception.Message}) }
+}
+[IO.File]::WriteAllText($Output, (ConvertTo-GdsJson @($results)), $script:Utf8NoBom)
+""")
+    output = tmp_path / "results.json"
+    result = subprocess.run(
+        [powershell, "-NoProfile", "-File", str(runner), str(library), str(suite), str(output)],
+        capture_output=True,
+        text=True,
+        timeout=600,  # Windows PowerShell 5.1 on CI runners is several times slower.
+    )
+    assert result.returncode == 0, result.stderr
+    actual = json.loads(output.read_text())
+    for (case, (candidate, baseline, scd)), value in zip(
+        DIMENSIONAL_CASES.items(), actual, strict=True
+    ):
+        expected = _python_dimensional(candidate, baseline, technical, audit, scd)
+        if "error" in expected:
+            # The native helper prefixes the layer to the backend message.
+            assert value["error"].endswith(expected["error"]), case
+        else:
+            assert value == expected, case
 
 def test_effective_gold_templates_match_the_backend() -> None:
     combined = {

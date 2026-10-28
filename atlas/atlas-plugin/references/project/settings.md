@@ -98,7 +98,7 @@ Null selects these shared defaults. An explicit `{"schema_version":"1.0","column
 
 Names/templates are nonblank, at most 255 characters; types at most 100; definitions at most 2,000. All three `type_2` entries use the audit-column structure above. Their names must differ; start/current require `nullable:false`, end requires `nullable:true`. The own surrogate also requires `nullable:false`.
 
-Only `{entity_name}` is accepted in own-surrogate names/definitions and the role-free foreign-key name; only `{role_name}` in role-qualified foreign-key names. Both placeholders are accepted in the foreign-key definition. Each name template must include its corresponding placeholder. No formatting/conversion suffixes are accepted.
+Only `{entity_name}` is accepted in own-surrogate names/definitions and the role-free foreign-key name; only `{role_name}` in role-qualified foreign-key names. Both placeholders are accepted in the foreign-key definition. Each name template must include its corresponding placeholder. No formatting/conversion suffixes are accepted. In names, not definitions, a dimension's `{entity_name}` drops its `Dim` prefix: `DimCustomer` gets `CustomerKey`. A saved surrogate keeps its saved name.
 
 ```json
 {

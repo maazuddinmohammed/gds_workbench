@@ -105,16 +105,19 @@ This is the data you work with. The examples only explain the terms; they are no
    subjects and date roles before writing records; consider every selected Entity
    without forcing an output for each.
 2. Reuse before you create. A Dimension or Fact built from these Logical Entities may
-   already be in existing_entities: extend or correct it there. Before naming a new
-   Entity, check neighbor_entities and entity_directory: relate to a shared Dimension
-   (Date, Customer, Product) by its saved schema and name instead of building a second
-   copy.
+   already be in existing_entities: extend or correct it there under its saved name.
+   Before naming a new Entity, check neighbor_entities and entity_directory: relate to a
+   shared Dimension (a date, customer or product) by its saved schema and name instead
+   of building a second copy. Match by meaning, not prefix: a saved Customer is the
+   customer Dimension, so never add a DimCustomer beside it; Optimize renames saved
+   names that lack their prefix.
 3. For each business process, fix the one-row grain before choosing measures or lookups;
    then decide the measures with units and additivity, the analysis Dimensions, the date
    roles, and the history and lookup needs. Test each requirement against the selected
    data and explicit rules, and challenge modeled assumptions with physical evidence.
-4. Name business Attributes so none collides with a reserved or generated name, and give
-   each extra edge to the same Dimension a distinct role.
+4. Give each new Entity its type prefix, name business Attributes so none collides with
+   a reserved or generated name, and give each extra edge to the same Dimension a
+   distinct role.
 5. Reconcile proposed and saved records against the selection and the coverage target:
    each selected Entity is represented, excluded or unresolved. There is no field for
    exclusions; note a material gap in the affected Entity's definition. An Entity
@@ -186,8 +189,8 @@ is not enough, and matching such members needs an explicit rule.
 
 - A Relationship runs from a child's foreign-key Attribute to its parent Dimension, and
   every edge is many-to-one. Name business endpoints: the child's business Attribute
-  holding the parent's business key, and that key (SalesOrder.CustomerNumber to
-  Customer.CustomerNumber). For a Fact or Bridge, the backend projects a foreign key
+  holding the parent's business key, and that key (FactSalesOrder.CustomerNumber to
+  DimCustomer.CustomerNumber). For a Fact or Bridge, the backend projects a foreign key
   from technical_columns and rewrites the edge to it. The reference is optional exactly
   when the child's business Attribute is nullable: make it nullable when the reference
   is nullable, profiles show nulls, validation finds missing keys or matching is
@@ -212,7 +215,7 @@ is not enough, and matching such members needs an explicit rule.
 - A Fact or Bridge edge needs only an existing parent key: the backend rewrites it to
   the parent's surrogate. When you cannot see a saved Dimension's natural key, point the
   edge at its saved surrogate (dimension_surrogate_key formatted with its name, such as
-  Customer.CustomerKey); for a Dimension new in this answer, use its natural key. A
+  DimCustomer.CustomerKey); for a Dimension new in this answer, use its natural key. A
   logical_link to an unselected Logical Entity usually leads to a Dimension built
   elsewhere: find it in neighbor_entities or entity_directory before omitting the edge.
 - A relationship's identity is its child Attribute: one foreign-key Attribute has one
@@ -233,16 +236,20 @@ Bridges that use them; Attribute ordinals are positive.
 - schemas (the Project's dimensional_schemas): the allowed schema names. Choose one by
   meaning and copy it exactly into each Entity, its Attributes and both relationship
   endpoints.
-- naming_instructions: Gold naming guidance (default PascalCase, key names ending in
-  Key). The Key suffix belongs to the generated surrogate and foreign keys: name
-  business keys and retained source identifiers by meaning (CustomerNumber,
-  CustomerSourceId), never <Entity>Key. Apply the guidance to new names; keep saved
-  identities; avoid cosmetic renames.
+- naming_instructions: the Project's Gold naming standard; apply it to every new name.
+  Every new Entity name starts with its type: Dim for a Dimension, Fact for a Fact,
+  Bridge for a Bridge (DimCustomer, FactSalesOrder, BridgeCustomerGroup), unless
+  naming_instructions set other prefixes. The Key suffix belongs to the generated
+  surrogate and foreign keys: name business keys and retained source identifiers by
+  meaning (CustomerNumber, CustomerSourceId), never <Entity>Key. Keep saved names,
+  prefixed or not; avoid cosmetic renames.
 - audit_columns and technical_columns: the effective Gold policies (blank Project
   settings are already resolved to defaults). technical_columns holds the surrogate
   template (dimension_surrogate_key), the role and no-role foreign-key templates
   (fact_bridge_foreign_key) and the type_2 columns. Strings such as {entity_name}Key are
-  templates the backend formats.
+  templates the backend formats. In key names a Dimension drops its Dim prefix and a
+  Fact or Bridge keeps its whole name: DimCustomer gets CustomerKey, FactSalesOrder gets
+  FactSalesOrderKey.
 - dimensional_entity_scd_type is the Project's history policy for Dimensions only. With
   type_2 the backend adds the type_2 columns to every active Dimension; with type_1 or
   null it adds none. There is no per-Attribute history field. Write history needs into
@@ -257,8 +264,8 @@ and dimensional_attribute_is_audit_column false; returning a generated column fa
 candidate.policy_column_forbidden.
 
 Reserved names, compared case-insensitively after trimming: every semantic_name in
-audit_columns and technical_columns, each Entity's surrogate (CustomerKey for Dimension
-Customer by default), and each foreign key of a Fact or Bridge edge (the role template
+audit_columns and technical_columns, each Entity's surrogate (CustomerKey for
+DimCustomer by default), and each foreign key of a Fact or Bridge edge (the role template
 with role_name, else the no-role template with the parent Dimension's name). A business
 Attribute with a reserved name fails even when inactive: name new ones by source meaning
 and keep their lineage (IsActive becomes CustomerIsActive; CreatedDate becomes
@@ -266,11 +273,11 @@ SourceCreatedDate). A saved one keeps blocking its name even after renaming or r
 so give a new edge whose foreign key would take that name a different real role, or omit
 the edge.
 
-Example (default templates, no roles): a new Fact SalesOrder with business Attributes
-OrderNumber and CustomerNumber and the edge SalesOrder.CustomerNumber to
-Customer.CustomerNumber is projected as SalesOrderKey at ordinal 1, OrderNumber and
-CustomerNumber from 2, the foreign key CustomerKey after the business columns, then the
-audit columns; the edge becomes SalesOrder.CustomerKey to Customer.CustomerKey.
+Example (default templates, no roles): a new Fact FactSalesOrder with business
+Attributes OrderNumber and CustomerNumber and the edge FactSalesOrder.CustomerNumber to
+DimCustomer.CustomerNumber is projected as FactSalesOrderKey at ordinal 1, OrderNumber
+and CustomerNumber from 2, the foreign key CustomerKey after the business columns, then
+the audit columns; the edge becomes FactSalesOrder.CustomerKey to DimCustomer.CustomerKey.
 
 Keep compatible business ordinals and relative order: the backend shifts business
 columns after the surrogate and appends the configured columns, and a shift that moves a
@@ -405,8 +412,9 @@ object_context: {{ object_context }}
 
 ## [I3] Final checks
 Before returning, confirm: no Entity duplicates one in existing_entities,
-neighbor_entities or entity_directory; every Entity uses a listed schema, every Fact a
-dimensional_fact_types code; every Logical source is in selected_logical_entities and
+neighbor_entities or entity_directory, prefixed or not; every new Entity name carries its
+type prefix; every Entity uses a listed schema, every Fact a dimensional_fact_types
+code; every Logical source is in selected_logical_entities and
 every Attribute source's Logical Entity is among its Entity's sources; every
 relationship names business endpoints that exist; no business Attribute takes a reserved
 or generated name; this area's coverage is reconciled.

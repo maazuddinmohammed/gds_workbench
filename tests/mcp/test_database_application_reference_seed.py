@@ -158,7 +158,7 @@ EXPECTED_NAMES: dict[str, set[str]] = {
     | DIMENSIONAL_RECORDS
     | DIMENSIONAL_SETTINGS
     | FINDINGS
-    | {"conformance_candidates", "selected_logical_entities"},
+    | {"conformance_candidates", "selected_logical_entities", "prefix_renames"},
     "mapping": {
         "mapping_support",
         "mapping_support_records",

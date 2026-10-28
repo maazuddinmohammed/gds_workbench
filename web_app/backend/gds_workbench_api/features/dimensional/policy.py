@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Literal, cast
 
 from gds_etl_workbench.application.change_sets.project import StageProjectChange
@@ -151,10 +152,24 @@ def project_dimensional_gold_policy(
         specifications: list[tuple[GoldPolicyColumn, Literal["technical", "audit"], str]] = []
         history: list[GoldPolicyColumn] = []
         if entity.dimensional_entity_type == "dimension" or is_new_entity:
+            # A saved Entity keeps its surrogate's name, such as a DimCustomerKey saved
+            # before generated keys dropped the Dim prefix.
+            saved_surrogate = None
+            if not is_new_entity:
+                saved_surrogate = next(
+                    (
+                        row.dimensional_attribute_name
+                        for row in entity_attributes
+                        if row.dimensional_attribute_is_surrogate_key
+                        and row.dimensional_attribute_is_active
+                    ),
+                    None,
+                )
             try:
                 surrogate = GoldPolicyColumn(
-                    semantic_name=technical.dimension_surrogate_key.semantic_name_template.format(
-                        entity_name=entity.dimensional_entity_name
+                    semantic_name=saved_surrogate
+                    or technical.dimension_surrogate_key.semantic_name_template.format(
+                        entity_name=_key_name(entity)
                     ),
                     data_type=technical.dimension_surrogate_key.data_type,
                     nullable=False,
@@ -381,7 +396,7 @@ def project_dimensional_foreign_key_policy(
                     if role_name is not None
                     else (
                         technical.fact_bridge_foreign_key.without_role_semantic_name_template.format(
-                            entity_name=to_entity.dimensional_entity_name
+                            entity_name=_key_name(to_entity)
                         )
                     )
                 )
@@ -566,7 +581,7 @@ def dimensional_policy_attribute_keys(
         for entity_key, entity in entities_by_key.items():
             names = [
                 technical.dimension_surrogate_key.semantic_name_template.format(
-                    entity_name=entity.dimensional_entity_name
+                    entity_name=_key_name(entity)
                 )
             ]
             names.extend(
@@ -618,7 +633,7 @@ def dimensional_policy_attribute_keys(
             )
             if role is not None
             else technical.fact_bridge_foreign_key.without_role_semantic_name_template.format(
-                entity_name=target.dimensional_entity_name
+                entity_name=_key_name(target)
             )
         )
         keys.add((*from_key, normalize_project_key_value(name)))
@@ -707,6 +722,14 @@ def _policy_attribute(
     if existing is not None and existing.dimensional_attribute_is_locked and existing != desired:
         raise DimensionalProjectionConflictError("A locked Gold policy column cannot be projected.")
     return desired
+
+
+def _key_name(entity: DimensionalEntityRecord) -> str:
+    """Generated key names drop a Dimension's Dim prefix: DimCustomer gets CustomerKey."""
+    name = entity.dimensional_entity_name
+    if entity.dimensional_entity_type == "dimension" and re.match(r"Dim[A-Z]", name):
+        return name[3:]
+    return name
 
 
 def _entity_key(record: DimensionalEntityRecord) -> tuple[str, str]:
