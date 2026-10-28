@@ -37,21 +37,14 @@ DEFAULTS = json.loads(
     .read_text()
     .split("$workflow_defaults$")[1]
 )
-# Seed 05 v2 publishes a second version of the same global defaults.
-V2_DEFAULTS = json.loads(
-    (ROOT / "database/seed/05_global_prompt_defaults.template.v2.sql")
-    .read_text()
-    .split("$workflow_defaults$")[1]
-)
 
 
 @pytest.mark.parametrize(
     "default",
-    [*DEFAULTS, *V2_DEFAULTS],
+    DEFAULTS,
     ids=[
-        f"{prefix}.{row['project_workflow']}.{row['workflow_execution_mode'] or 'common'}"
-        for prefix, rows in (("default", DEFAULTS), ("v2", V2_DEFAULTS))
-        for row in rows
+        f"{row['project_workflow']}.{row['workflow_execution_mode'] or 'common'}"
+        for row in DEFAULTS
     ],
 )
 def test_seeded_defaults_render_registered_inputs_and_select_supported_tools(
@@ -202,7 +195,7 @@ def test_mapping_defaults_render_selected_seeded_templates_with_nested_guidance(
     )
     stage = plan.stages[0].model_copy(update={"variables": variables})
     seeded = json.loads(
-        (ROOT / "database/seed/07_global_mapping_output_templates.template.sql")
+        (ROOT / "database/seed/06_global_mapping_output_templates.template.sql")
         .read_text()
         .split("$mapping_templates$")[1]
     )
@@ -253,21 +246,20 @@ def test_mapping_defaults_render_selected_seeded_templates_with_nested_guidance(
     values = project_prompt_input_values(
         plan=plan, stage=stage, context=context, resolver_values={}
     )
-    for prompts in (DEFAULTS, V2_DEFAULTS):
-        default = next(
-            row
-            for row in prompts
-            if row["project_workflow"] == "mapping" and row["workflow_execution_mode"] == mode
-        )
-        rendered = render_prompt(
-            templates=PromptComponentTemplates(
-                system=default["system_prompt"], instruction=default["instruction_prompt"]
-            ),
-            variables=variables,
-            resolver_values=values,
-        )
-        assert bool(rendered.system) and bool(rendered.instruction)
-        assert not rendered.warning_codes and not rendered.unknown_placeholders
+    default = next(
+        row
+        for row in DEFAULTS
+        if row["project_workflow"] == "mapping" and row["workflow_execution_mode"] == mode
+    )
+    rendered = render_prompt(
+        templates=PromptComponentTemplates(
+            system=default["system_prompt"], instruction=default["instruction_prompt"]
+        ),
+        variables=variables,
+        resolver_values=values,
+    )
+    assert bool(rendered.system) and bool(rendered.instruction)
+    assert not rendered.warning_codes and not rendered.unknown_placeholders
     invalid_context = cast(dict[str, Any], deepcopy(context))
     invalid_context["values"]["object_output_template"]["fields"][0]["is_required"] = "yes"
     with pytest.raises(InvalidRequestError, match="frozen workflow Prompt input is invalid"):

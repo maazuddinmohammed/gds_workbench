@@ -16,19 +16,11 @@ from tests.web_backend.test_logical_candidate import _answer, _validator
 from gds_workbench_api.features.logical.policy import project_logical_audit_policy
 
 SEED_ROOT = Path(__file__).resolve().parents[2] / "database/seed"
-# Seed 05 v2 is a second version of the global defaults and must keep the same boundaries.
-PROMPT_SETS = {
-    "default": json.loads(
-        (SEED_ROOT / "05_global_prompt_defaults.template.sql")
-        .read_text()
-        .split("$workflow_defaults$")[1]
-    ),
-    "v2": json.loads(
-        (SEED_ROOT / "05_global_prompt_defaults.template.v2.sql")
-        .read_text()
-        .split("$workflow_defaults$")[1]
-    ),
-}
+PROMPTS = json.loads(
+    (SEED_ROOT / "05_global_prompt_defaults.template.sql")
+    .read_text()
+    .split("$workflow_defaults$")[1]
+)
 
 
 # Boundaries both stages keep: the compact answer, backend-owned keys and safe repair.
@@ -79,20 +71,19 @@ STAGE_INPUTS = {
 }
 
 
-@pytest.mark.parametrize("prompt_set", sorted(PROMPT_SETS))
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
 @pytest.mark.parametrize("stage", sorted(STAGE_INPUTS))
 def test_logical_defaults_describe_the_compact_answer_and_keep_boundaries(
-    prompt_set: str, mode: str, stage: str
+    mode: str, stage: str
 ) -> None:
     row = next(
         item
-        for item in PROMPT_SETS[prompt_set]
+        for item in PROMPTS
         if item["project_workflow"] == "logical"
         and item["workflow_execution_mode"] == mode
         and item["workflow_stage_code"] == stage
     )
-    # v1 keeps hard-wrapped lines; compare both versions as flowing text.
+    # Prompts keep hard-wrapped lines; compare them as flowing text.
     system = " ".join(row["system_prompt"].split())
     instruction = row["instruction_prompt"]
     assert len(row["system_prompt"]) + len(instruction) < 17_000

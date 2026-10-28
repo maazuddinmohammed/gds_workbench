@@ -129,7 +129,7 @@ def _install_seeds(database: DisposablePostgres, entra_tenant_id: UUID, object_i
         connection.execute(cast(LiteralString, identity_seed))
         for name in (
             "05_global_prompt_defaults.template.sql",
-            "07_global_mapping_output_templates.template.sql",
+            "06_global_mapping_output_templates.template.sql",
         ):
             rendered = (
                 (SEED_ROOT / name)
@@ -139,7 +139,7 @@ def _install_seeds(database: DisposablePostgres, entra_tenant_id: UUID, object_i
                 .replace("__REPLACE_WITH_PRINCIPAL_TYPE__", "user")
             )
             connection.execute(cast(LiteralString, rendered))
-        review_seed = (SEED_ROOT / "08_local_workbench_review.sql").read_text()
+        review_seed = (SEED_ROOT / "07_local_workbench_review.sql").read_text()
         guard = "current_database() !~ '^gds_local_[0-9a-f]{12}$'"
         fixture_guard = (
             sql.SQL("current_database() <> {}")

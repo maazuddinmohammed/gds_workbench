@@ -10,7 +10,7 @@ into this navigation guide.
 | --- | --- |
 | Published default system/instruction prompts and selected readers | [seed 05](../database/seed/05_global_prompt_defaults.template.sql) |
 | Installed workflow/variable reference metadata | [seed 04](../database/seed/04_application_reference.sql) |
-| Mapping Output Templates | [seed 07](../database/seed/07_global_mapping_output_templates.template.sql) |
+| Mapping Output Templates | [seed 06](../database/seed/06_global_mapping_output_templates.template.sql) |
 | Variable registration and projection | [prompt_inputs.py](../web_app/backend/gds_workbench_api/features/workflows/authoring/prompt_inputs.py), [context_inputs.py](../web_app/backend/gds_workbench_api/features/workflows/authoring/context_inputs.py), [downstream_inputs.py](../web_app/backend/gds_workbench_api/features/workflows/authoring/downstream_inputs.py) |
 | Reader contracts, selection and paging | [context_contracts.py](../web_app/backend/gds_workbench_api/features/workflows/authoring/context_contracts.py), [context_readers.py](../web_app/backend/gds_workbench_api/features/workflows/authoring/context_readers.py) |
 | Downstream variable schemas | [downstream_contracts.py](../web_app/backend/gds_workbench_api/features/workflows/authoring/downstream_contracts.py) |
@@ -105,7 +105,7 @@ provenance and distinguish unknown, absent, zero, failed and contradictory state
 
 Default Object templates carry sources, filter criteria and a sample query;
 Attribute templates carry source columns, transformation logic and default-record
-instructions. Exact definitions live in seed 07. Saved inactive/custom template
+instructions. Exact definitions live in seed 06. Saved inactive/custom template
 definitions still travel with documents that reference them. No template field or
 nested custom value may be dropped by an internal-ID cleanup rule.
 
@@ -154,7 +154,7 @@ file placement happen later. Mapping/Code do not require this export.
 
 1. Change the runtime contract/projection first when evidence shapes change.
 2. Update seed 04's variable reference and seed 05's prompts/readers together;
-   update seed 07 only when template semantics change.
+   update seed 06 only when template semantics change.
 3. Verify rendering with actual registered variables and readers, candidate
    validation, complete paging, protected records and missing/conflicting evidence.
 4. Exercise meaningful synthetic cases and disposable-database round trips.

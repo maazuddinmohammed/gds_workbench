@@ -159,11 +159,9 @@ the production model, so confirm a kept change with a real Run.
 
 ## Keeping the seed in sync
 
-- The seed file is what installs; the studio files are where you edit.
+- The seed file (`database/seed/05_global_prompt_defaults.template.sql`) is what installs;
+  the studio files are where you edit.
 - Run `studio status` before starting work and after copying the seed.
-- Only v1 (`database/seed/05_global_prompt_defaults.template.sql`) is managed. While the v2
-  file exists, the per-table Analysis prompt must be identical in both seed files: copy a
-  changed per-table prompt into v2 as well.
 
 ## Checks
 

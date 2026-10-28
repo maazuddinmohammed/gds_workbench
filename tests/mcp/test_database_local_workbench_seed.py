@@ -23,7 +23,7 @@ def test_local_workbench_seed_uses_the_simplified_workflow_schema(
     bootstrap_postgres_database: DisposablePostgres,
 ) -> None:
     database = bootstrap_postgres_database
-    review_seed = (SEED_ROOT / "08_local_workbench_review.sql").read_text()
+    review_seed = (SEED_ROOT / "07_local_workbench_review.sql").read_text()
     original_guard = "current_database() !~ '^gds_local_[0-9a-f]{12}$'"
     assert review_seed.count(original_guard) == 1
 
@@ -58,7 +58,7 @@ def test_local_workbench_seed_uses_the_simplified_workflow_schema(
         connection.execute(cast(LiteralString, identity_seed))
         for seed_name in (
             "05_global_prompt_defaults.template.sql",
-            "07_global_mapping_output_templates.template.sql",
+            "06_global_mapping_output_templates.template.sql",
         ):
             rendered = (
                 (SEED_ROOT / seed_name)
