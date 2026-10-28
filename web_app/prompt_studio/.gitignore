@@ -1,0 +1,4 @@
+# Local working files: generated output, test runs, and undo backups.
+out/
+evals/*/
+prompts/*.previous

@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prompt Studio</title>
+<style>
+/* The Workbench font and tokens (web_app/frontend/src/styles/foundation.css). */
+@font-face { font-family: "Atlas Open Sans"; font-weight: 400; font-display: swap;
+  src: url("../../frontend/public/assets/fonts/OpenSans-Regular.woff2") format("woff2"); }
+@font-face { font-family: "Atlas Open Sans"; font-weight: 600; font-display: swap;
+  src: url("../../frontend/public/assets/fonts/OpenSans-SemiBold.woff2") format("woff2"); }
+:root {
+  --ink: #0c233c; --muted: #586a80; --line: #dfe5ee; --line-strong: #bdc9d9;
+  --paper: #f5f6fa; --surface: #ffffff; --brand: #00338d; --brand-raised: #164795;
+  --on-brand: #ffffff; --on-brand-muted: #d9e5fb; --accent: #1e49e2; --accent-soft: #edf2ff;
+  --amber: #87540a; --amber-soft: #fff5df; --green: #187252; --green-soft: #eaf6f1;
+  --red: #b42318; --red-soft: #fdecea;
+  --shadow: 0 1px 2px rgb(12 35 60 / 4%), 0 10px 28px rgb(12 35 60 / 6%);
+  --radius: 0.8rem; --radius-small: 0.55rem;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --ink: #e6ecf3; --muted: #9aa9bb; --line: #2a3442; --line-strong: #3b4757;
+    --paper: #10151c; --surface: #18202a; --brand: #0b275f; --brand-raised: #173a7e;
+    --accent: #8fb0ff; --accent-soft: #1b2a4a; --amber: #f0b35a; --amber-soft: #36270e;
+    --green: #5cc59a; --green-soft: #11301f; --red: #ff8a80; --red-soft: #3a1714; --shadow: none; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; height: 100vh; display: grid; grid-template-columns: 284px 1fr;
+  background: var(--paper); color: var(--ink); font: 14px/1.55 "Atlas Open Sans", system-ui, sans-serif; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code, pre { font-family: var(--mono); }
+
+nav { background: var(--brand); color: var(--on-brand); overflow: auto; padding: 20px 14px 32px; }
+nav .brand { padding: 0 8px; font-size: 18px; font-weight: 600; letter-spacing: .01em; }
+nav .sub { padding: 0 8px; color: var(--on-brand-muted); font-size: 12px; }
+nav h2 { margin: 20px 8px 6px; color: var(--on-brand-muted); font-size: 11px; font-weight: 600;
+  letter-spacing: .08em; text-transform: uppercase; }
+nav a { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 5px 8px; border-radius: 6px; color: var(--on-brand); text-decoration: none; font-size: 13.5px; }
+nav a:hover { background: var(--brand-raised); }
+nav a.active { background: var(--surface); color: var(--brand); }
+nav a.top { margin-top: 14px; }
+nav .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: #f5b74a; }
+nav .flag { flex: none; color: #ffb4a8; font-weight: 600; }
+
+main { overflow: auto; padding: 26px 34px 70px; }
+.page { max-width: 1180px; margin: 0 auto; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); }
+.head { padding: 18px 22px; }
+h1 { margin: 0 0 8px; font-size: 21px; font-weight: 600; }
+h3 { margin: 22px 0 10px; font-size: 15px; font-weight: 600; display: flex; gap: 10px; align-items: baseline; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+.chip { display: inline-block; margin: 0 6px 4px 0; padding: 1px 9px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--paper); color: var(--muted); font-size: 12px; }
+.chip.ok { color: var(--green); background: var(--green-soft); border-color: transparent; }
+.chip.edit { color: var(--amber); background: var(--amber-soft); border-color: transparent; }
+.chip.bad { color: var(--red); background: var(--red-soft); border-color: transparent; }
+.problem { margin: 10px 0 0; padding: 8px 12px; border-radius: var(--radius-small);
+  color: var(--red); background: var(--red-soft); }
+
+.tabs { display: flex; gap: 2px; margin: 18px 0 6px; border-bottom: 1px solid var(--line); }
+.tabs button { padding: 9px 14px; border: 0; border-bottom: 2px solid transparent; background: none;
+  color: var(--muted); font: inherit; cursor: pointer; }
+.tabs button:hover { color: var(--ink); }
+.tabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+.tabs .count { margin-left: 6px; padding: 0 7px; border-radius: 999px; background: var(--paper);
+  color: var(--muted); font-size: 11px; }
+
+.toolbar { margin-left: auto; }
+button.light { padding: 3px 10px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--surface); color: var(--ink); font: inherit; font-size: 12px; cursor: pointer; }
+button.light:hover { border-color: var(--line-strong); }
+details.item { margin: 8px 0; background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius-small); }
+details.item.changed { border-left: 3px solid var(--accent); }
+details.item > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 9px 12px; cursor: pointer; list-style: none; }
+details.item > summary::-webkit-details-marker { display: none; }
+details.item > summary::before { content: "▸"; color: var(--muted); width: 10px; }
+details.item[open] > summary::before { content: "▾"; }
+details.item > div { padding: 0 14px 12px; }
+.label { padding: 1px 7px; border-radius: 5px; background: var(--accent-soft); color: var(--accent);
+  font: 600 12px var(--mono); }
+.meta { color: var(--muted); font-size: 12px; }
+.var { padding: 0 7px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted);
+  font: 11px var(--mono); }
+pre.text { margin: 0; padding: 12px 14px; border-radius: var(--radius-small); background: var(--paper);
+  white-space: pre-wrap; word-break: break-word; font-size: 12.5px; line-height: 1.6; }
+.diff { margin-top: 10px; }
+.diff div { padding: 0 8px; white-space: pre-wrap; font: 12px/1.55 var(--mono); }
+.diff .add { background: var(--green-soft); } .diff .del { background: var(--red-soft); }
+.diff .hunk { color: var(--muted); }
+
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); }
+th, td { padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+td a { color: var(--accent); text-decoration: none; }
+td a:hover { text-decoration: underline; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+ul.tree { margin: 4px 0; padding-left: 18px; }
+ul.tree li { margin: 2px 0; }
+ul.tree code { color: var(--ink); }
+.type { color: var(--accent); font: 12px var(--mono); }
+
+.stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 16px 0 0; }
+.stat { padding: 12px 16px; }
+.stat b { display: block; font-size: 22px; font-weight: 600; }
+.steps { display: grid; gap: 10px; }
+.step { display: grid; grid-template-columns: 34px 1fr; gap: 12px; padding: 14px 16px; }
+.step .n { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--brand); color: #fff; font-weight: 600; }
+.step h4 { margin: 2px 0 2px; font-size: 14.5px; font-weight: 600; }
+.ask, .cmd { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 7px 10px;
+  border-radius: var(--radius-small); }
+.ask { background: var(--accent-soft); }
+.cmd { background: var(--paper); border: 1px solid var(--line); }
+.ask span, .cmd code { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ask .who, .cmd .who { flex: none; color: var(--muted); font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .06em; width: 30px; }
+
+@media (max-width: 860px) {
+  body { display: block; height: auto; }
+  nav { padding-bottom: 16px; }
+  main { padding: 18px 16px 48px; }
+  .stats { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+<nav id="nav" aria-label="Stages"></nav>
+<main id="main"></main>
+<script id="data" type="application/json">__DATA__</script>
+<script>
+let data;
+try {
+  data = JSON.parse(document.getElementById("data").textContent);
+} catch {
+  // This is the template; `studio.py build` writes the real page to out/studio.html.
+  document.body.textContent = "This is the Prompt Studio template. Run `studio build` and open out/studio.html.";
+  throw new Error("Prompt Studio template opened directly.");
+}
+const TOOL = "studio";
+const el = (tag, props = {}, ...children) => {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(props)) {
+    if (key === "text") node.textContent = value;
+    else if (key === "class") node.className = value;
+    else if (key === "onclick") node.onclick = value;
+    else if (value !== false && value != null) node.setAttribute(key, value === true ? "" : value);
+  }
+  for (const child of children.flat(Infinity)) if (child != null && child !== false) node.append(child);
+  return node;
+};
+const stateChip = (state) => el("span", {
+  class: "chip " + (state === "in sync" ? "ok" : state === "edited in studio" ? "edit" : "bad"), text: state });
+
+function copyButton(text) {
+  const button = el("button", { class: "light", type: "button", text: "Copy" });
+  button.onclick = async () => {
+    try { await navigator.clipboard.writeText(text); }
+    catch {
+      const area = el("textarea", { style: "position:fixed;opacity:0" });
+      area.value = text; document.body.append(area); area.select(); document.execCommand("copy"); area.remove();
+    }
+    button.textContent = "Copied";
+    setTimeout(() => { button.textContent = "Copy"; }, 1400);
+  };
+  return button;
+}
+
+/* JSON Schema → a readable tree of fields and types. */
+function resolve(schema, root) {
+  for (let i = 0; schema && schema.$ref && i < 20; i++) {
+    schema = (root.$defs || root.definitions || {})[schema.$ref.split("/").pop()];
+  }
+  return schema;
+}
+function typeText(schema, root) {
+  schema = resolve(schema, root);
+  if (!schema) return "any";
+  if (schema.enum) return "one of " + schema.enum.map((v) => JSON.stringify(v)).join(", ");
+  if (schema.const !== undefined) return "= " + JSON.stringify(schema.const);
+  const options = schema.anyOf || schema.oneOf;
+  if (options) return options.map((option) => typeText(option, root)).join(" | ");
+  const type = Array.isArray(schema.type) ? schema.type.join(" | ")
+    : schema.type || (schema.properties ? "object" : "any");
+  return type === "array" ? "array of " + typeText(schema.items, root) : type;
+}
+function schemaTree(schema, root, depth = 0) {
+  schema = resolve(schema, root);
+  if (!schema || depth > 12) return null;
+  const options = (schema.anyOf || schema.oneOf || []).map((option) => resolve(option, root));
+  const nested = options.filter((option) => option && (option.properties || option.items));
+  if (nested.length) return el("div", {}, nested.map((option) => schemaTree(option, root, depth + 1)));
+  if (schema.items) return schemaTree(schema.items, root, depth + 1);
+  if (!schema.properties) return null;
+  const required = new Set(schema.required || []);
+  return el("ul", { class: "tree" }, Object.entries(schema.properties).map(([name, property]) => {
+    const resolved = resolve(property, root) || {};
+    return el("li", {},
+      el("code", { text: name }), " ",
+      el("span", { class: "type", text: typeText(property, root) }),
+      required.has(name) ? null : el("span", { class: "meta", text: " optional" }),
+      resolved.description ? el("span", { class: "muted", text: " — " + resolved.description }) : null,
+      schemaTree(property, root, depth + 1));
+  }));
+}
+
+function nav(activeId) {
+  const root = document.getElementById("nav");
+  root.replaceChildren(
+    el("div", { class: "brand", text: "Prompt Studio" }),
+    el("div", { class: "sub", text: `GDS Workbench · built ${data.built}` }),
+    el("a", { href: "#", class: "top " + (activeId === "" ? "active" : ""), text: "Overview" }),
+    el("a", { href: "#guide", class: activeId === "guide" ? "active" : "", text: "How to work" }));
+  let group = null;
+  for (const stage of data.stages) {
+    if (stage.workflow !== group) {
+      group = stage.workflow;
+      root.append(el("h2", { text: group.replaceAll("_", " ") }));
+    }
+    root.append(el("a", { href: "#" + stage.id, class: stage.id === activeId ? "active" : "",
+      title: stage.id },
+      el("span", { text: `${stage.mode} · ${stage.stage}` }),
+      stage.problems.length ? el("span", { class: "flag", text: "!" })
+        : stage.state !== "in sync" ? el("span", { class: "dot", title: stage.state }) : null));
+  }
+}
+
+function guideSteps(stage) {
+  const id = stage ? stage.id : "<stage>";
+  const fixtures = stage && stage.fixtures.length ? stage.fixtures.map((f) => f.name) : ["<fixture>"];
+  const testable = !stage || stage.testable;
+  const steps = [
+    ["Check you are in sync", "Every stage should say in sync. If the seed changed, import it first.",
+      "Check that Prompt Studio is in sync.", `${TOOL} status`],
+    ["Change a section", "Edit the stage file, build, refresh this page: the changed section is marked with a diff.",
+      `In ${id}, rewrite S8 so that …`, `${TOOL} build`],
+    ["Make the test", "Writes 3 packets with the seed prompt and 3 with your change, shuffled and unlabeled.",
+      `Make a test for ${id} with fixture ${fixtures[0]}, label s8-v1.`,
+      `${TOOL} pack ${id} ${fixtures[0]} --label s8-v1`],
+    ["Run the test", "One fresh agent per packet answers as the model, then reviews the prompt.",
+      "Run the s8-v1 test packets.", "Read <packet path> and follow it exactly."],
+    ["Score it", "Old vs new side by side with a suggested verdict; added to the scoreboard (Tests tab).",
+      "Score the s8-v1 test.", `${TOOL} score ${id} s8-v1`],
+    ["Decide", "Better: keep it. Worse: revert, or restore an earlier tested version. Good: copy the built seed.",
+      `Keep it. / Revert ${id}. / Restore ${id} to s8-v1. / Copy the built seed into database/seed.`,
+      `${TOOL} revert ${id}`],
+  ];
+  return el("div", {},
+    el("div", { class: "steps" }, steps.map(([title, what, ask, command], index) =>
+      el("div", { class: "card step" },
+        el("div", { class: "n", text: String(index + 1) }),
+        el("div", {},
+          el("h4", { text: title }),
+          el("div", { class: "muted", text: what }),
+          !testable && index >= 2 && index <= 4
+            ? el("div", { class: "meta", text: "Only one_shot stages can be tested." }) : null,
+          el("div", { class: "ask" }, el("span", { class: "who", text: "Ask" }), el("span", { text: ask }), copyButton(ask)),
+          el("div", { class: "cmd" }, el("span", { class: "who", text: "Run" }), el("code", { text: command }), copyButton(command)))))),
+    el("h3", { text: "All in one sentence" }),
+    el("div", { class: "card step" }, el("div", { class: "n", text: "★" }), el("div", {},
+      el("div", { class: "ask" }, el("span", { class: "who", text: "Ask" }),
+        el("span", { text: `Improve S8 of ${id}, test it on ${fixtures.join(" and ")}, and show me the score.` }),
+        copyButton(`Improve S8 of ${id}, test it on ${fixtures.join(" and ")}, and show me the score.`)))),
+    el("p", { class: "meta" }, "Run the commands from the repository root after: ",
+      el("code", { text: 'alias studio="web_app/backend/.venv/bin/python web_app/prompt_studio/studio.py"' })));
+}
+
+function overview() {
+  const count = (state) => data.stages.filter((stage) => stage.state === state).length;
+  const tiles = [
+    ["Stages", data.stages.length],
+    ["In sync", count("in sync")],
+    ["Edited in studio", count("edited in studio")],
+    ["Test inputs", data.stages.reduce((sum, stage) => sum + stage.fixtures.length, 0)],
+    ["Problems", data.stages.reduce((sum, stage) => sum + stage.problems.length, 0)],
+  ];
+  return el("div", { class: "page" },
+    el("div", { class: "card head" },
+      el("h1", { text: "Prompt Studio" }),
+      el("div", { class: "muted", text: `Default prompts from ${data.seed}. Edit a stage, test the change with agents, keep score, build the seed.` }),
+      el("p", { class: "small" }, el("a", { href: "#guide", text: "How to work: the six steps and what to ask →" }))),
+    el("div", { class: "stats" }, tiles.map(([label, value]) =>
+      el("div", { class: "card stat" }, el("b", { text: String(value) }), el("span", { class: "muted small", text: label })))),
+    el("h3", { text: "Stages" }),
+    el("div", { class: "card" }, el("table", {},
+      el("tr", {}, ["Stage", "State", "System", "Instruction", "Variables", "Tools", "Tests"].map((title, index) =>
+        el("th", { class: index >= 2 ? "num" : "", text: title }))),
+      data.stages.map((stage) => el("tr", {},
+        el("td", {}, el("a", { href: "#" + stage.id, text: stage.id }),
+          stage.problems.length ? el("span", { class: "chip bad", text: `${stage.problems.length} problem` }) : null),
+        el("td", {}, stateChip(stage.state)),
+        el("td", { class: "num", text: stage.system.chars.toLocaleString() }),
+        el("td", { class: "num", text: stage.instruction.chars.toLocaleString() }),
+        el("td", { class: "num", text: stage.variables.length }),
+        el("td", { class: "num", text: stage.tools.length || "—" }),
+        el("td", { class: "num", text: stage.testable ? stage.fixtures.length : "—" }))))));
+}
+
+function guidePage() {
+  return el("div", { class: "page" },
+    el("div", { class: "card head" }, el("h1", { text: "How to work" }),
+      el("div", { class: "muted", text: "Ask an agent with the Ask line, or run the command yourself. Open a stage and use its How to work tab for ready-made lines." })),
+    el("h3", { text: "The loop" }), guideSteps(null));
+}
+
+function diffView(lines) {
+  return el("div", { class: "diff" }, lines.map((line) => el("div", {
+    class: line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : line.startsWith("@@") ? "hunk" : "",
+    text: line || " " })));
+}
+
+function promptPart(title, part) {
+  const box = el("div");
+  const toggle = el("button", { class: "light", type: "button", text: "Expand all" });
+  toggle.onclick = () => {
+    const open = toggle.textContent === "Expand all";
+    box.querySelectorAll(":scope > details").forEach((node) => { node.open = open; });
+    toggle.textContent = open ? "Collapse all" : "Expand all";
+  };
+  for (const section of part.sections) {
+    const changed = section.state !== "same";
+    box.append(el("details", { class: "item" + (changed ? " changed" : ""), open: changed },
+      el("summary", {},
+        section.label ? el("span", { class: "label", text: section.label }) : null,
+        el("span", { text: section.title }),
+        el("span", { class: "meta", text: `${section.chars.toLocaleString()} chars` }),
+        section.vars.map((name) => el("span", { class: "var", text: name })),
+        changed ? el("span", { class: "chip edit", text: section.state }) : null),
+      el("div", {}, el("pre", { class: "text", text: section.text }),
+        section.diff.length ? diffView(section.diff) : null)));
+  }
+  for (const removed of part.removed) {
+    box.append(el("details", { class: "item changed" },
+      el("summary", {}, el("span", { text: removed.title }), el("span", { class: "chip bad", text: "removed" })),
+      el("div", {}, el("pre", { class: "text", text: removed.text }))));
+  }
+  return [el("h3", {}, title, el("span", { class: "meta", text: `${part.chars.toLocaleString()} chars` }),
+    el("span", { class: "toolbar" }, toggle)), box];
+}
+
+function variablesPart(stage) {
+  if (!stage.variables.length) return el("p", { class: "muted", text: "This stage has no variables." });
+  const used = {};
+  for (const part of [stage.system, stage.instruction]) {
+    for (const section of part.sections) {
+      for (const name of section.vars) (used[name] ||= []).push(section.label || "intro");
+    }
+  }
+  return [el("p", { class: "muted", text: "Write {{ name }} in a prompt. Values arrive as compact JSON with sorted keys." }),
+    stage.variables.map((variable) => el("details", { class: "item" },
+      el("summary", {},
+        el("code", { text: `{{ ${variable.name} }}` }),
+        el("span", { class: "meta", text: variable.schema ? typeText(variable.schema, variable.schema) : variable.data_type }),
+        used[variable.name] ? used[variable.name].map((label) => el("span", { class: "var", text: label }))
+          : el("span", { class: "chip", text: "not used" })),
+      el("div", {},
+        el("p", { text: variable.description }),
+        variable.schema ? el("div", {}, el("b", { text: "Structure" }), schemaTree(variable.schema, variable.schema)) : null,
+        el("p", { class: "meta", text: "Resolver: " + variable.resolver_key }),
+        el("details", { class: "item" }, el("summary", {}, el("span", { text: "Example value" })),
+          el("div", {}, el("pre", { class: "text", text: JSON.stringify(variable.example, null, 2) }))))))];
+}
+
+function toolsPart(stage) {
+  if (!stage.tools.length) return el("p", { class: "muted", text: "This stage has no tools: its evidence is all in the prompt." });
+  return stage.tools.map((tool) => el("details", { class: "item" },
+    el("summary", {}, el("code", { text: tool.name })),
+    el("div", {}, el("p", { text: tool.description }), el("b", { text: "Input" }),
+      schemaTree(tool.input_schema, tool.input_schema) || el("p", { class: "muted", text: "No input." }))));
+}
+
+function testsPart(stage) {
+  if (!stage.testable) return el("p", { class: "muted", text: "Only one_shot stages can be tested: tool stages need live tool results." });
+  return [
+    stage.fixtures.length ? el("div", { class: "card" }, el("table", {},
+      el("tr", {}, ["Fixture", "What it tests", "Expected", "Forbidden"].map((t) => el("th", { text: t }))),
+      stage.fixtures.map((fixture) => el("tr", {},
+        el("td", {}, el("code", { text: fixture.name }),
+          fixture.problems.length ? el("div", { class: "problem", text: fixture.problems.join("; ") }) : null),
+        el("td", { text: fixture.description }),
+        el("td", { class: "num", text: fixture.expected }), el("td", { class: "num", text: fixture.forbidden })))))
+      : el("p", { class: "muted", text: "No fixtures yet: see the How to work tab." }),
+    el("h3", { text: "Scoreboard" }),
+    stage.eval_log ? el("pre", { class: "text card", text: stage.eval_log })
+      : el("p", { class: "muted", text: "No test runs yet." })];
+}
+
+const TABS = ["prompt", "variables", "tools", "tests", "guide"];
+function showStage(stage, tab) {
+  const counts = { variables: stage.variables.length, tools: stage.tools.length,
+    tests: stage.testable ? stage.fixtures.length : null };
+  const names = { prompt: "Prompt", variables: "Variables", tools: "Tools", tests: "Tests", guide: "How to work" };
+  const body = {
+    prompt: () => [promptPart("System prompt", stage.system), promptPart("Instruction prompt", stage.instruction)],
+    variables: () => variablesPart(stage),
+    tools: () => toolsPart(stage),
+    tests: () => testsPart(stage),
+    guide: () => guideSteps(stage),
+  }[tab]();
+  return el("div", { class: "page" },
+    el("div", { class: "card head" },
+      el("h1", { text: stage.id }),
+      el("div", {},
+        el("span", { class: "chip", text: "workflow " + stage.workflow }),
+        el("span", { class: "chip", text: "mode " + stage.mode }),
+        el("span", { class: "chip", text: "stage " + stage.stage }),
+        stateChip(stage.state)),
+      stage.problems.map((problem) => el("div", { class: "problem", text: problem }))),
+    el("div", { class: "tabs", role: "tablist" }, TABS.map((name) => el("button", {
+      role: "tab", type: "button", "aria-selected": String(name === tab),
+      onclick: () => { location.hash = `${stage.id}/${name}`; } },
+      names[name], counts[name] != null ? el("span", { class: "count", text: String(counts[name]) }) : null))),
+    body);
+}
+
+function route() {
+  const [id, tab] = decodeURIComponent(location.hash.slice(1)).split("/");
+  const stage = data.stages.find((candidate) => candidate.id === id);
+  nav(stage ? stage.id : id === "guide" ? "guide" : "");
+  const main = document.getElementById("main");
+  main.replaceChildren(stage ? showStage(stage, TABS.includes(tab) ? tab : "prompt")
+    : id === "guide" ? guidePage() : overview());
+  main.scrollTop = 0;
+}
+window.addEventListener("hashchange", route);
+route();
+</script>
+</body>
+</html>

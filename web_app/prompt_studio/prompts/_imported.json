@@ -1,0 +1,21 @@
+{
+  "metadata_enrichment_object.one_shot.candidate_authoring": "9dac3a43ca8b6ab909d7d2c454cd0603bbd330f929c2867737ced505cf397291",
+  "metadata_enrichment_attribute.one_shot.candidate_authoring": "5124eb0fc71789879ab777c072dec2a5d0e5f6f982ee056355c65b08638e4ec6",
+  "analysis.one_shot.relationship_inference": "19670f825d38ff3ccc0e6b704f160c1cf475a8bf0ec7e803448c400cc2864a50",
+  "analysis.tool_assisted.relationship_inference": "814b8cb129f0464fd123354555e28615575fc3b08ae215ac23fc7ac91bdc172d",
+  "analysis.one_shot.per_table_authoring": "5f26c7badb4ec83df7263b2cc9237f784201c2886247cb4a8dc72bf3ae6fe52e",
+  "subject_area.one_shot.candidate_authoring": "ada876ae3eae46945b87c7e1ff73e441397435c4246b73b1e4a2d135ecde2481",
+  "subject_area.tool_assisted.candidate_authoring": "71456b1f37a106fa604c26b8cd01d6fb867ea76cdfca78a1eece4e6d2083d107",
+  "logical.one_shot.build_authoring": "12a2f71cb354ffaf6d96a0f04736b27c451d34ee5ba0b93b0dd40aca3b8a9f9c",
+  "logical.tool_assisted.build_authoring": "2474697031bda4c19c72d47e943e9b3c512555243051ab90378a960078163193",
+  "logical.one_shot.optimize_authoring": "f41ad2eb3a5adfe79773ee3198ffb39b8da653bc5cb951f04df53b9679433558",
+  "logical.tool_assisted.optimize_authoring": "539f5df8ee6831fd8ddb5b3bd1c523a8f560cf59f3c7002a581e105be478600b",
+  "dimensional.one_shot.build_authoring": "0b814dbae9eb46cc87839c32b781fd447138244d098736dd2b59a487e1991d72",
+  "dimensional.tool_assisted.build_authoring": "a5ca23b0f9add2168cb2d31117203659021da2022a6b27cd4f93ebff11473bc5",
+  "dimensional.one_shot.optimize_authoring": "fff6f4524ebfd6fee1c3eff883bf3b75a1c7e71cbbe602b21e8a1df997f1ceee",
+  "dimensional.tool_assisted.optimize_authoring": "46fc8e54f6f1a7b5f3ff99a6b0f7b2e73dc8d2cf215d5db829dd7b995a43d766",
+  "mapping.one_shot.mapping_authoring": "be3152fa8c6a37f27398e50295255475b14478278c0b1bd560882b5f917c6dd5",
+  "mapping.tool_assisted.mapping_authoring": "187ec4ebd8db6f14abf8df52fb4a974b0b1d2678880c2b2f7c036cac545dac4e",
+  "code_generation.common.sql_generation": "160878d6164e347d09762a7d009c1a323bad564cd9ff8fdc7211a4cae0e1f613",
+  "validation.common.validation_generation": "dd16987d3ec550b28716b9ab23bad43c3ee3a45acbfdc84191034723a4d0490f"
+}

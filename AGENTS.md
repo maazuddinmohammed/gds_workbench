@@ -98,6 +98,9 @@ accessibility, and visual rules.
   `tests/atlas/test_stage_contract.py --write`; never edit it by hand.
 - Frontend: `web_app/frontend/src/features/` owns screens; reuse matching
   components from `shared/ui.tsx` and formatters from `shared/presentation.ts`.
+- Prompt Studio: `web_app/prompt_studio/` is where default prompts are edited by
+  numbered section, tested with agents and built into seed 05. Read its `README.md`
+  before changing a default prompt. It is a local tool and is not deployed.
 - SQL: `database/00_preflight.sql`, ordered install files `01`–`19`, then
   `20_verify_install.sql`. Never turn this fresh-install sequence into migrations.
 - Packaging: `deployment/databricks_ui/build_uploads.py`,

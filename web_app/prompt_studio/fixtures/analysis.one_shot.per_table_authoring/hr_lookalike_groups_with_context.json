@@ -1,0 +1,491 @@
+{
+  "description": "Same as hr_lookalike_groups, plus one Source Information record that names the per-prefix employeeid links.",
+  "values": {
+    "source_context": [],
+    "gds_context": [
+      {
+        "tenant_code": "GDS",
+        "system_code": "WAREHOUSE",
+        "connection_code": "MAIN",
+        "zone_code": "bronze",
+        "zone_description": "Stores ingested source data."
+      }
+    ],
+    "context_records": [
+      {
+        "context_record_id": "6f1c1b7e-2c4a-4f0e-9a51-3d2b8c7e4a10",
+        "context_group_name": "Employee keys",
+        "context_type_name": "Source Information",
+        "context_text": "Tables come in groups by name prefix: cds_ and cym_. Each group is a separate source. In each group, the <prefix>_datalake_primary table holds the employees, identified by employeeid. In every other table of the same group, employeeid refers to employeeid in that group's <prefix>_datalake_primary table. Never link tables of different groups. Bronze keeps several loads (gds_batch_id), so employeeid repeats across loads; this does not change these references.",
+        "source_reference": null
+      }
+    ],
+    "key_directory": [
+      {
+        "table": "t1",
+        "tenant_code": "GDS",
+        "system_code": "WAREHOUSE",
+        "connection_code": "MAIN",
+        "object_schema": "bronze_hr",
+        "object_name": "cds_datalake_primary",
+        "object_description": "CDS HR extract: one row per employee per load.",
+        "zone_code": "bronze",
+        "source_systems": [],
+        "key_columns": [
+          {
+            "attribute_name": "employeeid",
+            "attribute_description": "Identifier of the employee in CDS.",
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": "STRING",
+            "registered_is_natural_key": false,
+            "is_surrogate_key": false,
+            "is_natural_key": true,
+            "is_primary_key": null,
+            "profile": {
+              "row_scope": "all_rows",
+              "row_count": 1200,
+              "non_null_count": 1200,
+              "null_count": 0,
+              "distinct_count": 400,
+              "min_data_length": 8,
+              "max_data_length": 8
+            }
+          }
+        ],
+        "other_columns": []
+      },
+      {
+        "table": "t2",
+        "tenant_code": "GDS",
+        "system_code": "WAREHOUSE",
+        "connection_code": "MAIN",
+        "object_schema": "bronze_hr",
+        "object_name": "cds_datalake_contacts",
+        "object_description": "CDS emergency contacts: one row per contact per load.",
+        "zone_code": "bronze",
+        "source_systems": [],
+        "key_columns": [],
+        "other_columns": [
+          {
+            "attribute_name": "employeeid",
+            "attribute_description": "Employee this emergency contact belongs to.",
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": "STRING"
+          },
+          {
+            "attribute_name": "othercontactname",
+            "attribute_description": "Name of the emergency contact.",
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": "STRING"
+          },
+          {
+            "attribute_name": "othercontactpostcode",
+            "attribute_description": "Postcode of the emergency contact.",
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": "STRING"
+          },
+          {
+            "attribute_name": "gds_batch_id",
+            "attribute_description": "Load batch that delivered the row.",
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": "STRING"
+          }
+        ]
+      },
+      {
+        "table": "t3",
+        "tenant_code": "GDS",
+        "system_code": "WAREHOUSE",
+        "connection_code": "MAIN",
+        "object_schema": "bronze_hr",
+        "object_name": "cds_datalake_right_to_work",
+        "object_description": "CDS right-to-work documents: one row per document per load.",
+        "zone_code": "bronze",
+        "source_systems": [],
+        "key_columns": [],
+        "other_columns": [
+          {
+            "attribute_name": "employeeid",
+            "attribute_description": "Employee the right-to-work document belongs to.",
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": "STRING"
+          },
+          {
+            "attribute_name": "righttoworkdocid",
+            "attribute_description": "Right-to-work document identifier.",
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": "STRING"
+          },
+          {
+            "attribute_name": "gds_batch_id",
+            "attribute_description": "Load batch that delivered the row.",
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": "STRING"
+          }
+        ]
+      },
+      {
+        "table": "t4",
+        "tenant_code": "GDS",
+        "system_code": "WAREHOUSE",
+        "connection_code": "MAIN",
+        "object_schema": "bronze_hr",
+        "object_name": "cym_datalake_primary",
+        "object_description": "CYM HR extract: one row per employee per load.",
+        "zone_code": "bronze",
+        "source_systems": [],
+        "key_columns": [
+          {
+            "attribute_name": "employeeid",
+            "attribute_description": "Identifier of the employee in CYM.",
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": "STRING",
+            "registered_is_natural_key": false,
+            "is_surrogate_key": false,
+            "is_natural_key": true,
+            "is_primary_key": null,
+            "profile": {
+              "row_scope": "all_rows",
+              "row_count": 1200,
+              "non_null_count": 1200,
+              "null_count": 0,
+              "distinct_count": 400,
+              "min_data_length": 8,
+              "max_data_length": 8
+            }
+          }
+        ],
+        "other_columns": []
+      },
+      {
+        "table": "t5",
+        "tenant_code": "GDS",
+        "system_code": "WAREHOUSE",
+        "connection_code": "MAIN",
+        "object_schema": "bronze_hr",
+        "object_name": "cym_datalake_contacts",
+        "object_description": "CYM emergency contacts: one row per contact per load.",
+        "zone_code": "bronze",
+        "source_systems": [],
+        "key_columns": [],
+        "other_columns": [
+          {
+            "attribute_name": "employeeid",
+            "attribute_description": "Employee this emergency contact belongs to.",
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": "STRING"
+          },
+          {
+            "attribute_name": "othercontactname",
+            "attribute_description": "Name of the emergency contact.",
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": "STRING"
+          },
+          {
+            "attribute_name": "othercontactpostcode",
+            "attribute_description": "Postcode of the emergency contact.",
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": "STRING"
+          },
+          {
+            "attribute_name": "gds_batch_id",
+            "attribute_description": "Load batch that delivered the row.",
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": "STRING"
+          }
+        ]
+      },
+      {
+        "table": "t6",
+        "tenant_code": "GDS",
+        "system_code": "WAREHOUSE",
+        "connection_code": "MAIN",
+        "object_schema": "bronze_hr",
+        "object_name": "cym_datalake_right_to_work",
+        "object_description": "CYM right-to-work documents: one row per document per load.",
+        "zone_code": "bronze",
+        "source_systems": [],
+        "key_columns": [],
+        "other_columns": [
+          {
+            "attribute_name": "employeeid",
+            "attribute_description": "Employee the right-to-work document belongs to.",
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": "STRING"
+          },
+          {
+            "attribute_name": "righttoworkdocid",
+            "attribute_description": "Right-to-work document identifier.",
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": "STRING"
+          },
+          {
+            "attribute_name": "gds_batch_id",
+            "attribute_description": "Load batch that delivered the row.",
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": "STRING"
+          }
+        ]
+      }
+    ],
+    "focus_table": {
+      "table": "t2",
+      "tenant_code": "GDS",
+      "system_code": "WAREHOUSE",
+      "connection_code": "MAIN",
+      "object_schema": "bronze_hr",
+      "object_name": "cds_datalake_contacts",
+      "object_description": "CDS emergency contacts: one row per contact per load.",
+      "zone_code": "bronze",
+      "source_systems": [],
+      "attributes": [
+        {
+          "attribute_name": "employeeid",
+          "attribute_description": "Employee this emergency contact belongs to.",
+          "attribute_data_type": "STRING",
+          "attribute_inferred_data_type": "STRING",
+          "attribute_nullability": true,
+          "is_natural_key": null,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": {
+            "profiled_at": "2026-09-07T14:30:00Z",
+            "row_scope": "all_rows",
+            "batch_attribute_name": null,
+            "batch_id": null,
+            "row_count": 900,
+            "non_null_count": 900,
+            "null_count": 0,
+            "blank_count": 0,
+            "distinct_count": 350,
+            "min_data_length": 8,
+            "max_data_length": 8,
+            "avg_data_length": 8,
+            "percent_populated": 100,
+            "percent_duplicates": 61.1111,
+            "percent_null": 0,
+            "percent_blank": 0,
+            "percent_distinct": 38.8889
+          },
+          "registered_is_natural_key": false,
+          "is_primary_key": null,
+          "is_nullable": null,
+          "is_pii": null
+        },
+        {
+          "attribute_name": "othercontactname",
+          "attribute_description": "Name of the emergency contact.",
+          "attribute_data_type": "STRING",
+          "attribute_inferred_data_type": "STRING",
+          "attribute_nullability": true,
+          "is_natural_key": null,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": {
+            "profiled_at": "2026-09-07T14:30:00Z",
+            "row_scope": "all_rows",
+            "batch_attribute_name": null,
+            "batch_id": null,
+            "row_count": 900,
+            "non_null_count": 900,
+            "null_count": 0,
+            "blank_count": 0,
+            "distinct_count": 820,
+            "min_data_length": 10,
+            "max_data_length": 10,
+            "avg_data_length": 10,
+            "percent_populated": 100,
+            "percent_duplicates": 8.8889,
+            "percent_null": 0,
+            "percent_blank": 0,
+            "percent_distinct": 91.1111
+          },
+          "registered_is_natural_key": false,
+          "is_primary_key": null,
+          "is_nullable": null,
+          "is_pii": null
+        },
+        {
+          "attribute_name": "othercontactpostcode",
+          "attribute_description": "Postcode of the emergency contact.",
+          "attribute_data_type": "STRING",
+          "attribute_inferred_data_type": "STRING",
+          "attribute_nullability": true,
+          "is_natural_key": null,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": {
+            "profiled_at": "2026-09-07T14:30:00Z",
+            "row_scope": "all_rows",
+            "batch_attribute_name": null,
+            "batch_id": null,
+            "row_count": 900,
+            "non_null_count": 900,
+            "null_count": 0,
+            "blank_count": 0,
+            "distinct_count": 640,
+            "min_data_length": 7,
+            "max_data_length": 7,
+            "avg_data_length": 7,
+            "percent_populated": 100,
+            "percent_duplicates": 28.8889,
+            "percent_null": 0,
+            "percent_blank": 0,
+            "percent_distinct": 71.1111
+          },
+          "registered_is_natural_key": false,
+          "is_primary_key": null,
+          "is_nullable": null,
+          "is_pii": null
+        },
+        {
+          "attribute_name": "gds_batch_id",
+          "attribute_description": "Load batch that delivered the row.",
+          "attribute_data_type": "STRING",
+          "attribute_inferred_data_type": "STRING",
+          "attribute_nullability": true,
+          "is_natural_key": null,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": {
+            "profiled_at": "2026-09-07T14:30:00Z",
+            "row_scope": "all_rows",
+            "batch_attribute_name": null,
+            "batch_id": null,
+            "row_count": 900,
+            "non_null_count": 900,
+            "null_count": 0,
+            "blank_count": 0,
+            "distinct_count": 3,
+            "min_data_length": 12,
+            "max_data_length": 12,
+            "avg_data_length": 12,
+            "percent_populated": 100,
+            "percent_duplicates": 99.6667,
+            "percent_null": 0,
+            "percent_blank": 0,
+            "percent_distinct": 0.3333
+          },
+          "registered_is_natural_key": false,
+          "is_primary_key": null,
+          "is_nullable": null,
+          "is_pii": null
+        }
+      ]
+    },
+    "ingestion_mapping": [],
+    "saved_relationships": []
+  },
+  "output_schema": {
+    "$defs": {
+      "AnalysisTableRelationship": {
+        "additionalProperties": false,
+        "description": "One per-table answer link: it starts at a focus-table column and cites `tN.column`.",
+        "properties": {
+          "from_attribute_name": {
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "From Attribute Name",
+            "type": "string"
+          },
+          "to": {
+            "maxLength": 430,
+            "minLength": 4,
+            "pattern": "^t[1-9][0-9]*\\.\\S",
+            "title": "To",
+            "type": "string"
+          },
+          "relationship_kind": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Relationship Kind",
+            "type": "string"
+          },
+          "inferred_cardinality": {
+            "anyOf": [
+              {
+                "enum": [
+                  "one_to_one",
+                  "one_to_many",
+                  "many_to_one",
+                  "many_to_many"
+                ],
+                "type": "string"
+              },
+              {
+                "const": "unknown",
+                "type": "string"
+              }
+            ],
+            "title": "Inferred Cardinality"
+          }
+        },
+        "required": [
+          "from_attribute_name",
+          "to",
+          "relationship_kind",
+          "inferred_cardinality"
+        ],
+        "title": "AnalysisTableRelationship",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "relationships": {
+        "items": {
+          "$ref": "#/$defs/AnalysisTableRelationship"
+        },
+        "maxItems": 2000,
+        "title": "Relationships",
+        "type": "array"
+      }
+    },
+    "required": [
+      "relationships"
+    ],
+    "title": "_AnalysisTableCandidate",
+    "type": "object"
+  },
+  "expect": {
+    "list": "relationships",
+    "key": [
+      "from_attribute_name",
+      "to"
+    ],
+    "expected": [
+      {
+        "from_attribute_name": "employeeid",
+        "to": "t1.employeeid"
+      }
+    ],
+    "forbidden": [
+      {
+        "from_attribute_name": "employeeid",
+        "to": "t3.employeeid"
+      },
+      {
+        "from_attribute_name": "employeeid",
+        "to": "t4.employeeid"
+      },
+      {
+        "from_attribute_name": "employeeid",
+        "to": "t5.employeeid"
+      },
+      {
+        "from_attribute_name": "employeeid",
+        "to": "t6.employeeid"
+      },
+      {
+        "from_attribute_name": "othercontactpostcode",
+        "to": "t1.postcode"
+      }
+    ]
+  }
+}
