@@ -276,7 +276,7 @@ def test_gds_eligibility_uses_assigned_tenant_when_connection_owner_is_inactive(
     assert _required_bool(bronze, "is_project_input_eligible") is True
 
 
-def test_dimensional_mapping_sources_are_logical_entities_with_applied_mapping(
+def test_dimensional_mapping_sources_are_logical_entities_the_system_feeds(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
@@ -318,13 +318,8 @@ def test_dimensional_mapping_sources_are_logical_entities_with_applied_mapping(
             dimensional["dimensional_entity_id"],
             system["system_id"],
         )
-        assert (
-            connection.execute(
-                "SELECT * FROM workflow.list_mapping_source_objects(%s,%s,'dimensional_entity',%s)",
-                parameters,
-            ).fetchall()
-            == []
-        )
+        query = "SELECT * FROM workflow.list_mapping_source_objects(%s,%s,'dimensional_entity',%s)"
+        # Applied Mapping alone does not show that this System feeds the Logical Entity.
         mapping = _required_row(
             connection.execute(
                 "INSERT INTO workflow.mapping_object (project_id,modeled_entity_type,logical_entity_id,source_system_id,mapping_transformation_document) "
@@ -336,26 +331,47 @@ def test_dimensional_mapping_sources_are_logical_entities_with_applied_mapping(
                 ),
             ).fetchone()
         )
-        sources = connection.execute(
-            "SELECT * FROM workflow.list_mapping_source_objects(%s,%s,'dimensional_entity',%s)",
-            parameters,
-        ).fetchall()
+        assert connection.execute(query, parameters).fetchall() == []
+        source = _required_row(
+            connection.execute(
+                "SELECT object.object_id FROM core.object AS object "
+                "JOIN core.connection AS connection USING (connection_id) "
+                "WHERE connection.system_id = %s AND object.object_schema = 'source_demo' "
+                "AND object.object_name = 'customer'",
+                (system["system_id"],),
+            ).fetchone()
+        )
+        connection.execute(
+            "INSERT INTO project.project_input_scope (project_id, object_id) VALUES (%s, %s)",
+            (project["project_id"], source["object_id"]),
+        )
+        support = _required_row(
+            connection.execute(
+                "INSERT INTO workflow.logical_entity_source_mapping (project_id,"
+                "logical_entity_id,source_object_id,logical_entity_source_mapping_rationale) "
+                "VALUES (%s,%s,%s,'Source customers.') RETURNING logical_entity_source_mapping_id",
+                (project["project_id"], logical["logical_entity_id"], source["object_id"]),
+            ).fetchone()
+        )
+        sources = connection.execute(query, parameters).fetchall()
         assert (
             len(sources) == 1
             and sources[0]["source_logical_entity_id"] == logical["logical_entity_id"]
         )
         assert sources[0]["source_object_id"] is None
+        # The Logical Entity stays an input before or without its own Mapping.
         connection.execute(
             "UPDATE workflow.mapping_object SET object_mapping_status = 'inactive' WHERE mapping_object_id = %s",
             (mapping["mapping_object_id"],),
         )
-        assert (
-            connection.execute(
-                "SELECT * FROM workflow.list_mapping_source_objects(%s,%s,'dimensional_entity',%s)",
-                parameters,
-            ).fetchall()
-            == []
+        assert len(connection.execute(query, parameters).fetchall()) == 1
+        connection.execute(
+            "UPDATE workflow.logical_entity_source_mapping "
+            "SET logical_entity_source_mapping_is_active = FALSE "
+            "WHERE logical_entity_source_mapping_id = %s",
+            (support["logical_entity_source_mapping_id"],),
         )
+        assert connection.execute(query, parameters).fetchall() == []
 
 
 def test_fresh_project_can_add_unscoped_inputs_without_registered_targets(

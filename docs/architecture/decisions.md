@@ -271,8 +271,9 @@ draft.
 Mapping operates on frozen Entity/System pairs (branches). `workflow.list_mapping_branches`
 is the one rule for generation targets, Run creation and manual Mapping: a Logical
 Entity's branches are the Systems of its active source tables (Bronze resolves to its
-originating System through ingestion lineage); a Dimensional Entity's are the Systems
-where a supporting Logical Entity has complete applied Mapping. Every Input Scope
+originating System through ingestion lineage), even one that supplies no Attribute; a
+Dimensional Entity's are the Systems of the Logical Entities it is built from, whether or
+not their Mapping exists yet. Every Input Scope
 System is no longer paired with every Entity, and Context never adds a branch.
 Every Project Change Set Apply (Atlas, web review and Workflow Runs) enforces it too:
 a pair the Change Set makes active (new or reactivated) must be a branch, judged after
@@ -286,7 +287,8 @@ empty result. Final validation covers the whole future Project before Apply.
 
 Code may use partial applied Mapping with explicit typed-null/zero-row placeholders
 and warnings. Missing rules cannot justify invented joins or business logic.
-Validation and executable modeled-source lookups still require complete Mapping.
+Validation and executable modeled-source lookups still require complete Mapping; a
+Logical input of a Dimensional pair only needs the pair's System to feed it.
 Input-currentness digests describe consistency, not production execution readiness.
 An Entity supported only by Context has no branch and therefore no Mapping; there
 is no default Mapping System.

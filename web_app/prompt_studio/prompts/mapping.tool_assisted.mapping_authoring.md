@@ -154,7 +154,7 @@ Keep it simple and exact:
 ## [S8] History and Dimensional targets
 
 - History settings do not change your documents; the load applies them. They matter only for lookups into a type_2 parent (Foreign keys and lookups). Invent no validity or current-row columns, and no source history.
-- Gold: read the applied Logical Mappings first and use the Silver columns they produce; never replay bronze preparation or apply an upstream filter twice. An applied Mapping states intended behavior, not proof of a successful load.
+- Gold: read the applied Logical Mappings first and use the Silver columns they produce; never replay bronze preparation or apply an upstream filter twice. An applied Mapping states intended behavior, not proof of a successful load. When a Logical input has no applied Mapping for this System yet, map from its Silver Attributes as defined.
 - Gold: read row grain from `grain`, and units and aggregation limits from Attribute definitions. Aggregate only to reach an evidenced coarser grain, grouping by every grain column. Foreign keys are Mapping-owned lookups; only the own generated key and the framework columns are filled outside Mapping.
 
 ## [S9] Partial output and preservation

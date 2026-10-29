@@ -147,7 +147,7 @@ function Get-NextForArea([string]$Root, $State, [string]$Area, $Owner, [bool]$Ex
             }
             'mapping_branch_unavailable' {
                 return New-NextResult 'error_recovery' $Area $Owner 'A Mapping would map an Entity from a System that is not one of its Mapping branches.' ([ordered]@{kind = 'author';
-                    instructions = "The failed call's message names the mapping_object record. Remove it and its mapping_attribute records, or apply the Entity's source change first: map only from the Systems the Entity's sources come from (Dimensional: Systems where a supporting Logical Entity has complete Mapping). Then validate, review and accept again."}) @('Run next again.') $facts
+                    instructions = "The failed call's message names the mapping_object record. Remove it and its mapping_attribute records, or apply the Entity's source change first: map only from the Systems the Entity's sources come from (Dimensional: the Systems of the Logical Entities it is built from). Then validate, review and accept again."}) @('Run next again.') $facts
             }
             'draft_revision_conflict' {
                 if ($null -eq $changeSet) { $stop = 'The server draft changed or ended outside this operation.'; break }

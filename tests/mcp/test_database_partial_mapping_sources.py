@@ -16,11 +16,12 @@ if TYPE_CHECKING:
     from tests.mcp.conftest import DisposablePostgres
 
 
+# Peer lookups repeat their parent's key expressions. A Dimensional pair's Logical inputs
+# instead follow lineage (test_dimensional_mapping_sources_are_logical_entities_the_system_feeds).
 @pytest.mark.parametrize(
     ("source_layer", "target_layer"),
     [
         ("logical", "logical"),
-        ("logical", "dimensional"),
         ("dimensional", "dimensional"),
     ],
 )
