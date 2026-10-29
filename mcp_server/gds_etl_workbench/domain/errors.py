@@ -132,8 +132,8 @@ class MappingBranchUnavailableError(WorkbenchError):
             message=(
                 f"mapping_object record {record_number} makes a Mapping active for a System "
                 "that is not one of its Entity's Mapping branches. A Logical Entity maps only "
-                "from its source tables' Systems; a Dimensional Entity only from Systems where "
-                "a supporting Logical Entity has complete Mapping."
+                "from its source tables' Systems; a Dimensional Entity only from the Systems "
+                "of the Logical Entities it is built from."
             ),
         )
 

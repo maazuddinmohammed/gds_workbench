@@ -130,64 +130,48 @@ $list_project_input_sources$;
 REVOKE ALL ON FUNCTION workflow.list_project_input_sources(BIGINT) FROM PUBLIC;
 
 -- Entity/System pairs Mapping can author (branches). A Logical Entity maps from the
--- Systems of its own source tables, with Bronze resolved to its origin System through
--- ingestion lineage. A Dimensional Entity maps from the Systems where a supporting Logical
--- Entity has complete applied Mapping. Context never adds a branch; it only informs the
--- transformation inside one.
+-- Systems of its own source tables, even one that supplies no Attribute, with Bronze
+-- resolved to its origin System through ingestion lineage. A Dimensional Entity maps from
+-- every System of the Logical Entities it is built from; it does not wait for their
+-- Mapping. Context never adds a branch; it only informs the transformation inside one.
 CREATE FUNCTION workflow.list_mapping_branches(
     p_project_id BIGINT, p_modeled_entity_type VARCHAR(30)
 )
 RETURNS TABLE (modeled_entity_id BIGINT, source_system_id BIGINT)
 LANGUAGE SQL STABLE SECURITY INVOKER SET search_path = pg_catalog
 AS $list_mapping_branches$
-    SELECT DISTINCT entity.logical_entity_id, input.source_system_id
-      FROM workflow.logical_entity AS entity
-      JOIN workflow.logical_entity_source_mapping AS support
-        ON support.project_id = entity.project_id
-       AND support.logical_entity_id = entity.logical_entity_id
-       AND support.logical_entity_source_mapping_is_active
-      JOIN workflow.list_project_input_sources(p_project_id) AS input
-        ON input.object_id = support.source_object_id
+    WITH logical_branch AS (
+        SELECT DISTINCT entity.logical_entity_id, input.source_system_id
+          FROM workflow.logical_entity AS entity
+          JOIN workflow.logical_entity_source_mapping AS support
+            ON support.project_id = entity.project_id
+           AND support.logical_entity_id = entity.logical_entity_id
+           AND support.logical_entity_source_mapping_is_active
+          JOIN workflow.list_project_input_sources(p_project_id) AS input
+            ON input.object_id = support.source_object_id
+         WHERE entity.project_id = p_project_id AND entity.logical_entity_is_active
+    )
+    SELECT branch.logical_entity_id, branch.source_system_id
+      FROM logical_branch AS branch
      WHERE p_modeled_entity_type = 'logical_entity'
-       AND entity.project_id = p_project_id AND entity.logical_entity_is_active
     UNION
-    SELECT entity.dimensional_entity_id, mapping.source_system_id
+    SELECT entity.dimensional_entity_id, branch.source_system_id
       FROM workflow.dimensional_entity AS entity
       JOIN workflow.dimensional_entity_source_mapping AS support
         ON support.project_id = entity.project_id
        AND support.dimensional_entity_id = entity.dimensional_entity_id
        AND support.dimensional_entity_source_mapping_is_active
-      JOIN workflow.logical_entity AS source
-        ON source.project_id = entity.project_id
-       AND source.logical_entity_id = support.source_logical_entity_id
-       AND source.logical_entity_is_active
-      JOIN workflow.mapping_object AS mapping
-        ON mapping.project_id = entity.project_id AND mapping.modeled_entity_type = 'logical_entity'
-       AND mapping.logical_entity_id = source.logical_entity_id
-       AND mapping.object_mapping_status = 'active'
-       AND mapping.mapping_transformation_document IS NOT NULL
-      JOIN core.system AS system ON system.system_id = mapping.source_system_id AND system.is_active
+      JOIN logical_branch AS branch
+        ON branch.logical_entity_id = support.source_logical_entity_id
      WHERE p_modeled_entity_type = 'dimensional_entity'
-       AND entity.project_id = p_project_id AND entity.dimensional_entity_is_active
-       AND NOT EXISTS (
-           SELECT 1 FROM workflow.logical_attribute AS attribute
-            WHERE attribute.project_id = entity.project_id
-              AND attribute.logical_entity_id = source.logical_entity_id
-              AND attribute.logical_attribute_is_active
-              AND NOT EXISTS (
-                  SELECT 1 FROM workflow.mapping_attribute AS mapped
-                   WHERE mapped.mapping_object_id = mapping.mapping_object_id
-                     AND mapped.logical_attribute_id = attribute.logical_attribute_id
-                     AND mapped.attribute_mapping_status = 'active'
-                     AND mapped.attribute_mapping_transformation_document IS NOT NULL
-              )
-       );
+       AND entity.project_id = p_project_id AND entity.dimensional_entity_is_active;
 $list_mapping_branches$;
 REVOKE ALL ON FUNCTION workflow.list_mapping_branches(BIGINT, VARCHAR) FROM PUBLIC;
 
 -- Source evidence for one branch. Logical inputs include physical Objects and peer Logical
--- lookups; Dimensional inputs are Logical Entities. Modeled sources require an applied
--- Mapping for the selected source System.
+-- lookups; Dimensional inputs are Logical Entities. A Dimensional input is any Logical
+-- Entity the selected source System feeds, mapped yet or not; a peer lookup requires its
+-- complete applied Mapping for that System, whose key expressions the lookup repeats.
 CREATE FUNCTION workflow.list_mapping_source_objects(
     p_project_id BIGINT, p_target_entity_id BIGINT,
     p_modeled_entity_type VARCHAR(30), p_source_system_id BIGINT
@@ -205,6 +189,11 @@ AS $list_mapping_source_objects$
          WHERE entity.project_id = p_project_id
            AND entity.modeled_entity_type = p_modeled_entity_type
            AND entity.modeled_entity_id = p_target_entity_id AND entity.is_active
+    ), fed_logical AS MATERIALIZED (
+        SELECT branch.modeled_entity_id AS logical_entity_id
+          FROM workflow.list_mapping_branches(p_project_id, 'logical_entity') AS branch
+         WHERE p_modeled_entity_type = 'dimensional_entity'
+           AND branch.source_system_id = p_source_system_id
     )
     SELECT support.logical_entity_source_mapping_id, target.modeled_entity_id,
            CASE WHEN support.logical_entity_source_mapping_id IS NULL THEN 'candidate' ELSE 'support' END,
@@ -241,7 +230,9 @@ AS $list_mapping_source_objects$
        AND support.project_id = p_project_id AND support.dimensional_entity_id = target.modeled_entity_id
        AND support.source_logical_entity_id = source.logical_entity_id
        AND support.dimensional_entity_source_mapping_is_active
-     WHERE EXISTS (
+     WHERE CASE WHEN target.modeled_entity_type = 'dimensional_entity'
+                THEN source.logical_entity_id IN (SELECT logical_entity_id FROM fed_logical)
+                ELSE EXISTS (
          SELECT 1 FROM workflow.mapping_object AS mapping
          JOIN core.system AS system ON system.system_id = mapping.source_system_id AND system.is_active
           WHERE mapping.project_id = p_project_id AND mapping.logical_entity_id = source.logical_entity_id
@@ -260,7 +251,7 @@ AS $list_mapping_source_objects$
                           AND mapped.attribute_mapping_transformation_document IS NOT NULL
                    )
             )
-     )
+     ) END
     UNION ALL
     SELECT NULL::BIGINT, target.modeled_entity_id, 'lookup'::TEXT,
            'Available peer Dimensional lookup with applied Mapping for the selected source System.'::TEXT,

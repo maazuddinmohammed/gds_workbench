@@ -24,7 +24,7 @@ from gds_workbench_api.features.mapping.preparation_repository import (
 )
 from gds_etl_workbench.application.change_sets.project_apply import ProjectMaterializer
 from gds_etl_workbench.domain.errors import MappingBranchUnavailableError
-from gds_etl_workbench.domain.modeling_records import MappingAttributeRecord, MappingObjectRecord
+from gds_etl_workbench.domain.modeling_records import MappingObjectRecord
 from psycopg import sql
 
 from tests.mcp.conftest import DisposablePostgres
@@ -602,7 +602,7 @@ def test_logical_branches_follow_each_entitys_own_source_systems(
         }
 
 
-def test_dimensional_branches_need_complete_applied_logical_mapping(
+def test_dimensional_branches_are_the_systems_of_their_logical_sources(
     web_postgres_database: DisposablePostgres,
 ) -> None:
     scope = _seed_mapping_scope(web_postgres_database, create_run=False)
@@ -612,12 +612,65 @@ def test_dimensional_branches_need_complete_applied_logical_mapping(
         assert _branches(connection, project_id, "dimensional_entity") == {
             (dimensional_id, scope.source_system_id)
         }
+        # A System that feeds a Logical source stays a branch without its Logical Mapping.
         connection.execute(
-            "UPDATE workflow.mapping_attribute SET attribute_mapping_transformation_document = NULL "
+            "UPDATE workflow.mapping_object SET object_mapping_status = 'inactive' "
             "WHERE project_id = %s AND logical_entity_id = %s",
             (project_id, scope.logical_entity_id),
         )
-        assert _branches(connection, project_id, "dimensional_entity") == set()
+        assert _branches(connection, project_id, "dimensional_entity") == {
+            (dimensional_id, scope.source_system_id)
+        }
+        # Logical Entity A comes from the first System and B from BILLING; a Dimensional
+        # Entity built from both maps from both, before B has any Mapping.
+        billing_id, billing_object_id = _add_scope_source_table(connection, scope, "BILLING")
+        logical_b = _required_id(
+            connection.execute(
+                "INSERT INTO workflow.logical_entity (project_id, logical_entity_name, "
+                "logical_entity_definition, logical_entity_type, logical_entity_grain, "
+                "logical_entity_schema_name) VALUES (%s, 'invoice', 'One billing invoice.', "
+                "'transaction', 'One row per invoice.', 'silver') RETURNING logical_entity_id",
+                (project_id,),
+            ).fetchone(),
+            "logical_entity_id",
+        )
+        connection.execute(
+            "INSERT INTO workflow.logical_entity_source_mapping (project_id, logical_entity_id, "
+            "source_object_id, logical_entity_source_mapping_rationale) "
+            "VALUES (%s, %s, %s, 'Billing invoices.')",
+            (project_id, logical_b, billing_object_id),
+        )
+        assert _branches(connection, project_id, "dimensional_entity") == {
+            (dimensional_id, scope.source_system_id)
+        }
+        connection.execute(
+            "INSERT INTO workflow.dimensional_entity_source_mapping (project_id, "
+            "dimensional_entity_id, source_logical_entity_id, "
+            "dimensional_entity_source_mapping_rationale) VALUES (%s, %s, %s, 'Invoices.')",
+            (project_id, dimensional_id, logical_b),
+        )
+        assert _branches(connection, project_id, "dimensional_entity") == {
+            (dimensional_id, scope.source_system_id),
+            (dimensional_id, billing_id),
+        }
+        # The BILLING pair gets B as its Logical input although B has no Mapping yet.
+        inputs = connection.execute(
+            "SELECT source_logical_entity_id, role FROM workflow.list_mapping_source_objects("
+            "%s, %s, 'dimensional_entity', %s)",
+            (project_id, dimensional_id, billing_id),
+        ).fetchall()
+        assert [(row["source_logical_entity_id"], row["role"]) for row in inputs] == [
+            (logical_b, "support")
+        ]
+        connection.execute(
+            "UPDATE workflow.dimensional_entity_source_mapping "
+            "SET dimensional_entity_source_mapping_is_active = FALSE "
+            "WHERE project_id = %s AND source_logical_entity_id = %s",
+            (project_id, logical_b),
+        )
+        assert _branches(connection, project_id, "dimensional_entity") == {
+            (dimensional_id, scope.source_system_id)
+        }
 
 
 def _mapping_pair(
@@ -715,7 +768,7 @@ async def test_change_sets_make_mappings_active_only_for_branches(
     }
 
 
-async def test_change_set_gold_mapping_counts_its_own_logical_mapping(
+async def test_change_set_gold_mapping_follows_its_logical_sources_systems(
     web_postgres_database: DisposablePostgres,
 ) -> None:
     scope = _seed_mapping_scope(web_postgres_database, create_run=False)
@@ -725,34 +778,23 @@ async def test_change_set_gold_mapping_counts_its_own_logical_mapping(
             "SELECT system_code FROM core.system WHERE system_id = %s", (scope.source_system_id,)
         ).fetchone()
         assert system is not None
-        # The supporting Logical Mapping lacks its only Attribute rule.
+        billing_id, _ = _add_scope_source_table(connection, scope, "BILLING")
+        billing = connection.execute(
+            "SELECT system_code FROM core.system WHERE system_id = %s", (billing_id,)
+        ).fetchone()
+        assert billing is not None
+        # The supporting Logical Mapping lacks its only Attribute rule; Gold needs none.
         connection.execute(
             "UPDATE workflow.mapping_attribute SET attribute_mapping_transformation_document = NULL "
             "WHERE project_id = %s AND logical_entity_id = %s",
             (project_id, scope.logical_entity_id),
         )
-    gold = _mapping_pair("dimensional_entity", "gold", "Customer", system["system_code"])
-    rule = MappingAttributeRecord.model_validate(
-        {
-            "modeled_entity_type": "logical_entity",
-            "modeled_entity_schema_name": "silver",
-            "modeled_entity_name": "order",
-            "modeled_attribute_name": "customer_id",
-            "source_system_code": system["system_code"],
-            "output_template_code": None,
-            "attribute_mapping_transformation_document": {"transformation": "customer_id"},
-            "attribute_mapping_status": "active",
-            "attribute_mapping_is_locked": False,
-        }
-    )
+    # BILLING feeds none of the Dimensional Entity's Logical sources.
+    outside = _mapping_pair("dimensional_entity", "gold", "Customer", billing["system_code"])
     with pytest.raises(MappingBranchUnavailableError, match="mapping_object record 1"):
-        await _apply_change_set(web_postgres_database, project_id, {"mapping_object": (gold,)})
-    # The same Change Set completes the Logical Mapping, so the Gold branch exists.
-    await _apply_change_set(
-        web_postgres_database,
-        project_id,
-        {"mapping_object": (gold,), "mapping_attribute": (rule,)},
-    )
+        await _apply_change_set(web_postgres_database, project_id, {"mapping_object": (outside,)})
+    gold = _mapping_pair("dimensional_entity", "gold", "Customer", system["system_code"])
+    await _apply_change_set(web_postgres_database, project_id, {"mapping_object": (gold,)})
     with web_postgres_database.connect_owner() as connection:
         assert _branches(connection, project_id, "dimensional_entity") == {
             (scope.plan.pair.modeled_entity_id, scope.source_system_id)
