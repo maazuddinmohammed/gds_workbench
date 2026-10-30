@@ -2218,10 +2218,10 @@ AS $list_code_generation_target_context$
            AND target.modeled_entity_id = coalesce(mapping.logical_entity_id, mapping.dimensional_entity_id)
           JOIN core.system AS source ON source.system_id = mapping.source_system_id AND source.is_active
          WHERE mapping.object_mapping_status = 'active'
-           -- Code can be authored from a partial saved pair. Empty ledger rows
-           -- are retained only by strict consumers so they still block readiness.
-           AND (p_required_artifact_type IS NULL
-                OR mapping.mapping_transformation_document IS NOT NULL
+           -- A System's pair counts once its Mapping has a saved rule, for Code and
+           -- Validation alike; each System is judged only on its own Mapping, and a
+           -- rule missing for one Attribute never hides the pair or another System.
+           AND (mapping.mapping_transformation_document IS NOT NULL
                 OR EXISTS (
                     SELECT 1 FROM workflow.mapping_attribute AS mapped
                     JOIN workflow.modeled_attribute AS attribute
@@ -2239,25 +2239,6 @@ AS $list_code_generation_target_context$
          WHERE EXISTS (SELECT 1 FROM active_mapping AS mapping WHERE mapping.project_id = target.project_id
            AND mapping.modeled_entity_type = target.modeled_entity_type
            AND coalesce(mapping.logical_entity_id,mapping.dimensional_entity_id) = target.modeled_entity_id)
-           -- A NULL artifact type is the existing complete-Mapping contract
-           -- used by Validation and execution-readiness consumers.
-           AND (p_required_artifact_type IS NOT NULL OR NOT EXISTS (
-             SELECT 1 FROM active_mapping AS mapping
-              WHERE mapping.project_id = target.project_id AND mapping.modeled_entity_type = target.modeled_entity_type
-                AND coalesce(mapping.logical_entity_id,mapping.dimensional_entity_id) = target.modeled_entity_id
-                AND (mapping.mapping_transformation_document IS NULL OR EXISTS (
-                  SELECT 1 FROM workflow.modeled_attribute AS attribute
-                   WHERE attribute.project_id = target.project_id AND attribute.modeled_entity_type = target.modeled_entity_type
-                     AND attribute.modeled_entity_id = target.modeled_entity_id AND attribute.is_active
-                     AND NOT EXISTS (
-                       SELECT 1 FROM workflow.mapping_attribute AS mapped
-                        WHERE mapped.mapping_object_id = mapping.mapping_object_id
-                          AND coalesce(mapped.logical_attribute_id,mapped.dimensional_attribute_id) = attribute.modeled_attribute_id
-                          AND mapped.attribute_mapping_status = 'active'
-                          AND mapped.attribute_mapping_transformation_document IS NOT NULL
-                     )
-                ))
-           ))
     ), cited_context AS MATERIALIZED (
         -- Context a target Entity or one of its active Attributes cites as support.
         SELECT s.logical_entity_id AS modeled_entity_id, s.context_record_id

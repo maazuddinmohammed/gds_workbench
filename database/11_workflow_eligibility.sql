@@ -170,8 +170,8 @@ REVOKE ALL ON FUNCTION workflow.list_mapping_branches(BIGINT, VARCHAR) FROM PUBL
 
 -- Source evidence for one branch. Logical inputs include physical Objects and peer Logical
 -- lookups; Dimensional inputs are Logical Entities. A Dimensional input is any Logical
--- Entity the selected source System feeds, mapped yet or not; a peer lookup requires its
--- complete applied Mapping for that System, whose key expressions the lookup repeats.
+-- Entity the selected source System feeds, mapped yet or not; a peer lookup requires a
+-- saved Mapping for that System (at least one rule), whose key rules the lookup repeats.
 CREATE FUNCTION workflow.list_mapping_source_objects(
     p_project_id BIGINT, p_target_entity_id BIGINT,
     p_modeled_entity_type VARCHAR(30), p_source_system_id BIGINT
@@ -237,20 +237,16 @@ AS $list_mapping_source_objects$
          JOIN core.system AS system ON system.system_id = mapping.source_system_id AND system.is_active
           WHERE mapping.project_id = p_project_id AND mapping.logical_entity_id = source.logical_entity_id
             AND mapping.modeled_entity_type = 'logical_entity' AND mapping.source_system_id = p_source_system_id
-            AND mapping.object_mapping_status = 'active' AND mapping.mapping_transformation_document IS NOT NULL
-            AND NOT EXISTS (
-                SELECT 1 FROM workflow.logical_attribute AS attribute
-                 WHERE attribute.project_id = p_project_id
-                   AND attribute.logical_entity_id = source.logical_entity_id
-                   AND attribute.logical_attribute_is_active
-                   AND NOT EXISTS (
-                       SELECT 1 FROM workflow.mapping_attribute AS mapped
-                        WHERE mapped.mapping_object_id = mapping.mapping_object_id
-                          AND mapped.logical_attribute_id = attribute.logical_attribute_id
-                          AND mapped.attribute_mapping_status = 'active'
-                          AND mapped.attribute_mapping_transformation_document IS NOT NULL
-                   )
-            )
+            AND mapping.object_mapping_status = 'active'
+            AND (mapping.mapping_transformation_document IS NOT NULL OR EXISTS (
+                SELECT 1 FROM workflow.mapping_attribute AS mapped
+                JOIN workflow.logical_attribute AS attribute
+                  ON attribute.logical_attribute_id = mapped.logical_attribute_id
+                 AND attribute.logical_attribute_is_active
+                 WHERE mapped.mapping_object_id = mapping.mapping_object_id
+                   AND mapped.attribute_mapping_status = 'active'
+                   AND mapped.attribute_mapping_transformation_document IS NOT NULL
+            ))
      ) END
     UNION ALL
     SELECT NULL::BIGINT, target.modeled_entity_id, 'lookup'::TEXT,
@@ -267,20 +263,16 @@ AS $list_mapping_source_objects$
          JOIN core.system AS system ON system.system_id = mapping.source_system_id AND system.is_active
           WHERE mapping.project_id = p_project_id AND mapping.dimensional_entity_id = source.dimensional_entity_id
             AND mapping.modeled_entity_type = 'dimensional_entity' AND mapping.source_system_id = p_source_system_id
-            AND mapping.object_mapping_status = 'active' AND mapping.mapping_transformation_document IS NOT NULL
-            AND NOT EXISTS (
-                SELECT 1 FROM workflow.dimensional_attribute AS attribute
-                 WHERE attribute.project_id = p_project_id
-                   AND attribute.dimensional_entity_id = source.dimensional_entity_id
-                   AND attribute.dimensional_attribute_is_active
-                   AND NOT EXISTS (
-                       SELECT 1 FROM workflow.mapping_attribute AS mapped
-                        WHERE mapped.mapping_object_id = mapping.mapping_object_id
-                          AND mapped.dimensional_attribute_id = attribute.dimensional_attribute_id
-                          AND mapped.attribute_mapping_status = 'active'
-                          AND mapped.attribute_mapping_transformation_document IS NOT NULL
-                   )
-            )
+            AND mapping.object_mapping_status = 'active'
+            AND (mapping.mapping_transformation_document IS NOT NULL OR EXISTS (
+                SELECT 1 FROM workflow.mapping_attribute AS mapped
+                JOIN workflow.dimensional_attribute AS attribute
+                  ON attribute.dimensional_attribute_id = mapped.dimensional_attribute_id
+                 AND attribute.dimensional_attribute_is_active
+                 WHERE mapped.mapping_object_id = mapping.mapping_object_id
+                   AND mapped.attribute_mapping_status = 'active'
+                   AND mapped.attribute_mapping_transformation_document IS NOT NULL
+            ))
      );
 $list_mapping_source_objects$;
 REVOKE ALL ON FUNCTION workflow.list_mapping_source_objects(BIGINT, BIGINT, VARCHAR, BIGINT) FROM PUBLIC;

@@ -22,6 +22,7 @@ from gds_workbench_api.features.mapping.preparation_contracts import (
 from gds_workbench_api.features.mapping.preparation_repository import (
     PostgresMappingRunContextRepository,
 )
+from gds_workbench_api.features.validation.read_service import _ELIGIBLE_SYSTEMS_SQL
 from gds_etl_workbench.application.change_sets.project_apply import ProjectMaterializer
 from gds_etl_workbench.domain.errors import MappingBranchUnavailableError
 from gds_etl_workbench.domain.modeling_records import MappingObjectRecord
@@ -671,6 +672,88 @@ def test_dimensional_branches_are_the_systems_of_their_logical_sources(
         assert _branches(connection, project_id, "dimensional_entity") == {
             (dimensional_id, scope.source_system_id)
         }
+
+
+def test_validation_judges_each_system_on_its_own_saved_mapping(
+    web_postgres_database: DisposablePostgres,
+) -> None:
+    scope = _seed_mapping_scope(web_postgres_database, dimensional=False, create_run=False)
+    project_id, entity_id = scope.plan.project_id, scope.logical_entity_id
+    crm = scope.source_system_id
+    with web_postgres_database.connect_owner() as connection:
+        # loyalty_tier comes only from CRM, whose Mapping fills every Attribute.
+        crm_only = _required_id(
+            connection.execute(
+                "INSERT INTO workflow.logical_attribute (project_id, logical_entity_id, "
+                "logical_attribute_name, logical_attribute_definition, "
+                "logical_attribute_data_type, logical_attribute_is_nullable, "
+                "logical_attribute_ordinal_position) VALUES (%s, %s, 'loyalty_tier', "
+                "'CRM loyalty tier.', 'string', TRUE, 2) RETURNING logical_attribute_id",
+                (project_id, entity_id),
+            ).fetchone(),
+            "logical_attribute_id",
+        )
+        crm_mapping = connection.execute(
+            "SELECT mapping_object_id FROM workflow.mapping_object WHERE project_id = %s "
+            "AND logical_entity_id = %s",
+            (project_id, entity_id),
+        ).fetchone()
+        assert crm_mapping is not None
+        insert_rule = (
+            "INSERT INTO workflow.mapping_attribute (mapping_object_id, logical_attribute_id, "
+            "project_id, logical_entity_id, modeled_entity_type, "
+            "attribute_mapping_transformation_document, attribute_mapping_status) "
+            "VALUES (%s, %s, %s, %s, 'logical_entity', '{}'::JSONB, 'active')"
+        )
+        connection.execute(
+            insert_rule, (crm_mapping["mapping_object_id"], crm_only, project_id, entity_id)
+        )
+        # BILLING maps only the shared Attribute; HR feeds the Entity but has no Mapping.
+        systems: dict[str, int] = {}
+        for code in ("BILLING", "HR"):
+            systems[code], object_id = _add_scope_source_table(connection, scope, code)
+            connection.execute(
+                "INSERT INTO workflow.logical_entity_source_mapping (project_id, "
+                "logical_entity_id, source_object_id, logical_entity_source_mapping_rationale) "
+                "VALUES (%s, %s, %s, 'Also supplies orders.')",
+                (project_id, entity_id, object_id),
+            )
+        billing_mapping = _required_id(
+            connection.execute(
+                "INSERT INTO workflow.mapping_object (project_id, logical_entity_id, "
+                "modeled_entity_type, source_system_id, mapping_transformation_document, "
+                "object_mapping_status) VALUES (%s, %s, 'logical_entity', %s, '{}'::JSONB, "
+                "'active') RETURNING mapping_object_id",
+                (project_id, entity_id, systems["BILLING"]),
+            ).fetchone(),
+            "mapping_object_id",
+        )
+        shared = connection.execute(
+            "SELECT logical_attribute_id FROM workflow.logical_attribute WHERE project_id = %s "
+            "AND logical_entity_id = %s AND logical_attribute_id <> %s",
+            (project_id, entity_id, crm_only),
+        ).fetchone()
+        assert shared is not None
+        connection.execute(
+            insert_rule, (billing_mapping, shared["logical_attribute_id"], project_id, entity_id)
+        )
+        # Validation reads the per-System context: BILLING's gap hides neither System.
+        validation = connection.execute(
+            "SELECT (system.document ->> 'source_system_id')::BIGINT AS system_id "
+            "FROM workflow.list_code_generation_target_context(%s, 'logical_entity', NULL) "
+            "AS context CROSS JOIN LATERAL "
+            "jsonb_array_elements(context.source_context -> 'source_systems') AS system(document)",
+            (project_id,),
+        ).fetchall()
+        assert {row["system_id"] for row in validation} == {crm, systems["BILLING"]}
+        listed = {
+            row["system_id"]: (row["scope_target_count"], row["mapping_target_count"])
+            for row in connection.execute(
+                _ELIGIBLE_SYSTEMS_SQL, (scope.tenant_id, project_id, None, None, None, None)
+            ).fetchall()
+        }
+        # Every System in scope is listed; HR waits for its Mapping.
+        assert listed == {crm: (1, 1), systems["BILLING"]: (1, 1), systems["HR"]: (1, 0)}
 
 
 def _mapping_pair(

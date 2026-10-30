@@ -64,7 +64,7 @@ Runtime batch filters apply only where required by the transformation/consumer. 
 
 ## Complete context for coding and validation
 
-The coding/validation agent reads all components of one target-oriented Mapping view: Mapping instructions plus resolved technical context. Code may consume partial saved transformations; Validation requires the view's `complete=true` signal. Raw `mapping_object`/`mapping_attribute` arrays alone omit modeled target types and ordinal information. The read/assembly layer must resolve those once from the approved Entity and source context, so the consuming agent does not traverse the project or reinterpret its design.
+The coding/validation agent reads all components of one target-oriented Mapping view: Mapping instructions plus resolved technical context. Code and Validation may consume a System's partial saved transformations: `issues` name the gaps, and Validation leaves a column with a null transformation unchecked for that System. Raw `mapping_object`/`mapping_attribute` arrays alone omit modeled target types and ordinal information. The read/assembly layer must resolve those once from the approved Entity and source context, so the consuming agent does not traverse the project or reinterpret its design.
 
 Reuse the existing backend downstream projection where compatible:
 

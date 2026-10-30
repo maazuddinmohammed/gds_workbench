@@ -347,10 +347,10 @@ def _raise_safe_workflow_error(error: Exception) -> Never:
             message="A published prompt is unavailable for this workflow. "
             "Review the Project's prompt settings before generating again.",
         ) from error
-    if message == "Selected Validation System lacks complete applied Mapping":
+    if message == "Selected Validation System has no saved Mapping":
         raise InvalidRequestError(
-            "Validation needs an Entity with complete Object and Attribute Mapping "
-            "for each selected System."
+            "Map this System first: Validation needs at least one Entity with a saved "
+            "Mapping for each selected System."
         ) from error
     if message in {
         "Selected Scope requires Objects",

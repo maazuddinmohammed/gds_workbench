@@ -788,7 +788,7 @@
         "records": [
           {
             "context_group_name": "Customer Orders business rules",
-            "context_record_id": "a97dbd2d-e430-48cc-8513-a17e6c5e1ac9",
+            "context_record_id": "a52f95e4-5e6f-4402-af64-6479ae7e5a48",
             "context_text": "Every submitted Order belongs to exactly one Customer.",
             "is_locked": false,
             "source_reference": null,
@@ -796,7 +796,7 @@
           },
           {
             "context_group_name": "Customer Orders business rules",
-            "context_record_id": "b51c502f-8fec-4fb1-a8da-bf67236b96fc",
+            "context_record_id": "ff215595-68ee-4674-b080-174abb40fd65",
             "context_text": "One Customer record represents one durable customer identity.",
             "is_locked": false,
             "source_reference": null,
@@ -4006,11 +4006,11 @@
       "result": {
         "content_type": "application/zip",
         "download_url": "file:///atlas-eval-snapshot.zip",
-        "download_url_expires_at": "2026-10-27T05:32:05.891682Z",
+        "download_url_expires_at": "2026-10-30T01:59:09.786828Z",
         "schema_version": "3.0",
-        "sha256": "53cbf3973e9df829ece8d4809f085735b6c6794d03112db075e94ec60e2fb26e",
-        "size_bytes": 101181,
-        "snapshot_id": "11a20d17-99e9-4dd9-b095-74cccd0bc9fe",
+        "sha256": "eae44d5e9d6ac1d7ab55a936477afefe495ae0ff8eeacbfa2ba9ce77cda5379a",
+        "size_bytes": 101185,
+        "snapshot_id": "d5665f38-353a-4541-95bc-d60161e7584b",
         "snapshot_kind": "metadata",
         "status": "ready",
         "tenant_id": 1
@@ -4024,13 +4024,13 @@
       "result": {
         "content_type": "application/zip",
         "download_url": "file:///atlas-eval-snapshot.zip",
-        "download_url_expires_at": "2026-10-27T05:32:05.957654Z",
+        "download_url_expires_at": "2026-10-30T01:59:09.846375Z",
         "project_id": 1,
         "project_revision": 1,
         "schema_version": "3.0",
-        "sha256": "50a4a2e4969dbe5c5cbb8b9a5d447788c72ed3f3ba8c605c679469ffe44680b6",
-        "size_bytes": 65033,
-        "snapshot_id": "fda38b77-a32c-445f-8e66-7c911768e5ce",
+        "sha256": "eba5b88c030ad127a3882dadbc1f2c8cc18a2db2592eab355d53a3b6baaf0ae2",
+        "size_bytes": 65064,
+        "snapshot_id": "b9e075f0-5fc4-4d49-86c0-6da67aff3d4f",
         "snapshot_kind": "project",
         "status": "ready"
       },
@@ -4041,15 +4041,15 @@
   "snapshots": {
     "metadata": {
       "file": "metadata-snapshot.zip",
-      "sha256": "53cbf3973e9df829ece8d4809f085735b6c6794d03112db075e94ec60e2fb26e",
-      "size_bytes": 101181,
-      "snapshot_id": "11a20d17-99e9-4dd9-b095-74cccd0bc9fe"
+      "sha256": "eae44d5e9d6ac1d7ab55a936477afefe495ae0ff8eeacbfa2ba9ce77cda5379a",
+      "size_bytes": 101185,
+      "snapshot_id": "d5665f38-353a-4541-95bc-d60161e7584b"
     },
     "project": {
       "file": "project-snapshot.zip",
-      "sha256": "50a4a2e4969dbe5c5cbb8b9a5d447788c72ed3f3ba8c605c679469ffe44680b6",
-      "size_bytes": 65033,
-      "snapshot_id": "fda38b77-a32c-445f-8e66-7c911768e5ce"
+      "sha256": "eba5b88c030ad127a3882dadbc1f2c8cc18a2db2592eab355d53a3b6baaf0ae2",
+      "size_bytes": 65064,
+      "snapshot_id": "b9e075f0-5fc4-4d49-86c0-6da67aff3d4f"
     }
   },
   "tenant": {

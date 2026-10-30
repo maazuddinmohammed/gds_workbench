@@ -13,7 +13,7 @@ Both datasets belong to Project section `mapping`. Read the current Snapshot cat
 
 Compare keys with the shared Project normalization; preserve actual names. One target receiving Systems A and B has separate Object Mapping records and Attribute Mapping sets for A and B.
 
-Author a branch only for a System the target's own sources come from. A Logical Entity's Systems are those of its active source tables, with a Bronze table resolved to its originating System through ingestion lineage, never its lake placement. A Dimensional Entity's Systems are those of the Logical Entities it is built from, whether or not their Mapping exists yet. Context never creates a branch: records whose type lists `mapping` in `context_type_workflows` only inform the transformation inside a branch. Apply rejects a Change Set that makes a Mapping active outside its Entity's branches, judged after the Change Set's own sources and Mapping (`mapping_branch_unavailable`); already active Mappings stay editable. Partial transformations can be saved and used for reviewed Code authoring when the pair has at least one saved transformation. Empty pairs are excluded; Validation still requires complete Mapping. File grouping is a later Code Generation choice, absent from these keys.
+Author a branch only for a System the target's own sources come from. A Logical Entity's Systems are those of its active source tables, with a Bronze table resolved to its originating System through ingestion lineage, never its lake placement. A Dimensional Entity's Systems are those of the Logical Entities it is built from, whether or not their Mapping exists yet. Context never creates a branch: records whose type lists `mapping` in `context_type_workflows` only inform the transformation inside a branch. Apply rejects a Change Set that makes a Mapping active outside its Entity's branches, judged after the Change Set's own sources and Mapping (`mapping_branch_unavailable`); already active Mappings stay editable. Partial transformations can be saved and used for reviewed Code authoring when the pair has at least one saved transformation. Empty pairs are excluded from Code and Validation alike; each System is judged on its own Mapping. File grouping is a later Code Generation choice, absent from these keys.
 
 All fields below are required, with no record-schema defaults. Only the explicitly nullable fields accept JSON null. New completed records normally use `active` and unlocked; preserve existing state.
 
@@ -195,4 +195,4 @@ Code may expose missing target rules as reviewed typed NULL placeholders, but
 cannot treat an incomplete peer as an executable source or invent a join.
 Missing row-producing evidence requires a typed zero-row projection; unresolved
 or contradictory authored references still require correction. Validation
-requires `complete=true` before authoring.
+needs a saved Mapping for its System and leaves columns without a rule unchecked.

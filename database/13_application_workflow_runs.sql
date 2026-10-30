@@ -1969,7 +1969,7 @@ BEGIN
             ON eligible_system.system_id = source_system.system_id;
         IF cardinality(v_selected_system_ids) <> v_selected_scope_count THEN
             RAISE EXCEPTION
-                'Selected Validation System lacks complete applied Mapping';
+                'Selected Validation System has no saved Mapping';
         END IF;
         SELECT encode(
                    sha256(

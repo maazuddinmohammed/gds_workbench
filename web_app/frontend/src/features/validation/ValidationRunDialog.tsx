@@ -86,7 +86,9 @@ export function ValidationRunDialog({
   const selectedCodes = validateSelectedSystemCodes(
     selectedSystems.map((system) => system.system_code),
   );
-  const allSelected = systems.length > 0 && selectedSystemIds.size === systems.length;
+  // A System in scope is runnable once one of its Entities has a saved Mapping for it.
+  const readySystems = systems.filter((system) => system.mapping_target_count > 0);
+  const allSelected = readySystems.length > 0 && selectedSystemIds.size === readySystems.length;
   const { mutation: runMutation, pendingRunId: pendingWorkflowRunId } = useWorkflowRunSubmission({
     api,
     tenantId,
@@ -228,7 +230,7 @@ export function ValidationRunDialog({
                   className="text-action"
                   type="button"
                   disabled={runMutation.isPending || allSelected}
-                  onClick={() => setSelectedSystemIds(new Set(systems.map((system) => system.system_id)))}
+                  onClick={() => setSelectedSystemIds(new Set(readySystems.map((system) => system.system_id)))}
                 >
                   Select all
                 </button>
@@ -250,6 +252,7 @@ export function ValidationRunDialog({
                     <label>
                       <input
                         type="checkbox"
+                        disabled={system.mapping_target_count === 0}
                         checked={selectedSystemIds.has(system.system_id)}
                         onChange={(event) => {
                           setSelectedSystemIds((current) => {
@@ -262,8 +265,9 @@ export function ValidationRunDialog({
                       />
                       <strong>{system.system_code}</strong>
                       <small>
-                        {system.mapping_target_count} Mapping targets · {system.current_code_target_count} current Code targets
+                        {system.mapping_target_count} of {system.scope_target_count} Entities mapped · {system.current_code_target_count} current Code targets
                       </small>
+                      {system.mapping_target_count === 0 ? <small>Map this System first</small> : null}
                       <span className={`status-badge ${system.has_applied_validation ? "is-success" : "is-neutral"}`}>
                         {system.has_applied_validation ? "Applied Validation" : "No applied Validation"}
                       </span>

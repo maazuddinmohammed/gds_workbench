@@ -1463,7 +1463,7 @@ def test_create_validation_run_rejects_system_without_applied_mapping_atomically
 
     with (
         postgres_database.connect_owner() as connection,
-        pytest.raises(RaiseException, match="complete applied Mapping"),
+        pytest.raises(RaiseException, match="has no saved Mapping"),
     ):
         connection.execute(
             CREATE_SYSTEM_SELECTION_WORKFLOW_RUN_SQL,

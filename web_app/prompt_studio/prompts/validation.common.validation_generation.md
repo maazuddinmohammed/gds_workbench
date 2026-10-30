@@ -58,6 +58,10 @@ This is the data you work with. The examples only explain the terms; they are no
   source membership/order, columns/types/nullability, grain and applied documents.
 - Object documents specify inputs, preparation, joins, filters and grain changes;
   Attribute documents specify field lineage, expressions and supported defaults.
+  A null `transformation` means this System has no saved rule there, often because it
+  supplies no such value: leave that column unchecked for this System and name the gap
+  in a related Check's description. Key and required-value Checks on the loaded target
+  still apply.
   Read complete custom documents: `source_objects`/`steps` and
   `source_attributes`/`transformation` are examples, not the only possible keys.
   Selected shapes may use `source_tables`/`sample_query` and
@@ -234,7 +238,7 @@ retain valid existing categories. Descriptions state the rule and failure meanin
 
 `blocking` means a confirmed critical invariant; `warning` a justified nonblocking
 anomaly; `informational` an informative condition. Every selected System has at least
-one completely mapped target, so a core Check, such as no nulls in a required key of
+one target with a saved Mapping, so a core Check, such as no nulls in a required key of
 the loaded target, is always possible. When nothing new is supported, return the
 definitions you keep, copied exactly; that is a no-op. Never return text, an empty
 ledger or a constant-pass Check: each fails the attempt, and the last failure fails the

@@ -220,8 +220,15 @@ describe("Validation journey", () => {
     const submit = within(dialog).getByRole("button", { name: "Create and start Validation" });
     expect(submit).toBeDisabled();
 
+    // A System in scope with nothing mapped is listed but cannot be selected yet.
+    expect(within(dialog).getByRole("checkbox", { name: /BILLING/ })).toBeDisabled();
+    expect(within(dialog).getByText("Map this System first")).toBeVisible();
+    expect(within(dialog).getByText("4 of 5 Entities mapped · 0 current Code targets")).toBeVisible();
+    await user.click(within(dialog).getByRole("button", { name: "Select all" }));
+    expect(within(dialog).getByText("2 of 3 Systems selected")).toBeVisible();
+    await user.click(within(dialog).getByRole("button", { name: "Clear" }));
     await user.click(within(dialog).getByRole("checkbox", { name: /CRM/ }));
-    expect(within(dialog).getByText("1 of 2 Systems selected")).toBeVisible();
+    expect(within(dialog).getByText("1 of 3 Systems selected")).toBeVisible();
     await user.click(submit);
 
     expect(await screen.findByText(
@@ -534,6 +541,7 @@ const eligibleSystems = [
     system_id: 2,
     system_code: "CRM",
     system_name: "Customer CRM",
+    scope_target_count: 3,
     mapping_target_count: 3,
     current_code_target_count: 2,
     has_applied_validation: true,
@@ -542,7 +550,17 @@ const eligibleSystems = [
     system_id: 3,
     system_code: "ERP",
     system_name: "Order ERP",
+    scope_target_count: 5,
     mapping_target_count: 4,
+    current_code_target_count: 0,
+    has_applied_validation: false,
+  },
+  {
+    system_id: 4,
+    system_code: "BILLING",
+    system_name: "Billing",
+    scope_target_count: 2,
+    mapping_target_count: 0,
     current_code_target_count: 0,
     has_applied_validation: false,
   },

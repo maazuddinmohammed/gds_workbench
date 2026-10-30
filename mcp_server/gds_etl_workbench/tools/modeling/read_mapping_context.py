@@ -180,8 +180,8 @@ def register_read_mapping_context_tool(
             "Read one applied target Mapping component for independent SQL/Validation "
             "authoring. Read all five components, preserving expected_context_digest and "
             "expected_project_revision across pages/components. Missing context is reported; "
-            "Code may review partial Mapping with explicit gaps; Validation requires "
-            "complete=true. No SQL is executed."
+            "Code and Validation may use a System's partial Mapping: issues name the gaps, "
+            "and a null transformation stays unchecked. No SQL is executed."
         ),
         annotations=ToolAnnotations(
             read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False

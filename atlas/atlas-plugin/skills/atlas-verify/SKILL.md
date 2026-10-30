@@ -14,7 +14,7 @@ Goal: the requested kind of verification, reporting exactly which checks ran, wh
 | Record validity | Shared local validators; server validation stays separately authoritative. |
 | Modeling quality | The matching quality guide for evidence, grain, identity, relationships and coverage. |
 | Mapping or Code correctness | Applied prerequisites, the complete Mapping view and the actual Code being tested. |
-| Persisted SQL Validation groups and checks | Applied complete Mapping, plus actual Code when testing its implementation, with [SQL-check authoring](../../references/methods/sql-validation.md). |
+| Persisted SQL Validation groups and checks | The System's saved Mapping, plus actual Code when testing its implementation, with [SQL-check authoring](../../references/methods/sql-validation.md). |
 | Measured data result | Explicit execution authorization, SQL policy and a governed route under [query scope](../../references/query-scope.md). |
 
 "Validate this logical model" does not need Mapping or SQL check authoring. Subject Areas only choose tables; never use them to verify other layers.
@@ -29,7 +29,7 @@ Goal: the requested kind of verification, reporting exactly which checks ran, wh
 1. Read the selected records with `select --session <dir> --area <area> --dataset <name> --view effective`, never from Snapshot files.
 2. If no task is active, run `task-add --session <dir> --outcome <outcome>` first (local bookkeeping, allowed even when nothing may change). Run `validate --session <dir> --area <area>` and read the actual findings. `review_required`, `not_run` and `server_only` are not passes.
 3. Review business correctness against requirements and evidence with the one quality guide that fits, listed in [local validation](../../references/local-validation.md).
-4. Keep completeness boundaries: partial Mapping can support explicitly incomplete draft Code with typed placeholders, but never SQL Validation authoring or claims of executable correctness.
+4. Keep completeness boundaries: partial Mapping supports draft Code with typed placeholders and Validation of mapped columns only, never claims of executable correctness.
 5. Repair defects through the owning skill only when repair is requested or part of the current task; never invent an expectation to make a check pass.
 6. Report scope and bindings, checks run, evidence, unresolved findings and the next action, using the optional format in `templates/validation-summary.md`. Authored SQL Validation records follow the [Change Set lifecycle](../../references/change-set-lifecycle.md) via `next --session <dir> --area project`.
 

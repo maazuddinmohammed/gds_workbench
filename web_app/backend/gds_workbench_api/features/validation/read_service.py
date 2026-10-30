@@ -38,6 +38,8 @@ SELECT target_project.project_revision
    AND target_project.is_active
 """
 
+# Every System in scope: one that feeds an Entity of the layer, or already has a saved
+# Mapping for one. A System is runnable once any of its Entities has a saved Mapping for it.
 _ELIGIBLE_SYSTEMS_SQL: LiteralString = """
 WITH target_project AS MATERIALIZED (
     SELECT target_project.project_id,
@@ -62,9 +64,25 @@ WITH target_project AS MATERIALIZED (
           'dimensional_entity',
           NULL
       ) AS context
-), expanded AS MATERIALIZED (
-    SELECT context.*,
-           (source_system.document ->> 'source_system_id')::BIGINT AS source_system_id
+), system_target AS MATERIALIZED (
+    SELECT target_project.project_id,
+           layer.modeled_entity_type,
+           branch.modeled_entity_id,
+           branch.source_system_id,
+           NULL::CHAR(64) AS code_input_digest
+      FROM target_project
+      CROSS JOIN (VALUES ('logical_entity'::VARCHAR(30)), ('dimensional_entity'::VARCHAR(30)))
+           AS layer(modeled_entity_type)
+      CROSS JOIN LATERAL workflow.list_mapping_branches(
+          target_project.project_id,
+          layer.modeled_entity_type
+      ) AS branch
+    UNION ALL
+    SELECT context.project_id,
+           context.modeled_entity_type,
+           context.modeled_entity_id,
+           (source_system.document ->> 'source_system_id')::BIGINT,
+           context.code_input_digest
       FROM current_context AS context
       CROSS JOIN LATERAL jsonb_array_elements(
           context.source_context -> 'source_systems'
@@ -73,22 +91,26 @@ WITH target_project AS MATERIALIZED (
 SELECT source_system.system_id,
        source_system.system_code,
        source_system.system_name,
-       count(DISTINCT (context.modeled_entity_type, context.modeled_entity_id))::INTEGER
-           AS mapping_target_count,
-       count(DISTINCT (context.modeled_entity_type, context.modeled_entity_id)) FILTER (
-           WHERE EXISTS (
+       count(DISTINCT (target.modeled_entity_type, target.modeled_entity_id))::INTEGER
+           AS scope_target_count,
+       count(DISTINCT (target.modeled_entity_type, target.modeled_entity_id)) FILTER (
+           WHERE target.code_input_digest IS NOT NULL
+       )::INTEGER AS mapping_target_count,
+       count(DISTINCT (target.modeled_entity_type, target.modeled_entity_id)) FILTER (
+           WHERE target.code_input_digest IS NOT NULL
+             AND EXISTS (
                SELECT 1
                  FROM workflow.generated_code AS generated
                  JOIN workflow.generated_code_source_system AS assignment
                    ON assignment.generated_code_id = generated.generated_code_id
-                  AND assignment.source_system_id = context.source_system_id
+                  AND assignment.source_system_id = target.source_system_id
                   AND assignment.generated_code_source_system_status = 'active'
-                WHERE generated.project_id = context.project_id
-                  AND generated.modeled_entity_type = context.modeled_entity_type
+                WHERE generated.project_id = target.project_id
+                  AND generated.modeled_entity_type = target.modeled_entity_type
                   AND coalesce(generated.logical_entity_id, generated.dimensional_entity_id) =
-                      context.modeled_entity_id
+                      target.modeled_entity_id
                   AND generated.generated_code_status = 'active'
-                  AND generated.code_input_digest = context.code_input_digest
+                  AND generated.code_input_digest = target.code_input_digest
            )
        )::INTEGER AS current_code_target_count,
        EXISTS (
@@ -102,11 +124,11 @@ SELECT source_system.system_id,
               AND (%s::VARCHAR IS NULL OR validation_group.modeled_entity_type IS NULL
                    OR validation_group.modeled_entity_type = %s)
        ) AS has_applied_validation
-  FROM expanded AS context
+  FROM system_target AS target
   JOIN core.system AS source_system
-    ON source_system.system_id = context.source_system_id
+    ON source_system.system_id = target.source_system_id
    AND source_system.is_active
- WHERE (%s::VARCHAR IS NULL OR context.modeled_entity_type = %s)
+ WHERE (%s::VARCHAR IS NULL OR target.modeled_entity_type = %s)
  GROUP BY source_system.system_id,
           source_system.system_code,
           source_system.system_name

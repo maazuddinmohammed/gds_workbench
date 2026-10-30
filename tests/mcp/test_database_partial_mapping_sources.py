@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from tests.mcp.conftest import DisposablePostgres
 
 
-# Peer lookups repeat their parent's key expressions. A Dimensional pair's Logical inputs
+# A peer lookup needs a saved Mapping for its System. A Dimensional pair's Logical inputs
 # instead follow lineage (test_dimensional_mapping_sources_are_logical_entities_the_system_feeds).
 @pytest.mark.parametrize(
     ("source_layer", "target_layer"),
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
         ("dimensional", "dimensional"),
     ],
 )
-def test_partial_mapping_is_not_an_executable_modeled_source(
+def test_peer_lookup_needs_a_saved_mapping_for_its_system(
     postgres_database: DisposablePostgres,
     source_layer: Literal["logical", "dimensional"],
     target_layer: Literal["logical", "dimensional"],
@@ -109,7 +109,7 @@ def test_partial_mapping_is_not_an_executable_modeled_source(
             connection.execute(
                 sql.SQL(
                     "INSERT INTO workflow.mapping_object (project_id,modeled_entity_type,{},"
-                    "source_system_id,mapping_transformation_document) VALUES (%s,%s,%s,%s,'{{}}') "
+                    "source_system_id,mapping_transformation_document) VALUES (%s,%s,%s,%s,NULL) "
                     "RETURNING mapping_object_id"
                 ).format(sql.Identifier(f"{source_layer}_entity_id")),
                 (
@@ -127,49 +127,46 @@ def test_partial_mapping_is_not_an_executable_modeled_source(
             system["system_id"],
         )
         query = "SELECT * FROM workflow.list_mapping_source_objects(%s,%s,%s,%s)"
-        # No Attributes, one Attribute, an explicit blank, and an inactive rule
-        # must all remain ineligible; only a complete active branch is usable.
+        # An empty Mapping, a blank rule and an inactive rule save nothing for the System.
         assert connection.execute(query, parameters).fetchall() == []
-        mapped_ids: list[object] = []
-        for index, attribute_id in enumerate(attribute_ids):
-            mapped = _required_row(
-                connection.execute(
-                    sql.SQL(
-                        "INSERT INTO workflow.mapping_attribute (mapping_object_id,project_id,"
-                        "modeled_entity_type,{},{},attribute_mapping_transformation_document) "
-                        "VALUES (%s,%s,%s,%s,%s,%s::jsonb) RETURNING mapping_attribute_id"
-                    ).format(
-                        sql.Identifier(f"{source_layer}_entity_id"),
-                        sql.Identifier(f"{source_layer}_attribute_id"),
-                    ),
-                    (
-                        mapping["mapping_object_id"],
-                        project["project_id"],
-                        f"{source_layer}_entity",
-                        entity_ids[0],
-                        attribute_id,
-                        "{}" if index == 0 else None,
-                    ),
-                ).fetchone()
-            )
-            mapped_ids.append(mapped["mapping_attribute_id"])
-            assert connection.execute(query, parameters).fetchall() == []
-        connection.execute(
-            "UPDATE workflow.mapping_attribute SET attribute_mapping_transformation_document='{}', "
-            "attribute_mapping_status='inactive' WHERE mapping_attribute_id=%s",
-            (mapped_ids[1],),
+        rule = _required_row(
+            connection.execute(
+                sql.SQL(
+                    "INSERT INTO workflow.mapping_attribute (mapping_object_id,project_id,"
+                    "modeled_entity_type,{},{},attribute_mapping_transformation_document) "
+                    "VALUES (%s,%s,%s,%s,%s,NULL) RETURNING mapping_attribute_id"
+                ).format(
+                    sql.Identifier(f"{source_layer}_entity_id"),
+                    sql.Identifier(f"{source_layer}_attribute_id"),
+                ),
+                (
+                    mapping["mapping_object_id"],
+                    project["project_id"],
+                    f"{source_layer}_entity",
+                    entity_ids[0],
+                    attribute_ids[0],
+                ),
+            ).fetchone()
         )
         assert connection.execute(query, parameters).fetchall() == []
         connection.execute(
+            "UPDATE workflow.mapping_attribute SET attribute_mapping_transformation_document='{}', "
+            "attribute_mapping_status='inactive' WHERE mapping_attribute_id=%s",
+            (rule["mapping_attribute_id"],),
+        )
+        assert connection.execute(query, parameters).fetchall() == []
+        # One saved rule is enough, though the other Attribute has none: the lookup reads
+        # the saved key rule and reports anything still missing.
+        connection.execute(
             "UPDATE workflow.mapping_attribute SET attribute_mapping_status='active' "
             "WHERE mapping_attribute_id=%s",
-            (mapped_ids[1],),
+            (rule["mapping_attribute_id"],),
         )
         sources = connection.execute(query, parameters).fetchall()
         assert len(sources) == 1
         assert sources[0][f"source_{source_layer}_entity_id"] == entity_ids[0]
         connection.execute(
-            "UPDATE workflow.mapping_object SET mapping_transformation_document=NULL "
+            "UPDATE workflow.mapping_object SET object_mapping_status='inactive' "
             "WHERE mapping_object_id=%s",
             (mapping["mapping_object_id"],),
         )

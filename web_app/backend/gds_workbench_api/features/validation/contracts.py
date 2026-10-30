@@ -37,7 +37,9 @@ class ValidationEligibleSystem(_Contract):
     system_id: int = Field(gt=0)
     system_code: str = Field(min_length=1, max_length=100)
     system_name: str = Field(min_length=1, max_length=200)
-    mapping_target_count: int = Field(gt=0)
+    # Entities the System feeds; those with a saved Mapping for it can be validated.
+    scope_target_count: int = Field(gt=0)
+    mapping_target_count: int = Field(ge=0)
     current_code_target_count: int = Field(ge=0)
     has_applied_validation: bool
 

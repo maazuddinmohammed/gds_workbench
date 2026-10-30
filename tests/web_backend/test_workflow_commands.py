@@ -1317,9 +1317,9 @@ async def test_missing_mapping_default_returns_a_clear_controlled_error(
         ),
         (
             "validation",
-            "Selected Validation System lacks complete applied Mapping",
-            "Validation needs an Entity with complete Object and Attribute Mapping "
-            "for each selected System.",
+            "Selected Validation System has no saved Mapping",
+            "Map this System first: Validation needs at least one Entity with a saved "
+            "Mapping for each selected System.",
             "invalid_request",
         ),
     ],
