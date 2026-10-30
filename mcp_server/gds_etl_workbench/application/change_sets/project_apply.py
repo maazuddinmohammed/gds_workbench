@@ -2080,9 +2080,7 @@ SELECT attribute.{config.attribute_id}
             mapping_entries.append(entry)
         mapping_context_digest = _context_entries_digest(mapping_entries)
         if mapping_context_digest is None:
-            raise InvalidRequestError(
-                "Validation requires complete active Mapping for its source System."
-            )
+            raise InvalidRequestError("Validation requires a saved Mapping for its source System.")
 
         code_entries: list[dict[str, object]] = []
         for row in self._validation_generated_code_rows:

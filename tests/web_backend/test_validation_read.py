@@ -237,12 +237,15 @@ class EligibleSystemsTransaction:
             return []
         assert "LIMIT" not in query
         assert "workflow.list_code_generation_target_context" in query
+        # Systems in scope come from the Mapping branch rule, mapped or not.
+        assert "workflow.list_mapping_branches" in query
         assert parameters == (7, 18, None, None, None, None)
         return [
             {
                 "system_id": 9,
                 "system_code": "erp",
                 "system_name": "ERP",
+                "scope_target_count": 4,
                 "mapping_target_count": 3,
                 "current_code_target_count": 2,
                 "has_applied_validation": True,
@@ -393,6 +396,7 @@ class StaticValidationService:
                     system_id=9,
                     system_code="erp",
                     system_name="ERP",
+                    scope_target_count=4,
                     mapping_target_count=3,
                     current_code_target_count=2,
                     has_applied_validation=True,

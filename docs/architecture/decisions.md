@@ -287,8 +287,10 @@ empty result. Final validation covers the whole future Project before Apply.
 
 Code may use partial applied Mapping with explicit typed-null/zero-row placeholders
 and warnings. Missing rules cannot justify invented joins or business logic.
-Validation and executable modeled-source lookups still require complete Mapping; a
-Logical input of a Dimensional pair only needs the pair's System to feed it.
+Code, Validation and peer lookups judge each System on its own saved Mapping (at
+least one rule); another System's gaps never hide a target. A Logical input of a
+Dimensional pair only needs the pair's System to feed it. Validation lists every
+System in scope and runs one once an Entity has its saved Mapping.
 Input-currentness digests describe consistency, not production execution readiness.
 An Entity supported only by Context has no branch and therefore no Mapping; there
 is no default Mapping System.

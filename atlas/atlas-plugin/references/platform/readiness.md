@@ -18,7 +18,7 @@ For each requested artifact, distinguish missing, applicable applied work, pendi
 | Dimensional model | Active applied Logical Entities/Attributes; a Subject Area only chooses the Logical Entities of one Build; no compulsory physical Silver registration or Logical Mapping | Defensible analytical grain, conformance, measures/history and cross-process review. |
 | Mapping | Active applied target Entities/Attributes and eligible inputs | Complete target/System coverage and independently usable transformation instructions; missing branches remain explicit. |
 | Code generation | Applied nonempty Mapping and applied target project; all five consumer-context components | Exact SQL/file/record content, valid System assignments and translation checks. Partial Mapping permits labeled incomplete drafts, not a claim of business correctness. |
-| SQL Validation definitions | Applied complete Mapping; actual relevant Code if implementation is tested | Purposeful checked definitions with independent expectations/populations. Definitions alone are not executed evidence. |
+| SQL Validation definitions | The System's applied saved Mapping; actual relevant Code if implementation is tested | Purposeful checked definitions with independent expectations/populations. Definitions alone are not executed evidence. |
 | Target registration | Applied selected logical/dimensional targets and confirmed owner/placement | Compatible Metadata records checked per owner; requested DDL separately labeled generated, not executed. |
 | Process registration | Applied Code/Mapping, assignments, registered targets and confirmed runtime details | Compatible complete Process identities, intended dependencies and checked Metadata; no implied upload or execution. |
 

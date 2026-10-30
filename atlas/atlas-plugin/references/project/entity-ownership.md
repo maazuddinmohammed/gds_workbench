@@ -19,8 +19,9 @@ physical Source/Bronze inputs; Dimensional design and Mapping consume Logical
 Entities/Attributes through complete schema-qualified identities.
 
 Mapping must cover all active modeled Attributes for each contributing System,
-including keys, audit columns, constants and generated values. Code still requires
-complete applied Mapping and explicit Source System assignments. Retain locks,
+including keys, audit columns, constants and generated values. Code and Validation
+for a System need its saved Mapping (at least one rule) and explicit Source System
+assignments; another System's gaps never block them. Retain locks,
 revision fences, source provenance and existing artifact digests.
 
 Entity schema/name supplies the planned SQL coordinates. Registration and Process

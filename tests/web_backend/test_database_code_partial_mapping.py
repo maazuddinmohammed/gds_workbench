@@ -1,4 +1,4 @@
-"""Code authoring accepts partial saved Mapping; Validation keeps complete inputs."""
+"""Code and Validation accept partial saved Mapping, judging each System on its own."""
 
 # These helpers create only fixture-owned disposable PostgreSQL contents.
 # pyright: reportPrivateUsage=false
@@ -257,11 +257,8 @@ def test_code_keeps_partial_system_pairs_and_all_active_target_attributes(
                 )["transformation"]
                 is None
             )
-        if shape in {"complete", "inactive"}:
-            assert strict is not None
-            assert strict == code  # Complete contexts retain the same canonical digest.
-        else:
-            assert strict is None
+        # Validation reads the same per-System context, so digests match Code's.
+        assert strict == code
         # With the complete pair inactive, only real partial results keep the Entity available.
         connection.execute(
             "UPDATE workflow.mapping_object SET object_mapping_status='inactive' "

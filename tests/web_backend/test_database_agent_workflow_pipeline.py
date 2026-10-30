@@ -378,7 +378,10 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
             else:
                 evidence = cast(list[dict[str, JsonValue]], values["mapping_evidence"])
                 assert evidence
-                assert all(row["modeled_entity_name"] != "SecondCustomer" for row in evidence)
+                # A partial pair with a saved rule is validated for its System; an empty one is not.
+                assert any(row["modeled_entity_name"] == "SecondCustomer" for row in evidence) == (
+                    bulk != "empty"
+                )
         if request.workflow == "mapping":
             mapping_calls += 1
             if bulk == "partial" and mapping_calls == 1:
@@ -764,9 +767,11 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
                         "workflow.list_code_generation_target_context(%s,%s,NULL)",
                         (project_id, entity_type),
                     ).fetchall()
+                # Validation judges each System on its saved Mapping, so a partial pair with
+                # any saved rule stays available; only an empty pair does not.
                 assert {row["modeled_entity_id"] for row in eligible_code} == set(
                     successful_entity_ids
-                )
+                ) | (set() if bulk == "empty" else set(incomplete))
     finally:
         await services.close()
         await database.close()

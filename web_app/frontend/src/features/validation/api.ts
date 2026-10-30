@@ -9,6 +9,7 @@ export interface ValidationEligibleSystem {
   system_id: number;
   system_code: string;
   system_name: string;
+  scope_target_count: number;
   mapping_target_count: number;
   current_code_target_count: number;
   has_applied_validation: boolean;

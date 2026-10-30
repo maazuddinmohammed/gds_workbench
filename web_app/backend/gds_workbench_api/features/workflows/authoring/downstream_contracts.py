@@ -1207,7 +1207,8 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             "target/source metadata and exact applied "
             "Object/Attribute transformations. Context "
             "is design evidence, not measured "
-            "outcomes.",
+            "outcomes. A null transformation means this "
+            "System has no saved rule there; leave it unchecked.",
             "value_schema": {
                 "type": "array",
                 "items": {
@@ -1784,7 +1785,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                                     "$ref": "#/$defs/object_transformations_JsonValue"
                                 },
                                 "title": "Transformation",
-                                "type": "object",
+                                "type": ["object", "null"],
                             },
                             "source_system_code": {"type": "string", "minLength": 1},
                         },
@@ -1822,7 +1823,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                                     "$ref": "#/$defs/attribute_transformations_JsonValue"
                                 },
                                 "title": "Transformation",
-                                "type": "object",
+                                "type": ["object", "null"],
                             },
                             "source_system_code": {"type": "string", "minLength": 1},
                             "modeled_entity_type": {
