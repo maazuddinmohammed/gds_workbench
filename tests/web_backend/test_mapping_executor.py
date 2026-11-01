@@ -7,53 +7,53 @@ from unittest.mock import AsyncMock, patch
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.application.change_sets.project import StageProjectChange
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project import StageProjectChange
+from atlas_mcp.application.change_sets.project_validation import (
     ProjectValidationIssue,
 )
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import (
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import (
+    AtlasError,
     AuthorizationDeniedError,
     DependencyUnavailableError,
     TenantLockRequiredError,
-    WorkbenchError,
 )
-from gds_workbench_api.features.mapping.preparation_contracts import (
+from atlas_platform.features.mapping.preparation_contracts import (
     MappingPreparation,
     MappingRunContext,
     MappingRunContextUnavailableError,
     ModeledEntityType,
 )
-from gds_workbench_api.features.mapping.readiness import assess_mapping_readiness
-from gds_workbench_api.features.mapping.service import (
+from atlas_platform.features.mapping.readiness import assess_mapping_readiness
+from atlas_platform.features.mapping.service import (
     MappingChangeSetHandoff,
     MappingNoOpCompleter,
     MappingPreparationService,
     MappingWorkflow,
 )
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
+from atlas_platform.features.workflows.authoring.agent_execution import (
     AgentExecutionFailedError,
     AgentExecutionRequest,
     AgentExecutionResult,
 )
-from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
+from atlas_platform.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetFinalizationResult,
     WorkflowChangeSetHandoffResult,
     WorkflowChangeSetValidationError,
 )
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
+from atlas_platform.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
     AgentWorkflowRunStart,
     AgentWorkflowTerminalResult,
 )
-from gds_workbench_api.features.workflows.authoring.no_op import AuthoringNoOpReceipt
-from gds_workbench_api.features.workflows.authoring.plan import WorkflowExecutionMode
-from gds_workbench_api.features.workflows.authoring.repair import (
+from atlas_platform.features.workflows.authoring.no_op import AuthoringNoOpReceipt
+from atlas_platform.features.workflows.authoring.plan import WorkflowExecutionMode
+from atlas_platform.features.workflows.authoring.repair import (
     AgentContextPolicy,
     AgentContextTooLargeError,
 )
-from gds_workbench_api.integrations.agents.composition import LocalFakeAgentAdapter
-from gds_workbench_api.prompt_rendering import (
+from atlas_platform.integrations.agents.composition import LocalFakeAgentAdapter
+from atlas_platform.prompt_rendering import (
     PromptComponentTemplates,
     PromptVariableDefinition,
 )
@@ -283,12 +283,12 @@ async def test_mapping_local_fake_completes_each_mode(
     assert preparation.snapshot is not None
     service, handoff, no_op, fail = _executor(preparation, agent)
 
-    from gds_etl_workbench.application.change_sets.project_validation import (
+    from atlas_mcp.application.change_sets.project_validation import (
         validate_future_graph,
     )
 
     with patch(
-        "gds_workbench_api.features.mapping.service.validate_future_graph",
+        "atlas_platform.features.mapping.service.validate_future_graph",
         wraps=validate_future_graph,
     ) as validate:
         result = await _execute(service)
@@ -477,7 +477,7 @@ async def test_mapping_without_successful_changes_cannot_hide_a_failed_pair(
     service, handoff, no_op, fail = _executor(
         first, NoSuccessfulChangesAgent(), additional_preparations=(second,)
     )
-    with pytest.raises(WorkbenchError) as error:
+    with pytest.raises(AtlasError) as error:
         await _execute(service)
     assert error.value.code == "agent_timeout"
     handoff.assert_not_awaited()
@@ -504,7 +504,7 @@ async def test_mapping_safety_fence_failure_never_becomes_partial_success(
         "authorization": AuthorizationDeniedError(),
         "tenant_lock": TenantLockRequiredError(),
         "claim": DependencyUnavailableError(),
-        "revision": WorkbenchError(
+        "revision": AtlasError(
             "project_revision_conflict", "Project revision changed."
         ),
     }[failure_code]
@@ -525,7 +525,7 @@ async def test_mapping_safety_fence_failure_never_becomes_partial_success(
     service, handoff, no_op, fail = _executor(
         preparations[0], agent, additional_preparations=preparations[1:]
     )
-    with pytest.raises(WorkbenchError) as error:
+    with pytest.raises(AtlasError) as error:
         await _execute(service)
     assert error.value.code == fatal.code
     assert len(agent.requests) == (1 if failed_pair_first else 2)
@@ -669,10 +669,10 @@ async def test_failed_candidate_retention_belongs_to_the_reported_pair(
 
     with (
         patch(
-            "gds_workbench_api.features.mapping.service.validate_future_graph",
+            "atlas_platform.features.mapping.service.validate_future_graph",
             side_effect=validate_graph,
         ),
-        pytest.raises(WorkbenchError),
+        pytest.raises(AtlasError),
     ):
         await _execute(service)
     handoff.assert_not_awaited()
@@ -965,7 +965,7 @@ async def test_mapping_saved_reader_selection_is_enforced(
     await _execute(service)
     assert agent.requests[0].allowed_tool_names == selected_tools
     assert agent.requests[0].local_tool_catalog is not None
-    from gds_etl_workbench.domain.errors import InvalidRequestError
+    from atlas_mcp.domain.errors import InvalidRequestError
 
     with pytest.raises(InvalidRequestError):
         agent.requests[0].local_tool_catalog.invoke("get_mapping_sources", {})

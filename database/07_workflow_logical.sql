@@ -1,4 +1,4 @@
--- GDS ETL Workbench Release 1: five-table Logical Section.
+-- Atlas Release 1: five-table Logical Section.
 --
 -- One Logical model per Project. Subject Areas only choose which tables a Build works on;
 -- an Entity's areas are worked out from its source tables, never stored here.

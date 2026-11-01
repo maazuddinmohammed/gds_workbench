@@ -278,5 +278,5 @@
     "Backend rechecks authorization, revision, typed ownership, source evidence, and current Mapping/Code digests.",
     "Synthetic SQL omits the generated key, retains source identifiers and applies only supplied filters and expressions."
   ],
-  "output_schema_source": "web_app/backend/gds_workbench_api/features/code_generation/candidate.py:CodeGenerationCandidateValidator.output_schema"
+  "output_schema_source": "web_app/backend/atlas_platform/features/code_generation/candidate.py:CodeGenerationCandidateValidator.output_schema"
 }

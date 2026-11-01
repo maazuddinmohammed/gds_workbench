@@ -8,27 +8,27 @@ from copy import deepcopy
 from typing import Any, cast
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_workbench_api.features.metadata_enrichment.service import DescriptionValidator
-from gds_workbench_api.features.prompts.contracts import PromptStageVariable
-from gds_workbench_api.features.prompts.service import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_platform.features.metadata_enrichment.service import DescriptionValidator
+from atlas_platform.features.prompts.contracts import PromptStageVariable
+from atlas_platform.features.prompts.service import (
     DatabasePromptService,
     PromptDatabase,
 )
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
+from atlas_platform.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
     AgentExecutionResult,
 )
-from gds_workbench_api.features.workflows.authoring.plan import AgentRunPlan
-from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
+from atlas_platform.features.workflows.authoring.plan import AgentRunPlan
+from atlas_platform.features.workflows.authoring.prompt_inputs import (
     PromptInputContract,
     get_prompt_input_contract,
     project_prompt_input_values,
 )
-from gds_workbench_api.features.workflows.authoring.repair import AgentContextPolicy
-from gds_workbench_api.features.workflows.authoring.stage_runner import AgentStageRunner
-from gds_workbench_api.prompt_rendering import (
+from atlas_platform.features.workflows.authoring.repair import AgentContextPolicy
+from atlas_platform.features.workflows.authoring.stage_runner import AgentStageRunner
+from atlas_platform.prompt_rendering import (
     PromptComponentTemplates,
     PromptVariableDefinition,
     render_prompt,

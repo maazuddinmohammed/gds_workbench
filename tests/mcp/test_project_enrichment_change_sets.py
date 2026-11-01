@@ -4,19 +4,19 @@ import json
 from copy import deepcopy
 
 import pytest
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project_validation import (
     validate_future_graph,
     validate_staged_records,
 )
-from gds_etl_workbench.domain.snapshots.project import (
+from atlas_mcp.domain.snapshots.project import (
     DATASETS_BY_NAME,
     build_project_dataset_schema,
 )
 from jsonschema import Draft202012Validator
 
 from tests.mcp.project_test_fixtures import (
-    complete_project_graph,
     complete_physical_scope,
+    complete_project_graph,
     project_details,
     snapshot_from_graph,
 )

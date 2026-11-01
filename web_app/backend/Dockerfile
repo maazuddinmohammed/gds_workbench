@@ -41,4 +41,4 @@ USER 10001:10001
 EXPOSE 8000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=6 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=2)"]
-CMD ["python", "-m", "gds_workbench_api.app_process"]
+CMD ["python", "-m", "atlas_platform.app_process"]

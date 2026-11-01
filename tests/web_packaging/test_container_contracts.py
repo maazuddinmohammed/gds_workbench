@@ -30,7 +30,7 @@ def test_local_compose_is_loopback_only_and_uses_one_combined_app() -> None:
     assert not re.search(r"ports:\s*\n(?:\s+-.*\n)*\s+-\s*[\"']?5432:", compose)
     assert (
         compose.count(
-            "gds-workbench-app:local-${GDS_LOCAL_IMAGE_SUFFIX:?generated image suffix required}"
+            "atlas-platform-app:local-${GDS_LOCAL_IMAGE_SUFFIX:?generated image suffix required}"
         )
         == 1
     )
@@ -66,7 +66,7 @@ def test_combined_local_image_builds_react_and_python_then_runs_one_app_process(
     assert "uv sync --frozen --no-dev --no-editable" in dockerfile
     assert "/workspace/web_app/frontend/dist /app/web_app/frontend/dist" in dockerfile
     assert "USER 10001:10001" in dockerfile
-    assert 'CMD ["python", "-m", "gds_workbench_api.app_process"]' in dockerfile
+    assert 'CMD ["python", "-m", "atlas_platform.app_process"]' in dockerfile
 
 
 def test_combined_image_context_excludes_local_and_generated_content() -> None:
@@ -296,5 +296,5 @@ def test_windows_atlas_ci_tracks_and_uses_the_frozen_mcp_project() -> None:
     assert "uv sync --frozen --project mcp_server" in workflow
     assert "uv run --frozen --project mcp_server python -m pytest" in workflow
     assert "tests/atlas/test_native_parity.py" in workflow
-    assert "atlas/atlas-vs-code" in workflow
+    assert "atlas/atlas-bridge" in workflow
     assert "pip install pytest" not in workflow

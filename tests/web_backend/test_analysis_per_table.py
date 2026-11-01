@@ -9,36 +9,36 @@ from typing import Any, cast
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
-from gds_etl_workbench.domain.modeling_records import (
+from atlas_mcp.domain.errors import AtlasError, InvalidRequestError
+from atlas_mcp.domain.modeling_records import (
     AnalysisResultRecord,
     PhysicalAttributeKey,
 )
-from gds_workbench_api.capabilities import AgentRunSelection
-from gds_workbench_api.features.analysis.candidate import (
+from atlas_platform.capabilities import AgentRunSelection
+from atlas_platform.features.analysis.candidate import (
     AnalysisTableCandidateValidator,
     merge_table_findings,
 )
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
+from atlas_platform.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
     AgentExecutionResult,
 )
-from gds_workbench_api.features.workflows.authoring.context import (
+from atlas_platform.features.workflows.authoring.context import (
     AgentContextBundle,
     SelectedObjectContext,
 )
-from gds_workbench_api.features.workflows.authoring.context_contracts import (
+from atlas_platform.features.workflows.authoring.context_contracts import (
     INPUT_EXAMPLES,
     workflow_input_contracts,
 )
-from gds_workbench_api.features.workflows.authoring.context_inputs import (
+from atlas_platform.features.workflows.authoring.context_inputs import (
     analysis_table_inputs,
 )
-from gds_workbench_api.features.workflows.authoring.plan import (
+from atlas_platform.features.workflows.authoring.plan import (
     AgentRunPlan,
     FrozenAgentStage,
 )
-from gds_workbench_api.prompt_rendering import (
+from atlas_platform.prompt_rendering import (
     PromptComponentTemplates,
     PromptVariableDefinition,
 )
@@ -516,7 +516,7 @@ async def test_run_fails_when_no_table_could_be_analyzed() -> None:
         context_bundle=_context_bundle(),
     )
 
-    with pytest.raises(WorkbenchError):
+    with pytest.raises(AtlasError):
         await service.execute_started(
             _principal(),
             tenant_id=7,

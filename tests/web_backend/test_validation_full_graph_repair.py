@@ -4,7 +4,7 @@
 from typing import Any, cast
 
 import pytest
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
+from atlas_platform.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
     AgentExecutionResult,
 )

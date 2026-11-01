@@ -11,7 +11,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 _ROOT_FILES = ("app.py", "requirements.txt", "startup.sh")
-_PACKAGE = "gds_etl_workbench"
+_PACKAGE = "atlas_mcp"
 _FIXED_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 
 
@@ -51,7 +51,7 @@ def build_zip(output: Path) -> Path:
         json.dumps(
             {
                 "schema_version": "1.0",
-                "artifact": "gds-etl-workbench-mcp-appservice",
+                "artifact": "atlas-mcp-appservice",
                 "python_version": "3.14",
                 "files": manifest_files,
             },
@@ -78,7 +78,7 @@ def main() -> None:
         "--output",
         type=Path,
         default=(
-            Path(__file__).resolve().parent / "dist" / "gds-mcp-appservice-0.3.0.zip"
+            Path(__file__).resolve().parent / "dist" / "atlas-mcp-appservice-0.3.0.zip"
         ),
     )
     args = parser.parse_args()

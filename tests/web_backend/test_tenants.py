@@ -5,18 +5,17 @@ from typing import Any, LiteralString
 from uuid import UUID
 
 import pytest
-from fastapi.testclient import TestClient
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.authorization import (
     ActorKind,
     RequestPrincipal,
     TenantRole,
 )
-from gds_etl_workbench.domain.errors import TenantNotFoundError
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from gds_workbench_api.features.tenants import (
+from atlas_mcp.domain.errors import TenantNotFoundError
+from atlas_mcp.infrastructure.postgres import ReadIsolation
+from atlas_platform.features.tenants import (
     DatabaseTenantService,
     TenantCollection,
     TenantHome,
@@ -26,7 +25,8 @@ from gds_workbench_api.features.tenants import (
     TenantSelection,
     TenantSystemRecord,
 )
-from gds_workbench_api.main import create_app
+from atlas_platform.main import create_app
+from fastapi.testclient import TestClient
 
 
 class StaticTenantService:

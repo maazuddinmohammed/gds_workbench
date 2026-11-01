@@ -5,15 +5,15 @@ from io import BytesIO
 from zipfile import ZIP_STORED, ZipFile
 
 import pytest
-from fastapi.testclient import TestClient
-from gds_workbench_api.features.validation import downloads
-from gds_workbench_api.features.validation.contracts import (
+from atlas_platform.features.validation import downloads
+from atlas_platform.features.validation.contracts import (
     ExportValidationRequest,
     ValidationBundleLimitExceededError,
     ValidationExportEmptyError,
     ValidationLedger,
 )
-from gds_workbench_api.main import create_app
+from atlas_platform.main import create_app
+from fastapi.testclient import TestClient
 
 from tests.web_backend.test_code_generation import (
     _identity_provider,  # pyright: ignore[reportPrivateUsage]

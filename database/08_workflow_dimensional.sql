@@ -1,4 +1,4 @@
--- GDS ETL Workbench Release 1: five-table Dimensional Section.
+-- Atlas Release 1: five-table Dimensional Section.
 --
 -- Dimensional reuses the Project's Subject Areas through its Logical sources; it has no
 -- grouping of its own. Relationships point child -> parent: a fact, bridge or outrigger's

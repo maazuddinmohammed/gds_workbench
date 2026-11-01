@@ -3,12 +3,11 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
+import atlas_mcp.infrastructure.postgres as postgres_module
 import pytest
+from atlas_mcp.domain.errors import DependencyUnavailableError
+from atlas_mcp.infrastructure.postgres import PostgresDatabase
 from psycopg.errors import InsufficientPrivilege
-
-import gds_etl_workbench.infrastructure.postgres as postgres_module
-from gds_etl_workbench.domain.errors import DependencyUnavailableError
-from gds_etl_workbench.infrastructure.postgres import PostgresDatabase
 
 
 class _Result:

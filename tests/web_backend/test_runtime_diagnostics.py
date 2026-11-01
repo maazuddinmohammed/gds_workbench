@@ -12,17 +12,17 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
-from fastapi.testclient import TestClient
-from gds_workbench_api import runtime_diagnostics as diagnostics_module
-from gds_workbench_api.authentication import WebIdentityProvider
-from gds_workbench_api.features.workflows.execution import WorkflowExecutionWorker
-from gds_workbench_api.main import create_app
-from gds_workbench_api.runtime import create_runtime_app
-from gds_workbench_api.runtime_diagnostics import (
+from atlas_platform import runtime_diagnostics as diagnostics_module
+from atlas_platform.authentication import WebIdentityProvider
+from atlas_platform.features.workflows.execution import WorkflowExecutionWorker
+from atlas_platform.main import create_app
+from atlas_platform.runtime import create_runtime_app
+from atlas_platform.runtime_diagnostics import (
     RuntimeDiagnostics,
     source_tree_sha256,
 )
-from gds_workbench_api.workflow_worker import create_worker_runtime
+from atlas_platform.workflow_worker import create_worker_runtime
+from fastapi.testclient import TestClient
 from psycopg.errors import InsufficientPrivilege
 from test_runtime_wiring import LifecycleDatabase
 from test_workflow_execution_worker import BlockingDispatcher, FakeClaimRepository

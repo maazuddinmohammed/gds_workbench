@@ -38,7 +38,7 @@ hooks and skills out of the run; `--no-session-persistence` keeps runs out of yo
 history; `--max-budget-usd` caps each run.
 
 ```bash
-PYTHONPATH=mcp_server:web_app/backend:. web_app/backend/.venv/bin/python -m tests.atlas.eval.harness --scenario logical-sql-never --out /tmp/atlas-eval --agent-command 'claude -p "$(cat {prompt})" --mcp-config {mcp_config} --strict-mcp-config --add-dir {plugin} --allowedTools "mcp__gds-workbench" "Bash(node *)" "Bash(cd *)" --setting-sources project,local --disable-slash-commands --no-session-persistence --max-budget-usd 4 --output-format stream-json --verbose --permission-mode acceptEdits > {transcript}'
+PYTHONPATH=mcp_server:web_app/backend:. web_app/backend/.venv/bin/python -m tests.atlas.eval.harness --scenario logical-sql-never --out /tmp/atlas-eval --agent-command 'claude -p "$(cat {prompt})" --mcp-config {mcp_config} --strict-mcp-config --add-dir {plugin} --allowedTools "mcp__atlas-mcp" "Bash(node *)" "Bash(cd *)" --setting-sources project,local --disable-slash-commands --no-session-persistence --max-budget-usd 4 --output-format stream-json --verbose --permission-mode acceptEdits > {transcript}'
 ```
 
 Inside the Claude desktop app (or any Claude Code session) the nested CLI must not inherit

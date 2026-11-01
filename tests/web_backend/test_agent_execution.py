@@ -1,12 +1,12 @@
 from dataclasses import dataclass, field
 
 import pytest
-from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_workbench_api.capabilities import (
+from atlas_mcp.domain.errors import AtlasError
+from atlas_platform.capabilities import (
     AgentRunSelection,
     load_default_agent_capabilities,
 )
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
+from atlas_platform.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
     AgentExecutionResult,
     AgentExecutionRouter,
@@ -114,7 +114,7 @@ async def test_router_rejects_incompatible_selection_before_adapter_call() -> No
         )
     )
 
-    with pytest.raises(WorkbenchError) as caught:
+    with pytest.raises(AtlasError) as caught:
         await router.execute(request)
 
     assert caught.value.code == "invalid_request"
@@ -162,7 +162,7 @@ async def test_router_converts_unexpected_adapter_failure_to_stable_safe_error()
         adapters=(_FailingAdapter(),),
     )
 
-    with pytest.raises(WorkbenchError) as caught:
+    with pytest.raises(AtlasError) as caught:
         await router.execute(_request())
 
     assert caught.value.code == "agent_execution_failed"

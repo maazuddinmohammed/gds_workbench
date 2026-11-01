@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 jobs:
-  stage-runner:
+  bridge:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,22 +23,22 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: atlas/atlas-vs-code/package-lock.json
+          cache-dependency-path: atlas/atlas-bridge/package-lock.json
       - name: Install Atlas Local Workbench test dependencies
         run: npm ci
       - name: Test Atlas Local Workbench
         run: node --test tests/atlas/*.test.mjs
-      - name: Install frozen Atlas Stage Runner dependencies
-        working-directory: atlas/atlas-vs-code
+      - name: Install frozen Atlas Bridge dependencies
+        working-directory: atlas/atlas-bridge
         run: npm ci
-      - name: Test Atlas Stage Runner
-        working-directory: atlas/atlas-vs-code
+      - name: Test Atlas Bridge
+        working-directory: atlas/atlas-bridge
         run: npm test
-      - name: Type-check Atlas Stage Runner
-        working-directory: atlas/atlas-vs-code
+      - name: Type-check Atlas Bridge
+        working-directory: atlas/atlas-bridge
         run: npm run check
-      - name: Build Atlas Stage Runner VSIX
-        working-directory: atlas/atlas-vs-code
+      - name: Build Atlas Bridge VSIX
+        working-directory: atlas/atlas-bridge
         run: npm run package:vsix
 
   powershell-51:
@@ -57,8 +57,8 @@ jobs:
         run: python -m pip install uv==0.10.2
       - name: Verify frozen MCP dependencies
         run: uv sync --frozen --project mcp_server
-      - name: Install and test Stage Runner on Windows
-        working-directory: atlas/atlas-vs-code
+      - name: Install and test Atlas Bridge on Windows
+        working-directory: atlas/atlas-bridge
         run: |
           npm ci
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

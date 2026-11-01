@@ -3,24 +3,24 @@ from contextlib import AbstractAsyncContextManager
 from typing import cast
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.infrastructure.postgres import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.infrastructure.postgres import (
     ReadIsolation,
     ReadTransaction,
     WriteTransaction,
 )
-from gds_workbench_api.capabilities import load_default_agent_capabilities
-from gds_workbench_api.features.metadata_enrichment.repository import (
+from atlas_platform.capabilities import load_default_agent_capabilities
+from atlas_platform.features.metadata_enrichment.repository import (
     MetadataEnrichmentRepository,
 )
-from gds_workbench_api.features.workflows.execution.assembly import (
+from atlas_platform.features.workflows.execution.assembly import (
     create_workflow_runtime_services,
 )
-from gds_workbench_api.integrations.agents import ManagedModelAuthentication
-from gds_workbench_api.integrations.agents.configuration import (
+from atlas_platform.integrations.agents import ManagedModelAuthentication
+from atlas_platform.integrations.agents.configuration import (
     AgentRuntimeConfiguration,
 )
-from gds_workbench_api.integrations.databricks import (
+from atlas_platform.integrations.databricks import (
     create_databricks_execution_adapters,
 )
 
@@ -62,7 +62,7 @@ def test_workflow_runtime_services_share_one_executor_graph(
         return shared_agent_executor
 
     monkeypatch.setattr(
-        "gds_workbench_api.integrations.agents.create_agent_execution_router",
+        "atlas_platform.integrations.agents.create_agent_execution_router",
         create_agent_executor,
     )
     for executor_name in (
@@ -76,7 +76,7 @@ def test_workflow_runtime_services_share_one_executor_graph(
         "DatabaseMetadataEnrichmentExecutor",
     ):
         monkeypatch.setattr(
-            f"gds_workbench_api.features.workflows.execution.assembly.{executor_name}",
+            f"atlas_platform.features.workflows.execution.assembly.{executor_name}",
             capture(executor_name),
         )
 
@@ -142,7 +142,7 @@ def test_workflow_runtime_services_forward_provider_authentications(
         raise StopAssemblyError
 
     monkeypatch.setattr(
-        "gds_workbench_api.integrations.agents.create_agent_execution_router",
+        "atlas_platform.integrations.agents.create_agent_execution_router",
         capture_agent_executor,
     )
     authentication = cast(ManagedModelAuthentication, object())

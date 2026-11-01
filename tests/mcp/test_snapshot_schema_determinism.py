@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = """
 import json
-from gds_etl_workbench.domain.snapshots.project import DATASETS, build_project_dataset_schema
+from atlas_mcp.domain.snapshots.project import DATASETS, build_project_dataset_schema
 print(json.dumps([build_project_dataset_schema(definition) for definition in DATASETS]))
 """
 

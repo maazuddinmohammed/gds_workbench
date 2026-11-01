@@ -23,8 +23,8 @@ def test_native_quality_evaluator_matches_all_javascript_scenarios(
     if powershell is None:
         pytest.skip("PowerShell is not installed")
     captured = tmp_path / "cases.json"
-    module = HELPER.parent.parent / "workbench" / "project-quality.js"
-    suite = REPOSITORY_ROOT / "tests" / "atlas" / "workbench-quality.test.mjs"
+    module = HELPER.parent.parent / "atlas-local-workbench" / "project-quality.js"
+    suite = REPOSITORY_ROOT / "tests" / "atlas" / "local-workbench-quality.test.mjs"
     capture = tmp_path / "capture.cjs"
     capture.write_text("""
 const fs = require('node:fs');

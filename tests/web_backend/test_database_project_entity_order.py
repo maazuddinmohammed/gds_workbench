@@ -4,28 +4,28 @@ from dataclasses import replace
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.project import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.application.change_sets.project import (
     StageProjectChange,
     load_project_physical_scope,
     validate_project_stage_changes,
 )
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project_validation import (
     validate_future_graph,
 )
-from gds_etl_workbench.application.project_read import ProjectReadContext
-from gds_etl_workbench.application.project_snapshot import build_project_snapshot
-from gds_etl_workbench.domain.errors import (
+from atlas_mcp.application.project_read import ProjectReadContext
+from atlas_mcp.application.project_snapshot import build_project_snapshot
+from atlas_mcp.domain.errors import (
     InvalidRequestError,
     ProjectChangeSetNotValidatedError,
 )
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.project_change_sets.contracts import (
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.project_change_sets.contracts import (
     CreateProjectChangeSetRequest,
     ExpectedDraftRevisionRequest,
     StageProjectChangeSetRequest,
 )
-from gds_workbench_api.features.project_change_sets.service import (
+from atlas_platform.features.project_change_sets.service import (
     DatabaseProjectChangeSetService,
 )
 

@@ -1,4 +1,4 @@
--- GDS ETL Workbench Release 1: foundational Core business and physical metadata.
+-- Atlas Release 1: foundational Core business and physical metadata.
 
 CREATE SCHEMA core;
 

@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const graph = require('../../atlas/atlas-plugin/workbench/validation/project.js');
-const policy = require('../../atlas/atlas-plugin/workbench/validation/project-policy.js');
-const dbml = require('../../atlas/atlas-plugin/workbench/dbml.js');
+const graph = require('../../atlas/atlas-plugin/atlas-local-workbench/validation/project.js');
+const policy = require('../../atlas/atlas-plugin/atlas-local-workbench/validation/project-policy.js');
+const dbml = require('../../atlas/atlas-plugin/atlas-local-workbench/dbml.js');
 const state = (records, pending = []) => ({ records, effective: records, baseline: records.filter(record => !pending.includes(record)), pending, definition: {name: 'fixture', canonical_key: []} });
 const entity = schema => ({logical_entity_schema_name: schema, logical_entity_name: 'Customer', logical_entity_is_active: true, logical_entity_dependency_order: 1});
 const attribute = schema => ({logical_entity_schema_name: schema, logical_entity_name: 'Customer', logical_attribute_name: 'CustomerID', logical_attribute_is_active: true, logical_attribute_data_type: 'BIGINT', logical_attribute_ordinal_position: 1, logical_attribute_is_nullable: false});
@@ -143,7 +143,7 @@ test('Entity schema remains configured when Project schemas change', () => {
 });
 
 test('legacy Project catalogs are rejected despite the retained archive envelope version', () => {
-  const {isEntityOwnedProjectCatalog} = require('../../atlas/atlas-plugin/workbench/core.js');
+  const {isEntityOwnedProjectCatalog} = require('../../atlas/atlas-plugin/atlas-local-workbench/core.js');
   const catalog = datasets => ({schema_version: '3.0', sections: [{name: 'project', datasets}]});
   assert.equal(isEntityOwnedProjectCatalog(catalog([{name: 'logical_entity', canonical_key: ['logical_entity_schema_name', 'logical_entity_name']}])) , true);
   // Child -> parent: the child's foreign-key Attribute alone identifies a Relationship.

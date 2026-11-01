@@ -8,18 +8,17 @@ from copy import deepcopy
 from typing import cast
 
 import pytest
-from gds_etl_workbench.domain.snapshots.project import (
+from atlas_mcp.domain.snapshots.project import (
     CHANGE_SET_DATASETS,
     ModelingDatasetDefinition,
 )
-from pydantic import BaseModel, JsonValue
-
-from gds_workbench_api.features.dimensional.candidate import _DimensionalCandidate
-from gds_workbench_api.features.logical.candidate import _CompactLogicalCandidate
-from gds_workbench_api.features.subject_areas.candidate import _SubjectAreaAnswer
-from gds_workbench_api.features.workflows.authoring.repair import (
+from atlas_platform.features.dimensional.candidate import _DimensionalCandidate
+from atlas_platform.features.logical.candidate import _CompactLogicalCandidate
+from atlas_platform.features.subject_areas.candidate import _SubjectAreaAnswer
+from atlas_platform.features.workflows.authoring.repair import (
     enrich_agent_output_project_definitions,
 )
+from pydantic import BaseModel, JsonValue
 
 
 @pytest.mark.parametrize(

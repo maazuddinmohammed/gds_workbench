@@ -1,4 +1,4 @@
--- GDS ETL Workbench Release 1: Workflow Run state and lifecycle.
+-- Atlas Release 1: Workflow Run state and lifecycle.
 
 CREATE TABLE application.workflow_run (
     workflow_run_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

@@ -1,4 +1,4 @@
--- GDS ETL Workbench Release 1: Principal identity, Tenant RBAC, and governed Tenant Locks.
+-- Atlas Release 1: Principal identity, Tenant RBAC, and governed Tenant Locks.
 
 CREATE SCHEMA security;
 

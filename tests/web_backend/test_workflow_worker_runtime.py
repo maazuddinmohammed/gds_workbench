@@ -7,26 +7,26 @@ from unittest.mock import AsyncMock
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.infrastructure.postgres import (
+from atlas_mcp.infrastructure.postgres import (
     ReadinessRecord,
     ReadIsolation,
     ReadTransaction,
     WriteTransaction,
 )
-from gds_workbench_api.app_process import run_app_processes
-from gds_workbench_api.configuration import RuntimeSettings
-from gds_workbench_api.features.workflows.execution import (
+from atlas_platform.app_process import run_app_processes
+from atlas_platform.configuration import RuntimeSettings
+from atlas_platform.features.workflows.execution import (
     DatabaseWorkflowClaimRepository,
     WorkerRunResult,
     WorkflowClaimLease,
     WorkflowExecutionClaim,
     WorkflowExecutionWorker,
 )
-from gds_workbench_api.features.workflows.execution.configuration import (
+from atlas_platform.features.workflows.execution.configuration import (
     WorkflowExecutionConfiguration,
 )
-from gds_workbench_api.runtime_diagnostics import RuntimeDiagnostics
-from gds_workbench_api.workflow_worker import (
+from atlas_platform.runtime_diagnostics import RuntimeDiagnostics
+from atlas_platform.workflow_worker import (
     create_worker_runtime,
     run_worker_loop,
     run_worker_process,

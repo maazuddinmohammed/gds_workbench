@@ -7,9 +7,27 @@ from copy import deepcopy
 from typing import Any, Literal, cast
 
 import pytest
-from gds_etl_workbench.domain.errors import InvalidRequestError
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_platform.features.workflows.authoring.context import (
+    AgentContextBundle,
+    InMemoryAgentContextToolCatalog,
+    focus_subject_area,
+    modeled_layer_dependencies,
+)
+from atlas_platform.features.workflows.authoring.context_contracts import (
+    WORKFLOW_INPUTS,
+)
+from atlas_platform.features.workflows.authoring.context_inputs import (
+    _logical_optimize_inputs,
+)
+from atlas_platform.features.workflows.authoring.prompt_inputs import (
+    list_prompt_input_contracts,
+    project_prompt_input_values,
+)
+from atlas_platform.prompt_rendering import PromptVariableDefinition
 from jsonschema import Draft202012Validator
 from pydantic import JsonValue
+
 from tests.mcp.project_test_fixtures import complete_project_graph, snapshot_from_graph
 from tests.web_backend.test_logical_executor import (
     _context_bundle,
@@ -17,22 +35,6 @@ from tests.web_backend.test_logical_executor import (
     _saved_customer,
     _validation_context,
 )
-
-from gds_workbench_api.features.workflows.authoring.context import (
-    AgentContextBundle,
-    InMemoryAgentContextToolCatalog,
-    focus_subject_area,
-    modeled_layer_dependencies,
-)
-from gds_workbench_api.features.workflows.authoring.context_contracts import WORKFLOW_INPUTS
-from gds_workbench_api.features.workflows.authoring.context_inputs import (
-    _logical_optimize_inputs,
-)
-from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
-    list_prompt_input_contracts,
-    project_prompt_input_values,
-)
-from gds_workbench_api.prompt_rendering import PromptVariableDefinition
 
 
 def _call_bundle(mode: str, operation: Literal["build", "optimize"]) -> AgentContextBundle:

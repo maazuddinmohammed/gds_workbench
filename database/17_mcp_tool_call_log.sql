@@ -1,4 +1,4 @@
--- GDS ETL Workbench Release 1: append-only MCP Tool Call Log.
+-- Atlas Release 1: append-only MCP Tool Call Log.
 
 -- One immutable row per completed MCP tool call. input_metadata is server-created.
 -- PostgreSQL imposes no application-specific byte ceiling on the JSON object.

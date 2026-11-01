@@ -6,13 +6,12 @@ from uuid import UUID
 
 import psycopg
 import pytest
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.adapters.mcp.server import create_mcp_server
+from atlas_mcp.configuration import AuthMode, Environment, RuntimeSettings
+from atlas_mcp.domain.authorization import ActorKind, ToolPolicy
+from atlas_mcp.infrastructure.postgres import ToolCallLogRecord
 from mcp import Client
-
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.adapters.mcp.server import create_mcp_server
-from gds_etl_workbench.configuration import AuthMode, Environment, RuntimeSettings
-from gds_etl_workbench.domain.authorization import ActorKind, ToolPolicy
-from gds_etl_workbench.infrastructure.postgres import ToolCallLogRecord
 
 if TYPE_CHECKING:
     from conftest import DisposablePostgres

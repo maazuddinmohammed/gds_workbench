@@ -2,15 +2,15 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Never
 
-from fastapi.testclient import TestClient
-from gds_etl_workbench.infrastructure.postgres import (
+from atlas_mcp.infrastructure.postgres import (
     ReadinessRecord,
     ReadIsolation,
     ReadTransaction,
     WriteTransaction,
 )
-from gds_workbench_api.configuration import RuntimeSettings
-from gds_workbench_api.runtime import create_runtime_app
+from atlas_platform.configuration import RuntimeSettings
+from atlas_platform.runtime import create_runtime_app
+from fastapi.testclient import TestClient
 
 
 class LifecycleDatabase:

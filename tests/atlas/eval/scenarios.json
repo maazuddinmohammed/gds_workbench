@@ -334,13 +334,13 @@
     },
     {
       "id": "stage-without-runner",
-      "rubric": "Approval given but the Stage Runner extension is unavailable",
+      "rubric": "Approval given but the Atlas Bridge extension is unavailable",
       "request": "I reviewed the pending changes in Atlas Local Workbench. I approve these changes for Stage.",
       "workspace": "project-logical-draft",
       "expect": {
         "final_message_mentions_any": [
-          "Stage Runner",
-          "atlas_checkStageRunner",
+          "Atlas Bridge",
+          "atlas_checkBridge",
           "atlas_stageApprovedManifest",
           "extension"
         ]

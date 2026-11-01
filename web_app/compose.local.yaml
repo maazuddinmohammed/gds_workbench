@@ -9,7 +9,7 @@ x-app-environment: &app-environment
   GDS_WEB_DATABASE_DSN: >-
     host=database port=5432 dbname=${GDS_LOCAL_DATABASE_NAME:?generated database required}
     user=gds_web_runtime password=${GDS_LOCAL_WEB_PASSWORD:?generated web password required}
-    sslmode=disable application_name=gds_workbench_local
+    sslmode=disable application_name=atlas_platform_local
   GDS_WEB_DATABRICKS_ENVIRONMENT_CODE: local_fake
   GDS_WEB_DATABRICKS_EXECUTION_MODE: fake
   GDS_WEB_ENVIRONMENT: local
@@ -55,7 +55,7 @@ services:
 
   app:
     <<: *app-security
-    image: gds-workbench-app:local-${GDS_LOCAL_IMAGE_SUFFIX:?generated image suffix required}
+    image: atlas-platform-app:local-${GDS_LOCAL_IMAGE_SUFFIX:?generated image suffix required}
     pull_policy: never
     build: *app-build
     environment: *app-environment

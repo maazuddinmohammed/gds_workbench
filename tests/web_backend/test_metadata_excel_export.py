@@ -13,16 +13,14 @@ from uuid import UUID, uuid4
 from zipfile import ZipFile
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from gds_etl_workbench.adapters.auth.identity import AuthMode, IdentityProvider
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_etl_workbench.domain.snapshots.metadata import DATASETS_BY_NAME
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation, ReadTransaction
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.errors import workbench_error_response
-from gds_workbench_api.features.metadata import (
+from atlas_mcp.adapters.auth.identity import AuthMode, IdentityProvider
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.errors import AtlasError
+from atlas_mcp.domain.snapshots.metadata import DATASETS_BY_NAME
+from atlas_mcp.infrastructure.postgres import ReadIsolation, ReadTransaction
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.errors import atlas_error_response
+from atlas_platform.features.metadata import (
     MAX_METADATA_EXPORT_ROWS_PER_SHEET,
     OPERATIONAL_DATASETS,
     DatabaseMetadataService,
@@ -34,6 +32,8 @@ from gds_workbench_api.features.metadata import (
     PostgresMetadataRepository,
     create_metadata_router,
 )
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 from openpyxl.cell.cell import Cell
 from psycopg import Connection
@@ -204,7 +204,7 @@ def test_selected_operational_sheets_download_as_one_canonical_xlsx() -> None:
         cursor_signing_key=b"development-only-key-32-bytes-long",
     )
     app = FastAPI()
-    app.add_exception_handler(WorkbenchError, workbench_error_response)
+    app.add_exception_handler(AtlasError, atlas_error_response)
     app.include_router(
         create_metadata_router(
             identity_provider=_identity_provider(),
@@ -709,7 +709,7 @@ def test_export_selection_rejects_empty_duplicate_and_nonoperational_sheet_codes
         cursor_signing_key=b"development-only-key-32-bytes-long",
     )
     app = FastAPI()
-    app.add_exception_handler(WorkbenchError, workbench_error_response)
+    app.add_exception_handler(AtlasError, atlas_error_response)
     app.include_router(
         create_metadata_router(identity_provider=_identity_provider(), service=service)
     )
@@ -756,7 +756,7 @@ def test_unauthorized_tenant_export_is_denied_before_any_metadata_read() -> None
         cursor_signing_key=b"development-only-key-32-bytes-long",
     )
     app = FastAPI()
-    app.add_exception_handler(WorkbenchError, workbench_error_response)
+    app.add_exception_handler(AtlasError, atlas_error_response)
     app.include_router(
         create_metadata_router(identity_provider=_identity_provider(), service=service)
     )
@@ -797,7 +797,7 @@ def test_export_rejects_an_oversized_excel_cell_without_echoing_its_value() -> N
         cursor_signing_key=b"development-only-key-32-bytes-long",
     )
     app = FastAPI()
-    app.add_exception_handler(WorkbenchError, workbench_error_response)
+    app.add_exception_handler(AtlasError, atlas_error_response)
     app.include_router(
         create_metadata_router(identity_provider=_identity_provider(), service=service)
     )
@@ -838,7 +838,7 @@ def test_export_redacts_an_illegal_xml_cell_failure() -> None:
         cursor_signing_key=b"development-only-key-32-bytes-long",
     )
     app = FastAPI()
-    app.add_exception_handler(WorkbenchError, workbench_error_response)
+    app.add_exception_handler(AtlasError, atlas_error_response)
     app.include_router(
         create_metadata_router(identity_provider=_identity_provider(), service=service)
     )
@@ -878,7 +878,7 @@ def test_export_redacts_a_canonical_row_validation_failure() -> None:
         cursor_signing_key=b"development-only-key-32-bytes-long",
     )
     app = FastAPI()
-    app.add_exception_handler(WorkbenchError, workbench_error_response)
+    app.add_exception_handler(AtlasError, atlas_error_response)
     app.include_router(
         create_metadata_router(identity_provider=_identity_provider(), service=service)
     )
@@ -919,7 +919,7 @@ def test_export_rejects_a_sheet_above_the_fixed_row_limit() -> None:
         cursor_signing_key=b"development-only-key-32-bytes-long",
     )
     app = FastAPI()
-    app.add_exception_handler(WorkbenchError, workbench_error_response)
+    app.add_exception_handler(AtlasError, atlas_error_response)
     app.include_router(
         create_metadata_router(identity_provider=_identity_provider(), service=service)
     )
@@ -1045,7 +1045,7 @@ def test_database_route_exports_authorized_tenant_rows_from_disposable_postgres(
             await database.close()
 
     app = FastAPI(lifespan=lifespan)
-    app.add_exception_handler(WorkbenchError, workbench_error_response)
+    app.add_exception_handler(AtlasError, atlas_error_response)
     app.include_router(
         create_metadata_router(
             identity_provider=IdentityProvider(

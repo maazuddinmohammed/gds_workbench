@@ -8,7 +8,7 @@
   --on-brand-muted: #d9e5fb;
 }
 
-/* 01 — one continuous masthead, including tenant entry and local Workbench. */
+/* 01 — one continuous masthead, including tenant entry and Atlas Local Workbench. */
 .signature .app-masthead {
   background: var(--brand);
   border-color: var(--brand);

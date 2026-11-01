@@ -6,19 +6,19 @@ from copy import deepcopy
 from typing import Any, cast
 
 import pytest
-from gds_etl_workbench.domain.snapshots.project import (
+from atlas_mcp.domain.snapshots.project import (
     DimensionalSection,
     LogicalSection,
 )
+from atlas_platform.features.dimensional.candidate import (
+    DimensionalCandidateValidator,
+)
+from atlas_platform.features.logical.candidate import LogicalCandidateValidator
 from pydantic import JsonValue
+
 from tests.mcp.project_test_fixtures import LOGICAL_ENTITY_TYPES
 from tests.web_backend import test_dimensional_candidate as dimensional
 from tests.web_backend import test_logical_candidate as logical
-
-from gds_workbench_api.features.dimensional.candidate import (
-    DimensionalCandidateValidator,
-)
-from gds_workbench_api.features.logical.candidate import LogicalCandidateValidator
 
 
 def _logical_answer(*entities: tuple[str, list[str]]) -> dict[str, Any]:

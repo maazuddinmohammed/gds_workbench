@@ -3,13 +3,15 @@
 # Reuse fixture-only setup helpers.
 # pyright: reportPrivateUsage=false
 
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_workbench_api.features.workflows.execution import DatabaseWorkflowClaimRepository
-from gds_workbench_api.features.workflows.runs import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_platform.features.workflows.execution import DatabaseWorkflowClaimRepository
+from atlas_platform.features.workflows.runs import (
     DatabaseWorkflowRunService,
     WorkflowRunDetail,
 )
-from gds_workbench_api.features.workflows.usage.service import DatabaseWorkflowUsageRecorder
+from atlas_platform.features.workflows.usage.service import (
+    DatabaseWorkflowUsageRecorder,
+)
 
 from tests.mcp.conftest import DisposablePostgres
 from tests.web_backend.test_database_workflow_usage import _invocation, _run

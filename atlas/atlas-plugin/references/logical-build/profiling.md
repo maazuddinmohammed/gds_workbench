@@ -49,7 +49,7 @@ after an MCP restart; do not create a second run merely because one request time
 Use `cancel_profiling_run(run_id)` when the user requests cancellation. It requires the run
 owner and Tenant Lock, immediately revokes permission to save, and requests cancellation
 of active Databricks statements. Statement termination is best effort; status reports the
-Workbench run state, not a guarantee that Databricks has already stopped its statement.
+Atlas workflow run state, not a guarantee that Databricks has already stopped its statement.
 
 ## Refresh and reuse
 

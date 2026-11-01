@@ -1,13 +1,13 @@
 from pathlib import Path
 
 import pytest
-from fastapi import FastAPI, Request
-from fastapi.testclient import TestClient
-from gds_workbench_api.frontend import (
+from atlas_platform.frontend import (
     RequestBodyLimitMiddleware,
     SecurityHeadersMiddleware,
     mount_frontend,
 )
+from fastapi import FastAPI, Request
+from fastapi.testclient import TestClient
 
 
 def _built_frontend(directory: Path) -> Path:

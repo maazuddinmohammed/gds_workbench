@@ -3,17 +3,17 @@
 from copy import deepcopy
 from typing import Any, cast
 
-from gds_etl_workbench.domain.modeling_records import ContextTypeRecord
-from gds_etl_workbench.domain.snapshots.project import project_snapshot_records
-from gds_workbench_api.features.mapping.execution_context import (
+from atlas_mcp.domain.modeling_records import ContextTypeRecord
+from atlas_mcp.domain.snapshots.project import project_snapshot_records
+from atlas_platform.features.mapping.execution_context import (
     MappingExecutionContextLimits,
     build_mapping_execution_context,
 )
-from gds_workbench_api.features.mapping.preparation_contracts import (
+from atlas_platform.features.mapping.preparation_contracts import (
     MappingModeledEntity,
     MappingOutputTemplate,
 )
-from gds_workbench_api.features.workflows.authoring.downstream_inputs import (
+from atlas_platform.features.workflows.authoring.downstream_inputs import (
     DownstreamContextReaders,
     downstream_input_contracts,
 )

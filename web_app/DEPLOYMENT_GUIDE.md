@@ -50,7 +50,7 @@ and a production login other than `gds_web_runtime` are rejected.
 
 ## Foundry
 
-The registry `web_app/backend/gds_workbench_api/config/agent_capabilities.json` owns
+The registry `web_app/backend/atlas_platform/config/agent_capabilities.json` owns
 project codes, actual deployment names, execution modes and reasoning choices. Configure
 only combinations verified for the destination resource, then rebuild. There is no
 per-project environment override. Historical Run selections remain immutable.
@@ -139,7 +139,7 @@ python3 deployment/databricks_ui/build_uploads.py
 ```
 
 Use `--replace` only to replace that builder's previous output. Upload the expanded
-`artifacts/databricks-ui/gds-workbench-app-source` directory, preserving nesting;
+`artifacts/databricks-ui/atlas-platform-app-source` directory, preserving nesting;
 see [upload mechanics](../deployment/databricks_ui/README.md). The ZIP is transport,
 not a Databricks notebook import. Managed deployment installs dependencies, builds
 React into `web_app/frontend/dist`, then runs canonical `app.yaml`.

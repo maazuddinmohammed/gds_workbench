@@ -128,10 +128,10 @@ function Get-NextForArea([string]$Root, $State, [string]$Area, $Owner, [bool]$Ex
                     question = 'The Tenant is locked by another user. Wait until they release it?'}) @(
                     'Retry only after the lock is free. Never call override_tenant_lock unless the user explicitly asks.') $facts
             }
-            'project_locked' { $stop = 'The Project is locked; a human must unlock it in the GDS web app.' }
+            'project_locked' { $stop = 'The Project is locked; a human must unlock it in the Atlas Platform.' }
             'authorization_denied' { $stop = "The signed-in user's role does not allow this operation." }
-            'stage_runner_required' {
-                return New-NextResult 'error_recovery' $Area $Owner 'Stage uploads run only through the Stage Runner.' (New-NextHelperAction 'next' $Root $Area $ownerArgs @()) @(
+            'atlas_bridge_required' {
+                return New-NextResult 'error_recovery' $Area $Owner 'Stage uploads run only through the Atlas Bridge.' (New-NextHelperAction 'next' $Root $Area $ownerArgs @()) @(
                     "Follow next's atlas_stageApprovedManifest action. Never call stage_*, begin_*, put_* or commit_* tools.") $facts
             }
             'candidate_digest_conflict' {
@@ -255,7 +255,7 @@ function Get-NextForArea([string]$Root, $State, [string]$Area, $Owner, [bool]$Ex
         if ($null -eq $stage -and $null -eq $serverValidation -and $unchanged) {
             $stageRequest = Get-Property $operation 'stage_request'
             if ($null -ne $stageRequest) {
-                return New-NextResult 'stage_prepared' $Area $Owner 'The approved batch is ready for Stage Runner.' ([ordered]@{kind = 'extension';
+                return New-NextResult 'stage_prepared' $Area $Owner 'The approved batch is ready for Atlas Bridge.' ([ordered]@{kind = 'extension';
                     tool = 'atlas_stageApprovedManifest'; input = [ordered]@{manifestPath = (Resolve-WorkspacePath $Root $stageRequest.path)}}) @(
                     'Require status=staged and fingerprint_verified=true; on an uncertain result run next (it switches to recovery).', 'Run next again.') $facts
             }
@@ -311,7 +311,7 @@ function Get-NextForArea([string]$Root, $State, [string]$Area, $Owner, [bool]$Ex
     return New-NextResult 'ready_for_review' $Area $Owner 'Local changes are valid and ready for the user''s review.' ([ordered]@{kind = 'ask_user';
         question = 'Review the pending ' + $Area + ' changes in Atlas Local Workbench. Approve them for Stage?';
         after_approval = @(
-            [ordered]@{kind = 'extension'; tool = 'atlas_checkStageRunner'; input = [ordered]@{outputFile = $checkFile}},
+            [ordered]@{kind = 'extension'; tool = 'atlas_checkBridge'; input = [ordered]@{outputFile = $checkFile}},
             [ordered]@{kind = 'mcp'; tool = 'check_tenant_lock'; arguments = [ordered]@{tenant_id = $lockTenant}; note = 'Call acquire_tenant_lock first if the current Principal does not hold it.'},
             [ordered]@{kind = 'mcp'; tool = 'create_' + $Area + '_change_set'; arguments = $scope; save_response_to = $draftFile},
             $accept,

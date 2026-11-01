@@ -9,37 +9,37 @@ from copy import deepcopy
 from typing import Any, cast
 
 import pytest
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.domain.modeling_records import AnalysisResultRecord
-from jsonschema import Draft202012Validator
-from tests.web_backend.test_analysis_executor import _candidate, _context_bundle, _plan
-
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_mcp.domain.modeling_records import AnalysisResultRecord
+from atlas_platform.features.workflows.authoring.agent_execution import (
     AgentContextToolResultTooLargeError,
 )
-from gds_workbench_api.features.workflows.authoring.context import (
+from atlas_platform.features.workflows.authoring.context import (
     AgentContextToolRequestError,
     InMemoryAgentContextToolCatalog,
 )
-from gds_workbench_api.features.workflows.authoring.context_contracts import (
+from atlas_platform.features.workflows.authoring.context_contracts import (
     INPUT_EXAMPLES,
     workflow_input_contracts,
 )
-from gds_workbench_api.features.workflows.authoring.context_inputs import (
+from atlas_platform.features.workflows.authoring.context_inputs import (
     OBJECT_FIELDS,
     project_context_inputs,
 )
-from gds_workbench_api.features.workflows.authoring.context_readers import (
+from atlas_platform.features.workflows.authoring.context_readers import (
     FrozenContextReaders,
 )
-from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
+from atlas_platform.features.workflows.authoring.prompt_inputs import (
     project_prompt_input_values,
 )
-from gds_workbench_api.features.workflows.authoring.tool_configuration import (
+from atlas_platform.features.workflows.authoring.tool_configuration import (
     ConfiguredToolCatalog,
     configure_tools,
 )
-from gds_workbench_api.prompt_rendering import PromptVariableDefinition
+from atlas_platform.prompt_rendering import PromptVariableDefinition
+from jsonschema import Draft202012Validator
+
+from tests.web_backend.test_analysis_executor import _candidate, _context_bundle, _plan
 
 
 def catalog(
@@ -405,11 +405,11 @@ def test_empty_tool_selection_is_valid_and_preserves_inline_inputs() -> None:
 def test_workflows_without_public_modes_can_choose_any_or_no_readers(
     workflow: str,
 ) -> None:
-    from gds_workbench_api.features.workflows.authoring.downstream_inputs import (
+    from atlas_platform.features.workflows.authoring.downstream_inputs import (
         build_downstream_readers,
         downstream_input_contracts,
     )
-    from gds_workbench_api.features.workflows.authoring.tool_configuration import (
+    from atlas_platform.features.workflows.authoring.tool_configuration import (
         AgentToolName,
     )
 

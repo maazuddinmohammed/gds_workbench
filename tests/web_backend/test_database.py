@@ -4,11 +4,10 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import ClassVar
 
+import atlas_platform.database as database_module
 import pytest
+from atlas_platform.database import WebPostgresDatabase
 from psycopg.errors import InsufficientPrivilege
-
-import gds_workbench_api.database as database_module
-from gds_workbench_api.database import WebPostgresDatabase
 
 
 class Result:

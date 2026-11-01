@@ -215,7 +215,7 @@ function nav(activeId) {
   const root = document.getElementById("nav");
   root.replaceChildren(
     el("div", { class: "brand", text: "Prompt Studio" }),
-    el("div", { class: "sub", text: `GDS Workbench · built ${data.built}` }),
+    el("div", { class: "sub", text: `Atlas Platform · built ${data.built}` }),
     el("a", { href: "#", class: "top " + (activeId === "" ? "active" : ""), text: "Overview" }),
     el("a", { href: "#guide", class: activeId === "guide" ? "active" : "", text: "How to work" }));
   let group = null;

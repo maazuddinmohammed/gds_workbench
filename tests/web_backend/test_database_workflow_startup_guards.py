@@ -6,23 +6,28 @@ from collections.abc import Iterator
 from dataclasses import replace
 
 import pytest
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.workflows.authoring.lifecycle import (
     DatabaseAgentWorkflowLifecycle,
 )
-from gds_workbench_api.features.workflows.execution import (
+from atlas_platform.features.workflows.execution import (
     DatabaseWorkflowClaimRepository,
     WorkerRunResult,
     WorkflowExecutionDispatcher,
     WorkflowExecutionWorker,
 )
-from gds_workbench_api.features.workflows.usage.service import DatabaseWorkflowUsageRecorder
+from atlas_platform.features.workflows.usage.service import (
+    DatabaseWorkflowUsageRecorder,
+)
 from test_workflow_execution_dispatcher import _services
 
 from tests.mcp.conftest import DisposablePostgres, disposable_postgres
 from tests.mcp.database_test_support import require_row
 from tests.mcp.test_database_workflow_run_lifecycle import seed_workflow_context
-from tests.web_backend.test_database_workflow_run_claims import _create_run, _expire_claim
+from tests.web_backend.test_database_workflow_run_claims import (
+    _create_run,
+    _expire_claim,
+)
 
 
 @pytest.fixture

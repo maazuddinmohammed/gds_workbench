@@ -18,278 +18,278 @@ product decision.
 
 ## `references/code-generation/sql.md`
 
-Atlas contracts: [Generated Code records](../../atlas/atlas-plugin/references/project/generated-code.md) and [Mapping documents](../../atlas/atlas-plugin/references/project/mapping-documents.md). Backend contracts: `mcp_server/gds_etl_workbench/domain/modeling_records.py`, `application/change_sets/project_validation.py`; workflow authoring: `web_app/backend/gds_workbench_api/features/workflows/authoring/`.
+Atlas contracts: [Generated Code records](../../atlas/atlas-plugin/references/project/generated-code.md) and [Mapping documents](../../atlas/atlas-plugin/references/project/mapping-documents.md). Backend contracts: `mcp_server/atlas_mcp/domain/modeling_records.py`, `application/change_sets/project_validation.py`; workflow authoring: `web_app/backend/atlas_platform/features/workflows/authoring/`.
 
 ## `references/metadata/read-only/chunk-type.md`
 
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:121,312`.
+- `mcp_server/atlas_mcp/domain/metadata_records.py:121,312`.
 - `database/01_reference.sql:183`.
 - `database/seed/01_metadata_snapshot_demo.sql:36`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:332,512`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:290`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata.py:332,512`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata_guidance.py:290`.
 
 ## `references/metadata/read-only/connection-type.md`
 
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:77,97`.
+- `mcp_server/atlas_mcp/domain/metadata_records.py:77,97`.
 - `database/01_reference.sql:54`.
 - `database/seed/01_metadata_snapshot_demo.sql:12`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:288,301`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata.py:288,301`.
 
 ## `references/metadata/read-only/connection.md`
 
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:77`.
+- `mcp_server/atlas_mcp/domain/metadata_records.py:77`.
 - `database/02_core.sql:80`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:157,277`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:397`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata.py:157,277`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata_guidance.py:397`.
 
 ## `references/metadata/read-only/data-operation.md`
 
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:133,320`.
+- `mcp_server/atlas_mcp/domain/metadata_records.py:133,320`.
 - `database/01_reference.sql:169`.
 - `database/seed/01_metadata_snapshot_demo.sql:50`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:352,514`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:292`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata.py:352,514`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata_guidance.py:292`.
 
 ## `references/metadata/read-only/file-type.md`
 
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:127,315`.
+- `mcp_server/atlas_mcp/domain/metadata_records.py:127,315`.
 - `database/01_reference.sql:144`.
 - `database/seed/01_metadata_snapshot_demo.sql:43`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:342,513`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:291`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata.py:342,513`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata_guidance.py:291`.
 
 ## `references/metadata/read-only/lane.md`
 
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:35`.
+- `mcp_server/atlas_mcp/domain/metadata_records.py:35`.
 - `database/02_core.sql:5,34`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:232,251`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata.py:232,251`.
 - `database/seed/01_metadata_snapshot_demo.sql:66`.
 
 ## `references/metadata/read-only/object-type.md`
 
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:104,157`.
+- `mcp_server/atlas_mcp/domain/metadata_records.py:104,157`.
 - `database/01_reference.sql:70`.
 - `database/seed/01_metadata_snapshot_demo.sql:20`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:311,394`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata.py:311,394`.
 
 ## `references/metadata/read-only/process-type.md`
 
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:139,343`.
+- `mcp_server/atlas_mcp/domain/metadata_records.py:139,343`.
 - `database/01_reference.sql:212`.
 - `database/seed/01_metadata_snapshot_demo.sql:59`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:362,557`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:244`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata.py:362,557`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata_guidance.py:244`.
 
 ## `references/metadata/read-only/system-type.md`
 
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:90`.
+- `mcp_server/atlas_mcp/domain/metadata_records.py:90`.
 - `database/01_reference.sql:26`.
 - `database/seed/01_metadata_snapshot_demo.sql:4`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:274,291`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata.py:274,291`.
 
 ## `references/metadata/read-only/system.md`
 
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:69`.
+- `mcp_server/atlas_mcp/domain/metadata_records.py:69`.
 - `database/02_core.sql:43`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:265,393,465`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata.py:265,393,465`.
 
 ## `references/metadata/read-only/tenant.md`
 
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:42`.
+- `mcp_server/atlas_mcp/domain/metadata_records.py:42`.
 - `CONTEXT.md:7,11,20,45`.
-- `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:394`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:243`.
+- `mcp_server/atlas_mcp/application/change_sets/metadata_validation.py:394`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata.py:243`.
 
 ## `references/metadata/read-only/zone.md`
 
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:111,158,333`.
+- `mcp_server/atlas_mcp/domain/metadata_records.py:111,158,333`.
 - `database/01_reference.sql:40,267`.
 - `database/seed/01_metadata_snapshot_demo.sql:28`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:374,531`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata.py:374,531`.
 
 ## `references/metadata/tables/attribute.md`
 
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:29,163,171,173`.
+- `mcp_server/atlas_mcp/domain/metadata_records.py:29,163,171,173`.
 - `database/02_core.sql:199,206,215,223,225,230,516,517`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:159,415,416`.
-- `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:103,270,354,474,533`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata.py:159,415,416`.
+- `mcp_server/atlas_mcp/application/change_sets/metadata_validation.py:103,270,354,474,533`.
 - `database/16_mcp_metadata_apply.sql:140,226,270,445,469`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:45,194`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata_guidance.py:45,194`.
 
 ## `references/metadata/tables/copy-group-control.md`
 
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:29,284,290,291`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:74,79,84,204`.
+- `mcp_server/atlas_mcp/domain/metadata_records.py:29,284,290,291`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata_guidance.py:74,79,84,204`.
 - `database/02_core.sql:348,349,352,356,362,380,382`.
 - `database/16_mcp_metadata_apply.sql:747,767,781`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:181,493,495`.
-- `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:103,354,474,533`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata.py:181,493,495`.
+- `mcp_server/atlas_mcp/application/change_sets/metadata_validation.py:103,354,474,533`.
 
 ## `references/metadata/tables/copy-group.md`
 
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:29,266`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:204`.
+- `mcp_server/atlas_mcp/domain/metadata_records.py:29,266`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata_guidance.py:204`.
 - `database/02_core.sql:303,309,315,352,518`.
 - `database/16_mcp_metadata_apply.sql:656,673,686`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:160,465`.
-- `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:103,354,474,533`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata.py:160,465`.
+- `mcp_server/atlas_mcp/application/change_sets/metadata_validation.py:103,354,474,533`.
 
 ## `references/metadata/tables/copy.md`
 
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:26,29,296,311,315,319,324`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:89,94,100,126`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:180,500,508,509`.
+- `mcp_server/atlas_mcp/domain/metadata_records.py:26,29,296,311,315,319,324`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata_guidance.py:89,94,100,126`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata.py:180,500,508,509`.
 - `database/02_core.sql:388,392,393,401,409,425,427`.
-- `mcp_server/gds_etl_workbench/tools/ingestion/copy_groups.py:176`.
-- `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:103,354,474,533`.
+- `mcp_server/atlas_mcp/tools/ingestion/copy_groups.py:176`.
+- `mcp_server/atlas_mcp/application/change_sets/metadata_validation.py:103,354,474,533`.
 - `database/16_mcp_metadata_apply.sql:270,816,906,938`.
 
 ## `references/metadata/tables/ingestion-attribute-mapping.md`
 
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:29,226,241`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:179,441,450`.
+- `mcp_server/atlas_mcp/domain/metadata_records.py:29,226,241`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata.py:179,441,450`.
 - `database/02_core.sql:263,274,275,292,298`.
 - `database/16_mcp_metadata_apply.sql:593,639,649`.
-- `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:354,474,533`.
+- `mcp_server/atlas_mcp/application/change_sets/metadata_validation.py:354,474,533`.
 
 ## `references/metadata/tables/ingestion-object-mapping.md`
 
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:29,189,190,203`.
+- `mcp_server/atlas_mcp/domain/metadata_records.py:29,189,190,203`.
 - `CONTEXT.md:135`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:178,427,436`.
-- `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:354,425,474,533`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata.py:178,427,436`.
+- `mcp_server/atlas_mcp/application/change_sets/metadata_validation.py:354,425,474,533`.
 - `database/02_core.sql:237,246,250,258`.
 - `database/16_mcp_metadata_apply.sql:507,550`.
 
 ## `references/metadata/tables/member-group.md`
 
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:29,275,280`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:229`.
+- `mcp_server/atlas_mcp/domain/metadata_records.py:29,275,280`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata_guidance.py:229`.
 - `database/02_core.sql:326,332,338,371,524`.
-- `mcp_server/gds_etl_workbench/tools/ingestion/copy_groups.py:188`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:161,479`.
-- `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:354,474,533`.
+- `mcp_server/atlas_mcp/tools/ingestion/copy_groups.py:188`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata.py:161,479`.
+- `mcp_server/atlas_mcp/application/change_sets/metadata_validation.py:354,474,533`.
 - `database/16_mcp_metadata_apply.sql:709,722`.
 
 ## `references/metadata/tables/object.md`
 
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:29,145,152,158`.
+- `mcp_server/atlas_mcp/domain/metadata_records.py:29,145,152,158`.
 - `database/02_core.sql:166,176,185,510`.
 - `database/16_mcp_metadata_apply.sql:140,305,344,345,377`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:158,390,404`.
-- `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:103,270,451,474,533`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:68,132,397`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata.py:158,390,404`.
+- `mcp_server/atlas_mcp/application/change_sets/metadata_validation.py:103,270,451,474,533`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata_guidance.py:68,132,397`.
 - `database/14_application_workflow_execution.sql:796,848`.
-- `web_app/backend/gds_workbench_api/features/analysis/validation_execution.py:434`.
+- `web_app/backend/atlas_platform/features/analysis/validation_execution.py:434`.
 
 Guidance correction for implementation: `domain/snapshots/metadata_guidance.py` currently says downstream ownership "differs" from physical Tenant. It should say "may differ"; equality is permitted under the configured-Connection rules above. No backend change is made by this document.
 
 ## `references/metadata/tables/process-group.md`
 
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:29,333`.
+- `mcp_server/atlas_mcp/domain/metadata_records.py:29,333`.
 - `database/02_core.sql:432,435,445,530`.
 - `database/16_mcp_metadata_apply.sql:944,961,981`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:162,528`.
-- `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:354,474,533`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata.py:162,528`.
+- `mcp_server/atlas_mcp/application/change_sets/metadata_validation.py:354,474,533`.
 
 ## `references/metadata/tables/process.md`
 
-- `mcp_server/gds_etl_workbench/domain/metadata_records.py:29,343,349`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:51,182,544`.
+- `mcp_server/atlas_mcp/domain/metadata_records.py:29,343,349`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata.py:51,182,544`.
 - `database/02_core.sql:465,479,487,490`.
 - `database/16_mcp_metadata_apply.sql:1008,1043,1052,1059`.
-- `mcp_server/gds_etl_workbench/tools/processing/process_groups.py:110`.
+- `mcp_server/atlas_mcp/tools/processing/process_groups.py:110`.
 - `CONTEXT.md:442`.
-- `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:354,474,533`.
-- `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:249`.
+- `mcp_server/atlas_mcp/application/change_sets/metadata_validation.py:354,474,533`.
+- `mcp_server/atlas_mcp/domain/snapshots/metadata_guidance.py:249`.
 
 ## `references/methods/registration/target-definition.md`
 
-Atlas target registration follows the complete-column and optional-output rules above. Field contracts: `mcp_server/gds_etl_workbench/domain/metadata_records.py`; owner placement: `application/change_sets/metadata_validation.py`; Connection discovery: `tools/tenants/get_tenant_details.py`; Modeled ownership: `domain/modeling_records.py`; registration remains a separate Metadata workflow.
+Atlas target registration follows the complete-column and optional-output rules above. Field contracts: `mcp_server/atlas_mcp/domain/metadata_records.py`; owner placement: `application/change_sets/metadata_validation.py`; Connection discovery: `tools/tenants/get_tenant_details.py`; Modeled ownership: `domain/modeling_records.py`; registration remains a separate Metadata workflow.
 
 ## `references/project/analysis-result.md`
 
-Current contract: `mcp_server/gds_etl_workbench/domain/modeling_records.py` (`AnalysisResultRecord`, `AnalysisValidationEvidence`); key in `domain/snapshots/project.py`; scope checks in `application/change_sets/project_validation.py`; database rules in `database/05_workflow_analysis.sql`. Atlas probe planning lives in `atlas/atlas-plugin/scripts/analysis.js`.
+Current contract: `mcp_server/atlas_mcp/domain/modeling_records.py` (`AnalysisResultRecord`, `AnalysisValidationEvidence`); key in `domain/snapshots/project.py`; scope checks in `application/change_sets/project_validation.py`; database rules in `database/05_workflow_analysis.sql`. Atlas probe planning lives in `atlas/atlas-plugin/scripts/analysis.js`.
 
 ## `references/project/subject-areas.md`
 
-Current field contracts: `mcp_server/gds_etl_workbench/domain/modeling_records.py` (`SubjectAreaRecord`, `SubjectAreaTableRecord`). Keys: `domain/snapshots/project.py`; scope/references/locks: `application/change_sets/project_validation.py`; upserts: `application/change_sets/project_apply.py`; database contracts: `database/06_workflow_subject_area.sql`. The grouping method mirrors the web Subject Area prompt in `database/seed/05_global_prompt_defaults.template.sql` and the answer checks in `web_app/backend/gds_workbench_api/features/subject_areas/candidate.py`.
+Current field contracts: `mcp_server/atlas_mcp/domain/modeling_records.py` (`SubjectAreaRecord`, `SubjectAreaTableRecord`). Keys: `domain/snapshots/project.py`; scope/references/locks: `application/change_sets/project_validation.py`; upserts: `application/change_sets/project_apply.py`; database contracts: `database/06_workflow_subject_area.sql`. The grouping method mirrors the web Subject Area prompt in `database/seed/05_global_prompt_defaults.template.sql` and the answer checks in `web_app/backend/atlas_platform/features/subject_areas/candidate.py`.
 
 ## `references/project/dimensional.md`
 
-Fields/nested validation: `mcp_server/gds_etl_workbench/domain/modeling_records.py`; canonical keys: `domain/snapshots/project.py`; current graph checks: `application/change_sets/project_validation.py`; Attribute-parent source requirement: `application/change_sets/project_apply.py` (`_find_entity_object_source`); database constraints: `database/08_workflow_dimensional.sql`; physical eligibility: `database/11_workflow_eligibility.sql`; catalog prerequisites: `tools/snapshots/project/archive.py`.
+Fields/nested validation: `mcp_server/atlas_mcp/domain/modeling_records.py`; canonical keys: `domain/snapshots/project.py`; current graph checks: `application/change_sets/project_validation.py`; Attribute-parent source requirement: `application/change_sets/project_apply.py` (`_find_entity_object_source`); database constraints: `database/08_workflow_dimensional.sql`; physical eligibility: `database/11_workflow_eligibility.sql`; catalog prerequisites: `tools/snapshots/project/archive.py`.
 
 ## `references/project/generated-code.md`
 
-Fields: `mcp_server/gds_etl_workbench/domain/modeling_records.py` (`GeneratedCodeRecord`, `GeneratedCodeSourceSystemRecord`); keys/sections: `domain/snapshots/project.py`; catalog prerequisites: `tools/snapshots/project/archive.py`; locks/coverage: `application/change_sets/project_validation.py`; Apply/digests: `application/change_sets/project_apply.py`, `database/10_workflow_code_validation.sql`, `database/11_workflow_eligibility.sql`.
+Fields: `mcp_server/atlas_mcp/domain/modeling_records.py` (`GeneratedCodeRecord`, `GeneratedCodeSourceSystemRecord`); keys/sections: `domain/snapshots/project.py`; catalog prerequisites: `tools/snapshots/project/archive.py`; locks/coverage: `application/change_sets/project_validation.py`; Apply/digests: `application/change_sets/project_apply.py`, `database/10_workflow_code_validation.sql`, `database/11_workflow_eligibility.sql`.
 
-Separate backend candidate/SQL checks and conversion: `web_app/backend/gds_workbench_api/features/code_generation/candidate.py`, `service.py`; SQL-only read/download behavior: `read_service.py`. Atlas generation guidance is in `atlas/atlas-plugin/references/code-generation/sql.md`. Do not mistake internal backend candidate fields or helper functions for public MCP tools.
+Separate backend candidate/SQL checks and conversion: `web_app/backend/atlas_platform/features/code_generation/candidate.py`, `service.py`; SQL-only read/download behavior: `read_service.py`. Atlas generation guidance is in `atlas/atlas-plugin/references/code-generation/sql.md`. Do not mistake internal backend candidate fields or helper functions for public MCP tools.
 
 ## `references/project/logical.md`
 
-Field/source contracts: `mcp_server/gds_etl_workbench/domain/modeling_records.py`; canonical keys: `domain/snapshots/project.py`; graph checks: `application/change_sets/project_validation.py`; Attribute-parent source requirement: `application/change_sets/project_apply.py` (`_find_entity_object_source`); database rules: `database/07_workflow_logical.sql`. Shared catalog prerequisites are defined in `tools/snapshots/project/archive.py`.
+Field/source contracts: `mcp_server/atlas_mcp/domain/modeling_records.py`; canonical keys: `domain/snapshots/project.py`; graph checks: `application/change_sets/project_validation.py`; Attribute-parent source requirement: `application/change_sets/project_apply.py` (`_find_entity_object_source`); database rules: `database/07_workflow_logical.sql`. Shared catalog prerequisites are defined in `tools/snapshots/project/archive.py`.
 
 ## `references/project/mapping-documents.md`
 
-Exact template: `database/seed/06_global_mapping_output_templates.template.sql`. Record contract: [Mapping records](mapping.md). Runtime/code conventions: [SQL generation](../code-generation/sql.md). Complete-context projection: `web_app/backend/gds_workbench_api/features/workflows/authoring/downstream_inputs.py`; underlying eligibility projections: `database/11_workflow_eligibility.sql`.
+Exact template: `database/seed/06_global_mapping_output_templates.template.sql`. Record contract: [Mapping records](mapping.md). Runtime/code conventions: [SQL generation](../code-generation/sql.md). Complete-context projection: `web_app/backend/atlas_platform/features/workflows/authoring/downstream_inputs.py`; underlying eligibility projections: `database/11_workflow_eligibility.sql`.
 
 ## `references/project/mapping.md`
 
-Fields/JSON limits: `mcp_server/gds_etl_workbench/domain/modeling_records.py` (`MappingObjectRecord`, `MappingAttributeRecord`, `_json_size`); canonical keys/section: `domain/snapshots/project.py`; prerequisites: `tools/snapshots/project/archive.py`; active parents/coverage/locks/eligibility: `application/change_sets/project_validation.py`; active System catalog: `application/change_sets/project.py`; replacement/template resolution: `application/change_sets/project_apply.py`; database uniqueness/size: `database/09_workflow_mapping.sql`. Existing inner-template authority: `database/seed/06_global_mapping_output_templates.template.sql`.
+Fields/JSON limits: `mcp_server/atlas_mcp/domain/modeling_records.py` (`MappingObjectRecord`, `MappingAttributeRecord`, `_json_size`); canonical keys/section: `domain/snapshots/project.py`; prerequisites: `tools/snapshots/project/archive.py`; active parents/coverage/locks/eligibility: `application/change_sets/project_validation.py`; active System catalog: `application/change_sets/project.py`; replacement/template resolution: `application/change_sets/project_apply.py`; database uniqueness/size: `database/09_workflow_mapping.sql`. Existing inner-template authority: `database/seed/06_global_mapping_output_templates.template.sql`.
 
 ## `references/project/profiling-profile.md`
 
-Current contract: `mcp_server/gds_etl_workbench/domain/modeling_records.py` (`ProfilingProfileRecord`), `domain/snapshots/project.py` dataset key and `application/change_sets/project_validation.py` scope checks. Current SQL generation is in `mcp_server/gds_etl_workbench/application/profiling/execution.py`; MCP owns run execution and persistence.
+Current contract: `mcp_server/atlas_mcp/domain/modeling_records.py` (`ProfilingProfileRecord`), `domain/snapshots/project.py` dataset key and `application/change_sets/project_validation.py` scope checks. Current SQL generation is in `mcp_server/atlas_mcp/application/profiling/execution.py`; MCP owns run execution and persistence.
 
 ## `references/snapshots/metadata.md`
 
-- mcp_server/gds_etl_workbench/application/metadata_snapshot/archive.py
-- mcp_server/gds_etl_workbench/domain/snapshots/metadata.py
+- mcp_server/atlas_mcp/application/metadata_snapshot/archive.py
+- mcp_server/atlas_mcp/domain/snapshots/metadata.py
 
 ## `references/snapshots/project.md`
 
-- mcp_server/gds_etl_workbench/tools/snapshots/project/archive.py
-- mcp_server/gds_etl_workbench/application/project_snapshot.py
-- mcp_server/gds_etl_workbench/domain/snapshots/project.py
-- mcp_server/gds_etl_workbench/domain/modeling_records.py
-- mcp_server/gds_etl_workbench/application/change_sets/project.py
+- mcp_server/atlas_mcp/tools/snapshots/project/archive.py
+- mcp_server/atlas_mcp/application/project_snapshot.py
+- mcp_server/atlas_mcp/domain/snapshots/project.py
+- mcp_server/atlas_mcp/domain/modeling_records.py
+- mcp_server/atlas_mcp/application/change_sets/project.py
 
 ## `references/dimensional-build/history.md`
 
-Default Type 2 names come from `web_app/backend/gds_workbench_api/features/workflows/authoring/gold_policy.py` (`_DEFAULT_TECHNICAL`); projection in `features/dimensional/policy.py`; storage fields in `mcp_server/gds_etl_workbench/domain/modeling_records.py`. Prompt-variable examples in `database/seed/04_application_reference.sql` still show older names and are examples only.
+Default Type 2 names come from `web_app/backend/atlas_platform/features/workflows/authoring/gold_policy.py` (`_DEFAULT_TECHNICAL`); projection in `features/dimensional/policy.py`; storage fields in `mcp_server/atlas_mcp/domain/modeling_records.py`. Prompt-variable examples in `database/seed/04_application_reference.sql` still show older names and are examples only.
 
 ## `references/metadata/validation.md`
 
-Eligibility/keys/uniqueness/references: `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py`; guidance: `domain/snapshots/metadata_guidance.py`; field contracts: `domain/metadata_records.py`; cross-field rules: `domain/portable_validation.py`; published schemas: `application/metadata_snapshot/archive.py`; describe tool: `tools/snapshots/metadata/describe_metadata_dataset.py`; backend validation: `application/change_sets/metadata_validation.py`; storage/Apply: `database/02_core.sql`, `database/16_mcp_metadata_apply.sql`; local mirrors: `atlas/atlas-plugin/workbench/validation/`.
+Eligibility/keys/uniqueness/references: `mcp_server/atlas_mcp/domain/snapshots/metadata.py`; guidance: `domain/snapshots/metadata_guidance.py`; field contracts: `domain/metadata_records.py`; cross-field rules: `domain/portable_validation.py`; published schemas: `application/metadata_snapshot/archive.py`; describe tool: `tools/snapshots/metadata/describe_metadata_dataset.py`; backend validation: `application/change_sets/metadata_validation.py`; storage/Apply: `database/02_core.sql`, `database/16_mcp_metadata_apply.sql`; local mirrors: `atlas/atlas-plugin/atlas-local-workbench/validation/`.
 
 ## `references/project/change-sets.md`
 
-`mcp_server/gds_etl_workbench/domain/modeling_records.py`, `domain/snapshots/project.py`, `application/change_sets/project.py`, `application/change_sets/project_validation.py`, `tools/snapshots/project/describe_project_dataset.py`; helper flags in `atlas/atlas-plugin/contracts/local-helper.json`. Dataset guidance text shown to agents lives in `domain/snapshots/project_guidance.py` and `metadata_guidance.py`; keep it consistent with these references.
+`mcp_server/atlas_mcp/domain/modeling_records.py`, `domain/snapshots/project.py`, `application/change_sets/project.py`, `application/change_sets/project_validation.py`, `tools/snapshots/project/describe_project_dataset.py`; helper flags in `atlas/atlas-plugin/contracts/local-helper.json`. Dataset guidance text shown to agents lives in `domain/snapshots/project_guidance.py` and `metadata_guidance.py`; keep it consistent with these references.
 
 ## `references/project/context.md`
 
-`mcp_server/gds_etl_workbench/domain/modeling_records.py` (`ContextTypeRecord`, `ContextGroupRecord`, `ContextRecord`, `ContextRecordReference`), `domain/context_safety.py`, `domain/snapshots/project.py`, `application/change_sets/project_validation.py`.
+`mcp_server/atlas_mcp/domain/modeling_records.py` (`ContextTypeRecord`, `ContextGroupRecord`, `ContextRecord`, `ContextRecordReference`), `domain/context_safety.py`, `domain/snapshots/project.py`, `application/change_sets/project_validation.py`.
 
 ## `references/project/keys-and-audit.md`
 
-Backend projection: `web_app/backend/gds_workbench_api/features/logical/policy.py`, `features/dimensional/policy.py`, `features/workflows/authoring/gold_policy.py` and `audit_policy.py`; records in `mcp_server/gds_etl_workbench/domain/modeling_records.py`.
+Backend projection: `web_app/backend/atlas_platform/features/logical/policy.py`, `features/dimensional/policy.py`, `features/workflows/authoring/gold_policy.py` and `audit_policy.py`; records in `mcp_server/atlas_mcp/domain/modeling_records.py`.
 
 ## `references/project/validation.md`
 
-- `mcp_server/gds_etl_workbench/domain/modeling_records.py`: `ValidationGroupRecord`, `ValidationCheckRecord`, literal checks and limits; `domain/snapshots/project.py`: canonical keys and section.
+- `mcp_server/atlas_mcp/domain/modeling_records.py`: `ValidationGroupRecord`, `ValidationCheckRecord`, literal checks and limits; `domain/snapshots/project.py`: canonical keys and section.
 - `application/change_sets/project_validation.py`: ownership, active dependencies, independent locks and active SQL checks; `application/change_sets/project_apply.py`: Group/Check upserts and server-derived currentness.
-- `domain/databricks_sql.py`: statement policy/qualification; `application/project_snapshot.py`: exported saved definitions. All four paths above are under `mcp_server/gds_etl_workbench/`.
+- `domain/databricks_sql.py`: statement policy/qualification; `application/project_snapshot.py`: exported saved definitions. All four paths above are under `mcp_server/atlas_mcp/`.
 - `database/10_workflow_code_validation.sql`: storage constraints and uniqueness, including scalar-literal shape.
-- `web_app/backend/gds_workbench_api/features/validation/{context,candidate,service}.py`: applied/current authoring inputs, complete-ledger reconciliation and definition generation; not an external comparison executor.
+- `web_app/backend/atlas_platform/features/validation/{context,candidate,service}.py`: applied/current authoring inputs, complete-ledger reconciliation and definition generation; not an external comparison executor.
 - `docs/workflows.md` and `docs/architecture/decisions.md`: authoring/execution boundary and scalar consumer contract.
 
 ## `references/query-scope.md`
 
-`mcp_server/gds_etl_workbench/tools/databricks/execute_sql.py`, `domain/databricks_sql.py`, `infrastructure/databricks_sql.py`; Object owner catalog in `database/14_application_workflow_execution.sql`; batch planning in `atlas/atlas-plugin/scripts/profiling.js` and `scripts/analysis.js`.
+`mcp_server/atlas_mcp/tools/databricks/execute_sql.py`, `domain/databricks_sql.py`, `infrastructure/databricks_sql.py`; Object owner catalog in `database/14_application_workflow_execution.sql`; batch planning in `atlas/atlas-plugin/scripts/profiling.js` and `scripts/analysis.js`.
 
 ## `references/record-state.md`
 
-Local/server protection rules: `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py`, `application/change_sets/project_validation.py`, `domain/modeling_records.py`; local mirrors in `atlas/atlas-plugin/workbench/validation/`.
+Local/server protection rules: `mcp_server/atlas_mcp/application/change_sets/metadata_validation.py`, `application/change_sets/project_validation.py`, `domain/modeling_records.py`; local mirrors in `atlas/atlas-plugin/atlas-local-workbench/validation/`.
 
 ## `references/metadata/enrichment-quality.md` design notes
 
@@ -299,7 +299,7 @@ Local provenance: metadata_records.py; current GDS metadata-enrichment.md; profi
 
 ## `references/metadata/tables/copy.md` order contract
 
-Repeated `copy_source_order` values: `database/02_core.sql`, `database/16_mcp_metadata_apply.sql`, `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py`, Metadata Snapshot contracts and disposable Metadata Apply tests. Existing installations need a reviewed upgrade; readiness rejects the obsolete `uq_copy_group_order` constraint.
+Repeated `copy_source_order` values: `database/02_core.sql`, `database/16_mcp_metadata_apply.sql`, `mcp_server/atlas_mcp/domain/snapshots/metadata.py`, Metadata Snapshot contracts and disposable Metadata Apply tests. Existing installations need a reviewed upgrade; readiness rejects the obsolete `uq_copy_group_order` constraint.
 
 ## `references/release-scope.md` compatibility work
 

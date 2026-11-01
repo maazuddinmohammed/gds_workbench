@@ -7,16 +7,14 @@ from typing import Any, LiteralString, Protocol, cast
 from uuid import UUID, uuid4
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.analysis import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_mcp.infrastructure.postgres import ReadIsolation
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.analysis import (
     AnalysisEndpoint,
     AnalysisEvidence,
     AnalysisFindingDetail,
@@ -27,12 +25,12 @@ from gds_workbench_api.features.analysis import (
     DatabaseAnalysisReviewService,
     create_analysis_review_router,
 )
-from gds_workbench_api.features.analysis.read_service import (
+from atlas_platform.features.analysis.read_service import (
     _normalize_analysis_summary,  # pyright: ignore[reportPrivateUsage]
 )
-from gds_workbench_api.features.analysis.workbook import build_analysis_workbook
-from gds_workbench_api.features.metadata.contracts import MetadataWorkbookDownload
-from gds_workbench_api.features.profiling import (
+from atlas_platform.features.analysis.workbook import build_analysis_workbook
+from atlas_platform.features.metadata.contracts import MetadataWorkbookDownload
+from atlas_platform.features.profiling import (
     AttributeProfile,
     DatabaseProfilingReviewService,
     ProfileWorkflowProvenance,
@@ -42,7 +40,9 @@ from gds_workbench_api.features.profiling import (
     ProfilingObjectPage,
     create_profiling_router,
 )
-from gds_workbench_api.main import create_app
+from atlas_platform.main import create_app
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from psycopg import Connection
 
 
@@ -1320,7 +1320,7 @@ async def test_cardinality_inference_is_independent_of_measured_counts(
 async def test_analysis_export_loads_all_matching_rows_and_checks_revision() -> None:
     from io import BytesIO
 
-    from gds_workbench_api.features.projects import ProjectRevisionConflictError
+    from atlas_platform.features.projects import ProjectRevisionConflictError
     from openpyxl import load_workbook
 
     database = ReviewDatabase()

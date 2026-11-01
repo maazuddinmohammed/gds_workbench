@@ -49,14 +49,14 @@ access. It does not weaken locks, revisions, validation or audit. Tests and the 
 runner use fixture-created disposable PostgreSQL only. Production uses TLS and
 separate runtime logins; see the deployment runbooks.
 
-In VS Code Copilot, Stage Runner uses VS Code's Microsoft authentication provider;
-Restricted Mode disables it. The plugin's MCP connection and Stage Runner use
+In VS Code Copilot, Atlas Bridge uses VS Code's Microsoft authentication provider;
+Restricted Mode disables it. The plugin's MCP connection and Atlas Bridge use
 separate VS Code-managed sign-in flows and must select the same authorized account
-and intended backend. Stage Runner binds approved files to the trusted workspace,
+and intended backend. Atlas Bridge binds approved files to the trusted workspace,
 backend identity, content digest and current server draft.
 
 Microsoft tokens go only from VS Code to the authenticated backend. They never
-enter manifests, child-process arguments, agent context or receipts. Stage Runner
+enter manifests, child-process arguments, agent context or receipts. Atlas Bridge
 reads payload files directly and returns bounded receipts. An uncertain write
 requires checking saved operation evidence and server state before retrying.
 

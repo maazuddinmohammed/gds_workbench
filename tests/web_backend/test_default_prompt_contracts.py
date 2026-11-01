@@ -8,28 +8,28 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from jsonschema import Draft202012Validator
-from tests.web_backend.mapping_fixtures import mapping_preparation
-
-from gds_workbench_api.features.mapping.execution_context import (
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_platform.features.mapping.execution_context import (
     build_mapping_execution_context,
 )
-from gds_workbench_api.features.workflows.authoring.context_contracts import (
+from atlas_platform.features.workflows.authoring.context_contracts import (
     workflow_input_contracts,
 )
-from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
+from atlas_platform.features.workflows.authoring.prompt_inputs import (
     list_prompt_input_contracts,
     project_prompt_input_values,
 )
-from gds_workbench_api.features.workflows.authoring.tool_configuration import (
+from atlas_platform.features.workflows.authoring.tool_configuration import (
     registered_tool_definitions,
 )
-from gds_workbench_api.prompt_rendering import (
+from atlas_platform.prompt_rendering import (
     PromptComponentTemplates,
     PromptVariableDefinition,
     render_prompt,
 )
+from jsonschema import Draft202012Validator
+
+from tests.web_backend.mapping_fixtures import mapping_preparation
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULTS = json.loads(

@@ -6,38 +6,38 @@ from types import SimpleNamespace
 from typing import Literal
 
 import pytest
-from pydantic import ValidationError
-
-from gds_etl_workbench.application.change_sets.project import (
+from atlas_mcp.application.change_sets.project import (
     StageProjectChange,
     project_validation_outcome,
     validate_project_change_set_document_bounds,
     validate_project_stage_changes,
 )
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project_validation import (
     CodeGenerationTargetContext,
-    ProjectValidationIssue,
     PhysicalProjectCatalog,
+    ProjectValidationIssue,
     ValidatedProjectChangeSet,
     validate_future_graph,
     validate_staged_records,
     validation_code_context_digest,
     validation_mapping_context_digest,
 )
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.domain.snapshots.project import (
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_mcp.domain.snapshots.project import (
     CHANGE_SET_DATASETS_BY_NAME,
     DATASETS_BY_NAME,
     ProjectChangeSetDataset,
     ProjectSnapshot,
     build_project_dataset_schema,
 )
+from pydantic import ValidationError
+
 from tests.mcp.project_test_fixtures import (
     GOLD_SALES_FACT,
     SILVER_ORDER,
     SOURCE_ORDERS,
-    complete_project_graph,
     complete_physical_scope,
+    complete_project_graph,
     empty_project_snapshot,
     project_details,
     snapshot_from_graph,

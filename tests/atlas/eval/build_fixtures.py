@@ -20,12 +20,12 @@ from pathlib import Path
 from typing import Any, LiteralString, cast
 from uuid import UUID, uuid4
 
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.adapters.mcp.server import create_mcp_server
-from gds_etl_workbench.configuration import AuthMode, RuntimeSettings
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.infrastructure.snapshot_archive import SnapshotArchive
-from gds_etl_workbench.tools.snapshots.storage import SnapshotKind
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.adapters.mcp.server import create_mcp_server
+from atlas_mcp.configuration import AuthMode, RuntimeSettings
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.infrastructure.snapshot_archive import SnapshotArchive
+from atlas_mcp.tools.snapshots.storage import SnapshotKind
 from mcp import Client
 from psycopg import sql
 

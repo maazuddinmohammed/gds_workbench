@@ -8,16 +8,16 @@ from copy import deepcopy
 from typing import Any, cast
 
 import pytest
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_workbench_api.features.workflows.authoring.plan import (
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_platform.features.workflows.authoring.plan import (
     AgentRunPlan,
     WorkflowExecutionMode,
 )
-from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
+from atlas_platform.features.workflows.authoring.prompt_inputs import (
     get_prompt_input_contract,
     project_prompt_input_values,
 )
-from gds_workbench_api.prompt_rendering import PromptVariableDefinition
+from atlas_platform.prompt_rendering import PromptVariableDefinition
 from jsonschema import Draft202012Validator
 from pydantic import JsonValue
 

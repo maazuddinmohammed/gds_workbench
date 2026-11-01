@@ -6,11 +6,13 @@ from pathlib import Path
 from typing import Any, LiteralString, cast
 
 import pytest
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
+from atlas_platform.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
     DatabaseAgentWorkflowLifecycle,
 )
-from gds_workbench_api.features.workflows.usage.service import DatabaseWorkflowUsageRecorder
+from atlas_platform.features.workflows.usage.service import (
+    DatabaseWorkflowUsageRecorder,
+)
 from psycopg.pq import TransactionStatus
 
 from tests.mcp.conftest import DisposablePostgres, disposable_postgres

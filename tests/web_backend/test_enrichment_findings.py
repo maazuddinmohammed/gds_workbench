@@ -3,7 +3,7 @@
 from copy import deepcopy
 
 import pytest
-from gds_workbench_api.features.metadata_enrichment.service import DescriptionValidator
+from atlas_platform.features.metadata_enrichment.service import DescriptionValidator
 from pydantic import JsonValue
 
 

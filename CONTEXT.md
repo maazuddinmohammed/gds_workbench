@@ -1,8 +1,24 @@
-# GDS ETL Workbench
+# Atlas
 
 Atlas provides a plugin and web application for governed metadata and data-model
 authoring. Code, numbered SQL, and runtime schemas are authoritative. This file
 fixes domain vocabulary; it does not duplicate field contracts or prompt bodies.
+
+## Components
+
+| Name | Responsibility | Source |
+| --- | --- | --- |
+| Atlas | Overall product family. | This repository. |
+| Atlas Plugin | Agent skills, domain references and local helpers. | `atlas/atlas-plugin/` |
+| Atlas Local Workbench | Local browser review and editing of the Plugin's working files. | `atlas/atlas-plugin/atlas-local-workbench/` |
+| Atlas Bridge | VS Code extension: Microsoft sign-in, readiness and approved-change staging. | `atlas/atlas-bridge/` |
+| Atlas MCP | Agent-facing governed tools and their server. | `mcp_server/atlas_mcp/` |
+| Atlas Platform | Main web application, HTTP backend and workflow worker. | `web_app/`; backend `atlas_platform` |
+
+Stage prepares a server draft; Apply commits approved changes. These are actions,
+not component names. Atlas Platform calls shared application rules directly, not Atlas MCP.
+GDS remains the data-platform/domain term (for example, GDS Connection and GDS Context).
+External resource identities and persisted compatibility keys are not branding.
 
 ## Ownership and identity
 

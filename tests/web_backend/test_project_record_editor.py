@@ -4,13 +4,13 @@ from dataclasses import replace
 from typing import get_args
 
 import pytest
-from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_etl_workbench.domain.snapshots.project import DATASETS_BY_NAME
-from gds_workbench_api.features.project_change_sets.contracts import (
+from atlas_mcp.domain.errors import AtlasError
+from atlas_mcp.domain.snapshots.project import DATASETS_BY_NAME
+from atlas_platform.features.project_change_sets.contracts import (
     PreviewProjectRecordsRequest,
     ReviewProjectRecordsRequest,
 )
-from gds_workbench_api.features.project_change_sets.editor import (
+from atlas_platform.features.project_change_sets.editor import (
     EditableDataset,
     ProjectRecordEditorRequest,
     SaveProjectRecordRequest,
@@ -85,7 +85,7 @@ def test_logical_attribute_editor_exposes_key_origins_and_audit_classification()
         "logical_attribute_is_natural_key",
         "logical_attribute_is_audit_column",
     } <= field_names
-    with pytest.raises(WorkbenchError):
+    with pytest.raises(AtlasError):
         prepare_project_record_edit(
             review,
             SaveProjectRecordRequest(
@@ -113,7 +113,7 @@ def test_logical_attribute_editor_exposes_key_origins_and_audit_classification()
 def test_editor_rejects_identity_lifecycle_evidence_and_invalid_definition(
     changes: dict[str, object],
 ) -> None:
-    with pytest.raises(WorkbenchError):
+    with pytest.raises(AtlasError):
         prepare_project_record_edit(
             review_graph(complete_project_graph()),
             SaveProjectRecordRequest(
@@ -142,7 +142,7 @@ def test_editor_protects_locked_records_and_shows_project_choices() -> None:
         field for field in editor.fields if field.name == "logical_entity_type"
     )
     assert type_field.kind == "choice" and "transaction" in type_field.options
-    with pytest.raises(WorkbenchError) as error:
+    with pytest.raises(AtlasError) as error:
         prepare_project_record_edit(review, command, complete_physical_scope())
     assert error.value.code == "record_locked"
 

@@ -4,16 +4,16 @@ from typing import Any, LiteralString, cast
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_workbench_api.capabilities import AgentRunSelection
-from gds_workbench_api.features.validation.context import (
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_platform.capabilities import AgentRunSelection
+from atlas_platform.features.validation.context import (
     PostgresValidationContextRepository,
 )
-from gds_workbench_api.features.workflows.authoring.plan import (
+from atlas_platform.features.workflows.authoring.plan import (
     AgentRunPlan,
     FrozenAgentStage,
 )
-from gds_workbench_api.prompt_rendering import PromptComponentTemplates
+from atlas_platform.prompt_rendering import PromptComponentTemplates
 
 
 @pytest.fixture(autouse=True)
@@ -30,7 +30,7 @@ def frozen_validation_graph(monkeypatch: pytest.MonkeyPatch) -> None:
         ), complete_physical_scope()
 
     monkeypatch.setattr(
-        "gds_workbench_api.features.validation.context.load_frozen_project_graph",
+        "atlas_platform.features.validation.context.load_frozen_project_graph",
         load_graph,
     )
 

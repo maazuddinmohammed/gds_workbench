@@ -4,24 +4,24 @@ from dataclasses import replace
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.project import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.application.change_sets.project import (
     load_project_physical_scope,
 )
-from gds_etl_workbench.application.change_sets.project_apply import ProjectMaterializer
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project_apply import ProjectMaterializer
+from atlas_mcp.application.change_sets.project_validation import (
     validate_future_graph,
 )
-from gds_etl_workbench.application.metadata_snapshot.selection import (
+from atlas_mcp.application.metadata_snapshot.selection import (
     select_snapshot_datasets,
 )
-from gds_etl_workbench.application.project_read import (
+from atlas_mcp.application.project_read import (
     ProjectReadContext,
     authorize_project_read,
 )
-from gds_etl_workbench.application.project_snapshot import build_project_snapshot
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import InvalidRequestError, TenantNotFoundError
+from atlas_mcp.application.project_snapshot import build_project_snapshot
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import InvalidRequestError, TenantNotFoundError
 
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.project_test_fixtures import complete_project_graph

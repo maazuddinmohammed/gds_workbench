@@ -8,16 +8,16 @@ from unittest.mock import AsyncMock
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import DependencyUnavailableError, WorkbenchError
-from gds_workbench_api.features.metadata_enrichment.contracts import (
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import AtlasError, DependencyUnavailableError
+from atlas_platform.features.metadata_enrichment.contracts import (
     EnrichmentObject,
     MetadataEnrichmentContext,
 )
-from gds_workbench_api.features.metadata_enrichment.service import (
+from atlas_platform.features.metadata_enrichment.service import (
     DatabaseMetadataEnrichmentExecutor,
 )
-from gds_workbench_api.features.workflows.authoring.stage_runner import (
+from atlas_platform.features.workflows.authoring.stage_runner import (
     AgentStageOutcome,
     AgentStageRunner,
 )
@@ -236,14 +236,14 @@ async def test_progress_failure_stops_sibling_before_marking_run_failed() -> Non
     executor._stage = cast(AgentStageRunner, stage)
     lifecycle.append_event.side_effect = [
         None,
-        WorkbenchError(code="claim_lost", message="Lost claim."),
+        AtlasError(code="claim_lost", message="Lost claim."),
     ]
     task = asyncio.create_task(execute(executor))
     try:
         await asyncio.wait_for(stage.started.get(), timeout=1)
         await asyncio.wait_for(stage.started.get(), timeout=1)
         stage.release["table_0"].set()
-        with pytest.raises(WorkbenchError) as caught:
+        with pytest.raises(AtlasError) as caught:
             await asyncio.wait_for(task, timeout=1)
         assert caught.value.code == "claim_lost"
     finally:

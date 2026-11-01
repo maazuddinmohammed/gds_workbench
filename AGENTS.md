@@ -2,6 +2,22 @@
 
 These rules apply to every file and command in this repository.
 
+## Component names
+
+- **Atlas**: the overall product family.
+- **Atlas Plugin**: agent skills, references and local helpers in `atlas/atlas-plugin/`.
+- **Atlas Local Workbench**: the local browser interface for review and editing in
+  `atlas/atlas-plugin/atlas-local-workbench/`. Its launchers are `scripts/open-local-workbench.sh`
+  and `scripts/open-local-workbench.ps1` inside Atlas Plugin.
+- **Atlas Bridge**: the VS Code extension in `atlas/atlas-bridge/`; Microsoft sign-in,
+  readiness checks and staging of approved local changes. Stage and Apply are separate actions.
+- **Atlas MCP**: the agent-facing server in `mcp_server/`, Python package `atlas_mcp`.
+- **Atlas Platform**: the web application in `web_app/`, Python backend `atlas_platform`.
+
+Use these names in code descriptions, documentation and conversation. Existing external
+resource identities, URLs, authentication configuration and persisted compatibility keys
+are not product names; preserve them unless a separately authorized migration changes them.
+
 ## Strict Rules
 
 - Be extremely concise. Sacrifice grammar for the sake of consision.
@@ -64,26 +80,26 @@ accessibility, and visual rules.
 
 ## Code map and simplification
 
-- MCP: `mcp_server/gds_etl_workbench/runtime.py` wires authentication, tools,
+- MCP: `mcp_server/atlas_mcp/runtime.py` wires authentication, tools,
   auditing, and PostgreSQL. `tools/` and `adapters/mcp/` own transport;
   `application/`, `domain/`, and `infrastructure/` hold shared rules and storage.
   Change Set registration belongs in `tools/change_sets/`. Shared Change Set
   operations and Metadata Snapshot selection must import without MCP transport.
   Snapshot selection/encoding lives in `application/metadata_snapshot/`;
   the bounded ZIP writer lives in `infrastructure/snapshot_archive.py`.
-  `adapters/mcp/stage_runner_gate.py` keeps Stage upload tools on the Stage Runner
+  `adapters/mcp/atlas_bridge_gate.py` keeps Stage upload tools on the Atlas Bridge
   connection; Apply requires the approved `expected_candidate_digest`.
-- Backend: `web_app/backend/gds_workbench_api/main.py` mounts feature routers.
+- Backend: `web_app/backend/atlas_platform/main.py` mounts feature routers.
   `runtime.py` wires services; `dependencies.py` provides shared FastAPI authentication.
   Profiling keeps HTTP, PostgreSQL, and execution in its feature package.
   Workflow assembly lives in `features/workflows/execution/assembly.py`;
   shared candidate parsing and diagnostics live in `features/workflows/authoring/repair.py`.
   Shared workflow dependency contracts live beside their implementations;
   `execution/contracts.py` owns the shared write-transaction interface.
-- Plugin: `atlas/atlas-plugin/` contains local helpers and Workbench.
-  `workbench/core.js` owns shared JavaScript normalization and stable serialization.
+- Plugin: `atlas/atlas-plugin/` contains local helpers and Atlas Local Workbench.
+  `atlas-local-workbench/core.js` owns shared JavaScript normalization and stable serialization.
   `scripts/atlas-local.js` `next` drives submission and error recovery; `policy-apply`
-  and `coverage` mirror backend policy (`workbench/policy-projection.js`). Each Node
+  and `coverage` mirror backend policy (`atlas-local-workbench/policy-projection.js`). Each Node
   command has a native PowerShell twin in `scripts/*.ps1`. In those twins, `Get-Property`
   returns an array as one object: iterate `(Get-Property ...)`, never `@(Get-Property ...)`;
   records are dictionaries, so sort with script blocks, not `Sort-Object -Property`.
@@ -91,9 +107,9 @@ accessibility, and visual rules.
   linted by `tests/atlas/test_instructions.py`; `tests/atlas/eval/` replays agent runs
   against the real MCP tool surface, and `tests/atlas/test_shared_modeling_rules.py`
   keeps web prompt and Atlas rules aligned.
-- VS Code extension: `atlas/atlas-vs-code/src/extension.ts` exposes the
-  local Stage tool; `stage-runner.ts` verifies approval digests and stages chunks.
-  Reuse Workbench serialization: chunk hashes must match Python's JSON encoding.
+- VS Code extension: `atlas/atlas-bridge/src/extension.ts` exposes the
+  local Stage tool; `bridge.ts` verifies approval digests and stages chunks.
+  Reuse Atlas Local Workbench serialization: chunk hashes must match Python's JSON encoding.
   `test/fixtures/server-contract.json` is generated from the server by
   `tests/atlas/test_stage_contract.py --write`; never edit it by hand.
 - Frontend: `web_app/frontend/src/features/` owns screens; reuse matching
@@ -128,13 +144,13 @@ PYTHONPATH=mcp_server:web_app/backend:. web_app/backend/.venv/bin/python -m pyte
 # Frontend tests, types, and production build.
 npm --prefix web_app/frontend run check
 
-# Atlas plugin tests and extension. With PowerShell 7 installed, prefix the pytest
+# Atlas Plugin tests and extension. With PowerShell 7 installed, prefix the pytest
 # command with ATLAS_POWERSHELL="$(command -v pwsh)" to run the native parity tests
 # (Windows PowerShell 5.1 stays the CI job's check).
 PYTHONPATH=mcp_server:web_app/backend:. web_app/backend/.venv/bin/python -m pytest -c web_app/backend/pyproject.toml tests/atlas --tb=no --show-capture=no -q
 node --test tests/atlas/*.test.mjs
-npm --prefix atlas/atlas-vs-code test
-npm --prefix atlas/atlas-vs-code run compile
+npm --prefix atlas/atlas-bridge test
+npm --prefix atlas/atlas-bridge run compile
 ```
 
 Use each Python project's Ruff and Pyright settings. When calling Pyright from

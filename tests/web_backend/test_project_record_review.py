@@ -4,25 +4,25 @@ from typing import Any, LiteralString, cast
 from uuid import uuid4
 
 import pytest
-from fastapi.testclient import TestClient
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import TenantLockRequiredError, WorkbenchError
-from gds_etl_workbench.infrastructure.postgres import WriteTransaction
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.project_change_sets.contracts import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import AtlasError, TenantLockRequiredError
+from atlas_mcp.infrastructure.postgres import WriteTransaction
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.project_change_sets.contracts import (
     CreateProjectChangeSetRequest,
     ReviewProjectRecordsRequest,
 )
-from gds_workbench_api.features.project_change_sets.router import (
+from atlas_platform.features.project_change_sets.router import (
     ProjectChangeSetService,
 )
-from gds_workbench_api.features.project_change_sets.service import (
+from atlas_platform.features.project_change_sets.service import (
     DatabaseProjectChangeSetService,
     ProjectChangeSetDatabase,
 )
-from gds_workbench_api.features.projects import ProjectRevisionConflictError
-from gds_workbench_api.main import create_app
+from atlas_platform.features.projects import ProjectRevisionConflictError
+from atlas_platform.main import create_app
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from tests.web_backend.test_database_project_change_sets import (
@@ -79,7 +79,7 @@ async def test_review_uses_governed_fence_before_authorization_and_maps_safe_den
         database=cast(ProjectChangeSetDatabase, Database()),
         authorizer=AuthorizationService(),
     )
-    with pytest.raises(WorkbenchError) as raised:
+    with pytest.raises(AtlasError) as raised:
         await service.review_records(
             principal,
             tenant_id=7,
@@ -271,7 +271,7 @@ async def test_analysis_review_round_trip_preserves_evidence_and_fences_writes(
             )
             == locked
         )
-        with pytest.raises(WorkbenchError, match="already used"):
+        with pytest.raises(AtlasError, match="already used"):
             await service.review_records(
                 principal,
                 tenant_id=tenant_id,
@@ -287,7 +287,7 @@ async def test_analysis_review_round_trip_preserves_evidence_and_fences_writes(
                 command=command,
                 idempotency_key=uuid4(),
             )
-        with pytest.raises(WorkbenchError, match="Unlock selected"):
+        with pytest.raises(AtlasError, match="Unlock selected"):
             await service.review_records(
                 principal,
                 tenant_id=tenant_id,
@@ -297,7 +297,7 @@ async def test_analysis_review_round_trip_preserves_evidence_and_fences_writes(
                 ),
                 idempotency_key=uuid4(),
             )
-        with pytest.raises(WorkbenchError, match="unavailable"):
+        with pytest.raises(AtlasError, match="unavailable"):
             await service.review_records(
                 principal,
                 tenant_id=tenant_id,

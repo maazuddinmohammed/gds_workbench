@@ -8,35 +8,35 @@ from typing import Any, LiteralString
 from uuid import UUID
 
 import pytest
-from fastapi.testclient import TestClient
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.application.change_sets.project_validation import (
     validation_code_context_digest,
     validation_mapping_context_digest,
 )
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from gds_workbench_api.features.validation import (
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_mcp.infrastructure.postgres import ReadIsolation
+from atlas_platform.features.validation import (
     ValidationEligibleSystem,
     ValidationEligibleSystemCollection,
     ValidationLedger,
     ValidationValidationCheck,
     ValidationValidationGroup,
 )
-from gds_workbench_api.features.validation.read_service import (
+from atlas_platform.features.validation.read_service import (
     _CURRENT_CONTEXT_SQL,  # pyright: ignore[reportPrivateUsage]
     _LEDGER_GROUPS_SQL,  # pyright: ignore[reportPrivateUsage]
     DatabaseValidationReadService,
     _assemble_ledger_groups,  # pyright: ignore[reportPrivateUsage]
     _ledger_digest_context,  # pyright: ignore[reportPrivateUsage]
 )
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
+from atlas_platform.features.workflows.authoring.lifecycle import (
     AgentWorkflowRunStart,
 )
-from gds_workbench_api.main import create_app
+from atlas_platform.main import create_app
+from fastapi.testclient import TestClient
 
 
 def _context_row() -> dict[str, object]:

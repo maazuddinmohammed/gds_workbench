@@ -4,13 +4,13 @@ from dataclasses import replace
 from typing import cast
 
 import pytest
-from gds_etl_workbench.application.project_snapshot import ProjectReviewSnapshot
-from gds_etl_workbench.domain.modeling_records import ContextRecord
-from gds_etl_workbench.domain.snapshots.project import (
+from atlas_mcp.application.project_snapshot import ProjectReviewSnapshot
+from atlas_mcp.domain.modeling_records import ContextRecord
+from atlas_mcp.domain.snapshots.project import (
     ProjectChangeSetDataset,
     project_snapshot_records,
 )
-from gds_workbench_api.features.project_change_sets.review import (
+from atlas_platform.features.project_change_sets.review import (
     REVIEW_FIELDS,
     ProjectLayer,
     ProjectReviewDataset,
@@ -156,7 +156,7 @@ def test_attribute_retirement_includes_mapping_code_and_validation() -> None:
 
 
 def test_stale_code_review_preserves_assignments_and_authoring_still_rejects() -> None:
-    from gds_etl_workbench.application.change_sets.project_validation import (
+    from atlas_mcp.application.change_sets.project_validation import (
         validate_future_graph,
     )
 

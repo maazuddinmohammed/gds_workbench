@@ -7,25 +7,24 @@ from typing import Any, LiteralString
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.project import StageProjectChange
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.application.change_sets.project import StageProjectChange
+from atlas_mcp.application.change_sets.project_validation import (
     ProjectValidationIssue,
     ValidatedProjectChangeSet,
 )
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import (
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import (
     AuthorizationDeniedError,
     DependencyUnavailableError,
     InvalidRequestError,
 )
-
-from gds_workbench_api.features.projects import ProjectRevisionConflictError
-from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
+from atlas_platform.features.projects import ProjectRevisionConflictError
+from atlas_platform.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetHandoff,
     WorkflowChangeSetValidationError,
 )
-from gds_workbench_api.features.workflows.authoring.lifecycle import AgentWorkflowEvent
+from atlas_platform.features.workflows.authoring.lifecycle import AgentWorkflowEvent
 
 _NOW = datetime(2026, 8, 24, 16, 0, tzinfo=UTC)
 _CHANGE_SET_ID = UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")

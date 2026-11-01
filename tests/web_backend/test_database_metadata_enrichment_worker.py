@@ -6,25 +6,27 @@ from collections.abc import Iterator
 from typing import Any, LiteralString
 from uuid import uuid4
 
-import gds_workbench_api.database as database_module
+import atlas_platform.database as database_module
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_workbench_api.capabilities import load_default_agent_capabilities
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_platform.capabilities import load_default_agent_capabilities
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
     AgentExecutionResult,
 )
-from gds_workbench_api.features.workflows.execution import (
+from atlas_platform.features.workflows.execution import (
     DatabaseWorkflowClaimRepository,
     WorkerRunResult,
     WorkflowExecutionDispatcher,
     WorkflowExecutionWorker,
 )
-from gds_workbench_api.features.workflows.execution.assembly import create_workflow_runtime_services
-from gds_workbench_api.integrations.agents.composition import LocalFakeAgentAdapter
-from gds_workbench_api.integrations.agents.configuration import AgentRuntimeConfiguration
-from gds_workbench_api.integrations.databricks import create_databricks_execution_adapters
+from atlas_platform.features.workflows.execution.assembly import (
+    create_workflow_runtime_services,
+)
+from atlas_platform.integrations.agents.composition import LocalFakeAgentAdapter
+from atlas_platform.integrations.agents.configuration import AgentRuntimeConfiguration
+from atlas_platform.integrations.databricks import create_databricks_execution_adapters
 
 from tests.mcp.conftest import DisposablePostgres, disposable_postgres
 from tests.mcp.enrichment_test_support import seed_project_enrichment

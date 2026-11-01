@@ -4,12 +4,12 @@
 from typing import Any, Literal, cast
 
 import pytest
-from gds_workbench_api.features.validation.service import ValidationExecutionFailedError
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
+from atlas_platform.features.validation.service import ValidationExecutionFailedError
+from atlas_platform.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
     AgentExecutionResult,
 )
-from gds_workbench_api.features.workflows.authoring.plan import AgentRunPlan
+from atlas_platform.features.workflows.authoring.plan import AgentRunPlan
 from pydantic import JsonValue
 
 from tests.web_backend.test_validation_executor import (

@@ -5,14 +5,12 @@ from typing import Any, LiteralString
 from uuid import UUID
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from gds_workbench_api.features.dimensional import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.infrastructure.postgres import ReadIsolation
+from atlas_platform.features.dimensional import (
     DatabaseDimensionalService,
     DimensionalAttributeDetail,
     DimensionalAttributeFilters,
@@ -31,15 +29,17 @@ from gds_workbench_api.features.dimensional import (
     EntitySubjectArea,
     create_dimensional_router,
 )
-from gds_workbench_api.features.logical import (
+from atlas_platform.features.dimensional.read_contracts import (
+    LogicalAttributeReference,
+    LogicalEntityReference,
+)
+from atlas_platform.features.logical import (
     NOT_BUILT,
     ModelSubjectArea,
     ModelSubjectAreaPage,
 )
-from gds_workbench_api.features.dimensional.read_contracts import (
-    LogicalAttributeReference,
-    LogicalEntityReference,
-)
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 class StaticDimensionalService:

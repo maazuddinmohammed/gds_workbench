@@ -17,7 +17,7 @@ from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT = REPOSITORY_ROOT / "artifacts" / "databricks-ui"
-APP_DIRECTORY_NAME = "gds-workbench-app-source"
+APP_DIRECTORY_NAME = "atlas-platform-app-source"
 GENERATED_MARKER = ".gds-databricks-ui-artifact"
 GENERATED_MARKER_VALUE = "gds-databricks-ui-artifacts-v1\n"
 _ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
@@ -123,8 +123,8 @@ def _build_app_source(destination: Path) -> None:
         destination / "mcp_server" / "pyproject.toml",
     )
     _copy_tree(
-        REPOSITORY_ROOT / "mcp_server" / "gds_etl_workbench",
-        destination / "mcp_server" / "gds_etl_workbench",
+        REPOSITORY_ROOT / "mcp_server" / "atlas_mcp",
+        destination / "mcp_server" / "atlas_mcp",
         allowed_suffixes=frozenset({".py", ".json"}),
     )
 
@@ -133,8 +133,8 @@ def _build_app_source(destination: Path) -> None:
         destination / "web_app" / "backend" / "pyproject.toml",
     )
     _copy_tree(
-        REPOSITORY_ROOT / "web_app" / "backend" / "gds_workbench_api",
-        destination / "web_app" / "backend" / "gds_workbench_api",
+        REPOSITORY_ROOT / "web_app" / "backend" / "atlas_platform",
+        destination / "web_app" / "backend" / "atlas_platform",
         allowed_suffixes=frozenset({".json", ".py"}),
     )
     for relative in _FRONTEND_ROOT_FILES:
@@ -220,8 +220,8 @@ def _write_zip(source_directory: Path, archive: Path) -> None:
 
 
 def _write_operator_files(staging: Path, app: Path) -> tuple[Path, Path]:
-    api_root = app / "web_app" / "backend" / "gds_workbench_api"
-    shared_root = app / "mcp_server" / "gds_etl_workbench"
+    api_root = app / "web_app" / "backend" / "atlas_platform"
+    shared_root = app / "mcp_server" / "atlas_mcp"
     # Load the packaged stdlib-only helper without installing application dependencies.
     fingerprinting = runpy.run_path(str(api_root / "runtime_diagnostics.py"))
     source_tree_sha256 = fingerprinting["source_tree_sha256"]

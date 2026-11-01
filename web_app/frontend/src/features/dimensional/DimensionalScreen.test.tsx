@@ -5,7 +5,7 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
 
 import { createApiClient } from "../../api";
-import { WorkbenchApp, createWorkbenchRouter } from "../../app";
+import { AtlasPlatformApp, createAtlasPlatformRouter } from "../../app";
 
 describe("Project Dimensional", () => {
   it.each([
@@ -14,7 +14,7 @@ describe("Project Dimensional", () => {
     ["relationships/501", "gold.sales_fact.customer_key → gold.customer_dimension.customer_key", "Basis"],
   ])("keeps %s record actions beside its heading with lifecycle commands under More", async (detail, title, firstText) => {
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(dimensionalFetchStub()),
       history: createMemoryHistory({ initialEntries: [`/tenants/7/projects/18/dimensional/${detail}`] }),
     })} />);
@@ -43,7 +43,7 @@ describe("Project Dimensional", () => {
     const user = userEvent.setup();
     const fetcher = dimensionalFetchStub();
     const router = dimensionalRouter(fetcher);
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
     await screen.findByRole("table", { name: "Dimensional Entities" });
     await user.click(within(screen.getByRole("navigation", { name: "Dimensional views" })).getByRole("button", { name: /Subject Areas/ }));
 
@@ -78,7 +78,7 @@ describe("Project Dimensional", () => {
   it("opens a Dimensional Entity detail page with its derived Subject Areas and no Submodels", async () => {
     const user = userEvent.setup();
     const fetcher = dimensionalFetchStub();
-    render(<WorkbenchApp router={dimensionalRouter(fetcher)} />);
+    render(<AtlasPlatformApp router={dimensionalRouter(fetcher)} />);
 
     const ledger = await screen.findByRole("table", { name: "Dimensional Entities" });
     const views = within(screen.getByRole("navigation", { name: "Dimensional views" }));
@@ -111,7 +111,7 @@ describe("Project Dimensional", () => {
 
   it("reviews Dimensional Attributes and Relationships on dedicated detail pages", async () => {
     const user = userEvent.setup();
-    render(<WorkbenchApp router={dimensionalRouter(dimensionalFetchStub())} />);
+    render(<AtlasPlatformApp router={dimensionalRouter(dimensionalFetchStub())} />);
     await screen.findByRole("table", { name: "Dimensional Entities" });
 
     await user.click(screen.getByRole("link", { name: "Open Dimensional Entity 301" }));
@@ -162,7 +162,7 @@ describe("Project Dimensional", () => {
   });
 
   it("shows a role name and an unrecorded basis on role-playing Relationships", async () => {
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(dimensionalFetchStub({ rolePlaying: true })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/dimensional/relationships/501"] }),
     })} />);
@@ -173,7 +173,7 @@ describe("Project Dimensional", () => {
 
   it("opens a Dimensional Entity's quick view with its Logical sources and Attributes", async () => {
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(dimensionalFetchStub()),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/dimensional/subject-areas/41"] }),
     })} />);
@@ -196,7 +196,7 @@ describe("Project Dimensional", () => {
   });
 
   it.each(["natural", "surrogate"] as const)("shows %s key flags on Dimensional Attributes", async (keyAttribute) => {
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(dimensionalFetchStub({ keyAttribute })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/dimensional/attributes/401"] }),
     })} />);
@@ -210,7 +210,7 @@ describe("Project Dimensional", () => {
   it("sends only supported bounded filters and follows opaque pagination cursors", async () => {
     const fetcher = dimensionalFetchStub({ hasNextPage: true });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={dimensionalRouter(fetcher)} />);
+    render(<AtlasPlatformApp router={dimensionalRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Dimensional Entities" });
 
     if (screen.getByRole("button", { name: /^Filters/ }).getAttribute("aria-expanded") === "false") await user.click(screen.getByRole("button", { name: /^Filters/ }));
@@ -247,13 +247,13 @@ describe("Project Dimensional", () => {
 
   it("keeps empty, safe-error, denied, and revision mismatch states explicit", async () => {
     const empty = render(
-      <WorkbenchApp router={dimensionalRouter(dimensionalFetchStub({ empty: true }))} />,
+      <AtlasPlatformApp router={dimensionalRouter(dimensionalFetchStub({ empty: true }))} />,
     );
     expect(await screen.findByText("No Dimensional Entities match these filters.")).toBeVisible();
     empty.unmount();
 
     const mismatch = render(
-      <WorkbenchApp router={dimensionalRouter(dimensionalFetchStub({ projectRevision: 19 }))} />,
+      <AtlasPlatformApp router={dimensionalRouter(dimensionalFetchStub({ projectRevision: 19 }))} />,
     );
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The Project changed while Dimensional Entities were loading.",
@@ -261,21 +261,21 @@ describe("Project Dimensional", () => {
     mismatch.unmount();
 
     const denied = render(
-      <WorkbenchApp router={dimensionalRouter(dimensionalFetchStub({ denied: true }))} />,
+      <AtlasPlatformApp router={dimensionalRouter(dimensionalFetchStub({ denied: true }))} />,
     );
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "You do not have permission to view Dimensional Entities.",
     );
     denied.unmount();
 
-    render(<WorkbenchApp router={dimensionalRouter(dimensionalFetchStub({ error: true }))} />);
+    render(<AtlasPlatformApp router={dimensionalRouter(dimensionalFetchStub({ error: true }))} />);
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Dimensional Entities could not be loaded.",
     );
   });
 
   it("keeps Dimensional Build and Optimize lock-gated", async () => {
-    render(<WorkbenchApp router={dimensionalRouter(dimensionalFetchStub({ hasLock: false }))} />);
+    render(<AtlasPlatformApp router={dimensionalRouter(dimensionalFetchStub({ hasLock: false }))} />);
     await screen.findByRole("table", { name: "Dimensional Entities" });
     for (const name of ["Build", "Optimize"]) {
       expect(screen.getByRole("button", { name })).toBeDisabled();
@@ -288,7 +288,7 @@ describe("Project Dimensional", () => {
   it("builds one Subject Area without a Logical Entity picker, then starts the run", async () => {
     const fetcher = dimensionalFetchStub();
     const user = userEvent.setup();
-    render(<WorkbenchApp router={dimensionalRouter(fetcher)} />);
+    render(<AtlasPlatformApp router={dimensionalRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Dimensional Entities" });
     expect(screen.getByText("Tenant Lock held by you")).toBeVisible();
     await user.click(screen.getByText("Run Dimensional", { selector: "summary" }));
@@ -328,7 +328,7 @@ describe("Project Dimensional", () => {
   it("optimizes the whole Dimensional model with no selection", async () => {
     const fetcher = dimensionalFetchStub();
     const user = userEvent.setup();
-    render(<WorkbenchApp router={dimensionalRouter(fetcher)} />);
+    render(<AtlasPlatformApp router={dimensionalRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Dimensional Entities" });
     await user.click(screen.getByText("Run Dimensional", { selector: "summary" }));
     await user.click(screen.getByRole("button", { name: "Optimize" }));
@@ -352,7 +352,7 @@ function createRunBody(fetcher: ReturnType<typeof dimensionalFetchStub>): Record
 }
 
 function dimensionalRouter(fetcher: ReturnType<typeof dimensionalFetchStub>) {
-  return createWorkbenchRouter({
+  return createAtlasPlatformRouter({
     api: createApiClient(fetcher),
     history: createMemoryHistory({
       initialEntries: ["/tenants/7/projects/18/dimensional"],
@@ -699,7 +699,7 @@ const agentCapabilitiesPayload = {
 
 it.each([["Entities", "dimensional_entity", 301], ["Attributes", "dimensional_attribute", 401], ["Relationships", "dimensional_relationship", 501]] as const)("reviews selected %s through the governed endpoint", async (view, dataset, recordId) => {
   const { fetcher, commands } = withRecordReview(dimensionalFetchStub());
-  render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+  render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
     history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/dimensional"] }),
   })} />);
   const user = userEvent.setup();

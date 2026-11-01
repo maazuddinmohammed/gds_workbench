@@ -12,40 +12,40 @@ from typing import TYPE_CHECKING, Any, cast, overload
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import pytest
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.contracts import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.adapters.mcp.tool_audit import ToolCallAuditMiddleware
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.application.change_sets.contracts import (
     MAX_PROJECT_STAGE_CHUNK_BYTES,
     canonical_records_sha256,
     stage_batch_sha256,
     stage_fingerprint_sha256,
 )
-from gds_etl_workbench.application.change_sets.project import (
+from atlas_mcp.application.change_sets.project import (
     StageProjectChange,
     load_project_physical_scope,
     validate_project_stage_changes,
 )
-from gds_etl_workbench.application.change_sets.project_apply import ProjectMaterializer
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project_apply import ProjectMaterializer
+from atlas_mcp.application.change_sets.project_validation import (
     validate_future_graph,
 )
-from gds_etl_workbench.application.project_read import ProjectReadContext
-from gds_etl_workbench.application.project_snapshot import build_project_snapshot
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.modeling_records import (
+from atlas_mcp.application.project_read import ProjectReadContext
+from atlas_mcp.application.project_snapshot import build_project_snapshot
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.modeling_records import (
     ANALYSIS_VALIDATION_FIELDS,
 )
-from gds_etl_workbench.domain.snapshots.project import (
+from atlas_mcp.domain.snapshots.project import (
     CHANGE_SET_DATASETS_BY_NAME,
     DATASETS,
     WEB_MANAGED_PROJECT_DATASETS,
     ProjectChangeSetDataset,
 )
-from gds_etl_workbench.infrastructure.postgres import PostgresDatabase
-from gds_etl_workbench.infrastructure.snapshot_archive import SnapshotArchive
-from gds_etl_workbench.tools.change_sets.project import (
+from atlas_mcp.infrastructure.postgres import PostgresDatabase
+from atlas_mcp.infrastructure.snapshot_archive import SnapshotArchive
+from atlas_mcp.tools.change_sets.project import (
     _DATABASE_TIME_SQL,
     _EXPIRE_OWNED_SQL,
     _LOCK_OWNED_CHANGE_SETS_SQL,
@@ -54,20 +54,20 @@ from gds_etl_workbench.tools.change_sets.project import (
     WRITE_SECTION_COLUMNS,
     register_project_change_set_tools,
 )
-from gds_etl_workbench.tools.modeling.project_details import register_list_projects_tool
-from gds_etl_workbench.tools.modeling.project_input_scope import (
+from atlas_mcp.tools.modeling.project_details import register_list_projects_tool
+from atlas_mcp.tools.modeling.project_input_scope import (
     register_get_project_input_scope_tool,
 )
-from gds_etl_workbench.tools.modeling.read_mapping_context import (
+from atlas_mcp.tools.modeling.read_mapping_context import (
     register_read_mapping_context_tool,
 )
-from gds_etl_workbench.tools.modeling.read_project_section import (
+from atlas_mcp.tools.modeling.read_project_section import (
     register_read_project_section_tool,
 )
-from gds_etl_workbench.tools.snapshots.project.get_project_snapshot import (
+from atlas_mcp.tools.snapshots.project.get_project_snapshot import (
     register_create_project_snapshot_tool,
 )
-from gds_etl_workbench.tools.snapshots.storage import SnapshotKind
+from atlas_mcp.tools.snapshots.storage import SnapshotKind
 from mcp import Client
 from mcp.server.mcpserver import MCPServer
 from mcp.types import TextContent
@@ -1249,7 +1249,7 @@ async def test_project_stage_batch_runs_through_validate_and_apply(
             ) + sum(len(records) for records in staged.values())
             assert "records" not in fingerprint.structured_content
             assert len(fingerprint.structured_content["fingerprint"]) == 64
-            # Stage Runner recomputes this exact document; see tests/atlas/test_stage_contract.py.
+            # Atlas Bridge recomputes this exact document; see tests/atlas/test_stage_contract.py.
             assert fingerprint.structured_content["fingerprint_version"] == "1.0"
             assert [
                 item["dataset"] for item in fingerprint.structured_content["datasets"]

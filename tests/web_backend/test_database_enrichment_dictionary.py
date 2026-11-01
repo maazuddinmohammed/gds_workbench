@@ -7,21 +7,21 @@ from uuid import uuid4
 
 import httpx2
 import pytest
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.configuration import AuthMode
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.metadata_enrichment.dictionary import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.configuration import AuthMode
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.metadata_enrichment.dictionary import (
     DatabaseEnrichmentDictionaryService,
 )
-from gds_workbench_api.features.metadata_enrichment.review import (
+from atlas_platform.features.metadata_enrichment.review import (
     DatabaseEnrichmentReviewService,
 )
-from gds_workbench_api.features.metadata_enrichment.workbook import (
+from atlas_platform.features.metadata_enrichment.workbook import (
     DATA_DICTIONARY_COLUMNS,
     TECHNICAL_DICTIONARY_COLUMNS,
 )
-from gds_workbench_api.main import create_app
+from atlas_platform.main import create_app
 from openpyxl import load_workbook
 
 from tests.mcp.conftest import DisposablePostgres

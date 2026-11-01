@@ -5,19 +5,19 @@ from unittest.mock import MagicMock
 from uuid import UUID
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.configuration import AuthMode
-from gds_workbench_api.features.mapping.read_router import create_mapping_review_router
-from gds_workbench_api.features.mapping.read_service import MappingReviewService
-from gds_workbench_api.features.project_change_sets.router import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.configuration import AuthMode
+from atlas_platform.features.mapping.read_router import create_mapping_review_router
+from atlas_platform.features.mapping.read_service import MappingReviewService
+from atlas_platform.features.project_change_sets.router import (
     ProjectChangeSetService,
     create_project_change_sets_router,
 )
-from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
+from atlas_platform.features.workflows.authoring.prompt_inputs import (
     get_prompt_input_contract,
 )
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 def test_removed_system_order_routes_and_dataset_fail_before_service_access() -> None:

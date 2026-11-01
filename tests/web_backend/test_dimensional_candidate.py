@@ -5,29 +5,29 @@ import json
 from copy import deepcopy
 from typing import Any, cast
 
-from gds_etl_workbench.domain.modeling_records import (
+from atlas_mcp.domain.modeling_records import (
     DimensionalAttributeRecord,
     DimensionalEntityRecord,
     LogicalAttributeKey,
     LogicalEntityKey,
 )
-from gds_etl_workbench.domain.snapshots.project import DimensionalSection
-from gds_etl_workbench.domain.snapshots.project_guidance import (
+from atlas_mcp.domain.snapshots.project import DimensionalSection
+from atlas_mcp.domain.snapshots.project_guidance import (
     project_dataset_population_rules,
 )
+from atlas_platform.features.dimensional.candidate import (
+    DimensionalCandidateValidator,
+)
+from atlas_platform.features.dimensional.policy import (
+    project_dimensional_foreign_key_policy,
+    project_dimensional_gold_policy,
+)
 from pydantic import JsonValue
+
 from tests.web_backend.test_dimensional_policy import (
     _audit_template,
     _projected_baseline,
     _technical_template,
-)
-
-from gds_workbench_api.features.dimensional.candidate import (
-    DimensionalCandidateValidator,
-)
-from gds_workbench_api.features.dimensional.policy import (
-    project_dimensional_foreign_key_policy,
-    project_dimensional_gold_policy,
 )
 
 

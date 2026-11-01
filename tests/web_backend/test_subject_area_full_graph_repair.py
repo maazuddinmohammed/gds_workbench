@@ -5,9 +5,15 @@ from dataclasses import replace
 from typing import Any, cast
 
 import pytest
-from gds_etl_workbench.application.change_sets.project_validation import validate_future_graph
-from gds_etl_workbench.domain.snapshots.project import SubjectAreaSection
+from atlas_mcp.application.change_sets.project_validation import validate_future_graph
+from atlas_mcp.domain.snapshots.project import SubjectAreaSection
+from atlas_platform.features.subject_areas.service import _candidate_validator
+from atlas_platform.features.workflows.authoring.context import AgentContextBundle
+from atlas_platform.features.workflows.authoring.repair import (
+    AgentCandidateValidationError,
+)
 from pydantic import JsonValue
+
 from tests.web_backend.test_subject_area_executor import (
     _CLAIM_TOKEN,
     _AgentExecutor,
@@ -16,12 +22,6 @@ from tests.web_backend.test_subject_area_executor import (
     _principal,
     _service,
     _validation_bundle,
-)
-
-from gds_workbench_api.features.subject_areas.service import _candidate_validator
-from gds_workbench_api.features.workflows.authoring.context import AgentContextBundle
-from gds_workbench_api.features.workflows.authoring.repair import (
-    AgentCandidateValidationError,
 )
 
 # order_raw (t2) left the Input Scope after the run froze its selection. The answer

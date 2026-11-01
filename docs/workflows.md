@@ -11,11 +11,11 @@ into this navigation guide.
 | Published default system/instruction prompts and selected readers | [seed 05](../database/seed/05_global_prompt_defaults.template.sql) |
 | Installed workflow/variable reference metadata | [seed 04](../database/seed/04_application_reference.sql) |
 | Mapping Output Templates | [seed 06](../database/seed/06_global_mapping_output_templates.template.sql) |
-| Variable registration and projection | [prompt_inputs.py](../web_app/backend/gds_workbench_api/features/workflows/authoring/prompt_inputs.py), [context_inputs.py](../web_app/backend/gds_workbench_api/features/workflows/authoring/context_inputs.py), [downstream_inputs.py](../web_app/backend/gds_workbench_api/features/workflows/authoring/downstream_inputs.py) |
-| Reader contracts, selection and paging | [context_contracts.py](../web_app/backend/gds_workbench_api/features/workflows/authoring/context_contracts.py), [context_readers.py](../web_app/backend/gds_workbench_api/features/workflows/authoring/context_readers.py) |
-| Downstream variable schemas | [downstream_contracts.py](../web_app/backend/gds_workbench_api/features/workflows/authoring/downstream_contracts.py) |
-| Projects, limits and worker policy | [backend config](../web_app/backend/gds_workbench_api/config/README.md) |
-| Candidate validation | Each backend `features/<workflow>/` contract/validator/policy and shared `mcp_server/gds_etl_workbench/application/change_sets/` graph validation |
+| Variable registration and projection | [prompt_inputs.py](../web_app/backend/atlas_platform/features/workflows/authoring/prompt_inputs.py), [context_inputs.py](../web_app/backend/atlas_platform/features/workflows/authoring/context_inputs.py), [downstream_inputs.py](../web_app/backend/atlas_platform/features/workflows/authoring/downstream_inputs.py) |
+| Reader contracts, selection and paging | [context_contracts.py](../web_app/backend/atlas_platform/features/workflows/authoring/context_contracts.py), [context_readers.py](../web_app/backend/atlas_platform/features/workflows/authoring/context_readers.py) |
+| Downstream variable schemas | [downstream_contracts.py](../web_app/backend/atlas_platform/features/workflows/authoring/downstream_contracts.py) |
+| Projects, limits and worker policy | [backend config](../web_app/backend/atlas_platform/config/README.md) |
+| Candidate validation | Each backend `features/<workflow>/` contract/validator/policy and shared `mcp_server/atlas_mcp/application/change_sets/` graph validation |
 
 Seeds update database configuration only when explicitly run using their documented
 procedure. The application reads published database prompts, then freezes their

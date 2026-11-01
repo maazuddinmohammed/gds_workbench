@@ -3,15 +3,15 @@ from __future__ import annotations
 from copy import deepcopy
 
 import pytest
-
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project_validation import (
     validate_future_graph,
 )
-from gds_etl_workbench.domain.modeling_records import has_mapping_transformation_content
-from gds_etl_workbench.domain.snapshots.project import ProjectChangeSetDataset
+from atlas_mcp.domain.modeling_records import has_mapping_transformation_content
+from atlas_mcp.domain.snapshots.project import ProjectChangeSetDataset
+
 from tests.mcp.project_test_fixtures import (
-    complete_project_graph,
     complete_physical_scope,
+    complete_project_graph,
     empty_project_snapshot,
     snapshot_from_graph,
 )

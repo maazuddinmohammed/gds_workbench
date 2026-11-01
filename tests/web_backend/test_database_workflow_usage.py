@@ -4,17 +4,17 @@
 from uuid import UUID, uuid4
 
 import pytest
-from gds_etl_workbench.domain.authorization import RequestPrincipal
-from gds_etl_workbench.domain.errors import (
+from atlas_mcp.domain.authorization import RequestPrincipal
+from atlas_mcp.domain.errors import (
     DependencyUnavailableError,
     InvalidRequestError,
 )
-from gds_workbench_api.database import _READINESS_SQL, WebPostgresDatabase
-from gds_workbench_api.features.workflows.execution.contracts import (
+from atlas_platform.database import _READINESS_SQL, WebPostgresDatabase
+from atlas_platform.features.workflows.execution.contracts import (
     WorkflowExecutionClaim,
 )
-from gds_workbench_api.features.workflows.usage.contracts import ModelTokenUsage
-from gds_workbench_api.features.workflows.usage.service import (
+from atlas_platform.features.workflows.usage.contracts import ModelTokenUsage
+from atlas_platform.features.workflows.usage.service import (
     DatabaseWorkflowUsageRecorder,
 )
 
@@ -391,10 +391,10 @@ async def test_dispatcher_records_before_terminal_transition_clears_claim(
     web_postgres_database: DisposablePostgres,
     terminal: str,
 ) -> None:
-    from gds_workbench_api.features.workflows.authoring.lifecycle import (
+    from atlas_platform.features.workflows.authoring.lifecycle import (
         workflow_identity_triple,
     )
-    from gds_workbench_api.features.workflows.execution.dispatcher import (
+    from atlas_platform.features.workflows.execution.dispatcher import (
         WorkflowExecutionDispatcher,
         WorkflowExecutionServices,
     )

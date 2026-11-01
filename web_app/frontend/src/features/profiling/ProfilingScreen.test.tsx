@@ -4,7 +4,7 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
 
 import { createApiClient } from "../../api";
-import { WorkbenchApp, createWorkbenchRouter } from "../../app";
+import { AtlasPlatformApp, createAtlasPlatformRouter } from "../../app";
 import type { WorkflowTokenUsage } from "../workflows/api";
 
 describe("Project Profiling", () => {
@@ -13,7 +13,7 @@ describe("Project Profiling", () => {
     const router = profilingRouter(fetcher);
     const user = userEvent.setup();
 
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
 
     const table = await screen.findByRole("table", { name: "Profiling results" });
     expect(within(table).getByText("customer_raw")).toBeVisible();
@@ -114,7 +114,7 @@ describe("Project Profiling", () => {
     const fetcher = profilingFetchStub();
     const router = profilingRouter(fetcher);
     const user = userEvent.setup();
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
     await screen.findByRole("table", { name: "Profiling results" });
 
     await user.click(screen.getByRole("button", { name: "Show Profiling run activity" }));
@@ -153,7 +153,7 @@ describe("Project Profiling", () => {
     const fetcher = profilingFetchStub(options);
     const router = profilingRouter(fetcher);
     const user = userEvent.setup();
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
     await screen.findByRole("table", { name: "Profiling results" });
     await user.click(screen.getByRole("button", { name: "Show Profiling run activity" }));
     await user.click(await screen.findByRole("button", { name: /PR-1048/ }));
@@ -181,7 +181,7 @@ describe("Project Profiling", () => {
     const fetcher = profilingFetchStub({ executeConflictOnce: true });
     const router = profilingRouter(fetcher);
     const user = userEvent.setup();
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
     await screen.findByRole("table", { name: "Profiling results" });
 
     await user.click(screen.getByRole("button", { name: "Run profiling" }));
@@ -253,7 +253,7 @@ describe("Project Profiling", () => {
   it("keeps empty server results explicit", async () => {
     const fetcher = profilingFetchStub({ emptyResults: true });
     const router = profilingRouter(fetcher);
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
 
     expect(await screen.findByText("No profiling results match these filters.")).toBeVisible();
   });
@@ -261,7 +261,7 @@ describe("Project Profiling", () => {
   it("shows a safe result loading failure", async () => {
     const fetcher = profilingFetchStub({ resultsError: true });
     const router = profilingRouter(fetcher);
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Profiling results could not be loaded.",
@@ -270,7 +270,7 @@ describe("Project Profiling", () => {
 });
 
 function profilingRouter(fetcher: ReturnType<typeof profilingFetchStub>) {
-  return createWorkbenchRouter({
+  return createAtlasPlatformRouter({
     api: createApiClient(fetcher),
     history: createMemoryHistory({
       initialEntries: ["/tenants/7/projects/18/profiling"],

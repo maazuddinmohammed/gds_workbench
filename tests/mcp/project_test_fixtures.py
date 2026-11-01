@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project_validation import (
     PhysicalProjectCatalog,
 )
-from gds_etl_workbench.domain.snapshots.project import (
+from atlas_mcp.domain.snapshots.project import (
     ProjectChangeSetDataset,
     ProjectSnapshot,
 )

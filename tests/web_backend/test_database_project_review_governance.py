@@ -7,20 +7,20 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import (
     TenantLockRequiredError,
     TenantWorkflowConflictError,
 )
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.project_change_sets.contracts import (
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.project_change_sets.contracts import (
     ReviewProjectRecordsRequest,
 )
-from gds_workbench_api.features.project_change_sets.repository import (
+from atlas_platform.features.project_change_sets.repository import (
     PostgresProjectChangeSetRepository,
 )
-from gds_workbench_api.features.project_change_sets.service import (
+from atlas_platform.features.project_change_sets.service import (
     DatabaseProjectChangeSetService,
 )
 from psycopg.errors import InsufficientPrivilege

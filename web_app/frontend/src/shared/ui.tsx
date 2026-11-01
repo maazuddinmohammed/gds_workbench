@@ -31,7 +31,7 @@ export function WorkspaceToolbar({ children, actions }: {
 
 export function Brand({ compact = false }: { compact?: boolean }) {
   return (
-    <div className={compact ? "brand is-compact" : "brand"} aria-label="Atlas">
+    <div className={compact ? "brand is-compact" : "brand"} aria-label="Atlas Platform">
       <img className="brand-mark" src={atlasMarkUrl} width="32" height="32" alt="" />
       <strong>ATLAS</strong>
     </div>

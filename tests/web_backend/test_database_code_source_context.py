@@ -6,18 +6,18 @@
 from typing import Any, LiteralString, cast
 
 import pytest
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.code_generation.context import _assemble_context
-from gds_workbench_api.features.validation.read_service import _CURRENT_CONTEXT_SQL
-from gds_workbench_api.features.workflows.authoring.downstream_inputs import (
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.code_generation.context import _assemble_context
+from atlas_platform.features.validation.read_service import _CURRENT_CONTEXT_SQL
+from atlas_platform.features.workflows.authoring.downstream_inputs import (
     downstream_input_contracts,
     project_downstream_inputs,
 )
-from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
+from atlas_platform.features.workflows.authoring.prompt_inputs import (
     get_prompt_input_contract,
     project_prompt_input_values,
 )
-from gds_workbench_api.prompt_rendering import PromptVariableDefinition
+from atlas_platform.prompt_rendering import PromptVariableDefinition
 from jsonschema import Draft202012Validator
 
 from tests.mcp.conftest import DisposablePostgres

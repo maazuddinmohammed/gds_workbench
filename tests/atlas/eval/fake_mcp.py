@@ -2,7 +2,7 @@
 
 The server is the real `create_mcp_server` composition, so agents see the exact tool
 names, descriptions, input schemas and server instructions. Like Copilot's own
-connection, the evaluated agent is not the Stage Runner: the real gate hides and
+connection, the evaluated agent is not the Atlas Bridge: the real gate hides and
 refuses Stage upload tools. A middleware placed before the audit boundary answers
 `tools/call` from a recorded world (`fixtures/world.json`) plus small in-memory state
 for locks and drafts, and logs every call. Contract-only `describe_*` tools run their
@@ -25,40 +25,40 @@ from pathlib import Path
 from typing import Any, cast
 from uuid import UUID, uuid4
 
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.adapters.mcp.server import create_mcp_server
-from gds_etl_workbench.adapters.mcp.stage_runner_gate import STAGE_UPLOAD_TOOLS, StageRunnerGate
-from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
-from gds_etl_workbench.application.change_sets.contracts import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.adapters.mcp.atlas_bridge_gate import STAGE_UPLOAD_TOOLS, AtlasBridgeGate
+from atlas_mcp.adapters.mcp.server import create_mcp_server
+from atlas_mcp.adapters.mcp.tool_audit import ToolCallAuditMiddleware
+from atlas_mcp.application.change_sets.contracts import (
     canonical_records_sha256,
     stage_fingerprint_sha256,
 )
-from gds_etl_workbench.application.change_sets.metadata import (
+from atlas_mcp.application.change_sets.metadata import (
     CHANGE_SET_DATASETS as METADATA_DATASETS,
 )
-from gds_etl_workbench.application.change_sets.metadata import (
+from atlas_mcp.application.change_sets.metadata import (
     CreateMetadataChangeSetResult,
     GetMetadataChangeSetFingerprintResult,
     MetadataChangeSetDatasetFingerprint,
 )
-from gds_etl_workbench.application.change_sets.project import (
+from atlas_mcp.application.change_sets.project import (
     CreateProjectChangeSetResult,
     GetProjectChangeSetFingerprintResult,
     ProjectChangeSetDatasetFingerprint,
 )
-from gds_etl_workbench.application.profiling.service import ProfilingStatus
-from gds_etl_workbench.configuration import AuthMode, RuntimeSettings
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import DependencyUnavailableError
-from gds_etl_workbench.domain.snapshots.project import CHANGE_SET_DATASETS_BY_NAME
-from gds_etl_workbench.infrastructure.postgres import Database
-from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
+from atlas_mcp.application.profiling.service import ProfilingStatus
+from atlas_mcp.configuration import AuthMode, RuntimeSettings
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import DependencyUnavailableError
+from atlas_mcp.domain.snapshots.project import CHANGE_SET_DATASETS_BY_NAME
+from atlas_mcp.infrastructure.postgres import Database
+from atlas_mcp.tools.snapshots.metadata.get_metadata_snapshot import (
     CreateMetadataSnapshotResult,
 )
-from gds_etl_workbench.tools.snapshots.project.get_project_snapshot import (
+from atlas_mcp.tools.snapshots.project.get_project_snapshot import (
     CreateProjectSnapshotResult,
 )
-from gds_etl_workbench.tools.tenants.tenant_locks import (
+from atlas_mcp.tools.tenants.tenant_locks import (
     AcquireTenantLockResult,
     CheckTenantLockResult,
     ReleaseTenantLockResult,
@@ -349,8 +349,8 @@ class EvalWorld:
 
     def _unstaged(self, _arguments: Mapping[str, Any]) -> dict[str, Any]:
         raise ToolFailureError(
-            "evaluation_requires_stage_runner",
-            "This evaluation has no Stage Runner, so no draft content was staged.",
+            "evaluation_requires_atlas_bridge",
+            "This evaluation has no Atlas Bridge, so no draft content was staged.",
         )
 
     _tool_get_metadata_change_set = _unstaged
@@ -418,7 +418,7 @@ class ReplayMiddleware:
             return await call_next(ctx)
         if tool in STAGE_UPLOAD_TOOLS:
             # The production gate answers; the log still records the attempt.
-            self._world.log(tool, arguments, "error", "stage_runner_required")
+            self._world.log(tool, arguments, "error", "atlas_bridge_required")
             return await call_next(ctx)
         try:
             result = self._world.respond(tool, arguments)
@@ -457,11 +457,11 @@ def create_replay_server(world: EvalWorld) -> MCPServer[None]:
         _settings(), cast(Database, ReplayDatabase()), EvalIdentityProvider()
     )
     middleware = server.middleware
-    # Local settings treat in-memory sessions as the Stage Runner; evaluated agents are not.
+    # Local settings treat in-memory sessions as the Atlas Bridge; evaluated agents are not.
     gate_index = next(
-        index for index, item in enumerate(middleware) if isinstance(item, StageRunnerGate)
+        index for index, item in enumerate(middleware) if isinstance(item, AtlasBridgeGate)
     )
-    middleware[gate_index] = StageRunnerGate(allow_in_memory=False)
+    middleware[gate_index] = AtlasBridgeGate(allow_in_memory=False)
     audit_index = next(
         index for index, item in enumerate(middleware) if isinstance(item, ToolCallAuditMiddleware)
     )

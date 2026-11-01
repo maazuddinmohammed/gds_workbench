@@ -5,18 +5,18 @@ from unittest.mock import AsyncMock
 from uuid import UUID
 
 import pytest
-from fastapi.testclient import TestClient
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_workbench_api.features.metadata_enrichment.service import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_platform.features.metadata_enrichment.service import (
     DatabaseMetadataEnrichmentExecutor,
 )
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
+from atlas_platform.features.workflows.authoring.lifecycle import (
     AgentWorkflowRunStart,
 )
-from gds_workbench_api.features.workflows.commands import WorkflowRunCommandResult
-from gds_workbench_api.main import create_app
+from atlas_platform.features.workflows.commands import WorkflowRunCommandResult
+from atlas_platform.main import create_app
+from fastapi.testclient import TestClient
 
 
 @pytest.mark.parametrize("changed", [True, False])
@@ -123,7 +123,7 @@ def test_web_start_uses_governed_fixed_target_and_supports_retry(changed: bool) 
 def test_regeneration_requires_exact_scope_and_current_metadata_revision(
     patch: dict[str, object],
 ) -> None:
-    from gds_workbench_api.features.workflows.commands.contracts import (
+    from atlas_platform.features.workflows.commands.contracts import (
         CreateWorkflowRunRequest,
     )
     from pydantic import ValidationError

@@ -5,23 +5,23 @@ import json
 from typing import cast
 
 import pytest
-from gds_workbench_api.features.mapping.complete_candidate import (
+from atlas_platform.features.mapping.complete_candidate import (
     CompleteMappingCandidateValidator,
 )
-from gds_workbench_api.features.mapping.execution_context import (
+from atlas_platform.features.mapping.execution_context import (
     build_mapping_execution_context,
 )
-from gds_workbench_api.features.mapping.preparation_contracts import (
+from atlas_platform.features.mapping.preparation_contracts import (
     MappingPhysicalObject,
     MappingRunContext,
     ModeledEntityType,
 )
-from gds_workbench_api.features.mapping.read_service import (
+from atlas_platform.features.mapping.read_service import (
     _MAPPING_GENERATION_TARGETS_SQL,
 )
-from gds_workbench_api.features.mapping.readiness import assess_mapping_readiness
-from gds_workbench_api.features.mapping.reconciliation import MappingCandidateReconciler
-from gds_workbench_api.features.workflows.authoring.plan import WorkflowExecutionMode
+from atlas_platform.features.mapping.readiness import assess_mapping_readiness
+from atlas_platform.features.mapping.reconciliation import MappingCandidateReconciler
+from atlas_platform.features.workflows.authoring.plan import WorkflowExecutionMode
 from mapping_fixtures import mapping_candidate, mapping_preparation
 from pydantic import JsonValue, ValidationError
 

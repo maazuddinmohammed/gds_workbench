@@ -4,22 +4,21 @@
 from typing import Any, LiteralString, cast
 
 import pytest
-from gds_etl_workbench.domain.snapshots.project import ContextSection
-from tests.mcp.project_test_fixtures import complete_project_graph
-from tests.web_backend.mapping_fixtures import mapping_preparation
-
-from gds_workbench_api.features.context.context import (
+from atlas_mcp.domain.snapshots.project import ContextSection
+from atlas_platform.features.context.context import (
     select_context_records,
     with_cited_context_records,
 )
-from gds_workbench_api.features.mapping.execution_context import (
+from atlas_platform.features.mapping.execution_context import (
     build_mapping_execution_context,
 )
-from gds_workbench_api.features.workflows.authoring.downstream_inputs import (
+from atlas_platform.features.workflows.authoring.downstream_inputs import (
     DownstreamContextReaders,
     project_downstream_inputs,
 )
 
+from tests.mcp.project_test_fixtures import complete_project_graph
+from tests.web_backend.mapping_fixtures import mapping_preparation
 
 ALL_WORKFLOWS = (
     "analysis",
@@ -126,16 +125,16 @@ def test_mapping_receives_unlinked_project_wide_requirements_in_both_modes(
 async def test_dimensional_requirements_follow_business_system_behind_silver(
     mode: Any,
 ) -> None:
+    from atlas_platform.features.workflows.authoring.context import (
+        AgentContextLimits,
+        PostgresAgentContextRepository,
+    )
+
     from tests.web_backend.test_agent_context import (
         DimensionalContextTransaction,
         _dimensional_snapshot,
         _load_physical_scope,
         _plan,
-    )
-
-    from gds_workbench_api.features.workflows.authoring.context import (
-        AgentContextLimits,
-        PostgresAgentContextRepository,
     )
 
     requirement = section()
@@ -182,18 +181,18 @@ async def test_dimensional_requirements_follow_business_system_behind_silver(
 async def test_all_modeling_workflows_receive_context_without_layer_selection(
     workflow: Any, mode: Any
 ) -> None:
+    from atlas_platform.features.workflows.authoring.context import (
+        AgentContextLimits,
+        PostgresAgentContextRepository,
+        focus_subject_area,
+    )
+
     from tests.web_backend.test_agent_context import (
         _CUSTOMERS,
         ContextTransaction,
         _load_physical_scope,
         _plan,
         _snapshot,
-    )
-
-    from gds_workbench_api.features.workflows.authoring.context import (
-        AgentContextLimits,
-        PostgresAgentContextRepository,
-        focus_subject_area,
     )
 
     data = section()

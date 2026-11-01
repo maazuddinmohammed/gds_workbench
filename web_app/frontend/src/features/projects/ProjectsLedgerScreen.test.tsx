@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
 import { createApiClient } from "../../api";
-import { createWorkbenchRouter, WorkbenchApp } from "../../app";
+import { createAtlasPlatformRouter, AtlasPlatformApp } from "../../app";
 
 function setup({ role = "tenant_admin", owned = true, failure = false } = {}) {
   let locked = false;
@@ -26,8 +26,8 @@ function setup({ role = "tenant_admin", owned = true, failure = false } = {}) {
     if (url.pathname.endsWith("/projects")) return response({ items: [{ project_id: 18, project_name: "Customer", project_description: "Customer domain", project_revision: revision, is_locked: locked, updated_at: "2026-09-27T00:00:00Z" }], next_cursor: null });
     return response({}, 404);
   });
-  const router = createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/projects"] }) });
-  render(<WorkbenchApp router={router} />);
+  const router = createAtlasPlatformRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/projects"] }) });
+  render(<AtlasPlatformApp router={router} />);
   return fetcher;
 }
 

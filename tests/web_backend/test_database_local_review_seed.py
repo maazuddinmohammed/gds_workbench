@@ -5,30 +5,30 @@
 from pathlib import Path
 from uuid import uuid4
 
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.databricks_sql import validate_databricks_sql
-from gds_workbench_api.capabilities import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.databricks_sql import validate_databricks_sql
+from atlas_platform.capabilities import (
     AgentRunSelection,
     load_default_agent_capabilities,
 )
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.subject_areas.service import SubjectAreaWorkflow
-from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.subject_areas.service import SubjectAreaWorkflow
+from atlas_platform.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetHandoff,
     WorkflowChangeSetHandoffResult,
 )
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
+from atlas_platform.features.workflows.authoring.lifecycle import (
     DatabaseAgentWorkflowLifecycle,
 )
-from gds_workbench_api.features.workflows.authoring.no_op import (
+from atlas_platform.features.workflows.authoring.no_op import (
     DatabaseAuthoringNoOpService,
 )
-from gds_workbench_api.features.workflows.commands import (
+from atlas_platform.features.workflows.commands import (
     CreateWorkflowRunRequest,
     DatabaseWorkflowCommandService,
 )
-from gds_workbench_api.features.workflows.execution.repository import (
+from atlas_platform.features.workflows.execution.repository import (
     DatabaseWorkflowClaimRepository,
 )
 

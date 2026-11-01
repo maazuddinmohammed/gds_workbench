@@ -7,36 +7,36 @@ from typing import Any, LiteralString
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.contracts import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.adapters.mcp.tool_audit import ToolCallAuditMiddleware
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.application.change_sets.contracts import (
     canonical_records_sha256,
     stage_batch_sha256,
     stage_fingerprint_sha256,
 )
-from gds_etl_workbench.application.change_sets.metadata import (
+from atlas_mcp.application.change_sets.metadata import (
     CHANGE_SET_DATASETS,
     all_documents,
 )
-from gds_etl_workbench.application.change_sets.metadata_validation import (
+from atlas_mcp.application.change_sets.metadata_validation import (
     validate_metadata_documents,
 )
-from gds_etl_workbench.application.metadata_snapshot.archive import encode_dataset
-from gds_etl_workbench.application.metadata_snapshot.selection import (
+from atlas_mcp.application.metadata_snapshot.archive import encode_dataset
+from atlas_mcp.application.metadata_snapshot.selection import (
     SelectedMetadataSnapshot,
 )
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.snapshots.metadata import DATASETS_BY_NAME
-from gds_etl_workbench.infrastructure.postgres import (
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.snapshots.metadata import DATASETS_BY_NAME
+from atlas_mcp.infrastructure.postgres import (
     ReadinessRecord,
     ReadIsolation,
     ReadTransaction,
     ToolCallLogRecord,
     WriteTransaction,
 )
-from gds_etl_workbench.tools.change_sets.metadata import (
+from atlas_mcp.tools.change_sets.metadata import (
     register_metadata_change_set_tools,
 )
 from mcp import Client
@@ -826,7 +826,7 @@ async def test_get_metadata_change_set_fingerprint_verifies_the_draft_without_re
     assert output["record_count"] == 1
     assert len(output["fingerprint"]) == 64
     assert len(output["datasets"]) == 17
-    # Stage Runner recomputes this exact document; see tests/atlas/test_stage_contract.py.
+    # Atlas Bridge recomputes this exact document; see tests/atlas/test_stage_contract.py.
     assert output["fingerprint_version"] == "1.0"
     assert [item["dataset"] for item in output["datasets"]] == list(CHANGE_SET_DATASETS)
     assert output["fingerprint"] == stage_fingerprint_sha256("metadata", output["datasets"])
@@ -968,7 +968,7 @@ async def test_validate_metadata_change_set_persists_bounded_result(
         )
 
     monkeypatch.setattr(
-        "gds_etl_workbench.application.change_sets.metadata.select_snapshot_datasets",
+        "atlas_mcp.application.change_sets.metadata.select_snapshot_datasets",
         select_snapshot,
     )
 
@@ -1074,7 +1074,7 @@ async def test_apply_metadata_change_set_revalidates_then_applies(
         return SelectedMetadataSnapshot(tenant_code="DEMO", datasets=())
 
     monkeypatch.setattr(
-        "gds_etl_workbench.application.change_sets.metadata.select_snapshot_datasets",
+        "atlas_mcp.application.change_sets.metadata.select_snapshot_datasets",
         select_empty_snapshot,
     )
 
@@ -1172,7 +1172,7 @@ async def test_apply_metadata_change_set_returns_safe_locked_object_error(
         return SelectedMetadataSnapshot(tenant_code="DEMO", datasets=())
 
     monkeypatch.setattr(
-        "gds_etl_workbench.application.change_sets.metadata.select_snapshot_datasets",
+        "atlas_mcp.application.change_sets.metadata.select_snapshot_datasets",
         select_empty_snapshot,
     )
 

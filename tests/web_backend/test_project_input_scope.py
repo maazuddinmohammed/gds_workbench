@@ -7,14 +7,13 @@ from typing import Any, LiteralString, Protocol, cast
 from uuid import UUID, uuid4
 
 import pytest
-from fastapi.testclient import TestClient
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.project_input_scope import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.infrastructure.postgres import ReadIsolation
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.project_input_scope import (
     DatabaseProjectInputScopeService,
     ProjectInputScopeCandidate,
     ProjectInputScopeCandidatePage,
@@ -23,11 +22,12 @@ from gds_workbench_api.features.project_input_scope import (
     ProjectInputScopePage,
     ProjectInputScopeService,
 )
-from gds_workbench_api.features.project_input_scope.contracts import (
+from atlas_platform.features.project_input_scope.contracts import (
     ProjectInputScopeAttribute,
     ScopeSearchOptions,
 )
-from gds_workbench_api.main import create_app
+from atlas_platform.main import create_app
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 

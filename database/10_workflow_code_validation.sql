@@ -1,4 +1,4 @@
--- GDS ETL Workbench Release 1: generated Code and Validation Project Sections.
+-- Atlas Release 1: generated Code and Validation Project Sections.
 
 CREATE TABLE workflow.generated_code (
     generated_code_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

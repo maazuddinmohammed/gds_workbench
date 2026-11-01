@@ -5,18 +5,18 @@
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import AuthorizationDeniedError, TenantNotFoundError
-from tests.mcp.conftest import DisposablePostgres
-from tests.mcp.database_test_support import require_row
-from tests.web_backend.test_database_project_change_sets import _seed_profile_project
-
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.subject_areas import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import AuthorizationDeniedError, TenantNotFoundError
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.subject_areas import (
     DatabaseSubjectAreaService,
     SubjectAreaNotFoundError,
 )
+
+from tests.mcp.conftest import DisposablePostgres
+from tests.mcp.database_test_support import require_row
+from tests.web_backend.test_database_project_change_sets import _seed_profile_project
 
 
 async def test_subject_area_reads_count_active_bronze_scope_and_memberships(

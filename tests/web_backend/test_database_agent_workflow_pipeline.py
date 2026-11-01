@@ -7,11 +7,62 @@ from typing import Literal, cast
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import WorkbenchError
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import AtlasError
+from atlas_platform.capabilities import (
+    AgentRunSelection,
+    load_default_agent_capabilities,
+)
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.mapping.contracts import MappingTargetSelection
+from atlas_platform.features.mapping.read_contracts import (
+    MappingAttributeFilters,
+    MappingFilters,
+)
+from atlas_platform.features.mapping.read_service import DatabaseMappingReviewService
+from atlas_platform.features.workflows.authoring.agent_execution import (
+    AgentExecutionRequest,
+    AgentExecutionResult,
+)
+from atlas_platform.features.workflows.authoring.change_set_apply import (
+    ApplyWorkflowDraftRequest,
+    DatabaseWorkflowDraftApplyService,
+)
+from atlas_platform.features.workflows.authoring.change_set_handoff import (
+    WorkflowChangeSetHandoffResult,
+)
+from atlas_platform.features.workflows.authoring.lifecycle import (
+    DatabaseAgentWorkflowLifecycle,
+)
+from atlas_platform.features.workflows.commands import (
+    CreateWorkflowRunRequest,
+    DatabaseWorkflowCommandService,
+)
+from atlas_platform.features.workflows.execution import (
+    WorkerRunResult,
+    WorkflowExecutionWorker,
+)
+from atlas_platform.features.workflows.execution.assembly import (
+    create_workflow_runtime_services,
+)
+from atlas_platform.features.workflows.execution.dispatcher import (
+    WorkflowExecutionDispatcher,
+)
+from atlas_platform.features.workflows.execution.repository import (
+    DatabaseWorkflowClaimRepository,
+)
+from atlas_platform.features.workflows.runs import DatabaseWorkflowRunService
+from atlas_platform.integrations.agents import LocalFakeAgentAdapter
+from atlas_platform.integrations.agents.configuration import (
+    AgentRuntimeConfiguration,
+)
+from atlas_platform.integrations.databricks.runtime import (
+    create_databricks_execution_adapters,
+)
 from psycopg import sql
 from pydantic import JsonValue
+
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.conftest import (
     bootstrap_postgres_database as bootstrap_postgres_database,
@@ -29,57 +80,6 @@ from tests.mcp.test_database_mapping_output_template_seed import (
 from tests.web_backend.test_database_mapping_source_context import (
     MappingScope,
     _seed_mapping_scope,
-)
-
-from gds_workbench_api.capabilities import (
-    AgentRunSelection,
-    load_default_agent_capabilities,
-)
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.mapping.contracts import MappingTargetSelection
-from gds_workbench_api.features.mapping.read_contracts import (
-    MappingAttributeFilters,
-    MappingFilters,
-)
-from gds_workbench_api.features.mapping.read_service import DatabaseMappingReviewService
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
-    AgentExecutionRequest,
-    AgentExecutionResult,
-)
-from gds_workbench_api.features.workflows.authoring.change_set_apply import (
-    ApplyWorkflowDraftRequest,
-    DatabaseWorkflowDraftApplyService,
-)
-from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
-    WorkflowChangeSetHandoffResult,
-)
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
-    DatabaseAgentWorkflowLifecycle,
-)
-from gds_workbench_api.features.workflows.commands import (
-    CreateWorkflowRunRequest,
-    DatabaseWorkflowCommandService,
-)
-from gds_workbench_api.features.workflows.execution import (
-    WorkerRunResult,
-    WorkflowExecutionWorker,
-)
-from gds_workbench_api.features.workflows.execution.assembly import (
-    create_workflow_runtime_services,
-)
-from gds_workbench_api.features.workflows.execution.dispatcher import (
-    WorkflowExecutionDispatcher,
-)
-from gds_workbench_api.features.workflows.execution.repository import (
-    DatabaseWorkflowClaimRepository,
-)
-from gds_workbench_api.features.workflows.runs import DatabaseWorkflowRunService
-from gds_workbench_api.integrations.agents import LocalFakeAgentAdapter
-from gds_workbench_api.integrations.agents.configuration import (
-    AgentRuntimeConfiguration,
-)
-from gds_workbench_api.integrations.databricks.runtime import (
-    create_databricks_execution_adapters,
 )
 
 
@@ -752,7 +752,7 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
                     agent=selection,
                 )
                 if bulk == "empty":
-                    with pytest.raises(WorkbenchError) as incomplete_mapping_error:
+                    with pytest.raises(AtlasError) as incomplete_mapping_error:
                         await commands.create_run(
                             principal,
                             tenant_id=scope.tenant_id,

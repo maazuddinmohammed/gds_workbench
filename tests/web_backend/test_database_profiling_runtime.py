@@ -3,18 +3,18 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.authorization import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.authorization import (
     ActorKind,
     RequestPrincipal,
     ToolPolicy,
 )
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.analysis.validation_service import (
+from atlas_mcp.infrastructure.postgres import ReadIsolation
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.analysis.validation_service import (
     DatabaseAnalysisValidationRepository,
 )
-from gds_workbench_api.features.profiling.repository import (
+from atlas_platform.features.profiling.repository import (
     DatabaseProfilingWorkflowRepository,
 )
 

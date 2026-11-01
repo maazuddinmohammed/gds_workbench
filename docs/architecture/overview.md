@@ -4,33 +4,33 @@ Code and SQL define behavior. These paths are the navigation map, not a second
 contract registry.
 
 ```text
-Atlas plugin (VS Code Copilot) -> VS Code Stage Runner
-                           -> Azure App Service MCP + profiling worker -> PostgreSQL
-Databricks App: React -> FastAPI + durable worker ----> PostgreSQL
-                                     -> Foundry / governed Databricks SQL
+Atlas Plugin (VS Code Copilot) -> Atlas Bridge
+                             -> Atlas MCP + profiling worker -> PostgreSQL
+Atlas Platform: React -> FastAPI + durable worker ----------> PostgreSQL
+                                -> Foundry / governed Databricks SQL
 ```
 
 The two servers deploy independently. Packaging copies shared
-`gds_etl_workbench` source into each artifact; the web App does not call MCP.
+`atlas_mcp` source into each artifact; Atlas Platform does not call Atlas MCP.
 There is no separate notebook workflow runtime.
 
 ## Source map
 
 | Concern | Authoritative source |
 | --- | --- |
-| MCP composition, tool registration, audit | `mcp_server/gds_etl_workbench/runtime.py`, `tools/`, `adapters/mcp/` |
+| MCP composition, tool registration, audit | `mcp_server/atlas_mcp/runtime.py`, `tools/`, `adapters/mcp/` |
 | Transport-neutral rules and storage | MCP package `application/`, `domain/`, `infrastructure/` |
-| HTTP setup and dependencies | `web_app/backend/gds_workbench_api/main.py`, `runtime.py`, `dependencies.py` |
+| HTTP setup and dependencies | `web_app/backend/atlas_platform/main.py`, `runtime.py`, `dependencies.py` |
 | Web feature orchestration and SQL I/O | Backend `features/<feature>/` |
 | Worker composition | Backend `features/workflows/execution/assembly.py` |
 | Foundry model transports and usage | Backend `integrations/agents/`; `anthropic_model.py` adapts Claude Messages to the shared Agents SDK loop |
 | Prompt variables, readers and rendering | Backend `features/workflows/authoring/` |
 | Frontend screens | `web_app/frontend/src/features/` |
 | Shared UI and formatting | Frontend `shared/ui.tsx`, `shared/presentation.ts` |
-| Atlas local workspace and review | `atlas/atlas-plugin/`; serialization in `workbench/core.js` |
-| Stage transport and approval checks | `atlas/atlas-vs-code/src/stage-runner.ts` |
+| Atlas local workspace and review | `atlas/atlas-plugin/`; serialization in `atlas-local-workbench/core.js` |
+| Stage transport and approval checks | `atlas/atlas-bridge/src/bridge.ts` |
 | Database contract | Ordered `database/01_*.sql` through `19_*.sql`, then `20_verify_install.sql` |
-| Release entrypoints | `mcp_server/build_zip.py`, `deployment/databricks_ui/build_uploads.py`, `atlas/build_plugin.py`; VSIX uses `atlas/atlas-vs-code/package.json` |
+| Release entrypoints | `mcp_server/build_zip.py`, `deployment/databricks_ui/build_uploads.py`, `atlas/build_plugin.py`; VSIX uses `atlas/atlas-bridge/package.json` |
 
 ## Data and execution boundaries
 
@@ -77,9 +77,9 @@ revision invalidates work based on the earlier Snapshot.
 
 Stage transport never applies partial datasets. Byte-fragment mode is transport
 for complete generated Code records. Python, JavaScript and Windows PowerShell
-serialization must produce matching digests. Stage Runner verifies the approved
+serialization must produce matching digests. Atlas Bridge verifies the approved
 manifest and content before sending bounded chunks; Apply remains a separate step.
-The server lists and runs Stage upload tools only for the Stage Runner's
+The server lists and runs Stage upload tools only for the Atlas Bridge's
 connection, and Apply must name the approved validation's candidate digest.
 
 ## Build and verify

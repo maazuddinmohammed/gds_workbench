@@ -1,4 +1,4 @@
-# Native counterpart of workbench/validation/sql.js generated-artifact checks.
+# Native counterpart of atlas-local-workbench/validation/sql.js generated-artifact checks.
 # This is the same bounded lexical policy, not a SQL parser or execution validator.
 $script:AtlasSqlRegex = [Text.RegularExpressions.RegexOptions]::ECMAScript -bor [Text.RegularExpressions.RegexOptions]::CultureInvariant
 $script:AtlasSqlRegexIgnoreCase = $script:AtlasSqlRegex -bor [Text.RegularExpressions.RegexOptions]::IgnoreCase

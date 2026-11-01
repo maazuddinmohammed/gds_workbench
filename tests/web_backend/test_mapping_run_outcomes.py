@@ -8,17 +8,17 @@ from typing import Any, LiteralString
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation, ReadTransaction
-from gds_workbench_api.features.workflows.overview.contracts import WorkflowMetric
-from gds_workbench_api.features.workflows.overview.service import _section_state
-from gds_workbench_api.features.workflows.runs import service as run_service
-from gds_workbench_api.features.workflows.runs.contracts import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.infrastructure.postgres import ReadIsolation, ReadTransaction
+from atlas_platform.features.workflows.overview.contracts import WorkflowMetric
+from atlas_platform.features.workflows.overview.service import _section_state
+from atlas_platform.features.workflows.runs import service as run_service
+from atlas_platform.features.workflows.runs.contracts import (
     MappingRunOutcome,
     RunState,
 )
-from gds_workbench_api.features.workflows.usage.read_service import (
+from atlas_platform.features.workflows.usage.read_service import (
     WorkflowTokenUsageSummary,
 )
 

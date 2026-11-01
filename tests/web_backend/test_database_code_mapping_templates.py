@@ -8,8 +8,8 @@ from collections.abc import Iterator
 from typing import Any, cast
 
 import pytest
-from gds_etl_workbench.application.mapping_context import project_mapping_inputs
-from gds_workbench_api.features.workflows.authoring.downstream_inputs import (
+from atlas_mcp.application.mapping_context import project_mapping_inputs
+from atlas_platform.features.workflows.authoring.downstream_inputs import (
     downstream_input_contracts,
 )
 from jsonschema import Draft202012Validator

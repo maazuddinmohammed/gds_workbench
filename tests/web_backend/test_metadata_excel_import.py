@@ -3,7 +3,7 @@ from io import BytesIO
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
-from gds_workbench_api.features.metadata.workbook import (
+from atlas_platform.features.metadata.workbook import (
     MANIFEST_SHEET_NAME,
     MetadataWorkbookParseError,
     MetadataWorkbookSheet,
@@ -50,7 +50,7 @@ def _workbook() -> bytes:
 
 
 def _canonical_workbook() -> bytes:
-    from gds_etl_workbench.domain.snapshots.metadata import DATASETS_BY_NAME
+    from atlas_mcp.domain.snapshots.metadata import DATASETS_BY_NAME
 
     definition = DATASETS_BY_NAME["copy_group"]
     return build_metadata_workbook(

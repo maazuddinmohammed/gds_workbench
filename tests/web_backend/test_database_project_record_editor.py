@@ -6,44 +6,44 @@ from typing import cast
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.project import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.application.change_sets.project import (
     load_project_physical_scope,
 )
-from gds_etl_workbench.application.change_sets.project_apply import ProjectMaterializer
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project_apply import ProjectMaterializer
+from atlas_mcp.application.change_sets.project_validation import (
     validate_future_graph,
 )
-from gds_etl_workbench.application.project_read import ProjectReadContext
-from gds_etl_workbench.application.project_snapshot import (
+from atlas_mcp.application.project_read import ProjectReadContext
+from atlas_mcp.application.project_snapshot import (
     build_project_snapshot,
     read_project_review_snapshot,
 )
-from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.project_change_sets.contracts import (
+from atlas_mcp.domain.errors import AtlasError
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.project_change_sets.contracts import (
     PreviewProjectRecordsRequest,
     ReviewProjectRecordsRequest,
     ReviewProjectRecordsResult,
 )
-from gds_workbench_api.features.project_change_sets.editor import (
+from atlas_platform.features.project_change_sets.editor import (
     EditableDataset,
     ProjectRecordEditor,
     ProjectRecordEditorRequest,
     SaveProjectRecordRequest,
 )
-from gds_workbench_api.features.project_change_sets.review import (
+from atlas_platform.features.project_change_sets.review import (
     ProjectLayer,
     review_lifecycle,
 )
-from gds_workbench_api.features.project_change_sets.service import (
+from atlas_platform.features.project_change_sets.service import (
     DatabaseProjectChangeSetService,
 )
-from gds_workbench_api.features.project_targets.contracts import ExportProjectDdlRequest
-from gds_workbench_api.features.project_targets.service import (
+from atlas_platform.features.project_targets.contracts import ExportProjectDdlRequest
+from atlas_platform.features.project_targets.service import (
     DatabaseProjectTargetsService,
 )
-from gds_workbench_api.features.projects import ProjectRevisionConflictError
+from atlas_platform.features.projects import ProjectRevisionConflictError
 
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.project_test_fixtures import complete_project_graph
@@ -103,7 +103,7 @@ async def test_edit_then_clear_layer_is_atomic_replayable_and_recoverable(
         load = ProjectRecordEditorRequest(
             dataset=dataset, record_id=record_id, expected_project_revision=1
         )
-        with pytest.raises(WorkbenchError) as denied:
+        with pytest.raises(AtlasError) as denied:
             await service.edit_record(
                 principal, tenant_id=tenant_id, project_id=project_id, command=load
             )
@@ -169,7 +169,7 @@ async def test_edit_then_clear_layer_is_atomic_replayable_and_recoverable(
             principal, tenant_id=tenant_id, project_id=project_id, command=clear
         )
         assert preview.can_apply and preview.action_count > 1
-        with pytest.raises(WorkbenchError) as unconfirmed:
+        with pytest.raises(AtlasError) as unconfirmed:
             await service.review_records(
                 principal,
                 tenant_id=tenant_id,
@@ -325,7 +325,7 @@ async def test_mapping_edit_uses_scope_and_revision_fenced_replay(
                     (project_id, prefix + "_ERP"),
                 )
             assert anchor is not None
-            from gds_workbench_api.features.project_change_sets.editor import (
+            from atlas_platform.features.project_change_sets.editor import (
                 NewMappingTarget,
             )
 
@@ -340,7 +340,7 @@ async def test_mapping_edit_uses_scope_and_revision_fenced_replay(
             expected_project_revision=1,
             mapping_target=target,
         )
-        with pytest.raises(WorkbenchError) as denied:
+        with pytest.raises(AtlasError) as denied:
             await service.edit_record(
                 principal, tenant_id=tenant_id, project_id=project_id, command=load
             )
@@ -461,7 +461,7 @@ async def test_mapping_edit_uses_scope_and_revision_fenced_replay(
                 ]
             },
         )
-        with pytest.raises(WorkbenchError) as outside:
+        with pytest.raises(AtlasError) as outside:
             await service.edit_record(
                 principal,
                 tenant_id=tenant_id,

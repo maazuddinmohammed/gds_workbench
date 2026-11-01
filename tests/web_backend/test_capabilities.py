@@ -3,11 +3,10 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from fastapi.testclient import TestClient
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_workbench_api.capabilities import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_platform.capabilities import (
     AgentCapabilityRegistry,
     AgentExecutionModeCode,
     AgentModelExecutionProfile,
@@ -15,7 +14,8 @@ from gds_workbench_api.capabilities import (
     load_default_agent_capabilities,
     select_agent_runtime_capabilities,
 )
-from gds_workbench_api.main import create_app
+from atlas_platform.main import create_app
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 

@@ -449,7 +449,7 @@ wheels = [
 ]
 
 [[package]]
-name = "gds-etl-workbench-mcp"
+name = "atlas-mcp"
 version = "0.3.0"
 source = { directory = "../../mcp_server" }
 dependencies = [
@@ -493,7 +493,7 @@ dev = [
 ]
 
 [[package]]
-name = "gds-workbench-api"
+name = "atlas-platform-api"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
@@ -501,7 +501,7 @@ dependencies = [
     { name = "certifi" },
     { name = "databricks-sdk" },
     { name = "fastapi" },
-    { name = "gds-etl-workbench-mcp" },
+    { name = "atlas-mcp" },
     { name = "httpx2" },
     { name = "jinja2" },
     { name = "jsonschema" },
@@ -528,7 +528,7 @@ requires-dist = [
     { name = "certifi", specifier = "==2026.7.22" },
     { name = "databricks-sdk", specifier = "==0.133.0" },
     { name = "fastapi", specifier = "==0.141.1" },
-    { name = "gds-etl-workbench-mcp", directory = "../../mcp_server" },
+    { name = "atlas-mcp", directory = "../../mcp_server" },
     { name = "httpx2", specifier = "==2.10.0" },
     { name = "jinja2", specifier = "==3.1.6" },
     { name = "jsonschema", specifier = "==4.26.0" },

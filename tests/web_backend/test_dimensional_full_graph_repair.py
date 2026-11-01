@@ -6,10 +6,22 @@ from dataclasses import replace
 from typing import Any, Literal, cast
 
 import pytest
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project_validation import (
     validate_future_graph,
 )
+from atlas_platform.features.dimensional.service import (
+    _candidate_validator,
+    _project_dimensional_changes,
+)
+from atlas_platform.features.workflows.authoring.context import (
+    AgentContextBundle,
+    modeled_layer_dependencies,
+)
+from atlas_platform.features.workflows.authoring.repair import (
+    AgentCandidateValidationError,
+)
 from pydantic import JsonValue
+
 from tests.mcp.project_test_fixtures import (
     DIMENSIONAL_FACT_TYPES,
     complete_physical_scope,
@@ -24,18 +36,6 @@ from tests.web_backend.test_dimensional_executor import (
     _plan,
     _principal,
     _service,
-)
-
-from gds_workbench_api.features.dimensional.service import (
-    _candidate_validator,
-    _project_dimensional_changes,
-)
-from gds_workbench_api.features.workflows.authoring.context import (
-    AgentContextBundle,
-    modeled_layer_dependencies,
-)
-from gds_workbench_api.features.workflows.authoring.repair import (
-    AgentCandidateValidationError,
 )
 
 

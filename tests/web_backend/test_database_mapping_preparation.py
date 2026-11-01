@@ -4,8 +4,8 @@ from __future__ import annotations
 from typing import Any, LiteralString, Protocol, cast
 from uuid import UUID
 
-from gds_workbench_api.features.mapping import preparation_repository as preparation
-from gds_workbench_api.features.mapping.read_service import (
+from atlas_platform.features.mapping import preparation_repository as preparation
+from atlas_platform.features.mapping.read_service import (
     _MAPPING_GENERATION_TARGETS_SQL,
     _UNSUPPLIED_ENTITY_COUNT_SQL,
 )

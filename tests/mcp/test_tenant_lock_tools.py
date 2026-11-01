@@ -7,23 +7,22 @@ from typing import Any, LiteralString
 from uuid import UUID
 
 import pytest
-from mcp import Client
-from mcp.server.mcpserver import MCPServer
-from mcp.types import TextContent
-
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.infrastructure.postgres import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.adapters.mcp.tool_audit import ToolCallAuditMiddleware
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.infrastructure.postgres import (
     ReadinessRecord,
     ReadIsolation,
     ReadTransaction,
     ToolCallLogRecord,
     WriteTransaction,
 )
-from gds_etl_workbench.tools.tenants.tenant_locks import register_tenant_lock_tools
+from atlas_mcp.tools.tenants.tenant_locks import register_tenant_lock_tools
+from mcp import Client
+from mcp.server.mcpserver import MCPServer
+from mcp.types import TextContent
 
 ENTRA_TENANT_ID = UUID("10000000-0000-0000-0000-000000000021")
 ENTRA_OBJECT_ID = UUID("20000000-0000-0000-0000-000000000021")

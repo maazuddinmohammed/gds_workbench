@@ -5,7 +5,7 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
 
 import { createApiClient } from "../../api";
-import { WorkbenchApp, createWorkbenchRouter } from "../../app";
+import { AtlasPlatformApp, createAtlasPlatformRouter } from "../../app";
 
 describe("Project Logical", () => {
   it.each([
@@ -14,7 +14,7 @@ describe("Project Logical", () => {
     ["relationships/101", "silver.sales_order.customer_id → silver.customer_account.customer_id"],
   ])("keeps %s record actions beside its heading with lifecycle commands under More", async (detail, title) => {
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(logicalFetchStub()),
       history: createMemoryHistory({ initialEntries: [`/tenants/7/projects/18/logical/${detail}`] }),
     })} />);
@@ -38,7 +38,7 @@ describe("Project Logical", () => {
     const user = userEvent.setup();
     const fetcher = logicalFetchStub();
     const router = logicalRouter(fetcher);
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
     await screen.findByRole("table", { name: "Logical Entities" });
     await user.click(within(screen.getByRole("navigation", { name: "Logical views" })).getByRole("button", { name: /Subject Areas/ }));
 
@@ -78,7 +78,7 @@ describe("Project Logical", () => {
 
   it("opens an Entity's quick view beside its Subject Area, keeping Show details", async () => {
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(logicalFetchStub()),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/logical/subject-areas/41"] }),
     })} />);
@@ -123,7 +123,7 @@ describe("Project Logical", () => {
   it("reviews a Logical Entity with its derived Subject Areas and sources on a detail page", async () => {
     const fetcher = logicalFetchStub();
     const user = userEvent.setup();
-    render(<WorkbenchApp router={logicalRouter(fetcher)} />);
+    render(<AtlasPlatformApp router={logicalRouter(fetcher)} />);
 
     const ledger = await screen.findByRole("table", { name: "Logical Entities" });
     expect(within(ledger).getAllByRole("columnheader").slice(1, 3).map((cell) => cell.textContent)).toEqual(["Schema", "Entity name"]);
@@ -166,7 +166,7 @@ describe("Project Logical", () => {
   it("shows no Submodels and reviews Attributes and child-to-parent Relationships", async () => {
     const user = userEvent.setup();
     const fetcher = logicalFetchStub();
-    render(<WorkbenchApp router={logicalRouter(fetcher)} />);
+    render(<AtlasPlatformApp router={logicalRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Logical Entities" });
     const views = within(screen.getByRole("navigation", { name: "Logical views" }));
     expect(views.getAllByRole("button").map((button) => button.textContent?.replace(/\d/g, ""))).toEqual(["Subject Areas", "Entities", "Relationships"]);
@@ -229,7 +229,7 @@ describe("Project Logical", () => {
   it("filters Entities by Subject Area and status, and keeps empty, error, and revision states explicit", async () => {
     const user = userEvent.setup();
     const fetcher = logicalFetchStub();
-    const filtered = render(<WorkbenchApp router={logicalRouter(fetcher)} />);
+    const filtered = render(<AtlasPlatformApp router={logicalRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Logical Entities" });
 
     if (screen.getByRole("button", { name: /^Filters/ }).getAttribute("aria-expanded") === "false") await user.click(screen.getByRole("button", { name: /^Filters/ }));
@@ -261,27 +261,27 @@ describe("Project Logical", () => {
     filtered.unmount();
 
     const empty = render(
-      <WorkbenchApp router={logicalRouter(logicalFetchStub({ empty: true }))} />,
+      <AtlasPlatformApp router={logicalRouter(logicalFetchStub({ empty: true }))} />,
     );
     expect(await screen.findByText("No Logical Entities match these filters.")).toBeVisible();
     empty.unmount();
 
     const mismatch = render(
-      <WorkbenchApp router={logicalRouter(logicalFetchStub({ projectRevision: 19 }))} />,
+      <AtlasPlatformApp router={logicalRouter(logicalFetchStub({ projectRevision: 19 }))} />,
     );
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The Project changed while Logical Entities were loading.",
     );
     mismatch.unmount();
 
-    render(<WorkbenchApp router={logicalRouter(logicalFetchStub({ error: true }))} />);
+    render(<AtlasPlatformApp router={logicalRouter(logicalFetchStub({ error: true }))} />);
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Logical Entities could not be loaded.",
     );
   });
 
   it("keeps Build and Optimize lock-gated", async () => {
-    render(<WorkbenchApp router={logicalRouter(logicalFetchStub({ hasLock: false }))} />);
+    render(<AtlasPlatformApp router={logicalRouter(logicalFetchStub({ hasLock: false }))} />);
     await screen.findByRole("table", { name: "Logical Entities" });
     for (const name of ["Build", "Optimize"]) {
       expect(screen.getByRole("button", { name })).toBeDisabled();
@@ -294,7 +294,7 @@ describe("Project Logical", () => {
   it("builds one Subject Area at a time, listed most-shared first", async () => {
     const fetcher = logicalFetchStub();
     const user = userEvent.setup();
-    render(<WorkbenchApp router={logicalRouter(fetcher)} />);
+    render(<AtlasPlatformApp router={logicalRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Logical Entities" });
     expect(screen.getByText("Tenant Lock held by you")).toBeVisible();
     await user.click(screen.getByText("Run Logical", { selector: "summary" }));
@@ -356,7 +356,7 @@ describe("Project Logical", () => {
   it("blocks the next Build while a Build draft waits for Apply, naming its area", async () => {
     const fetcher = logicalFetchStub({ waitingDraft: true });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={logicalRouter(fetcher)} />);
+    render(<AtlasPlatformApp router={logicalRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Logical Entities" });
     await user.click(screen.getByText("Run Logical", { selector: "summary" }));
     await user.click(screen.getByRole("button", { name: "Build" }));
@@ -375,7 +375,7 @@ describe("Project Logical", () => {
   it("optimizes the whole Logical model without a Subject Area or Object selection", async () => {
     const fetcher = logicalFetchStub();
     const user = userEvent.setup();
-    render(<WorkbenchApp router={logicalRouter(fetcher)} />);
+    render(<AtlasPlatformApp router={logicalRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Logical Entities" });
     await user.click(screen.getByText("Run Logical", { selector: "summary" }));
     await user.click(screen.getByRole("button", { name: "Optimize" }));
@@ -409,7 +409,7 @@ function createRunBody(fetcher: ReturnType<typeof logicalFetchStub>): Record<str
 }
 
 function logicalRouter(fetcher: ReturnType<typeof logicalFetchStub>) {
-  return createWorkbenchRouter({
+  return createAtlasPlatformRouter({
     api: createApiClient(fetcher),
     history: createMemoryHistory({
       initialEntries: ["/tenants/7/projects/18/logical"],
@@ -757,7 +757,7 @@ const agentCapabilitiesPayload = {
 
 it.each([["Entities", "logical_entity", 71], ["Attributes", "logical_attribute", 81], ["Relationships", "logical_relationship", 101]] as const)("reviews selected %s through the governed endpoint", async (view, dataset, recordId) => {
   const { fetcher, commands } = withRecordReview(logicalFetchStub());
-  render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+  render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
     history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/logical"] }),
   })} />);
   const user = userEvent.setup();

@@ -5,22 +5,21 @@ from typing import Any, Literal, LiteralString, cast
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project_validation import (
     PhysicalProjectCatalog,
 )
-from gds_etl_workbench.application.project_read import ProjectReadContext
-from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_etl_workbench.domain.modeling_records import (
+from atlas_mcp.application.project_read import ProjectReadContext
+from atlas_mcp.domain.errors import AtlasError
+from atlas_mcp.domain.modeling_records import (
     GeneratedCodeRecord,
     LogicalAttributeRecord,
     LogicalEntityRecord,
     LogicalObjectSourceRecord,
     MappingObjectRecord,
 )
-from gds_etl_workbench.domain.snapshots.project import ProjectSnapshot
-
-from gds_workbench_api.capabilities import AgentRunSelection
-from gds_workbench_api.features.workflows.authoring.context import (
+from atlas_mcp.domain.snapshots.project import ProjectSnapshot
+from atlas_platform.capabilities import AgentRunSelection
+from atlas_platform.features.workflows.authoring.context import (
     AgentContextLimits,
     AgentContextToolRequestError,
     BuildSubjectArea,
@@ -28,12 +27,12 @@ from gds_workbench_api.features.workflows.authoring.context import (
     PostgresAgentContextRepository,
     focus_subject_area,
 )
-from gds_workbench_api.features.workflows.authoring.plan import (
+from atlas_platform.features.workflows.authoring.plan import (
     AgentRunPlan,
     FrozenAgentStage,
     PlannedSubjectArea,
 )
-from gds_workbench_api.prompt_rendering import PromptComponentTemplates
+from atlas_platform.prompt_rendering import PromptComponentTemplates
 
 _CUSTOMERS = PlannedSubjectArea(
     subject_area_id=61,
@@ -763,7 +762,7 @@ async def test_dimensional_context_rejects_an_ineligible_selected_object() -> No
     async def load_ineligible_dimensional_snapshot(*_: object) -> ProjectSnapshot:
         return _dimensional_snapshot()
 
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await PostgresAgentContextRepository(
             physical_scope_loader=_load_physical_scope,
             snapshot_loader=load_ineligible_dimensional_snapshot,
@@ -1059,7 +1058,7 @@ class UnavailableFenceTransaction(ContextTransaction):
 async def test_revision_or_tenant_fence_fails_before_any_context_rows_are_read() -> None:
     transaction = UnavailableFenceTransaction()
 
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await PostgresAgentContextRepository(
             snapshot_loader=_load_snapshot, physical_scope_loader=_load_physical_scope
         ).load(
@@ -1074,7 +1073,7 @@ async def test_revision_or_tenant_fence_fails_before_any_context_rows_are_read()
 
 @pytest.mark.asyncio
 async def test_embedded_mode_fails_on_json_bound_without_tool_fallback() -> None:
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await PostgresAgentContextRepository(
             physical_scope_loader=_load_physical_scope,
             snapshot_loader=_load_snapshot,
@@ -1093,7 +1092,7 @@ async def test_embedded_mode_fails_on_json_bound_without_tool_fallback() -> None
 
 @pytest.mark.asyncio
 async def test_tool_mode_rejects_a_bound_too_small_for_its_manifest() -> None:
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await PostgresAgentContextRepository(
             physical_scope_loader=_load_physical_scope,
             snapshot_loader=_load_snapshot,
@@ -1164,7 +1163,7 @@ async def test_build_load_packages_and_bounds_each_subject_area_separately(
         embedded = cast(dict[str, Any], focused.embedded_context)
         assert embedded["applied"]["subject_area"] is None
         assert embedded["prompt_inputs"]["subject_area_context"]["input_count"] == 1
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         focus_subject_area(
             loaded["tight"], plan=plan, subject_area=_CUSTOMERS, logical=snapshot.logical
         )
@@ -1197,7 +1196,7 @@ async def test_provider_projection_rejects_unsafe_nested_json(
     async def load_unsafe_snapshot(*_: object) -> ProjectSnapshot:
         return _snapshot_with_policy_json(unsafe_json)
 
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await PostgresAgentContextRepository(
             physical_scope_loader=_load_physical_scope,
             snapshot_loader=load_unsafe_snapshot,
@@ -1239,7 +1238,7 @@ async def test_nested_authored_records_count_toward_hard_record_bound(
         ),
     )
 
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         if operation == "optimize":
             await repository.load(LogicalContextTransaction(), tenant_id=7, plan=plan)
         else:
@@ -1297,7 +1296,7 @@ async def test_tool_catalog_cap_measures_the_exact_stored_projection() -> None:
     )
     assert result.tool_catalog.serialized_size_bytes == expected_bytes
 
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await PostgresAgentContextRepository(
             physical_scope_loader=_load_physical_scope,
             snapshot_loader=_load_snapshot,
@@ -1330,7 +1329,7 @@ class ChangingRevisionFenceTransaction(ContextTransaction):
 async def test_read_committed_revision_change_fails_the_final_fence() -> None:
     transaction = ChangingRevisionFenceTransaction()
 
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await PostgresAgentContextRepository(
             physical_scope_loader=_load_physical_scope,
             snapshot_loader=_load_snapshot,
@@ -1357,14 +1356,13 @@ async def test_read_committed_revision_change_fails_the_final_fence() -> None:
 async def test_projected_inputs_keep_actual_keys_profiles_and_scoped_relationships(
     project_workflow: Literal["subject_area", "logical"],
 ) -> None:
-    from jsonschema import Draft202012Validator
-
-    from gds_workbench_api.features.workflows.authoring.context_contracts import (
+    from atlas_platform.features.workflows.authoring.context_contracts import (
         workflow_input_contracts,
     )
-    from gds_workbench_api.features.workflows.authoring.context_inputs import (
+    from atlas_platform.features.workflows.authoring.context_inputs import (
         project_context_inputs,
     )
+    from jsonschema import Draft202012Validator
 
     plan = _plan(project_workflow=project_workflow)
     result = await PostgresAgentContextRepository(
@@ -1471,7 +1469,7 @@ async def test_authoring_requires_configured_output_schemas(workflow: Any) -> No
     async def load_snapshot(*_: object) -> ProjectSnapshot:
         return snapshot
 
-    with pytest.raises(WorkbenchError, match="revision-fenced"):
+    with pytest.raises(AtlasError, match="revision-fenced"):
         await PostgresAgentContextRepository(
             physical_scope_loader=_load_physical_scope,
             snapshot_loader=load_snapshot,

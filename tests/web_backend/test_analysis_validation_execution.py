@@ -9,9 +9,9 @@ from types import TracebackType
 from typing import Any, Self
 
 import pytest
-from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_workbench_api.features.analysis.validation_execution import (
+from atlas_mcp.domain.databricks import DatabricksSqlConnection
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_platform.features.analysis.validation_execution import (
     AnalysisValidationEndpoint,
     AnalysisValidationEvidence,
     AnalysisValidationRelationship,

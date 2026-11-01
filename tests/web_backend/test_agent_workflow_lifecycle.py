@@ -7,13 +7,13 @@ from typing import Any, LiteralString
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import (
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import (
     DependencyUnavailableError,
     TenantWorkflowConflictError,
 )
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
+from atlas_mcp.infrastructure.postgres import ReadIsolation
+from atlas_platform.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
     DatabaseAgentWorkflowLifecycle,
 )

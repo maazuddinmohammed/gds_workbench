@@ -4,15 +4,15 @@ from collections.abc import Mapping
 from uuid import UUID
 
 import pytest
-from gds_workbench_api.capabilities import (
+from atlas_platform.capabilities import (
     AgentCapabilityRegistry,
     load_default_agent_capabilities,
 )
-from gds_workbench_api.integrations.agents import composition as agent_composition
-from gds_workbench_api.integrations.agents.adapters import (
+from atlas_platform.integrations.agents import composition as agent_composition
+from atlas_platform.integrations.agents.adapters import (
     OpenAIProviderCredentials,
 )
-from gds_workbench_api.integrations.agents.configuration import (
+from atlas_platform.integrations.agents.configuration import (
     AgentProviderConnection,
     AgentRuntimeConfiguration,
     FoundryClientCredentials,

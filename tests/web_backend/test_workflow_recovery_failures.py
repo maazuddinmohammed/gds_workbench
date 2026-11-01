@@ -11,18 +11,18 @@ from typing import Any, LiteralString
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.domain.errors import DependencyUnavailableError
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
+from atlas_mcp.domain.errors import DependencyUnavailableError
+from atlas_platform.features.workflows.authoring.lifecycle import (
     DatabaseAgentWorkflowLifecycle,
 )
-from gds_workbench_api.features.workflows.execution import (
+from atlas_platform.features.workflows.execution import (
     WorkerRunResult,
     WorkflowClaimLease,
     WorkflowClaimRunner,
     WorkflowExecutionClaim,
     WorkflowExecutionDispatcher,
 )
-from gds_workbench_api.features.workflows.usage.service import (
+from atlas_platform.features.workflows.usage.service import (
     DatabaseWorkflowUsageRecorder,
 )
 from psycopg.errors import UndefinedFunction

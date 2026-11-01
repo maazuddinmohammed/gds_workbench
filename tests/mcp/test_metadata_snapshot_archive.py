@@ -10,14 +10,14 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.application.metadata_snapshot.archive import (
+from atlas_mcp.application.metadata_snapshot.archive import (
     EncodedDataset,
     SnapshotArchive,
     SnapshotContractError,
     build_snapshot_archive,
     encode_dataset,
 )
-from gds_etl_workbench.domain.snapshots.metadata import DATASETS
+from atlas_mcp.domain.snapshots.metadata import DATASETS
 
 SNAPSHOT_ID = UUID("7d7cc8ad-62b5-44ef-aeb0-c09c770ff233")
 CREATED_TIME = datetime(2026, 8, 11, 16, 0, tzinfo=UTC)

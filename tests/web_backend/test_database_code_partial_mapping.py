@@ -6,10 +6,10 @@
 from typing import Any
 
 import pytest
-from gds_workbench_api.features.code_generation.contracts import (
+from atlas_platform.features.code_generation.contracts import (
     CodeGenerationTargetSummary,
 )
-from gds_workbench_api.features.code_generation.read_service import (
+from atlas_platform.features.code_generation.read_service import (
     _CODE_GENERATION_TARGETS_SQL,
 )
 from psycopg import sql

@@ -5,52 +5,52 @@ from typing import cast
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_etl_workbench.domain.modeling_records import (
+from atlas_mcp.domain.errors import AtlasError
+from atlas_mcp.domain.modeling_records import (
     LogicalAttributeKey,
     LogicalEntityKey,
     PhysicalAttributeKey,
     PhysicalObjectKey,
 )
-from mapping_fixtures import mapping_preparation as _mapping_preparation
-from pydantic import JsonValue, SecretStr
-from tests.mcp.project_test_fixtures import LOGICAL_ENTITY_TYPES
-
-from gds_workbench_api.capabilities import (
+from atlas_platform.capabilities import (
     AgentModelExecutionProfile,
     AgentRunSelection,
     load_default_agent_capabilities,
 )
-from gds_workbench_api.features.dimensional.candidate import (
+from atlas_platform.features.dimensional.candidate import (
     DimensionalCandidateValidator,
 )
-from gds_workbench_api.features.logical.candidate import LogicalCandidateValidator
-from gds_workbench_api.features.mapping.complete_candidate import (
+from atlas_platform.features.logical.candidate import LogicalCandidateValidator
+from atlas_platform.features.mapping.complete_candidate import (
     CompleteMappingCandidateValidator,
 )
-from gds_workbench_api.features.mapping.execution_context import (
+from atlas_platform.features.mapping.execution_context import (
     build_mapping_execution_context,
 )
-from gds_workbench_api.features.subject_areas import SubjectAreaCandidateValidator
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
+from atlas_platform.features.subject_areas import SubjectAreaCandidateValidator
+from atlas_platform.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
     LocalAgentToolCatalog,
     LocalAgentToolDefinition,
 )
-from gds_workbench_api.features.workflows.authoring.context_contracts import (
+from atlas_platform.features.workflows.authoring.context_contracts import (
     INPUT_EXAMPLES,
 )
-from gds_workbench_api.features.workflows.authoring.context_readers import (
+from atlas_platform.features.workflows.authoring.context_readers import (
     FrozenContextReaders,
 )
-from gds_workbench_api.integrations.agents import (
+from atlas_platform.integrations.agents import (
     create_agent_execution_router,
 )
-from gds_workbench_api.integrations.agents.configuration import (
+from atlas_platform.integrations.agents.configuration import (
     AgentProviderConnection,
     AgentRuntimeConfiguration,
     FoundryClientCredentials,
 )
+from mapping_fixtures import mapping_preparation as _mapping_preparation
+from pydantic import JsonValue, SecretStr
+
+from tests.mcp.project_test_fixtures import LOGICAL_ENTITY_TYPES
 
 
 def _selection(*, sdk_code: str) -> AgentRunSelection:
@@ -118,7 +118,7 @@ async def test_agent_router_rejects_a_model_profile_for_the_wrong_execution_mode
         capabilities=registry,
     )
 
-    with pytest.raises(WorkbenchError, match="incompatible"):
+    with pytest.raises(AtlasError, match="incompatible"):
         await router.execute(_request(sdk_code="openai_agents_sdk"))
 
 
@@ -1160,7 +1160,7 @@ async def test_local_fake_rejects_unsupported_path_or_malformed_context() -> Non
         unsupported,
         malformed,
     ):
-        with pytest.raises(WorkbenchError) as captured:
+        with pytest.raises(AtlasError) as captured:
             await router.execute(request)
         assert captured.value.code == "invalid_request"
 
@@ -1196,7 +1196,7 @@ async def test_remote_runtime_constructs_without_contacting_a_provider() -> None
             )
         }
     )
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await router.execute(request)
 
     assert captured.value.code == "invalid_request"
@@ -1226,7 +1226,7 @@ async def test_remote_foundry_runtime_constructs_without_provider_io() -> None:
         capabilities=load_default_agent_capabilities(),
     )
 
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await router.execute(_request(sdk_code="unsupported_sdk"))
 
     assert captured.value.code == "invalid_request"
@@ -1252,7 +1252,7 @@ async def test_remote_foundry_api_key_runtime_constructs_without_provider_io() -
         capabilities=load_default_agent_capabilities(),
     )
 
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await router.execute(_request(sdk_code="unsupported_sdk"))
 
     assert captured.value.code == "invalid_request"

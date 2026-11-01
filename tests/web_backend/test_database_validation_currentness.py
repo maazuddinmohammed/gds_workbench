@@ -6,16 +6,16 @@ from typing import cast
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.application.change_sets.project import (
+from atlas_mcp.application.change_sets.project import (
     load_project_physical_scope,
 )
-from gds_etl_workbench.application.change_sets.project_apply import ProjectMaterializer
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project_apply import ProjectMaterializer
+from atlas_mcp.application.change_sets.project_validation import (
     validate_future_graph,
 )
-from gds_etl_workbench.application.project_read import ProjectReadContext
-from gds_etl_workbench.application.project_snapshot import build_project_snapshot
-from gds_workbench_api.features.validation.read_service import (
+from atlas_mcp.application.project_read import ProjectReadContext
+from atlas_mcp.application.project_snapshot import build_project_snapshot
+from atlas_platform.features.validation.read_service import (
     _CURRENT_CONTEXT_SQL,
     _LEDGER_GROUPS_SQL,
     _assemble_ledger_groups,

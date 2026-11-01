@@ -5,17 +5,17 @@ import re
 from typing import cast
 
 import pytest
-from gds_etl_workbench.application.metadata_snapshot.archive import (
+from atlas_mcp.application.metadata_snapshot.archive import (
     build_dataset_document,
 )
-from gds_etl_workbench.domain.metadata_records import (
+from atlas_mcp.domain.metadata_records import (
     CopyGroupControlRecord,
     CopyRecord,
     IngestionAttributeMappingRecord,
     IngestionObjectMappingRecord,
 )
-from gds_etl_workbench.domain.portable_validation import METADATA_RECORD_VALIDATIONS
-from gds_etl_workbench.domain.snapshots.metadata import (
+from atlas_mcp.domain.portable_validation import METADATA_RECORD_VALIDATIONS
+from atlas_mcp.domain.snapshots.metadata import (
     DATASETS,
     PHYSICAL_TABLE_COUNT,
     SnapshotSection,
@@ -433,8 +433,8 @@ def test_column_guidance_distinguishes_value_sources_and_constraints() -> None:
 
 
 def test_atlas_dependency_order_is_explicit_positive_and_not_an_identity() -> None:
-    from gds_etl_workbench.domain.metadata_records import ProcessGroupRecord
-    from gds_etl_workbench.domain.snapshots.metadata import DATASETS_BY_NAME
+    from atlas_mcp.domain.metadata_records import ProcessGroupRecord
+    from atlas_mcp.domain.snapshots.metadata import DATASETS_BY_NAME
 
     record = {
         "tenant_code": "DEMO",

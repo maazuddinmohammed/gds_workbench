@@ -6,15 +6,15 @@ from dataclasses import dataclass, field
 from typing import cast
 
 import pytest
-from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_workbench_api.capabilities import AgentRunSelection
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
+from atlas_mcp.domain.errors import AtlasError
+from atlas_platform.capabilities import AgentRunSelection
+from atlas_platform.features.workflows.authoring.agent_execution import (
     AGENT_OUTPUT_CONTRACT_INSTRUCTION,
     AgentExecutionRequest,
     AgentExecutionResult,
 )
-from gds_workbench_api.features.workflows.authoring.lifecycle import AgentWorkflowEvent
-from gds_workbench_api.features.workflows.authoring.repair import (
+from atlas_platform.features.workflows.authoring.lifecycle import AgentWorkflowEvent
+from atlas_platform.features.workflows.authoring.repair import (
     AgentCandidateValidation,
     AgentCandidateValidationError,
     AgentContextPolicy,
@@ -25,7 +25,7 @@ from gds_workbench_api.features.workflows.authoring.repair import (
     load_default_agent_context_policy,
     parse_pydantic_candidate,
 )
-from gds_workbench_api.features.workflows.authoring.stage_runner import (
+from atlas_platform.features.workflows.authoring.stage_runner import (
     AgentStageOutcome,
 )
 from pydantic import BaseModel, ConfigDict, JsonValue, model_validator
@@ -701,7 +701,7 @@ async def test_validation_exhaustion_fails_loudly_without_returning_candidate() 
     executor = FakeExecutor(candidates=[{}, {}])
     validator = FakeValidator(outcomes=[(issue,), (issue,)])
 
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await ValidationRepairRunner(
             executor=executor,
             policy=_policy(),
@@ -718,7 +718,7 @@ async def test_oversized_one_shot_context_fails_without_implicit_mode_fallback()
     executor = FakeExecutor(candidates=[{}])
     validator = FakeValidator(outcomes=[()])
 
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await ValidationRepairRunner(
             executor=executor,
             policy=_policy(one_shot_bytes=20),

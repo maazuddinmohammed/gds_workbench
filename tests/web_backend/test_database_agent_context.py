@@ -5,8 +5,28 @@ from typing import Any, LiteralString, Protocol, cast
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation
+from atlas_mcp.infrastructure.postgres import ReadIsolation
+from atlas_platform.capabilities import AgentRunSelection
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.workflows.authoring.context import (
+    AgentContextBundle,
+    PostgresAgentContextRepository,
+    focus_subject_area,
+)
+from atlas_platform.features.workflows.authoring.context_inputs import (
+    analysis_table_inputs,
+)
+from atlas_platform.features.workflows.authoring.plan import (
+    AgentRunPlan,
+    FrozenAgentStage,
+    PlannedSubjectArea,
+)
+from atlas_platform.features.workflows.authoring.prompt_inputs import (
+    project_prompt_input_values,
+)
+from atlas_platform.prompt_rendering import PromptComponentTemplates, render_prompt
 from psycopg import Connection
+
 from tests.mcp.conftest import (
     bootstrap_postgres_database as bootstrap_postgres_database,
 )
@@ -14,26 +34,6 @@ from tests.web_backend.test_database_seeded_defaults import SeedStages
 from tests.web_backend.test_database_seeded_defaults import (
     installed_stages as installed_stages,
 )
-
-from gds_workbench_api.capabilities import AgentRunSelection
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.workflows.authoring.context import (
-    AgentContextBundle,
-    PostgresAgentContextRepository,
-    focus_subject_area,
-)
-from gds_workbench_api.features.workflows.authoring.context_inputs import (
-    analysis_table_inputs,
-)
-from gds_workbench_api.features.workflows.authoring.plan import (
-    AgentRunPlan,
-    FrozenAgentStage,
-    PlannedSubjectArea,
-)
-from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
-    project_prompt_input_values,
-)
-from gds_workbench_api.prompt_rendering import PromptComponentTemplates, render_prompt
 
 _DATABASE_ROOT = Path(__file__).resolve().parents[2] / "database"
 

@@ -5,15 +5,15 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from gds_etl_workbench.application.change_sets.project import (
+from atlas_mcp.application.change_sets.project import (
     require_mcp_writable_pending,
     require_mutable_project_change_set,
 )
-from gds_etl_workbench.domain.errors import (
+from atlas_mcp.domain.errors import (
     InvalidRequestError,
     ProjectChangeSetNotActiveError,
 )
-from gds_etl_workbench.tools.change_sets.project import (
+from atlas_mcp.tools.change_sets.project import (
     _EXPIRE_OWNED_SQL,
     _FIND_ONGOING_SQL,
 )

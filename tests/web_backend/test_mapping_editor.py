@@ -4,13 +4,13 @@ from copy import deepcopy
 from typing import Any, cast
 
 import pytest
-from gds_etl_workbench.application.project_snapshot import ProjectReviewSnapshot
-from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_workbench_api.features.mapping.editor import (
+from atlas_mcp.application.project_snapshot import ProjectReviewSnapshot
+from atlas_mcp.domain.errors import AtlasError
+from atlas_platform.features.mapping.editor import (
     mapping_record_editor,
     prepare_mapping_edit,
 )
-from gds_workbench_api.features.project_change_sets.editor import (
+from atlas_platform.features.project_change_sets.editor import (
     ProjectRecordEditor,
     ProjectRecordEditorRequest,
     SaveProjectRecordRequest,
@@ -155,7 +155,7 @@ def test_source_columns_require_selected_eligible_tables(violation: str) -> None
                 },
             }
         ]
-    with pytest.raises(WorkbenchError):
+    with pytest.raises(AtlasError):
         prepare_mapping_edit(review, command, editor, complete_physical_scope())
 
 
@@ -166,7 +166,7 @@ def test_locked_mapping_or_child_protects_object_logic(locked: str) -> None:
     command.changes["object_mapping"]["mapping_transformation_document"][
         "filter_criteria"
     ] = "Changed rows."
-    with pytest.raises(WorkbenchError) as error:
+    with pytest.raises(AtlasError) as error:
         prepare_mapping_edit(review, command, editor, complete_physical_scope())
     assert error.value.code == "record_locked"
 
@@ -203,6 +203,6 @@ def test_object_and_attribute_edits_cannot_be_combined() -> None:
             },
         }
     ]
-    with pytest.raises(WorkbenchError) as error:
+    with pytest.raises(AtlasError) as error:
         prepare_mapping_edit(review, command, editor, complete_physical_scope())
     assert error.value.code == "invalid_request"

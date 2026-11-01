@@ -4,26 +4,26 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_workbench_api.capabilities import AgentRunSelection
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
+from atlas_mcp.domain.errors import AtlasError
+from atlas_platform.capabilities import AgentRunSelection
+from atlas_platform.features.workflows.authoring.agent_execution import (
     AGENT_OUTPUT_CONTRACT_INSTRUCTION,
     AgentExecutionRequest,
     LocalAgentToolDefinition,
 )
-from gds_workbench_api.features.workflows.authoring.repair import (
+from atlas_platform.features.workflows.authoring.repair import (
     AgentCandidateValidation,
     ValidationRepairRunner,
     load_default_agent_context_policy,
 )
-from gds_workbench_api.integrations.agents import adapters as agent_adapters
-from gds_workbench_api.integrations.agents.adapters import (
+from atlas_platform.integrations.agents import adapters as agent_adapters
+from atlas_platform.integrations.agents.adapters import (
     FoundryApiKeyAuthentication,
     FoundryModelAuthentication,
     OpenAIAgentsSdkAdapter,
     OpenAIProviderCredentials,
 )
-from gds_workbench_api.integrations.agents.configuration import (
+from atlas_platform.integrations.agents.configuration import (
     AgentProviderConnection,
 )
 from pydantic import JsonValue, SecretStr, ValidationError
@@ -90,7 +90,7 @@ async def test_openai_adapter_rejects_removed_sdk_before_provider_io() -> None:
         connections=(connection,),
         model_authentications={"microsoft_foundry": FakeModelAuthentication()},
     )
-    with pytest.raises(WorkbenchError) as caught:
+    with pytest.raises(AtlasError) as caught:
         await adapter.execute(
             _request(
                 sdk_code="langchain_create_agent",
@@ -413,7 +413,7 @@ async def test_openai_agents_adapter_distinguishes_provider_default_and_explicit
 async def test_adapter_rejects_provider_without_configured_connection() -> None:
     adapter = OpenAIAgentsSdkAdapter(connections=())
 
-    with pytest.raises(WorkbenchError) as caught:
+    with pytest.raises(AtlasError) as caught:
         await adapter.execute(
             _request(
                 sdk_code="openai_agents_sdk",
@@ -521,7 +521,7 @@ async def test_adapter_requires_selected_model_mapping() -> None:
         model_authentications={"microsoft_foundry": FakeModelAuthentication()},
     )
 
-    with pytest.raises(WorkbenchError) as caught:
+    with pytest.raises(AtlasError) as caught:
         await adapter.execute(
             _request(
                 sdk_code="openai_agents_sdk",

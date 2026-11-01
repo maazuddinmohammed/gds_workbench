@@ -5,30 +5,30 @@
 from uuid import UUID, uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import AtlasError, InvalidRequestError
+from atlas_platform.capabilities import load_default_agent_capabilities
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.project_change_sets.contracts import (
+    ReviewProjectRecordsResult,
+    SaveSubjectAreaRequest,
+)
+from atlas_platform.features.project_change_sets.service import (
+    DatabaseProjectChangeSetService,
+)
+from atlas_platform.features.projects import ProjectRevisionConflictError
+from atlas_platform.features.workflows.commands import (
+    CreateWorkflowRunRequest,
+    DatabaseWorkflowCommandService,
+)
+
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.database_test_support import require_row
 from tests.mcp.test_database_workflow_run_lifecycle import (
     WorkflowContext,
     _seed_project_input_scope_object_in_zone,
     seed_workflow_context,
-)
-
-from gds_workbench_api.capabilities import load_default_agent_capabilities
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.project_change_sets.contracts import (
-    ReviewProjectRecordsResult,
-    SaveSubjectAreaRequest,
-)
-from gds_workbench_api.features.project_change_sets.service import (
-    DatabaseProjectChangeSetService,
-)
-from gds_workbench_api.features.projects import ProjectRevisionConflictError
-from gds_workbench_api.features.workflows.commands import (
-    CreateWorkflowRunRequest,
-    DatabaseWorkflowCommandService,
 )
 
 _DEFINITION = "Orders and the customers who place them."
@@ -62,7 +62,7 @@ async def _rejected(
     command: SaveSubjectAreaRequest,
     key: UUID | None = None,
 ) -> str:
-    with pytest.raises(WorkbenchError) as error:
+    with pytest.raises(AtlasError) as error:
         await _save(runtime, context, command, key)
     return error.value.code
 

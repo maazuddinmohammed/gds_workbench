@@ -1,14 +1,14 @@
 """Logical registration exports round-trip through the governed Metadata importer."""
 
 import pytest
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_workbench_api.features.metadata.workbook import parse_metadata_workbook
-from gds_workbench_api.features.project_targets.contracts import (
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_platform.features.metadata.workbook import parse_metadata_workbook
+from atlas_platform.features.project_targets.contracts import (
     ExportProjectTargetsRequest,
     TargetLayer,
     TargetPlacement,
 )
-from gds_workbench_api.features.project_targets.service import registration_workbook
+from atlas_platform.features.project_targets.service import registration_workbook
 
 
 @pytest.mark.parametrize("layer,zone", [("logical", "silver"), ("dimensional", "gold")])

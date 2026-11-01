@@ -1,15 +1,15 @@
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import (
+from atlas_mcp.application.authorization import (
     AuthorizationService,
     ResolvedPrincipal,
 )
-from gds_etl_workbench.application.tenants import query_visible_tenants
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.session import DatabaseSessionService
-from gds_workbench_api.features.tenants import DatabaseTenantService
+from atlas_mcp.application.tenants import query_visible_tenants
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.session import DatabaseSessionService
+from atlas_platform.features.tenants import DatabaseTenantService
 
 from tests.mcp.conftest import DisposablePostgres
 

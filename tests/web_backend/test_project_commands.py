@@ -6,15 +6,14 @@ from typing import Any, LiteralString, cast
 from uuid import UUID
 
 import pytest
-from fastapi.testclient import TestClient
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_workbench_api.capabilities import load_default_agent_capabilities
-from gds_workbench_api.configuration import RuntimeSettings
-from gds_workbench_api.features.projects import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_platform.capabilities import load_default_agent_capabilities
+from atlas_platform.configuration import RuntimeSettings
+from atlas_platform.features.projects import (
     ArchiveProjectRequest,
     CompleteProjectRequest,
     DatabaseProjectCommandService,
@@ -22,8 +21,9 @@ from gds_workbench_api.features.projects import (
     ProjectNotFoundError,
     UpdateProjectRequest,
 )
-from gds_workbench_api.main import create_app
-from gds_workbench_api.runtime import RuntimeDatabase, create_runtime_app
+from atlas_platform.main import create_app
+from atlas_platform.runtime import RuntimeDatabase, create_runtime_app
+from fastapi.testclient import TestClient
 from psycopg.types.json import Jsonb
 
 
@@ -303,7 +303,7 @@ def test_project_creation_duplicate_name_is_safe_and_distinct_from_other_databas
                 try:
                     raise UniqueFailureError("private database details")
                 except UniqueFailureError as error:
-                    from gds_etl_workbench.domain.errors import (
+                    from atlas_mcp.domain.errors import (
                         DependencyUnavailableError,
                     )
 

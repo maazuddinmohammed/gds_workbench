@@ -2,12 +2,9 @@ from collections.abc import Mapping
 from uuid import UUID
 
 import pytest
-from databricks.sdk.errors import InternalError, Unauthenticated
-from fastapi import FastAPI, Request
-from fastapi.testclient import TestClient
-from gds_etl_workbench.adapters.auth.identity import AuthenticationError
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_workbench_api.authentication import (
+from atlas_mcp.adapters.auth.identity import AuthenticationError
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_platform.authentication import (
     CurrentUserLookup,
     DatabricksUserIdentity,
     DatabricksUserResolver,
@@ -15,6 +12,9 @@ from gds_workbench_api.authentication import (
     WebAuthenticationMiddleware,
     WebIdentityProvider,
 )
+from databricks.sdk.errors import InternalError, Unauthenticated
+from fastapi import FastAPI, Request
+from fastapi.testclient import TestClient
 
 _TENANT_ID = UUID("11111111-1111-1111-1111-111111111111")
 _OBJECT_ID = UUID("22222222-2222-2222-2222-222222222222")

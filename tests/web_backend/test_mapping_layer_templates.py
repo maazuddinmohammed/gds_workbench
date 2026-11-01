@@ -4,12 +4,12 @@ from copy import deepcopy
 from typing import Any
 
 import pytest
-from gds_workbench_api.features.mapping.complete_candidate import (
+from atlas_platform.features.mapping.complete_candidate import (
     CompleteMappingCandidateValidator,
 )
-from gds_workbench_api.features.mapping.preparation_contracts import ModeledEntityType
-from gds_workbench_api.features.mapping.readiness import assess_mapping_readiness
-from gds_workbench_api.features.workflows.authoring.context_inputs import OBJECT_FIELDS
+from atlas_platform.features.mapping.preparation_contracts import ModeledEntityType
+from atlas_platform.features.mapping.readiness import assess_mapping_readiness
+from atlas_platform.features.workflows.authoring.context_inputs import OBJECT_FIELDS
 from mapping_fixtures import mapping_candidate, mapping_preparation
 
 

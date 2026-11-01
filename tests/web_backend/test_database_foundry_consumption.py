@@ -6,13 +6,13 @@ from uuid import UUID
 
 import httpx2
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_platform.features.workflows.authoring.lifecycle import (
     DatabaseAgentWorkflowLifecycle,
 )
-from gds_workbench_api.features.workflows.runs import DatabaseWorkflowRunService
-from gds_workbench_api.features.workflows.usage.contracts import FoundryModelPricing
-from gds_workbench_api.features.workflows.usage.service import (
+from atlas_platform.features.workflows.runs import DatabaseWorkflowRunService
+from atlas_platform.features.workflows.usage.contracts import FoundryModelPricing
+from atlas_platform.features.workflows.usage.service import (
     DatabaseWorkflowUsageRecorder,
 )
 

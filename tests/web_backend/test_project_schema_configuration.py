@@ -1,10 +1,10 @@
 """Schema lists are validated by the backend before project commands reach SQL."""
 
 import pytest
-from gds_workbench_api.features.project_targets.contracts import (
+from atlas_platform.features.project_targets.contracts import (
     ExportProjectTargetsRequest,
 )
-from gds_workbench_api.features.projects.command_contracts import CompleteProjectRequest
+from atlas_platform.features.projects.command_contracts import CompleteProjectRequest
 from pydantic import ValidationError
 
 

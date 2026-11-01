@@ -1,4 +1,4 @@
--- GDS ETL Workbench Release 1: Subject Area Section.
+-- Atlas Release 1: Subject Area Section.
 --
 -- A Subject Area is a named focus window over Project Input Scope tables, such as
 -- Sales or Support. It keeps each modeling call small; it is not a separate model,

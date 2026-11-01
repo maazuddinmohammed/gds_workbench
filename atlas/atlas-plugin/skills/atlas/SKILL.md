@@ -5,7 +5,7 @@ description: Start or resume Atlas and route a data-modeling request to the need
 
 # Atlas modeling playbook
 
-Goal: route each request to the one workflow that produces it, reusing current state, without making the user explain the SDLC or answer setup questionnaires.
+Goal: route each request to its workflow, reusing current state, without making the user explain the SDLC or answer setup questionnaires.
 
 ## When to use
 
@@ -13,7 +13,7 @@ Goal: route each request to the one workflow that produces it, reusing current s
 
 ## What you need
 
-- [Working context](../../references/working-method.md) and its golden rules. General explanations need no Tenant, Project, workspace or Workbench.
+- [Working context](../../references/working-method.md) and its golden rules. General explanations need no Tenant, Project, workspace or Atlas Local Workbench.
 - In an existing workspace, `status --session <dir>` and `next --session <dir>` show the active task, unfinished work and the most urgent area.
 
 ## Steps

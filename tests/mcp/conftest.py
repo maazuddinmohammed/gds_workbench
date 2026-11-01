@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 
 import psycopg
 import pytest
-from gds_etl_workbench.infrastructure.postgres import PostgresDatabase
+from atlas_mcp.infrastructure.postgres import PostgresDatabase
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
@@ -146,7 +146,7 @@ def disposable_postgres() -> Iterator[DisposablePostgres]:
 
     marker = uuid4()
     suffix = secrets.token_hex(8)
-    container_name = f"gds-mcp-test-{suffix}"
+    container_name = f"atlas-mcp-test-{suffix}"
     database = f"gds_{suffix}"
     owner_user = f"owner_{suffix}"
     runtime_user = f"runtime_{suffix}"

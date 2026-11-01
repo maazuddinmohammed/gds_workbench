@@ -5,19 +5,18 @@ import json
 from uuid import UUID
 
 import pytest
+from atlas_mcp.adapters.auth.identity import (
+    AuthenticationError,
+    IdentityProvider,
+)
+from atlas_mcp.adapters.auth.middleware import ProtectedMCPMiddleware
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.authorization import ActorKind
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 from starlette.testclient import TestClient
-
-from gds_etl_workbench.adapters.auth.identity import (
-    AuthenticationError,
-    IdentityProvider,
-)
-from gds_etl_workbench.adapters.auth.middleware import ProtectedMCPMiddleware
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import ActorKind
 
 TENANT_ID = UUID("11111111-1111-1111-1111-111111111111")
 OBJECT_ID = UUID("22222222-2222-2222-2222-222222222222")

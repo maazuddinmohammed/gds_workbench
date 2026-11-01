@@ -1,6 +1,6 @@
-# atlas
+# Atlas Plugin and Atlas Bridge
 
-Atlas is a portable Agent Plugins 1.0 plugin with 12 task-oriented skills, shared domain references, workspace helpers, Atlas Local Workbench and Stage Runner for VS Code Copilot.
+Atlas Plugin is a portable Agent Plugins 1.0 plugin with 12 task-oriented skills, shared domain references, workspace helpers and Atlas Local Workbench. Atlas Bridge is its companion VS Code extension. Atlas MCP supplies governed server tools; Atlas Platform is the web application. Together these components form Atlas.
 
 ## User guides
 
@@ -8,7 +8,7 @@ Complete the setup guide, then follow the usage guide.
 
 | Guide | When to use it |
 |---|---|
-| [Atlas setup](atlas-plugin/docs/copilot-vs-code-installation-and-setup.md) | Install and update the plugin and Stage Runner, register them in VS Code, and sign in. |
+| [Atlas setup](atlas-plugin/docs/copilot-vs-code-installation-and-setup.md) | Install and update the plugin and Atlas Bridge, register them in VS Code, and sign in. |
 | [Atlas usage](atlas-plugin/docs/usage-guide.md) | What you can ask Atlas, with sample prompts; review, Stage, Apply and resume. |
 
 The plugin ZIP includes both guides in its `docs/` folder. Users do not need a
@@ -22,9 +22,9 @@ no policy selection; unsupported model selection keeps work in the main agent.
 ## Repository layout
 
 - `atlas-plugin/`: plugin source, `plugin.json`, governed MCP configuration, skills, references, scripts and Atlas Local Workbench.
-- `atlas-vs-code/`: VS Code Copilot extension and deterministic Stage engine.
+- `atlas-bridge/`: VS Code Copilot extension and deterministic Stage engine.
 - `build_plugin.py`: deterministic plugin ZIP builder.
-- `dist/`: current plugin ZIP and Stage Runner VSIX.
+- `dist/`: current plugin ZIP and Atlas Bridge VSIX.
 
 The [local runtime reference](atlas-plugin/references/local-runtime.md) covers
 technical helper commands and the Windows PowerShell fallback.
@@ -35,9 +35,9 @@ contracts; see [architecture decisions](../docs/architecture/decisions.md).
 Backend setup follows the [MCP README](../mcp_server/README.md) and
 [fresh-install database sequence](../database/README.md).
 
-The current artifacts are Atlas plugin 0.4.1 and VS Code Stage Runner 0.3.0. Rebuild the matching artifacts after source changes; version labels alone do not prove source equality. Installing the plugin does not install the extension or update the deployed backend. Publication and deployment require separate approval.
+The current artifacts are Atlas Plugin 0.4.1 and Atlas Bridge 0.3.0. Rebuild the matching artifacts after source changes; version labels alone do not prove source equality. Installing the plugin does not install the extension or update the deployed backend. Publication and deployment require separate approval.
 
-Release order: Stage Runner 0.3.0 first (older servers ignore its client header), then MCP server 0.3.0 together with plugin 0.4.1. Users' laptop files never update the server or database, so a user who reports a version or compatibility error needs the matching server release.
+Release order: Atlas Bridge 0.3.0 first (older servers ignore its client header), then MCP server 0.3.0 together with plugin 0.4.1. Users' laptop files never update the server or database, so a user who reports a version or compatibility error needs the matching server release.
 
 ## Build
 
@@ -45,11 +45,11 @@ Build from the repository root:
 
 ```sh
 python3 atlas/build_plugin.py --output /absolute/path/new-atlas.zip
-npm --prefix atlas/atlas-vs-code run compile
-npm --prefix atlas/atlas-vs-code run package:vsix
+npm --prefix atlas/atlas-bridge run compile
+npm --prefix atlas/atlas-bridge run package:vsix
 ```
 
-The plugin builder refuses an existing output, unsafe links or unreviewed file families. The archive has one `atlas/` root. Copilot loads that folder directly; the Stage Runner VSIX is installed separately. Updates replace the whole plugin folder while retaining a backup. Never include node_modules, token caches or per-user setup output in the archive.
+The plugin builder refuses an existing output, unsafe links or unreviewed file families. The archive has one `atlas/` root. Copilot loads that folder directly; the Atlas Bridge VSIX is installed separately. Updates replace the whole plugin folder while retaining a backup. Never include node_modules, token caches or per-user setup output in the archive.
 
 ## Maintainer boundaries
 
@@ -63,20 +63,20 @@ Each skill uses one short template (When to use, What you need, Steps, Done when
 
 | Source | Responsibility |
 |---|---|
-| `workbench/app.js`, `ui/`, `ui-state.js` | Browser operation flows, record editing and findings. |
-| `workbench/workspace.js` | Snapshot integrity, local persistence, conflicts and exports. |
-| `workbench/core.js` | Shared identity, overlay and Python-compatible serialization. |
-| `workbench/validation/`, `project-quality.js` | Shared browser/helper checks; server remains authoritative. |
-| `workbench/dbml.js` | Pure effective-Project rendering: the whole model plus one file per Subject Area; export is a user-only Atlas Local Workbench action. |
+| `atlas-local-workbench/app.js`, `ui/`, `ui-state.js` | Browser operation flows, record editing and findings. |
+| `atlas-local-workbench/workspace.js` | Snapshot integrity, local persistence, conflicts and exports. |
+| `atlas-local-workbench/core.js` | Shared identity, overlay and Python-compatible serialization. |
+| `atlas-local-workbench/validation/`, `project-quality.js` | Shared browser/helper checks; server remains authoritative. |
+| `atlas-local-workbench/dbml.js` | Pure effective-Project rendering: the whole model plus one file per Subject Area; export is a user-only Atlas Local Workbench action. |
 | `scripts/atlas-local.js`, `scripts/*.ps1` | Local command execution and Windows fallback. Exact flags live in `contracts/local-helper.json`. |
-| `atlas-vs-code/src/stage-runner.ts`, `stage-request.ts`, `stage-transport.ts` | Approval/input binding, revision checks, transport and uncertain-write recovery. |
+| `atlas-bridge/src/bridge.ts`, `stage-request.ts`, `stage-transport.ts` | Approval/input binding, revision checks, transport and uncertain-write recovery. |
 
 Copilot executes Stage inside VS Code using Atlas Local Workbench serialization. Preserve canonical bytes, owner isolation, locks, input hashes and Windows parity together. Local validation, Stage and Apply remain separate operations; [submission and recovery](atlas-plugin/references/change-set-lifecycle.md) owns the runtime procedure.
 
 ## Verification
 
-Run repository checks in [AGENTS.md](../AGENTS.md), including Python Atlas tests, `node --test tests/atlas/*.test.mjs`, extension tests and compilation. `tests/atlas/test_packaging.py` checks deterministic plugin source equality, the packaged Stage Runner and every packaged Markdown link. Rebuild the corresponding package after source changes.
+Run repository checks in [AGENTS.md](../AGENTS.md), including Python Atlas tests, `node --test tests/atlas/*.test.mjs`, extension tests and compilation. `tests/atlas/test_packaging.py` checks deterministic plugin source equality, the packaged Atlas Bridge and every packaged Markdown link. Rebuild the corresponding package after source changes.
 
 [Agent scenarios](../tests/atlas/agent_scenarios.md) cover intent, evidence and workflow boundaries for instruction walkthroughs or an explicitly authorized independent evaluation. Packaging/link checks and local helper tests do not establish live-agent or deployed-backend behavior.
 
-`npm --prefix atlas/atlas-vs-code run test:host` checks the packaged VSIX in an installed VS Code using an isolated workspace and loopback fixture; it never downloads a host. Inspect Atlas Local Workbench folder access, keyboard/zoom behavior and DBML export in Chrome/Edge separately. Synthetic tests must preserve drafts and locked records, reject stale approval/revision evidence, and verify recovery without replaying uncertain writes. Use only fixture-created disposable PostgreSQL; local checks do not establish live provider or Databricks behavior.
+`npm --prefix atlas/atlas-bridge run test:host` checks the packaged VSIX in an installed VS Code using an isolated workspace and loopback fixture; it never downloads a host. Inspect Atlas Local Workbench folder access, keyboard/zoom behavior and DBML export in Chrome/Edge separately. Synthetic tests must preserve drafts and locked records, reject stale approval/revision evidence, and verify recovery without replaying uncertain writes. Use only fixture-created disposable PostgreSQL; local checks do not establish live provider or Databricks behavior.

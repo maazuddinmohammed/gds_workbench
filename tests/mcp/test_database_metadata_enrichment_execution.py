@@ -11,9 +11,9 @@ from psycopg.errors import InsufficientPrivilege, RaiseException
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from tests.mcp.enrichment_test_support import seed_project_enrichment
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.database_test_support import require_row
+from tests.mcp.enrichment_test_support import seed_project_enrichment
 from tests.mcp.test_database_metadata_enrichment_registration import _context, _create
 from tests.mcp.test_database_profiling_persistence import _seed_attributes
 from tests.mcp.test_database_workflow_run_lifecycle import (

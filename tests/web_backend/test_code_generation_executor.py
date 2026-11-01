@@ -11,73 +11,73 @@ from typing import Any, cast
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.application.change_sets.contracts import (
+from atlas_mcp.application.change_sets.contracts import (
     MAX_PROJECT_STAGE_PAYLOAD_BYTES,
 )
-from gds_etl_workbench.application.change_sets.project import StageProjectChange
-from gds_etl_workbench.domain.authorization import (
+from atlas_mcp.application.change_sets.project import StageProjectChange
+from atlas_mcp.domain.authorization import (
     ActorKind,
     RequestPrincipal,
     ToolPolicy,
 )
-from gds_etl_workbench.domain.errors import (
+from atlas_mcp.domain.errors import (
+    AtlasError,
     DependencyUnavailableError,
     InvalidRequestError,
-    WorkbenchError,
 )
-from gds_etl_workbench.domain.modeling_records import (
+from atlas_mcp.domain.modeling_records import (
     GeneratedCodeRecord,
     GeneratedCodeSourceSystemRecord,
 )
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation, WriteTransaction
-from gds_workbench_api.capabilities import (
+from atlas_mcp.infrastructure.postgres import ReadIsolation, WriteTransaction
+from atlas_platform.capabilities import (
     AgentRunSelection,
     load_default_agent_capabilities,
 )
-from gds_workbench_api.features.code_generation.artifact_context import (
+from atlas_platform.features.code_generation.artifact_context import (
     CodeGenerationArtifactContext,
 )
-from gds_workbench_api.features.code_generation.context import (
+from atlas_platform.features.code_generation.context import (
     CodeGenerationExecutionContext,
 )
-from gds_workbench_api.features.code_generation.service import (
+from atlas_platform.features.code_generation.service import (
     CodeGenerationExecutionFailedError,
     CodeGenerationFinalizationFailedError,
     CodeGenerationWorkflow,
 )
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
+from atlas_platform.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
     AgentExecutionResult,
     AgentExecutionRouter,
 )
-from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
+from atlas_platform.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetFinalizationResult,
     WorkflowChangeSetHandoffResult,
 )
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
+from atlas_platform.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
     AgentWorkflowRunStart,
     AgentWorkflowTerminalResult,
 )
-from gds_workbench_api.features.workflows.authoring.no_op import (
+from atlas_platform.features.workflows.authoring.no_op import (
     AuthoringNoOpReceipt,
     AuthoringNoOpRequest,
 )
-from gds_workbench_api.features.workflows.authoring.plan import (
+from atlas_platform.features.workflows.authoring.plan import (
     AgentRunPlan,
     FrozenAgentStage,
     WorkflowExecutionMode,
 )
-from gds_workbench_api.features.workflows.authoring.repair import (
+from atlas_platform.features.workflows.authoring.repair import (
     AgentContextPolicy,
     AgentContextTooLargeError,
     agent_request_envelope_bytes,
     load_default_agent_context_policy,
 )
-from gds_workbench_api.features.workflows.authoring.repair import (
+from atlas_platform.features.workflows.authoring.repair import (
     AgentExecutor as RepairAgentExecutor,
 )
-from gds_workbench_api.prompt_rendering import (
+from atlas_platform.prompt_rendering import (
     PromptComponentTemplates,
     PromptVariableDefinition,
 )
@@ -748,7 +748,7 @@ async def test_executor_renders_artifact_requirements_and_keeps_frozen_system_pr
 async def test_executor_keeps_partial_mapping_systems_and_marks_sql_for_review(
     reported_missing: bool,
 ) -> None:
-    from gds_etl_workbench.domain.snapshots.project import (
+    from atlas_mcp.domain.snapshots.project import (
         ProjectChangeSetDataset,
         project_snapshot_records,
     )
@@ -1552,7 +1552,7 @@ async def test_executor_rejects_noncanonical_mode_without_provider_fallback() ->
         plan_repository=_PlanRepository(plan=invalid),
     )
 
-    with pytest.raises(WorkbenchError, match="fixed execution path"):
+    with pytest.raises(AtlasError, match="fixed execution path"):
         await service.execute_started(
             _principal(),
             tenant_id=7,
@@ -1609,11 +1609,11 @@ def code_validation_context(
     """Applied Entity Mapping for synthetic Code targets."""
     from dataclasses import fields, replace
 
-    from gds_etl_workbench.domain.modeling_records import (
+    from atlas_mcp.domain.modeling_records import (
         ModelingRecord,
         normalize_project_key_value,
     )
-    from gds_etl_workbench.domain.snapshots.project import (
+    from atlas_mcp.domain.snapshots.project import (
         DATASETS_BY_NAME,
         ProjectChangeSetDataset,
         project_snapshot_records,
@@ -1628,7 +1628,7 @@ def code_validation_context(
     records: dict[
         ProjectChangeSetDataset, dict[tuple[object, ...], ModelingRecord]
     ] = {}
-    from gds_etl_workbench.application.change_sets.project_validation import (
+    from atlas_mcp.application.change_sets.project_validation import (
         PhysicalProjectCatalog,
     )
 

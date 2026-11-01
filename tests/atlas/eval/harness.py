@@ -308,7 +308,7 @@ def build_sandbox(scenario: dict[str, Any], out: Path) -> Sandbox:
         json.dumps(
             {
                 "mcpServers": {
-                    "gds-workbench": {
+                    "atlas-mcp": {
                         "command": server[0],
                         "args": server[1:],
                         "cwd": str(REPOSITORY),
@@ -321,7 +321,7 @@ def build_sandbox(scenario: dict[str, Any], out: Path) -> Sandbox:
         encoding="utf-8",
     )
     (sandbox.root / "codex-mcp.toml").write_text(
-        "[mcp_servers.gds-workbench]\n"
+        "[mcp_servers.atlas-mcp]\n"
         f"command = {json.dumps(server[0])}\n"
         f"args = {json.dumps(server[1:])}\n"
         f"cwd = {json.dumps(str(REPOSITORY))}\n"

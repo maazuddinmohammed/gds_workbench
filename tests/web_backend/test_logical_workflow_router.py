@@ -4,18 +4,18 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import UUID
 
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import RequestPrincipal
-from gds_workbench_api.features.logical.router import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.authorization import RequestPrincipal
+from atlas_platform.features.logical.router import (
     ExecuteLogicalRunRequest,
     create_logical_workflow_router,
 )
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
+from atlas_platform.features.workflows.authoring.lifecycle import (
     AgentWorkflowRunStart,
 )
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 _CLAIM_TOKEN = UUID("44444444-4444-4444-8444-444444444444")
 

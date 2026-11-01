@@ -1,12 +1,12 @@
 # pyright: reportPrivateUsage=false
 
-from gds_etl_workbench.tools.catalog.get_objects import _OBJECTS_SQL
-from gds_etl_workbench.tools.catalog.list_objects import _LIST_OBJECTS_SQL
-from gds_workbench_api.features.mapping.preparation_repository import (
+from atlas_mcp.tools.catalog.get_objects import _OBJECTS_SQL
+from atlas_mcp.tools.catalog.list_objects import _LIST_OBJECTS_SQL
+from atlas_platform.features.mapping.preparation_repository import (
     _MAPPING_ENTITY_CONTEXT_SQL,
     MAPPING_SOURCE_CONTEXT_SQL,
 )
-from gds_workbench_api.features.metadata.repository import (
+from atlas_platform.features.metadata.repository import (
     _ATTRIBUTE_ROWS_SQL,
     _COPY_ROWS_SQL,
     _INGESTION_ATTRIBUTE_MAPPING_ROWS_SQL,
@@ -14,7 +14,7 @@ from gds_workbench_api.features.metadata.repository import (
     _OBJECT_ROWS_SQL,
     _PROCESS_ROWS_SQL,
 )
-from gds_workbench_api.features.workflows.authoring.context import (
+from atlas_platform.features.workflows.authoring.context import (
     _SELECTED_ATTRIBUTES_SQL,
     _SELECTED_OBJECTS_SQL,
 )

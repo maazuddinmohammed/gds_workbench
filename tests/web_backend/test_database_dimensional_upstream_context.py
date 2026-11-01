@@ -8,22 +8,22 @@ from typing import Any, cast
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation
+from atlas_mcp.infrastructure.postgres import ReadIsolation
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.workflows.authoring.context import (
+    _SUPPORTING_OBJECT_IDS_SQL,
+    PostgresAgentContextRepository,
+    focus_subject_area,
+)
+from atlas_platform.features.workflows.authoring.context_inputs import OBJECT_FIELDS
+from atlas_platform.features.workflows.authoring.plan import PlannedSubjectArea
 from psycopg.types.json import Jsonb
+
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.enrichment_test_support import seed_project_enrichment
 from tests.web_backend.test_database_mapping_source_context import _seed_mapping_scope
 from tests.web_backend.test_database_project_change_sets import _required_id
 from tests.web_backend.test_dimensional_executor import _plan
-
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.workflows.authoring.context import (
-    _SUPPORTING_OBJECT_IDS_SQL,
-    PostgresAgentContextRepository,
-    focus_subject_area,
-)
-from gds_workbench_api.features.workflows.authoring.context_inputs import OBJECT_FIELDS
-from gds_workbench_api.features.workflows.authoring.plan import PlannedSubjectArea
 
 
 @pytest.mark.asyncio

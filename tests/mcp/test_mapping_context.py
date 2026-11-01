@@ -3,10 +3,10 @@
 from copy import deepcopy
 
 import pytest
-from gds_etl_workbench.application.cursor import CursorCodec
-from gds_etl_workbench.application.mapping_context import project_mapping_inputs
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.tools.modeling.read_mapping_context import mapping_context_page
+from atlas_mcp.application.cursor import CursorCodec
+from atlas_mcp.application.mapping_context import project_mapping_inputs
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_mcp.tools.modeling.read_mapping_context import mapping_context_page
 
 
 def context():

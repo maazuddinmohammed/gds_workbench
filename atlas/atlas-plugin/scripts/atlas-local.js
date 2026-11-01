@@ -6,17 +6,17 @@ const path = require("node:path");
 const readline = require("node:readline");
 const crypto = require("node:crypto");
 const childProcess = require("node:child_process");
-const unicode = require("../workbench/unicode.js");
-const workbenchCore = require("../workbench/core.js");
-const { normalize: normalizedValue, stableStringify } = workbenchCore;
-const workbenchCommon = require("../workbench/validation/common.js");
-const workbenchAreas = {
-  metadata: require("../workbench/metadata.js"),
-  project: require("../workbench/project.js"),
+const unicode = require("../atlas-local-workbench/unicode.js");
+const localWorkbenchCore = require("../atlas-local-workbench/core.js");
+const { normalize: normalizedValue, stableStringify } = localWorkbenchCore;
+const localWorkbenchCommon = require("../atlas-local-workbench/validation/common.js");
+const localWorkbenchAreas = {
+  metadata: require("../atlas-local-workbench/metadata.js"),
+  project: require("../atlas-local-workbench/project.js"),
 };
 const qualityFiles = require("./project-quality-files.js");
 const evidence = require("./operation-evidence.js");
-const policyProjection = require("../workbench/policy-projection.js");
+const policyProjection = require("../atlas-local-workbench/policy-projection.js");
 
 const stateFiles = require("./workspace-state.js");
 const HELPER_CONTRACT_PATH = path.resolve(__dirname, "..", "contracts", "local-helper.json");
@@ -161,7 +161,7 @@ function loadSnapshotRoot(root, session, area, bindSession = true, selectedOwner
   }
   if (manifest.schema_version !== "3.0" || catalog.schema_version !== "3.0") fail("Snapshot schema version 3.0 is required; download a fresh Snapshot.");
   if (!Array.isArray(catalog.sections)) fail("Snapshot catalog sections are invalid.");
-  if (area === "project" && !workbenchCore.isEntityOwnedProjectCatalog(catalog)) fail("Legacy Project Snapshot contract; fetch a new Entity-owned Project Snapshot.");
+  if (area === "project" && !localWorkbenchCore.isEntityOwnedProjectCatalog(catalog)) fail("Legacy Project Snapshot contract; fetch a new Entity-owned Project Snapshot.");
 
   const datasets = [];
   const byName = new Map();
@@ -310,7 +310,7 @@ function optionsArea(context) {
 function workspaceDigest(context) {
   const hash = crypto.createHash("sha256");
   const entries = fs.readdirSync(context.directory, { withFileTypes: true });
-  for (const entry of entries.sort((left, right) => workbenchCore.compareOrdinal(left.name, right.name))) {
+  for (const entry of entries.sort((left, right) => localWorkbenchCore.compareOrdinal(left.name, right.name))) {
     if (!entry.isFile() || entry.isSymbolicLink() || !entry.name.endsWith(".json")) {
       fail("Local Change Set contains an unsupported entry.");
     }
@@ -356,15 +356,15 @@ function editableDatasetSchema(context, dataset) {
   return schema;
 }
 
-// Atlas reads these from Snapshots only; see WEB_MANAGED_PROJECT_DATASETS in workbench/core.js.
+// Atlas reads these from Snapshots only; see WEB_MANAGED_PROJECT_DATASETS in atlas-local-workbench/core.js.
 function assertDraftable(context, dataset) {
-  if (optionsArea(context) === "project" && workbenchCore.WEB_MANAGED_PROJECT_DATASETS.includes(dataset.name)) {
+  if (optionsArea(context) === "project" && localWorkbenchCore.WEB_MANAGED_PROJECT_DATASETS.includes(dataset.name)) {
     fail(`${dataset.name} is managed outside Atlas: read it from the Project Snapshot and never draft or stage it.`);
   }
 }
 
 function schemaIssues(value, schema) {
-  return workbenchCommon.validateSchema(value, schema);
+  return localWorkbenchCommon.validateSchema(value, schema);
 }
 
 function parseObjectOption(value, label) {
@@ -386,9 +386,9 @@ function assertEditableRecords(context, proposed) {
     const schema = datasetSchema(context, dataset), baseline = readSnapshotRecords(context, dataset);
     const pending = proposed[dataset.name] ?? [];
     loaded.set(dataset.name, {definition: {...dataset, record_type: schema["x-gds-record-type"] ?? dataset.record_type ?? dataset.name},
-      schema, baseline, pending, effective: workbenchCore.overlay(optionsArea(context), dataset, baseline, pending)});
+      schema, baseline, pending, effective: localWorkbenchCore.overlay(optionsArea(context), dataset, baseline, pending)});
   }
-  const findings = workbenchAreas[optionsArea(context)].validate(loaded, null, {tenantCode: context.owner.code});
+  const findings = localWorkbenchAreas[optionsArea(context)].validate(loaded, null, {tenantCode: context.owner.code});
   const locked = findings.find((finding) => /lock/.test(finding.code));
   if (locked) fail(locked.message ?? "A locked record cannot be changed.");
 }
@@ -600,7 +600,7 @@ function coverageReport(options) {
   const pending = fs.existsSync(directory) ? readPending({...snapshot, directory}) : {};
   const applied = (name) => snapshot.byName.has(name) ? readSnapshotRecords(snapshot, snapshot.byName.get(name)) : [];
   const effective = (name) => snapshot.byName.has(name)
-    ? workbenchCore.overlay("project", snapshot.byName.get(name), applied(name), pending[name] ?? []) : [];
+    ? localWorkbenchCore.overlay("project", snapshot.byName.get(name), applied(name), pending[name] ?? []) : [];
   const layer = options.layer, details = effective("project_details")[0] ?? {};
   const percent = details[`${layer}_coverage_threshold_percent`] ?? (layer === "logical" ? 70 : 60);
   const physical = ["tenant_code", "system_code", "connection_code", "object_schema", "object_name"];
@@ -698,8 +698,8 @@ function reviewChangeSet(options) {
       let action;
       if (!original) action = "added";
       else if (stableStringify(original) === stableStringify(record)) action = "unchanged";
-      else if (workbenchCore.active(original) === true && workbenchCore.active(record) === false) action = "deactivated";
-      else if (workbenchCore.active(original) === false && workbenchCore.active(record) === true) action = "reactivated";
+      else if (localWorkbenchCore.active(original) === true && localWorkbenchCore.active(record) === false) action = "deactivated";
+      else if (localWorkbenchCore.active(original) === false && localWorkbenchCore.active(record) === true) action = "reactivated";
       else action = "changed";
       counts[action] += 1;
       counts.total += 1;
@@ -735,7 +735,7 @@ function sameAppliedRecord(local, server, schema, root = schema, recordType = ""
         alternatives.some((part) => part.type === "string" && typeof part.pattern === "string")) {
       const values = [local, server].map((value) => {
         if (!["string", "number"].includes(typeof value) ||
-            workbenchCommon.validateSchema(value, schema, root).length) return null;
+            localWorkbenchCommon.validateSchema(value, schema, root).length) return null;
         const match = /^([+-]?)(\d+)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/.exec(String(value));
         if (!match) return null;
         const exponent = Number(match[4] ?? 0) - (match[3] ?? "").length;
@@ -749,8 +749,8 @@ function sameAppliedRecord(local, server, schema, root = schema, recordType = ""
       return values[0] !== null && values[0] === values[1];
     }
     return alternatives.some((part) =>
-      workbenchCommon.validateSchema(local, part, root).length === 0 &&
-      workbenchCommon.validateSchema(server, part, root).length === 0 &&
+      localWorkbenchCommon.validateSchema(local, part, root).length === 0 &&
+      localWorkbenchCommon.validateSchema(server, part, root).length === 0 &&
       sameAppliedRecord(local, server, part, root, recordType, collection));
   }
   if (Array.isArray(local) || Array.isArray(server)) {
@@ -847,7 +847,7 @@ async function selectRecords(options) {
   const offset = pageOffset(options.cursor, binding), records = [];
   let truncated = false, matched = 0, lineNumber = 0, entries, input, lines;
   if (view === "effective") {
-    entries = workbenchCore.overlay(options.area, dataset, readSnapshotRecords(snapshot, dataset), pending);
+    entries = localWorkbenchCore.overlay(options.area, dataset, readSnapshotRecords(snapshot, dataset), pending);
   } else {
     const rowsPath = resolveSnapshotMember(snapshot.root, dataset.rows_file, snapshot.inventory);
     input = fs.createReadStream(rowsPath, {encoding: "utf8"});
@@ -1056,7 +1056,7 @@ function setSubagentPolicy(options) {
     fail("Sub-agent policy accepts only --session, --mode, --model and --output-file.");
   }
   const root = requireSessionPath(options.session), document = stateFiles.session(root);
-  const policy = workbenchCore.validateSubagentPolicy({mode: options.mode,
+  const policy = localWorkbenchCore.validateSubagentPolicy({mode: options.mode,
     ...(Object.hasOwn(options, "model") ? {model: options.model} : {})});
   document.value.subagent_policy = policy;
   stateFiles.write(root, ".atlas/session.json", document.value, document.digest);
@@ -1107,7 +1107,7 @@ function validateChangeSet(options) {
   for (const dataset of context.datasets) {
     const schema = datasetSchema(context, dataset), baseline = readSnapshotRecords(context, dataset), draft = pending[dataset.name] ?? [];
     let effective = baseline, overlayError = null;
-    try { effective = workbenchCore.overlay(options.area, dataset, baseline, draft); }
+    try { effective = localWorkbenchCore.overlay(options.area, dataset, baseline, draft); }
     catch (error) { overlayError = error.message; }
     loaded.set(dataset.name, {definition: {...dataset, record_type: schema["x-gds-record-type"] ?? dataset.record_type ?? dataset.name}, schema, baseline, pending: draft, effective, overlayError});
   }
@@ -1131,7 +1131,7 @@ function validateChangeSet(options) {
     noteFiles = evidence.noteFiles;
     qualityBindings = evidence.files;
   }
-  const evaluated = require("../workbench/validation/run.js").run(options.area, loaded, metadata,
+  const evaluated = require("../atlas-local-workbench/validation/run.js").run(options.area, loaded, metadata,
     {tenantCode: context.owner.code, project: context.catalog.project ?? null, decisions, noteFiles, missingMetadataOwners});
   const {issues, quality} = evaluated;
   for (const evidence of qualityBindings) {
@@ -1161,7 +1161,7 @@ function acceptChangeSet(options) {
     if (check.schema_version !== "1.0" || check.status !== "ready" || !stateFiles.object(check.backend)) fail("Backend check did not return readiness.");
     backend = {profile: check.backend.profile, endpoint_sha256: check.backend.endpoint_sha256};
   }
-  if (!["production", "local", "azureLocalTest"].includes(backend.profile) || !stateFiles.digest.test(backend.endpoint_sha256 ?? "")) fail("Supply safe backend identity from Check Stage Runner.");
+  if (!["production", "local", "azureLocalTest"].includes(backend.profile) || !stateFiles.digest.test(backend.endpoint_sha256 ?? "")) fail("Supply safe backend identity from Check Atlas Bridge.");
   if (options["prepare-stage"] !== undefined && options["prepare-stage"] !== "true") fail("--prepare-stage must be true when supplied.");
   const validation = validateChangeSet(options);
   if (!validation.valid) fail("Fix local validation findings before acknowledgement.");
@@ -1372,11 +1372,11 @@ function nextForArea(root, state, area, owner, explicit, errorCode) {
           {kind: "ask_user", question: "The Tenant is locked by another user. Wait until they release it?"},
           ["Retry only after the lock is free. Never call override_tenant_lock unless the user explicitly asks."]);
       case "project_locked":
-        return stop("The Project is locked; a human must unlock it in the GDS web app.");
+        return stop("The Project is locked; a human must unlock it in the Atlas Platform.");
       case "authorization_denied":
         return stop("The signed-in user's role does not allow this operation.");
-      case "stage_runner_required":
-        return recover("Stage uploads run only through the Stage Runner.", helper("next"),
+      case "atlas_bridge_required":
+        return recover("Stage uploads run only through the Atlas Bridge.", helper("next"),
           ["Follow next's atlas_stageApprovedManifest action. Never call stage_*, begin_*, put_* or commit_* tools."]);
       case "candidate_digest_conflict":
       case `${area}_change_set_not_validated`:
@@ -1475,7 +1475,7 @@ function nextForArea(root, state, area, owner, explicit, errorCode) {
     }
     if (!stage && !operation.server_validation && matches) {
       if (operation.stage_request) {
-        return result("stage_prepared", "The approved batch is ready for Stage Runner.",
+        return result("stage_prepared", "The approved batch is ready for Atlas Bridge.",
           {kind: "extension", tool: "atlas_stageApprovedManifest", input: {manifestPath: stateFiles.safePath(root, operation.stage_request.path)}},
           ["Require status=staged and fingerprint_verified=true; on an uncertain result run next (it switches to recovery).", "Run next again."], facts);
       }
@@ -1514,7 +1514,7 @@ function nextForArea(root, state, area, owner, explicit, errorCode) {
   return result("ready_for_review", "Local changes are valid and ready for the user's review.",
     {kind: "ask_user", question: `Review the pending ${area} changes in Atlas Local Workbench. Approve them for Stage?`,
       after_approval: [
-        {kind: "extension", tool: "atlas_checkStageRunner", input: {outputFile: checkFile}},
+        {kind: "extension", tool: "atlas_checkBridge", input: {outputFile: checkFile}},
         {kind: "mcp", tool: "check_tenant_lock", arguments: {tenant_id: lockTenant}, note: "Call acquire_tenant_lock first if the current Principal does not hold it."},
         {kind: "mcp", tool: `create_${area}_change_set`, arguments: scope, save_response_to: draftFile},
         helper("accept", "--digest", digest, "--backend-file", checkFile, "--draft-file", draftFile, "--prepare-stage", "true"),

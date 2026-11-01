@@ -1,6 +1,6 @@
 """Atlas's local technical-column projection must equal the web backend's projection.
 
-The plugin cannot import the backend, so `workbench/policy-projection.js` ports the
+The plugin cannot import the backend, so `atlas-local-workbench/policy-projection.js` ports the
 deterministic rules. These tests run the real Python projections and the port on the
 same candidates and require identical records or the same rejection.
 """
@@ -15,20 +15,22 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from gds_etl_workbench.application.change_sets.project import StageProjectChange
-from gds_etl_workbench.domain.modeling_records import (
+from atlas_mcp.application.change_sets.project import StageProjectChange
+from atlas_mcp.domain.modeling_records import (
     DimensionalAttributeRecord,
     DimensionalEntityRecord,
     LogicalAttributeRecord,
     LogicalEntityRecord,
 )
-from gds_etl_workbench.domain.snapshots.project import DimensionalSection, LogicalSection
-from gds_workbench_api.features.dimensional.policy import project_dimensional_gold_policy
-from gds_workbench_api.features.logical.policy import project_logical_audit_policy
-from gds_workbench_api.features.workflows.authoring.gold_policy import effective_gold_templates
+from atlas_mcp.domain.snapshots.project import DimensionalSection, LogicalSection
+from atlas_platform.features.dimensional.policy import project_dimensional_gold_policy
+from atlas_platform.features.logical.policy import project_logical_audit_policy
+from atlas_platform.features.workflows.authoring.gold_policy import (
+    effective_gold_templates,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
-MODULE = ROOT / "atlas/atlas-plugin/workbench/policy-projection.js"
+MODULE = ROOT / "atlas/atlas-plugin/atlas-local-workbench/policy-projection.js"
 HELPER = ROOT / "atlas/atlas-plugin/scripts/atlas-local.ps1"
 SOURCE = {
     "support_source_type": "attribute",

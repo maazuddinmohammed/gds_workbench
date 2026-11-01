@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from gds_etl_workbench.domain.modeling_records import has_mapping_transformation_content
+from atlas_mcp.domain.modeling_records import has_mapping_transformation_content
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 HELPER = REPOSITORY_ROOT / "atlas/atlas-plugin/scripts/atlas-local.js"
@@ -82,8 +82,8 @@ def test_native_project_policy_matches_all_javascript_scenarios(tmp_path: Path) 
     if powershell is None:
         pytest.skip("PowerShell is not installed")
     captured = tmp_path / "cases.json"
-    module = HELPER.parent.parent / "workbench" / "validation" / "project-policy.js"
-    suite = REPOSITORY_ROOT / "tests" / "atlas" / "workbench-policy.test.mjs"
+    module = HELPER.parent.parent / "atlas-local-workbench" / "validation" / "project-policy.js"
+    suite = REPOSITORY_ROOT / "tests" / "atlas" / "local-workbench-policy.test.mjs"
     capture = tmp_path / "capture.cjs"
     capture.write_text("""
 const fs = require('node:fs');
@@ -184,7 +184,7 @@ def test_native_entity_record_rules_match_javascript(tmp_path: Path) -> None:
     )
     if powershell is None:
         pytest.skip("PowerShell is not installed")
-    module = HELPER.parent.parent / "workbench" / "validation" / "common.js"
+    module = HELPER.parent.parent / "atlas-local-workbench" / "validation" / "common.js"
     suite = REPOSITORY_ROOT / "tests" / "atlas" / "entity-record-validation.test.mjs"
     captured = tmp_path / "schema-cases.json"
     capture = tmp_path / "capture.cjs"

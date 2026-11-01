@@ -45,7 +45,7 @@ describe("frontend Module architecture", () => {
     ));
 
     expect(unexpected.map((statement) => ts.SyntaxKind[statement.kind])).toEqual([]);
-    expect(interfaces.map((declaration) => declaration.name.text)).toEqual(["WorkbenchApi"]);
+    expect(interfaces.map((declaration) => declaration.name.text)).toEqual(["AtlasPlatformApi"]);
     expect(interfaces[0]?.members).toHaveLength(0);
     expect(functions.map((declaration) => declaration.name?.text)).toEqual(["createApiClient"]);
 

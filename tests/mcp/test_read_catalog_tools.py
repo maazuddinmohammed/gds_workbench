@@ -5,12 +5,11 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 import pytest
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.adapters.mcp.server import create_mcp_server
+from atlas_mcp.configuration import RuntimeSettings
 from mcp import Client
 from mcp.types import TextContent
-
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.adapters.mcp.server import create_mcp_server
-from gds_etl_workbench.configuration import RuntimeSettings
 
 if TYPE_CHECKING:
     from conftest import DisposablePostgres

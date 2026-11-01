@@ -7,16 +7,16 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_workbench_api.features.workflows.execution.contracts import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_platform.features.workflows.execution.contracts import (
     WorkflowExecutionClaim,
 )
-from gds_workbench_api.features.workflows.runs import DatabaseWorkflowRunService
-from gds_workbench_api.features.workflows.usage.contracts import (
+from atlas_platform.features.workflows.runs import DatabaseWorkflowRunService
+from atlas_platform.features.workflows.usage.contracts import (
     FoundryModelPricing,
     ModelTokenUsage,
 )
-from gds_workbench_api.features.workflows.usage.service import (
+from atlas_platform.features.workflows.usage.service import (
     DatabaseWorkflowUsageRecorder,
 )
 

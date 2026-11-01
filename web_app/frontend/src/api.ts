@@ -270,7 +270,7 @@ export type {
 } from "./features/workflows/api";
 export type { JsonObject, JsonValue, ReviewStatus } from "./shared/contracts";
 
-export interface WorkbenchApi
+export interface AtlasPlatformApi
   extends TenantsApi,
   TenantLockApi,
   ProjectsApi,
@@ -291,7 +291,7 @@ export interface WorkbenchApi
   MetadataEnrichmentTransport,
   ProjectTargetsTransport {}
 
-export function createApiClient(fetcher: typeof fetch = globalThis.fetch): WorkbenchApi {
+export function createApiClient(fetcher: typeof fetch = globalThis.fetch): AtlasPlatformApi {
   const request = createHttpRequest(fetcher);
 
   return {

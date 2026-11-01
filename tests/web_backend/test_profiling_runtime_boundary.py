@@ -4,25 +4,25 @@ import ast
 from importlib.resources import files
 from pathlib import Path
 
-from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
-from gds_etl_workbench.infrastructure.databricks_sql import (
+from atlas_mcp.domain.databricks import DatabricksSqlConnection
+from atlas_mcp.infrastructure.databricks_sql import (
     DatabricksSqlConnection as AdapterDatabricksSqlConnection,
 )
-from gds_workbench_api.features.profiling.execution import load_default_profiling_policy
-from gds_workbench_api.features.profiling.repository import (
+from atlas_platform.features.profiling.execution import load_default_profiling_policy
+from atlas_platform.features.profiling.repository import (
     DatabaseProfilingWorkflowRepository,
 )
-from gds_workbench_api.features.profiling.router import (
+from atlas_platform.features.profiling.router import (
     ExecuteProfilingRunRequest,
     create_profiling_workflow_router,
 )
-from gds_workbench_api.features.profiling.workflow import ProfilingWorkflowOrchestrator
+from atlas_platform.features.profiling.workflow import ProfilingWorkflowOrchestrator
 
 _ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_profiling_workflow_does_not_depend_on_http_or_storage_adapters() -> None:
-    feature = _ROOT / "web_app/backend/gds_workbench_api/features/profiling"
+    feature = _ROOT / "web_app/backend/atlas_platform/features/profiling"
     for name in ("execution.py", "workflow.py"):
         imports = {
             node.module or ""
@@ -38,7 +38,7 @@ def test_profiling_workflow_does_not_depend_on_http_or_storage_adapters() -> Non
 
 
 def test_profiling_policy_is_packaged_with_the_web_application() -> None:
-    assert files("gds_workbench_api").joinpath("config", "profiling.json").is_file()
+    assert files("atlas_platform").joinpath("config", "profiling.json").is_file()
     assert load_default_profiling_policy().attributes_per_query > 0
 
 

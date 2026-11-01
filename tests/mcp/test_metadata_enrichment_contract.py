@@ -1,10 +1,10 @@
 from copy import deepcopy
 
 import pytest
-from gds_etl_workbench.application.change_sets.metadata_validation import (
+from atlas_mcp.application.change_sets.metadata_validation import (
     validate_metadata_documents,
 )
-from gds_etl_workbench.domain.metadata_records import AttributeRecord
+from atlas_mcp.domain.metadata_records import AttributeRecord
 from pydantic import ValidationError
 
 from tests.mcp.test_metadata_change_set_validation import (

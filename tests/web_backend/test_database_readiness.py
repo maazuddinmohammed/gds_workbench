@@ -8,8 +8,8 @@ from uuid import UUID, uuid4
 
 import psycopg
 import pytest
-from gds_etl_workbench.infrastructure.postgres import ReadinessRecord
-from gds_workbench_api.database import WebPostgresDatabase
+from atlas_mcp.infrastructure.postgres import ReadinessRecord
+from atlas_platform.database import WebPostgresDatabase
 from psycopg import sql
 from psycopg.errors import InsufficientPrivilege
 

@@ -5,16 +5,15 @@ from copy import deepcopy
 from typing import Literal
 
 import pytest
-from gds_etl_workbench.application.change_sets.project import StageProjectChange
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.domain.modeling_records import (
+from atlas_mcp.application.change_sets.project import StageProjectChange
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_mcp.domain.modeling_records import (
     DimensionalAttributeRecord,
     DimensionalEntityRecord,
     DimensionalRelationshipRecord,
 )
-from gds_etl_workbench.domain.snapshots.project import DimensionalSection
-
-from gds_workbench_api.features.dimensional.policy import (
+from atlas_mcp.domain.snapshots.project import DimensionalSection
+from atlas_platform.features.dimensional.policy import (
     DimensionalProjectionConflictError,
     project_dimensional_foreign_key_policy,
     project_dimensional_gold_policy,
@@ -792,8 +791,8 @@ def test_dimension_scd_policy_preserves_business_columns_and_excludes_fact_histo
 
 
 def test_combined_audit_template_projects_history_in_audit_order() -> None:
-    from gds_workbench_api.features.projects.templates import default_project_templates
-    from gds_workbench_api.features.workflows.authoring.gold_policy import (
+    from atlas_platform.features.projects.templates import default_project_templates
+    from atlas_platform.features.workflows.authoring.gold_policy import (
         effective_gold_templates,
     )
 

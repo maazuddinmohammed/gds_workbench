@@ -5,17 +5,15 @@ from typing import Any, Literal, LiteralString
 from uuid import UUID
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_etl_workbench.domain.snapshots.metadata import DATASETS_BY_NAME
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation, ReadTransaction
-from gds_workbench_api.errors import workbench_error_response
-from gds_workbench_api.features.metadata import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import AtlasError
+from atlas_mcp.domain.snapshots.metadata import DATASETS_BY_NAME
+from atlas_mcp.infrastructure.postgres import ReadIsolation, ReadTransaction
+from atlas_platform.errors import atlas_error_response
+from atlas_platform.features.metadata import (
     DatabaseMetadataService,
     MetadataDataset,
     MetadataDatasetRegistry,
@@ -30,6 +28,8 @@ from gds_workbench_api.features.metadata import (
     create_metadata_router,
     metadata_dataset_registry,
 )
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 def test_catalog_sheets_share_excel_fields_without_ids_or_audit_columns() -> None:
@@ -372,7 +372,7 @@ def test_dataset_rows_normalize_exact_sheet_filters_without_free_text_search() -
 
 def test_dataset_filters_enforce_the_selected_sheet_field_types() -> None:
     app = FastAPI()
-    app.add_exception_handler(WorkbenchError, workbench_error_response)
+    app.add_exception_handler(AtlasError, atlas_error_response)
     app.include_router(
         create_metadata_router(
             identity_provider=IdentityProvider(

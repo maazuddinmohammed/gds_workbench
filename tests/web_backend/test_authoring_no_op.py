@@ -8,15 +8,15 @@ from typing import Any, LiteralString, cast
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import DependencyUnavailableError
-from gds_workbench_api.features.workflows.authoring.lifecycle import AgentWorkflowEvent
-from gds_workbench_api.features.workflows.authoring.no_op import (
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import DependencyUnavailableError
+from atlas_platform.features.workflows.authoring.lifecycle import AgentWorkflowEvent
+from atlas_platform.features.workflows.authoring.no_op import (
     AuthoringNoOpRequest,
     DatabaseAuthoringNoOpService,
     authoring_no_op_candidate_digest,
 )
-from gds_workbench_api.features.workflows.authoring.plan import AgentRunPlan
+from atlas_platform.features.workflows.authoring.plan import AgentRunPlan
 
 _CLAIM_TOKEN = UUID("44444444-4444-4444-4444-444444444444")
 

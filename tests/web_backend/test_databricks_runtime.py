@@ -1,13 +1,13 @@
-from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
-from gds_workbench_api.features.analysis.validation_execution import (
+from atlas_mcp.domain.databricks import DatabricksSqlConnection
+from atlas_platform.features.analysis.validation_execution import (
     AnalysisValidationQuery,
     ConnectorAnalysisValidationExecutor,
 )
-from gds_workbench_api.features.profiling.execution import (
+from atlas_platform.features.profiling.execution import (
     ConnectorProfilingExecutor,
     ProfileQuery,
 )
-from gds_workbench_api.integrations.databricks import (
+from atlas_platform.integrations.databricks import (
     LocalFakeAnalysisValidationExecutor,
     LocalFakeProfilingExecutor,
     create_databricks_execution_adapters,

@@ -1,4 +1,4 @@
--- GDS ETL Workbench Release 1: Project, Input Scope, policy, Context, and revision state.
+-- Atlas Release 1: Project, Input Scope, policy, Context, and revision state.
 
 CREATE SCHEMA project;
 

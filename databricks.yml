@@ -61,7 +61,7 @@ resources:
   apps:
     workbench:
       name: ${var.app_name}
-      description: GDS Workbench React and FastAPI application.
+      description: Atlas Platform React and FastAPI application.
       source_code_path: .
       compute_size: MEDIUM
       user_api_scopes:

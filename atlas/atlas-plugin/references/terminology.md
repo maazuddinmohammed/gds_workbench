@@ -1,6 +1,8 @@
-# atlas terminology
+# Atlas terminology
 
 Use these terms consistently. Load the affected [metadata table reference](metadata/index.md) for field-level details.
+
+Atlas is the overall product. Use the [component names](platform/architecture.md#component-names): Atlas Plugin, Atlas Local Workbench, Atlas Bridge, Atlas MCP and Atlas Platform.
 
 | Term | Meaning |
 |---|---|
@@ -97,4 +99,4 @@ Use these terms consistently. Load the affected [metadata table reference](metad
 
 The user may say "site" for Tenant. Resolve ambiguity when it could instead mean a deployment or connection. Do not silently equate ownership with physical placement.
 
-Source: current GDS `CONTEXT.md` and the Metadata Snapshot record contracts. Field-specific nuances live on the table pages.
+Source: current Atlas `CONTEXT.md` and the Metadata Snapshot record contracts. Field-specific nuances live on the table pages.

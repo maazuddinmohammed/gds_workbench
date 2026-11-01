@@ -5,19 +5,45 @@ from typing import Any, cast
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.project import StageProjectChange
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.application.change_sets.project import StageProjectChange
+from atlas_mcp.application.change_sets.project_validation import (
     ProjectValidationIssue,
 )
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import (
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import (
     AuthorizationDeniedError,
     DependencyUnavailableError,
     InvalidRequestError,
     ProjectChangeSetNotValidatedError,
     TenantLockRequiredError,
 )
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.project_change_sets.contracts import (
+    ExpectedDraftRevisionRequest,
+)
+from atlas_platform.features.project_change_sets.service import (
+    DatabaseProjectChangeSetService,
+)
+from atlas_platform.features.projects import ProjectRevisionConflictError
+from atlas_platform.features.workflows.authoring import change_set_handoff
+from atlas_platform.features.workflows.authoring.change_set_apply import (
+    ApplyWorkflowDraftRequest,
+    DatabaseWorkflowDraftApplyService,
+)
+from atlas_platform.features.workflows.authoring.change_set_handoff import (
+    WorkflowChangeSetHandoff,
+)
+from atlas_platform.features.workflows.authoring.lifecycle import (
+    DatabaseAgentWorkflowLifecycle,
+)
+from atlas_platform.features.workflows.execution.contracts import (
+    WorkflowExecutionClaim,
+)
+from atlas_platform.features.workflows.execution.repository import (
+    DatabaseWorkflowClaimRepository,
+)
+
 from tests.mcp.conftest import DisposablePostgres
 from tests.web_backend.test_database_project_change_sets import (
     _create_queued_subject_area_run_with_prompt,  # pyright: ignore[reportPrivateUsage]
@@ -25,32 +51,6 @@ from tests.web_backend.test_database_project_change_sets import (
 )
 from tests.web_backend.test_database_workflow_run_claims import (
     _expire_claim,  # pyright: ignore[reportPrivateUsage]
-)
-
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.project_change_sets.contracts import (
-    ExpectedDraftRevisionRequest,
-)
-from gds_workbench_api.features.project_change_sets.service import (
-    DatabaseProjectChangeSetService,
-)
-from gds_workbench_api.features.projects import ProjectRevisionConflictError
-from gds_workbench_api.features.workflows.authoring import change_set_handoff
-from gds_workbench_api.features.workflows.authoring.change_set_apply import (
-    ApplyWorkflowDraftRequest,
-    DatabaseWorkflowDraftApplyService,
-)
-from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
-    WorkflowChangeSetHandoff,
-)
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
-    DatabaseAgentWorkflowLifecycle,
-)
-from gds_workbench_api.features.workflows.execution.contracts import (
-    WorkflowExecutionClaim,
-)
-from gds_workbench_api.features.workflows.execution.repository import (
-    DatabaseWorkflowClaimRepository,
 )
 
 type ClaimedRun = tuple[WebPostgresDatabase, WorkflowExecutionClaim]

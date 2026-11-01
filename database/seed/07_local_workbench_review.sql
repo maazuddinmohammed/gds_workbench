@@ -1,4 +1,4 @@
--- Local-only review data for the complete GDS Workbench journey.
+-- Local-only review data for the complete Atlas Platform journey.
 -- The database-name guard prevents this seed from running outside the disposable
 -- stack created by web_app/local/run.py.
 

@@ -382,7 +382,7 @@ wheels = [
 ]
 
 [[package]]
-name = "gds-etl-workbench-mcp"
+name = "atlas-mcp"
 version = "0.3.0"
 source = { editable = "." }
 dependencies = [

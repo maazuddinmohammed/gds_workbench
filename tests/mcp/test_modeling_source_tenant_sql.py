@@ -1,13 +1,13 @@
-from gds_etl_workbench.application.project_snapshot import (
+from atlas_mcp.application.modeling.profiling_analysis import (
+    ANALYSIS_SQL,
+    PROFILING_SQL,
+)
+from atlas_mcp.application.project_snapshot import (
     _MAPPING_ATTRIBUTE_SQL,
     _MAPPING_OBJECT_SQL,
     _PROJECT_INPUT_SCOPE_SQL,
 )
-from gds_etl_workbench.application.modeling.profiling_analysis import (
-    ANALYSIS_SQL,
-    PROFILING_SQL,
-)
-from gds_etl_workbench.tools.modeling.project_input_scope import (
+from atlas_mcp.tools.modeling.project_input_scope import (
     _PROJECT_INPUT_SCOPE_SQL as PROJECT_INPUT_SCOPE_TOOL_SQL,
 )
 

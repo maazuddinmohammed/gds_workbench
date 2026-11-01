@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {createRequire} from 'node:module';
 const require = createRequire(import.meta.url);
-const validation = require('../../atlas/atlas-plugin/workbench/validation/common.js');
+const validation = require('../../atlas/atlas-plugin/atlas-local-workbench/validation/common.js');
 const schema = rule => ({type:'object','x-gds-record-validation':{version:'1.0',rules:[rule]}});
 
 test('modeled relationship identity includes schema for both endpoint comparisons', () => {

@@ -4,7 +4,7 @@
 # pyright: reportPrivateUsage=false
 
 import pytest
-from gds_etl_workbench.tools.change_sets.project import _audit_project_input
+from atlas_mcp.tools.change_sets.project import _audit_project_input
 
 
 @pytest.mark.parametrize(

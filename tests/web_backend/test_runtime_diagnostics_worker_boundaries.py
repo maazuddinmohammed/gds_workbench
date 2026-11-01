@@ -12,26 +12,26 @@ from typing import Any, LiteralString
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.domain.errors import DependencyUnavailableError
-from gds_etl_workbench.infrastructure.postgres import ReadinessRecord
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
+from atlas_mcp.domain.errors import DependencyUnavailableError
+from atlas_mcp.infrastructure.postgres import ReadinessRecord
+from atlas_platform.features.workflows.authoring.lifecycle import (
     DatabaseAgentWorkflowLifecycle,
 )
-from gds_workbench_api.features.workflows.execution import (
+from atlas_platform.features.workflows.execution import (
     WorkerRunResult,
     WorkflowClaimLease,
     WorkflowExecutionClaim,
     WorkflowExecutionDispatcher,
     WorkflowExecutionWorker,
 )
-from gds_workbench_api.features.workflows.execution.configuration import (
+from atlas_platform.features.workflows.execution.configuration import (
     WorkflowExecutionConfiguration,
 )
-from gds_workbench_api.features.workflows.usage.service import (
+from atlas_platform.features.workflows.usage.service import (
     DatabaseWorkflowUsageRecorder,
 )
-from gds_workbench_api.runtime_diagnostics import RuntimeDiagnostics
-from gds_workbench_api.workflow_worker import run_worker_process
+from atlas_platform.runtime_diagnostics import RuntimeDiagnostics
+from atlas_platform.workflow_worker import run_worker_process
 from psycopg.errors import InsufficientPrivilege, QueryCanceled, UndefinedFunction
 from test_workflow_execution_dispatcher import _claim, _services
 from test_workflow_execution_worker import FakeClaimRepository

@@ -5,11 +5,11 @@ from datetime import UTC, date, datetime
 from typing import Any, cast
 
 import pytest
-from gds_etl_workbench.application.metadata_snapshot.archive import (
+from atlas_mcp.application.metadata_snapshot.archive import (
     SnapshotContractError,
     encode_dataset,
 )
-from gds_etl_workbench.domain.snapshots.metadata import (
+from atlas_mcp.domain.snapshots.metadata import (
     DATASETS,
     DatasetDefinition,
 )

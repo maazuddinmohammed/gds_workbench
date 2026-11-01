@@ -5,26 +5,26 @@ from typing import Any, LiteralString, cast
 from uuid import UUID
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import (
     InvalidRequestError,
     ProjectChangeSetNotFoundError,
 )
-from gds_etl_workbench.infrastructure.postgres import WriteTransaction
-from gds_workbench_api.features.workflows.authoring.change_set_apply import (
+from atlas_mcp.infrastructure.postgres import WriteTransaction
+from atlas_platform.features.workflows.authoring.change_set_apply import (
     ApplyWorkflowDraftRequest,
     ApplyWorkflowDraftResult,
     DatabaseWorkflowDraftApplyService,
 )
-from gds_workbench_api.features.workflows.authoring.change_set_apply_router import (
+from atlas_platform.features.workflows.authoring.change_set_apply_router import (
     WorkflowDraftApplyService,
     create_workflow_draft_apply_router,
 )
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 class StaticWorkflowDraftApplyService:

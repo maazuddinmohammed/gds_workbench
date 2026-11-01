@@ -9,11 +9,28 @@ from copy import deepcopy
 from typing import Any, Literal, LiteralString, cast
 
 import pytest
-from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_etl_workbench.domain.modeling_records import ContextRecord
-from gds_etl_workbench.domain.safe_json import validate_safe_json
-from gds_etl_workbench.domain.snapshots.project import ProjectSnapshot
+from atlas_mcp.domain.errors import AtlasError
+from atlas_mcp.domain.modeling_records import ContextRecord
+from atlas_mcp.domain.safe_json import validate_safe_json
+from atlas_mcp.domain.snapshots.project import ProjectSnapshot
+from atlas_platform.features.workflows.authoring.agent_execution import (
+    AgentExecutionRequest,
+)
+from atlas_platform.features.workflows.authoring.context import (
+    AgentContextToolRequestError,
+    PostgresAgentContextRepository,
+    focus_subject_area,
+    reject_forbidden_provider_json,
+)
+from atlas_platform.features.workflows.authoring.context_contracts import (
+    INPUT_EXAMPLES,
+)
+from atlas_platform.features.workflows.authoring.context_readers import (
+    FrozenContextReaders,
+)
+from atlas_platform.integrations.agents.adapters import OpenAIAgentsSdkAdapter
 from pydantic import JsonValue, ValidationError
+
 from tests.web_backend.test_agent_context import (
     ContextTransaction,
     _load_physical_scope,
@@ -22,23 +39,6 @@ from tests.web_backend.test_agent_context import (
     _snapshot,
     _snapshot_with_policy_json,
 )
-
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
-    AgentExecutionRequest,
-)
-from gds_workbench_api.features.workflows.authoring.context import (
-    AgentContextToolRequestError,
-    PostgresAgentContextRepository,
-    focus_subject_area,
-    reject_forbidden_provider_json,
-)
-from gds_workbench_api.features.workflows.authoring.context_contracts import (
-    INPUT_EXAMPLES,
-)
-from gds_workbench_api.features.workflows.authoring.context_readers import (
-    FrozenContextReaders,
-)
-from gds_workbench_api.integrations.agents.adapters import OpenAIAgentsSdkAdapter
 
 LARGE_DESCRIPTION = "Documented business meaning. " * 50_000
 
@@ -189,7 +189,7 @@ async def test_unlimited_repository_still_rejects_prohibited_nested_fields(
     async def load_snapshot(*_: object) -> ProjectSnapshot:
         return _snapshot_with_policy_json({"detail": {prohibited_key: "synthetic-private-marker"}})
 
-    with pytest.raises(WorkbenchError) as caught:
+    with pytest.raises(AtlasError) as caught:
         await PostgresAgentContextRepository(
             physical_scope_loader=_load_physical_scope,
             snapshot_loader=load_snapshot,
@@ -206,7 +206,7 @@ def test_unlimited_value_safety_check_still_rejects_sensitive_text(
     prohibited_value: str,
 ) -> None:
     value: JsonValue = {"explanation": LARGE_DESCRIPTION, "detail": [prohibited_value]}
-    with pytest.raises(WorkbenchError) as caught:
+    with pytest.raises(AtlasError) as caught:
         reject_forbidden_provider_json(value, reject_sensitive_values=True)
     assert caught.value.code == "agent_context_unavailable"
     assert "synthetic-private-marker" not in str(caught.value)
@@ -242,7 +242,7 @@ def test_explicit_json_and_mcp_record_bounds_are_unchanged(shape: str) -> None:
 def test_provider_context_preserves_only_canonical_context_uuid_identity() -> None:
     reject_forbidden_provider_json({"context_record_id": "00000000-0000-4000-8000-000000000001"})
     for value in (1, "customer.key", "00000000-0000-4000-8000-00000000000A"):
-        with pytest.raises(WorkbenchError):
+        with pytest.raises(AtlasError):
             reject_forbidden_provider_json({"context_record_id": value})
-    with pytest.raises(WorkbenchError):
+    with pytest.raises(AtlasError):
         reject_forbidden_provider_json({"context_group_id": 1})

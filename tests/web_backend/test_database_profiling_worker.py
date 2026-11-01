@@ -5,22 +5,24 @@ import asyncio
 from collections.abc import Iterator
 from typing import Any, LiteralString, cast
 
-import gds_workbench_api.database as database_module
+import atlas_platform.database as database_module
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
-from gds_workbench_api.capabilities import load_default_agent_capabilities
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.profiling.execution import ProfileMetric, ProfileQuery
-from gds_workbench_api.features.workflows.execution import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.databricks import DatabricksSqlConnection
+from atlas_platform.capabilities import load_default_agent_capabilities
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.profiling.execution import ProfileMetric, ProfileQuery
+from atlas_platform.features.workflows.execution import (
     DatabaseWorkflowClaimRepository,
     WorkerRunResult,
     WorkflowExecutionDispatcher,
     WorkflowExecutionWorker,
 )
-from gds_workbench_api.features.workflows.execution.assembly import create_workflow_runtime_services
-from gds_workbench_api.integrations.agents.configuration import AgentRuntimeConfiguration
-from gds_workbench_api.integrations.databricks import (
+from atlas_platform.features.workflows.execution.assembly import (
+    create_workflow_runtime_services,
+)
+from atlas_platform.integrations.agents.configuration import AgentRuntimeConfiguration
+from atlas_platform.integrations.databricks import (
     LocalFakeProfilingExecutor,
     create_databricks_execution_adapters,
 )

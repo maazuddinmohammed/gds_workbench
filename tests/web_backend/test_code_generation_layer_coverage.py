@@ -6,7 +6,7 @@
 from typing import Literal, cast
 
 import pytest
-from gds_etl_workbench.domain.modeling_records import GeneratedCodeSourceSystemRecord
+from atlas_mcp.domain.modeling_records import GeneratedCodeSourceSystemRecord
 from pydantic import JsonValue
 
 from tests.web_backend.test_code_generation_executor import (

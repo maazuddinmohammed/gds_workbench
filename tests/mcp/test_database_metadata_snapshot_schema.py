@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from gds_etl_workbench.domain.snapshots.metadata import DATASETS
+from atlas_mcp.domain.snapshots.metadata import DATASETS
 
 if TYPE_CHECKING:
     from conftest import DisposablePostgres

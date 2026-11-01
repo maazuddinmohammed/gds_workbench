@@ -3,12 +3,12 @@ from __future__ import annotations
 from typing import Any, cast
 
 import pytest
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.domain.modeling_records import (
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_mcp.domain.modeling_records import (
     AnalysisResultRecord,
     PhysicalAttributeKey,
 )
-from gds_workbench_api.features.analysis.candidate import (
+from atlas_platform.features.analysis.candidate import (
     AnalysisInferenceCandidateValidator,
 )
 from jsonschema import Draft202012Validator

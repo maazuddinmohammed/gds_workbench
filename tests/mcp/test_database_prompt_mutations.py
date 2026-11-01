@@ -8,8 +8,9 @@ from uuid import UUID, uuid4
 
 import psycopg
 import pytest
-from tests.mcp.database_test_support import require_row
 from psycopg.errors import RaiseException
+
+from tests.mcp.database_test_support import require_row
 
 if TYPE_CHECKING:
     from conftest import DisposablePostgres, TestRow

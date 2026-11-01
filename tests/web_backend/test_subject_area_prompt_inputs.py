@@ -7,31 +7,33 @@ from copy import deepcopy
 from typing import Any, cast
 
 import pytest
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.domain.modeling_records import (
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_mcp.domain.modeling_records import (
     ANALYSIS_VALIDATION_FIELDS,
     SubjectAreaRecord,
     SubjectAreaTableRecord,
 )
-from gds_etl_workbench.domain.snapshots.project import SubjectAreaSection
-from jsonschema import Draft202012Validator
-from pydantic import JsonValue
-from tests.web_backend.test_subject_area_executor import _context_bundle, _plan
-
-from gds_workbench_api.features.workflows.authoring.context import (
+from atlas_mcp.domain.snapshots.project import SubjectAreaSection
+from atlas_platform.features.workflows.authoring.context import (
     AgentAuthoringContext,
     InMemoryAgentContextToolCatalog,
     _provider_context,
 )
-from gds_workbench_api.features.workflows.authoring.context_contracts import WORKFLOW_INPUTS
-from gds_workbench_api.features.workflows.authoring.context_inputs import (
+from atlas_platform.features.workflows.authoring.context_contracts import (
+    WORKFLOW_INPUTS,
+)
+from atlas_platform.features.workflows.authoring.context_inputs import (
     project_context_inputs,
 )
-from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
+from atlas_platform.features.workflows.authoring.prompt_inputs import (
     list_prompt_input_contracts,
     project_prompt_input_values,
 )
-from gds_workbench_api.prompt_rendering import PromptVariableDefinition
+from atlas_platform.prompt_rendering import PromptVariableDefinition
+from jsonschema import Draft202012Validator
+from pydantic import JsonValue
+
+from tests.web_backend.test_subject_area_executor import _context_bundle, _plan
 
 _KEY = {
     "tenant_code": "NWA",

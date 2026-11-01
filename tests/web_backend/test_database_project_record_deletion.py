@@ -6,30 +6,30 @@ from typing import cast
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.project import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.application.change_sets.project import (
     load_project_physical_scope,
 )
-from gds_etl_workbench.application.change_sets.project_apply import ProjectMaterializer
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project_apply import ProjectMaterializer
+from atlas_mcp.application.change_sets.project_validation import (
     validate_future_graph,
 )
-from gds_etl_workbench.application.project_read import ProjectReadContext
-from gds_etl_workbench.application.project_snapshot import (
+from atlas_mcp.application.project_read import ProjectReadContext
+from atlas_mcp.application.project_snapshot import (
     build_project_snapshot,
     read_project_review_snapshot,
 )
-from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.project_change_sets.contracts import (
+from atlas_mcp.domain.errors import AtlasError
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.project_change_sets.contracts import (
     PreviewProjectRecordsRequest,
     ReviewProjectRecordsRequest,
 )
-from gds_workbench_api.features.project_change_sets.review import (
+from atlas_platform.features.project_change_sets.review import (
     ProjectLayer,
     ProjectReviewDataset,
 )
-from gds_workbench_api.features.project_change_sets.service import (
+from atlas_platform.features.project_change_sets.service import (
     DatabaseProjectChangeSetService,
 )
 from psycopg import sql
@@ -115,7 +115,7 @@ async def test_permanent_clear_includes_supports_and_replays_without_restoring_r
             action="delete",
             expected_project_revision=1,
         )
-        with pytest.raises(WorkbenchError) as forbidden:
+        with pytest.raises(AtlasError) as forbidden:
             await service.preview_record_review(
                 principal,
                 tenant_id=tenant_id,
@@ -229,7 +229,7 @@ async def test_permanent_clear_includes_supports_and_replays_without_restoring_r
             command=preview_command,
         )
         assert not blocked.can_apply and blocked.issue_count == 1
-        with pytest.raises(WorkbenchError) as locked:
+        with pytest.raises(AtlasError) as locked:
             await service.review_records(
                 principal,
                 tenant_id=tenant_id,
@@ -268,7 +268,7 @@ async def test_permanent_clear_includes_supports_and_replays_without_restoring_r
             project_id=project_id,
             command=preview_command,
         )
-        with pytest.raises(WorkbenchError) as unconfirmed:
+        with pytest.raises(AtlasError) as unconfirmed:
             await service.review_records(
                 principal,
                 tenant_id=tenant_id,
@@ -348,7 +348,7 @@ async def test_permanent_clear_includes_supports_and_replays_without_restoring_r
                 (run["workflow_run_id"],),
             ).fetchone()
             assert history is not None and history["count"] == 1
-        with pytest.raises(WorkbenchError) as missing:
+        with pytest.raises(AtlasError) as missing:
             await service.preview_record_review(
                 principal,
                 tenant_id=tenant_id,

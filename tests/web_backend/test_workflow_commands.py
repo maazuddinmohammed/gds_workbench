@@ -5,30 +5,29 @@ from typing import Any, Literal, LiteralString, cast
 from uuid import UUID
 
 import pytest
-from fastapi.testclient import TestClient
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
-from gds_etl_workbench.infrastructure.postgres import WriteTransaction
-from pydantic import ValidationError
-
-from gds_workbench_api.capabilities import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import AtlasError, InvalidRequestError
+from atlas_mcp.infrastructure.postgres import WriteTransaction
+from atlas_platform.capabilities import (
     AgentCapabilityRegistry,
     AgentModelExecutionProfile,
     AgentRunSelection,
     load_default_agent_capabilities,
 )
-from gds_workbench_api.features.workflows.commands import (
+from atlas_platform.features.workflows.commands import (
     CreateWorkflowRunRequest,
     DatabaseWorkflowCommandService,
     WorkflowRunCommandResult,
 )
-from gds_workbench_api.features.workflows.commands.contracts import (
+from atlas_platform.features.workflows.commands.contracts import (
     WorkflowRunCancellationResult,
 )
-from gds_workbench_api.main import create_app
+from atlas_platform.main import create_app
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 
 @pytest.mark.parametrize("mode", [None, "tool_assisted"])
@@ -1116,7 +1115,7 @@ async def test_build_and_optimize_creation_failures_are_actionable(
         authorizer=AuthorizationService(),
         agent_capability_registry=load_default_agent_capabilities(),
     )
-    with pytest.raises(WorkbenchError) as caught:
+    with pytest.raises(AtlasError) as caught:
         await service.create_run(
             RequestPrincipal(
                 actor_kind=ActorKind.HUMAN,
@@ -1363,7 +1362,7 @@ async def test_incomplete_mapping_prerequisite_returns_an_actionable_controlled_
             ),
         }
     )
-    with pytest.raises(WorkbenchError) as caught:
+    with pytest.raises(AtlasError) as caught:
         await service.create_run(
             RequestPrincipal(
                 actor_kind=ActorKind.HUMAN,
@@ -1406,11 +1405,11 @@ def test_cancel_workflow_http_contract() -> None:
     ],
 )
 def test_cancellation_errors_are_safe(message: str, code: str) -> None:
-    from gds_workbench_api.features.workflows.commands.service import (
+    from atlas_platform.features.workflows.commands.service import (
         _raise_safe_workflow_error,  # pyright: ignore[reportPrivateUsage]
     )
 
-    with pytest.raises(WorkbenchError) as caught:
+    with pytest.raises(AtlasError) as caught:
         _raise_safe_workflow_error(RuntimeError(message))
     assert caught.value.code == code
     assert "internal diagnostic" not in caught.value.message

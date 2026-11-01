@@ -5,18 +5,18 @@ from types import SimpleNamespace
 from typing import Any, LiteralString, cast
 
 import pytest
-from gds_etl_workbench.application.change_sets import project as project_change_sets
-from gds_etl_workbench.application.change_sets.project import (
+from atlas_mcp.application.change_sets import project as project_change_sets
+from atlas_mcp.application.change_sets.project import (
     load_project_physical_scope,
     validate_locked_project_change_set,
 )
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project_validation import (
     CodeGenerationTargetContext,
     validation_code_context_digest,
     validation_mapping_context_digest,
 )
-from gds_etl_workbench.application.project_read import ProjectReadContext
-from gds_etl_workbench.infrastructure.postgres import WriteTransaction
+from atlas_mcp.application.project_read import ProjectReadContext
+from atlas_mcp.infrastructure.postgres import WriteTransaction
 
 
 @dataclass

@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.configuration import (
+from atlas_mcp.configuration import (
     DATABASE_CONNECTION_BUDGET,
     DATABASE_CONNECTION_HEADROOM,
     DATABASE_POOL_MAX,

@@ -10,12 +10,16 @@ import json
 import re
 from pathlib import Path
 
-from gds_etl_workbench.application.change_sets.metadata import (
+from atlas_mcp.application.change_sets.metadata import (
     CHANGE_SET_DATASETS as METADATA_CHANGE_SET_DATASETS,
 )
-from gds_etl_workbench.domain.snapshots.project import DATASETS as PROJECT_DATASETS
-from gds_workbench_api.features.workflows.authoring.audit_policy import effective_audit_template
-from gds_workbench_api.features.workflows.authoring.gold_policy import effective_gold_templates
+from atlas_mcp.domain.snapshots.project import DATASETS as PROJECT_DATASETS
+from atlas_platform.features.workflows.authoring.audit_policy import (
+    effective_audit_template,
+)
+from atlas_platform.features.workflows.authoring.gold_policy import (
+    effective_gold_templates,
+)
 
 from tests.mcp.test_tool_schema_contracts import EXPECTED_PUBLIC_TOOLS
 
@@ -28,7 +32,7 @@ INSTRUCTIONS = sorted(
 )
 EXTENSION_TOOLS = {
     tool["name"]
-    for tool in json.loads((ROOT / "atlas/atlas-vs-code/package.json").read_text())["contributes"][
+    for tool in json.loads((ROOT / "atlas/atlas-bridge/package.json").read_text())["contributes"][
         "languageModelTools"
     ]
 }
@@ -51,7 +55,7 @@ TOOL_VERBS = (
 DOCUMENTED_ABSENT_TOOLS = {"get_project_details"}
 # Response and manifest fields shaped like tool names.
 # Field names and server error codes that share a tool verb prefix.
-NON_TOOL_IDENTIFIERS = {"stage_manifest_path", "stage_runner_required"}
+NON_TOOL_IDENTIFIERS = {"stage_manifest_path", "atlas_bridge_required"}
 # Phrases from superseded designs. Each one previously contradicted current behavior.
 STALE_PHRASES = (
     "Codex",

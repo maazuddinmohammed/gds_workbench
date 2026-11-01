@@ -8,10 +8,10 @@ from typing import Literal
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.metadata_enrichment.review import (
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import AtlasError, InvalidRequestError
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.metadata_enrichment.review import (
     DatabaseEnrichmentReviewService,
     ReviewEnrichmentRequest,
 )
@@ -159,7 +159,7 @@ async def test_import_skip_replace_replay_and_project_isolation(
         command=command,
         idempotency_key=key,
     )
-    with pytest.raises(WorkbenchError) as changed_request:
+    with pytest.raises(AtlasError) as changed_request:
         await ctx.service.review_records(
             ctx.principal,
             tenant_id=project.tenant_id,
@@ -335,7 +335,7 @@ async def test_import_preserves_selection_revision_and_lock_guards(
             )
     if guard in ("record_lock", "blank_record_lock"):
         command = ctx.command(record_type, first_only=guard != "blank_record_lock")
-    with pytest.raises(WorkbenchError) as failure:
+    with pytest.raises(AtlasError) as failure:
         await ctx.service.review_records(
             ctx.principal,
             tenant_id=project.tenant_id,
@@ -358,7 +358,7 @@ async def test_import_preserves_selection_revision_and_lock_guards(
 async def test_import_rejects_an_active_workflow(import_context: ImportContext) -> None:
     ctx = import_context
     _create_run(ctx.fixture, ctx.project, start=False)
-    with pytest.raises(WorkbenchError) as failure:
+    with pytest.raises(AtlasError) as failure:
         await ctx.service.review_records(
             ctx.principal,
             tenant_id=ctx.project.tenant_id,

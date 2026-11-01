@@ -6,10 +6,24 @@ from __future__ import annotations
 from typing import Any, Literal, cast
 
 import pytest
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project_validation import (
     validate_future_graph,
 )
+from atlas_platform.features.mapping.execution_context import (
+    build_mapping_execution_context,
+)
+from atlas_platform.features.mapping.preparation_contracts import (
+    MappingAuthoringPolicy,
+)
+from atlas_platform.features.workflows.authoring.context import (
+    InMemoryAgentContextToolCatalog,
+)
+from atlas_platform.features.workflows.authoring.prompt_inputs import (
+    project_prompt_input_values,
+)
+from atlas_platform.prompt_rendering import PromptVariableDefinition
 from pydantic import ValidationError
+
 from tests.mcp.project_test_fixtures import (
     complete_physical_scope,
     project_details,
@@ -21,20 +35,6 @@ from tests.web_backend.test_dimensional_executor import (
 )
 from tests.web_backend.test_dimensional_executor import _plan as dimensional_plan
 from tests.web_backend.test_logical_executor import _context_bundle, _plan
-
-from gds_workbench_api.features.mapping.execution_context import (
-    build_mapping_execution_context,
-)
-from gds_workbench_api.features.mapping.preparation_contracts import (
-    MappingAuthoringPolicy,
-)
-from gds_workbench_api.features.workflows.authoring.context import (
-    InMemoryAgentContextToolCatalog,
-)
-from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
-    project_prompt_input_values,
-)
-from gds_workbench_api.prompt_rendering import PromptVariableDefinition
 
 
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])

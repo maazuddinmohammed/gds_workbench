@@ -5,24 +5,23 @@ from typing import Any, LiteralString, cast
 from uuid import UUID
 
 import pytest
-from fastapi.testclient import TestClient
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets import metadata as canonical_metadata
-from gds_etl_workbench.application.change_sets.metadata_validation import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.application.change_sets import metadata as canonical_metadata
+from atlas_mcp.application.change_sets.metadata_validation import (
     MetadataChangeSetValidation,
 )
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.domain.snapshots.metadata import DATASETS_BY_NAME
-from gds_etl_workbench.infrastructure.postgres import WriteTransaction
-from gds_workbench_api.features.metadata.workbook import (
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_mcp.domain.snapshots.metadata import DATASETS_BY_NAME
+from atlas_mcp.infrastructure.postgres import WriteTransaction
+from atlas_platform.features.metadata.workbook import (
     XLSX_MEDIA_TYPE,
     MetadataWorkbookSheet,
     build_metadata_workbook,
 )
-from gds_workbench_api.features.metadata_change_sets.contracts import (
+from atlas_platform.features.metadata_change_sets.contracts import (
     ApplyMetadataChangeSetResult,
     ArchiveMetadataChangeSetResult,
     CreateMetadataChangeSetRequest,
@@ -34,10 +33,11 @@ from gds_workbench_api.features.metadata_change_sets.contracts import (
     StageMetadataChangeSetResult,
     ValidateMetadataChangeSetResult,
 )
-from gds_workbench_api.features.metadata_change_sets.service import (
+from atlas_platform.features.metadata_change_sets.service import (
     DatabaseMetadataChangeSetService,
 )
-from gds_workbench_api.main import create_app
+from atlas_platform.main import create_app
+from fastapi.testclient import TestClient
 from psycopg.types.json import Jsonb
 
 _CHANGE_SET_ID = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")

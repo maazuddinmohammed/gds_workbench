@@ -3,15 +3,15 @@ from __future__ import annotations
 from typing import Any, cast
 
 import pytest
-from gds_etl_workbench.domain.modeling_records import (
+from atlas_mcp.domain.modeling_records import (
     ValidationCheckRecord,
     ValidationGroupRecord,
 )
-from gds_workbench_api.features.validation.candidate import (
+from atlas_platform.features.validation.candidate import (
     ValidationSystemCandidateValidator,
     reconcile_validation_candidates,
 )
-from gds_workbench_api.features.validation.context import (
+from atlas_platform.features.validation.context import (
     ValidationExecutionContext,
     ValidationSystemAuthoringContext,
 )

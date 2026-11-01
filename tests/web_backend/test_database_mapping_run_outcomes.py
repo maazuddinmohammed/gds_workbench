@@ -5,17 +5,17 @@
 from typing import Literal
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import TenantNotFoundError
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.projects import DatabaseProjectService
-from gds_workbench_api.features.workflows.overview import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import TenantNotFoundError
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.projects import DatabaseProjectService
+from atlas_platform.features.workflows.overview import (
     DatabaseWorkflowOverviewService,
 )
-from gds_workbench_api.features.workflows.runs import DatabaseWorkflowRunService
-from gds_workbench_api.features.workflows.runs.contracts import MappingRunOutcome
-from gds_workbench_api.features.workflows.runs.service import read_mapping_run_outcomes
+from atlas_platform.features.workflows.runs import DatabaseWorkflowRunService
+from atlas_platform.features.workflows.runs.contracts import MappingRunOutcome
+from atlas_platform.features.workflows.runs.service import read_mapping_run_outcomes
 
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.database_test_support import require_row

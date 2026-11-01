@@ -4,21 +4,21 @@
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.project_read import authorize_project_read
-from gds_etl_workbench.application.project_snapshot import build_project_snapshot
-from gds_workbench_api.capabilities import load_default_agent_capabilities
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.projects.command_contracts import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.application.project_read import authorize_project_read
+from atlas_mcp.application.project_snapshot import build_project_snapshot
+from atlas_platform.capabilities import load_default_agent_capabilities
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.projects.command_contracts import (
     CompleteProjectRequest,
     ProjectRevisionConflictError,
     UpdateProjectRequest,
 )
-from gds_workbench_api.features.projects.command_service import (
+from atlas_platform.features.projects.command_service import (
     DatabaseProjectCommandService,
 )
-from gds_workbench_api.features.projects.service import DatabaseProjectService
-from gds_workbench_api.features.workflows.authoring.gold_policy import (
+from atlas_platform.features.projects.service import DatabaseProjectService
+from atlas_platform.features.workflows.authoring.gold_policy import (
     effective_gold_templates,
 )
 from psycopg import errors

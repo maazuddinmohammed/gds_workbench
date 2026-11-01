@@ -10,16 +10,16 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 import pytest
-from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
-from gds_etl_workbench.domain.databricks_sql import ValidatedDatabricksSql
-from gds_etl_workbench.domain.errors import (
+from atlas_mcp.domain.databricks import DatabricksSqlConnection
+from atlas_mcp.domain.databricks_sql import ValidatedDatabricksSql
+from atlas_mcp.domain.errors import (
     DatabricksConnectionFailedError,
     DatabricksStatementFailedError,
 )
-from gds_etl_workbench.infrastructure.databricks_sql import DatabricksSqlExecutionResult
-from gds_workbench_api.features.metadata_enrichment import evidence
-from gds_workbench_api.features.metadata_enrichment.contracts import EnrichmentObject
-from gds_workbench_api.features.metadata_enrichment.evidence import (
+from atlas_mcp.infrastructure.databricks_sql import DatabricksSqlExecutionResult
+from atlas_platform.features.metadata_enrichment import evidence
+from atlas_platform.features.metadata_enrichment.contracts import EnrichmentObject
+from atlas_platform.features.metadata_enrichment.evidence import (
     MetadataEvidenceReader,
     TypeEvidence,
 )

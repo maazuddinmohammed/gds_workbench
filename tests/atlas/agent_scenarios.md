@@ -9,7 +9,7 @@ is a rubric, not a record that such an evaluation passed.
 
 | Request / fixture state | Observable acceptance |
 |---|---|
-| Explain how Atlas works; no workspace | Investigate/architecture answer. No Tenant questionnaire, Workbench launch, delegation setup or fabricated tool call. |
+| Explain how Atlas works; no workspace | Investigate/architecture answer. No Tenant questionnaire, Atlas Local Workbench launch, delegation setup or fabricated tool call. |
 | Analyze scoped sources and build a logical model; SQL Never | Reuse available metadata/evidence; mark profiles unmeasured; analyze then model only as needed. No profiling/SQL execution or fabricated counts. Runs `validate` and `coverage`; logical checks remain explicit. Adds the Project framework audit columns through the policy, states grain from saved evidence, and never renames existing names without asking. |
 | Group the Input Scope into Subject Areas only | Areas named by business capability with complete Object memberships; an Object may sit in several areas. Every Bronze Object is in an active area or reported unassigned. No Logical or downstream work. |
 | Build one Subject Area's Logical model | Works one area at a time: reads the area's Objects, the Entities already built from them and their neighbours; reuses those Entities, writes only changes and retires instead of deleting. Relationships point child -> parent. Runs `coverage --subject-area`. The area only chooses Objects and is never evidence; no Subject Area, Dimensional or Mapping changes. |

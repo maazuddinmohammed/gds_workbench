@@ -6,18 +6,18 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.domain.errors import DependencyUnavailableError
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
+from atlas_mcp.domain.errors import DependencyUnavailableError
+from atlas_platform.features.workflows.authoring.lifecycle import (
     workflow_identity_triple,
 )
-from gds_workbench_api.features.workflows.execution.contracts import (
+from atlas_platform.features.workflows.execution.contracts import (
     WorkflowExecutionClaim,
 )
-from gds_workbench_api.features.workflows.usage.contracts import (
+from atlas_platform.features.workflows.usage.contracts import (
     FoundryModelPricing,
     ModelTokenUsage,
 )
-from gds_workbench_api.features.workflows.usage.service import (
+from atlas_platform.features.workflows.usage.service import (
     DatabaseWorkflowUsageRecorder,
 )
 from psycopg.errors import RaiseException

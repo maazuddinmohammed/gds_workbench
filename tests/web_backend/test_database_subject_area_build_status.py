@@ -10,10 +10,10 @@ from uuid import uuid4
 
 import psycopg
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.dimensional import DatabaseDimensionalService
-from gds_workbench_api.features.logical import DatabaseLogicalService, WaitingDraft
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.dimensional import DatabaseDimensionalService
+from atlas_platform.features.logical import DatabaseLogicalService, WaitingDraft
 
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.test_database_project_change_set_round_trip import (

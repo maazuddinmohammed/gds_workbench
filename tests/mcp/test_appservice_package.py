@@ -34,8 +34,8 @@ def test_appservice_zip_uses_runtime_only_allowlist(tmp_path: Path) -> None:
             SOURCE_ROOT / "app.py",
             SOURCE_ROOT / "requirements.txt",
             SOURCE_ROOT / "startup.sh",
-            SOURCE_ROOT / "gds_etl_workbench/application/profiling/profiling.json",
-            *sorted((SOURCE_ROOT / "gds_etl_workbench").rglob("*.py")),
+            SOURCE_ROOT / "atlas_mcp/application/profiling/profiling.json",
+            *sorted((SOURCE_ROOT / "atlas_mcp").rglob("*.py")),
         ]
         expected_names = sorted(
             {
@@ -54,32 +54,32 @@ def test_appservice_zip_uses_runtime_only_allowlist(tmp_path: Path) -> None:
             "startup.sh",
             "requirements.txt",
             "BUILD_MANIFEST.json",
-            "gds_etl_workbench/application/change_sets/contracts.py",
-            "gds_etl_workbench/application/change_sets/metadata.py",
-            "gds_etl_workbench/application/change_sets/project.py",
-            "gds_etl_workbench/application/project_snapshot.py",
-            "gds_etl_workbench/domain/snapshots/description.py",
-            "gds_etl_workbench/domain/snapshots/metadata.py",
-            "gds_etl_workbench/domain/snapshots/project.py",
-            "gds_etl_workbench/infrastructure/metadata_visibility.py",
-            "gds_etl_workbench/tools/snapshots/service.py",
-            "gds_etl_workbench/tools/snapshots/storage.py",
-            "gds_etl_workbench/application/metadata_snapshot/archive.py",
-            "gds_etl_workbench/tools/snapshots/metadata/get_metadata_snapshot.py",
-            "gds_etl_workbench/application/metadata_snapshot/sql.py",
-            "gds_etl_workbench/tools/catalog/get_object_lineage.py",
-            "gds_etl_workbench/tools/catalog/get_objects.py",
-            "gds_etl_workbench/tools/catalog/list_objects.py",
-            "gds_etl_workbench/tools/ingestion/copy_groups.py",
-            "gds_etl_workbench/tools/processing/process_groups.py",
-            "gds_etl_workbench/tools/tenants/get_tenant_details.py",
-            "gds_etl_workbench/tools/tenants/tenant_locks.py",
+            "atlas_mcp/application/change_sets/contracts.py",
+            "atlas_mcp/application/change_sets/metadata.py",
+            "atlas_mcp/application/change_sets/project.py",
+            "atlas_mcp/application/project_snapshot.py",
+            "atlas_mcp/domain/snapshots/description.py",
+            "atlas_mcp/domain/snapshots/metadata.py",
+            "atlas_mcp/domain/snapshots/project.py",
+            "atlas_mcp/infrastructure/metadata_visibility.py",
+            "atlas_mcp/tools/snapshots/service.py",
+            "atlas_mcp/tools/snapshots/storage.py",
+            "atlas_mcp/application/metadata_snapshot/archive.py",
+            "atlas_mcp/tools/snapshots/metadata/get_metadata_snapshot.py",
+            "atlas_mcp/application/metadata_snapshot/sql.py",
+            "atlas_mcp/tools/catalog/get_object_lineage.py",
+            "atlas_mcp/tools/catalog/get_objects.py",
+            "atlas_mcp/tools/catalog/list_objects.py",
+            "atlas_mcp/tools/ingestion/copy_groups.py",
+            "atlas_mcp/tools/processing/process_groups.py",
+            "atlas_mcp/tools/tenants/get_tenant_details.py",
+            "atlas_mcp/tools/tenants/tenant_locks.py",
         } <= set(names)
-        assert "gds_etl_workbench/tools/snapshots/metadata/storage.py" not in names
+        assert "atlas_mcp/tools/snapshots/metadata/storage.py" not in names
         assert not any("/snapshots/dbml/" in name for name in names)
         assert all(
             name in {"app.py", "startup.sh", "requirements.txt", "BUILD_MANIFEST.json"}
-            or name.startswith("gds_etl_workbench/")
+            or name.startswith("atlas_mcp/")
             for name in names
         )
         assert all("tests/" not in name and ".env" not in name for name in names)
@@ -142,13 +142,13 @@ installed_version = importlib.metadata.version
 
 
 def version_without_project_metadata(name: str) -> str:
-    if name == "gds-etl-workbench-mcp":
+    if name == "atlas-mcp":
         raise importlib.metadata.PackageNotFoundError(name)
     return installed_version(name)
 
 
 importlib.metadata.version = version_without_project_metadata
-from gds_etl_workbench.adapters.mcp.server import MCP_SERVER_VERSION
+from atlas_mcp.adapters.mcp.server import MCP_SERVER_VERSION
 
 assert MCP_SERVER_VERSION == sys.argv[1]
 """,

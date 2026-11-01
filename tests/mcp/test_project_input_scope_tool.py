@@ -6,16 +6,16 @@ from dataclasses import dataclass, field
 from typing import Any, LiteralString
 
 import pytest
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.infrastructure.postgres import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.adapters.mcp.tool_audit import ToolCallAuditMiddleware
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.infrastructure.postgres import (
     ReadIsolation,
     ReadTransaction,
     ToolCallLogRecord,
 )
-from gds_etl_workbench.tools.modeling.project_input_scope import (
+from atlas_mcp.tools.modeling.project_input_scope import (
     GetProjectInputScopeResult,
     register_get_project_input_scope_tool,
 )

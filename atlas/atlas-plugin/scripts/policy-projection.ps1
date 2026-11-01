@@ -1,4 +1,4 @@
-# Technical-column projection, native Windows PowerShell 5.1 twin of workbench/policy-projection.js.
+# Technical-column projection, native Windows PowerShell 5.1 twin of atlas-local-workbench/policy-projection.js.
 # Keep rules, ordering and messages aligned; tests/atlas/test_policy_projection.py pins the
 # JavaScript port to the web backend and the native parity suite compares this file with Node.
 

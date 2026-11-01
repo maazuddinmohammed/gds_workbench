@@ -1,4 +1,4 @@
--- GDS ETL Workbench Release 1: governed workflow execution and persistence.
+-- Atlas Release 1: governed workflow execution and persistence.
 
 -- Resolve the complete immutable physical input for one running Profiling Run.
 -- Relation catalog ownership comes from core.object.source_tenant_id.

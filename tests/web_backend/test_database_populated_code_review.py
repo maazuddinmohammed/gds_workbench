@@ -3,19 +3,19 @@
 # pyright: reportPrivateUsage=false
 from uuid import uuid4
 
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.project import StageProjectChange
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.code_generation import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.application.change_sets.project import StageProjectChange
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.code_generation import (
     CodeGenerationTargetFilters,
     DatabaseCodeGenerationService,
 )
-from gds_workbench_api.features.project_change_sets.contracts import (
+from atlas_platform.features.project_change_sets.contracts import (
     CreateProjectChangeSetRequest,
     ExpectedDraftRevisionRequest,
     StageProjectChangeSetRequest,
 )
-from gds_workbench_api.features.project_change_sets.service import (
+from atlas_platform.features.project_change_sets.service import (
     DatabaseProjectChangeSetService,
 )
 

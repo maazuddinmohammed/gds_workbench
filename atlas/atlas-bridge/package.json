@@ -1,0 +1,138 @@
+{
+  "name": "atlas-bridge",
+  "displayName": "ATLAS Bridge",
+  "icon": "assets/atlas.png",
+  "description": "ATLAS Bridge for VS Code Copilot using VS Code Microsoft sign-in.",
+  "version": "0.3.0",
+  "publisher": "gds-workbench",
+  "license": "UNLICENSED",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maazuddinmohammed/gds_workbench.git",
+    "directory": "atlas/atlas-bridge"
+  },
+  "type": "module",
+  "engines": {
+    "vscode": "^1.136.0"
+  },
+  "categories": [
+    "Machine Learning"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Stage requires a trusted Atlas workspace."
+    }
+  },
+  "activationEvents": [
+    "onLanguageModelTool:atlas_checkBridge",
+    "onLanguageModelTool:atlas_stageApprovedManifest",
+    "onCommand:atlasBridge.check"
+  ],
+  "main": "./dist/extension.cjs",
+  "contributes": {
+    "commands": [
+      {
+        "command": "atlasBridge.check",
+        "title": "ATLAS: Check Bridge"
+      }
+    ],
+    "languageModelTools": [
+      {
+        "name": "atlas_checkBridge",
+        "displayName": "Check ATLAS Bridge",
+        "modelDescription": "Read-only readiness check. Returns the configured backend profile and endpoint fingerprint directly; no URLs, credentials or tenant records. Use before local Accept to bind the correct backend.",
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "atlasCheckBridge",
+        "inputSchema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "outputFile": {
+              "type": "string",
+              "description": "Optional absolute path for one JSON receipt in the workspace .atlas/temp directory. Must be a new .json file; existing files are never replaced."
+            }
+          }
+        }
+      },
+      {
+        "name": "atlas_stageApprovedManifest",
+        "displayName": "Stage Approved ATLAS Change Set",
+        "modelDescription": "Stages one digest-approved Atlas Metadata or Project Change Set from its local Stage request. Use only after local validation and user acknowledgement. Returns a bounded receipt and never returns payload records.",
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "atlasStageApprovedManifest",
+        "inputSchema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "manifestPath": {
+              "type": "string",
+              "description": "Absolute path returned by the Atlas prepare-stage-request helper."
+            },
+            "expectedDigest": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$",
+              "description": "Optional expected digest. Omit to use the accepted digest bound to this manifest and its acknowledged operation; explicit mismatches fail."
+            },
+            "recoverOnly": {
+              "type": "boolean",
+              "description": "Read-only recovery of an uncertain Stage: verify saved intended hashes against the governed draft and fingerprint. Never replay writes."
+            },
+            "outputFile": {
+              "type": "string",
+              "description": "Optional absolute path for one JSON receipt in the workspace .atlas/temp directory. Must be a new .json file; existing files are never replaced."
+            }
+          },
+          "required": [
+            "manifestPath"
+          ]
+        }
+      }
+    ],
+    "configuration": {
+      "title": "ATLAS Bridge",
+      "properties": {
+        "atlas.bridge.profile": {
+          "type": "string",
+          "scope": "machine",
+          "enum": [
+            "production",
+            "local",
+            "azureLocalTest"
+          ],
+          "default": "production",
+          "description": "Production requires Microsoft authentication. Local permits only loopback. Azure Local Test is an explicit temporary no-auth profile."
+        },
+        "atlas.bridge.localUrl": {
+          "type": "string",
+          "scope": "machine",
+          "default": "http://127.0.0.1:8000/mcp",
+          "description": "Local MCP URL. Only loopback HTTP URLs ending in /mcp are accepted."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "vitest run",
+    "check": "tsc --noEmit",
+    "compile": "npm run check && node esbuild.mjs",
+    "package:vsix": "npm run compile && vsce package --no-dependencies --skip-license --baseContentUrl https://github.com/maazuddinmohammed/gds_workbench/blob/HEAD/atlas/atlas-bridge --out ../dist/atlas-bridge-0.3.0.vsix",
+    "test:host": "node test/run-vscode-host.mjs"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6",
+    "@types/node": "24.10.0",
+    "@types/vscode": "1.136.0",
+    "@vscode/vsce": "3.9.2",
+    "esbuild": "0.28.2",
+    "typescript": "6.0.3",
+    "vitest": "4.1.7"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0"
+  }
+}

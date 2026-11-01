@@ -7,33 +7,32 @@ from typing import Any, Literal, cast
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from jsonschema import Draft202012Validator
-
-from gds_workbench_api.capabilities import AgentRunSelection
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_platform.capabilities import AgentRunSelection
+from atlas_platform.features.workflows.authoring.agent_execution import (
     AgentContextToolResultTooLargeError,
 )
-from gds_workbench_api.features.workflows.authoring.context import (
+from atlas_platform.features.workflows.authoring.context import (
     AgentContextToolRequestError,
 )
-from gds_workbench_api.features.workflows.authoring.downstream_inputs import (
+from atlas_platform.features.workflows.authoring.downstream_inputs import (
     build_downstream_readers,
     downstream_input_contracts,
     project_downstream_inputs,
 )
-from gds_workbench_api.features.workflows.authoring.plan import (
+from atlas_platform.features.workflows.authoring.plan import (
     AgentRunPlan,
     FrozenAgentStage,
 )
-from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
+from atlas_platform.features.workflows.authoring.prompt_inputs import (
     get_prompt_input_contract,
     project_prompt_input_values,
 )
-from gds_workbench_api.prompt_rendering import (
+from atlas_platform.prompt_rendering import (
     PromptComponentTemplates,
     PromptVariableDefinition,
 )
+from jsonschema import Draft202012Validator
 
 FIXTURE: dict[str, Any] = json.loads(
     (Path(__file__).parent / "fixtures" / "downstream_prompt_contexts.json").read_text()

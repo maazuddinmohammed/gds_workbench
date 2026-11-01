@@ -9,45 +9,45 @@ from typing import Any, LiteralString, cast
 from uuid import UUID
 
 import pytest
-from fastapi.testclient import TestClient
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
-from gds_etl_workbench.domain.errors import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.databricks import DatabricksSqlConnection
+from atlas_mcp.domain.errors import (
     DatabricksStatementFailedError,
     DependencyUnavailableError,
 )
-from gds_etl_workbench.infrastructure.postgres import (
+from atlas_mcp.infrastructure.postgres import (
     ReadIsolation,
     WriteTransaction,
 )
-from gds_workbench_api.features.analysis.validation_execution import (
+from atlas_platform.features.analysis.validation_execution import (
     AnalysisValidationEndpoint,
     AnalysisValidationEvidence,
     AnalysisValidationPolicy,
     AnalysisValidationQuery,
     AnalysisValidationRelationship,
 )
-from gds_workbench_api.features.analysis.validation_router import (
+from atlas_platform.features.analysis.validation_router import (
     ExecuteAnalysisValidationRunRequest,
 )
-from gds_workbench_api.features.analysis.validation_service import (
+from atlas_platform.features.analysis.validation_service import (
     AnalysisValidationCommitResult,
     AnalysisValidationExecutionContext,
     AnalysisValidationExecutionTarget,
     AnalysisValidationWorkflow,
     DatabaseAnalysisValidationRepository,
 )
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
+from atlas_platform.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
     AgentWorkflowRunStart,
 )
-from gds_workbench_api.features.workflows.authoring.plan import (
+from atlas_platform.features.workflows.authoring.plan import (
     ProjectWorkflow,
     WorkflowExecutionMode,
 )
-from gds_workbench_api.main import create_app
+from atlas_platform.main import create_app
+from fastapi.testclient import TestClient
 from psycopg.types.json import Jsonb
 
 _CLAIM_TOKEN = UUID("44444444-4444-4444-4444-444444444444")

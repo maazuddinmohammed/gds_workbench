@@ -14,79 +14,79 @@ from typing import Any, Literal, cast
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.application.change_sets.project import StageProjectChange
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project import StageProjectChange
+from atlas_mcp.application.change_sets.project_validation import (
     PhysicalProjectCatalog,
     validate_future_graph,
 )
-from gds_etl_workbench.domain.authorization import (
+from atlas_mcp.domain.authorization import (
     ActorKind,
     RequestPrincipal,
     ToolPolicy,
 )
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.domain.modeling_records import PhysicalObjectKey
-from gds_etl_workbench.domain.snapshots.project import (
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_mcp.domain.modeling_records import PhysicalObjectKey
+from atlas_mcp.domain.snapshots.project import (
     ProjectChangeSetDataset,
     SubjectAreaSection,
 )
-from gds_etl_workbench.infrastructure.postgres import (
+from atlas_mcp.infrastructure.postgres import (
     ReadIsolation,
     ReadTransaction,
     WriteTransaction,
 )
-from pydantic import JsonValue
-from tests.mcp.project_test_fixtures import snapshot_from_graph
-from tests.web_backend.workflow_recovery_fixtures import RetainingHandoff
-
-from gds_workbench_api.capabilities import AgentRunSelection
-from gds_workbench_api.features.logical.service import (
+from atlas_platform.capabilities import AgentRunSelection
+from atlas_platform.features.logical.service import (
     LogicalExecutionFailedError,
     LogicalFinalizationFailedError,
     LogicalWorkflow,
 )
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
+from atlas_platform.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
     AgentExecutionResult,
 )
-from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
+from atlas_platform.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetFinalizationResult,
     WorkflowChangeSetHandoffResult,
 )
-from gds_workbench_api.features.workflows.authoring.context import (
+from atlas_platform.features.workflows.authoring.context import (
     AgentAuthoringContext,
     AgentContextBundle,
     AgentContextLimits,
     InMemoryAgentContextToolCatalog,
     modeled_layer_dependencies,
 )
-from gds_workbench_api.features.workflows.authoring.context import (
+from atlas_platform.features.workflows.authoring.context import (
     _context_bundle as package_context,
 )
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
+from atlas_platform.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
     AgentWorkflowRunStart,
     AgentWorkflowTerminalResult,
 )
-from gds_workbench_api.features.workflows.authoring.no_op import (
+from atlas_platform.features.workflows.authoring.no_op import (
     AuthoringNoOpReceipt,
     AuthoringNoOpRequest,
     authoring_no_op_candidate_digest,
 )
-from gds_workbench_api.features.workflows.authoring.plan import (
+from atlas_platform.features.workflows.authoring.plan import (
     AgentRunPlan,
     FrozenAgentStage,
     PlannedSubjectArea,
     WorkflowExecutionMode,
 )
-from gds_workbench_api.features.workflows.authoring.repair import (
+from atlas_platform.features.workflows.authoring.repair import (
     AgentCandidateValidationError,
     AgentContextPolicy,
 )
-from gds_workbench_api.prompt_rendering import (
+from atlas_platform.prompt_rendering import (
     PromptComponentTemplates,
     PromptVariableDefinition,
 )
+from pydantic import JsonValue
+
+from tests.mcp.project_test_fixtures import snapshot_from_graph
+from tests.web_backend.workflow_recovery_fixtures import RetainingHandoff
 
 _CLAIM_TOKEN = UUID("44444444-4444-4444-8444-444444444444")
 # Byte limits stay open so each test controls only the evidence it needs.

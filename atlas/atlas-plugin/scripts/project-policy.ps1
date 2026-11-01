@@ -1,4 +1,4 @@
-# Native counterpart of workbench/validation/project-policy.js. Keep rule IDs aligned.
+# Native counterpart of atlas-local-workbench/validation/project-policy.js. Keep rule IDs aligned.
 function Get-PolicyTuple($Values) {
     return ConvertTo-StableJson @($Values | ForEach-Object { Normalize-Value 'project' 'value' $_ })
 }

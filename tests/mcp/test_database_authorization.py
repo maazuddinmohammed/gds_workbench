@@ -4,22 +4,22 @@ from typing import TYPE_CHECKING, cast
 from uuid import UUID, uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import (
+from atlas_mcp.application.authorization import (
     AuthorizationService,
     ResolvedPrincipal,
 )
-from gds_etl_workbench.application.tenants import query_visible_tenants
-from gds_etl_workbench.domain.authorization import (
+from atlas_mcp.application.tenants import query_visible_tenants
+from atlas_mcp.domain.authorization import (
     ActorKind,
     RequestPrincipal,
     TenantRole,
     ToolPolicy,
 )
-from gds_etl_workbench.domain.errors import (
+from atlas_mcp.domain.errors import (
     AuthorizationDeniedError,
     TenantNotFoundError,
 )
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation
+from atlas_mcp.infrastructure.postgres import ReadIsolation
 from psycopg.errors import ForeignKeyViolation, InvalidParameterValue, UniqueViolation
 
 if TYPE_CHECKING:

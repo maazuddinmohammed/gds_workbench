@@ -9,7 +9,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.domain.modeling_records import (
+from atlas_mcp.domain.modeling_records import (
     AnalysisResultRecord,
     DimensionalAttributeRecord,
     GeneratedCodeRecord,
@@ -17,8 +17,8 @@ from gds_etl_workbench.domain.modeling_records import (
     ProfilingProfileRecord,
     ValidationCheckRecord,
 )
-from gds_etl_workbench.domain.portable_validation import PROJECT_RECORD_VALIDATIONS
-from gds_etl_workbench.domain.snapshots.project import (
+from atlas_mcp.domain.portable_validation import PROJECT_RECORD_VALIDATIONS
+from atlas_mcp.domain.snapshots.project import (
     CHANGE_SET_DATASETS,
     DATASETS,
     DATASETS_BY_NAME,
@@ -28,8 +28,8 @@ from gds_etl_workbench.domain.snapshots.project import (
     build_project_dataset_schema,
     project_snapshot_records,
 )
-from gds_etl_workbench.infrastructure.snapshot_archive import SnapshotContractError
-from gds_etl_workbench.tools.snapshots.project.archive import (
+from atlas_mcp.infrastructure.snapshot_archive import SnapshotContractError
+from atlas_mcp.tools.snapshots.project.archive import (
     build_project_snapshot_archive,
     encode_project_snapshot,
 )

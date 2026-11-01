@@ -3,14 +3,13 @@ from __future__ import annotations
 from typing import Any, LiteralString
 
 import pytest
-
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.authorization import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.authorization import (
     RequestPrincipal,
     TenantRole,
     ToolPolicy,
 )
-from gds_etl_workbench.domain.errors import TenantLockRequiredError
+from atlas_mcp.domain.errors import TenantLockRequiredError
 
 
 class UnexpectedDatabaseAccess:

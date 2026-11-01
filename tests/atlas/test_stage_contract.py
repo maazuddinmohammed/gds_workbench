@@ -1,6 +1,6 @@
-"""Server contract fixture consumed by the VS Code Stage Runner tests.
+"""Server contract fixture consumed by the Atlas Bridge tests.
 
-`atlas/atlas-vs-code/test/fixtures/server-contract.json` is built here from the MCP
+`atlas/atlas-bridge/test/fixtures/server-contract.json` is built here from the MCP
 server's own models, dataset registries and the MCP SDK's real error formatting. The
 extension tests read that file instead of hand-written server copies, so a server
 change the extension does not follow fails one of the two suites.
@@ -21,38 +21,38 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from gds_etl_workbench.adapters.mcp.stage_runner_gate import (
-    STAGE_RUNNER_CLIENT,
-    STAGE_RUNNER_HEADER,
+from atlas_mcp.adapters.mcp.atlas_bridge_gate import (
+    ATLAS_BRIDGE_CLIENT,
+    ATLAS_BRIDGE_HEADER,
     STAGE_UPLOAD_TOOLS,
-    StageRunnerGate,
+    AtlasBridgeGate,
 )
-from gds_etl_workbench.application.change_sets.contracts import (
+from atlas_mcp.application.change_sets.contracts import (
     STAGE_FINGERPRINT_VERSION,
     canonical_records_sha256,
     stage_fingerprint_sha256,
 )
-from gds_etl_workbench.application.change_sets.metadata import (
+from atlas_mcp.application.change_sets.metadata import (
     CHANGE_SET_DATASETS as METADATA_DATASETS,
 )
-from gds_etl_workbench.application.change_sets.metadata import (
+from atlas_mcp.application.change_sets.metadata import (
     GetMetadataChangeSetFingerprintResult,
     MetadataChangeSetDatasetFingerprint,
 )
-from gds_etl_workbench.application.change_sets.project import (
+from atlas_mcp.application.change_sets.project import (
     GetProjectChangeSetFingerprintResult,
     ProjectChangeSetDatasetFingerprint,
 )
-from gds_etl_workbench.domain.errors import DraftRevisionConflictError, TenantLockRequiredError
-from gds_etl_workbench.domain.snapshots.project import CHANGE_SET_DATASETS_BY_NAME
-from gds_etl_workbench.tools.change_sets.metadata import MetadataChangeSetToolError
-from gds_etl_workbench.tools.change_sets.project import ProjectChangeSetToolError
+from atlas_mcp.domain.errors import DraftRevisionConflictError, TenantLockRequiredError
+from atlas_mcp.domain.snapshots.project import CHANGE_SET_DATASETS_BY_NAME
+from atlas_mcp.tools.change_sets.metadata import MetadataChangeSetToolError
+from atlas_mcp.tools.change_sets.project import ProjectChangeSetToolError
 from mcp import Client
 from mcp.server.mcpserver import MCPServer
 from mcp.types import TextContent
 
 ROOT = Path(__file__).resolve().parents[2]
-FIXTURE = ROOT / "atlas/atlas-vs-code/test/fixtures/server-contract.json"
+FIXTURE = ROOT / "atlas/atlas-bridge/test/fixtures/server-contract.json"
 EXPIRES_AT = datetime(2099, 1, 1, tzinfo=UTC)
 METADATA_CHANGE_SET_ID = UUID("30000000-0000-4000-8000-000000000050")
 PROJECT_CHANGE_SET_ID = UUID("20000000-0000-4000-8000-000000000001")
@@ -149,10 +149,10 @@ async def _tool_error_examples() -> list[dict[str, str]]:
         register(name, failure)
     # An in-memory session outside development identity is an agent connection.
     gated = MCPServer[None](
-        name="stage-contract-gate", middleware=[StageRunnerGate(allow_in_memory=False)]
+        name="stage-contract-gate", middleware=[AtlasBridgeGate(allow_in_memory=False)]
     )
     calls = [(server, name, str(failure).split(":", 1)[0]) for name, failure in failures.items()]
-    calls.append((gated, "put_project_stage_chunk", "stage_runner_required"))
+    calls.append((gated, "put_project_stage_chunk", "atlas_bridge_required"))
     examples: list[dict[str, str]] = []
     for target, name, code in calls:
         async with Client(target) as client:
@@ -185,9 +185,9 @@ def build_contract() -> dict[str, Any]:
             "datasets": sorted(CHANGE_SET_DATASETS_BY_NAME),
             "fingerprint_example": _project_fingerprint(),
         },
-        "stage_runner": {
-            "header": STAGE_RUNNER_HEADER,
-            "client": STAGE_RUNNER_CLIENT,
+        "atlas_bridge": {
+            "header": ATLAS_BRIDGE_HEADER,
+            "client": ATLAS_BRIDGE_CLIENT,
             "upload_tools": sorted(STAGE_UPLOAD_TOOLS),
         },
         "tool_error_examples": asyncio.run(_tool_error_examples()),
@@ -198,11 +198,11 @@ def _encoded(contract: dict[str, Any]) -> str:
     return json.dumps(contract, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
 
 
-def test_stage_runner_contract_fixture_matches_the_server() -> None:
+def test_atlas_bridge_contract_fixture_matches_the_server() -> None:
     expected = _encoded(build_contract())
     actual = FIXTURE.read_text(encoding="utf-8") if FIXTURE.is_file() else ""
     assert actual == expected, (
-        "Stage Runner contract fixture is stale; regenerate it with "
+        "Atlas Bridge contract fixture is stale; regenerate it with "
         "`tests/atlas/test_stage_contract.py --write` and update the extension to match."
     )
 

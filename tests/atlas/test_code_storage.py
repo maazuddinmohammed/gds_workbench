@@ -4,7 +4,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from gds_etl_workbench.domain.snapshots.project import (
+from atlas_mcp.domain.snapshots.project import (
     DATASETS_BY_NAME,
     build_project_dataset_schema,
 )
@@ -36,7 +36,7 @@ def test_plugin_accepts_git_metadata_with_the_published_schema(tmp_path: Path) -
         )
     )
     validator = Path(__file__).resolve().parents[2] / (
-        "atlas/atlas-plugin/workbench/validation/common.js"
+        "atlas/atlas-plugin/atlas-local-workbench/validation/common.js"
     )
     result = subprocess.run(
         [

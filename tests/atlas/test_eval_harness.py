@@ -16,9 +16,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from gds_etl_workbench.adapters.mcp.stage_runner_gate import STAGE_UPLOAD_TOOLS
-from gds_etl_workbench.domain.snapshots.metadata import DATASETS_BY_NAME as METADATA_DATASETS
-from gds_etl_workbench.domain.snapshots.project import DATASETS_BY_NAME as PROJECT_DATASETS
+from atlas_mcp.adapters.mcp.atlas_bridge_gate import STAGE_UPLOAD_TOOLS
+from atlas_mcp.domain.snapshots.metadata import DATASETS_BY_NAME as METADATA_DATASETS
+from atlas_mcp.domain.snapshots.project import DATASETS_BY_NAME as PROJECT_DATASETS
 from mcp import Client
 
 from tests.atlas.eval import harness
@@ -115,7 +115,7 @@ def test_replay_server_exposes_the_real_tool_surface(tmp_path: Path) -> None:
         async with Client(create_replay_server(world)) as client:
             return {tool.name for tool in (await client.list_tools()).tools}
 
-    # Evaluated agents connect like Copilot, not the Stage Runner.
+    # Evaluated agents connect like Copilot, not the Atlas Bridge.
     assert asyncio.run(tools()) == EXPECTED_PUBLIC_TOOLS - STAGE_UPLOAD_TOOLS
 
 
@@ -134,9 +134,9 @@ def test_replayed_and_scripted_results_satisfy_the_real_output_schemas(tmp_path:
 
 def test_governed_writes_are_refused_and_logged(tmp_path: Path) -> None:
     refused = [
-        ("stage_project_change_set", {"project_id": 1}, "stage_runner_required"),
-        ("begin_metadata_stage_batch", {"tenant_id": 1}, "stage_runner_required"),
-        ("apply_project_change_set", {"project_id": 1}, "evaluation_requires_stage_runner"),
+        ("stage_project_change_set", {"project_id": 1}, "atlas_bridge_required"),
+        ("begin_metadata_stage_batch", {"tenant_id": 1}, "atlas_bridge_required"),
+        ("apply_project_change_set", {"project_id": 1}, "evaluation_requires_atlas_bridge"),
         ("override_tenant_lock", {"tenant_id": 1, "reason": "x"}, "authorization_denied"),
         ("execute_databricks_sql", {"connection_id": 1, "sql": "SELECT 1"}, "databricks"),
         ("create_project_change_set", {"project_id": 1}, "tenant_lock_required"),
@@ -192,9 +192,9 @@ def test_dry_run_sandboxes_seed_real_workspaces_and_isolate_the_plugin(tmp_path:
     prompt = (sandbox.root / "prompt.md").read_text()
     assert prompt.count("/SKILL.md)") == len(SKILLS)
     assert scenarios["resume-uncertain-stage"]["request"] in prompt
-    server = json.loads((sandbox.root / "mcp.json").read_text())["mcpServers"]["gds-workbench"]
+    server = json.loads((sandbox.root / "mcp.json").read_text())["mcpServers"]["atlas-mcp"]
     assert server["args"][:2] == ["-m", "tests.atlas.eval.fake_mcp"]
-    assert "[mcp_servers.gds-workbench]" in (sandbox.root / "codex-mcp.toml").read_text()
+    assert "[mcp_servers.atlas-mcp]" in (sandbox.root / "codex-mcp.toml").read_text()
     assert not list(sandbox.plugin.rglob("node_modules"))
     session = json.loads((sandbox.workspace / ".atlas/session.json").read_text())
     operation = json.loads((sandbox.workspace / session["operations"]["project"]).read_text())

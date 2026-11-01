@@ -2,17 +2,17 @@
 
 # pyright: reportPrivateUsage=false
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.metadata import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.metadata import (
     DatabaseMetadataService,
     MetadataObjectNotFoundError,
     ObjectCatalogFilters,
     PostgresMetadataRepository,
 )
-from gds_workbench_api.features.project_input_scope import (
+from atlas_platform.features.project_input_scope import (
     DatabaseProjectInputScopeService,
     ProjectInputScopeObjectNotFoundError,
 )

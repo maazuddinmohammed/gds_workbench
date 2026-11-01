@@ -8,13 +8,13 @@ from dataclasses import replace
 from typing import Any, LiteralString
 
 import pytest
-from gds_etl_workbench.domain.errors import DependencyUnavailableError
-from gds_etl_workbench.infrastructure.postgres import raise_postgres_error
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
+from atlas_mcp.domain.errors import DependencyUnavailableError
+from atlas_mcp.infrastructure.postgres import raise_postgres_error
+from atlas_platform.features.workflows.authoring.lifecycle import (
     DatabaseAgentWorkflowLifecycle,
 )
-from gds_workbench_api.features.workflows.execution import WorkflowExecutionDispatcher
-from gds_workbench_api.features.workflows.usage.service import (
+from atlas_platform.features.workflows.execution import WorkflowExecutionDispatcher
+from atlas_platform.features.workflows.usage.service import (
     DatabaseWorkflowUsageRecorder,
 )
 from psycopg.errors import UndefinedFunction

@@ -3,25 +3,25 @@ from __future__ import annotations
 from typing import Any, cast
 from uuid import UUID
 
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project_validation import (
     PhysicalProjectCatalog,
 )
-from gds_etl_workbench.domain.modeling_records import PhysicalObjectKey
-from gds_etl_workbench.domain.snapshots.project import ProjectChangeSetDataset
-from gds_workbench_api.capabilities import AgentRunSelection
-from gds_workbench_api.features.mapping import (
+from atlas_mcp.domain.modeling_records import PhysicalObjectKey
+from atlas_mcp.domain.snapshots.project import ProjectChangeSetDataset
+from atlas_platform.capabilities import AgentRunSelection
+from atlas_platform.features.mapping import (
     MappingPreparation,
     MappingRunContext,
     MappingRunPlan,
     assess_mapping_readiness,
 )
-from gds_workbench_api.features.mapping.preparation_contracts import ModeledEntityType
-from gds_workbench_api.features.workflows.authoring.plan import (
+from atlas_platform.features.mapping.preparation_contracts import ModeledEntityType
+from atlas_platform.features.workflows.authoring.plan import (
     AgentRunPlan,
     FrozenAgentStage,
     WorkflowExecutionMode,
 )
-from gds_workbench_api.prompt_rendering import PromptComponentTemplates
+from atlas_platform.prompt_rendering import PromptComponentTemplates
 from pydantic import JsonValue
 
 from tests.mcp.project_test_fixtures import (

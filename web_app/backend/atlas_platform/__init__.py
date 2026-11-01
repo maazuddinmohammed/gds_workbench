@@ -1,0 +1,1 @@
+"""Atlas Platform FastAPI backend."""

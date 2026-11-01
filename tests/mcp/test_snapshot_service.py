@@ -4,16 +4,16 @@ from datetime import UTC, datetime, timedelta, timezone
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.domain.errors import DependencyUnavailableError
-from gds_etl_workbench.infrastructure.snapshot_archive import (
+from atlas_mcp.domain.errors import DependencyUnavailableError
+from atlas_mcp.infrastructure.snapshot_archive import (
     SnapshotArchive,
     SnapshotContractError,
 )
-from gds_etl_workbench.tools.snapshots.service import (
+from atlas_mcp.tools.snapshots.service import (
     create_snapshot_download,
     create_snapshot_window,
 )
-from gds_etl_workbench.tools.snapshots.storage import SnapshotKind
+from atlas_mcp.tools.snapshots.storage import SnapshotKind
 
 
 class FakeSnapshotStore:

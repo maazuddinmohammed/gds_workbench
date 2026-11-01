@@ -1,9 +1,14 @@
 """Human Subject Area edits stage one validated change: nothing deleted, locks respected."""
 
 import pytest
-from gds_etl_workbench.application.project_snapshot import ProjectReviewSnapshot
-from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
-from gds_etl_workbench.domain.snapshots.project import ProjectChangeSetDataset
+from atlas_mcp.application.project_snapshot import ProjectReviewSnapshot
+from atlas_mcp.domain.errors import AtlasError, InvalidRequestError
+from atlas_mcp.domain.snapshots.project import ProjectChangeSetDataset
+from atlas_platform.features.project_change_sets.contracts import SaveSubjectAreaRequest
+from atlas_platform.features.project_change_sets.subject_areas import (
+    prepare_subject_area_change,
+)
+
 from tests.mcp.project_test_fixtures import (
     BRONZE_ORDERS,
     SOURCE_CUSTOMERS,
@@ -12,11 +17,6 @@ from tests.mcp.project_test_fixtures import (
     complete_project_graph,
     physical_object,
     snapshot_from_graph,
-)
-
-from gds_workbench_api.features.project_change_sets.contracts import SaveSubjectAreaRequest
-from gds_workbench_api.features.project_change_sets.subject_areas import (
-    prepare_subject_area_change,
 )
 
 type Graph = dict[ProjectChangeSetDataset, list[dict[str, object]]]
@@ -77,7 +77,7 @@ def _save(graph: Graph | None = None, **command: object) -> dict[str, list[dict[
 
 
 def _error_code(graph: Graph | None = None, **command: object) -> str:
-    with pytest.raises(WorkbenchError) as raised:
+    with pytest.raises(AtlasError) as raised:
         _save(graph, **command)
     return raised.value.code
 

@@ -54,19 +54,19 @@ cd artifacts/databricks-ui
 shasum -a 256 -c SHA256SUMS.txt
 ```
 
-Upload the expanded `gds-workbench-app-source` directory to an access-controlled
+Upload the expanded `atlas-platform-app-source` directory to an access-controlled
 Databricks Workspace location. Do not import the ZIP as notebooks; that can flatten
 Python/package paths. Verify this nesting before selecting the App source folder:
 
 ```text
-gds-workbench-app-source/
+atlas-platform-app-source/
 ├── app.yaml
 ├── DEPLOYMENT_GUIDE.md
 ├── package.json, package-lock.json
 ├── pyproject.toml, uv.lock
-├── mcp_server/gds_etl_workbench/
+├── mcp_server/atlas_mcp/
 └── web_app/
-    ├── backend/gds_workbench_api/
+    ├── backend/atlas_platform/
     └── frontend/src/
 ```
 

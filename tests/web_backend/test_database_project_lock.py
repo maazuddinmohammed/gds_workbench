@@ -5,22 +5,29 @@ from dataclasses import replace
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.project import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.application.change_sets.project import (
     load_project_physical_scope,
 )
-from gds_etl_workbench.application.change_sets.project_apply import ProjectMaterializer
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project_apply import ProjectMaterializer
+from atlas_mcp.application.change_sets.project_validation import (
     validate_future_graph,
 )
-from gds_etl_workbench.application.project_read import (
+from atlas_mcp.application.project_read import (
     ProjectReadContext,
     authorize_project_read,
 )
-from gds_etl_workbench.application.project_snapshot import build_project_snapshot
-from gds_etl_workbench.domain.authorization import ActorKind
-from gds_etl_workbench.domain.errors import WorkbenchError
+from atlas_mcp.application.project_snapshot import build_project_snapshot
+from atlas_mcp.domain.authorization import ActorKind
+from atlas_mcp.domain.errors import AtlasError
+from atlas_platform.capabilities import load_default_agent_capabilities
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.projects.command_contracts import SetProjectLockRequest
+from atlas_platform.features.projects.command_service import (
+    DatabaseProjectCommandService,
+)
 from psycopg import errors, sql
+
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.project_test_fixtures import complete_project_graph
 from tests.mcp.test_database_project_change_set_round_trip import (
@@ -28,13 +35,6 @@ from tests.mcp.test_database_project_change_set_round_trip import (
     _acquire_tenant_lock,
     _replace_codes,
     _seed_project_foundation,
-)
-
-from gds_workbench_api.capabilities import load_default_agent_capabilities
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.projects.command_contracts import SetProjectLockRequest
-from gds_workbench_api.features.projects.command_service import (
-    DatabaseProjectCommandService,
 )
 
 
@@ -189,7 +189,7 @@ async def test_project_lock_fences_graph_and_runtime_but_keeps_reads_and_metadat
                     "UPDATE project.project SET is_locked=FALSE WHERE project_id=%s",
                     (project_id,),
                 )
-        with pytest.raises(WorkbenchError) as denied:
+        with pytest.raises(AtlasError) as denied:
             await service.set_project_lock(
                 replace(principal, actor_kind=ActorKind.WORKLOAD),
                 tenant_id=tenant_id,
@@ -197,7 +197,7 @@ async def test_project_lock_fences_graph_and_runtime_but_keeps_reads_and_metadat
                 request=SetProjectLockRequest(expected_project_revision=2, is_locked=False),
             )
         assert denied.value.code == "authorization_denied"
-        with pytest.raises(WorkbenchError) as stale:
+        with pytest.raises(AtlasError) as stale:
             await service.set_project_lock(
                 principal,
                 tenant_id=tenant_id,
@@ -283,8 +283,8 @@ def test_project_lock_rejects_queued_work_and_locked_project_rejects_new_work(
 async def test_locked_project_mcp_reads_work_but_change_set_mutations_fail(
     web_postgres_database: DisposablePostgres,
 ) -> None:
-    from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
-    from gds_etl_workbench.tools.change_sets.project import (
+    from atlas_mcp.adapters.mcp.tool_audit import ToolCallAuditMiddleware
+    from atlas_mcp.tools.change_sets.project import (
         register_project_change_set_tools,
     )
     from mcp import Client

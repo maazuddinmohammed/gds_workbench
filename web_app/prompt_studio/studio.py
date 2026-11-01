@@ -32,16 +32,16 @@ IMPORTED = PROMPTS / "_imported.json"
 # Rendering, input contracts and tools come from the backend, so tests see what a Run sends.
 sys.path[:0] = [str(ROOT / "web_app" / "backend"), str(ROOT / "mcp_server")]
 
-from gds_workbench_api.features.workflows.authoring.agent_execution import (  # noqa: E402
+from atlas_platform.features.workflows.authoring.agent_execution import (  # noqa: E402
     AGENT_OUTPUT_CONTRACT_INSTRUCTION,
 )
-from gds_workbench_api.features.workflows.authoring.prompt_inputs import (  # noqa: E402
+from atlas_platform.features.workflows.authoring.prompt_inputs import (  # noqa: E402
     get_prompt_input_contract,
 )
-from gds_workbench_api.features.workflows.authoring.tool_configuration import (  # noqa: E402
+from atlas_platform.features.workflows.authoring.tool_configuration import (  # noqa: E402
     registered_tool_definitions,
 )
-from gds_workbench_api.prompt_rendering import (  # noqa: E402
+from atlas_platform.prompt_rendering import (  # noqa: E402
     PromptComponentTemplates,
     PromptVariableDefinition,
     render_prompt,
@@ -383,7 +383,7 @@ def compare_sections(current: str, seed: str, letter: str, names: set[str]) -> d
 
 def known_output_schema(stage: str) -> dict[str, Any] | None:
     """The `required_output_schema` the backend sends for stages whose schema is fixed."""
-    from gds_workbench_api.features.analysis import candidate
+    from atlas_platform.features.analysis import candidate
 
     if stage == "analysis.one_shot.per_table_authoring":
         return candidate._AnalysisTableCandidate.model_json_schema()  # noqa: SLF001

@@ -3,14 +3,14 @@
 from typing import Any, cast
 
 import pytest
-from gds_workbench_api.features.mapping.complete_candidate import (
+from atlas_platform.features.mapping.complete_candidate import (
     CompleteMappingCandidateValidator,
 )
-from gds_workbench_api.features.mapping.execution_context import (
+from atlas_platform.features.mapping.execution_context import (
     build_mapping_execution_context,
 )
-from gds_workbench_api.features.mapping.readiness import assess_mapping_readiness
-from gds_workbench_api.features.workflows.authoring.downstream_inputs import (
+from atlas_platform.features.mapping.readiness import assess_mapping_readiness
+from atlas_platform.features.workflows.authoring.downstream_inputs import (
     DownstreamContextReaders,
     project_downstream_inputs,
 )
@@ -251,9 +251,9 @@ async def test_unchanged_legacy_object_document_does_not_block_attribute_regener
 def test_logical_mapping_can_join_physical_inputs_with_schema_qualified_peer_lookups(
     mistake: str | None,
 ) -> None:
-    from gds_etl_workbench.domain.errors import InvalidRequestError
-    from gds_workbench_api.features.mapping.contracts import CompleteMappingCandidateV1
-    from gds_workbench_api.features.mapping.semantics import validate_mapping_references
+    from atlas_mcp.domain.errors import InvalidRequestError
+    from atlas_platform.features.mapping.contracts import CompleteMappingCandidateV1
+    from atlas_platform.features.mapping.semantics import validate_mapping_references
 
     preparation = mapping_preparation()
     lookup = mapping_preparation(
@@ -324,7 +324,7 @@ def test_logical_mapping_can_join_physical_inputs_with_schema_qualified_peer_loo
 def test_mixed_mapping_source_reader_selects_both_key_variants_without_id_aliasing() -> (
     None
 ):
-    from gds_workbench_api.features.workflows.authoring.agent_execution import (
+    from atlas_platform.features.workflows.authoring.agent_execution import (
         AgentContextToolRequestError,
     )
 
@@ -387,9 +387,9 @@ def test_mixed_mapping_source_reader_selects_both_key_variants_without_id_aliasi
 def test_dimensional_mapping_can_join_logical_inputs_with_gold_peer_lookups(
     mistake: str | None,
 ) -> None:
-    from gds_etl_workbench.domain.errors import InvalidRequestError
-    from gds_workbench_api.features.mapping.contracts import CompleteMappingCandidateV1
-    from gds_workbench_api.features.mapping.semantics import validate_mapping_references
+    from atlas_mcp.domain.errors import InvalidRequestError
+    from atlas_platform.features.mapping.contracts import CompleteMappingCandidateV1
+    from atlas_platform.features.mapping.semantics import validate_mapping_references
 
     preparation = mapping_preparation(modeled_entity_type="dimensional_entity")
     logical_source = preparation.context.sources[0]

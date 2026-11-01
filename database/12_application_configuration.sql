@@ -1,4 +1,4 @@
--- GDS ETL Workbench Release 1: application configuration and authoring policy.
+-- Atlas Release 1: application configuration and authoring policy.
 
 CREATE SCHEMA application;
 

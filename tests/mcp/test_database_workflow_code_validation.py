@@ -8,6 +8,7 @@ from uuid import uuid4
 import pytest
 from psycopg.errors import CheckViolation, ForeignKeyViolation, UniqueViolation
 from psycopg.types.json import Jsonb
+
 from tests.mcp.database_test_support import require_row
 
 if TYPE_CHECKING:

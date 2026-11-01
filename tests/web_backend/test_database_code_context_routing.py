@@ -6,7 +6,7 @@
 from typing import Any
 from uuid import uuid4
 
-from gds_etl_workbench.application.mapping_context import project_mapping_inputs
+from atlas_mcp.application.mapping_context import project_mapping_inputs
 from psycopg.types.json import Jsonb
 
 from tests.mcp.conftest import DisposablePostgres

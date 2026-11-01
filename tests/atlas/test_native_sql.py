@@ -83,8 +83,8 @@ import(pathToFileURL(process.argv[3]).href);
         [
             "node",
             str(capture),
-            str(HELPER.parent.parent / "workbench/validation/sql.js"),
-            str(ROOT / "tests/atlas/workbench-sql.test.mjs"),
+            str(HELPER.parent.parent / "atlas-local-workbench/validation/sql.js"),
+            str(ROOT / "tests/atlas/local-workbench-sql.test.mjs"),
             str(captured),
         ],
         capture_output=True,

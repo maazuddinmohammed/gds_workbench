@@ -17,7 +17,7 @@ python3 -m http.server 4324 --bind 127.0.0.1 --directory web_app/frontend/protot
 ```
 
 Open <http://127.0.0.1:4324/?variant=signature&surface=web>.
-The bottom switcher compares colour placement. Top tabs show web, Workbench,
+The bottom switcher compares colour placement. Top tabs show web, Atlas Local Workbench,
 Tenant entry, logo construction, and the source-backed rationale.
 Left/right arrows also switch directions when focus is outside interactive controls.
 
@@ -59,10 +59,10 @@ These are public-site references, not an internal brand-guide certification.
 ## Review performed
 
 - JavaScript syntax check.
-- Desktop visual review of all three new directions in web, Workbench and entry.
+- Desktop visual review of all three new directions in web, Atlas Local Workbench and entry.
 - Shared Meridian construction inspected at 16–176px, positive and reversed.
 - 391px responsive checks: no document overflow across all four web variants
-  and the three new Workbench variants; data tables retain their own scroll area.
+  and the three new Atlas Local Workbench variants; data tables retain their own scroll area.
 - Search, empty search, Tenant entry enablement, filtering, record inspector,
   attributes dialog, synthetic add-object flow and local validation feedback.
 - Comparison buttons preserve keyboard focus after a re-render.

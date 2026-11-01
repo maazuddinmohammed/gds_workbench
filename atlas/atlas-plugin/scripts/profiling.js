@@ -1,7 +1,7 @@
 "use strict";
 
 // SQL shape mirrors the server's aggregate planner; parity is tested in Python.
-const { normalize } = require("../workbench/core.js");
+const { normalize } = require("../atlas-local-workbench/core.js");
 const fields = ["tenant_code", "system_code", "connection_code", "object_schema", "object_name"];
 const norm = (value) => normalize("metadata", "object_name", value);
 const key = (row, prefix = "") => JSON.stringify(fields.map((field) => norm(row[prefix + field])));

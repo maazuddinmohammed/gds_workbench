@@ -4,10 +4,10 @@ import json
 from decimal import Decimal
 
 import pytest
-from gds_etl_workbench.configuration import ConfigurationError
-from gds_workbench_api.configuration import RuntimeSettings
-from gds_workbench_api.features.workflows.usage.contracts import FoundryModelPricing
-from gds_workbench_api.integrations.agents.configuration import (
+from atlas_mcp.configuration import ConfigurationError
+from atlas_platform.configuration import RuntimeSettings
+from atlas_platform.features.workflows.usage.contracts import FoundryModelPricing
+from atlas_platform.integrations.agents.configuration import (
     AgentRuntimeConfiguration,
 )
 from pydantic import ValidationError

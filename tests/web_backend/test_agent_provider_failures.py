@@ -10,15 +10,15 @@ import httpx2
 import pytest
 from agents import ModelSettings
 from agents.exceptions import ModelTimeoutError
-from azure.core.exceptions import ClientAuthenticationError
-from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
+from atlas_mcp.domain.errors import AtlasError
+from atlas_platform.features.workflows.authoring.agent_execution import (
     AgentContextToolRequestError,
     AgentExecutionFailedError,
     AgentFailureReason,
     LocalAgentToolDefinition,
 )
-from gds_workbench_api.integrations.agents import LocalFakeAgentAdapter, adapters
+from atlas_platform.integrations.agents import LocalFakeAgentAdapter, adapters
+from azure.core.exceptions import ClientAuthenticationError
 from pydantic import JsonValue, SecretStr
 
 from tests.web_backend import (
@@ -174,7 +174,7 @@ async def test_real_sdk_redacts_authentication_failure_during_a_later_tool_turn(
         return httpx2.Response(200, json=_responses_response(None, tool=True))
 
     monkeypatch.setattr(FixtureAuthentication, "authenticate", authenticate)
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await _router(monkeypatch, None, handler).execute(_request(tools=True))
 
     assert captured.value.code == "agent_authentication_failed"
@@ -217,7 +217,7 @@ async def test_real_sdk_classifies_structured_provider_errors_without_messages(
             },
         )
 
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await _router(monkeypatch, None, handler).execute(_request())
     assert captured.value.code == public_code
     assert "private-marker" not in str(captured.value)
@@ -233,7 +233,7 @@ async def test_real_sdk_classifies_transport_failures(
         error_type = httpx2.ReadTimeout if transport_timeout else httpx2.ConnectError
         raise error_type("private-marker", request=request)
 
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await _router(monkeypatch, None, handler).execute(_request())
     assert captured.value.code == (
         "agent_timeout" if transport_timeout else "agent_provider_unavailable"
@@ -286,7 +286,7 @@ async def test_real_sdk_rejects_truncation_before_candidate_or_tool_acceptance(
     request = _request(tools=output == "tool")
     if output == "tool":
         request = request.model_copy(update={"local_tool_catalog": Catalog()})
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await _router(monkeypatch, recorder, handler).execute(request)
     assert captured.value.code == "agent_output_truncated"
     assert sends == 1 and tool_calls == 0
@@ -317,7 +317,7 @@ async def test_real_sdk_preserves_safe_tool_errors_and_redacts_unexpected_tool_e
         assert request.url.path.endswith("/responses")
         return httpx2.Response(200, json=_responses_response(None, tool=True))
 
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await _router(monkeypatch, None, handler).execute(
             _request(tools=True).model_copy(update={"local_tool_catalog": Catalog()})
         )
@@ -336,7 +336,7 @@ async def test_real_sdk_turn_exhaustion_is_distinct_from_provider_failure(
         assert request.url.path.endswith("/responses")
         return httpx2.Response(200, json=_responses_response(None, tool=True))
 
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await _router(monkeypatch, None, handler).execute(
             _request(tools=True, max_turns=1)
         )
@@ -365,7 +365,7 @@ async def test_adapter_classifies_sdk_timeout_and_entra_authentication(
         pytest.fail("No HTTP expected")
 
     monkeypatch.setattr(adapters.Runner, "run", fail)
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await _router(monkeypatch, None, handler).execute(_request())
     assert captured.value.code == public_code
     assert "private-marker" not in str(captured.value)
@@ -381,7 +381,7 @@ async def test_real_sdk_rejects_filtered_output_even_when_json_is_valid(
         )
         return httpx2.Response(200, json=payload)
 
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await _router(monkeypatch, None, handler).execute(_request())
     assert captured.value.code == "agent_output_refused"
 
@@ -474,7 +474,7 @@ async def test_every_authoring_workflow_persists_safe_stage_failure_without_hand
     execute = AsyncMock(side_effect=error)
     monkeypatch.setattr(agent, "execute", execute)
 
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await service.execute_started(
             analysis._principal(),
             tenant_id=7,

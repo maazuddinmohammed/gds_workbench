@@ -5,24 +5,24 @@
 
 from typing import Any, LiteralString, cast
 
-from gds_etl_workbench.application.mapping_context import project_mapping_inputs
+from atlas_mcp.application.mapping_context import project_mapping_inputs
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.mapping import assess_mapping_readiness
+from atlas_platform.features.mapping.preparation_contracts import (
+    MappingModeledEntity,
+)
+from atlas_platform.features.workflows.authoring.downstream_contracts import (
+    CONTRACTS,
+)
 from jsonschema import Draft202012Validator
 from psycopg.types.json import Jsonb
+
 from tests.mcp.conftest import DisposablePostgres
 from tests.web_backend.test_database_mapping_source_context import (
     _load,
     _seed_mapping_scope,
 )
 from tests.web_backend.test_database_project_change_sets import _required_id
-
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.mapping import assess_mapping_readiness
-from gds_workbench_api.features.mapping.preparation_contracts import (
-    MappingModeledEntity,
-)
-from gds_workbench_api.features.workflows.authoring.downstream_contracts import (
-    CONTRACTS,
-)
 
 
 async def test_logical_peer_lookup_metadata_is_authorized_and_invalidates_code(

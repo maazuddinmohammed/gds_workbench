@@ -3,11 +3,11 @@
 from typing import cast
 
 import pytest
-from gds_workbench_api.features.mapping.complete_candidate import (
+from atlas_platform.features.mapping.complete_candidate import (
     CompleteMappingCandidateValidator,
 )
-from gds_workbench_api.features.mapping.preparation_contracts import ModeledEntityType
-from gds_workbench_api.features.mapping.readiness import assess_mapping_readiness
+from atlas_platform.features.mapping.preparation_contracts import ModeledEntityType
+from atlas_platform.features.mapping.readiness import assess_mapping_readiness
 from mapping_fixtures import mapping_candidate, mapping_preparation
 from pydantic import JsonValue
 

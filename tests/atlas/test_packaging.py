@@ -22,7 +22,7 @@ PLUGIN_ROOT = ROOT / "atlas" / "atlas-plugin"
 def test_brand_assets_match_across_independent_packages() -> None:
     """Keep separately shipped favicons, header marks and extension identity aligned."""
     favicon = (ROOT / "web_app/frontend/public/assets/atlas.svg").read_bytes()
-    assert (PLUGIN_ROOT / "workbench/atlas.svg").read_bytes() == favicon
+    assert (PLUGIN_ROOT / "atlas-local-workbench/atlas.svg").read_bytes() == favicon
     artwork = ET.fromstring(favicon)
     assert artwork.attrib["viewBox"] == "0 0 32 32"
     paths = artwork.findall("{http://www.w3.org/2000/svg}path")
@@ -35,7 +35,7 @@ def test_brand_assets_match_across_independent_packages() -> None:
     )
     for header, asset_source in (
         (web_header, "src={atlasMarkUrl}"),
-        (PLUGIN_ROOT / "workbench/app.js", 'src="atlas.svg"'),
+        (PLUGIN_ROOT / "atlas-local-workbench/app.js", 'src="atlas.svg"'),
     ):
         source = header.read_text(encoding="utf-8")
         assert f'{asset_source} width="32" height="32"' in source
@@ -47,20 +47,20 @@ def test_brand_assets_match_across_independent_packages() -> None:
         "OFL.txt",
     }
     web_fonts = ROOT / "web_app/frontend/public/assets/fonts"
-    workbench_fonts = PLUGIN_ROOT / "workbench/fonts"
+    local_workbench_fonts = PLUGIN_ROOT / "atlas-local-workbench/fonts"
     assert {path.name for path in web_fonts.iterdir()} == font_names
-    assert {path.name for path in workbench_fonts.iterdir()} == font_names | {"fonts.css"}
+    assert {path.name for path in local_workbench_fonts.iterdir()} == font_names | {"fonts.css"}
     for name in font_names:
-        assert (workbench_fonts / name).read_bytes() == (web_fonts / name).read_bytes()
+        assert (local_workbench_fonts / name).read_bytes() == (web_fonts / name).read_bytes()
     embedded_fonts = re.findall(
         r"data:font/woff2;base64,([A-Za-z0-9+/=]+)",
-        (workbench_fonts / "fonts.css").read_text(encoding="utf-8"),
+        (local_workbench_fonts / "fonts.css").read_text(encoding="utf-8"),
     )
     assert len(embedded_fonts) == 3
     assert {base64.b64decode(font, validate=True) for font in embedded_fonts} == {
         (web_fonts / name).read_bytes() for name in font_names if name.endswith(".woff2")
     }
-    extension = ROOT / "atlas/atlas-vs-code"
+    extension = ROOT / "atlas/atlas-bridge"
     manifest = json.loads((extension / "package.json").read_text(encoding="utf-8"))
     png = (extension / manifest["icon"]).read_bytes()
     assert png[:8] == b"\x89PNG\r\n\x1a\n"
@@ -124,10 +124,10 @@ def test_archive_round_trip_and_reproducibility(tmp_path: Path) -> None:
         assert "atlas/docs/workbench-design.md" not in expected
         assert "atlas/docs/extension-design.md" not in expected
         assert "atlas/docs/validation-index.md" not in expected
-        assert "atlas/workbench/README.md" not in expected
+        assert "atlas/atlas-local-workbench/README.md" not in expected
         assert "atlas/mcp.json" in expected
         assert "atlas/scripts/atlas-local.js" in expected
-        assert "atlas/workbench/validation/run.js" in expected
+        assert "atlas/atlas-local-workbench/validation/run.js" in expected
         assert all((info.external_attr >> 16) & 0o170000 == 0o100000 for info in archive.infolist())
         archive.extractall(tmp_path / "extracted")
 
@@ -186,11 +186,11 @@ def test_archive_round_trip_and_reproducibility(tmp_path: Path) -> None:
                 assert unquote(link.fragment) in anchors, (document, destination)
 
 
-def test_stage_runner_vsix_matches_source() -> None:
-    extension = ROOT / "atlas/atlas-vs-code"
+def test_atlas_bridge_vsix_matches_source() -> None:
+    extension = ROOT / "atlas/atlas-bridge"
     manifest = json.loads((extension / "package.json").read_text(encoding="utf-8"))
     with zipfile.ZipFile(
-        ROOT / "atlas/dist" / f"atlas-stage-runner-{manifest['version']}.vsix"
+        ROOT / "atlas/dist" / f"atlas-bridge-{manifest['version']}.vsix"
     ) as archive:
         for packaged, source in (
             ("package.json", "package.json"),
@@ -200,11 +200,11 @@ def test_stage_runner_vsix_matches_source() -> None:
             assert archive.read(f"extension/{packaged}") == (extension / source).read_bytes()
         packaged_manifest = json.loads(archive.read("extension/package.json"))
         assert packaged_manifest["contributes"]["commands"] == [
-            {"command": "atlasStageRunner.check", "title": "ATLAS: Check Stage Runner"}
+            {"command": "atlasBridge.check", "title": "ATLAS: Check Bridge"}
         ]
         assert {
             tool["name"] for tool in packaged_manifest["contributes"]["languageModelTools"]
-        } == {"atlas_checkStageRunner", "atlas_stageApprovedManifest"}
+        } == {"atlas_checkBridge", "atlas_stageApprovedManifest"}
 
 
 def test_existing_output_and_source_directory_are_preserved(tmp_path: Path) -> None:
@@ -240,13 +240,13 @@ def test_invalid_package_inputs_fail_before_writing(
     elif addition == "private-file":
         (fixture / "docs" / ".env").write_text("synthetic fixture; not package content")
     elif addition == "unreviewed-font":
-        (fixture / "workbench/fonts/Other.woff2").write_bytes(b"synthetic fixture")
+        (fixture / "atlas-local-workbench/fonts/Other.woff2").write_bytes(b"synthetic fixture")
     elif addition == "font-script":
-        (fixture / "workbench/fonts/Other.js").write_text("synthetic fixture")
+        (fixture / "atlas-local-workbench/fonts/Other.js").write_text("synthetic fixture")
     elif addition == "font-stylesheet":
-        (fixture / "workbench/fonts/Other.css").write_text("synthetic fixture")
+        (fixture / "atlas-local-workbench/fonts/Other.css").write_text("synthetic fixture")
     elif addition == "text-file":
-        (fixture / "workbench/unreviewed.txt").write_text("synthetic fixture")
+        (fixture / "atlas-local-workbench/unreviewed.txt").write_text("synthetic fixture")
     else:
         (fixture / "plugin.json").write_text("{}")
     monkeypatch.setattr(build_plugin, "PLUGIN_ROOT", fixture)

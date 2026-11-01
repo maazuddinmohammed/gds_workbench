@@ -1,8 +1,8 @@
 """Databricks exports preserve project definitions without executing SQL."""
 
 import pytest
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_workbench_api.features.project_targets.ddl import build_project_ddl
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_platform.features.project_targets.ddl import build_project_ddl
 from sqlglot import parse
 
 

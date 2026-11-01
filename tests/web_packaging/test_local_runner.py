@@ -150,7 +150,7 @@ def test_compose_cleanup_always_disposes_volumes(
         command for command in calls if command[:3] == ["docker", "image", "rm"]
     )
     assert len(image_removal) == 4
-    image_suffix = image_removal[3].removeprefix("gds-workbench-app:local-")
+    image_suffix = image_removal[3].removeprefix("atlas-platform-app:local-")
     assert re.fullmatch(r"[0-9a-f]{12}", image_suffix)
 
 

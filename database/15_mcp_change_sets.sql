@@ -1,4 +1,4 @@
--- GDS ETL Workbench Release 1: governed MCP Change Sets and runtime lookup.
+-- Atlas Release 1: governed MCP Change Sets and runtime lookup.
 
 CREATE SCHEMA mcp;
 

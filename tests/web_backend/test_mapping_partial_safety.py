@@ -3,14 +3,14 @@
 from typing import cast
 
 import pytest
-from gds_workbench_api.features.mapping.complete_candidate import (
+from atlas_platform.features.mapping.complete_candidate import (
     CompleteMappingCandidateValidator,
 )
-from gds_workbench_api.features.mapping.contracts import (
+from atlas_platform.features.mapping.contracts import (
     MappingAttributeCandidate,
     MappingObjectCandidate,
 )
-from gds_workbench_api.features.mapping.readiness import assess_mapping_readiness
+from atlas_platform.features.mapping.readiness import assess_mapping_readiness
 from pydantic import JsonValue, ValidationError
 
 from tests.web_backend.mapping_fixtures import mapping_preparation

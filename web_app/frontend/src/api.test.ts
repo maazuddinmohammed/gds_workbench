@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ApiError, createApiClient } from "./api";
 
-describe("Workbench API client", () => {
+describe("Atlas Platform API client", () => {
   it("uses only the same-origin tenant entry routes", async () => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse({

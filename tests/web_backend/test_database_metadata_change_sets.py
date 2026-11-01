@@ -2,24 +2,24 @@ from typing import Protocol
 from uuid import UUID, uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import (
     DraftRevisionConflictError,
     MetadataChangeSetNotFoundError,
     TenantLockRequiredError,
 )
-from gds_etl_workbench.domain.snapshots.metadata import DATASETS_BY_NAME
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.metadata.workbook import (
+from atlas_mcp.domain.snapshots.metadata import DATASETS_BY_NAME
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.metadata.workbook import (
     MetadataWorkbookSheet,
     build_metadata_workbook,
 )
-from gds_workbench_api.features.metadata_change_sets.contracts import (
+from atlas_platform.features.metadata_change_sets.contracts import (
     CreateMetadataChangeSetRequest,
     ExpectedDraftRevisionRequest,
 )
-from gds_workbench_api.features.metadata_change_sets.service import (
+from atlas_platform.features.metadata_change_sets.service import (
     DatabaseMetadataChangeSetService,
 )
 from psycopg import Connection

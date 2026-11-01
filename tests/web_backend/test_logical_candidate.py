@@ -5,28 +5,28 @@ from copy import deepcopy
 from typing import Any, cast
 
 import pytest
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project_validation import (
     PhysicalProjectCatalog,
     ProjectValidationIssue,
     validate_future_graph,
 )
-from gds_etl_workbench.domain.modeling_records import (
+from atlas_mcp.domain.modeling_records import (
     LogicalAttributeRecord,
     LogicalEntityRecord,
     LogicalRelationshipRecord,
     PhysicalAttributeKey,
     PhysicalObjectKey,
 )
-from gds_etl_workbench.domain.snapshots.project import (
+from atlas_mcp.domain.snapshots.project import (
     LogicalSection,
     ProjectChangeSetDataset,
 )
+from atlas_platform.features.logical.candidate import LogicalCandidateValidator
+from atlas_platform.features.logical.policy import project_logical_audit_policy
 from jsonschema import Draft202012Validator
 from pydantic import JsonValue
-from tests.mcp.project_test_fixtures import LOGICAL_ENTITY_TYPES, snapshot_from_graph
 
-from gds_workbench_api.features.logical.candidate import LogicalCandidateValidator
-from gds_workbench_api.features.logical.policy import project_logical_audit_policy
+from tests.mcp.project_test_fixtures import LOGICAL_ENTITY_TYPES, snapshot_from_graph
 
 
 def _object(name: str = "customer_raw") -> PhysicalObjectKey:

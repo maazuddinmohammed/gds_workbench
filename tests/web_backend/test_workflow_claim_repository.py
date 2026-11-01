@@ -5,8 +5,8 @@ from typing import Any, LiteralString
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from gds_workbench_api.features.workflows.execution import (
+from atlas_mcp.infrastructure.postgres import ReadIsolation
+from atlas_platform.features.workflows.execution import (
     DatabaseWorkflowClaimRepository,
 )
 from pydantic import ValidationError

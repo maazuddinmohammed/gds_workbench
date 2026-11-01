@@ -167,7 +167,7 @@ def run_local(*, frontend_port: int, api_port: int) -> int:
     values = build_local_environment(frontend_port=frontend_port, api_port=api_port)
     lane_name = values["GDS_LOCAL_PROJECT_NAME"]
 
-    with tempfile.TemporaryDirectory(prefix="gds-workbench-local-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="atlas-platform-local-") as temporary:
         environment_file = write_environment_file(Path(temporary), values)
         compose = _compose_base(
             compose_command=compose_command,
@@ -196,7 +196,7 @@ def run_local(*, frontend_port: int, api_port: int) -> int:
                     "docker",
                     "image",
                     "rm",
-                    f"gds-workbench-app:local-{image_suffix}",
+                    f"atlas-platform-app:local-{image_suffix}",
                 ],
                 check=False,
                 capture_output=True,

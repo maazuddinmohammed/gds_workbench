@@ -9,26 +9,28 @@ from unittest.mock import AsyncMock
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.metadata_enrichment.contracts import MetadataEnrichmentContext
-from gds_workbench_api.features.metadata_enrichment.evidence import MetadataEvidenceReader
-from gds_workbench_api.features.metadata_enrichment.repository import (
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import AtlasError
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.metadata_enrichment.contracts import (
+    MetadataEnrichmentContext,
+)
+from atlas_platform.features.metadata_enrichment.evidence import MetadataEvidenceReader
+from atlas_platform.features.metadata_enrichment.repository import (
     MetadataEnrichmentRepository,
 )
-from gds_workbench_api.features.metadata_enrichment.service import (
+from atlas_platform.features.metadata_enrichment.service import (
     DatabaseMetadataEnrichmentExecutor,
 )
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
+from atlas_platform.features.workflows.authoring.lifecycle import (
     DatabaseAgentWorkflowLifecycle,
 )
-from gds_workbench_api.features.workflows.authoring.plan import (
+from atlas_platform.features.workflows.authoring.plan import (
     AgentRunPlan,
     AgentRunPlanTransaction,
     PostgresAgentRunPlanRepository,
 )
-from gds_workbench_api.features.workflows.execution import DatabaseWorkflowClaimRepository
+from atlas_platform.features.workflows.execution import DatabaseWorkflowClaimRepository
 
 from tests.mcp.enrichment_test_support import seed_project_enrichment
 from tests.mcp.test_database_metadata_enrichment_execution import _start
@@ -217,7 +219,7 @@ async def test_enrichment_rechecks_claim_after_preparation_before_provider_calls
                     ),
                 )
         resume.set()
-        with pytest.raises(WorkbenchError):
+        with pytest.raises(AtlasError):
             await asyncio.wait_for(execution, timeout=3)
         evidence.assert_not_awaited()
         agent.execute.assert_not_awaited()

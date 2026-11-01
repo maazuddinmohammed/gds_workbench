@@ -4,10 +4,10 @@
 from typing import Any, cast
 
 import pytest
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project_validation import (
     validate_future_graph,
 )
-from gds_workbench_api.features.workflows.authoring.repair import (
+from atlas_platform.features.workflows.authoring.repair import (
     AgentCandidateValidationError,
 )
 from pydantic import JsonValue

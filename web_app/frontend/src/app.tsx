@@ -18,7 +18,7 @@ import {
   type RouterHistory,
 } from "@tanstack/react-router";
 
-import type { WorkbenchApi } from "./api";
+import type { AtlasPlatformApi } from "./api";
 import { validateProfilingRouteSearch } from "./features/profiling/api";
 import { ProfilingObjectDetailPage } from "./features/profiling/ProfilingDetail";
 import { ProfilingScreen } from "./features/profiling/ProfilingScreen";
@@ -73,7 +73,7 @@ import {
 } from "./shared/ui";
 
 interface RouterContext {
-  api: WorkbenchApi;
+  api: AtlasPlatformApi;
   queryClient: QueryClient;
 }
 
@@ -451,8 +451,8 @@ const routeTree = rootRoute.addChildren([
   tenantProjectDimensionalRelationshipRoute,
 ]);
 
-export function createWorkbenchRouter(options: {
-  api: WorkbenchApi;
+export function createAtlasPlatformRouter(options: {
+  api: AtlasPlatformApi;
   history?: RouterHistory;
 }) {
   const queryClient = new QueryClient({
@@ -476,15 +476,15 @@ export function createWorkbenchRouter(options: {
   });
 }
 
-export type WorkbenchRouter = ReturnType<typeof createWorkbenchRouter>;
+export type AtlasPlatformRouter = ReturnType<typeof createAtlasPlatformRouter>;
 
 declare module "@tanstack/react-router" {
   interface Register {
-    router: WorkbenchRouter;
+    router: AtlasPlatformRouter;
   }
 }
 
-export function WorkbenchApp({ router }: { router: WorkbenchRouter }) {
+export function AtlasPlatformApp({ router }: { router: AtlasPlatformRouter }) {
   return (
     <QueryClientProvider client={router.options.context.queryClient}>
       <RouterProvider router={router} />
@@ -646,7 +646,7 @@ function TenantMappingDetail({
   kind,
   systemCode,
 }: {
-  api: WorkbenchApi;
+  api: AtlasPlatformApi;
   tenantId: number;
   projectId: number;
   detailId: number;
@@ -1237,7 +1237,7 @@ function LogicalDetailRoute({
   detailId,
   kind,
 }: {
-  api: WorkbenchApi;
+  api: AtlasPlatformApi;
   tenantId: number;
   projectId: number;
   detailId: number;
@@ -1391,7 +1391,7 @@ function DimensionalDetailRoute({
   detailId,
   kind,
 }: {
-  api: WorkbenchApi;
+  api: AtlasPlatformApi;
   tenantId: number;
   projectId: number;
   detailId: number;

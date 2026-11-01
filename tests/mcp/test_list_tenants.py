@@ -6,18 +6,17 @@ from dataclasses import dataclass, field
 from typing import Any, LiteralString
 
 import pytest
-from mcp import Client
-
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.adapters.mcp.server import create_mcp_server
-from gds_etl_workbench.configuration import RuntimeSettings
-from gds_etl_workbench.infrastructure.postgres import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.adapters.mcp.server import create_mcp_server
+from atlas_mcp.configuration import RuntimeSettings
+from atlas_mcp.infrastructure.postgres import (
     ReadinessRecord,
     ReadIsolation,
     ReadTransaction,
     ToolCallLogRecord,
 )
-from gds_etl_workbench.tools.tenants.list_tenants import ListTenantsResult
+from atlas_mcp.tools.tenants.list_tenants import ListTenantsResult
+from mcp import Client
 
 
 @dataclass

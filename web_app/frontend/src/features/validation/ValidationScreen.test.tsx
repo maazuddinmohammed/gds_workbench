@@ -5,7 +5,7 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createApiClient } from "../../api";
-import { WorkbenchApp, createWorkbenchRouter } from "../../app";
+import { AtlasPlatformApp, createAtlasPlatformRouter } from "../../app";
 import { validateSelectedSystemCodes } from "./ValidationRunDialog";
 import type { ValidationValidationGroup } from "./api";
 
@@ -89,7 +89,7 @@ describe("Validation journey", () => {
 
   it("keeps the legacy Project picker bookmark usable", async () => {
     const fetcher = validationFetchStub();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/validation"] }),
     })} />);
@@ -106,7 +106,7 @@ describe("Validation journey", () => {
   it("keeps the Group page and opens only SQL checks in an expandable inspector", async () => {
     const user = userEvent.setup();
     const history = createMemoryHistory({ initialEntries: ["/tenants/7/validation/projects/18?layer=dimensional"] });
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(validationFetchStub()), history })} />);
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(validationFetchStub()), history })} />);
     const groups = await screen.findByRole("table", { name: "Validation Groups" });
     expect(within(groups).getAllByRole("columnheader").slice(1, 5).map((cell) => cell.textContent)).toEqual(["System", "Group", "Group description", "Checks"]);
     expect(within(groups).queryByText("Shared across layers")).not.toBeInTheDocument();
@@ -206,7 +206,7 @@ describe("Validation journey", () => {
   it.each(["logical", "dimensional"] as const)("starts %s Validation with exact Systems", async (layer) => {
     const fetcher = validationFetchStub();
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: [`/tenants/7/validation/projects/18?layer=${layer}`] }),
     })} />);
@@ -275,7 +275,7 @@ describe("Validation journey", () => {
       return success(input, init);
     });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/validation/projects/18"] }),
     })} />);
@@ -344,7 +344,7 @@ describe("Validation journey", () => {
 
   it("traps focus, closes with Escape, and restores the Validation trigger", async () => {
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(validationFetchStub()),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/validation/projects/18"] }),
     })} />);
@@ -403,7 +403,7 @@ describe("Validation journey", () => {
 });
 
 function renderValidation(fetcher: ReturnType<typeof vi.fn<typeof fetch>>, path = "") {
-  return render(<WorkbenchApp router={createWorkbenchRouter({
+  return render(<AtlasPlatformApp router={createAtlasPlatformRouter({
     api: createApiClient(fetcher),
     history: createMemoryHistory({ initialEntries: [`/tenants/7/validation/projects/18${path}`] }),
   })} />);
@@ -647,7 +647,7 @@ const runningRun = {
 it.each([["Groups", "validation_group", 91], ["Checks", "validation_check", 301]] as const)(
   "reviews selected Validation %s", async (kind, dataset, id) => {
     const { fetcher, commands } = withRecordReview(validationFetchStub());
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/validation/projects/18"] }),
     })} />);
     const user = userEvent.setup();

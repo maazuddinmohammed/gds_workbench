@@ -681,7 +681,7 @@ function Resolve-Member([string]$Root, [string]$RelativePath, $Members) {
 
 function ConvertTo-Casefold([string]$Value) {
     if ($null -eq $script:CasefoldMap) {
-        $mapPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'workbench\unicode-casefold.json'
+        $mapPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'atlas-local-workbench\unicode-casefold.json'
         $script:CasefoldMap = Read-Json $mapPath 'Unicode casefold table'
     }
     $builder = New-Object Text.StringBuilder
@@ -984,7 +984,7 @@ function Get-DatasetSchema($Context, $Dataset) {
     return Read-Json (Resolve-Member $Context.Root ([string]$Dataset.schema_file) $Context.Members) "$($Dataset.name) schema"
 }
 
-# Atlas reads these from Snapshots only; mirrors WEB_MANAGED_PROJECT_DATASETS in workbench/core.js.
+# Atlas reads these from Snapshots only; mirrors WEB_MANAGED_PROJECT_DATASETS in atlas-local-workbench/core.js.
 $script:WebManagedProjectDatasets = @('profiling_profile', 'project_input_scope')
 
 function Assert-Draftable($Context, $Dataset) {

@@ -1,8 +1,8 @@
 import asyncio
 
 import pytest
-from gds_etl_workbench.configuration import ConfigurationError
-from gds_workbench_api.app_process import (
+from atlas_mcp.configuration import ConfigurationError
+from atlas_platform.app_process import (
     COORDINATED_SHUTDOWN_SECONDS,
     DATABRICKS_SHUTDOWN_DEADLINE_SECONDS,
     HTTP_SHUTDOWN_SECONDS,

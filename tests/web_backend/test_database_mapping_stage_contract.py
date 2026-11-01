@@ -9,21 +9,21 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_workbench_api.features.mapping.service import MappingWorkflow
-from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_platform.features.mapping.service import MappingWorkflow
+from atlas_platform.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetFinalizationResult,
     WorkflowChangeSetHandoffResult,
 )
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
+from atlas_platform.features.workflows.authoring.lifecycle import (
     AgentWorkflowTerminalResult,
 )
-from gds_workbench_api.features.workflows.authoring.plan import (
+from atlas_platform.features.workflows.authoring.plan import (
     FrozenAgentStage,
     WorkflowExecutionMode,
 )
-from gds_workbench_api.integrations.agents import LocalFakeAgentAdapter
-from gds_workbench_api.prompt_rendering import (
+from atlas_platform.integrations.agents import LocalFakeAgentAdapter
+from atlas_platform.prompt_rendering import (
     PromptComponentTemplates,
     PromptVariableDefinition,
 )

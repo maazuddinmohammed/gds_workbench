@@ -4,13 +4,12 @@ from typing import Any, LiteralString
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.domain.errors import WorkbenchError
-from pydantic import ValidationError
-
-from gds_workbench_api.features.workflows.authoring.plan import (
+from atlas_mcp.domain.errors import AtlasError
+from atlas_platform.features.workflows.authoring.plan import (
     AgentRunPlan,
     PostgresAgentRunPlanRepository,
 )
+from pydantic import ValidationError
 
 
 def _stage_row(
@@ -158,7 +157,7 @@ async def test_repository_rejects_incomplete_prompt_stage_coverage_safely() -> N
     rows = [_stage_row(variable_id=None)]
     rows[0]["expected_stage_count"] = 2
 
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await PostgresAgentRunPlanRepository().load(
             PlanTransaction(rows=rows),
             tenant_id=7,
@@ -172,7 +171,7 @@ async def test_repository_rejects_incomplete_prompt_stage_coverage_safely() -> N
 
 @pytest.mark.asyncio
 async def test_repository_rejects_changed_or_incomplete_object_selection() -> None:
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await PostgresAgentRunPlanRepository().load(
             PlanTransaction(selection=[{"object_id": 501, "selection_order": 1}]),
             tenant_id=7,
@@ -191,7 +190,7 @@ async def test_repository_rejects_inconsistent_frozen_correlation() -> None:
     ]
     rows[1]["correlation_id"] = UUID("44444444-4444-4444-4444-444444444444")
 
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await PostgresAgentRunPlanRepository().load(
             PlanTransaction(rows=rows),
             tenant_id=7,
@@ -219,7 +218,7 @@ async def test_plan_freezes_tool_permissions_and_rejects_inconsistent_rows() -> 
     )
     assert plan.stages[0].agent_tool_names == ("get_agent_context_dataset",)
     rows[1]["agent_tool_names"] = None
-    with pytest.raises(WorkbenchError):
+    with pytest.raises(AtlasError):
         await PostgresAgentRunPlanRepository().load(
             PlanTransaction(rows=rows),
             tenant_id=7,
@@ -319,7 +318,7 @@ async def test_repository_loads_optimize_without_subject_areas() -> None:
 async def test_repository_rejects_missing_or_inconsistent_build_subject_areas(
     subject_areas: list[dict[str, Any]],
 ) -> None:
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await PostgresAgentRunPlanRepository().load(
             PlanTransaction(rows=[_logical_row("build")], subject_areas=subject_areas),
             tenant_id=7,

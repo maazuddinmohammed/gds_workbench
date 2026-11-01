@@ -1,5 +1,5 @@
+from atlas_platform.main import ReadinessResult, create_app
 from fastapi.testclient import TestClient
-from gds_workbench_api.main import ReadinessResult, create_app
 
 
 class ReadyDependency:

@@ -686,7 +686,7 @@ function Accept-Changes([hashtable]$Options) {
         if ((Get-Property $check 'schema_version') -isnot [string] -or (Get-Property $check 'schema_version') -cne '1.0' -or (Get-Property $check 'status') -cne 'ready' -or -not (Test-AtlasObject (Get-Property $check 'backend'))) { Fail 'Backend check did not return readiness.' }
         $backend = [ordered]@{profile = Get-Property $check.backend 'profile'; endpoint_sha256 = Get-Property $check.backend 'endpoint_sha256'}
     }
-    if (@('production', 'local', 'azureLocalTest') -cnotcontains $backend.profile -or [string]$backend.endpoint_sha256 -cnotmatch $script:AtlasDigest) { Fail 'Supply safe backend identity from Check Stage Runner.' }
+    if (@('production', 'local', 'azureLocalTest') -cnotcontains $backend.profile -or [string]$backend.endpoint_sha256 -cnotmatch $script:AtlasDigest) { Fail 'Supply safe backend identity from Check Atlas Bridge.' }
     if ($Options.ContainsKey('prepare-stage') -and $Options['prepare-stage'] -cne 'true') { Fail '--prepare-stage must be true when supplied.' }
     $validation = Validate-Changes $Options
     if (-not $validation.valid) { Fail 'Fix local validation findings before acknowledgement.' }

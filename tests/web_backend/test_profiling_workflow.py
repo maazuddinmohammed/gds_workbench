@@ -8,36 +8,35 @@ from typing import Any, LiteralString, cast
 from uuid import UUID
 
 import pytest
-from fastapi.testclient import TestClient
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
-from gds_etl_workbench.domain.errors import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.databricks import DatabricksSqlConnection
+from atlas_mcp.domain.errors import (
     DatabricksStatementFailedError,
     DependencyUnavailableError,
     InvalidRequestError,
     TenantWorkflowConflictError,
 )
-from gds_etl_workbench.infrastructure.postgres import (
+from atlas_mcp.infrastructure.postgres import (
     ReadIsolation,
     ReadTransaction,
     WriteTransaction,
 )
-from gds_workbench_api.features.profiling.execution import (
+from atlas_platform.features.profiling.execution import (
     ProfileAttribute,
     ProfileMetric,
     ProfileObject,
     ProfileQuery,
     ProfilingPolicy,
 )
-from gds_workbench_api.features.profiling.repository import (
+from atlas_platform.features.profiling.repository import (
     DatabaseProfilingWorkflowRepository,
 )
-from gds_workbench_api.features.profiling.router import (
+from atlas_platform.features.profiling.router import (
     ExecuteProfilingRunRequest,
 )
-from gds_workbench_api.features.profiling.workflow import (
+from atlas_platform.features.profiling.workflow import (
     ProfilingCommitResult,
     ProfilingExecutionContext,
     ProfilingExecutionTarget,
@@ -45,7 +44,8 @@ from gds_workbench_api.features.profiling.workflow import (
     ProfilingWorkflowOrchestrator,
     _intermediate_progress_points,  # pyright: ignore[reportPrivateUsage]
 )
-from gds_workbench_api.main import create_app
+from atlas_platform.main import create_app
+from fastapi.testclient import TestClient
 
 _CLAIM_TOKEN = UUID("33333333-3333-3333-3333-333333333333")
 

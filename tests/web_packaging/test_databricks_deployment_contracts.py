@@ -14,7 +14,7 @@ def test_databricks_app_runs_one_supervised_python_process() -> None:
     app_config = (ROOT / "app.yaml").read_text(encoding="utf-8")
 
     assert "command:\n  - uv\n  - run\n  - --frozen\n  - python\n  - -m\n" in app_config
-    assert "gds_workbench_api.app_process" in app_config
+    assert "atlas_platform.app_process" in app_config
     assert "GDS_WEB_STATIC_DIR" in app_config
     assert "value: web_app/frontend/dist" in app_config
     assert "GDS_WEB_AGENT_EXECUTION_MODE" in app_config
@@ -77,11 +77,11 @@ def test_canonical_app_enables_claude_without_another_resource_binding() -> None
 
 
 def test_canonical_app_settings_expose_claude_without_external_io() -> None:
-    from gds_workbench_api.capabilities import (
+    from atlas_platform.capabilities import (
         load_default_agent_capabilities,
         select_agent_runtime_capabilities,
     )
-    from gds_workbench_api.configuration import RuntimeSettings
+    from atlas_platform.configuration import RuntimeSettings
 
     app_config = (ROOT / "app.yaml").read_text(encoding="utf-8")
     values = {
@@ -163,8 +163,8 @@ def test_root_manifests_are_locked_hybrid_app_inputs() -> None:
     assert backend_project["tool"]["pyright"]["pythonVersion"] == "3.14"
     assert backend_project["tool"]["ruff"]["target-version"] == "py314"
     assert set(python_project["tool"]["uv"]["sources"]) == {
-        "gds-etl-workbench-mcp",
-        "gds-workbench-api",
+        "atlas-mcp",
+        "atlas-platform-api",
     }
     assert all(
         source["editable"] is False
@@ -174,7 +174,7 @@ def test_root_manifests_are_locked_hybrid_app_inputs() -> None:
     assert node_project["workspaces"] == ["web_app/frontend"]
     assert (
         node_project["scripts"]["build"]
-        == "npm run build --workspace=gds-workbench-web"
+        == "npm run build --workspace=atlas-platform-web"
     )
 
 
@@ -186,14 +186,14 @@ def test_noneditable_mcp_dependency_rebuilds_when_its_source_changes() -> None:
         (ROOT / "mcp_server" / "pyproject.toml").read_text(encoding="utf-8")
     )
 
-    assert backend_project["tool"]["uv"]["sources"]["gds-etl-workbench-mcp"] == {
+    assert backend_project["tool"]["uv"]["sources"]["atlas-mcp"] == {
         "path": "../../mcp_server",
         "editable": False,
     }
     assert mcp_project["tool"]["uv"]["cache-keys"] == [
         {"file": "pyproject.toml"},
-        {"file": "gds_etl_workbench/**/*.py"},
-        {"file": "gds_etl_workbench/**/*.json"},
+        {"file": "atlas_mcp/**/*.py"},
+        {"file": "atlas_mcp/**/*.json"},
     ]
 
 

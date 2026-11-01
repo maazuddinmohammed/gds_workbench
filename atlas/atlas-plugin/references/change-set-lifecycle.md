@@ -12,7 +12,7 @@ Run `next --session <workspace> --area metadata|project`, do exactly its `action
 |---|---|
 | `helper` | Run `argv` exactly, as a structured argument array. |
 | `mcp` | Call `tool` with `arguments` and save the exact JSON response to `save_response_to`. `requires_tenant_lock` names the Tenant whose lock you must hold: check it with `check_tenant_lock` and acquire it if free. |
-| `extension` | Call the Stage Runner tool with `input`. |
+| `extension` | Call the Atlas Bridge tool with `input`. |
 | `ask_user` | Show `show` when present, ask `question` and wait for an explicit yes; then run each `after_approval` step in order. |
 | `author` | Follow `instructions`, usually repairing local records. |
 | `stop` | Tell the user; do not retry or work around it. |
@@ -23,7 +23,7 @@ Then follow `then`. After a failed MCP call, run `next --area <area> --error <co
 |---|---|
 | `no_session`, `snapshot_missing`, `not_started`, `no_pending_changes` | Set up the workspace, install the Snapshot, or nothing to submit. |
 | `needs_task`, `needs_validation`, `validation_failed`, `local_files_invalid` | Add a task, run `validate`, or repair the findings or unreadable draft files. |
-| `ready_for_review` | Local changes pass validation. The user reviews them in Atlas Local Workbench and approves Stage; then check the Stage Runner, hold the Tenant Lock, create the server draft, run `accept` with `--prepare-stage true` and stage with `atlas_stageApprovedManifest`. |
+| `ready_for_review` | Local changes pass validation. The user reviews them in Atlas Local Workbench and approves Stage; then check the Atlas Bridge, hold the Tenant Lock, create the server draft, run `accept` with `--prepare-stage true` and stage with `atlas_stageApprovedManifest`. |
 | `accepted`, `draft_bound`, `stage_prepared` | An interrupted acceptance continues: create the draft, prepare the request, or stage. |
 | `stage_uncertain` | The last Stage outcome is unknown; recover with `recoverOnly: true` before anything else. |
 | `staged` | Validate the exact server draft and record it with the `validation` checkpoint. |
@@ -72,7 +72,7 @@ If the draft was not available at acknowledgement, omit `--draft-file`/`--prepar
 - `prepare-stage-request --session <workspace> --area <area> --draft-file <exact-server-response.json>` to import and prepare in one command; or
 - `draft-cache --session <workspace> --area <area> --file <exact-server-response.json>`, followed by `prepare-stage-request` with the same scope.
 
-Preparation uses the current operation's draft and verifies local identity, revision/status and content bindings. A cached response cannot prove live freshness; Stage Runner checks current server state before writes. An operation cannot silently switch to another Change Set.
+Preparation uses the current operation's draft and verifies local identity, revision/status and content bindings. A cached response cannot prove live freshness; Atlas Bridge checks current server state before writes. An operation cannot silently switch to another Change Set.
 
 ## Response and evidence files
 
@@ -99,9 +99,9 @@ Field authoring belongs in [Project Change Sets](project/change-sets.md) and the
 
 ## Extension readiness
 
-Install the matching Stage Runner VSIX for VS Code Copilot in a trusted workspace. It exposes `atlas_checkStageRunner` and `atlas_stageApprovedManifest`. The approved files must be inside the current workspace. Follow [Copilot - VS Code setup](../docs/copilot-vs-code-installation-and-setup.md). If a tool is missing, retain local work and repair setup; never paste payloads into another tool.
+Install the matching Atlas Bridge VSIX for VS Code Copilot in a trusted workspace. It exposes `atlas_checkBridge` and `atlas_stageApprovedManifest`. The approved files must be inside the current workspace. Follow [Copilot - VS Code setup](../docs/copilot-vs-code-installation-and-setup.md). If a tool is missing, retain local work and repair setup; never paste payloads into another tool.
 
-`atlas_checkStageRunner` exposes the same read-only check as **Atlas: Check Stage Runner** (`atlasStageRunner.check`). It returns readiness and safe backend identity directly. MCP and extension connections must target the intended matching backend. Microsoft tokens stay in VS Code. If authentication expires, ask the user to run **Atlas: Check Stage Runner** and complete sign-in. Never copy credentials or replay writes after disconnection; inspect the saved operation and server status. SQL environment is separate from the connection profile. Use the supported sign-in flow; never copy tokens or credentials.
+`atlas_checkBridge` exposes the same read-only check as **Atlas: Check Atlas Bridge** (`atlasBridge.check`). It returns readiness and safe backend identity directly. MCP and extension connections must target the intended matching backend. Microsoft tokens stay in VS Code. If authentication expires, ask the user to run **Atlas: Check Atlas Bridge** and complete sign-in. Never copy credentials or replay writes after disconnection; inspect the saved operation and server status. SQL environment is separate from the connection profile. Use the supported sign-in flow; never copy tokens or credentials.
 
 Preserve any host Stage confirmation. It does not replace content acknowledgement or separate Apply approval. Atlas Local Workbench has no Stage/Apply buttons in this release.
 
@@ -114,4 +114,4 @@ Preserve any host Stage confirmation. It does not replace content acknowledgemen
 - Unknown Apply outcomes require authoritative status inspection before retrying. A confirmed Apply can still be recorded after subsequent local edits; refresh removes only proposals matching confirmed applied records.
 - Missing helpers, review surface or host capability leave local work intact. Report the missing capability without inventing a successful receipt or alternate submission path.
 
-Governed operations use the `metadata` or `project` family: `create_*_change_set`, `get_*_change_set`, `get_*_change_set_fingerprint`, `validate_*_change_set`, and `apply_*_change_set`. Validate and Apply require `expected_draft_revision`; Apply also requires the approved `expected_candidate_digest`. Stage upload tools (`stage_*`, `begin_*`, `put_*`, `commit_*`) are hidden from agent connections and refused with `stage_runner_required`; only the Stage Runner uses them.
+Governed operations use the `metadata` or `project` family: `create_*_change_set`, `get_*_change_set`, `get_*_change_set_fingerprint`, `validate_*_change_set`, and `apply_*_change_set`. Validate and Apply require `expected_draft_revision`; Apply also requires the approved `expected_candidate_digest`. Stage upload tools (`stage_*`, `begin_*`, `put_*`, `commit_*`) are hidden from agent connections and refused with `atlas_bridge_required`; only the Atlas Bridge uses them.

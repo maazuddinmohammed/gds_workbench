@@ -6,11 +6,11 @@ from typing import Any, cast
 
 import httpx2
 import pytest
-from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
+from atlas_mcp.domain.errors import AtlasError
+from atlas_platform.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetHandoffResult,
 )
-from gds_workbench_api.features.workflows.authoring.tool_configuration import (
+from atlas_platform.features.workflows.authoring.tool_configuration import (
     configure_tools,
 )
 
@@ -222,7 +222,7 @@ async def test_responses_never_accepts_json_from_an_unsuccessful_response(
 
     router = _router(monkeypatch, None, handler)
     try:
-        with pytest.raises(WorkbenchError) as raised:
+        with pytest.raises(AtlasError) as raised:
             await router.execute(_request(tools=True))
     finally:
         await router.close()

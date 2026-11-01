@@ -328,8 +328,8 @@ Unzip it through an approved internal channel and register the `atlas`
 directory that contains `plugin.json` in VS Code. The repository marketplace
 entry in `.github/plugin/marketplace.json` also points to the Atlas source.
 
-Install the matching Atlas Stage Runner VSIX from `atlas/dist/`. Confirm the
-`atlas` skill and `gds-workbench` MCP server appear in VS Code, then perform a
+Install the matching Atlas Bridge VSIX from `atlas/dist/`. Confirm the
+`atlas` skill and `atlas-mcp` MCP server appear in VS Code, then perform a
 read-only `list_tenants` call to verify client-managed Microsoft Entra sign-in
 and Tenant authorization.
 

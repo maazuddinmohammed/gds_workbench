@@ -1,0 +1,2028 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { mkdtemp, mkdir, readFile, rename, symlink, truncate, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, relative, sep } from "node:path";
+import { describe, expect, test, vi } from "vitest";
+
+import {
+  canonicalRecordsSha256,
+  stageApprovedManifest as runStageApprovedManifest,
+  AtlasBridgeError,
+  workspaceDigest,
+  type McpToolClient,
+  type AtlasBridgeDependencies,
+  type StageApprovedManifestInput,
+} from "../src/bridge.js";
+
+const TASK = "60000000-0000-4000-8000-000000000001";
+const OP = "70000000-0000-4000-8000-000000000001";
+const EVIDENCE = `.atlas/tasks/${TASK}.evidence`;
+const OP_PATH = `${EVIDENCE}/${OP}.json`;
+const BACKEND = { profile: "local" as const, endpoint_sha256: createHash("sha256").update("http://127.0.0.1:8000/mcp").digest("hex") };
+function stageApprovedManifest(input: StageApprovedManifestInput, dependencies: Omit<AtlasBridgeDependencies, "backend"> & Partial<Pick<AtlasBridgeDependencies, "backend">>) {
+  return runStageApprovedManifest(input, { backend: BACKEND, ...dependencies });
+}
+async function sealManifest(session: string, file: string) {
+  // Workspace paths are stored with "/" on every OS, like the Atlas helpers write them.
+  const portable = (target: string) => relative(session, target).split(sep).join("/");
+  const request = JSON.parse(await readFile(file, "utf8"));
+  request.schema_version = "2.0";
+  request.kind = "atlas-stage-request";
+  request.task = TASK;
+  request.operation = { id: OP, path: OP_PATH };
+  request.owner = { id: 17, code: "DEMO", root: "." };
+  request.backend = BACKEND;
+  request.snapshot.manifest_path = `${request.area}/${request.area}-snapshot/manifest.json`;
+  for (const d of request.datasets) if (d.payload_file.startsWith(session)) d.payload_file = portable(d.payload_file);
+  const bytes = JSON.stringify(request)+"\n";
+  await writeFile(file, bytes);
+  const opFile = join(session, OP_PATH);
+  const operation = JSON.parse(await readFile(opFile, "utf8"));
+  operation.stage_request = {path: portable(file), sha256: createHash("sha256").update(bytes).digest("hex")};
+  operation.inputs[0] = {area:request.area, owner_tenant_id:17, ...request.snapshot,
+    ...(request.area === "project" ? {project_revision:8}: {})};
+  const reportPath=join(session,operation.validation.report_path);
+  const report=JSON.parse(await readFile(reportPath,"utf8"));
+  report.schema_version="2.0";report.valid=true;report.digest=request.accepted_digest;
+  report.area=request.area;report.owner_tenant_id=17;report.inputs=operation.inputs;report.evidence_files=[];
+  const reportBytes=JSON.stringify(report);
+  await writeFile(reportPath,reportBytes);
+  const reportHash=createHash("sha256").update(reportBytes).digest("hex");
+  operation.validation.report_sha256=reportHash;operation.acknowledgement.report_sha256=reportHash;
+  await writeFile(opFile, JSON.stringify(operation));
+}
+const CHANGE_SET_ID = "30000000-0000-4000-8000-000000000050";
+
+// Expected digests come from the server's canonical_records_sha256 after JSON decoding.
+test.each([
+  [[{ value: 0.000001 }], "52423a9af622ea11ea3356dcf5e3b8954bff3797e92ee37ae78fc7da3974e68d"],
+  [[{ value: 0.00001 }], "d46acfb78daa87265af33ed356292c12a7ab73593e754956ba4c0e6f41ba8589"],
+  [[{ value: 0.0001 }], "78acce6cb4150d114dbcf9a0b647331536b183a386364f6a3919b760f5c2b185"],
+  [[{ value: 1e-7 }], "7996b584fc4eb4a0222e35cc4c752fb999adcd53ea5725150461ceb1da5b1bb6"],
+  [[{ value: 1.234567e-5 }], "4e4416939731a96642d5f7bd2f658d0383a0e700902171351ead402ec3d71fd1"],
+  [[{ value: 1e21 }], "92544edd51ed35f069b10ecd00e61757e80a0dd756abffd15dbcdd7d4b929be2"],
+  [[{context_record_id:"74acf19b-49ba-4a71-a21c-8b46238f3d96",context_group_name:"Identity",context_text:"Preserve zeros é 😀",source_reference:"Requirements §2",status:"active",is_locked:false}], "24654eea36fa5f58d28569e48fbaaa8d35b2a3158e8f9cd94bc4d853fbfb864c"],
+  [[{ "\ue000": 1, "😀": 2 }], "d217a29d93fef13515f254c0c7932dcb38d341cd13f41118a44d78400a8ee939"],
+] as const)("matches the Python server's record digest for %j", (records, expected) => {
+  expect(canonicalRecordsSha256([...records])).toBe(expected);
+});
+
+const SNAPSHOT_IDS = {
+  metadata: "10000000-0000-4000-8000-000000000001",
+  project: "20000000-0000-4000-8000-000000000001",
+} as const;
+// Dataset order comes from the MCP server contract fixture (tests/atlas/test_stage_contract.py).
+const SERVER_CONTRACT = JSON.parse(
+  readFileSync(new URL("./fixtures/server-contract.json", import.meta.url), "utf8"),
+) as { metadata: { datasets: string[] }; project: { datasets: string[] } };
+const METADATA_DATASETS: readonly string[] = SERVER_CONTRACT.metadata.datasets;
+const PROJECT_DATASETS: readonly string[] = SERVER_CONTRACT.project.datasets;
+
+function fingerprintResponse(
+  area: "metadata" | "project",
+  revision: number,
+  recordsByDataset: Record<string, Array<Record<string, unknown>>>,
+  hashOverrides: Record<string, string> = {},
+) {
+  const names = area === "metadata" ? METADATA_DATASETS : [...PROJECT_DATASETS].sort();
+  const datasets = names.map((dataset) => {
+    const records = recordsByDataset[dataset] ?? [];
+    return {
+      dataset,
+      record_count: records.length,
+      sha256: hashOverrides[dataset] ?? canonicalRecordsSha256(records),
+    };
+  });
+  const fingerprintDocument = {
+    area,
+    datasets,
+    fingerprint_version: "1.0",
+  };
+  return {
+    schema_version: area === "project" ? "2.0" : "1.0",
+    fingerprint_version: "1.0",
+    area,
+    ...(area === "metadata"
+      ? { tenant_id: 17, metadata_change_set_id: CHANGE_SET_ID }
+      : { project_id: 42, project_change_set_id: CHANGE_SET_ID }),
+    status: "active",
+    draft_revision: revision,
+    dataset_count: datasets.length,
+    record_count: datasets.reduce((total, item) => total + item.record_count, 0),
+    datasets,
+    fingerprint: createHash("sha256")
+      .update(JSON.stringify(fingerprintDocument))
+      .digest("hex"),
+    expires_at: "2026-09-05T00:00:00Z",
+  };
+}
+
+function directStageResponse(
+  area: "metadata" | "project",
+  revision: number,
+  recordsByDataset: Record<string, Array<Record<string, unknown>>>,
+) {
+  return {
+    schema_version: area === "project" ? "2.0" : "1.0",
+    ...(area === "metadata"
+      ? { tenant_id: 17, metadata_change_set_id: CHANGE_SET_ID }
+      : { project_id: 42, project_change_set_id: CHANGE_SET_ID }),
+    staged: true,
+    datasets: Object.entries(recordsByDataset).map(([dataset, records]) => ({
+      dataset,
+      record_count: records.length,
+    })),
+    draft_revision: revision,
+    status: "active",
+    expires_at: "2026-09-05T00:00:00Z",
+  };
+}
+
+function batchTarget(area: "metadata" | "project") {
+  return area === "metadata"
+    ? { tenant_id: 17, metadata_change_set_id: CHANGE_SET_ID }
+    : { project_id: 42, project_change_set_id: CHANGE_SET_ID };
+}
+
+function beginStageResponse(
+  area: "metadata" | "project",
+  input: Record<string, unknown>,
+  stageBatchId: string,
+) {
+  return {
+    schema_version: area === "project" ? "2.0" : "1.0",
+    ...batchTarget(area),
+    stage_batch_id: stageBatchId,
+    dataset: input.dataset,
+    created: true,
+    total_record_count: input.total_record_count,
+    total_chunk_count: input.total_chunk_count,
+    received_chunk_count: 0,
+    expected_draft_revision: input.expected_draft_revision,
+    expires_at: "2026-09-05T00:00:00Z",
+    ...(area === "project"
+      ? {
+          payload_mode: input.payload_mode,
+          total_payload_bytes: input.total_payload_bytes ?? null,
+        }
+      : {}),
+  };
+}
+
+function putStageResponse(
+  area: "metadata" | "project",
+  input: Record<string, unknown>,
+  totalChunkCount: number,
+) {
+  const fragment =
+    typeof input.payload_fragment_base64 === "string"
+      ? Buffer.from(input.payload_fragment_base64, "base64")
+      : null;
+  return {
+    schema_version: area === "project" ? "2.0" : "1.0",
+    ...batchTarget(area),
+    stage_batch_id: input.stage_batch_id,
+    dataset: input.dataset,
+    accepted: true,
+    duplicate: false,
+    chunk_index: input.chunk_index,
+    record_count: Array.isArray(input.records) ? input.records.length : 0,
+    received_chunk_count: input.chunk_index,
+    total_chunk_count: totalChunkCount,
+    expires_at: "2026-09-05T00:00:00Z",
+    ...(area === "project"
+      ? {
+          payload_mode: input.payload_mode,
+          payload_byte_count: fragment?.length ?? null,
+        }
+      : {}),
+  };
+}
+
+function commitStageResponse(
+  area: "metadata" | "project",
+  input: Record<string, unknown>,
+  dataset: string,
+  recordCount: number,
+  revision: number,
+) {
+  return {
+    schema_version: area === "project" ? "2.0" : "1.0",
+    ...batchTarget(area),
+    stage_batch_id: input.stage_batch_id,
+    dataset,
+    committed: true,
+    replayed: false,
+    record_count: recordCount,
+    draft_revision: revision,
+    status: "active",
+    expires_at: "2026-09-05T00:00:00Z",
+  };
+}
+
+function changeSetResponse(
+  area: "metadata" | "project",
+  revision: number,
+  dataset: unknown,
+  records: Array<Record<string, unknown>> = [],
+) {
+  const selectedDataset = typeof dataset === "string" ? dataset : null;
+  return {
+    schema_version: area === "project" ? "2.0" : "1.0",
+    ...batchTarget(area),
+    status: "active",
+    draft_revision: revision,
+    candidate_digest: null,
+    validation_outcome: null,
+    dataset_counts: [],
+    dataset: selectedDataset,
+    records: selectedDataset === null ? null : records,
+    created_at: "2026-09-04T00:00:00Z",
+    last_activity_at: "2026-09-04T00:00:00Z",
+    expires_at: "2026-09-05T00:00:00Z",
+    validated_at: null,
+    applied_at: null,
+    terminal_at: null,
+  };
+}
+
+function tenantListResponse(
+  tenants: Array<{ tenant_id: number; tenant_code: string }> = [
+    { tenant_id: 17, tenant_code: "DEMO" },
+  ],
+  nextCursor: string | null = null,
+) {
+  return {
+    schema_version: "1.0",
+    tenants: tenants.map((tenant) => ({
+      ...tenant,
+      tenant_name: tenant.tenant_code,
+      tenant_description: null,
+      tenant_visibility: "private",
+      effective_role: "developer",
+    })),
+    next_cursor: nextCursor,
+  };
+}
+
+async function bindSession(
+  session: string,
+  area: "metadata" | "project",
+  acceptedDigest: string,
+  dataset: string,
+  canonicalKey: string[],
+  startingRevision: number,
+) {
+  const snapshotId = SNAPSHOT_IDS[area];
+  const snapshotDirectory = join(session, area, `${area}-snapshot`);
+  const tasksDirectory = join(session, EVIDENCE);
+  await mkdir(snapshotDirectory, { recursive: true });
+  await mkdir(tasksDirectory, { recursive: true });
+  const catalog = {
+    schema_version: "3.0",
+    snapshot_kind: area,
+    ...(area === "project"
+      ? { project: { project_id: 42, project_name: "Customer Project", project_revision: 8 } }
+      : {}),
+    sections: [{ name: "test", datasets: [{ name: dataset, canonical_key: canonicalKey }] }],
+  };
+  const catalogBytes = `${JSON.stringify(catalog)}\n`;
+  await writeFile(join(snapshotDirectory, "catalog.json"), catalogBytes, { mode: 0o600 });
+  const catalogSha256 = createHash("sha256").update(catalogBytes).digest("hex");
+  const manifest = {
+    schema_version: "3.0",
+    snapshot_kind: area,
+    snapshot_id: snapshotId,
+    ...(area === "metadata"
+      ? { tenant_code: "DEMO" }
+      : { project_id: 42, project_name: "Customer Project", project_revision: 8 }),
+    catalog: { path: "catalog.json", sha256: catalogSha256 },
+    members: [
+      {
+        path: "catalog.json",
+        size_bytes: Buffer.byteLength(catalogBytes),
+        sha256: catalogSha256,
+      },
+    ],
+  };
+  const manifestBytes = `${JSON.stringify(manifest)}\n`;
+  await writeFile(join(snapshotDirectory, "manifest.json"), manifestBytes, { mode: 0o600 });
+  const manifestSha256 = createHash("sha256").update(manifestBytes).digest("hex");
+  await writeFile(join(session, ".atlas/session.json"), JSON.stringify({schema_version:"2.0",
+    tenant:{id:17,code:"DEMO"},project:area === "project" ? {id:42,name:"Customer Project"}:null,
+    metadata_owners:{"17":{id:17,code:"DEMO",root:"."}},
+    active_task:TASK, operations: area === "project" ? {project:OP_PATH}: {metadata:{"17":OP_PATH}}}));
+  await writeFile(join(session, `.atlas/tasks/${TASK}.json`), JSON.stringify({schema_version:"2.0",outcome:"Stage test"}));
+  const report = JSON.stringify({schema_version:"2.0",outcome:"valid",checks:["fixture"],digest:acceptedDigest});
+  await writeFile(join(session,EVIDENCE,"validation.json"),report);
+  const reportHash = createHash("sha256").update(report).digest("hex");
+  await writeFile(join(session,OP_PATH),JSON.stringify({schema_version:"2.0",id:OP,task_id:TASK,area,
+    owner:{id:17,code:"DEMO",root:"."},backend:BACKEND,inputs:[],local_digest:acceptedDigest,
+    validation:{outcome:"valid",report_path:`${EVIDENCE}/validation.json`,report_sha256:reportHash,checks:["fixture"]},
+    acknowledgement:{source:"conversation",at:"2026-09-15T00:00:00Z",digest:acceptedDigest,report_sha256:reportHash},
+    draft:{id:CHANGE_SET_ID,revision:startingRevision,status:"active",digest:acceptedDigest}}));
+  return { manifestSha256, snapshotId };
+}
+
+async function metadataRequest(records: Array<Record<string, unknown>>) {
+  const workspace = await mkdtemp(join(tmpdir(), "atlas-bridge-"));
+  const session = join(workspace, "working");
+  const changeSetDirectory = join(session, "metadata-change-set");
+  const tasksDirectory = join(session, EVIDENCE);
+  await mkdir(changeSetDirectory, { recursive: true });
+  await mkdir(tasksDirectory, { recursive: true });
+  const payloadPath = join(changeSetDirectory, "source_object.json");
+  const payload = `${JSON.stringify(records)}\n`;
+  await writeFile(payloadPath, payload, { mode: 0o600 });
+  const acceptedDigest = await workspaceDigest(changeSetDirectory);
+  const { manifestSha256 } = await bindSession(
+    session,
+    "metadata",
+    acceptedDigest,
+    "source_object",
+    ["tenant_code", "system_code", "connection_code", "object_schema", "object_name"],
+    1,
+  );
+  const manifestPath = join(tasksDirectory, `${OP}.stage-request.json`);
+  await writeFile(
+    manifestPath,
+    `${JSON.stringify({
+      schema_version: "2.0",
+      kind: "atlas-stage-request",
+      area: "metadata",
+      task: "01",
+      accepted_digest: acceptedDigest,
+      failed_retry: false,
+      snapshot: {
+        snapshot_id: SNAPSHOT_IDS.metadata,
+        manifest_sha256: manifestSha256,
+      },
+      target: {
+        tenant_code: "DEMO",
+        change_set_id: CHANGE_SET_ID,
+        starting_revision: 1,
+      },
+      datasets: [
+        {
+          dataset: "source_object",
+          canonical_key: [
+            "tenant_code",
+            "system_code",
+            "connection_code",
+            "object_schema",
+            "object_name",
+          ],
+          record_count: records.length,
+          payload_file: payloadPath,
+          sha256: createHash("sha256").update(payload).digest("hex"),
+        },
+      ],
+    })}\n`,
+    { mode: 0o600 },
+  );
+  await sealManifest(session, manifestPath);
+  return { workspace, session, manifestPath, acceptedDigest };
+}
+
+async function projectRequest(
+  dataset: string,
+  canonicalKey: string[],
+  records: Array<Record<string, unknown>>,
+) {
+  const workspace = await mkdtemp(join(tmpdir(), "atlas-bridge-project-"));
+  const session = join(workspace, "working");
+  const changeSetDirectory = join(session, "project-change-set");
+  const tasksDirectory = join(session, EVIDENCE);
+  await mkdir(changeSetDirectory, { recursive: true });
+  await mkdir(tasksDirectory, { recursive: true });
+  const payloadPath = join(changeSetDirectory, `${dataset}.json`);
+  const payload = `${JSON.stringify(records)}\n`;
+  await writeFile(payloadPath, payload, { mode: 0o600 });
+  const acceptedDigest = await workspaceDigest(changeSetDirectory);
+  const { manifestSha256 } = await bindSession(
+    session,
+    "project",
+    acceptedDigest,
+    dataset,
+    canonicalKey,
+    3,
+  );
+  const manifestPath = join(tasksDirectory, `${OP}.stage-request.json`);
+  await writeFile(
+    manifestPath,
+    `${JSON.stringify({
+      schema_version: "2.0",
+      kind: "atlas-stage-request",
+      area: "project",
+      task: "01",
+      accepted_digest: acceptedDigest,
+      failed_retry: false,
+      snapshot: { snapshot_id: SNAPSHOT_IDS.project, manifest_sha256: manifestSha256 },
+      target: {
+        project_id: 42,
+        project_name: "Customer Project",
+        project_revision: 8,
+        change_set_id: CHANGE_SET_ID,
+        starting_revision: 3,
+      },
+      datasets: [
+        {
+          dataset,
+          canonical_key: canonicalKey,
+          record_count: records.length,
+          payload_file: payloadPath,
+          sha256: createHash("sha256").update(payload).digest("hex"),
+        },
+      ],
+    })}\n`,
+    { mode: 0o600 },
+  );
+  await sealManifest(session, manifestPath);
+  return { workspace, session, manifestPath, acceptedDigest };
+}
+
+async function markFailedRetry(session: string, manifestPath: string): Promise<void> {
+  const file = join(session,OP_PATH);
+  const operation = JSON.parse(await readFile(file,"utf8"));
+  operation.draft.digest = "0".repeat(64);
+  operation.draft.validation_failed = true;
+  await writeFile(file,JSON.stringify(operation));
+  const request = JSON.parse(await readFile(manifestPath,"utf8"));
+  request.failed_retry = true;
+  await writeFile(manifestPath,JSON.stringify(request));
+  await sealManifest(session,manifestPath);
+}
+
+async function addMetadataDataset(
+  session: string,
+  manifestPath: string,
+  dataset: string,
+  canonicalKey: string[],
+  records: Array<Record<string, unknown>>,
+): Promise<string> {
+  const changeSetDirectory = join(session, "metadata-change-set");
+  const payloadPath = join(changeSetDirectory, `${dataset}.json`);
+  const payload = `${JSON.stringify(records)}\n`;
+  await writeFile(payloadPath, payload, { mode: 0o600 });
+
+  const snapshotDirectory = join(session, "metadata", "metadata-snapshot");
+  const catalogPath = join(snapshotDirectory, "catalog.json");
+  const catalog = JSON.parse(await readFile(catalogPath, "utf8")) as {
+    sections: Array<{ datasets: Array<Record<string, unknown>> }>;
+  };
+  catalog.sections[0]!.datasets.push({ name: dataset, canonical_key: canonicalKey });
+  const catalogBytes = `${JSON.stringify(catalog)}\n`;
+  await writeFile(catalogPath, catalogBytes, { mode: 0o600 });
+  const catalogSha256 = createHash("sha256").update(catalogBytes).digest("hex");
+
+  const snapshotManifestPath = join(snapshotDirectory, "manifest.json");
+  const snapshotManifest = JSON.parse(await readFile(snapshotManifestPath, "utf8")) as {
+    catalog: { sha256: string };
+    members: Array<{ path: string; size_bytes: number; sha256: string }>;
+  };
+  snapshotManifest.catalog.sha256 = catalogSha256;
+  const catalogMember = snapshotManifest.members.find((member) => member.path === "catalog.json");
+  if (!catalogMember) throw new Error("Fixture has no catalog member");
+  catalogMember.size_bytes = Buffer.byteLength(catalogBytes);
+  catalogMember.sha256 = catalogSha256;
+  const snapshotManifestBytes = `${JSON.stringify(snapshotManifest)}\n`;
+  await writeFile(snapshotManifestPath, snapshotManifestBytes, { mode: 0o600 });
+
+  const acceptedDigest = await workspaceDigest(changeSetDirectory);
+  const opFile=join(session,OP_PATH);
+  const op=JSON.parse(await readFile(opFile,"utf8"));
+  op.local_digest=acceptedDigest;op.draft.digest=acceptedDigest;op.acknowledgement.digest=acceptedDigest;
+  await writeFile(opFile,JSON.stringify(op));
+  const request = JSON.parse(await readFile(manifestPath, "utf8")) as {
+    accepted_digest: string;
+    snapshot: { manifest_sha256: string };
+    datasets: Array<Record<string, unknown>>;
+  };
+  request.accepted_digest = acceptedDigest;
+  request.snapshot.manifest_sha256 = createHash("sha256")
+    .update(snapshotManifestBytes)
+    .digest("hex");
+  request.datasets.push({
+    dataset,
+    canonical_key: canonicalKey,
+    record_count: records.length,
+    payload_file: payloadPath,
+    sha256: createHash("sha256").update(payload).digest("hex"),
+  });
+  request.datasets.sort((left, right) =>
+    String(left.dataset).localeCompare(String(right.dataset)),
+  );
+  await writeFile(manifestPath, `${JSON.stringify(request)}\n`, { mode: 0o600 });
+  await sealManifest(session,manifestPath);
+  return acceptedDigest;
+}
+
+describe("stageApprovedManifest", () => {
+  test.each(["missing_acceptance", "changed_decisions", "stale_metadata"])(
+    "rejects %s modeling evidence before MCP", async (scenario) => {
+      const {workspace, session, manifestPath, acceptedDigest} = await projectRequest(
+        "logical_entity", ["logical_entity_schema_name", "logical_entity_name"], [{logical_entity_schema_name: "silver", logical_entity_name: "Customer"}],
+      );
+      if (scenario === "missing_acceptance") {
+        const operation = JSON.parse(await readFile(join(session, OP_PATH), "utf8"));
+        operation.validation.report_sha256 = "0".repeat(64);
+        operation.acknowledgement.report_sha256 = "0".repeat(64);
+        await writeFile(join(session, OP_PATH), JSON.stringify(operation));
+      } else if (scenario === "changed_decisions") {
+        await writeFile(join(session, EVIDENCE, "validation.json"), "{}");
+      } else {
+        const state = JSON.parse(await readFile(join(session, ".atlas/session.json"), "utf8"));
+        state.refresh_required = [{area:"project",owner_tenant_id:17,reason:"fixture",evidence:[]}];
+        await writeFile(join(session, ".atlas/session.json"), JSON.stringify(state));
+      }
+      let calls = 0;
+      await expect(stageApprovedManifest({manifestPath, expectedDigest: acceptedDigest}, {
+        workspaceRoots: [workspace], mcp: {async callTool() { calls++; return {}; }},
+      })).rejects.toMatchObject({code: "MODELING_EVIDENCE_CHANGED"});
+      expect(calls).toBe(0);
+    },
+  );
+
+  test("rechecks modeling evidence after remote reads and before the first write", async () => {
+    const {workspace, session, manifestPath, acceptedDigest} = await projectRequest(
+      "logical_entity", ["logical_entity_schema_name", "logical_entity_name"], [{logical_entity_schema_name: "silver", logical_entity_name: "Customer"}],
+    );
+    let writes = 0;
+    const mcp: McpToolClient = {async callTool(name, input) {
+      if (name === "get_project_change_set") {
+        if (input.dataset) await writeFile(join(session, EVIDENCE, "validation.json"), "{}");
+        return changeSetResponse("project", 3, input.dataset);
+      }
+      writes++;
+      return {};
+    }};
+    await expect(stageApprovedManifest({manifestPath, expectedDigest: acceptedDigest}, {
+      workspaceRoots: [workspace], mcp,
+    })).rejects.toMatchObject({code: "MODELING_EVIDENCE_CHANGED"});
+    expect(writes).toBe(0);
+  });
+
+  test("rejects an oversized payload before hashing or contacting MCP", async () => {
+    const { workspace, session, manifestPath, acceptedDigest } = await metadataRequest([]);
+    await truncate(join(session, "metadata-change-set", "source_object.json"), 64 * 450 * 1024 + 1025);
+    let calls = 0;
+    await expect(stageApprovedManifest(
+      { manifestPath, expectedDigest: acceptedDigest },
+      { workspaceRoots: [workspace], mcp: { async callTool() { calls += 1; return {}; } } },
+    )).rejects.toMatchObject({ code: "PAYLOAD_LIMIT" });
+    expect(calls).toBe(0);
+  });
+
+  test.each([
+    ["acceptance", "LOCAL_STATE_MISMATCH"],
+    ["payload", "DIGEST_MISMATCH"],
+    ["manifest", "MANIFEST_CHANGED"],
+  ])("rechecks changed %s after server reads and before writing", async (changed, code) => {
+    const { workspace, session, manifestPath, acceptedDigest } = await metadataRequest([]);
+    let writes = 0;
+    const mcp: McpToolClient = {
+      async callTool(name, input) {
+        if (name === "list_tenants") return tenantListResponse();
+        if (name === "get_metadata_change_set") {
+          if (input.dataset !== undefined) {
+            if (changed === "acceptance") await writeFile(join(session, OP_PATH), "[]");
+            if (changed === "payload") await writeFile(join(session, "metadata-change-set", "source_object.json"), "[]  ");
+            if (changed === "manifest") {
+              const request = JSON.parse(await readFile(manifestPath, "utf8"));
+              request.datasets[0].sha256 = "0".repeat(64);
+              await writeFile(manifestPath, JSON.stringify(request));
+            }
+          }
+          return changeSetResponse("metadata", 1, input.dataset);
+        }
+        if (name === "stage_metadata_change_set") {
+          writes += 1;
+          return directStageResponse("metadata", 2, { source_object: [] });
+        }
+        return fingerprintResponse("metadata", 2, { source_object: [] });
+      },
+    };
+
+    await expect(stageApprovedManifest(
+      { manifestPath, expectedDigest: acceptedDigest }, { mcp, workspaceRoots: [workspace] },
+    )).rejects.toMatchObject({ code });
+    expect(writes).toBe(0);
+  });
+
+  test("rejects a linked Change Set directory outside the workspace before MCP", async () => {
+    const { workspace, session, manifestPath, acceptedDigest } = await metadataRequest([]);
+    const directory = join(session, "metadata-change-set");
+    const outside = await mkdtemp(join(tmpdir(), "atlas-bridge-outside-"));
+    await rename(directory, join(outside, "payloads"));
+    await symlink(join(outside, "payloads"), directory, "junction");
+    let callCount = 0;
+
+    await expect(stageApprovedManifest(
+      { manifestPath, expectedDigest: acceptedDigest },
+      { workspaceRoots: [workspace], mcp: { async callTool() { callCount += 1; return {}; } } },
+    )).rejects.toMatchObject({ code: "LOCAL_CHANGE_SET_INVALID" });
+    expect(callCount).toBe(0);
+  });
+
+  test("rejects a changed Snapshot manifest before any MCP call", async () => {
+    const { workspace, session, manifestPath, acceptedDigest } = await metadataRequest([]);
+    await writeFile(join(session, "metadata", "metadata-snapshot", "manifest.json"), "{}\n", { mode: 0o600 });
+    let callCount = 0;
+    const mcp: McpToolClient = {
+      async callTool() {
+        callCount += 1;
+        throw new Error("MCP must not be called");
+      },
+    };
+
+    const operation = stageApprovedManifest(
+      { manifestPath, expectedDigest: acceptedDigest },
+      { mcp, workspaceRoots: [workspace] },
+    );
+
+    await expect(operation).rejects.toMatchObject({
+      code: "SNAPSHOT_MISMATCH",
+    });
+    expect(callCount).toBe(0);
+  });
+
+  test("rejects a Stage request whose cached draft binding changed", async () => {
+    const { workspace, session, manifestPath, acceptedDigest } = await metadataRequest([]);
+    await writeFile(
+      join(session, ".atlas/session.json"),
+      `${JSON.stringify({
+        current: "01",
+        tasks: [["01", "metadata", "Stage test", "ready"]],
+        cs: {
+          metadata: [
+            "50000000-0000-4000-8000-000000000050",
+            1,
+            "active",
+            "01",
+            acceptedDigest,
+          ],
+        },
+      })}\n`,
+      { mode: 0o600 },
+    );
+    let callCount = 0;
+    const mcp: McpToolClient = {
+      async callTool() {
+        callCount += 1;
+        throw new Error("MCP must not be called");
+      },
+    };
+
+    const operation = stageApprovedManifest(
+      { manifestPath, expectedDigest: acceptedDigest },
+      { mcp, workspaceRoots: [workspace] },
+    );
+
+    await expect(operation).rejects.toMatchObject({
+      code: "LOCAL_STATE_MISMATCH",
+    });
+    expect(callCount).toBe(0);
+  });
+
+  test("rejects a canonical key that differs from the bound Snapshot", async () => {
+    const { workspace, session, manifestPath, acceptedDigest } = await metadataRequest([]);
+    const request = JSON.parse(await readFile(manifestPath, "utf8")) as {
+      datasets: Array<{ canonical_key: string[] }>;
+    };
+    request.datasets[0]!.canonical_key = ["object_name"];
+    await writeFile(manifestPath, `${JSON.stringify(request)}\n`, { mode: 0o600 });
+    await sealManifest(session,manifestPath);
+    let callCount = 0;
+    const mcp: McpToolClient = {
+      async callTool() {
+        callCount += 1;
+        throw new Error("MCP must not be called");
+      },
+    };
+
+    const operation = stageApprovedManifest(
+      { manifestPath, expectedDigest: acceptedDigest },
+      { mcp, workspaceRoots: [workspace] },
+    );
+
+    await expect(operation).rejects.toMatchObject({
+      code: "SNAPSHOT_MISMATCH",
+    });
+    expect(callCount).toBe(0);
+  });
+
+  test("rejects a symbolic-link Stage request before any MCP call", async () => {
+    const { workspace, manifestPath, acceptedDigest } = await metadataRequest([]);
+    const targetPath = `${manifestPath}.real`;
+    await rename(manifestPath, targetPath);
+    await symlink(targetPath, manifestPath);
+    let callCount = 0;
+    const mcp: McpToolClient = {
+      async callTool() {
+        callCount += 1;
+        throw new Error("MCP must not be called");
+      },
+    };
+
+    const operation = stageApprovedManifest(
+      { manifestPath, expectedDigest: acceptedDigest },
+      { mcp, workspaceRoots: [workspace] },
+    );
+
+    await expect(operation).rejects.toMatchObject({
+      code: "MANIFEST_INVALID",
+    });
+    expect(callCount).toBe(0);
+  });
+
+  test("rejects unknown manifest fields before any MCP call", async () => {
+    const { workspace, manifestPath, acceptedDigest } = await metadataRequest([]);
+    const request = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>;
+    request.command = "anything";
+    await writeFile(manifestPath, `${JSON.stringify(request)}\n`, { mode: 0o600 });
+    let callCount = 0;
+    const mcp: McpToolClient = {
+      async callTool() {
+        callCount += 1;
+        throw new Error("MCP must not be called");
+      },
+    };
+
+    await expect(
+      stageApprovedManifest(
+        { manifestPath, expectedDigest: acceptedDigest },
+        { mcp, workspaceRoots: [workspace] },
+      ),
+    ).rejects.toMatchObject({ code: "MANIFEST_INVALID" });
+    expect(callCount).toBe(0);
+  });
+
+  test("rejects malformed IDs and area-specific target fields before MCP", async () => {
+    const { workspace, manifestPath, acceptedDigest } = await metadataRequest([]);
+    const request = JSON.parse(await readFile(manifestPath, "utf8")) as {
+      snapshot: { snapshot_id: string };
+      target: Record<string, unknown>;
+    };
+    request.snapshot.snapshot_id = "not-a-uuid";
+    request.target.project_id = 42;
+    await writeFile(manifestPath, `${JSON.stringify(request)}\n`, { mode: 0o600 });
+    let callCount = 0;
+    const mcp: McpToolClient = {
+      async callTool() {
+        callCount += 1;
+        throw new Error("MCP must not be called");
+      },
+    };
+
+    await expect(
+      stageApprovedManifest(
+        { manifestPath, expectedDigest: acceptedDigest },
+        { mcp, workspaceRoots: [workspace] },
+      ),
+    ).rejects.toMatchObject({ code: "MANIFEST_INVALID" });
+    expect(callCount).toBe(0);
+  });
+
+  test("rejects a renamed request before MCP", async () => {
+    const { workspace, manifestPath, acceptedDigest } = await metadataRequest([]);
+    const renamedPath = join(dirname(manifestPath), "other.json");
+    await rename(manifestPath, renamedPath);
+    let callCount = 0;
+    const mcp: McpToolClient = {
+      async callTool() {
+        callCount += 1;
+        throw new Error("MCP must not be called");
+      },
+    };
+
+    await expect(
+      stageApprovedManifest(
+        { manifestPath: renamedPath, expectedDigest: acceptedDigest },
+        { mcp, workspaceRoots: [workspace] },
+      ),
+    ).rejects.toMatchObject({ code: "MANIFEST_INVALID" });
+    expect(callCount).toBe(0);
+  });
+
+  test("rejects an excessive dataset record count before MCP", async () => {
+    const { workspace, session, manifestPath, acceptedDigest } = await metadataRequest([]);
+    const request = JSON.parse(await readFile(manifestPath, "utf8")) as {
+      datasets: Array<{ record_count: number }>;
+    };
+    request.datasets[0]!.record_count = 50_001;
+    await writeFile(manifestPath, `${JSON.stringify(request)}\n`, { mode: 0o600 });
+    await sealManifest(session,manifestPath);
+    let callCount = 0;
+    const mcp: McpToolClient = {
+      async callTool() {
+        callCount += 1;
+        throw new Error("MCP must not be called");
+      },
+    };
+
+    await expect(
+      stageApprovedManifest(
+        { manifestPath, expectedDigest: acceptedDigest },
+        { mcp, workspaceRoots: [workspace] },
+      ),
+    ).rejects.toMatchObject({ code: "MANIFEST_INVALID" });
+    expect(callCount).toBe(0);
+  });
+
+  test("rejects an oversized Stage request manifest before MCP", async () => {
+    const { workspace, manifestPath, acceptedDigest } = await metadataRequest([]);
+    await writeFile(manifestPath, " ".repeat(128 * 1024 + 1), { mode: 0o600 });
+    let callCount = 0;
+    const mcp: McpToolClient = {
+      async callTool() {
+        callCount += 1;
+        throw new Error("MCP must not be called");
+      },
+    };
+
+    await expect(
+      stageApprovedManifest(
+        { manifestPath, expectedDigest: acceptedDigest },
+        { mcp, workspaceRoots: [workspace] },
+      ),
+    ).rejects.toMatchObject({ code: "MANIFEST_LIMIT" });
+    expect(callCount).toBe(0);
+  });
+
+  test("merges non-overlapping server records before replacement Stage", async () => {
+    const localRecord = {
+      tenant_code: "DEMO",
+      system_code: "CRM",
+      connection_code: "MAIN",
+      object_schema: "sales",
+      object_name: "Customer",
+    };
+    const serverRecord = {
+      tenant_code: "DEMO",
+      system_code: "ERP",
+      connection_code: "MAIN",
+      object_schema: "sales",
+      object_name: "Order",
+    };
+    const expected = [localRecord, serverRecord];
+    const { workspace, manifestPath, acceptedDigest } = await metadataRequest([localRecord]);
+    let staged: unknown;
+    const mcp: McpToolClient = {
+      async callTool(name, input) {
+        if (name === "list_tenants") {
+          return tenantListResponse();
+        }
+        if (name === "get_metadata_change_set") {
+          return changeSetResponse("metadata", 1, input.dataset, [serverRecord]);
+        }
+        if (name === "stage_metadata_change_set") {
+          staged = input.changes;
+          return directStageResponse("metadata", 2, { source_object: expected });
+        }
+        if (name === "get_metadata_change_set_fingerprint") {
+          return fingerprintResponse("metadata", 2, { source_object: expected });
+        }
+        throw new Error(`Unexpected tool: ${name}`);
+      },
+    };
+
+    await stageApprovedManifest(
+      { manifestPath, expectedDigest: acceptedDigest },
+      { mcp, workspaceRoots: [workspace] },
+    );
+
+    expect(staged).toEqual([{ dataset: "source_object", records: expected }]);
+  });
+
+  test("honors cancellation at the final pre-write boundary", async () => {
+    const records = [
+      {
+        tenant_code: "DEMO",
+        system_code: "CRM",
+        connection_code: "MAIN",
+        object_schema: "sales",
+        object_name: "Customer",
+      },
+    ];
+    const { workspace, manifestPath, acceptedDigest } = await metadataRequest(records);
+    let writeCount = 0;
+    const mcp: McpToolClient = {
+      async callTool(name, input) {
+        if (name === "list_tenants") return tenantListResponse();
+        if (name === "get_metadata_change_set") {
+          return changeSetResponse("metadata", 1, input.dataset);
+        }
+        writeCount += 1;
+        throw new Error(`Unexpected write: ${name}`);
+      },
+    };
+
+    await expect(
+      stageApprovedManifest(
+        { manifestPath, expectedDigest: acceptedDigest },
+        {
+          mcp,
+          workspaceRoots: [workspace],
+          isCancellationRequested: () => true,
+        },
+      ),
+    ).rejects.toMatchObject({ code: "CANCELLED" });
+    expect(writeCount).toBe(0);
+  });
+
+  test("rejects a differing record at the same canonical key before writing", async () => {
+    const localRecord = {
+      tenant_code: "DEMO",
+      system_code: "CRM",
+      connection_code: "MAIN",
+      object_schema: "sales",
+      object_name: "Customer",
+      is_active: true,
+    };
+    const { workspace, manifestPath, acceptedDigest } = await metadataRequest([localRecord]);
+    let writeCount = 0;
+    const mcp: McpToolClient = {
+      async callTool(name, input) {
+        if (name === "list_tenants") {
+          return tenantListResponse();
+        }
+        if (name === "get_metadata_change_set") {
+          return changeSetResponse("metadata", 1, input.dataset, [
+            { ...localRecord, is_active: false },
+          ]);
+        }
+        writeCount += 1;
+        throw new Error(`Unexpected tool: ${name}`);
+      },
+    };
+
+    await expect(
+      stageApprovedManifest(
+        { manifestPath, expectedDigest: acceptedDigest },
+        { mcp, workspaceRoots: [workspace] },
+      ),
+    ).rejects.toMatchObject({ code: "RECONCILIATION_CONFLICT" });
+    expect(writeCount).toBe(0);
+  });
+
+  test("rejects an ordinary explicit clear when server pending records exist", async () => {
+    const { workspace, manifestPath, acceptedDigest } = await metadataRequest([]);
+    let writeCount = 0;
+    const mcp: McpToolClient = {
+      async callTool(name, input) {
+        if (name === "list_tenants") {
+          return tenantListResponse();
+        }
+        if (name === "get_metadata_change_set") {
+          return changeSetResponse("metadata", 1, input.dataset, [{ object_name: "Server" }]);
+        }
+        writeCount += 1;
+        throw new Error(`Unexpected tool: ${name}`);
+      },
+    };
+
+    await expect(
+      stageApprovedManifest(
+        { manifestPath, expectedDigest: acceptedDigest },
+        { mcp, workspaceRoots: [workspace] },
+      ),
+    ).rejects.toMatchObject({ code: "RECONCILIATION_CONFLICT" });
+    expect(writeCount).toBe(0);
+  });
+
+  test("failed-draft retry replaces server pending records, including explicit clear", async () => {
+    const { workspace, session, manifestPath, acceptedDigest } = await metadataRequest([]);
+    await markFailedRetry(session, manifestPath);
+    let staged: unknown;
+    const mcp: McpToolClient = {
+      async callTool(name, input) {
+        if (name === "list_tenants") {
+          return tenantListResponse();
+        }
+        if (name === "get_metadata_change_set") {
+          return changeSetResponse("metadata", 1, input.dataset, [{ object_name: "Stale" }]);
+        }
+        if (name === "stage_metadata_change_set") {
+          staged = input.changes;
+          return directStageResponse("metadata", 2, { source_object: [] });
+        }
+        if (name === "get_metadata_change_set_fingerprint") {
+          return fingerprintResponse("metadata", 2, { source_object: [] });
+        }
+        throw new Error(`Unexpected tool: ${name}`);
+      },
+    };
+
+    const receipt = await stageApprovedManifest(
+      { manifestPath, expectedDigest: acceptedDigest },
+      { mcp, workspaceRoots: [workspace] },
+    );
+
+    expect(staged).toEqual([{ dataset: "source_object", records: [] }]);
+    expect(receipt.datasets).toEqual([{ dataset: "source_object", record_count: 0 }]);
+  });
+
+  test("stages one approved Metadata request without returning payload records", async () => {
+    const records = [
+      {
+        tenant_code: "DEMO",
+        system_code: "CRM",
+        connection_code: "MAIN",
+        object_schema: "sales",
+        object_name: "Customer",
+        is_active: true,
+      },
+    ];
+    const { workspace, manifestPath, acceptedDigest } = await metadataRequest(records);
+    const expectedFingerprint = fingerprintResponse("metadata", 2, { source_object: records });
+
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    const mcp: McpToolClient = {
+      async callTool(name, input) {
+        calls.push([name, input]);
+        if (name === "list_tenants") {
+          return tenantListResponse();
+        }
+        if (name === "get_metadata_change_set") {
+          return changeSetResponse("metadata", 1, input.dataset);
+        }
+        if (name === "stage_metadata_change_set") {
+          expect(input).toEqual({
+            tenant_id: 17,
+            metadata_change_set_id: CHANGE_SET_ID,
+            expected_draft_revision: 1,
+            changes: [{ dataset: "source_object", records }],
+          });
+          return directStageResponse("metadata", 2, { source_object: records });
+        }
+        if (name === "get_metadata_change_set_fingerprint") {
+          return expectedFingerprint;
+        }
+        throw new Error(`Unexpected tool: ${name}`);
+      },
+    };
+
+    const receipt = await stageApprovedManifest(
+      { manifestPath, expectedDigest: acceptedDigest },
+      { mcp, workspaceRoots: [workspace] },
+    );
+
+    expect(receipt).toEqual({
+      task_id:TASK,operation_id:OP,owner_tenant_id:17,owner_root:".",backend:BACKEND,
+      schema_version: "2.0",
+      status: "staged",
+      area: "metadata",
+      change_set_id: CHANGE_SET_ID,
+      starting_revision: 1,
+      draft_revision: 2,
+      accepted_digest: acceptedDigest,
+      stage_fingerprint: expectedFingerprint.fingerprint,
+      fingerprint_verified: true,
+      datasets: [{ dataset: "source_object", record_count: 1 }],
+    });
+    expect(JSON.stringify(receipt)).not.toContain("Customer");
+    expect(calls.map(([name]) => name)).toEqual([
+      "list_tenants",
+      "get_metadata_change_set",
+      "get_metadata_change_set",
+      "stage_metadata_change_set",
+      "get_metadata_change_set_fingerprint",
+    ]);
+  });
+
+  test.each([1, undefined])("rejects a different acknowledged dataset with count %s", async (count) => {
+    const records = [
+      {
+        tenant_code: "DEMO",
+        system_code: "CRM",
+        connection_code: "MAIN",
+        object_schema: "sales",
+        object_name: "Customer",
+      },
+    ];
+    const { workspace, manifestPath, acceptedDigest } = await metadataRequest(records);
+    const mcp: McpToolClient = {
+      async callTool(name, input) {
+        if (name === "list_tenants") {
+          return tenantListResponse();
+        }
+        if (name === "get_metadata_change_set") {
+          return changeSetResponse("metadata", 1, input.dataset);
+        }
+        if (name === "stage_metadata_change_set") {
+          return {
+            schema_version: "1.0",
+            tenant_id: 17,
+            metadata_change_set_id: CHANGE_SET_ID,
+            staged: true,
+            datasets: [{ dataset: "source_attribute", record_count: count }],
+            status: "active",
+            draft_revision: 2,
+          };
+        }
+        if (name === "get_metadata_change_set_fingerprint") {
+          return fingerprintResponse("metadata", 2, { source_object: records });
+        }
+        throw new Error(`Unexpected tool: ${name}`);
+      },
+    };
+
+    await expect(
+      stageApprovedManifest(
+        { manifestPath, expectedDigest: acceptedDigest },
+        { mcp, workspaceRoots: [workspace] },
+      ),
+    ).rejects.toMatchObject({ code: "MCP_RESPONSE_INVALID" });
+  });
+
+  test("rejects a Change Set read response for a different target before writing", async () => {
+    const records = [
+      {
+        tenant_code: "DEMO",
+        system_code: "CRM",
+        connection_code: "MAIN",
+        object_schema: "sales",
+        object_name: "Customer",
+      },
+    ];
+    const { workspace, manifestPath, acceptedDigest } = await metadataRequest(records);
+    let writeCount = 0;
+    const mcp: McpToolClient = {
+      async callTool(name, input) {
+        if (name === "list_tenants") {
+          return tenantListResponse();
+        }
+        if (name === "get_metadata_change_set") {
+          return { ...changeSetResponse("metadata", 1, input.dataset), tenant_id: 18 };
+        }
+        writeCount += 1;
+        return directStageResponse("metadata", 2, { source_object: records });
+      },
+    };
+
+    await expect(
+      stageApprovedManifest(
+        { manifestPath, expectedDigest: acceptedDigest },
+        { mcp, workspaceRoots: [workspace] },
+      ),
+    ).rejects.toMatchObject({ code: "MCP_RESPONSE_INVALID" });
+    expect(writeCount).toBe(0);
+  });
+
+  test("requires the Metadata Tenant Code to resolve uniquely across all pages", async () => {
+    const { workspace, manifestPath, acceptedDigest } = await metadataRequest([]);
+    let listCalls = 0;
+    const mcp: McpToolClient = {
+      async callTool(name) {
+        if (name !== "list_tenants") throw new Error(`Unexpected tool: ${name}`);
+        listCalls += 1;
+        return listCalls === 1
+          ? tenantListResponse([{ tenant_id: 17, tenant_code: "DEMO" }], "page-2")
+          : tenantListResponse([{ tenant_id: 18, tenant_code: "demo" }]);
+      },
+    };
+
+    await expect(
+      stageApprovedManifest(
+        { manifestPath, expectedDigest: acceptedDigest },
+        { mcp, workspaceRoots: [workspace] },
+      ),
+    ).rejects.toMatchObject({ code: "TARGET_MISMATCH" });
+    expect(listCalls).toBe(2);
+  });
+
+  test.each(["x", "é", "😀"])("batches a Metadata dataset with %s beyond the direct transport limit", async (character) => {
+    const records = [0, 1].map((index) => ({
+      tenant_code: "DEMO",
+      system_code: "CRM",
+      connection_code: "MAIN",
+      object_schema: "sales",
+      object_name: `Customer${index}_${character.repeat(40_000)}`,
+      is_active: true,
+    }));
+    const { workspace, manifestPath, acceptedDigest } = await metadataRequest(records);
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    const stageBatchId = "40000000-0000-4000-8000-000000000050";
+    const mcp: McpToolClient = {
+      async callTool(name, input) {
+        calls.push([name, input]);
+        if (name === "list_tenants") {
+          return tenantListResponse();
+        }
+        if (name === "get_metadata_change_set") {
+          return changeSetResponse("metadata", 1, input.dataset);
+        }
+        if (name === "begin_metadata_stage_batch") {
+          expect(input.total_record_count).toBe(2);
+          expect(input.total_chunk_count).toBe(2);
+          expect(input.dataset).toBe("source_object");
+          return beginStageResponse("metadata", input, stageBatchId);
+        }
+        if (name === "put_metadata_stage_chunk") {
+          expect(Array.isArray(input.records)).toBe(true);
+          expect(input.records).toHaveLength(1);
+          return putStageResponse("metadata", input, 2);
+        }
+        if (name === "commit_metadata_stage_batch") {
+          return commitStageResponse("metadata", input, "source_object", 2, 2);
+        }
+        if (name === "get_metadata_change_set_fingerprint") {
+          return fingerprintResponse("metadata", 2, { source_object: records });
+        }
+        throw new Error(`Unexpected tool: ${name}`);
+      },
+    };
+
+    const receipt = await stageApprovedManifest(
+      { manifestPath, expectedDigest: acceptedDigest },
+      { mcp, workspaceRoots: [workspace] },
+    );
+
+    expect(receipt.draft_revision).toBe(2);
+    expect(calls.map(([name]) => name)).toEqual([
+      "list_tenants",
+      "get_metadata_change_set",
+      "get_metadata_change_set",
+      "begin_metadata_stage_batch",
+      "put_metadata_stage_chunk",
+      "put_metadata_stage_chunk",
+      "commit_metadata_stage_batch",
+      "get_metadata_change_set_fingerprint",
+    ]);
+  });
+
+  test("resumes an identical incomplete Stage batch from its received chunk count", async () => {
+    const records = [0, 1].map((index) => ({
+      tenant_code: "DEMO",
+      system_code: "CRM",
+      connection_code: "MAIN",
+      object_schema: "sales",
+      object_name: `Customer${index}_${"x".repeat(40_000)}`,
+      is_active: true,
+    }));
+    const { workspace, manifestPath, acceptedDigest } = await metadataRequest(records);
+    const stageBatchId = "40000000-0000-4000-8000-000000000050";
+    const putIndexes: unknown[] = [];
+    const mcp: McpToolClient = {
+      async callTool(name, input) {
+        if (name === "list_tenants") return tenantListResponse();
+        if (name === "get_metadata_change_set") {
+          return changeSetResponse("metadata", 1, input.dataset);
+        }
+        if (name === "begin_metadata_stage_batch") {
+          return {
+            ...beginStageResponse("metadata", input, stageBatchId),
+            created: false,
+            received_chunk_count: 1,
+          };
+        }
+        if (name === "put_metadata_stage_chunk") {
+          putIndexes.push(input.chunk_index);
+          return putStageResponse("metadata", input, 2);
+        }
+        if (name === "commit_metadata_stage_batch") {
+          return commitStageResponse("metadata", input, "source_object", 2, 2);
+        }
+        if (name === "get_metadata_change_set_fingerprint") {
+          return fingerprintResponse("metadata", 2, { source_object: records });
+        }
+        throw new Error(`Unexpected tool: ${name}`);
+      },
+    };
+
+    await stageApprovedManifest(
+      { manifestPath, expectedDigest: acceptedDigest },
+      { mcp, workspaceRoots: [workspace] },
+    );
+
+    expect(putIndexes).toEqual([2]);
+  });
+
+  test("fails closed when a batch acknowledgement names a different dataset", async () => {
+    const records = [0, 1].map((index) => ({
+      tenant_code: "DEMO",
+      system_code: "CRM",
+      connection_code: "MAIN",
+      object_schema: "sales",
+      object_name: `Customer${index}_${"x".repeat(40_000)}`,
+    }));
+    const { workspace, manifestPath, acceptedDigest } = await metadataRequest(records);
+    const stageBatchId = "40000000-0000-4000-8000-000000000050";
+    const mcp: McpToolClient = {
+      async callTool(name, input) {
+        if (name === "list_tenants") {
+          return tenantListResponse();
+        }
+        if (name === "get_metadata_change_set") {
+          return changeSetResponse("metadata", 1, input.dataset);
+        }
+        if (name === "begin_metadata_stage_batch") {
+          return beginStageResponse("metadata", input, stageBatchId);
+        }
+        if (name === "put_metadata_stage_chunk") {
+          return putStageResponse("metadata", input, 2);
+        }
+        if (name === "commit_metadata_stage_batch") {
+          return {
+            schema_version: "1.0",
+            tenant_id: 17,
+            metadata_change_set_id: CHANGE_SET_ID,
+            stage_batch_id: stageBatchId,
+            dataset: "source_attribute",
+            committed: true,
+            replayed: false,
+            record_count: records.length,
+            draft_revision: 2,
+            status: "active",
+          };
+        }
+        if (name === "get_metadata_change_set_fingerprint") {
+          return fingerprintResponse("metadata", 2, { source_object: records });
+        }
+        throw new Error(`Unexpected tool: ${name}`);
+      },
+    };
+
+    await expect(
+      stageApprovedManifest(
+        { manifestPath, expectedDigest: acceptedDigest },
+        { mcp, workspaceRoots: [workspace] },
+      ),
+    ).rejects.toMatchObject({ code: "MCP_RESPONSE_INVALID" });
+  });
+
+  test("carries each returned revision through a mixed direct and batch Stage", async () => {
+    const largeRecords = [0, 1].map((index) => ({
+      tenant_code: "DEMO",
+      system_code: "CRM",
+      connection_code: "MAIN",
+      object_schema: "sales",
+      object_name: `Customer${index}_${"x".repeat(40_000)}`,
+    }));
+    const prepared = await metadataRequest(largeRecords);
+    const acceptedDigest = await addMetadataDataset(
+      prepared.session,
+      prepared.manifestPath,
+      "source_attribute",
+      [
+        "tenant_code",
+        "system_code",
+        "connection_code",
+        "object_schema",
+        "object_name",
+        "attribute_name",
+      ],
+      [],
+    );
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    const stageBatchId = "40000000-0000-4000-8000-000000000051";
+    const mcp: McpToolClient = {
+      async callTool(name, input) {
+        calls.push([name, input]);
+        if (name === "list_tenants") {
+          return tenantListResponse();
+        }
+        if (name === "get_metadata_change_set") {
+          return changeSetResponse("metadata", 1, input.dataset);
+        }
+        if (name === "stage_metadata_change_set") {
+          expect(input.expected_draft_revision).toBe(1);
+          expect(input.changes).toEqual([{ dataset: "source_attribute", records: [] }]);
+          return directStageResponse("metadata", 2, { source_attribute: [] });
+        }
+        if (name === "begin_metadata_stage_batch") {
+          expect(input.expected_draft_revision).toBe(2);
+          return beginStageResponse("metadata", input, stageBatchId);
+        }
+        if (name === "put_metadata_stage_chunk") {
+          return putStageResponse("metadata", input, 2);
+        }
+        if (name === "commit_metadata_stage_batch") {
+          expect(input.expected_draft_revision).toBe(2);
+          return commitStageResponse("metadata", input, "source_object", 2, 3);
+        }
+        if (name === "get_metadata_change_set_fingerprint") {
+          return fingerprintResponse("metadata", 3, {
+            source_attribute: [],
+            source_object: largeRecords,
+          });
+        }
+        throw new Error(`Unexpected tool: ${name}`);
+      },
+    };
+
+    const receipt = await stageApprovedManifest(
+      { manifestPath: prepared.manifestPath, expectedDigest: acceptedDigest },
+      { mcp, workspaceRoots: [prepared.workspace] },
+    );
+
+    expect(receipt.draft_revision).toBe(3);
+    expect(calls.filter(([name]) => name === "stage_metadata_change_set")).toHaveLength(1);
+    expect(calls.filter(([name]) => name === "commit_metadata_stage_batch")).toHaveLength(1);
+  });
+
+  test("rejects an unstageable batch before writing another dataset", async () => {
+    const prepared = await metadataRequest([{
+      tenant_code: "DEMO", system_code: "CRM", connection_code: "MAIN",
+      object_schema: "sales", object_name: "Customer", description: "x".repeat(450 * 1024),
+    }]);
+    const acceptedDigest = await addMetadataDataset(
+      prepared.session, prepared.manifestPath, "source_attribute", ["attribute_name"], [],
+    );
+    let writeStarted = false;
+    const mcp: McpToolClient = {
+      async callTool(name, input) {
+        if (name === "list_tenants") return tenantListResponse();
+        if (name === "get_metadata_change_set") return changeSetResponse("metadata", 1, input.dataset);
+        if (name === "stage_metadata_change_set") {
+          return directStageResponse("metadata", 2, { source_attribute: [] });
+        }
+        throw new Error("Unexpected tool");
+      },
+    };
+
+    await expect(stageApprovedManifest(
+      { manifestPath: prepared.manifestPath, expectedDigest: acceptedDigest },
+      { mcp, workspaceRoots: [prepared.workspace], onWriteStart: () => { writeStarted = true; } },
+    )).rejects.toMatchObject({ code: "PAYLOAD_LIMIT" });
+    expect(writeStarted).toBe(false);
+  });
+
+  test("derives the Project target from the approved request without a Tenant lookup", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "atlas-bridge-project-"));
+    const session = join(workspace, "working");
+    const changeSetDirectory = join(session, "project-change-set");
+    const tasksDirectory = join(session, EVIDENCE);
+    await mkdir(changeSetDirectory, { recursive: true });
+    await mkdir(tasksDirectory, { recursive: true });
+    const records = [{ logical_entity_schema_name: "silver", logical_entity_name: "Customer" }];
+    const payloadPath = join(changeSetDirectory, "logical_entity.json");
+    const payload = `${JSON.stringify(records)}\n`;
+    await writeFile(payloadPath, payload, { mode: 0o600 });
+    const acceptedDigest = await workspaceDigest(changeSetDirectory);
+    const { manifestSha256 } = await bindSession(
+      session,
+      "project",
+      acceptedDigest,
+      "logical_entity",
+      ["logical_entity_schema_name", "logical_entity_name"],
+      3,
+    );
+    const manifestPath = join(tasksDirectory, `${OP}.stage-request.json`);
+    await writeFile(
+      manifestPath,
+      `${JSON.stringify({
+        schema_version: "2.0",
+        kind: "atlas-stage-request",
+        area: "project",
+        task: "01",
+        accepted_digest: acceptedDigest,
+        failed_retry: false,
+        snapshot: {
+          snapshot_id: SNAPSHOT_IDS.project,
+          manifest_sha256: manifestSha256,
+        },
+        target: {
+          project_id: 42,
+          project_name: "Customer Project",
+          project_revision: 8,
+          change_set_id: CHANGE_SET_ID,
+          starting_revision: 3,
+        },
+        datasets: [
+          {
+            dataset: "logical_entity",
+            canonical_key: ["logical_entity_schema_name", "logical_entity_name"],
+            record_count: 1,
+            payload_file: payloadPath,
+            sha256: createHash("sha256").update(payload).digest("hex"),
+          },
+        ],
+      })}\n`,
+      { mode: 0o600 },
+    );
+    await sealManifest(session, manifestPath);
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    const mcp: McpToolClient = {
+      async callTool(name, input) {
+        calls.push([name, input]);
+        if (name === "get_project_change_set") {
+          return changeSetResponse("project", 3, input.dataset);
+        }
+        if (name === "stage_project_change_set") {
+          expect(input).toEqual({
+            project_id: 42,
+            project_change_set_id: CHANGE_SET_ID,
+            expected_draft_revision: 3,
+            changes: [{ dataset: "logical_entity", records }],
+          });
+          return directStageResponse("project", 4, { logical_entity: records });
+        }
+        if (name === "get_project_change_set_fingerprint") {
+          return fingerprintResponse("project", 4, { logical_entity: records });
+        }
+        throw new Error(`Unexpected tool: ${name}`);
+      },
+    };
+
+    const receipt = await stageApprovedManifest(
+      { manifestPath, expectedDigest: acceptedDigest },
+      { mcp, workspaceRoots: [workspace] },
+    );
+
+    expect(receipt.area).toBe("project");
+    expect(receipt.draft_revision).toBe(4);
+    expect(calls.map(([name]) => name).includes("list_tenants")).toBe(false);
+  });
+
+  test.each(["project_object_binding", "project_attribute_binding", "mapping_dependency"])("rejects retired %s before contacting MCP", async (dataset) => {
+    const { workspace, manifestPath, acceptedDigest } = await projectRequest(dataset, ["modeled_entity_schema_name", "modeled_entity_name"], [{modeled_entity_schema_name: "silver", modeled_entity_name: "Customer"}]);
+    let calls = 0;
+    await expect(stageApprovedManifest({manifestPath, expectedDigest: acceptedDigest}, {
+      workspaceRoots: [workspace], mcp: {async callTool() { calls++; return {}; }},
+    })).rejects.toBeInstanceOf(AtlasBridgeError);
+    expect(calls).toBe(0);
+  });
+
+  test("rejects schema-less Entity catalog keys before contacting MCP", async () => {
+    const { workspace, manifestPath, acceptedDigest } = await projectRequest("logical_entity", ["logical_entity_name"], [{logical_entity_name: "Customer"}]);
+    let calls = 0;
+    await expect(stageApprovedManifest({manifestPath, expectedDigest: acceptedDigest}, {
+      workspaceRoots: [workspace], mcp: {async callTool() { calls++; return {}; }},
+    })).rejects.toMatchObject({code: "SNAPSHOT_MISMATCH"});
+    expect(calls).toBe(0);
+  });
+
+  test.each(["object_enrichment", "attribute_enrichment"])("stages %s through the existing approved manifest", async dataset => {
+    const object = { tenant_code: "T", system_code: "ERP", connection_code: "C", object_schema: "bronze", object_name: "Orders" };
+    const attribute = dataset === "attribute_enrichment";
+    const keys = [...Object.keys(object), ...(attribute ? ["attribute_name"] : [])];
+    const records = [attribute
+      ? { ...object, attribute_name: "OrderNumber", attribute_description: "Business identifier", attribute_inferred_data_type: "STRING", is_natural_key: true, is_primary_key: null, is_nullable: null, is_pii: null, is_locked: false }
+      : { ...object, object_description: "Customer orders", is_locked: false }];
+    const {workspace, manifestPath, acceptedDigest} = await projectRequest(dataset, keys, records);
+    const mcp: McpToolClient = { async callTool(name, input) {
+      if (name === "get_project_change_set") return changeSetResponse("project", 3, input.dataset);
+      if (name === "stage_project_change_set") return directStageResponse("project", 4, {[dataset]: records});
+      if (name === "get_project_change_set_fingerprint") return fingerprintResponse("project", 4, {[dataset]: records});
+      throw new Error(`Unexpected tool: ${name}`);
+    }};
+    const receipt = await stageApprovedManifest({manifestPath, expectedDigest: acceptedDigest}, {mcp, workspaceRoots: [workspace]});
+    expect(receipt.datasets).toEqual([{dataset, record_count: 1}]);
+    expect(receipt.fingerprint_verified).toBe(true);
+  });
+
+  test("stages the singleton project_details dataset with its empty canonical key", async () => {
+    const records = [{ project_name: "Customer Project", project_description: "Customers" }];
+    const { workspace, manifestPath, acceptedDigest } = await projectRequest(
+      "project_details",
+      [],
+      records,
+    );
+    const mcp: McpToolClient = {
+      async callTool(name, input) {
+        if (name === "get_project_change_set") {
+          return changeSetResponse("project", 3, input.dataset);
+        }
+        if (name === "stage_project_change_set") {
+          return directStageResponse("project", 4, { project_details: records });
+        }
+        if (name === "get_project_change_set_fingerprint") {
+          return fingerprintResponse("project", 4, { project_details: records });
+        }
+        throw new Error(`Unexpected tool: ${name}`);
+      },
+    };
+
+    const receipt = await stageApprovedManifest(
+      { manifestPath, expectedDigest: acceptedDigest },
+      { mcp, workspaceRoots: [workspace] },
+    );
+
+    expect(receipt.datasets).toEqual([{ dataset: "project_details", record_count: 1 }]);
+  });
+
+  test.each([
+    ["project_input_scope", ["tenant_code", "system_code", "connection_code", "object_schema", "object_name"]],
+    ["profiling_profile", ["tenant_code", "system_code", "connection_code", "object_schema", "object_name", "attribute_name"]],
+  ])("never stages web-managed %s, even from a sealed manifest", async (dataset, canonicalKey) => {
+    const records = [{ tenant_code: "DEMO", system_code: "CRM", connection_code: "LAKE", object_schema: "bronze",
+      object_name: "customer", attribute_name: "customer_id", is_active: true }];
+    const { workspace, manifestPath, acceptedDigest } = await projectRequest(dataset, canonicalKey, records);
+    const mcp: McpToolClient = { callTool: vi.fn(async () => { throw new Error("MCP must not be called"); }) };
+
+    await expect(
+      stageApprovedManifest({ manifestPath, expectedDigest: acceptedDigest }, { mcp, workspaceRoots: [workspace] }),
+    ).rejects.toMatchObject({ code: "DATASET_NOT_STAGEABLE" });
+    expect(mcp.callTool).not.toHaveBeenCalled();
+  });
+
+  test("binds the local digest to the authoritative fingerprint after server normalization", async () => {
+    const records = [{ logical_entity_schema_name: "silver", logical_entity_name: "Customer" }];
+    const { workspace, manifestPath, acceptedDigest } = await projectRequest(
+      "logical_entity",
+      ["logical_entity_schema_name", "logical_entity_name"],
+      records,
+    );
+    const normalizedFingerprint = fingerprintResponse(
+      "project",
+      4,
+      { logical_entity: records },
+      { logical_entity: "7".repeat(64) },
+    );
+    const mcp: McpToolClient = {
+      async callTool(name, input) {
+        if (name === "get_project_change_set") {
+          return changeSetResponse("project", 3, input.dataset);
+        }
+        if (name === "stage_project_change_set") {
+          return directStageResponse("project", 4, { logical_entity: records });
+        }
+        if (name === "get_project_change_set_fingerprint") {
+          return normalizedFingerprint;
+        }
+        throw new Error(`Unexpected tool: ${name}`);
+      },
+    };
+
+    const receipt = await stageApprovedManifest(
+      { manifestPath, expectedDigest: acceptedDigest },
+      { mcp, workspaceRoots: [workspace] },
+    );
+
+    expect(receipt.accepted_digest).toBe(acceptedDigest);
+    expect(receipt.stage_fingerprint).toBe(normalizedFingerprint.fingerprint);
+    expect(receipt.fingerprint_verified).toBe(true);
+  });
+
+  test("rejects a self-consistent fingerprint with a noncanonical dataset order", async () => {
+    const records = [{ logical_entity_schema_name: "silver", logical_entity_name: "Customer" }];
+    const { workspace, manifestPath, acceptedDigest } = await projectRequest(
+      "logical_entity",
+      ["logical_entity_schema_name", "logical_entity_name"],
+      records,
+    );
+    const fingerprint = fingerprintResponse("project", 4, { logical_entity: records });
+    fingerprint.datasets = [...fingerprint.datasets].reverse();
+    fingerprint.fingerprint = createHash("sha256")
+      .update(
+        JSON.stringify({
+          area: "project",
+          datasets: fingerprint.datasets,
+          fingerprint_version: "1.0",
+        }),
+      )
+      .digest("hex");
+    const mcp: McpToolClient = {
+      async callTool(name, input) {
+        if (name === "get_project_change_set") {
+          return changeSetResponse("project", 3, input.dataset);
+        }
+        if (name === "stage_project_change_set") {
+          return directStageResponse("project", 4, { logical_entity: records });
+        }
+        if (name === "get_project_change_set_fingerprint") return fingerprint;
+        throw new Error(`Unexpected tool: ${name}`);
+      },
+    };
+
+    await expect(
+      stageApprovedManifest(
+        { manifestPath, expectedDigest: acceptedDigest },
+        { mcp, workspaceRoots: [workspace] },
+      ),
+    ).rejects.toMatchObject({ code: "FINGERPRINT_MISMATCH" });
+  });
+
+  test("rejects a tampered aggregate fingerprint", async () => {
+    const records = [{ logical_entity_schema_name: "silver", logical_entity_name: "Customer" }];
+    const { workspace, manifestPath, acceptedDigest } = await projectRequest(
+      "logical_entity",
+      ["logical_entity_schema_name", "logical_entity_name"],
+      records,
+    );
+    const fingerprint = fingerprintResponse("project", 4, { logical_entity: records });
+    fingerprint.fingerprint = "f".repeat(64);
+    const mcp: McpToolClient = {
+      async callTool(name, input) {
+        if (name === "get_project_change_set") {
+          return changeSetResponse("project", 3, input.dataset);
+        }
+        if (name === "stage_project_change_set") {
+          return directStageResponse("project", 4, { logical_entity: records });
+        }
+        if (name === "get_project_change_set_fingerprint") return fingerprint;
+        throw new Error(`Unexpected tool: ${name}`);
+      },
+    };
+
+    await expect(
+      stageApprovedManifest(
+        { manifestPath, expectedDigest: acceptedDigest },
+        { mcp, workspaceRoots: [workspace] },
+      ),
+    ).rejects.toMatchObject({ code: "FINGERPRINT_MISMATCH" });
+  });
+
+  test("rejects duplicate server Project keys using Unicode casefolding", async () => {
+    const records = [{ logical_entity_schema_name: "silver", logical_entity_name: "Other" }];
+    const { workspace, manifestPath, acceptedDigest } = await projectRequest(
+      "logical_entity",
+      ["logical_entity_schema_name", "logical_entity_name"],
+      records,
+    );
+    let writeCount = 0;
+    const mcp: McpToolClient = {
+      async callTool(name, input) {
+        if (name === "get_project_change_set") {
+          return changeSetResponse("project", 3, input.dataset, [
+            { logical_entity_schema_name: "silver", logical_entity_name: "Straße" },
+            { logical_entity_schema_name: "silver", logical_entity_name: "STRASSE" },
+          ]);
+        }
+        writeCount += 1;
+        throw new Error(`Unexpected tool: ${name}`);
+      },
+    };
+
+    const operation = stageApprovedManifest(
+      { manifestPath, expectedDigest: acceptedDigest },
+      { mcp, workspaceRoots: [workspace] },
+    );
+
+    await expect(operation).rejects.toMatchObject({
+      code: "MCP_RESPONSE_INVALID",
+    });
+    expect(writeCount).toBe(0);
+  });
+
+  test("uses bounded JSON fragments only for oversized generated code", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "atlas-bridge-code-"));
+    const session = join(workspace, "working");
+    const changeSetDirectory = join(session, "project-change-set");
+    const tasksDirectory = join(session, EVIDENCE);
+    await mkdir(changeSetDirectory, { recursive: true });
+    await mkdir(tasksDirectory, { recursive: true });
+    const records = [{ modeled_entity_schema_name: "silver", artifact_name: "customers.sql", sql: "x".repeat(1_200_000) }];
+    const payloadPath = join(changeSetDirectory, "generated_code.json");
+    const payload = `${JSON.stringify(records)}\n`;
+    await writeFile(payloadPath, payload, { mode: 0o600 });
+    const acceptedDigest = await workspaceDigest(changeSetDirectory);
+    const { manifestSha256 } = await bindSession(
+      session,
+      "project",
+      acceptedDigest,
+      "generated_code",
+      ["modeled_entity_schema_name", "artifact_name"],
+      3,
+    );
+    const manifestPath = join(tasksDirectory, `${OP}.stage-request.json`);
+    await writeFile(
+      manifestPath,
+      `${JSON.stringify({
+        schema_version: "2.0",
+        kind: "atlas-stage-request",
+        area: "project",
+        task: "01",
+        accepted_digest: acceptedDigest,
+        failed_retry: false,
+        snapshot: {
+          snapshot_id: SNAPSHOT_IDS.project,
+          manifest_sha256: manifestSha256,
+        },
+        target: {
+          project_id: 42,
+          project_name: "Customer Project",
+          project_revision: 8,
+          change_set_id: CHANGE_SET_ID,
+          starting_revision: 3,
+        },
+        datasets: [
+          {
+            dataset: "generated_code",
+            canonical_key: ["modeled_entity_schema_name", "artifact_name"],
+            record_count: 1,
+            payload_file: payloadPath,
+            sha256: createHash("sha256").update(payload).digest("hex"),
+          },
+        ],
+      })}\n`,
+      { mode: 0o600 },
+    );
+    await sealManifest(session, manifestPath);
+    const fragments: Buffer[] = [];
+    let totalChunkCount = 0;
+    const stageBatchId = "40000000-0000-4000-8000-000000000050";
+    const mcp: McpToolClient = {
+      async callTool(name, input) {
+        if (name === "get_project_change_set") {
+          return changeSetResponse("project", 3, input.dataset);
+        }
+        if (name === "begin_project_stage_batch") {
+          expect(input.payload_mode).toBe("json_fragments");
+          expect(input.total_payload_bytes).toBeGreaterThan(1_000_000);
+          expect(input.total_chunk_count).toBeLessThanOrEqual(64);
+          totalChunkCount = Number(input.total_chunk_count);
+          return beginStageResponse("project", input, stageBatchId);
+        }
+        if (name === "put_project_stage_chunk") {
+          expect(input.payload_mode).toBe("json_fragments");
+          expect(input.records).toBeUndefined();
+          const fragment = Buffer.from(String(input.payload_fragment_base64), "base64");
+          expect(fragment.length).toBeLessThanOrEqual(1024 * 1024);
+          fragments.push(fragment);
+          return putStageResponse("project", input, totalChunkCount);
+        }
+        if (name === "commit_project_stage_batch") {
+          return commitStageResponse("project", input, "generated_code", 1, 4);
+        }
+        if (name === "get_project_change_set_fingerprint") {
+          return fingerprintResponse("project", 4, { generated_code: records });
+        }
+        throw new Error(`Unexpected tool: ${name}`);
+      },
+    };
+
+    const receipt = await stageApprovedManifest(
+      { manifestPath, expectedDigest: acceptedDigest },
+      { mcp, workspaceRoots: [workspace] },
+    );
+
+    expect(receipt.draft_revision).toBe(4);
+    expect(JSON.parse(Buffer.concat(fragments).toString("utf8"))).toEqual(records);
+    const receiptBytes = Buffer.byteLength(JSON.stringify(receipt), "utf8");
+    expect(Buffer.byteLength(payload, "utf8")).toBeGreaterThan(1_000_000);
+    expect(receiptBytes).toBeLessThan(2_048);
+    expect(Buffer.byteLength(payload, "utf8") / receiptBytes).toBeGreaterThan(500);
+    expect(JSON.stringify(receipt)).not.toContain("x".repeat(100));
+  });
+});
+
+function successfulMetadataClient(ownerId = 17, ownerCode = "DEMO"): McpToolClient {
+  let records: Array<Record<string, unknown>> = [];
+  return {async callTool(name,input) {
+    if (name === "list_tenants") return tenantListResponse([{tenant_id:ownerId,tenant_code:ownerCode}]);
+    if (name === "get_metadata_change_set") return {...changeSetResponse("metadata",1,input.dataset),tenant_id:ownerId};
+    if (name === "stage_metadata_change_set") {
+      records=(input.changes as Array<{records:Array<Record<string,unknown>>}>)[0]!.records;
+      return {...directStageResponse("metadata",2,{source_object:records}),tenant_id:ownerId};
+    }
+    if (name === "get_metadata_change_set_fingerprint") return {...fingerprintResponse("metadata",2,{source_object:records}),tenant_id:ownerId};
+    throw new Error("Unexpected fixture call");
+  }};
+}
+
+async function updateOperation(session: string, change:(operation:Record<string,any>)=>void) {
+  const file=join(session,OP_PATH);
+  const op=JSON.parse(await readFile(file,"utf8"));
+  change(op);
+  await writeFile(file,JSON.stringify(op));
+}
+
+describe("Atlas operation isolation",()=>{
+  test("keeps approval after task navigation and narrative edits",async()=>{
+    const fixture=await metadataRequest([]);
+    const file=join(fixture.session,".atlas/session.json");
+    const state=JSON.parse(await readFile(file,"utf8"));state.active_task=null;
+    await writeFile(file,JSON.stringify(state));
+    await writeFile(join(fixture.session,`.atlas/tasks/${TASK}.json`),JSON.stringify({schema_version:"2.0",outcome:"Still the same work",progress:"Another task is selected"}));
+    const receipt=await stageApprovedManifest({manifestPath:fixture.manifestPath,expectedDigest:fixture.acceptedDigest},{workspaceRoots:[fixture.workspace],mcp:successfulMetadataClient()});
+    const op=JSON.parse(await readFile(join(fixture.session,OP_PATH),"utf8"));
+    expect(op.stage).toMatchObject(receipt);expect(op.stage_attempt.status).toBe("verified");
+  });
+
+  test("keeps workspace-relative approvals when the working directory moves",async()=>{
+    const fixture=await metadataRequest([]);
+    const relocated=join(fixture.workspace,"relocated");
+    await rename(fixture.session,relocated);
+    const receipt=await stageApprovedManifest({manifestPath:join(relocated,EVIDENCE,`${OP}.stage-request.json`),expectedDigest:fixture.acceptedDigest},{workspaceRoots:[fixture.workspace],mcp:successfulMetadataClient()});
+    expect(receipt.status).toBe("staged");
+  });
+
+  test("rejects a different configured backend before any remote call",async()=>{
+    const fixture=await metadataRequest([]);let calls=0;
+    await expect(stageApprovedManifest({manifestPath:fixture.manifestPath,expectedDigest:fixture.acceptedDigest},{workspaceRoots:[fixture.workspace],backend:{...BACKEND,endpoint_sha256:"f".repeat(64)},mcp:{async callTool(){calls++;return {};}}})).rejects.toMatchObject({code:"LOCAL_STATE_MISMATCH"});
+    expect(calls).toBe(0);
+  });
+
+  test("retains uncertain writes and blocks blind retry",async()=>{
+    const fixture=await metadataRequest([]);let writes=0;
+    const client=successfulMetadataClient();
+    const mcp:McpToolClient={async callTool(name,input){if(name==="stage_metadata_change_set"){writes++;throw new Error("synthetic lost acknowledgement");}return client.callTool(name,input);}};
+    const input={manifestPath:fixture.manifestPath,expectedDigest:fixture.acceptedDigest};
+    await expect(stageApprovedManifest(input,{workspaceRoots:[fixture.workspace],mcp})).rejects.toThrow("synthetic lost acknowledgement");
+    expect(JSON.parse(await readFile(join(fixture.session,OP_PATH),"utf8")).stage_attempt.status).toBe("unknown");
+    await expect(stageApprovedManifest(input,{workspaceRoots:[fixture.workspace],mcp})).rejects.toMatchObject({code:"STAGE_OUTCOME_UNKNOWN"});
+    expect(writes).toBe(1);
+  });
+
+  test("does not overwrite externally edited operation evidence after a write",async()=>{
+    const fixture=await metadataRequest([]);const client=successfulMetadataClient();
+    const mcp:McpToolClient={async callTool(name,input){const result=await client.callTool(name,input);if(name==="stage_metadata_change_set") await updateOperation(fixture.session,op=>{op.external_note="preserve";});return result;}};
+    await expect(stageApprovedManifest({manifestPath:fixture.manifestPath,expectedDigest:fixture.acceptedDigest},{workspaceRoots:[fixture.workspace],mcp})).rejects.toMatchObject({code:"LOCAL_STATE_MISMATCH"});
+    const op=JSON.parse(await readFile(join(fixture.session,OP_PATH),"utf8"));
+    expect(op.external_note).toBe("preserve");expect(op.stage_attempt.status).toBe("unknown");
+  });
+
+  test.each([false,true])("checks evidence presence and bytes before Stage (initially absent=%s)",async(absent)=>{
+    const fixture=await metadataRequest([]);const evidencePath=`${EVIDENCE}/decision.json`;
+    if(!absent)await writeFile(join(fixture.session,evidencePath),"original");
+    const opFile=join(fixture.session,OP_PATH);const op=JSON.parse(await readFile(opFile,"utf8"));
+    const reportFile=join(fixture.session,op.validation.report_path);const report=JSON.parse(await readFile(reportFile,"utf8"));
+    report.evidence_files=[{path:evidencePath,sha256:absent?null:createHash("sha256").update("original").digest("hex")}];
+    const bytes=JSON.stringify(report);await writeFile(reportFile,bytes);
+    op.validation.report_sha256=createHash("sha256").update(bytes).digest("hex");op.acknowledgement.report_sha256=op.validation.report_sha256;await writeFile(opFile,JSON.stringify(op));
+    await writeFile(join(fixture.session,evidencePath),"changed");let calls=0;
+    await expect(stageApprovedManifest({manifestPath:fixture.manifestPath,expectedDigest:fixture.acceptedDigest},{workspaceRoots:[fixture.workspace],mcp:{async callTool(){calls++;return {};}}})).rejects.toMatchObject({code:"MODELING_EVIDENCE_CHANGED"});
+    expect(calls).toBe(0);
+  });
+
+  test("stages a registered secondary Metadata owner without changing primary context",async()=>{
+    const fixture=await metadataRequest([]);const owner={id:23,code:"OTHER",root:"metadata-owners/tenant-23"};
+    const ownerRoot=join(fixture.session,owner.root);await mkdir(ownerRoot,{recursive:true});
+    await rename(join(fixture.session,"metadata"),join(ownerRoot,"metadata"));await rename(join(fixture.session,"metadata-change-set"),join(ownerRoot,"metadata-change-set"));
+    const snapshotPath=`${owner.root}/metadata/metadata-snapshot/manifest.json`;
+    const snapshot=JSON.parse(await readFile(join(fixture.session,snapshotPath),"utf8"));snapshot.tenant_code=owner.code;
+    const snapshotBytes=JSON.stringify(snapshot);await writeFile(join(fixture.session,snapshotPath),snapshotBytes);
+    const request=JSON.parse(await readFile(fixture.manifestPath,"utf8"));request.owner=owner;request.target.tenant_code=owner.code;
+    request.snapshot.manifest_path=snapshotPath;request.snapshot.manifest_sha256=createHash("sha256").update(snapshotBytes).digest("hex");
+    request.datasets[0].payload_file=`${owner.root}/metadata-change-set/source_object.json`;
+    const requestBytes=JSON.stringify(request);await writeFile(fixture.manifestPath,requestBytes);
+    const opFile=join(fixture.session,OP_PATH);const op=JSON.parse(await readFile(opFile,"utf8"));op.owner=owner;
+    op.inputs=[{area:"metadata",owner_tenant_id:23,...request.snapshot}];op.stage_request.sha256=createHash("sha256").update(requestBytes).digest("hex");
+    const reportFile=join(fixture.session,op.validation.report_path);const report=JSON.parse(await readFile(reportFile,"utf8"));report.owner_tenant_id=23;report.inputs=op.inputs;
+    const reportBytes=JSON.stringify(report);await writeFile(reportFile,reportBytes);op.validation.report_sha256=createHash("sha256").update(reportBytes).digest("hex");op.acknowledgement.report_sha256=op.validation.report_sha256;await writeFile(opFile,JSON.stringify(op));
+    const stateFile=join(fixture.session,".atlas/session.json");const state=JSON.parse(await readFile(stateFile,"utf8"));state.metadata_owners["23"]=owner;state.operations.metadata["23"]=OP_PATH;await writeFile(stateFile,JSON.stringify(state));
+    const receipt=await stageApprovedManifest({manifestPath:fixture.manifestPath,expectedDigest:fixture.acceptedDigest},{workspaceRoots:[fixture.workspace],mcp:successfulMetadataClient(23,"OTHER")});
+    expect(receipt.owner_tenant_id).toBe(23);expect(receipt.owner_root).toBe(owner.root);
+    expect(JSON.parse(await readFile(stateFile,"utf8")).tenant.id).toBe(17);
+  });
+});
+
+describe("read-only uncertain Stage recovery",()=>{
+  test.each([false,true])("recovers exact intent without replay (server changed=%s)",async(changed)=>{
+    const fixture=await metadataRequest([]);let writes=0;let committed=false;
+    const mcp:McpToolClient={async callTool(name,input){
+      if(name==="list_tenants")return tenantListResponse([{tenant_id:17,tenant_code:"DEMO"}]);
+      if(name==="get_metadata_change_set")return changeSetResponse("metadata",committed?2:1,input.dataset,
+        input.dataset && changed && committed ? [{tenant_code:"DEMO",system_code:"CRM",connection_code:"CRM",object_schema:"dbo",object_name:"Extra"}] : []);
+      if(name==="stage_metadata_change_set"){writes++;committed=true;throw new Error("lost write response");}
+      if(name==="get_metadata_change_set_fingerprint")return fingerprintResponse("metadata",2,{source_object:[]});
+      throw new Error("Unexpected fixture call");
+    }};
+    const input={manifestPath:fixture.manifestPath,expectedDigest:fixture.acceptedDigest};
+    await expect(stageApprovedManifest(input,{workspaceRoots:[fixture.workspace],mcp})).rejects.toThrow("lost write response");
+    if(changed)await expect(stageApprovedManifest({...input,recoverOnly:true},{workspaceRoots:[fixture.workspace],mcp})).rejects.toMatchObject({code:"RECOVERY_UNPROVEN"});
+    else {
+      const result=await stageApprovedManifest({...input,recoverOnly:true},{workspaceRoots:[fixture.workspace],mcp});
+      expect(result.draft_revision).toBe(2);
+      const op=JSON.parse(await readFile(join(fixture.session,OP_PATH),"utf8"));
+      expect(op.stage.recovered).toBe(true);expect(op.draft.revision).toBe(2);
+    }
+    expect(writes).toBe(1);
+  });
+  test("refuses an older unknown attempt without saved reconciliation hashes",async()=>{
+    const fixture=await metadataRequest([]);
+    await updateOperation(fixture.session,op=>{op.stage_attempt={status:"unknown",accepted_digest:fixture.acceptedDigest};});
+    await expect(stageApprovedManifest({manifestPath:fixture.manifestPath,expectedDigest:fixture.acceptedDigest,recoverOnly:true},
+      {workspaceRoots:[fixture.workspace],mcp:successfulMetadataClient()})).rejects.toMatchObject({code:"RECOVERY_UNPROVEN"});
+  });
+});
+
+
+describe("operation-derived Stage digest", () => {
+  test("stages using the manifest and bound accepted operation without digest transcription", async () => {
+    const fixture = await metadataRequest([{ tenant_code: "DEMO", system_code: "CRM", connection_code: "MAIN", object_schema: "dbo", object_name: "Customer" }]);
+    const receipt = await stageApprovedManifest({ manifestPath: fixture.manifestPath }, { workspaceRoots: [fixture.workspace], mcp: successfulMetadataClient() });
+    expect(receipt.accepted_digest).toBe(fixture.acceptedDigest);
+    expect(receipt.operation_id).toBe(OP);
+    expect(JSON.parse(await readFile(join(fixture.session, OP_PATH), "utf8")).stage).toMatchObject({ operation_id: OP, accepted_digest: fixture.acceptedDigest });
+  });
+
+  test.each(["explicit mismatch", "changed payload", "changed acknowledgement"])("rejects %s with no server I/O", async reason => {
+    const fixture = await metadataRequest([{ tenant_code: "DEMO", system_code: "CRM", connection_code: "MAIN", object_schema: "dbo", object_name: "Customer" }]);
+    if (reason === "changed payload") await writeFile(join(fixture.session, "metadata-change-set/source_object.json"), "[]");
+    if (reason === "changed acknowledgement") await updateOperation(fixture.session, operation => { operation.acknowledgement.digest = "a".repeat(64); });
+    let calls = 0;
+    await expect(stageApprovedManifest({ manifestPath: fixture.manifestPath, ...(reason === "explicit mismatch" ? { expectedDigest: "0".repeat(64) } : {}) },
+      { workspaceRoots: [fixture.workspace], mcp: { async callTool() { calls++; return {}; } } })).rejects.toMatchObject({ code: reason === "changed acknowledgement" ? "LOCAL_STATE_MISMATCH" : "DIGEST_MISMATCH" });
+    expect(calls).toBe(0);
+  });
+});
+
+describe("local Change Set digest", () => {
+  test("orders files ordinally, matching the Node and PowerShell helpers", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "atlas-digest-"));
+    const copy = JSON.stringify([{ tenant_code: "T", name: "a" }]);
+    const group = JSON.stringify([{ tenant_code: "T", name: "b" }]);
+    await writeFile(join(directory, "copy_group.json"), group);
+    await writeFile(join(directory, "copy.json"), copy);
+    // Ordinal: '.' (U+002E) sorts before '_' (U+005F); ICU localeCompare reverses these names.
+    const expected = createHash("sha256");
+    for (const [name, text] of [["copy.json", copy], ["copy_group.json", group]] as const) {
+      expected.update(`${name}\0${Buffer.byteLength(text)}\0`).update(text);
+    }
+    expect(await workspaceDigest(directory)).toBe(expected.digest("hex"));
+  });
+});

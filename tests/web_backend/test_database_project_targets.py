@@ -4,35 +4,35 @@
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.project import StageProjectChange
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.metadata.workbook import parse_metadata_workbook
-from gds_workbench_api.features.metadata_change_sets.contracts import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.application.change_sets.project import StageProjectChange
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.metadata.workbook import parse_metadata_workbook
+from atlas_platform.features.metadata_change_sets.contracts import (
     CreateMetadataChangeSetRequest,
 )
-from gds_workbench_api.features.metadata_change_sets.contracts import (
+from atlas_platform.features.metadata_change_sets.contracts import (
     ExpectedDraftRevisionRequest as MetadataRevisionRequest,
 )
-from gds_workbench_api.features.metadata_change_sets.service import (
+from atlas_platform.features.metadata_change_sets.service import (
     DatabaseMetadataChangeSetService,
 )
-from gds_workbench_api.features.project_change_sets.contracts import (
+from atlas_platform.features.project_change_sets.contracts import (
     CreateProjectChangeSetRequest,
     ExpectedDraftRevisionRequest,
     StageProjectChangeSetRequest,
 )
-from gds_workbench_api.features.project_change_sets.service import (
+from atlas_platform.features.project_change_sets.service import (
     DatabaseProjectChangeSetService,
 )
-from gds_workbench_api.features.project_targets.contracts import (
+from atlas_platform.features.project_targets.contracts import (
     ExportProjectDdlRequest,
     ExportProjectTargetsRequest,
 )
-from gds_workbench_api.features.project_targets.service import (
+from atlas_platform.features.project_targets.service import (
     DatabaseProjectTargetsService,
 )
-from gds_workbench_api.features.projects import ProjectRevisionConflictError
+from atlas_platform.features.projects import ProjectRevisionConflictError
 
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.test_database_project_change_set_round_trip import (

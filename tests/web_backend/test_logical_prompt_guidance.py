@@ -10,10 +10,10 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+from atlas_platform.features.logical.policy import project_logical_audit_policy
 from pydantic import JsonValue
-from tests.web_backend.test_logical_candidate import _answer, _validator
 
-from gds_workbench_api.features.logical.policy import project_logical_audit_policy
+from tests.web_backend.test_logical_candidate import _answer, _validator
 
 SEED_ROOT = Path(__file__).resolve().parents[2] / "database/seed"
 PROMPTS = json.loads(

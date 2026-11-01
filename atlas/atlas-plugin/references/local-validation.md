@@ -2,7 +2,7 @@
 
 After each authored phase or coherent batch, validate the complete effective result: bound Snapshot plus all pending records overlaid by canonical key. Repeat affected checks after repairs. Phase completion requires structural checks and a review of meaning; it does not trigger Stage or Apply.
 
-Atlas Local Workbench and `scripts/atlas-local.js` use the same [validation runner](../workbench/validation/run.js). Reports say which checks ran, were skipped, need review or remain server-only.
+Atlas Local Workbench and `scripts/atlas-local.js` use the same [validation runner](../atlas-local-workbench/validation/run.js). Reports say which checks ran, were skipped, need review or remain server-only.
 
 ## Structural checks
 

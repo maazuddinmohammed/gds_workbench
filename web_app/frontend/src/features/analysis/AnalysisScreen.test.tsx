@@ -4,14 +4,14 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
 
 import { createApiClient } from "../../api";
-import { WorkbenchApp, createWorkbenchRouter } from "../../app";
+import { AtlasPlatformApp, createAtlasPlatformRouter } from "../../app";
 import type { AnalysisFinding } from "./api";
 
 describe("Project Analysis", () => {
   it("filters either relationship endpoint and reviews findings in the complete table", async () => {
     const fetcher = analysisFetchStub();
     const user = userEvent.setup();
-    render(<WorkbenchApp router={analysisRouter(fetcher)} />);
+    render(<AtlasPlatformApp router={analysisRouter(fetcher)} />);
 
     const ledger = await screen.findByRole("table", { name: "Analysis findings" });
     expect(screen.queryByText("Findings", { exact: true })).not.toBeInTheDocument();
@@ -70,7 +70,7 @@ describe("Project Analysis", () => {
       source_missing_target_percent: 5, unused_target_percent: 24,
       observed_cardinality: "many_to_many", cardinality_mismatch: true,
     } });
-    render(<WorkbenchApp router={analysisRouter(fetcher)} />);
+    render(<AtlasPlatformApp router={analysisRouter(fetcher)} />);
     const ledger = await screen.findByRole("table", { name: "Analysis findings" });
     const cells = within(within(ledger).getAllByRole("row")[1]!).getAllByRole("cell");
     expect(cells.slice(10, 16).map((cell) => cell.textContent)).toEqual(["1,000", "2,000", "4", "24", "5.00%", "24.00%"]);
@@ -79,7 +79,7 @@ describe("Project Analysis", () => {
   });
 
   it("distinguishes missing measurements, measured zero, and an undefined percentage", async () => {
-    render(<WorkbenchApp router={analysisRouter(analysisFetchStub({ findingOverrides: {
+    render(<AtlasPlatformApp router={analysisRouter(analysisFetchStub({ findingOverrides: {
       validation_state: "validated", validation_result: "inconclusive",
       from_row_count: null, to_row_count: 0,
       source_missing_target_count: 3, unused_target_count: 0,
@@ -92,11 +92,11 @@ describe("Project Analysis", () => {
 
   it("redirects old finding links to the table and preserves the Project layer", async () => {
     const fetcher = analysisFetchStub();
-    const router = createWorkbenchRouter({
+    const router = createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/analysis/81?layer=dimensional"] }),
     });
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
     await screen.findByRole("table", { name: "Analysis findings" });
     expect(router.state.location.pathname).toBe("/tenants/7/projects/18/analysis");
     expect(router.state.location.search).toEqual({ layer: "dimensional" });
@@ -106,7 +106,7 @@ describe("Project Analysis", () => {
   it("unlocks, deactivates, and reactivates findings using each refreshed Project revision", async () => {
     const fetcher = analysisFetchStub({ findingLocked: true });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={analysisRouter(fetcher)} />);
+    render(<AtlasPlatformApp router={analysisRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Analysis findings" });
     if (screen.getByRole("button", { name: /^Filters/ }).getAttribute("aria-expanded") === "false") await user.click(screen.getByRole("button", { name: /^Filters/ }));
     await user.click(screen.getByRole("checkbox", { name: "Show inactive" }));
@@ -135,7 +135,7 @@ describe("Project Analysis", () => {
   it.each(["network", "server"] as const)("retries an uncertain %s response with the original key and command", async (reviewFailureOnce) => {
     const fetcher = analysisFetchStub({ reviewFailureOnce });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={analysisRouter(fetcher)} />);
+    render(<AtlasPlatformApp router={analysisRouter(fetcher)} />);
     await user.click(await screen.findByRole("checkbox", { name: "Select finding 81" }));
     await user.click(screen.getByRole("button", { name: "Lock selected" }));
 
@@ -156,7 +156,7 @@ describe("Project Analysis", () => {
   it("keeps selection and gives a safe next action after a definitive conflict", async () => {
     const fetcher = analysisFetchStub({ reviewFailureOnce: "conflict" });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={analysisRouter(fetcher)} />);
+    render(<AtlasPlatformApp router={analysisRouter(fetcher)} />);
     await user.click(await screen.findByRole("checkbox", { name: "Select finding 81" }));
     await user.click(screen.getByRole("button", { name: "Lock selected" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Refresh, check your selection, then retry.");
@@ -172,7 +172,7 @@ describe("Project Analysis", () => {
 
   it("requires selection and an owned Tenant Lock for review", async () => {
     const user = userEvent.setup();
-    render(<WorkbenchApp router={analysisRouter(analysisFetchStub({ hasTenantLock: false }))} />);
+    render(<AtlasPlatformApp router={analysisRouter(analysisFetchStub({ hasTenantLock: false }))} />);
     await screen.findByRole("table", { name: "Analysis findings" });
     expect(screen.getByRole("button", { name: "Lock selected", hidden: true })).toBeDisabled();
     await user.click(screen.getByRole("checkbox", { name: "Select finding 81" }));
@@ -183,7 +183,7 @@ describe("Project Analysis", () => {
   it("shows Analysis run history and starts explicit inference and validation runs", async () => {
     const fetcher = analysisFetchStub();
     const user = userEvent.setup();
-    render(<WorkbenchApp router={analysisRouter(fetcher)} />);
+    render(<AtlasPlatformApp router={analysisRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Analysis findings" });
 
     await user.click(screen.getByRole("button", { name: "Show Analysis run activity" }));
@@ -263,7 +263,7 @@ describe("Project Analysis", () => {
 
   it("keeps modes, models, and reasoning aligned with capability profiles", async () => {
     const user = userEvent.setup();
-    render(<WorkbenchApp router={analysisRouter(analysisFetchStub())} />);
+    render(<AtlasPlatformApp router={analysisRouter(analysisFetchStub())} />);
     await screen.findByRole("table", { name: "Analysis findings" });
 
     if (!screen.getByText("Run", { selector: "summary" }).closest("details")?.open) await user.click(screen.getByText("Run", { selector: "summary" }));
@@ -299,7 +299,7 @@ describe("Project Analysis", () => {
   it("analyzes one table per call by default, in one-shot mode", async () => {
     const fetcher = analysisFetchStub();
     const user = userEvent.setup();
-    render(<WorkbenchApp router={analysisRouter(fetcher)} />);
+    render(<AtlasPlatformApp router={analysisRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Analysis findings" });
 
     if (!screen.getByText("Run", { selector: "summary" }).closest("details")?.open) await user.click(screen.getByText("Run", { selector: "summary" }));
@@ -334,7 +334,7 @@ describe("Project Analysis", () => {
   it("retries a queued Analysis run without creating a duplicate", async () => {
     const fetcher = analysisFetchStub({ inferenceStartConflictsOnce: true });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={analysisRouter(fetcher)} />);
+    render(<AtlasPlatformApp router={analysisRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Analysis findings" });
 
     if (!screen.getByText("Run", { selector: "summary" }).closest("details")?.open) await user.click(screen.getByText("Run", { selector: "summary" }));
@@ -366,19 +366,19 @@ describe("Project Analysis", () => {
   it("keeps empty, failed, and revision-mismatched results explicit", async () => {
     const emptyFetcher = analysisFetchStub({ empty: true });
     const emptyRouter = analysisRouter(emptyFetcher);
-    const { unmount } = render(<WorkbenchApp router={emptyRouter} />);
+    const { unmount } = render(<AtlasPlatformApp router={emptyRouter} />);
     expect(await screen.findByText("No Analysis findings match these filters.")).toBeVisible();
     unmount();
 
     const mismatchFetcher = analysisFetchStub({ projectRevision: 19 });
-    const mismatchRender = render(<WorkbenchApp router={analysisRouter(mismatchFetcher)} />);
+    const mismatchRender = render(<AtlasPlatformApp router={analysisRouter(mismatchFetcher)} />);
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The Project changed while Analysis results were loading.",
     );
     expect(screen.getByRole("button", { name: "Lock selected", hidden: true })).toBeDisabled();
     mismatchRender.unmount();
 
-    render(<WorkbenchApp router={analysisRouter(analysisFetchStub({ error: true }))} />);
+    render(<AtlasPlatformApp router={analysisRouter(analysisFetchStub({ error: true }))} />);
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Analysis findings could not be loaded.",
     );
@@ -386,7 +386,7 @@ describe("Project Analysis", () => {
 });
 
 function analysisRouter(fetcher: ReturnType<typeof analysisFetchStub>) {
-  return createWorkbenchRouter({
+  return createAtlasPlatformRouter({
     api: createApiClient(fetcher),
     history: createMemoryHistory({
       initialEntries: ["/tenants/7/projects/18/analysis"],

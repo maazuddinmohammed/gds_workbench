@@ -3,16 +3,16 @@
 from copy import deepcopy
 
 import pytest
-from gds_etl_workbench.application.project_snapshot import ProjectReviewSnapshot
-from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_etl_workbench.domain.snapshots.project import ProjectChangeSetDataset
-from tests.mcp.project_test_fixtures import complete_project_graph, snapshot_from_graph
-
-from gds_workbench_api.features.project_change_sets.review import (
+from atlas_mcp.application.project_snapshot import ProjectReviewSnapshot
+from atlas_mcp.domain.errors import AtlasError
+from atlas_mcp.domain.snapshots.project import ProjectChangeSetDataset
+from atlas_platform.features.project_change_sets.review import (
     ProjectReviewDataset,
     RecordReviewAction,
     plan_project_record_review,
 )
+
+from tests.mcp.project_test_fixtures import complete_project_graph, snapshot_from_graph
 
 
 def _review(
@@ -88,7 +88,7 @@ def test_membership_reactivation_also_reactivates_its_inactive_area() -> None:
             review, dataset="subject_area", record_ids=[1], action="reactivate"
         )
     ] == [("subject_area", 1)]
-    with pytest.raises(WorkbenchError, match="unavailable"):
+    with pytest.raises(AtlasError, match="unavailable"):
         plan_project_record_review(
             review, dataset="subject_area_table", record_ids=[999], action="reactivate"
         )
@@ -131,7 +131,7 @@ def test_layer_clear_covers_every_area_and_membership() -> None:
         ("subject_area", [], "lock"),
     )
     for dataset, record_ids, action in invalid:
-        with pytest.raises(WorkbenchError, match="layer review request is invalid"):
+        with pytest.raises(AtlasError, match="layer review request is invalid"):
             plan_project_record_review(
                 review, dataset=dataset, record_ids=record_ids, action=action, layer="subject_area"
             )

@@ -9,13 +9,13 @@ from unittest.mock import AsyncMock
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.application.change_sets.project import StageProjectChange
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project import StageProjectChange
+from atlas_mcp.application.change_sets.project_validation import (
     ProjectValidationIssue,
 )
-from gds_etl_workbench.domain.authorization import RequestPrincipal
-from gds_etl_workbench.domain.errors import DependencyUnavailableError
-from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
+from atlas_mcp.domain.authorization import RequestPrincipal
+from atlas_mcp.domain.errors import DependencyUnavailableError
+from atlas_platform.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetValidationError,
 )
 

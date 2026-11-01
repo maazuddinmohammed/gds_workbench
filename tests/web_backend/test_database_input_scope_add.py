@@ -4,16 +4,16 @@
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.project_change_sets.input_scope import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.errors import AtlasError, InvalidRequestError
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.project_change_sets.input_scope import (
     AddInputScopeRequest,
 )
-from gds_workbench_api.features.project_change_sets.service import (
+from atlas_platform.features.project_change_sets.service import (
     DatabaseProjectChangeSetService,
 )
-from gds_workbench_api.features.projects import ProjectRevisionConflictError
+from atlas_platform.features.projects import ProjectRevisionConflictError
 
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.test_database_project_change_set_round_trip import (
@@ -57,7 +57,7 @@ async def test_scope_add_is_locked_fenced_additive_and_idempotent(
     await database.open()
     try:
         command = AddInputScopeRequest(expected_project_revision=1, object_ids=[source])
-        with pytest.raises(WorkbenchError):
+        with pytest.raises(AtlasError):
             await service.add_input_scope(
                 principal,
                 tenant_id=tenant_id,
@@ -120,7 +120,7 @@ async def test_scope_add_is_locked_fenced_additive_and_idempotent(
             idempotency_key=uuid4(),
         )
         assert no_op.action_count == 0 and no_op.project_revision == 3
-        with pytest.raises(WorkbenchError):
+        with pytest.raises(AtlasError):
             await service.add_input_scope(
                 principal,
                 tenant_id=tenant_id,

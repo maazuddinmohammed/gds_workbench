@@ -7,28 +7,28 @@ from typing import Any, LiteralString
 from uuid import UUID
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from gds_workbench_api.features.context import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import AtlasError, InvalidRequestError
+from atlas_mcp.infrastructure.postgres import ReadIsolation
+from atlas_platform.features.context import (
     DatabaseContextService,
     create_context_router,
 )
-from gds_workbench_api.features.context.authoring import SaveContextRecordRequest
-from gds_workbench_api.features.context.contracts import (
+from atlas_platform.features.context.authoring import SaveContextRecordRequest
+from atlas_platform.features.context.contracts import (
     ContextGroupFilters,
     ContextPayloadNotSafeError,
     ContextRecordFilters,
 )
-from gds_workbench_api.features.project_change_sets.contracts import (
+from atlas_platform.features.project_change_sets.contracts import (
     ReviewProjectRecordsRequest,
 )
-from gds_workbench_api.main import create_app
+from atlas_platform.main import create_app
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 RECORD_ID = "00000000-0000-4000-8000-000000000001"
@@ -192,10 +192,10 @@ async def test_context_catalog_and_details_require_project_authority() -> None:
         & detail.model_dump().keys()
     )
     database.transaction.project_exists = False
-    with pytest.raises(WorkbenchError):
+    with pytest.raises(AtlasError):
         await reader.list_types(principal(), tenant_id=7, project_id=18)
     database.transaction.authorized = False
-    with pytest.raises(WorkbenchError):
+    with pytest.raises(AtlasError):
         await reader.read_record(
             principal(), tenant_id=7, project_id=18, context_record_id=RECORD_ID
         )

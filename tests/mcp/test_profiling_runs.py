@@ -6,17 +6,17 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from psycopg.errors import ObjectNotInPrerequisiteState, RaiseException
-from psycopg.types.json import Jsonb
-
-from gds_etl_workbench.application.profiling.execution import ProfileMetric
-from gds_etl_workbench.application.profiling.service import (
+from atlas_mcp.application.profiling.execution import ProfileMetric
+from atlas_mcp.application.profiling.service import (
     ProfilingService,
     ProfilingWorker,
     plan_context,
 )
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.infrastructure.postgres import PostgresDatabase
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.infrastructure.postgres import PostgresDatabase
+from psycopg.errors import ObjectNotInPrerequisiteState, RaiseException
+from psycopg.types.json import Jsonb
+
 from tests.mcp.test_database_profiling_execution_context import (
     _seed_profiling_execution,
 )

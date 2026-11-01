@@ -5,8 +5,7 @@ import threading
 from typing import Any
 
 import pytest
-
-from gds_etl_workbench.application.profiling.execution import (
+from atlas_mcp.application.profiling.execution import (
     ConnectorProfilingExecutor,
     ProfileAttribute,
     ProfileObject,
@@ -14,8 +13,8 @@ from gds_etl_workbench.application.profiling.execution import (
     build_profile_queries,
     validate_batch_ids,
 )
-from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
-from gds_etl_workbench.domain.errors import InvalidRequestError
+from atlas_mcp.domain.databricks import DatabricksSqlConnection
+from atlas_mcp.domain.errors import InvalidRequestError
 
 
 @pytest.mark.parametrize(

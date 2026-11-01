@@ -1,8 +1,8 @@
 # Atlas usage guide
 
-Atlas helps Copilot build and maintain GDS Workbench metadata, models, mappings
+Atlas helps Copilot build and maintain Atlas Platform metadata, models, mappings
 and code. You describe the work in plain English and Atlas prepares it locally.
-Records in GDS Workbench change only after you approve twice: Stage, then Apply.
+Records in Atlas Platform change only after you approve twice: Stage, then Apply.
 
 Set up Atlas first with the [setup guide](copilot-vs-code-installation-and-setup.md).
 
@@ -10,7 +10,7 @@ Set up Atlas first with the [setup guide](copilot-vs-code-installation-and-setup
 
 | Term | Meaning |
 |---|---|
-| Tenant | Your team's space in GDS Workbench. It owns metadata and Projects. |
+| Tenant | Your team's space in Atlas Platform. It owns metadata and Projects. |
 | Project | One modeling effort in a Tenant: its scope, models, Mappings and code. |
 | Scope | The source tables chosen for a Project in the web app. |
 | Snapshot | A local copy of saved records that Atlas reads. |
@@ -23,7 +23,7 @@ Set up Atlas first with the [setup guide](copilot-vs-code-installation-and-setup
 You ask
   -> Atlas prepares local drafts
   -> You review them in Atlas Local Workbench
-  -> You approve Stage: Stage Runner uploads a server draft
+  -> You approve Stage: Atlas Bridge uploads a server draft
   -> You approve Apply: Atlas saves the records
 ```
 
@@ -176,14 +176,14 @@ Atlas opens Atlas Local Workbench in your browser when changes are ready.
 
 To change something, ask Atlas in chat, then select **Reload local files**. If
 you edit a record yourself, select **Save changes** and tell Atlas what you
-changed. If the Workbench reports a conflict, reload and redo your edit.
-Approvals happen in chat; the Workbench has no Stage or Apply button.
+changed. If the Atlas Local Workbench reports a conflict, reload and redo your edit.
+Approvals happen in chat; the Atlas Local Workbench has no Stage or Apply button.
 
 ## Approve Stage, then Apply
 
 1. When the changes are right, tell Atlas: `I approve these changes for Stage.`
    VS Code asks to allow **Stage approved Atlas Change Set**. It replaces only
-   your pending server draft; select **Allow**. Stage Runner uploads the changes.
+   your pending server draft; select **Allow**. Atlas Bridge uploads the changes.
 2. Atlas validates the draft on the server and shows the result.
 3. When Atlas asks `Apply these validated changes to [Project]?`, reply
    `Yes, apply.` Atlas saves the records and refreshes your local Snapshots.
@@ -218,8 +218,8 @@ Not supported yet: building models from existing code (reverse engineering).
 
 | Problem | What to do |
 |---|---|
-| VS Code asks you to sign in for **gds-workbench** | Sign in with the same Atlas account. |
-| Atlas says Stage Runner needs sign-in | Run **ATLAS: Check Stage Runner** and sign in. |
+| VS Code asks you to sign in for **atlas-mcp** | Sign in with the same Atlas account. |
+| Atlas says Atlas Bridge needs sign-in | Run **ATLAS: Check Bridge** and sign in. |
 | Atlas Local Workbench didn't open | Ask Atlas to open it again, in Chrome or Edge. |
 | A tool is missing | Use a **Local** session with **Agent**, and check **Configure Tools**. See [setup troubleshooting](copilot-vs-code-installation-and-setup.md#troubleshooting). Your drafts are kept. |
 | Validation fails | Ask Atlas to explain and fix the findings, then review again. |

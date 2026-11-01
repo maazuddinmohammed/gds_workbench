@@ -1,7 +1,7 @@
 {
-  "name": "gds-workbench",
+  "name": "atlas",
   "owner": {
-    "name": "Atlas Local Workbench"
+    "name": "Atlas"
   },
   "metadata": {
     "description": "Atlas Agent Plugins marketplace.",

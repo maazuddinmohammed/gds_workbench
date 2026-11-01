@@ -6,8 +6,8 @@ import re
 from typing import Any
 
 import pytest
-from gds_workbench_api.features.workflows.authoring import stage_runner
-from gds_workbench_api.features.workflows.authoring.context_contracts import (
+from atlas_platform.features.workflows.authoring import stage_runner
+from atlas_platform.features.workflows.authoring.context_contracts import (
     workflow_input_contracts,
 )
 from jsonschema import Draft202012Validator

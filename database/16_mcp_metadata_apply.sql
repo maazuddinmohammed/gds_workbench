@@ -1,4 +1,4 @@
--- GDS ETL Workbench Release 1: atomic Metadata Change Set Apply.
+-- Atlas Release 1: atomic Metadata Change Set Apply.
 
 CREATE FUNCTION mcp.apply_metadata_change_set(
     p_entra_tenant_id UUID,

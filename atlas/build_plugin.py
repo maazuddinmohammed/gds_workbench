@@ -39,16 +39,16 @@ def build(output: Path | None = None) -> Path:
             "docs": {".md", ".png"},
             "scripts": {".js", ".ps1", ".sh", ".py"},
             "contracts": {".json"},
-            "workbench": {".js", ".html", ".css", ".md", ".json", ".svg"},
+            "atlas-local-workbench": {".js", ".html", ".css", ".md", ".json", ".svg"},
             "assets": {".json"},
         }
-        if relative.parts[:2] == ("workbench", "fonts"):
+        if relative.parts[:2] == ("atlas-local-workbench", "fonts"):
             reviewed = relative.as_posix() in {
-                "workbench/fonts/OpenSans-Regular.woff2",
-                "workbench/fonts/OpenSans-SemiBold.woff2",
-                "workbench/fonts/OpenSans_Condensed-Bold.woff2",
-                "workbench/fonts/OFL.txt",
-                "workbench/fonts/fonts.css",
+                "atlas-local-workbench/fonts/OpenSans-Regular.woff2",
+                "atlas-local-workbench/fonts/OpenSans-SemiBold.woff2",
+                "atlas-local-workbench/fonts/OpenSans_Condensed-Bold.woff2",
+                "atlas-local-workbench/fonts/OFL.txt",
+                "atlas-local-workbench/fonts/fonts.css",
             }
         else:
             reviewed = relative in {Path("plugin.json"), Path("mcp.json")} or (

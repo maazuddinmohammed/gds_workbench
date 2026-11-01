@@ -6,18 +6,18 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_workbench_api.capabilities import AgentRunSelection
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
+from atlas_mcp.domain.errors import AtlasError
+from atlas_platform.capabilities import AgentRunSelection
+from atlas_platform.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
     LocalAgentToolDefinition,
 )
-from gds_workbench_api.integrations.agents import adapters as agent_adapters
-from gds_workbench_api.integrations.agents.adapters import (
+from atlas_platform.integrations.agents import adapters as agent_adapters
+from atlas_platform.integrations.agents.adapters import (
     OpenAIAgentsSdkAdapter,
     OpenAIProviderCredentials,
 )
-from gds_workbench_api.integrations.agents.configuration import AgentProviderConnection
+from atlas_platform.integrations.agents.configuration import AgentProviderConnection
 from pydantic import JsonValue, SecretStr, ValidationError
 
 
@@ -169,7 +169,7 @@ def test_each_provider_conversation_has_a_fresh_cumulative_tool_budget() -> None
 
     first_conversation = wrapper(catalog)
     assert first_conversation.invoke("get_agent_context_manifest", {}) == manifest
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         first_conversation.invoke("get_agent_context_manifest", {})
 
     second_conversation = wrapper(catalog)
@@ -261,7 +261,7 @@ async def test_tool_wrapper_construction_failure_is_redacted(
         model_authentications={"microsoft_foundry": _ModelAuthentication()},
     )
 
-    with pytest.raises(WorkbenchError) as captured:
+    with pytest.raises(AtlasError) as captured:
         await adapter.execute(_request(sdk_code="openai_agents_sdk"))
 
     error = captured.value

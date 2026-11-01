@@ -11,59 +11,59 @@ from typing import Any, cast
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.application.change_sets.project import StageProjectChange
-from gds_etl_workbench.domain.authorization import (
+from atlas_mcp.application.change_sets.project import StageProjectChange
+from atlas_mcp.domain.authorization import (
     ActorKind,
     RequestPrincipal,
     ToolPolicy,
 )
-from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_etl_workbench.infrastructure.postgres import (
+from atlas_mcp.domain.errors import AtlasError
+from atlas_mcp.infrastructure.postgres import (
     ReadIsolation,
     ReadTransaction,
     WriteTransaction,
 )
-from gds_workbench_api.capabilities import AgentRunSelection
-from gds_workbench_api.features.analysis.service import (
+from atlas_platform.capabilities import AgentRunSelection
+from atlas_platform.features.analysis.service import (
     AnalysisInferenceExecutionFailedError,
     AnalysisInferenceFinalizationFailedError,
     AnalysisInferenceWorkflow,
 )
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
+from atlas_platform.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
     AgentExecutionResult,
 )
-from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
+from atlas_platform.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetFinalizationResult,
     WorkflowChangeSetHandoffResult,
 )
-from gds_workbench_api.features.workflows.authoring.context import (
+from atlas_platform.features.workflows.authoring.context import (
     AgentAuthoringContext,
     AgentContextBundle,
     InMemoryAgentContextToolCatalog,
 )
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
+from atlas_platform.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
     AgentWorkflowRunStart,
     AgentWorkflowTerminalResult,
 )
-from gds_workbench_api.features.workflows.authoring.no_op import (
+from atlas_platform.features.workflows.authoring.no_op import (
     AuthoringNoOpReceipt,
     AuthoringNoOpRequest,
     authoring_no_op_candidate_digest,
 )
-from gds_workbench_api.features.workflows.authoring.plan import (
+from atlas_platform.features.workflows.authoring.plan import (
     AgentRunPlan,
     FrozenAgentStage,
     WorkflowExecutionMode,
 )
-from gds_workbench_api.features.workflows.authoring.repair import (
+from atlas_platform.features.workflows.authoring.repair import (
     AgentContextPolicy,
 )
-from gds_workbench_api.features.workflows.authoring.repair import (
+from atlas_platform.features.workflows.authoring.repair import (
     AgentExecutor as RepairAgentExecutor,
 )
-from gds_workbench_api.prompt_rendering import (
+from atlas_platform.prompt_rendering import (
     PromptComponentTemplates,
     PromptVariableDefinition,
 )
@@ -829,7 +829,7 @@ async def test_analysis_inference_rejects_the_wrong_stage_path() -> None:
         plan=_plan(stage_code="unsupported_stage"),
     )
 
-    with pytest.raises(WorkbenchError, match="fixed execution path"):
+    with pytest.raises(AtlasError, match="fixed execution path"):
         await service.execute_started(
             _principal(),
             tenant_id=7,

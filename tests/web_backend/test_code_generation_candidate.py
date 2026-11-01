@@ -3,14 +3,14 @@ from __future__ import annotations
 from typing import Literal, cast
 
 import pytest
-from gds_workbench_api.features.code_generation.candidate import (
+from atlas_platform.features.code_generation.candidate import (
     CodeGenerationCandidateValidator,
     CodeGenerationTargetReference,
 )
-from gds_workbench_api.features.code_generation.contracts import (
+from atlas_platform.features.code_generation.contracts import (
     SqlArtifactDownload,
 )
-from gds_workbench_api.features.mapping import ModeledEntityReference
+from atlas_platform.features.mapping import ModeledEntityReference
 from pydantic import JsonValue
 
 
@@ -352,7 +352,7 @@ async def test_requested_transformation_layout_rejects_loading_sql_and_implicit_
 async def test_requirement_failure_returns_safe_diagnostic_and_cannot_be_applied(
     code: str,
 ) -> None:
-    from gds_etl_workbench.domain.errors import InvalidRequestError
+    from atlas_mcp.domain.errors import InvalidRequestError
 
     candidate = cast(JsonValue, {"artifacts": [], "issues": [code]})
     validator = _validator()
@@ -433,7 +433,7 @@ async def test_conflicting_requirements_still_reject_otherwise_covered_sql() -> 
     ],
 )
 async def test_support_artifacts_cannot_bypass_sql_write_restrictions(sql: str) -> None:
-    from gds_etl_workbench.domain.errors import InvalidRequestError
+    from atlas_mcp.domain.errors import InvalidRequestError
 
     validator = _validator()
     candidate = cast(

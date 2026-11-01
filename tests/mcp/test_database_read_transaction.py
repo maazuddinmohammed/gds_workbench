@@ -3,9 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
-
-from gds_etl_workbench.domain.errors import TenantNotFoundError
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation
+from atlas_mcp.domain.errors import TenantNotFoundError
+from atlas_mcp.infrastructure.postgres import ReadIsolation
 
 if TYPE_CHECKING:
     from conftest import DisposablePostgres

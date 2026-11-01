@@ -4,14 +4,14 @@
 # pyright: reportPrivateUsage=false
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import TenantNotFoundError
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.metadata_enrichment.read_service import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import TenantNotFoundError
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.metadata_enrichment.read_service import (
     DatabaseMetadataEnrichmentReadService,
 )
-from gds_workbench_api.features.workflows.runs import WorkflowRunNotFoundError
+from atlas_platform.features.workflows.runs import WorkflowRunNotFoundError
 
 from tests.mcp.conftest import (
     DisposablePostgres,

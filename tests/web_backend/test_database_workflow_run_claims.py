@@ -9,8 +9,8 @@ from uuid import UUID, uuid4
 
 import psycopg
 import pytest
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.workflows.execution import (
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.workflows.execution import (
     DatabaseWorkflowClaimRepository,
 )
 from psycopg.errors import (

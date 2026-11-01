@@ -10,11 +10,11 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from gds_workbench_api.features.code_generation.candidate import (
+from atlas_platform.features.code_generation.candidate import (
     CodeGenerationCandidateValidator,
     CodeGenerationTargetReference,
 )
-from gds_workbench_api.features.workflows.authoring.downstream_inputs import (
+from atlas_platform.features.workflows.authoring.downstream_inputs import (
     build_downstream_readers,
     downstream_input_contracts,
     project_downstream_inputs,

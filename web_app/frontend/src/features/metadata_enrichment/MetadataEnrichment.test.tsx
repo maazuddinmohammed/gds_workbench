@@ -7,7 +7,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { createApiClient } from "../../api";
-import { WorkbenchApp, createWorkbenchRouter } from "../../app";
+import { AtlasPlatformApp, createAtlasPlatformRouter } from "../../app";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -327,7 +327,7 @@ describe("Metadata enrichment Project screen", () => {
       throw new Error("Unexpected synthetic route");
     });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/metadata-enrichment"] }) })} />);
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/metadata-enrichment"] }) })} />);
     const trigger = await screen.findByRole("button", { name: "Run object enrichment" });
     expect(screen.getByRole("link", { name: "Metadata enrichment" })).toHaveAttribute("href", "/tenants/7/projects/18/metadata-enrichment");
     await user.click(trigger);

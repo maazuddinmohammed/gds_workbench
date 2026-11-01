@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from gds_etl_workbench.domain.authorization import RequestPrincipal
+from atlas_mcp.domain.authorization import RequestPrincipal
 
 
 @dataclass

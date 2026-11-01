@@ -3,8 +3,8 @@ from io import BytesIO
 from zipfile import ZipFile
 
 import pytest
-from gds_workbench_api.features.mapping import workbook as mapping_workbook
-from gds_workbench_api.features.mapping.workbook import (
+from atlas_platform.features.mapping import workbook as mapping_workbook
+from atlas_platform.features.mapping.workbook import (
     MappingWorkbookAttribute,
     MappingWorkbookBuildError,
     MappingWorkbookEntity,

@@ -12,10 +12,27 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 import pytest
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.domain.snapshots.project import DimensionalSection, LogicalSection
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_mcp.domain.snapshots.project import DimensionalSection, LogicalSection
+from atlas_platform.features.workflows.authoring.context import (
+    AgentAuthoringContext,
+    InMemoryAgentContextToolCatalog,
+    _provider_context,
+    focus_subject_area,
+)
+from atlas_platform.features.workflows.authoring.context_contracts import (
+    workflow_input_contracts,
+)
+from atlas_platform.features.workflows.authoring.plan import AgentRunPlan
+from atlas_platform.features.workflows.authoring.prompt_inputs import (
+    get_prompt_input_contract,
+    list_prompt_input_contracts,
+    project_prompt_input_values,
+)
+from atlas_platform.prompt_rendering import PromptVariableDefinition
 from jsonschema import Draft202012Validator
 from pydantic import JsonValue
+
 from tests.mcp.project_test_fixtures import snapshot_from_graph
 from tests.web_backend.test_dimensional_executor import (
     _BILLING,
@@ -26,23 +43,6 @@ from tests.web_backend.test_dimensional_executor import (
     _selected_logical_entity,
     _subject_areas,
 )
-
-from gds_workbench_api.features.workflows.authoring.context import (
-    AgentAuthoringContext,
-    InMemoryAgentContextToolCatalog,
-    _provider_context,
-    focus_subject_area,
-)
-from gds_workbench_api.features.workflows.authoring.context_contracts import (
-    workflow_input_contracts,
-)
-from gds_workbench_api.features.workflows.authoring.plan import AgentRunPlan
-from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
-    get_prompt_input_contract,
-    list_prompt_input_contracts,
-    project_prompt_input_values,
-)
-from gds_workbench_api.prompt_rendering import PromptVariableDefinition
 
 _FACT_TYPES = [
     {
@@ -433,7 +433,7 @@ def test_inconsistent_resolver_value_is_rejected(
 _ORDER_PROBE = """
 import json
 from copy import deepcopy
-from gds_workbench_api.features.workflows.authoring.context_inputs import project_context_inputs
+from atlas_platform.features.workflows.authoring.context_inputs import project_context_inputs
 from tests.web_backend.test_dimensional_executor import (
     _applied_dimensional_section,
     _context_bundle,

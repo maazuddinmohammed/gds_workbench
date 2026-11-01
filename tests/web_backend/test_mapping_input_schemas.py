@@ -5,17 +5,17 @@ from copy import deepcopy
 from typing import Any, cast
 
 import pytest
-from gds_etl_workbench.application.mapping_context import (
+from atlas_mcp.application.mapping_context import (
     OPAQUE_CONTEXT_DOCUMENT_FIELDS,
     without_internal_fields,
 )
-from gds_workbench_api.features.mapping.execution_context import (
+from atlas_platform.features.mapping.execution_context import (
     build_mapping_execution_context,
 )
-from gds_workbench_api.features.workflows.authoring.downstream_inputs import (
+from atlas_platform.features.workflows.authoring.downstream_inputs import (
     project_downstream_inputs,
 )
-from gds_workbench_api.features.workflows.authoring.mapping_input_schemas import (
+from atlas_platform.features.workflows.authoring.mapping_input_schemas import (
     _project_schema,
     mapping_input_schemas,
 )

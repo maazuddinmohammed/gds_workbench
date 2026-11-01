@@ -1,4 +1,4 @@
--- GDS ETL Workbench Release 1: Profiling, Enrichment, and Analysis Sections.
+-- Atlas Release 1: Profiling, Enrichment, and Analysis Sections.
 
 CREATE SCHEMA workflow;
 

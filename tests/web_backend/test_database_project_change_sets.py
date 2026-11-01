@@ -6,64 +6,63 @@ from typing import Literal, Protocol, cast
 from uuid import UUID, uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.contracts import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.application.change_sets.contracts import (
     canonical_records_sha256,
     stage_batch_sha256,
 )
-from gds_etl_workbench.application.change_sets.project import StageProjectChange
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import (
+from atlas_mcp.application.change_sets.project import StageProjectChange
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import (
     CandidateDigestConflictError,
     DependencyUnavailableError,
     InvalidRequestError,
     TenantLockRequiredError,
 )
-from psycopg import Connection
-from psycopg.types.json import Jsonb
-
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.analysis.service import AnalysisInferenceWorkflow
-from gds_workbench_api.features.dimensional import DimensionalWorkflow
-from gds_workbench_api.features.logical.service import LogicalWorkflow
-from gds_workbench_api.features.project_change_sets.contracts import (
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.analysis.service import AnalysisInferenceWorkflow
+from atlas_platform.features.dimensional import DimensionalWorkflow
+from atlas_platform.features.logical.service import LogicalWorkflow
+from atlas_platform.features.project_change_sets.contracts import (
     BeginProjectStageBatchRequest,
     CreateProjectChangeSetRequest,
     ExpectedDraftRevisionRequest,
     PutProjectStageChunkRequest,
     StageProjectChangeSetRequest,
 )
-from gds_workbench_api.features.project_change_sets.service import (
+from atlas_platform.features.project_change_sets.service import (
     DatabaseProjectChangeSetService,
 )
-from gds_workbench_api.features.projects import ProjectRevisionConflictError
-from gds_workbench_api.features.subject_areas.service import SubjectAreaWorkflow
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
+from atlas_platform.features.projects import ProjectRevisionConflictError
+from atlas_platform.features.subject_areas.service import SubjectAreaWorkflow
+from atlas_platform.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
     AgentExecutionResult,
 )
-from gds_workbench_api.features.workflows.authoring.change_set_apply import (
+from atlas_platform.features.workflows.authoring.change_set_apply import (
     ApplyWorkflowDraftRequest,
     DatabaseWorkflowDraftApplyService,
 )
-from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
+from atlas_platform.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetHandoff,
     WorkflowChangeSetHandoffResult,
     WorkflowChangeSetValidationError,
 )
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
+from atlas_platform.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
     DatabaseAgentWorkflowLifecycle,
 )
-from gds_workbench_api.features.workflows.authoring.no_op import (
+from atlas_platform.features.workflows.authoring.no_op import (
     AuthoringNoOpReceipt,
     DatabaseAuthoringNoOpService,
 )
-from gds_workbench_api.features.workflows.execution.repository import (
+from atlas_platform.features.workflows.execution.repository import (
     DatabaseWorkflowClaimRepository,
 )
-from gds_workbench_api.features.workflows.runs import DatabaseWorkflowRunService
-from gds_workbench_api.integrations.agents import LocalFakeAgentAdapter
+from atlas_platform.features.workflows.runs import DatabaseWorkflowRunService
+from atlas_platform.integrations.agents import LocalFakeAgentAdapter
+from psycopg import Connection
+from psycopg.types.json import Jsonb
 
 
 class RecordingFakeAgentAdapter(LocalFakeAgentAdapter):

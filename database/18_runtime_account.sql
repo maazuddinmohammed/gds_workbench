@@ -1,4 +1,4 @@
--- GDS ETL Workbench Release 1: group roles and least-privilege runtime logins.
+-- Atlas Release 1: group roles and least-privilege runtime logins.
 -- Set passwords afterward with psql for each runtime login.
 
 CREATE ROLE gds_migration NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;

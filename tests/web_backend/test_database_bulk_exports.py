@@ -9,13 +9,13 @@ from uuid import uuid4
 from zipfile import ZipFile
 
 import httpx2
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.configuration import AuthMode
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.code_generation import DatabaseCodeGenerationService
-from gds_workbench_api.features.validation import DatabaseValidationReadService
-from gds_workbench_api.main import create_app
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.configuration import AuthMode
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.code_generation import DatabaseCodeGenerationService
+from atlas_platform.features.validation import DatabaseValidationReadService
+from atlas_platform.main import create_app
 
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.conftest import (

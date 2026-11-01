@@ -9,19 +9,18 @@ from typing import Self
 from uuid import uuid4
 
 import pytest
-
-from gds_etl_workbench.domain.errors import (
+from atlas_mcp.domain.databricks_sql import validate_databricks_sql
+from atlas_mcp.domain.errors import (
     DatabricksConnectionFailedError,
     DatabricksResultTooLargeError,
     DatabricksStatementFailedError,
 )
-from gds_etl_workbench.infrastructure.databricks_sql import (
+from atlas_mcp.infrastructure.databricks_sql import (
     ConnectorDatabricksSqlExecutor,
     DatabricksError,
     DatabricksSqlConnection,
     bounded_connector_options,
 )
-from gds_etl_workbench.domain.databricks_sql import validate_databricks_sql
 
 
 class FakeCursor:
@@ -149,7 +148,7 @@ async def test_executor_runs_all_statements_and_returns_only_50_final_rows() -> 
         "http_path": connection.http_path,
         "access_token": connection.access_token,
         "session_configuration": {"STATEMENT_TIMEOUT": "90"},
-        "user_agent_entry": "gds-etl-workbench",
+        "user_agent_entry": "atlas-mcp",
         "use_cloud_fetch": False,
         "enable_telemetry": 0,
         "_use_arrow_native_complex_types": False,

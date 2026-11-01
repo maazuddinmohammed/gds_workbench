@@ -7,15 +7,15 @@ import sys
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
-_WEB_PACKAGE = _ROOT / "web_app" / "backend" / "gds_workbench_api"
-_SHARED_PACKAGE = _ROOT / "mcp_server" / "gds_etl_workbench"
+_WEB_PACKAGE = _ROOT / "web_app" / "backend" / "atlas_platform"
+_SHARED_PACKAGE = _ROOT / "mcp_server" / "atlas_mcp"
 
 
 def test_web_and_shared_rules_do_not_import_mcp_tool_or_identity_adapters() -> None:
     forbidden = (
-        "gds_etl_workbench.adapters.auth",
-        "gds_etl_workbench.adapters.mcp",
-        "gds_etl_workbench.tools",
+        "atlas_mcp.adapters.auth",
+        "atlas_mcp.adapters.mcp",
+        "atlas_mcp.tools",
     )
     violations: list[str] = []
     packages = [
@@ -63,9 +63,9 @@ real_import = builtins.__import__
 
 forbidden = (
     "mcp",
-    "gds_etl_workbench.adapters.auth",
-    "gds_etl_workbench.adapters.mcp",
-    "gds_etl_workbench.tools",
+    "atlas_mcp.adapters.auth",
+    "atlas_mcp.adapters.mcp",
+    "atlas_mcp.tools",
 )
 
 def reject_mcp(name, globals=None, locals=None, fromlist=(), level=0):
@@ -75,18 +75,18 @@ def reject_mcp(name, globals=None, locals=None, fromlist=(), level=0):
 
 builtins.__import__ = reject_mcp
 
-from gds_etl_workbench.application.change_sets.metadata import CHANGE_SET_DATASETS
-from gds_etl_workbench.application.change_sets.project import StageProjectChange
-from gds_workbench_api.features.metadata_change_sets.service import (
+from atlas_mcp.application.change_sets.metadata import CHANGE_SET_DATASETS
+from atlas_mcp.application.change_sets.project import StageProjectChange
+from atlas_platform.features.metadata_change_sets.service import (
     DatabaseMetadataChangeSetService,
 )
-from gds_workbench_api.features.project_change_sets.service import DatabaseProjectChangeSetService
-from gds_workbench_api.features.workflows.execution.assembly import (
+from atlas_platform.features.project_change_sets.service import DatabaseProjectChangeSetService
+from atlas_platform.features.workflows.execution.assembly import (
     WorkflowRuntimeServices,
     create_workflow_runtime_services,
 )
 
-assert StageProjectChange.__module__ == "gds_etl_workbench.application.change_sets.project"
+assert StageProjectChange.__module__ == "atlas_mcp.application.change_sets.project"
 assert "source_object" in CHANGE_SET_DATASETS
 assert WorkflowRuntimeServices.__module__.endswith("workflows.execution.assembly")
 assert callable(create_workflow_runtime_services)

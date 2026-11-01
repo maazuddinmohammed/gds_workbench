@@ -3,17 +3,17 @@
 from typing import Literal
 
 import pytest
-from gds_etl_workbench.application.change_sets.project import (
+from atlas_mcp.application.change_sets.project import (
     load_project_physical_scope,
 )
-from gds_etl_workbench.application.change_sets.project_apply import ProjectMaterializer
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project_apply import ProjectMaterializer
+from atlas_mcp.application.change_sets.project_validation import (
     validate_future_graph,
 )
-from gds_etl_workbench.application.project_read import ProjectReadContext
-from gds_etl_workbench.application.project_snapshot import build_project_snapshot
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_workbench_api.database import WebPostgresDatabase
+from atlas_mcp.application.project_read import ProjectReadContext
+from atlas_mcp.application.project_snapshot import build_project_snapshot
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_platform.database import WebPostgresDatabase
 
 from tests.mcp.conftest import DisposablePostgres
 from tests.web_backend.test_database_project_change_sets import (

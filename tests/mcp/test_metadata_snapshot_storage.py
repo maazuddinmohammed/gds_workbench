@@ -7,18 +7,18 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.application.metadata_snapshot.archive import (
+from atlas_mcp.application.metadata_snapshot.archive import (
     SnapshotArchive,
     encode_dataset,
 )
-from gds_etl_workbench.configuration import AuthMode, Environment, RuntimeSettings
-from gds_etl_workbench.domain.errors import DependencyUnavailableError
-from gds_etl_workbench.domain.snapshots.metadata import DATASETS
-from gds_etl_workbench.tools.snapshots import storage as storage_module
-from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
+from atlas_mcp.configuration import AuthMode, Environment, RuntimeSettings
+from atlas_mcp.domain.errors import DependencyUnavailableError
+from atlas_mcp.domain.snapshots.metadata import DATASETS
+from atlas_mcp.tools.snapshots import storage as storage_module
+from atlas_mcp.tools.snapshots.metadata.get_metadata_snapshot import (
     build_and_upload_metadata_snapshot,
 )
-from gds_etl_workbench.tools.snapshots.storage import AzureSnapshotStore, SnapshotKind
+from atlas_mcp.tools.snapshots.storage import AzureSnapshotStore, SnapshotKind
 
 SNAPSHOT_ID = UUID("7d7cc8ad-62b5-44ef-aeb0-c09c770ff233")
 CREATED_AT = datetime(2026, 8, 11, 16, 0, tzinfo=UTC)

@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
 import { createApiClient } from "../../api";
-import { WorkbenchApp, createWorkbenchRouter } from "../../app";
+import { AtlasPlatformApp, createAtlasPlatformRouter } from "../../app";
 import { withRecordReview } from "../../test/projectRecordReview";
 
 const recordId = "00000000-0000-4000-8000-000000000091";
@@ -303,7 +303,7 @@ describe("Project Context", () => {
 });
 
 function renderContext(fetcher: typeof fetch, path = "/tenants/7/projects/18/context") {
-  return render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: [path] }) })} />);
+  return render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: [path] }) })} />);
 }
 function saveCalls(fetcher: ReturnType<typeof contextFetchStub>, kind: string) { return fetcher.mock.calls.filter(([url]) => String(url).endsWith(`/change-sets/context-${kind}`)); }
 function contextFetchStub(options: { empty?: boolean; multipleRecords?: boolean; truncated?: boolean; error?: boolean; revision?: number; failSaveOnce?: number; hasLock?: boolean; projectLocked?: boolean; recordLocked?: boolean; groupInactive?: boolean; failTypes?: number; lockedRecords?: number; viewer?: boolean } = {}) {

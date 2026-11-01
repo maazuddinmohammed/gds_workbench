@@ -1,8 +1,8 @@
 from decimal import localcontext
 
 import pytest
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_workbench_api.features.metadata_enrichment.inference import (
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_platform.features.metadata_enrichment.inference import (
     infer_sample_data_type,
     normalize_data_type,
 )

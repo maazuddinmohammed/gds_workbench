@@ -5,21 +5,21 @@ from typing import Protocol
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.code_generation import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.code_generation import (
     CodeGenerationTargetFilters,
     DatabaseCodeGenerationService,
     GeneratedSqlArtifactNotFoundError,
 )
-from gds_workbench_api.features.mapping import (
+from atlas_platform.features.mapping import (
     DatabaseMappingReviewService,
     MappingAttributeNotFoundError,
     MappingFilters,
     MappingObjectNotFoundError,
 )
-from gds_workbench_api.features.mapping.read_contracts import MappingAttributeFilters
+from atlas_platform.features.mapping.read_contracts import MappingAttributeFilters
 from psycopg import Connection
 
 

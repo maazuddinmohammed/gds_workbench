@@ -4,18 +4,18 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
 
 import { createApiClient } from "./api";
-import { WorkbenchApp, createWorkbenchRouter } from "./app";
+import { AtlasPlatformApp, createAtlasPlatformRouter } from "./app";
 
 describe("tenant entry", () => {
   it("selects the last Tenant and enters its governed workspace", async () => {
     const fetcher = tenantFetchStub();
-    const router = createWorkbenchRouter({
+    const router = createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/"] }),
     });
     const user = userEvent.setup();
 
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
 
     expect(await screen.findByRole("heading", { name: "Choose a Tenant" })).toBeVisible();
     expect(screen.getByText("Signed in as")).toBeVisible();
@@ -35,12 +35,12 @@ describe("tenant entry", () => {
   });
 
   it("filters Tenants without adding a generic dashboard", async () => {
-    const router = createWorkbenchRouter({
+    const router = createAtlasPlatformRouter({
       api: createApiClient(tenantFetchStub()),
       history: createMemoryHistory({ initialEntries: ["/"] }),
     });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
     await screen.findByText("Northwind Analytics");
 
     await user.type(screen.getByRole("searchbox", { name: "Search Tenants" }), "global");
@@ -53,12 +53,12 @@ describe("tenant entry", () => {
 
 describe("Tenant Home", () => {
   it("lets the user collapse and expand workspace navigation", async () => {
-    const router = createWorkbenchRouter({
+    const router = createAtlasPlatformRouter({
       api: createApiClient(tenantFetchStub()),
       history: createMemoryHistory({ initialEntries: ["/tenants/7"] }),
     });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
 
     await screen.findByRole("heading", { name: "Tenant Lock" });
     const navigation = screen.getByLabelText("Workspace navigation");
@@ -84,12 +84,12 @@ describe("Tenant Home", () => {
   });
 
   it("makes the governed lock the focus and presents registered Systems", async () => {
-    const router = createWorkbenchRouter({
+    const router = createAtlasPlatformRouter({
       api: createApiClient(tenantFetchStub()),
       history: createMemoryHistory({ initialEntries: ["/tenants/7"] }),
     });
 
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
 
     const lock = await screen.findByRole("region", { name: "Tenant Lock" });
     expect(within(lock).getByText("Elena Morris")).toBeVisible();
@@ -104,12 +104,12 @@ describe("Tenant Home", () => {
   });
 
   it("returns to Tenant selection through the prominent Switch Tenant control", async () => {
-    const router = createWorkbenchRouter({
+    const router = createAtlasPlatformRouter({
       api: createApiClient(tenantFetchStub()),
       history: createMemoryHistory({ initialEntries: ["/tenants/7"] }),
     });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
     await screen.findByRole("heading", { name: "Tenant Lock" });
 
     await user.click(screen.getByRole("link", { name: "Switch Tenant" }));
@@ -136,12 +136,12 @@ describe("Tenant Home", () => {
       }
       return baseFetcher(input, init);
     });
-    const router = createWorkbenchRouter({
+    const router = createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7"] }),
     });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
 
     expect(await screen.findByText("Tenant is unlocked")).toBeVisible();
     expect(fetcher.mock.calls.some(([input]) => String(input).endsWith("/lock/acquire"))).toBe(false);
@@ -179,12 +179,12 @@ describe("Tenant Home", () => {
       }
       return baseFetcher(input, init);
     });
-    const router = createWorkbenchRouter({
+    const router = createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7"] }),
     });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
 
     expect(await screen.findByText("Locked by you")).toBeVisible();
     expect(fetcher.mock.calls.some(([input]) => String(input).endsWith("/lock/renew"))).toBe(false);
@@ -220,12 +220,12 @@ describe("Tenant Home", () => {
       }
       return baseFetcher(input, init);
     });
-    const router = createWorkbenchRouter({
+    const router = createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7"] }),
     });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
 
     expect(await screen.findByText("Locked by you")).toBeVisible();
     expect(fetcher.mock.calls.some(([input]) => String(input).endsWith("/lock/release"))).toBe(false);
@@ -267,12 +267,12 @@ describe("Tenant Home", () => {
       }
       return baseFetcher(input, init);
     });
-    const router = createWorkbenchRouter({
+    const router = createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7"] }),
     });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
 
     expect(await screen.findByText("Locked by another Principal")).toBeVisible();
     expect(screen.getByRole("note", { name: "Tenant Lock override warning" })).toHaveTextContent(
@@ -328,12 +328,12 @@ describe("Tenant Home", () => {
       }
       return baseFetcher(input, init);
     });
-    const router = createWorkbenchRouter({
+    const router = createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7"] }),
     });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
 
     expect(await screen.findByRole("button", { name: "View history" })).toBeVisible();
     expect(fetcher.mock.calls.some(([input]) => String(input).includes("/lock/history"))).toBe(false);
@@ -357,16 +357,16 @@ describe("Projects ledger", () => {
     const fetcher = vi.fn<typeof fetch>(async (input, init) => String(input).endsWith("/home")
       ? jsonResponse({ ...acquiredTenantHomePayload, tenant: { ...tenantHomePayload.tenant, effective_role: role } })
       : base(input, init));
-    const router = createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/projects"] }) });
-    render(<WorkbenchApp router={router} />);
+    const router = createAtlasPlatformRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/projects"] }) });
+    render(<AtlasPlatformApp router={router} />);
     await screen.findByRole("table", { name: "Active Projects" });
     expect(Boolean(screen.queryByRole("button", { name: "Create Project" }))).toBe(["tenant_admin", "super_admin"].includes(role));
   });
 
   it("allows form inspection without a lock, blocks creation, and restores focus on Escape", async () => {
-    const router = createWorkbenchRouter({ api: createApiClient(tenantFetchStub()), history: createMemoryHistory({ initialEntries: ["/tenants/7/projects"] }) });
+    const router = createAtlasPlatformRouter({ api: createApiClient(tenantFetchStub()), history: createMemoryHistory({ initialEntries: ["/tenants/7/projects"] }) });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
     const trigger = await screen.findByRole("button", { name: "Create Project" });
     await user.click(trigger);
     const dialog = screen.getByRole("dialog", { name: "Create Project" });
@@ -393,9 +393,9 @@ describe("Projects ledger", () => {
       }
       return base(input, init);
     });
-    const router = createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/projects"] }) });
+    const router = createAtlasPlatformRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/projects"] }) });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
     await user.click(await screen.findByRole("button", { name: "Create Project" }));
     const dialog = screen.getByRole("dialog");
     const submit = within(dialog).getByRole("button", { name: "Create Project" });
@@ -457,9 +457,9 @@ describe("Projects ledger", () => {
       }
       return base(input, init);
     });
-    const router = createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/projects"] }) });
+    const router = createAtlasPlatformRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/projects"] }) });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
     await user.click(await screen.findByRole("button", { name: "Create Project" }));
     const dialog = screen.getByRole("dialog");
     await user.type(within(dialog).getByRole("textbox", { name: /Project name/ }), "New project");
@@ -521,12 +521,12 @@ describe("Projects ledger", () => {
   });
 
   it("lists active Projects and keeps Open links inside the active Tenant", async () => {
-    const router = createWorkbenchRouter({
+    const router = createAtlasPlatformRouter({
       api: createApiClient(tenantFetchStub()),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/projects"] }),
     });
 
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
 
     const ledger = await screen.findByRole("table", { name: "Active Projects" });
     expect(within(ledger).getByText("Customer 360")).toBeVisible();
@@ -540,12 +540,12 @@ describe("Projects ledger", () => {
 
   it("switches between the active and archived server ledgers", async () => {
     const fetcher = tenantFetchStub();
-    const router = createWorkbenchRouter({
+    const router = createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/projects"] }),
     });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
     await screen.findByRole("table", { name: "Active Projects" });
 
     await user.click(screen.getByRole("button", { name: "Archived" }));
@@ -561,12 +561,12 @@ describe("Projects ledger", () => {
 
 describe("Project overview", () => {
   it("keeps Project sections visible when workspace navigation is collapsed", async () => {
-    const router = createWorkbenchRouter({
+    const router = createAtlasPlatformRouter({
       api: createApiClient(tenantFetchStub()),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18"] }),
     });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
     await screen.findByRole("heading", { name: "Overview" });
     const workspaceNavigation = screen.getByLabelText("Workspace navigation");
     const projectSections = screen.getByRole("navigation", { name: "Project sections" });
@@ -595,11 +595,11 @@ describe("Project overview", () => {
   });
 
   it("orients the selected Project and links Scope within the active Tenant", async () => {
-    const router = createWorkbenchRouter({
+    const router = createAtlasPlatformRouter({
       api: createApiClient(tenantFetchStub()),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18"] }),
     });
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
 
     expect(await screen.findByRole("heading", { name: "Overview" })).toBeVisible();
     expect(screen.getByText("Cross-system customer domain")).toBeVisible();
@@ -623,11 +623,11 @@ describe("Project overview", () => {
 describe("Active Scope", () => {
   it("lists only the server-returned active Scope Objects", async () => {
     const fetcher = tenantFetchStub();
-    const router = createWorkbenchRouter({
+    const router = createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/input-scope"] }),
     });
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
 
     const scope = await screen.findByRole("table", { name: "Active Project Input Scope" });
     expect(within(scope).getByText("customer_raw")).toBeVisible();
@@ -642,12 +642,12 @@ describe("Active Scope", () => {
 
   it("submits normalized server filters instead of filtering eligibility locally", async () => {
     const fetcher = tenantFetchStub();
-    const router = createWorkbenchRouter({
+    const router = createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/input-scope"] }),
     });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
     await screen.findByRole("table", { name: "Active Project Input Scope" });
 
     expect(screen.getByLabelText("Zone")).not.toBeVisible();
@@ -671,12 +671,12 @@ describe("Active Scope", () => {
 
   it("opens details only on request and returns focus when the drawer closes", async () => {
     const fetcher = tenantFetchStub();
-    const router = createWorkbenchRouter({
+    const router = createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/input-scope"] }),
     });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
     const showDetails = await screen.findByRole("button", {
       name: "Show details for customer_raw",
     });

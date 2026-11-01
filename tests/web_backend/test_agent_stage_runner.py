@@ -5,24 +5,24 @@ from typing import cast
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_workbench_api.capabilities import AgentRunSelection
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_platform.capabilities import AgentRunSelection
+from atlas_platform.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
     AgentExecutionResult,
     LocalAgentToolDefinition,
 )
-from gds_workbench_api.features.workflows.authoring.plan import (
+from atlas_platform.features.workflows.authoring.plan import (
     AgentRunPlan,
     FrozenAgentStage,
     WorkflowExecutionMode,
 )
-from gds_workbench_api.features.workflows.authoring.repair import (
+from atlas_platform.features.workflows.authoring.repair import (
     AgentCandidateValidation,
     AgentContextPolicy,
 )
-from gds_workbench_api.features.workflows.authoring.stage_runner import AgentStageRunner
-from gds_workbench_api.prompt_rendering import (
+from atlas_platform.features.workflows.authoring.stage_runner import AgentStageRunner
+from atlas_platform.prompt_rendering import (
     PromptComponentTemplates,
     PromptVariableDefinition,
 )
@@ -222,7 +222,7 @@ async def test_stage_runner_keeps_the_exact_run_local_catalog() -> None:
 async def test_frozen_tool_selection_controls_discovery_variables_and_invocation() -> (
     None
 ):
-    from gds_workbench_api.features.workflows.authoring.tool_configuration import (
+    from atlas_platform.features.workflows.authoring.tool_configuration import (
         registered_tool_definitions,
     )
 
@@ -295,7 +295,7 @@ async def test_frozen_tool_selection_controls_discovery_variables_and_invocation
 def test_prompt_tool_policy_rejects_duplicates_cross_family_and_one_shot(
     workflow: str,
 ) -> None:
-    from gds_workbench_api.features.workflows.authoring.tool_configuration import (
+    from atlas_platform.features.workflows.authoring.tool_configuration import (
         AgentToolName,
         configure_tools,
         registered_tool_definitions,

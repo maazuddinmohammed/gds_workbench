@@ -8,24 +8,24 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.mapping import (
+from atlas_mcp.application.change_sets.project_apply import ProjectMaterializer
+from atlas_mcp.domain.errors import MappingBranchUnavailableError
+from atlas_mcp.domain.modeling_records import MappingObjectRecord
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.mapping import (
     MappingRunContext,
     MappingRunPlan,
     assess_mapping_readiness,
 )
-from gds_workbench_api.features.mapping.preparation_contracts import (
+from atlas_platform.features.mapping.preparation_contracts import (
     MappingModeledEntity,
     MappingPhysicalObject,
     MappingRunContextUnavailableError,
 )
-from gds_workbench_api.features.mapping.preparation_repository import (
+from atlas_platform.features.mapping.preparation_repository import (
     PostgresMappingRunContextRepository,
 )
-from gds_workbench_api.features.validation.read_service import _ELIGIBLE_SYSTEMS_SQL
-from gds_etl_workbench.application.change_sets.project_apply import ProjectMaterializer
-from gds_etl_workbench.domain.errors import MappingBranchUnavailableError
-from gds_etl_workbench.domain.modeling_records import MappingObjectRecord
+from atlas_platform.features.validation.read_service import _ELIGIBLE_SYSTEMS_SQL
 from psycopg import sql
 
 from tests.mcp.conftest import DisposablePostgres
@@ -438,7 +438,7 @@ def _seed_context_mapping_target(
 def _generation_targets(
     connection: Any, scope: MappingScope, entity_type: str
 ) -> list[dict[str, Any]]:
-    from gds_workbench_api.features.mapping.read_service import (
+    from atlas_platform.features.mapping.read_service import (
         _MAPPING_GENERATION_TARGETS_SQL,
     )
 
@@ -524,7 +524,9 @@ def test_context_never_adds_a_mapping_branch(
     web_postgres_database: DisposablePostgres,
     dimensional: bool,
 ) -> None:
-    from gds_workbench_api.features.mapping.read_service import _UNSUPPLIED_ENTITY_COUNT_SQL
+    from atlas_platform.features.mapping.read_service import (
+        _UNSUPPLIED_ENTITY_COUNT_SQL,
+    )
 
     scope = _seed_mapping_scope(web_postgres_database, dimensional=False, create_run=False)
     entity_id, context_record_id = _seed_context_mapping_target(

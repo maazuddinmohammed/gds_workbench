@@ -4,7 +4,7 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
 
 import { createApiClient } from "../../api";
-import { WorkbenchApp, createWorkbenchRouter } from "../../app";
+import { AtlasPlatformApp, createAtlasPlatformRouter } from "../../app";
 
 describe("Project Subject Areas", () => {
   it("lists areas with plain Object and Attribute counts and an Open button", async () => {
@@ -197,7 +197,7 @@ describe("Project Subject Areas", () => {
 });
 
 function renderAt(path: string, fetcher: ReturnType<typeof subjectAreaFetchStub>) {
-  render(<WorkbenchApp router={createWorkbenchRouter({
+  render(<AtlasPlatformApp router={createAtlasPlatformRouter({
     api: createApiClient(fetcher),
     history: createMemoryHistory({ initialEntries: [path] }),
   })} />);

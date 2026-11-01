@@ -3,13 +3,13 @@ from uuid import UUID
 
 import certifi
 import pytest
-from gds_etl_workbench.configuration import ConfigurationError
-from gds_workbench_api.capabilities import (
+from atlas_mcp.configuration import ConfigurationError
+from atlas_platform.capabilities import (
     load_default_agent_capabilities,
     select_agent_runtime_capabilities,
 )
-from gds_workbench_api.configuration import Environment, RuntimeSettings
-from gds_workbench_api.integrations.agents.configuration import (
+from atlas_platform.configuration import Environment, RuntimeSettings
+from atlas_platform.integrations.agents.configuration import (
     AgentRuntimeConfiguration,
 )
 from psycopg.conninfo import conninfo_to_dict
@@ -187,7 +187,7 @@ def test_runtime_settings_reject_legacy_project_routing_variables(
     settings = RuntimeSettings.from_environment(values)
 
     assert settings.agent_runtime.connections[0].model_code == "foundry-primary"
-    with pytest.raises(ConfigurationError, match="unsupported GDS web setting"):
+    with pytest.raises(ConfigurationError, match="unsupported Atlas Platform setting"):
         RuntimeSettings.from_environment(
             {
                 **values,
@@ -634,7 +634,7 @@ def test_remote_foundry_accepts_the_services_resource_openai_route() -> None:
 
 
 def test_remote_agent_provider_rejects_legacy_project_endpoint_settings() -> None:
-    with pytest.raises(ConfigurationError, match="unsupported GDS web setting"):
+    with pytest.raises(ConfigurationError, match="unsupported Atlas Platform setting"):
         RuntimeSettings.from_environment(
             {
                 "GDS_WEB_ENVIRONMENT": "local",

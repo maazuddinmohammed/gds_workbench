@@ -3,7 +3,7 @@
 Technical commands for agents and maintainers. For normal use, follow the
 [usage guide](../docs/usage-guide.md).
 
-Call each helper by absolute path as its own terminal command, as in the examples below, where `<plugin>` is the installed `atlas` plugin folder. Never `cd` first or combine commands with `&&`, `;`, pipes, redirects, loops or shell variables: hosts refuse such commands or ask the user to approve each one. `--session` always means the user's working directory containing `.atlas`, never the plugin source directory. Node.js 20+ is the main runtime; Snapshot ZIP installation also requires Python 3.12+. Windows PowerShell 5.1 provides the native fallback. Local helpers do not connect to databases or execute SQL. For governed submission, install the Stage Runner VSIX in VS Code. Microsoft credentials stay in VS Code. See [Copilot - VS Code setup](../docs/copilot-vs-code-installation-and-setup.md).
+Call each helper by absolute path as its own terminal command, as in the examples below, where `<plugin>` is the installed `atlas` plugin folder. Never `cd` first or combine commands with `&&`, `;`, pipes, redirects, loops or shell variables: hosts refuse such commands or ask the user to approve each one. `--session` always means the user's working directory containing `.atlas`, never the plugin source directory. Node.js 20+ is the main runtime; Snapshot ZIP installation also requires Python 3.12+. Windows PowerShell 5.1 provides the native fallback. Local helpers do not connect to databases or execute SQL. For governed submission, install the Atlas Bridge VSIX in VS Code. Microsoft credentials stay in VS Code. See [Copilot - VS Code setup](../docs/copilot-vs-code-installation-and-setup.md).
 
 ```sh
 node <plugin>/scripts/atlas-local.js command-contract
@@ -60,7 +60,7 @@ A baseline conflict while unapplied work exists requires explicit three-way revi
 
 ## Atlas Local Workbench
 
-When local authoring/review needs it or the user requests it, open or reuse Atlas Local Workbench with `bash <plugin>/scripts/open-workbench.sh` or `<plugin>/scripts/open-workbench.ps1`. No Tenant, Project, workflow or Snapshot is required to open it. This opens the bundled static app in Chrome/Edge; it does not start a server. Once `.atlas` is ready, select the working directory in the browser, then reload local files after agent edits. Existing owners and operation status remain visible.
+When local authoring/review needs it or the user requests it, open or reuse Atlas Local Workbench with `bash <plugin>/scripts/open-local-workbench.sh` or `<plugin>/scripts/open-local-workbench.ps1`. No Tenant, Project, workflow or Snapshot is required to open it. This opens the bundled static app in Chrome/Edge; it does not start a server. Once `.atlas` is ready, select the working directory in the browser, then reload local files after agent edits. Existing owners and operation status remain visible.
 
 DBML is a user-only Atlas Local Workbench export of the complete Snapshot plus saved changes. There is no Atlas CLI or MCP export command. Agents use Project records and local validation; they never generate, read, inspect or use DBML. For an export request, direct the user to **Generate DBML** in Atlas Local Workbench.
 
@@ -90,4 +90,4 @@ Creation DDL and transformation SQL are agent-authored using the relevant workfl
 
 ## Review and submission
 
-Submit by repeating `next` as described in [submit with next](change-set-lifecycle.md#submit-with-next): local acknowledgement → Check Stage Runner → resolve draft → accept/prepare → Stage → server validation → separate Apply approval → Apply. Use its exact actions and direct response files; do not copy digests or curate JSON fields manually. Operation evidence, validation reports and Stage manifests stay under `.atlas/tasks/<task>.evidence/`; temporary downloads and query intermediates belong under `.atlas/temp/`. Do not hand-edit operation receipts or use narrative task progress as proof of approval.
+Submit by repeating `next` as described in [submit with next](change-set-lifecycle.md#submit-with-next): local acknowledgement → Check Atlas Bridge → resolve draft → accept/prepare → Stage → server validation → separate Apply approval → Apply. Use its exact actions and direct response files; do not copy digests or curate JSON fields manually. Operation evidence, validation reports and Stage manifests stay under `.atlas/tasks/<task>.evidence/`; temporary downloads and query intermediates belong under `.atlas/temp/`. Do not hand-edit operation receipts or use narrative task progress as proof of approval.

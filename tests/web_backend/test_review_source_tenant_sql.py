@@ -1,25 +1,25 @@
 # pyright: reportPrivateUsage=false
 
-from gds_workbench_api.features.code_generation.read_service import (
+from atlas_platform.features.code_generation.read_service import (
     _CODE_GENERATION_TARGETS_SQL,
     _GENERATED_SQL_ARTIFACT_DETAIL_SQL,
     _GENERATED_SQL_DOWNLOAD_SQL,
 )
-from gds_workbench_api.features.dimensional import (
+from atlas_platform.features.dimensional import (
     DIMENSIONAL_ATTRIBUTE_SOURCES_SQL,
     DIMENSIONAL_OBJECT_SOURCES_SQL,
 )
-from gds_workbench_api.features.logical import (
+from atlas_platform.features.logical import (
     LOGICAL_ATTRIBUTE_SOURCES_SQL,
     LOGICAL_ENTITY_SOURCES_SQL,
 )
-from gds_workbench_api.features.mapping import (
+from atlas_platform.features.mapping import (
     MAPPING_ATTRIBUTE_DETAIL_SQL,
     MAPPING_ATTRIBUTES_SQL,
     MAPPING_OBJECT_DETAIL_SQL,
     MAPPING_OBJECTS_SQL,
 )
-from gds_workbench_api.features.subject_areas.read_service import _SCOPE_TABLES_SQL
+from atlas_platform.features.subject_areas.read_service import _SCOPE_TABLES_SQL
 
 
 def _compact(sql: str) -> str:

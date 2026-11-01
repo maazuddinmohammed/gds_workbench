@@ -9,39 +9,39 @@ from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import DependencyUnavailableError
-from gds_workbench_api.capabilities import load_default_agent_capabilities
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.metadata_enrichment.contracts import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import DependencyUnavailableError
+from atlas_platform.capabilities import load_default_agent_capabilities
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.metadata_enrichment.contracts import (
     EnrichmentDescriptionTarget,
     EnrichmentFieldResult,
     MetadataEnrichmentCompletion,
     MetadataEnrichmentContext,
 )
-from gds_workbench_api.features.metadata_enrichment.repository import (
+from atlas_platform.features.metadata_enrichment.repository import (
     MetadataEnrichmentRepository,
 )
-from gds_workbench_api.features.metadata_enrichment.service import (
+from atlas_platform.features.metadata_enrichment.service import (
     DatabaseMetadataEnrichmentExecutor,
 )
-from gds_workbench_api.features.project_input_scope.service import (
+from atlas_platform.features.project_input_scope.service import (
     DatabaseProjectInputScopeService,
 )
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
+from atlas_platform.features.workflows.authoring.agent_execution import (
     AgentExecutionFailedError,
     AgentExecutionRequest,
     AgentExecutionResult,
 )
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
+from atlas_platform.features.workflows.authoring.lifecycle import (
     DatabaseAgentWorkflowLifecycle,
 )
-from gds_workbench_api.features.workflows.commands import (
+from atlas_platform.features.workflows.commands import (
     CreateWorkflowRunRequest,
     DatabaseWorkflowCommandService,
 )
-from gds_workbench_api.integrations.agents.composition import LocalFakeAgentAdapter
+from atlas_platform.integrations.agents.composition import LocalFakeAgentAdapter
 from pydantic import JsonValue
 
 from tests.mcp.conftest import DisposablePostgres

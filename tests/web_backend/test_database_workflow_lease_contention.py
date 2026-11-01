@@ -14,7 +14,10 @@ from psycopg.rows import dict_row
 
 from tests.mcp.database_test_support import require_row
 from tests.mcp.test_database_workflow_run_lifecycle import seed_workflow_context
-from tests.web_backend.test_database_workflow_run_claims import _complete_run, _create_run
+from tests.web_backend.test_database_workflow_run_claims import (
+    _complete_run,
+    _create_run,
+)
 
 if TYPE_CHECKING:
     from tests.mcp.conftest import DisposablePostgres

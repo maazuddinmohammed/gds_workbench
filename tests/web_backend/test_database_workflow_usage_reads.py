@@ -4,23 +4,23 @@
 from contextlib import nullcontext
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_platform.features.workflows.authoring.lifecycle import (
     DatabaseAgentWorkflowLifecycle,
 )
-from gds_workbench_api.features.workflows.execution.contracts import (
+from atlas_platform.features.workflows.execution.contracts import (
     WorkflowExecutionClaim,
 )
-from gds_workbench_api.features.workflows.runs import (
+from atlas_platform.features.workflows.runs import (
     DatabaseWorkflowRunService,
     WorkflowRunNotFoundError,
 )
-from gds_workbench_api.features.workflows.usage.contracts import ModelTokenUsage
-from gds_workbench_api.features.workflows.usage.read_service import (
+from atlas_platform.features.workflows.usage.contracts import ModelTokenUsage
+from atlas_platform.features.workflows.usage.read_service import (
     WorkflowTokenUsageSummary,
     read_run_token_usage,
 )
-from gds_workbench_api.features.workflows.usage.service import (
+from atlas_platform.features.workflows.usage.service import (
     DatabaseWorkflowUsageRecorder,
 )
 

@@ -14,9 +14,48 @@ from typing import Any, cast
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_platform.capabilities import load_default_agent_capabilities
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.subject_areas.service import SubjectAreaWorkflow
+from atlas_platform.features.workflows.authoring import stage_runner
+from atlas_platform.features.workflows.authoring.agent_execution import (
+    AgentExecutionRequest,
+    AgentExecutionResult,
+)
+from atlas_platform.features.workflows.authoring.change_set_handoff import (
+    WorkflowChangeSetHandoff,
+    WorkflowChangeSetHandoffResult,
+)
+from atlas_platform.features.workflows.authoring.lifecycle import (
+    DatabaseAgentWorkflowLifecycle,
+)
+from atlas_platform.features.workflows.authoring.no_op import (
+    DatabaseAuthoringNoOpService,
+)
+from atlas_platform.features.workflows.authoring.plan import (
+    AgentRunPlan,
+    FrozenAgentStage,
+    WorkflowExecutionMode,
+)
+from atlas_platform.features.workflows.authoring.prompt_inputs import (
+    get_prompt_input_contract,
+)
+from atlas_platform.features.workflows.commands import (
+    CreateWorkflowRunRequest,
+    DatabaseWorkflowCommandService,
+)
+from atlas_platform.features.workflows.execution.repository import (
+    DatabaseWorkflowClaimRepository,
+)
+from atlas_platform.integrations.agents import LocalFakeAgentAdapter
+from atlas_platform.prompt_rendering import (
+    PromptComponentTemplates,
+    PromptVariableDefinition,
+)
 from jsonschema import Draft202012Validator
+
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.conftest import (
     bootstrap_postgres_database as bootstrap_postgres_database,
@@ -34,45 +73,6 @@ from tests.web_backend import test_analysis_per_table as per_table
 from tests.web_backend import test_dimensional_executor as dimensional
 from tests.web_backend import test_logical_executor as logical
 from tests.web_backend.test_database_project_change_sets import _seed_profile_project
-
-from gds_workbench_api.capabilities import load_default_agent_capabilities
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.subject_areas.service import SubjectAreaWorkflow
-from gds_workbench_api.features.workflows.authoring import stage_runner
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
-    AgentExecutionRequest,
-    AgentExecutionResult,
-)
-from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
-    WorkflowChangeSetHandoff,
-    WorkflowChangeSetHandoffResult,
-)
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
-    DatabaseAgentWorkflowLifecycle,
-)
-from gds_workbench_api.features.workflows.authoring.no_op import (
-    DatabaseAuthoringNoOpService,
-)
-from gds_workbench_api.features.workflows.authoring.plan import (
-    AgentRunPlan,
-    FrozenAgentStage,
-    WorkflowExecutionMode,
-)
-from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
-    get_prompt_input_contract,
-)
-from gds_workbench_api.features.workflows.commands import (
-    CreateWorkflowRunRequest,
-    DatabaseWorkflowCommandService,
-)
-from gds_workbench_api.features.workflows.execution.repository import (
-    DatabaseWorkflowClaimRepository,
-)
-from gds_workbench_api.integrations.agents import LocalFakeAgentAdapter
-from gds_workbench_api.prompt_rendering import (
-    PromptComponentTemplates,
-    PromptVariableDefinition,
-)
 
 type StageIdentity = tuple[str, str | None, str]
 type SeedStages = dict[tuple[str, str | None], tuple[FrozenAgentStage, ...]]
@@ -567,14 +567,14 @@ async def test_installed_sql_defaults_with_repository_projection(
     monkeypatch: pytest.MonkeyPatch,
     repair: bool,
 ) -> None:
+    from atlas_platform.features.code_generation.context import (
+        _assemble_context,
+    )
+
     from tests.web_backend import test_code_generation_executor as code
     from tests.web_backend.test_code_generation_context import _row
     from tests.web_backend.test_database_mapping_source_context import (
         _seed_mapping_scope,
-    )
-
-    from gds_workbench_api.features.code_generation.context import (
-        _assemble_context,
     )
 
     scope = _seed_mapping_scope(web_postgres_database, dimensional=False)
@@ -690,13 +690,13 @@ async def test_installed_validation_defaults_with_repository_context(
     monkeypatch: pytest.MonkeyPatch,
     with_code: bool,
 ) -> None:
+    from atlas_platform.features.validation.context import _assemble_context
+
     from tests.web_backend import test_validation_executor as validation
     from tests.web_backend.test_database_mapping_source_context import (
         _seed_mapping_scope,
     )
     from tests.web_backend.test_validation_context import _applied_row
-
-    from gds_workbench_api.features.validation.context import _assemble_context
 
     scope = _seed_mapping_scope(web_postgres_database, dimensional=False)
     with web_postgres_database.connect_owner() as connection:

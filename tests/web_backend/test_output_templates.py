@@ -4,16 +4,13 @@ from typing import Any, LiteralString, cast
 from uuid import UUID
 
 import pytest
-from fastapi import FastAPI
-from fastapi.routing import APIRoute
-from fastapi.testclient import TestClient
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from gds_workbench_api.features.output_templates import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_mcp.infrastructure.postgres import ReadIsolation
+from atlas_platform.features.output_templates import (
     DatabaseOutputTemplateService,
     OutputTemplateDatabase,
     OutputTemplateDetail,
@@ -24,6 +21,9 @@ from gds_workbench_api.features.output_templates import (
     OutputTemplateSummary,
     create_output_templates_router,
 )
+from fastapi import FastAPI
+from fastapi.routing import APIRoute
+from fastapi.testclient import TestClient
 
 PRINCIPAL = RequestPrincipal(
     actor_kind=ActorKind.HUMAN,

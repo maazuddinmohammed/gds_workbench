@@ -3,12 +3,12 @@
 from copy import deepcopy
 
 import pytest
-from gds_etl_workbench.application.change_sets.project import StageProjectChange
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project import StageProjectChange
+from atlas_mcp.application.change_sets.project_validation import (
     validate_future_graph,
 )
-from gds_etl_workbench.domain.modeling_records import ContextRecord
-from gds_etl_workbench.domain.snapshots.project import ProjectSnapshot
+from atlas_mcp.domain.modeling_records import ContextRecord
+from atlas_mcp.domain.snapshots.project import ProjectSnapshot
 from pydantic import ValidationError
 
 from tests.mcp.project_test_fixtures import (

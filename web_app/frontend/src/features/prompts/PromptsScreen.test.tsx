@@ -4,7 +4,7 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
 
 import { createApiClient } from "../../api";
-import { WorkbenchApp, createWorkbenchRouter } from "../../app";
+import { AtlasPlatformApp, createAtlasPlatformRouter } from "../../app";
 import type {
   ProjectPromptAssignmentState,
   PromptAssignmentTarget,
@@ -20,7 +20,7 @@ describe("governed Prompts experience", () => {
   it("opens from the shell with server filters, page-local visibility, and allowed variables", async () => {
     const fetcher = promptFetchStub();
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7"] }),
     })} />);
@@ -63,7 +63,7 @@ describe("governed Prompts experience", () => {
   it("creates a Tenant Template in a focused dialog and navigates to its real detail route", async () => {
     const fetcher = promptFetchStub();
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts"] }),
     })} />);
@@ -114,7 +114,7 @@ describe("governed Prompts experience", () => {
 
   it("keeps dialog keyboard focus inside and restores focus when closed", async () => {
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(promptFetchStub()), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts"] }) })} />);
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(promptFetchStub()), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts"] }) })} />);
     const trigger = await screen.findByRole("button", { name: "New Prompt Template" });
     await screen.findByRole("table", { name: "Prompt Templates" });
     await user.click(trigger);
@@ -132,7 +132,7 @@ describe("governed Prompts experience", () => {
   it("saves a fenced draft, publishes it immutably, retires it, and renders bodies as inert text", async () => {
     const fetcher = promptFetchStub();
     const user = userEvent.setup();
-    const { container } = render(<WorkbenchApp router={createWorkbenchRouter({
+    const { container } = render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }),
     })} />);
@@ -195,7 +195,7 @@ describe("governed Prompts experience", () => {
   it("inserts at the active selection, previews only on request, and keeps stale previews separate", async () => {
     const fetcher = promptFetchStub();
     const user = userEvent.setup();
-    const { container } = render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
+    const { container } = render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
     const system = await screen.findByLabelText("System Prompt");
     await user.click(screen.getByRole("button", { name: "System" }));
     await user.clear(system);
@@ -218,7 +218,7 @@ describe("governed Prompts experience", () => {
   it("saves no enabled tools explicitly and resets text and tools to the saved version", async () => {
     const fetcher = promptFetchStub();
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
     const system = await screen.findByLabelText("System Prompt");
     await user.click(screen.getByRole("button", { name: "System" }));
     await user.type(system, " Unsaved");
@@ -241,7 +241,7 @@ describe("governed Prompts experience", () => {
   it("saves complete prompt bodies larger than the former byte cap", async () => {
     const fetcher = promptFetchStub();
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }),
     })} />);
@@ -265,7 +265,7 @@ describe("governed Prompts experience", () => {
   it("retains working text and tool choices after a save conflict or preview error", async () => {
     const fetcher = promptFetchStub({ saveStatus: 409, previewStatus: 422 });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
     const system = await screen.findByLabelText("System Prompt");
     await user.click(screen.getByRole("button", { name: "System" }));
     await user.clear(system);
@@ -283,7 +283,7 @@ describe("governed Prompts experience", () => {
 
   it("shows the frozen tool selection for published Code prompts with default execution mode", async () => {
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(promptFetchStub({ promptWorkflow: "code_generation" })), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(promptFetchStub({ promptWorkflow: "code_generation" })), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
     await screen.findByLabelText("System Prompt");
     await user.click(screen.getByText(/^Version history/, { selector: "summary" }));
     await user.click(screen.getByRole("button", { name: /Version 1.*Published/ }));
@@ -293,7 +293,7 @@ describe("governed Prompts experience", () => {
 
   it("expands editing with trapped focus and retains edits across content switches", async () => {
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(promptFetchStub()), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(promptFetchStub()), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
     const instruction = await screen.findByLabelText("Instruction Prompt");
     const expand = screen.getByRole("button", { name: "Expand Instruction Prompt" });
     await user.click(expand);
@@ -321,7 +321,7 @@ describe("governed Prompts experience", () => {
   it("requires discard before refreshing, switching versions, or leaving dirty content", async () => {
     const fetcher = promptFetchStub();
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
     const instruction = await screen.findByLabelText("Instruction Prompt");
     await user.type(instruction, " working");
     const reads = () => fetcher.mock.calls.filter(([input]) => String(input) === "/api/v1/tenants/7/prompts/templates/31").length;
@@ -351,7 +351,7 @@ describe("governed Prompts experience", () => {
 
   it("expands published content without making it editable", async () => {
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(promptFetchStub()), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(promptFetchStub()), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
     await screen.findByLabelText("Instruction Prompt");
     await user.click(screen.getByText(/^Version history/, { selector: "summary" }));
     await user.click(screen.getByRole("button", { name: /Version 1.*Published/ }));
@@ -368,7 +368,7 @@ describe("governed Prompts experience", () => {
   it("shows effective Project provenance and changes only a lock-gated Project override", async () => {
     const fetcher = promptFetchStub();
     const user = userEvent.setup();
-    const view = render(<WorkbenchApp router={createWorkbenchRouter({
+    const view = render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/settings/prompts"] }),
     })} />);
@@ -402,7 +402,7 @@ describe("governed Prompts experience", () => {
     expect(screen.getByText("Global default")).toBeVisible();
     view.unmount();
 
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(promptFetchStub({ hasLock: false })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/projects/18/settings/prompts"] }),
     })} />);
@@ -412,21 +412,21 @@ describe("governed Prompts experience", () => {
   });
 
   it("keeps loading, empty, denied, and error Library states exact and redacted", async () => {
-    const loading = render(<WorkbenchApp router={createWorkbenchRouter({
+    const loading = render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(promptFetchStub({ pendingLibrary: true })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts"] }),
     })} />);
     expect(await screen.findByText("Loading Prompts…")).toBeVisible();
     loading.unmount();
 
-    const empty = render(<WorkbenchApp router={createWorkbenchRouter({
+    const empty = render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(promptFetchStub({ emptyLibrary: true })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts"] }),
     })} />);
     expect(await screen.findByText("No Prompts match these filters.")).toBeVisible();
     empty.unmount();
 
-    const denied = render(<WorkbenchApp router={createWorkbenchRouter({
+    const denied = render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(promptFetchStub({ libraryStatus: 403 })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts"] }),
     })} />);
@@ -435,7 +435,7 @@ describe("governed Prompts experience", () => {
     );
     denied.unmount();
 
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(promptFetchStub({ libraryStatus: 503 })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts"] }),
     })} />);

@@ -5,12 +5,12 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
 
 import { createApiClient } from "../../api";
-import { WorkbenchApp, createWorkbenchRouter } from "../../app";
+import { AtlasPlatformApp, createAtlasPlatformRouter } from "../../app";
 
 describe("Mapping journey", () => {
   it("offers Mapping editors only inside Show detail", async () => {
     const fetcher = mappingFetchStub();
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18?layer=logical"] }) })} />);
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18?layer=logical"] }) })} />);
     const user = userEvent.setup();
     const detail = await screen.findByRole("link", { name: "Open Object Mapping 81" });
     expect(screen.queryByRole("button", { name: /Add row|Edit row|Edit Object Mapping|Edit Attribute Mapping/ })).not.toBeInTheDocument();
@@ -49,7 +49,7 @@ describe("Mapping journey", () => {
       }
       return base(input, init);
     });
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: [`/tenants/7/mapping/projects/18/objects/81?layer=${layer}`] }) })} />);
     const grid = await screen.findByRole("table", { name: "Attribute Mappings" });
     expect(await within(grid).findByText("TRIM(source_5)")).toBeVisible();
@@ -89,9 +89,9 @@ describe("Mapping journey", () => {
       }
       return jsonResponse(body);
     });
-    const router = createWorkbenchRouter({ api: createApiClient(fetcher),
+    const router = createAtlasPlatformRouter({ api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: [`/tenants/7/mapping/projects/18?layer=${layer}`] }) });
-    render(<WorkbenchApp router={router} />);
+    render(<AtlasPlatformApp router={router} />);
     const user = userEvent.setup();
     const grid = await screen.findByRole("table", { name: "Object Mappings" });
     expect(within(grid).queryByRole("columnheader", { name: "Entity transformation" })).not.toBeInTheDocument();
@@ -146,7 +146,7 @@ describe("Mapping journey", () => {
       }
       return response;
     });
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18"] }) })} />);
     const user = userEvent.setup();
     await user.click(await screen.findByRole("link", { name: "Open Object Mapping 81" }));
@@ -183,7 +183,7 @@ describe("Mapping journey", () => {
       });
       return base(input, init);
     });
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18/objects/81"] }) })} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Mapping changed. Refresh");
     expect(screen.queryByText("Current safe attribute transformation")).not.toBeInTheDocument();
@@ -201,7 +201,7 @@ describe("Mapping journey", () => {
       }
       return base(input, init);
     });
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18/objects/81"] }) })} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Transformation could not be loaded.");
     expect(screen.getByRole("table", { name: "Attribute Mappings" })).toBeVisible();
@@ -233,7 +233,7 @@ describe("Mapping journey", () => {
       const detail = details.find((item) => url.endsWith(`/mapping/attributes/${item.mapping_attribute_id}`));
       return detail ? jsonResponse(detail) : base(input, init);
     });
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18/objects/81"] }),
     })} />);
     const table = await screen.findByRole("table", { name: "Attribute Mappings" });
@@ -266,7 +266,7 @@ describe("Mapping journey", () => {
 
   it("keeps the legacy Mapping Project picker addressable", async () => {
     const fetcher = mappingFetchStub();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping"] }),
     })} />);
@@ -278,7 +278,7 @@ describe("Mapping journey", () => {
   it("opens a Project directly into server-filtered Entity mappings", async () => {
     const fetcher = mappingFetchStub();
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18"] }),
     })} />);
@@ -313,7 +313,7 @@ describe("Mapping journey", () => {
   it("reviews Entity logic and inline Attribute records without leaving the spreadsheet", async () => {
     const fetcher = mappingFetchStub();
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18"] }),
     })} />);
@@ -405,7 +405,7 @@ describe("Mapping journey", () => {
   });
 
   it("keeps legacy Attribute Mapping URLs addressable with focused return navigation", async () => {
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(mappingFetchStub()),
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(mappingFetchStub()),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18/attributes/91"] }),
     })} />);
     const user = userEvent.setup();
@@ -430,7 +430,7 @@ describe("Mapping journey", () => {
   it("follows opaque Mapping cursors and refreshes the active ledger", async () => {
     const fetcher = mappingFetchStub({ hasNextPage: true });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18"] }),
     })} />);
@@ -456,7 +456,7 @@ describe("Mapping journey", () => {
   it("keeps Attribute filters, pagination, and refresh within the parent Object", async () => {
     const fetcher = mappingFetchStub({ hasNextPage: true });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18/objects/81"] }),
     })} />);
@@ -502,7 +502,7 @@ describe("Mapping journey", () => {
     [{ error: true }, "Attribute Mappings could not be loaded."],
     [{ projectRevision: 19 }, "The Project changed while Attribute Mappings were loading. Refresh to reconcile revisions."],
   ] as const)("keeps nested Attribute states explicit: %s", async (options, message) => {
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(mappingFetchStub(options)),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18/objects/81"] }),
     })} />);
@@ -512,7 +512,7 @@ describe("Mapping journey", () => {
   });
 
   it.each(["attributes", "dependencies"])("opens old %s bookmarks at Entity mappings", async (view) => {
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(mappingFetchStub()),
       history: createMemoryHistory({ initialEntries: [`/tenants/7/mapping/projects/18?view=${view}`] }),
     })} />);
@@ -521,14 +521,14 @@ describe("Mapping journey", () => {
   });
 
   it("keeps Mapping empty, safe-error, denied, and revision states explicit", async () => {
-    const empty = render(<WorkbenchApp router={createWorkbenchRouter({
+    const empty = render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(mappingFetchStub({ empty: true })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18"] }),
     })} />);
     expect(await screen.findByText("No Object Mappings match these filters.")).toBeVisible();
     empty.unmount();
 
-    const mismatch = render(<WorkbenchApp router={createWorkbenchRouter({
+    const mismatch = render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(mappingFetchStub({ projectRevision: 19 })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18"] }),
     })} />);
@@ -537,7 +537,7 @@ describe("Mapping journey", () => {
     );
     mismatch.unmount();
 
-    const denied = render(<WorkbenchApp router={createWorkbenchRouter({
+    const denied = render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(mappingFetchStub({ denied: true })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18"] }),
     })} />);
@@ -546,7 +546,7 @@ describe("Mapping journey", () => {
     );
     denied.unmount();
 
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(mappingFetchStub({ error: true })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18"] }),
     })} />);
@@ -556,7 +556,7 @@ describe("Mapping journey", () => {
   });
 
   it("requires App permission and Tenant Lock, then explicitly creates and executes one target", async () => {
-    const unlocked = render(<WorkbenchApp router={createWorkbenchRouter({
+    const unlocked = render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(mappingFetchStub({ hasLock: false })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18"] }),
     })} />);
@@ -565,7 +565,7 @@ describe("Mapping journey", () => {
     expect(screen.getByRole("button", { name: "Generate mappings" })).toHaveAttribute("title", "Tenant Lock required to run");
     unlocked.unmount();
 
-    const denied = render(<WorkbenchApp router={createWorkbenchRouter({
+    const denied = render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(mappingFetchStub({ role: "developer" })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18"] }),
     })} />);
@@ -576,7 +576,7 @@ describe("Mapping journey", () => {
 
     const fetcher = mappingFetchStub();
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18"] }),
     })} />);
@@ -652,7 +652,7 @@ describe("Mapping journey", () => {
       return success(input, init);
     });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18"] }),
     })} />);
@@ -683,7 +683,7 @@ describe("Mapping journey", () => {
   it("retries a conflicted Mapping start without creating another run", async () => {
     const fetcher = mappingFetchStub({ executeConflictOnce: true });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18"] }),
     })} />);
@@ -722,7 +722,7 @@ describe("Mapping journey", () => {
     });
     const fetcher = mappingFetchStub({ executeGate });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18"] }),
     })} />);
@@ -760,7 +760,7 @@ describe("Mapping journey", () => {
   ])("uses server-resolved global defaults with independent overrides: $layer, custom=$customObject, unavailable=$templatesUnavailable", async ({ layer, customObject, templatesUnavailable }) => {
     const fetcher = mappingFetchStub({ templatesUnavailable });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18"] }),
     })} />);
@@ -1101,7 +1101,7 @@ function jsonResponse(value: unknown, status = 200): Response {
 
 it.each([["Object mappings", "mapping_object", 81], ["Attribute mappings", "mapping_attribute", 91]] as const)("reviews selected %s through the governed endpoint", async (view, dataset, recordId) => {
   const { fetcher, commands } = withRecordReview(mappingFetchStub());
-  render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+  render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
     history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18"] }),
   })} />);
   const user = userEvent.setup();
@@ -1140,7 +1140,7 @@ it("selects Objects with their unlocked Attributes and preserves explicit exclus
     { ...target, entity_id: 705, entity_name: "orders", is_locked: true },
   ] });
   const user = userEvent.setup();
-  render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+  render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
     history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18"] }),
   })} />);
   await screen.findByRole("table", { name: "Object Mappings" });
@@ -1171,7 +1171,7 @@ it("lists only the server's Entity/System branches and explains unsupplied Entit
     ...target, source_system: { system_id: index + 2, system_code, system_name: system_code },
   })) });
   const user = userEvent.setup();
-  render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+  render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
     history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18?layer=logical&view=objects"] }),
   })} />);
   await user.click(await screen.findByRole("button", { name: "Generate mappings" }));
@@ -1200,9 +1200,9 @@ it("keeps the System tab in the address through details, back links and Generate
       attributes: [{ attribute_id: 802, attribute_name: "order_id", modeled_attribute_name: "OrderID", ordinal_position: 1, is_locked: false, is_authored: false }] },
   ] });
   const user = userEvent.setup();
-  const router = createWorkbenchRouter({ api: createApiClient(fetcher),
+  const router = createAtlasPlatformRouter({ api: createApiClient(fetcher),
     history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18?layer=logical"] }) });
-  render(<WorkbenchApp router={router} />);
+  render(<AtlasPlatformApp router={router} />);
   const tabs = await screen.findByRole("navigation", { name: "Mapping Systems" });
   await waitFor(() => expect(within(tabs).getAllByRole("link").map((link) => link.getAttribute("aria-label") ?? link.textContent))
     .toEqual(["All Systems", "CRM, 1 Mapping", "ERP, 0 Mappings"]));
@@ -1231,7 +1231,7 @@ it("keeps a tab's System that sources nothing instead of generating for every Sy
       attributes: [{ attribute_id: 702, attribute_name: "customer_name", modeled_attribute_name: "Name", ordinal_position: 1, is_locked: false, is_authored: false }] },
   ] });
   const user = userEvent.setup();
-  render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+  render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
     history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18?layer=logical&system=LEGACY"] }),
   })} />);
   await user.click(await screen.findByRole("button", { name: "Generate mappings" }));
@@ -1250,9 +1250,9 @@ it("keeps layer filters and detail navigation scoped to Dimensional", async () =
     ? jsonResponse({ ...mappingObjectDetail, target: { ...mappingObjectDetail.target, entity_type: "dimensional_entity" } })
     : base(input, init));
   const user = userEvent.setup();
-  const router = createWorkbenchRouter({ api: createApiClient(fetcher),
+  const router = createAtlasPlatformRouter({ api: createApiClient(fetcher),
     history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18"] }) });
-  render(<WorkbenchApp router={router} />);
+  render(<AtlasPlatformApp router={router} />);
   await user.click(await screen.findByRole("checkbox", { name: "Select Mapping Objects 81" }));
   await user.click(within(screen.getByRole("navigation", { name: "Mapping layer" })).getByRole("link", { name: "Dimensional" }));
   expect(await screen.findByRole("checkbox", { name: "Select Mapping Objects 81" })).not.toBeChecked();
@@ -1282,9 +1282,9 @@ it("retains the Dimensional layer across Mapping, Code generation, and Validatio
     return base(input, init);
   });
   const user = userEvent.setup();
-  const router = createWorkbenchRouter({ api: createApiClient(fetcher),
+  const router = createAtlasPlatformRouter({ api: createApiClient(fetcher),
     history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18?layer=dimensional"] }) });
-  render(<WorkbenchApp router={router} />);
+  render(<AtlasPlatformApp router={router} />);
   await screen.findByRole("table", { name: "Object Mappings" });
   for (const [tab, heading, path, layerNav] of [
     ["Code generation", "Code generation", "code-generation", "Code generation layer"],
@@ -1319,7 +1319,7 @@ it("retains Object and Attribute choices across scope modes, detail navigation a
     { ...target, entity_id: 706, entity_name: "locked", is_locked: true },
   ] });
   const user = userEvent.setup();
-  render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+  render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
     history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18?view=objects"] }),
   })} />);
   await user.click(await screen.findByRole("button", { name: "Generate mappings" }));
@@ -1369,7 +1369,7 @@ it("selects unlocked Attributes across every page and permits excluded missing m
       ordinal_position: index + 1, is_locked: index === 0, is_authored: index !== 51 })),
   }] });
   const user = userEvent.setup();
-  render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+  render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
     history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18?view=objects"] }),
   })} />);
   await user.click(await screen.findByRole("button", { name: "Generate mappings" }));
@@ -1403,7 +1403,7 @@ it.each(["logical", "dimensional"] as const)("exports %s Mapping from More witho
   vi.stubGlobal("URL", class extends URL { static override createObjectURL = createObjectURL; static override revokeObjectURL = revokeObjectURL; });
   const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
   try {
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: [`/tenants/7/mapping/projects/18?layer=${layer}`] }) })} />);
     const user = userEvent.setup();
     await screen.findByRole("table", { name: "Object Mappings" });

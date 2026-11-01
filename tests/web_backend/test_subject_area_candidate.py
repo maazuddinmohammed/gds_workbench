@@ -5,35 +5,34 @@ from __future__ import annotations
 from typing import cast
 
 import pytest
-from gds_etl_workbench.application.change_sets.project import StageProjectChange
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project import StageProjectChange
+from atlas_mcp.application.change_sets.project_validation import (
     ProjectValidationIssue,
 )
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.domain.modeling_records import (
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_mcp.domain.modeling_records import (
     PhysicalObjectKey,
     SubjectAreaRecord,
     SubjectAreaTableRecord,
 )
-from gds_etl_workbench.domain.snapshots.project import (
+from atlas_mcp.domain.snapshots.project import (
     ProjectChangeSetDataset,
     SubjectAreaSection,
 )
-from pydantic import JsonValue
-
-from gds_workbench_api.capabilities import AgentRunSelection
-from gds_workbench_api.features.subject_areas.candidate import (
+from atlas_platform.capabilities import AgentRunSelection
+from atlas_platform.features.subject_areas.candidate import (
     SubjectAreaCandidateValidator,
 )
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
+from atlas_platform.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
     AgentExecutionResult,
 )
-from gds_workbench_api.features.workflows.authoring.repair import (
+from atlas_platform.features.workflows.authoring.repair import (
     MAX_COVERAGE_SOURCE_REFS,
     ValidationRepairRunner,
     load_default_agent_context_policy,
 )
+from pydantic import JsonValue
 
 # table_index numbers the selection in order: t1, t2, t3.
 TABLES = ("customer_raw", "order_raw", "invoice_raw")

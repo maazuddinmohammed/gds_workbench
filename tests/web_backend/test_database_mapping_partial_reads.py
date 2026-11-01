@@ -6,14 +6,14 @@ from io import BytesIO
 from typing import Literal
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.mapping.read_contracts import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.mapping.read_contracts import (
     MappingAttributeFilters,
     MappingFilters,
 )
-from gds_workbench_api.features.mapping.read_service import DatabaseMappingReviewService
+from atlas_platform.features.mapping.read_service import DatabaseMappingReviewService
 from openpyxl import load_workbook
 from psycopg import sql
 

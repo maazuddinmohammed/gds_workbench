@@ -1,6 +1,6 @@
 import pytest
-from gds_etl_workbench.configuration import ConfigurationError
-from gds_workbench_api.features.workflows.execution.configuration import (
+from atlas_mcp.configuration import ConfigurationError
+from atlas_platform.features.workflows.execution.configuration import (
     WorkflowExecutionConfiguration,
 )
 

@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from gds_etl_workbench.domain.modeling_records import AnalysisResultRecord
-from gds_etl_workbench.domain.snapshots.project import (
+from atlas_mcp.domain.modeling_records import AnalysisResultRecord
+from atlas_mcp.domain.snapshots.project import (
     DATASETS_BY_NAME,
     build_project_dataset_schema,
 )
@@ -588,7 +588,7 @@ def test_agent_runtime_does_not_expose_or_read_user_dbml(tmp_path: Path) -> None
     assert {path.name: path.read_bytes() for path in export.iterdir()} == before
 
 
-def test_cli_validation_report_matches_workbench_owner_and_evidence_contract(
+def test_cli_validation_report_matches_local_workbench_owner_and_evidence_contract(
     tmp_path: Path,
 ) -> None:
     root = workspace(tmp_path)
@@ -1469,7 +1469,7 @@ def test_context_group_locks_and_active_supports_are_checked_locally(
 
 
 def test_local_digest_orders_change_set_files_ordinally(tmp_path: Path) -> None:
-    """Node, PowerShell and Stage Runner must hash copy.json before copy_group.json."""
+    """Node, PowerShell and Atlas Bridge must hash copy.json before copy_group.json."""
     root = workspace(tmp_path)
     snapshot = root / "metadata" / "metadata-snapshot"
     catalog = json.loads((snapshot / "catalog.json").read_text())
@@ -1561,7 +1561,7 @@ def test_next_drives_metadata_submission_one_action_at_a_time(tmp_path: Path) ->
     assert step["action"]["kind"] == "ask_user"
     plan = step["action"]["after_approval"]
     assert [item.get("tool", item.get("command")) for item in plan] == [
-        "atlas_checkStageRunner",
+        "atlas_checkBridge",
         "check_tenant_lock",
         "create_metadata_change_set",
         "accept",
@@ -1603,7 +1603,7 @@ def test_next_drives_metadata_submission_one_action_at_a_time(tmp_path: Path) ->
         "input": {"manifestPath": prepared["stage_manifest_path"]},
     }
 
-    # Simulate the Stage Runner's verified receipt (tested in the extension suite).
+    # Simulate the Atlas Bridge's verified receipt (tested in the extension suite).
     evidence = root / ".atlas/tasks" / f"{prepared['task_id']}.evidence"
     operation_path = evidence / f"{prepared['operation_id']}.json"
     operation = json.loads(operation_path.read_text())
@@ -2083,7 +2083,7 @@ def test_next_error_returns_one_recovery_action_per_server_code(tmp_path: Path) 
     )
     assert "override_tenant_lock" in lock["then"][1]
 
-    stage = run("next", *project, "--error", "stage_runner_required")
+    stage = run("next", *project, "--error", "atlas_bridge_required")
     assert stage["action"]["argv"] == ["next", *project]
 
     expected_kinds = {

@@ -10,14 +10,14 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, cast
 
-import gds_etl_workbench.diagnostics.metadata_snapshot as diagnostic_module
+import atlas_mcp.diagnostics.metadata_snapshot as diagnostic_module
 import pytest
-from gds_etl_workbench.application.metadata_snapshot.sql import (
+from atlas_mcp.application.metadata_snapshot.sql import (
     OBJECT_CLOSURE_SQL,
     OBJECT_ROWS_SQL,
 )
-from gds_etl_workbench.configuration import RuntimeSettings
-from gds_etl_workbench.diagnostics.metadata_snapshot import (
+from atlas_mcp.configuration import RuntimeSettings
+from atlas_mcp.diagnostics.metadata_snapshot import (
     _failure_fields,
     _run_database_diagnostic,
     _TracingReadTransaction,
@@ -294,7 +294,7 @@ def test_deployment_inspection_checks_every_manifest_file(tmp_path: Path) -> Non
         [
             sys.executable,
             "-m",
-            "gds_etl_workbench.diagnostics.metadata_snapshot",
+            "atlas_mcp.diagnostics.metadata_snapshot",
             "--help",
         ],
         cwd=deployed_root,
@@ -309,7 +309,7 @@ def test_deployment_inspection_checks_every_manifest_file(tmp_path: Path) -> Non
         [
             sys.executable,
             "-m",
-            "gds_etl_workbench.diagnostics.metadata_snapshot",
+            "atlas_mcp.diagnostics.metadata_snapshot",
             "--tenant-id",
             "5",
         ],
@@ -327,9 +327,9 @@ def test_deployment_inspection_checks_every_manifest_file(tmp_path: Path) -> Non
     assert "diagnostic=FAILED" in diagnostic_result.stdout
     assert diagnostic_result.stderr == ""
 
-    configuration = deployed_root / "gds_etl_workbench" / "configuration.py"
+    configuration = deployed_root / "atlas_mcp" / "configuration.py"
     configuration.write_bytes(configuration.read_bytes() + b"\n# stale deployment\n")
-    (deployed_root / "gds_etl_workbench" / "stale_file.py").write_text("pass\n")
+    (deployed_root / "atlas_mcp" / "stale_file.py").write_text("pass\n")
 
     stale = inspect_deployment(deployed_root)
     assert stale.status == "FAILED"

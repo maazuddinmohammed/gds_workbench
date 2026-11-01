@@ -13,16 +13,16 @@ from copy import deepcopy
 from typing import Any, cast
 
 import pytest
-from gds_etl_workbench.domain.snapshots.project import DimensionalSection
-from tests.web_backend import test_analysis_candidate as analysis
-from tests.web_backend import test_dimensional_candidate as dimensional
-
-from gds_workbench_api.features.analysis.candidate import (
+from atlas_mcp.domain.snapshots.project import DimensionalSection
+from atlas_platform.features.analysis.candidate import (
     AnalysisInferenceCandidateValidator,
 )
-from gds_workbench_api.features.dimensional.candidate import (
+from atlas_platform.features.dimensional.candidate import (
     DimensionalCandidateValidator,
 )
+
+from tests.web_backend import test_analysis_candidate as analysis
+from tests.web_backend import test_dimensional_candidate as dimensional
 
 FAMILIES = ("analysis", "dimensional")
 CODES = {

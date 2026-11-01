@@ -7,10 +7,11 @@ from uuid import uuid4
 
 import psycopg
 import pytest
-from tests.mcp.database_test_support import require_row
 from psycopg.errors import InsufficientPrivilege, RaiseException
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
+
+from tests.mcp.database_test_support import require_row
 from tests.mcp.test_database_workflow_run_lifecycle import (
     CREATE_WORKFLOW_RUN_SQL,
     WorkflowContext,

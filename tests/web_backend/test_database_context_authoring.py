@@ -4,21 +4,21 @@
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.context import DatabaseContextService
-from gds_workbench_api.features.context.authoring import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.errors import AtlasError, InvalidRequestError
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.context import DatabaseContextService
+from atlas_platform.features.context.authoring import (
     SaveContextGroupRequest,
     SaveContextRecordRequest,
 )
-from gds_workbench_api.features.project_change_sets.contracts import (
+from atlas_platform.features.project_change_sets.contracts import (
     ReviewProjectRecordsRequest,
 )
-from gds_workbench_api.features.project_change_sets.service import (
+from atlas_platform.features.project_change_sets.service import (
     DatabaseProjectChangeSetService,
 )
-from gds_workbench_api.features.projects import ProjectRevisionConflictError
+from atlas_platform.features.projects import ProjectRevisionConflictError
 
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.test_database_project_change_set_round_trip import (
@@ -60,7 +60,7 @@ async def test_context_group_and_record_round_trip(
     )
     await database.open()
     try:
-        with pytest.raises(WorkbenchError):
+        with pytest.raises(AtlasError):
             await writes.save_context(
                 principal,
                 tenant_id=tenant_id,

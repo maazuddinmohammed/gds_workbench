@@ -3,8 +3,8 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_workbench_api.features.workflows.execution import (
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_platform.features.workflows.execution import (
     WorkflowExecutionClaim,
     WorkflowExecutionDispatcher,
     WorkflowExecutionServices,

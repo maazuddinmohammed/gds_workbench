@@ -9,8 +9,31 @@ from dataclasses import replace
 from typing import Any, Literal, cast
 
 import pytest
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.domain.snapshots.project import LogicalSection, SubjectAreaSection
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_mcp.domain.snapshots.project import LogicalSection, SubjectAreaSection
+from atlas_platform.features.workflows.authoring.context import (
+    AgentContextBundle,
+    AgentContextToolRequestError,
+    focus_subject_area,
+)
+from atlas_platform.features.workflows.authoring.context import (
+    _context_bundle as package_context,
+)
+from atlas_platform.features.workflows.authoring.plan import (
+    AgentRunPlan,
+    PlannedSubjectArea,
+)
+from atlas_platform.features.workflows.authoring.prompt_inputs import (
+    get_prompt_input_contract,
+    list_prompt_input_contracts,
+    project_prompt_input_values,
+)
+from atlas_platform.features.workflows.authoring.tool_configuration import (
+    configure_tools,
+    registered_tool_definitions,
+)
+from atlas_platform.prompt_rendering import PromptVariableDefinition
+
 from tests.mcp.project_test_fixtures import snapshot_from_graph
 from tests.web_backend.test_agent_context import _plan
 from tests.web_backend.test_dimensional_executor import (
@@ -18,34 +41,13 @@ from tests.web_backend.test_dimensional_executor import (
     _selected_logical_entity,
     _subject_areas,
 )
-from tests.web_backend.test_dimensional_executor import _context_bundle as dimensional_context
+from tests.web_backend.test_dimensional_executor import (
+    _context_bundle as dimensional_context,
+)
 from tests.web_backend.test_dimensional_executor import _plan as dimensional_plan
 from tests.web_backend.test_logical_executor import _context_bundle as logical_context
 from tests.web_backend.test_logical_executor import _plan as logical_plan
 from tests.web_backend.test_logical_executor import _selected_object
-
-from gds_workbench_api.features.workflows.authoring.context import (
-    AgentContextBundle,
-    AgentContextToolRequestError,
-    focus_subject_area,
-)
-from gds_workbench_api.features.workflows.authoring.context import (
-    _context_bundle as package_context,
-)
-from gds_workbench_api.features.workflows.authoring.plan import (
-    AgentRunPlan,
-    PlannedSubjectArea,
-)
-from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
-    get_prompt_input_contract,
-    list_prompt_input_contracts,
-    project_prompt_input_values,
-)
-from gds_workbench_api.features.workflows.authoring.tool_configuration import (
-    configure_tools,
-    registered_tool_definitions,
-)
-from gds_workbench_api.prompt_rendering import PromptVariableDefinition
 
 # Inputs and readers that exist only for Subject Area runs.
 SUBJECT_AREA_INPUTS = (

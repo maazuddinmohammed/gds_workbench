@@ -5,12 +5,12 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, LiteralString, cast
 
-from psycopg import sql
 import psycopg
 import pytest
+from psycopg import sql
 
-from tests.mcp.database_test_support import require_row
 from tests.mcp.conftest import disposable_postgres
+from tests.mcp.database_test_support import require_row
 
 if TYPE_CHECKING:
     from conftest import DisposablePostgres
@@ -196,8 +196,8 @@ EXPECTED_NAMES: dict[str, set[str]] = {
 
 def _expected_variables() -> set[VariableIdentity]:
     # The MCP-only CI job has no web backend; the backend job runs this check.
-    pytest.importorskip("gds_workbench_api")
-    from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
+    pytest.importorskip("atlas_platform")
+    from atlas_platform.features.workflows.authoring.prompt_inputs import (
         list_prompt_input_contracts,
     )
     from jsonschema import Draft202012Validator

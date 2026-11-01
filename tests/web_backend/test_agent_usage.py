@@ -6,32 +6,32 @@ from uuid import UUID, uuid4
 
 import httpx2
 import pytest
-from gds_etl_workbench.domain.errors import DependencyUnavailableError, WorkbenchError
-from gds_workbench_api.capabilities import (
+from atlas_mcp.domain.errors import AtlasError, DependencyUnavailableError
+from atlas_platform.capabilities import (
     AgentRunSelection,
     load_default_agent_capabilities,
 )
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
+from atlas_platform.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
     AgentExecutionRouter,
     LocalAgentToolDefinition,
 )
-from gds_workbench_api.features.workflows.authoring.repair import (
+from atlas_platform.features.workflows.authoring.repair import (
     AgentCandidateValidation,
     ValidationRepairRunner,
     load_default_agent_context_policy,
 )
-from gds_workbench_api.features.workflows.usage.contracts import (
+from atlas_platform.features.workflows.usage.contracts import (
     AgentUsageRecorder,
     ModelTokenUsage,
 )
-from gds_workbench_api.integrations.agents import adapters
-from gds_workbench_api.integrations.agents.adapters import (
+from atlas_platform.integrations.agents import adapters
+from atlas_platform.integrations.agents.adapters import (
     OpenAIAgentsSdkAdapter,
     OpenAIProviderCredentials,
 )
-from gds_workbench_api.integrations.agents.configuration import AgentProviderConnection
-from gds_workbench_api.integrations.agents.usage import ProviderUsageHooks
+from atlas_platform.integrations.agents.configuration import AgentProviderConnection
+from atlas_platform.integrations.agents.usage import ProviderUsageHooks
 from openai import DefaultAsyncHttpxClient
 from pydantic import JsonValue, SecretStr
 
@@ -358,7 +358,7 @@ async def test_real_sdk_keeps_reported_turn_usage_when_a_later_turn_fails(
         raise httpx2.ReadTimeout("Fixture transport timeout", request=request)
 
     router = _router(monkeypatch, recorder, handler)
-    with pytest.raises(WorkbenchError):
+    with pytest.raises(AtlasError):
         await router.execute(_request(tools=True, max_turns=max_turns))
     assert sends == expected_requests
     assert len(recorder.started) == expected_requests and len(recorder.completed) == 1
@@ -474,7 +474,7 @@ async def test_usage_survives_candidate_size_rejection_after_sdk_completion(
         async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
             raise AssertionError("Candidate size must be checked before validation")
 
-    with pytest.raises(WorkbenchError):
+    with pytest.raises(AtlasError):
         await ValidationRepairRunner(
             executor=_router(monkeypatch, recorder, handler),
             policy=load_default_agent_context_policy(),

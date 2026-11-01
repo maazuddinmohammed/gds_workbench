@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx2
 import pytest
-from gds_etl_workbench.domain.errors import WorkbenchError
+from atlas_mcp.domain.errors import AtlasError
 
 from tests.web_backend import test_code_generation_executor as code
 from tests.web_backend.test_agent_usage import _request, _responses_response, _router
@@ -49,7 +49,7 @@ async def test_known_provider_rejection_uses_fixed_diagnostic(
             json={"error": {"message": "private-provider-message", **error}},
         )
 
-    with pytest.raises(WorkbenchError) as raised:
+    with pytest.raises(AtlasError) as raised:
         await _router(monkeypatch, None, handler).execute(_request(tools=True))
     assert raised.value.code == f"agent_{reason}"
     assert "private-provider-message" not in str(raised.value) + caplog.text
@@ -82,7 +82,7 @@ async def test_unknown_provider_rejection_exposes_only_http_status(
             json={"error": {"message": "private-message", **error}},
         )
 
-    with pytest.raises(WorkbenchError) as raised:
+    with pytest.raises(AtlasError) as raised:
         await _router(monkeypatch, None, handler).execute(_request(tools=True))
     assert raised.value.code == "agent_provider_request_rejected"
     assert f"HTTP {status}" in raised.value.message
@@ -134,7 +134,7 @@ async def test_real_code_tool_conversation_preserves_later_rejection_in_run(
     router = _router(monkeypatch, None, handler)
     service, _, _, handoff, no_op, lifecycle = code._service(executor=router)
     try:
-        with pytest.raises(WorkbenchError) as raised:
+        with pytest.raises(AtlasError) as raised:
             await service.execute_started(
                 code._principal(),
                 tenant_id=7,

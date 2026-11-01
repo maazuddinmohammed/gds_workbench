@@ -2,9 +2,9 @@ from dataclasses import dataclass, field
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_workbench_api.features.workflows.authoring.lifecycle import AgentWorkflowEvent
-from gds_workbench_api.features.workflows.authoring.progress import (
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_platform.features.workflows.authoring.lifecycle import AgentWorkflowEvent
+from atlas_platform.features.workflows.authoring.progress import (
     AgentWorkflowProgress,
     intermediate_progress_points,
 )

@@ -6,13 +6,13 @@ from typing import Any, LiteralString, Protocol, cast
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.domain.snapshots.metadata import (
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_mcp.domain.snapshots.metadata import (
     DATASETS_BY_NAME,
     normalize_natural_key_value,
 )
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.metadata import (
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.metadata import (
     FOUNDATIONAL_DATASETS,
     METADATA_DATASETS,
     REFERENCE_DATASETS,

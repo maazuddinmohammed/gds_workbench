@@ -9,22 +9,24 @@ from uuid import UUID
 from zipfile import ZIP_STORED, ZipFile
 
 import pytest
-from fastapi.testclient import TestClient
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from gds_workbench_api.features.code_generation import downloads
-from gds_workbench_api.features.code_generation.contracts import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import AtlasError
+from atlas_mcp.infrastructure.postgres import ReadIsolation
+from atlas_platform.features.code_generation import downloads
+from atlas_platform.features.code_generation.contracts import (
     MAX_BULK_SQL_BYTES,
     MAX_EXPORT_ARTIFACTS,
     ExportSqlArtifactsRequest,
     SqlArtifactBundleLimitExceededError,
     SqlArtifactDownload,
 )
-from gds_workbench_api.features.code_generation.downloads import build_sql_zip
-from gds_workbench_api.features.code_generation.read_service import DatabaseCodeGenerationService
-from gds_workbench_api.main import create_app
+from atlas_platform.features.code_generation.downloads import build_sql_zip
+from atlas_platform.features.code_generation.read_service import (
+    DatabaseCodeGenerationService,
+)
+from atlas_platform.main import create_app
+from fastapi.testclient import TestClient
 from pydantic import JsonValue
 
 from tests.web_backend.test_code_generation import (
@@ -189,7 +191,7 @@ async def test_bulk_service_authorizes_and_bounds_before_loading_all_sql(
     )
     command = ExportSqlArtifactsRequest(entity_type="logical_entity", expected_project_revision=4)
     if error is not None:
-        with pytest.raises(WorkbenchError) as raised:
+        with pytest.raises(AtlasError) as raised:
             await service.read_all_artifacts_for_download(
                 principal, tenant_id=7, project_id=18, command=command
             )

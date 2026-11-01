@@ -7,9 +7,10 @@ from uuid import uuid4
 
 import psycopg
 import pytest
-from tests.mcp.database_test_support import require_row
 from psycopg.errors import InsufficientPrivilege, RaiseException
 from psycopg.rows import dict_row
+
+from tests.mcp.database_test_support import require_row
 from tests.mcp.test_database_profiling_persistence import (
     _create_run,
     _seed_attributes,

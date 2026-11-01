@@ -5,7 +5,7 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createApiClient } from "../../api";
-import { WorkbenchApp, createWorkbenchRouter } from "../../app";
+import { AtlasPlatformApp, createAtlasPlatformRouter } from "../../app";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -26,7 +26,7 @@ describe("Code Generation journey", () => {
       return base(input, init);
     });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     await screen.findByRole("table", { name: "Code Generation target Entities" });
@@ -73,7 +73,7 @@ describe("Code Generation journey", () => {
       return base(input, init);
     });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     await screen.findByRole("table", { name: "Code Generation target Entities" });
@@ -95,7 +95,7 @@ describe("Code Generation journey", () => {
 
   it("keeps the legacy Project picker bookmark usable", async () => {
     const fetcher = codeGenerationFetchStub();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation"] }),
     })} />);
@@ -114,7 +114,7 @@ describe("Code Generation journey", () => {
   it("separates layers and filters all loaded Objects by Object and status", async () => {
     const fetcher = codeGenerationFetchStub({ hasNextPage: true });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
@@ -152,7 +152,7 @@ describe("Code Generation journey", () => {
 
   it("reviews stored SQL and essential context on a dedicated full page", async () => {
     const user = userEvent.setup();
-    const { container } = render(<WorkbenchApp router={createWorkbenchRouter({
+    const { container } = render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(codeGenerationFetchStub()),
       history: createMemoryHistory({
         initialEntries: ["/tenants/7/code-generation/projects/18/artifacts/501"],
@@ -195,7 +195,7 @@ describe("Code Generation journey", () => {
   });
 
   it("keeps migrated Code artifacts focused on stored SQL", async () => {
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(codeGenerationFetchStub({ nullableProvenance: true })),
       history: createMemoryHistory({
         initialEntries: ["/tenants/7/code-generation/projects/18/artifacts/501"],
@@ -225,7 +225,7 @@ describe("Code Generation journey", () => {
           object_transformation_missing: true, unmapped_attribute_count: 4 },
       ], mapping_support_count: 2 });
     });
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18/artifacts/501"] }),
     })} />);
     await screen.findByRole("heading", { name: "customer.sql" });
@@ -237,7 +237,7 @@ describe("Code Generation journey", () => {
   });
 
   it.each([false, true])("keeps stored SQL available with stale or bounded supports (%s)", async (truncated) => {
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(codeGenerationFetchStub({ stale: !truncated, truncated })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18/artifacts/501"] }),
     })} />);
@@ -258,7 +258,7 @@ describe("Code Generation journey", () => {
   });
 
   it("gates generation, then explicitly creates and executes selected and all coverage", async () => {
-    const unlocked = render(<WorkbenchApp router={createWorkbenchRouter({
+    const unlocked = render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(codeGenerationFetchStub({ hasLock: false })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
@@ -268,7 +268,7 @@ describe("Code Generation journey", () => {
     expect(screen.getByRole("button", { name: "Generate SQL" })).toHaveAttribute("title", "Tenant Lock required to generate SQL");
     unlocked.unmount();
 
-    const denied = render(<WorkbenchApp router={createWorkbenchRouter({
+    const denied = render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(codeGenerationFetchStub({ role: "developer" })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
@@ -279,7 +279,7 @@ describe("Code Generation journey", () => {
 
     const fetcher = codeGenerationFetchStub();
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
@@ -352,7 +352,7 @@ describe("Code Generation journey", () => {
       })) });
     });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     await user.click(await screen.findByRole("button", { name: "Generate SQL" }));
@@ -391,7 +391,7 @@ describe("Code Generation journey", () => {
       }] });
     });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     await user.click(await screen.findByRole("button", { name: "Generate SQL" }));
@@ -427,7 +427,7 @@ describe("Code Generation journey", () => {
       }] });
     });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     await user.click(await screen.findByRole("button", { name: "Generate SQL" }));
@@ -454,7 +454,7 @@ describe("Code Generation journey", () => {
       })) });
     });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     await user.click(await screen.findByRole("button", { name: "Generate SQL" }));
@@ -480,7 +480,7 @@ describe("Code Generation journey", () => {
   it("limits All Systems to the selected Entities when Entities have disjoint sources", async () => {
     const fetcher = codeGenerationFetchStub({ disjointSourceSystems: true });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     await user.click(await screen.findByRole("checkbox", { name: "Select silver_nwa.customer" }));
@@ -500,7 +500,7 @@ describe("Code Generation journey", () => {
   it("keeps Entities reselectable while unavailable Systems block generation", async () => {
     const fetcher = codeGenerationFetchStub({ disjointSourceSystems: true });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     await user.click(await screen.findByRole("button", { name: "Generate SQL" }));
@@ -552,7 +552,7 @@ describe("Code Generation journey", () => {
       return success(input, init);
     });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
@@ -598,7 +598,7 @@ describe("Code Generation journey", () => {
       return base(input, init);
     });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     await screen.findByRole("table", { name: "Code Generation target Entities" });
@@ -623,7 +623,7 @@ describe("Code Generation journey", () => {
   it("retries a conflicted Code Generation start without creating another run", async () => {
     const fetcher = codeGenerationFetchStub({ executeConflictOnce: true });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
@@ -653,7 +653,7 @@ describe("Code Generation journey", () => {
   it("cannot dismiss the dialog while a created run is still starting", async () => {
     const fetcher = codeGenerationFetchStub({ executePending: true });
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
@@ -672,14 +672,14 @@ describe("Code Generation journey", () => {
   });
 
   it("keeps empty, denied, error, and revision-drift states explicit and redacted", async () => {
-    const empty = render(<WorkbenchApp router={createWorkbenchRouter({
+    const empty = render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(codeGenerationFetchStub({ empty: true })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
     expect(await screen.findByText("No eligible target Entities in this layer.")).toBeVisible();
     empty.unmount();
 
-    const denied = render(<WorkbenchApp router={createWorkbenchRouter({
+    const denied = render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(codeGenerationFetchStub({ denied: true })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
@@ -688,7 +688,7 @@ describe("Code Generation journey", () => {
     );
     denied.unmount();
 
-    const drift = render(<WorkbenchApp router={createWorkbenchRouter({
+    const drift = render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(codeGenerationFetchStub({ projectRevision: 19 })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
@@ -697,7 +697,7 @@ describe("Code Generation journey", () => {
     );
     drift.unmount();
 
-    render(<WorkbenchApp router={createWorkbenchRouter({
+    render(<AtlasPlatformApp router={createAtlasPlatformRouter({
       api: createApiClient(codeGenerationFetchStub({ error: true })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
     })} />);
@@ -960,7 +960,7 @@ it("finds and reactivates inactive Code without an eligible generation target", 
     project_id: 18, project_revision: 18, dataset: "generated_code", next_page: null,
     items: [{ record_id: 501, label: "Customer · customer.sql", status: "inactive", is_locked: false }],
   });
-  render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+  render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
     history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
   })} />);
   const user = userEvent.setup();
@@ -994,9 +994,9 @@ it.each(["Entities", "SQL files"] as const)("keeps Dimensional context through %
     project_id: 18, project_revision: 18, dataset: "generated_code", next_page: null,
     items: [{ record_id: 501, label: "Customer · customer.sql", status: "active", is_locked: false }],
   });
-  const router = createWorkbenchRouter({ api: createApiClient(fetcher),
+  const router = createAtlasPlatformRouter({ api: createApiClient(fetcher),
     history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18?layer=dimensional"] }) });
-  render(<WorkbenchApp router={router} />);
+  render(<AtlasPlatformApp router={router} />);
   const user = userEvent.setup();
   if (view === "SQL files") {
     await user.click(await screen.findByRole("button", { name: "SQL files" }));

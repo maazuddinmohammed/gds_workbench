@@ -4,21 +4,21 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import UUID
 
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import RequestPrincipal
-from gds_workbench_api.features.mapping.router import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.authorization import RequestPrincipal
+from atlas_platform.features.mapping.router import (
     ExecuteMappingRunRequest,
     create_mapping_workflow_router,
 )
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
+from atlas_platform.features.workflows.authoring.lifecycle import (
     AgentWorkflowRunStart,
 )
-from gds_workbench_api.features.workflows.authoring.plan import (
+from atlas_platform.features.workflows.authoring.plan import (
     WorkflowExecutionMode,
 )
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 @dataclass

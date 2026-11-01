@@ -1,4 +1,4 @@
-from gds_workbench_api.features.workflows.authoring.naming import (
+from atlas_platform.features.workflows.authoring.naming import (
     effective_naming_instructions,
 )
 

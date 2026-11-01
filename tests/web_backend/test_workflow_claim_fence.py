@@ -4,8 +4,8 @@ from typing import Any, LiteralString
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.domain.errors import DependencyUnavailableError
-from gds_workbench_api.features.workflows.execution.fence import (
+from atlas_mcp.domain.errors import DependencyUnavailableError
+from atlas_platform.features.workflows.execution.fence import (
     assert_workflow_run_claim,
 )
 

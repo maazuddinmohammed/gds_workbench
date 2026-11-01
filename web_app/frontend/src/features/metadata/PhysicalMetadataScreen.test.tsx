@@ -4,7 +4,7 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
 
 import { createApiClient } from "../../api";
-import { WorkbenchApp, createWorkbenchRouter } from "../../app";
+import { AtlasPlatformApp, createAtlasPlatformRouter } from "../../app";
 import type { ObjectAttribute, ObjectCatalogDetail } from "./api";
 
 describe("read-only physical metadata", () => {
@@ -77,8 +77,8 @@ describe("read-only physical metadata", () => {
 });
 
 function renderCatalog(fixture: ReturnType<typeof catalogFixture>, search = "") {
-  const router = createWorkbenchRouter({ api: createApiClient(fixture.fetcher), history: createMemoryHistory({ initialEntries: [`/tenants/7/metadata/objects${search}`] }) });
-  render(<WorkbenchApp router={router} />);
+  const router = createAtlasPlatformRouter({ api: createApiClient(fixture.fetcher), history: createMemoryHistory({ initialEntries: [`/tenants/7/metadata/objects${search}`] }) });
+  render(<AtlasPlatformApp router={router} />);
   return router;
 }
 function catalogFixture(options: { parentLocked?: boolean; inactiveObject?: boolean; restriction?: string; ambiguousStatus?: number; staleOnce?: boolean; detailFailure?: string; foreignPage?: boolean; noOp?: boolean; wide?: boolean; pageTwo?: boolean } = {}) {

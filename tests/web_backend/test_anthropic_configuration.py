@@ -3,21 +3,23 @@
 from collections.abc import Mapping
 
 import pytest
-from gds_etl_workbench.configuration import ConfigurationError
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_workbench_api.capabilities import (
+from atlas_mcp.configuration import ConfigurationError
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_platform.capabilities import (
     AgentExecutionModeCode,
     AgentRunSelection,
     load_default_agent_capabilities,
     select_agent_runtime_capabilities,
 )
-from gds_workbench_api.features.workflows.authoring.agent_execution import AgentExecutionRequest
-from gds_workbench_api.integrations.agents import composition
-from gds_workbench_api.integrations.agents.adapters import (
+from atlas_platform.features.workflows.authoring.agent_execution import (
+    AgentExecutionRequest,
+)
+from atlas_platform.integrations.agents import composition
+from atlas_platform.integrations.agents.adapters import (
     ManagedModelAuthentication,
     OpenAIProviderCredentials,
 )
-from gds_workbench_api.integrations.agents.configuration import (
+from atlas_platform.integrations.agents.configuration import (
     AgentProviderConnection,
     AgentRuntimeConfiguration,
 )

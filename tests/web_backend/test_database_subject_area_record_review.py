@@ -4,23 +4,23 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import WorkbenchError
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import AtlasError
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.project_change_sets.contracts import (
+    PreviewProjectRecordsRequest,
+    ReviewProjectRecordsRequest,
+)
+from atlas_platform.features.project_change_sets.service import (
+    DatabaseProjectChangeSetService,
+)
+
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.database_test_support import require_row
 from tests.mcp.test_database_workflow_run_lifecycle import (
     WorkflowContext,
     seed_workflow_context,
-)
-
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.project_change_sets.contracts import (
-    PreviewProjectRecordsRequest,
-    ReviewProjectRecordsRequest,
-)
-from gds_workbench_api.features.project_change_sets.service import (
-    DatabaseProjectChangeSetService,
 )
 
 type StoredAreas = tuple[list[dict[str, Any]], list[dict[str, Any]]]
@@ -172,7 +172,7 @@ async def test_subject_area_preview_is_complete_paged_and_preserves_stored_state
         assert bool(first.issues) == locked
         if locked:
             assert any(issue.code == "record_locked" for issue in first.issues)
-        with pytest.raises(WorkbenchError) as missing:
+        with pytest.raises(AtlasError) as missing:
             await service.preview_record_review(
                 principal,
                 tenant_id=context.tenant_id,
@@ -182,7 +182,7 @@ async def test_subject_area_preview_is_complete_paged_and_preserves_stored_state
                 ),
             )
         assert missing.value.code == "project_record_not_found"
-        with pytest.raises(WorkbenchError) as stale:
+        with pytest.raises(AtlasError) as stale:
             await service.preview_record_review(
                 principal,
                 tenant_id=context.tenant_id,
@@ -193,7 +193,7 @@ async def test_subject_area_preview_is_complete_paged_and_preserves_stored_state
         apply_command = ReviewProjectRecordsRequest.model_validate(
             command.model_dump(), strict=False
         )
-        with pytest.raises(WorkbenchError) as denied:
+        with pytest.raises(AtlasError) as denied:
             await service.review_records(
                 principal,
                 tenant_id=context.tenant_id,
@@ -250,7 +250,7 @@ async def test_subject_area_preview_is_complete_paged_and_preserves_stored_state
             assert reviewed.action_count == 1
             revision = reviewed.project_revision
             if action == "lock":
-                with pytest.raises(WorkbenchError) as locked_status:
+                with pytest.raises(AtlasError) as locked_status:
                     await service.review_records(
                         principal,
                         tenant_id=context.tenant_id,
@@ -350,7 +350,7 @@ async def test_subject_area_delete_removes_only_its_own_memberships(
             command=command,
         )
         assert _stored(database, context.project_id) == before
-        with pytest.raises(WorkbenchError) as unconfirmed:
+        with pytest.raises(AtlasError) as unconfirmed:
             await service.review_records(
                 principal,
                 tenant_id=context.tenant_id,

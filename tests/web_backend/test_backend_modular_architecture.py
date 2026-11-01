@@ -5,12 +5,12 @@ import importlib.util
 from pathlib import Path
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-_PACKAGE_ROOT = _REPOSITORY_ROOT / "web_app" / "backend" / "gds_workbench_api"
-_PACKAGE_NAME = "gds_workbench_api"
+_PACKAGE_ROOT = _REPOSITORY_ROOT / "web_app" / "backend" / "atlas_platform"
+_PACKAGE_NAME = "atlas_platform"
 
-_WORKFLOW_COMPOSITION_MODULE = "gds_workbench_api.features.workflows.execution.assembly"
-_AGENT_PORT_MODULE = "gds_workbench_api.features.workflows.authoring.agent_execution"
-_USAGE_PORT_MODULE = "gds_workbench_api.features.workflows.usage.contracts"
+_WORKFLOW_COMPOSITION_MODULE = "atlas_platform.features.workflows.execution.assembly"
+_AGENT_PORT_MODULE = "atlas_platform.features.workflows.authoring.agent_execution"
+_USAGE_PORT_MODULE = "atlas_platform.features.workflows.usage.contracts"
 
 
 def _module_identity(source: Path) -> tuple[str, bool]:

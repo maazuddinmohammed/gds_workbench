@@ -3,12 +3,12 @@ from io import BytesIO
 from zipfile import ZipFile
 
 import pytest
-from gds_workbench_api.features.analysis import workbook as analysis_workbook
-from gds_workbench_api.features.analysis.read_contracts import (
+from atlas_platform.features.analysis import workbook as analysis_workbook
+from atlas_platform.features.analysis.read_contracts import (
     AnalysisEndpoint,
     AnalysisFindingSummary,
 )
-from gds_workbench_api.features.analysis.workbook import (
+from atlas_platform.features.analysis.workbook import (
     AnalysisWorkbookBuildError,
     build_analysis_workbook,
 )

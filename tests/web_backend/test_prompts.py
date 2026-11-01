@@ -6,20 +6,17 @@ from typing import Any, LiteralString, Protocol, cast
 from uuid import UUID, uuid4
 
 import pytest
-from fastapi import FastAPI
-from fastapi.routing import APIRoute
-from fastapi.testclient import TestClient
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_mcp.domain.errors import (
     AuthorizationDeniedError,
     DependencyUnavailableError,
 )
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.prompts import (
+from atlas_mcp.infrastructure.postgres import ReadIsolation
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.prompts import (
     CreatePromptTemplateRequest,
     DatabasePromptService,
     PromptConflictError,
@@ -33,6 +30,9 @@ from gds_workbench_api.features.prompts import (
     UpdatePromptTemplateRequest,
     create_prompts_router,
 )
+from fastapi import FastAPI
+from fastapi.routing import APIRoute
+from fastapi.testclient import TestClient
 from psycopg import Connection
 from pydantic import ValidationError
 
@@ -1685,8 +1685,8 @@ async def test_prompt_library_round_trip_uses_disposable_database_web_role(
 def test_prompt_preview_uses_synthetic_examples_and_never_saves(
     system_content: str,
 ) -> None:
-    from gds_etl_workbench.domain.errors import WorkbenchError
-    from gds_workbench_api.errors import workbench_error_response
+    from atlas_mcp.domain.errors import AtlasError
+    from atlas_platform.errors import atlas_error_response
 
     database = TemplateDetailDatabase()
     service = DatabasePromptService(
@@ -1695,7 +1695,7 @@ def test_prompt_preview_uses_synthetic_examples_and_never_saves(
         cursor_signing_key=b"development-only-key-32-bytes-long",
     )
     app = FastAPI()
-    app.add_exception_handler(WorkbenchError, workbench_error_response)
+    app.add_exception_handler(AtlasError, atlas_error_response)
     app.include_router(
         create_prompts_router(
             identity_provider=IdentityProvider(

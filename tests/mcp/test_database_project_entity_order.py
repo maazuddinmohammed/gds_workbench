@@ -7,22 +7,22 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.project import (
+from atlas_mcp.adapters.mcp.tool_audit import ToolCallAuditMiddleware
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.application.change_sets.project import (
     load_project_physical_scope,
 )
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project_validation import (
     ValidatedProjectChangeSet,
     validate_future_graph,
 )
-from gds_etl_workbench.application.project_read import ProjectReadContext
-from gds_etl_workbench.application.project_snapshot import build_project_snapshot
-from gds_etl_workbench.domain.snapshots.project import (
+from atlas_mcp.application.project_read import ProjectReadContext
+from atlas_mcp.application.project_snapshot import build_project_snapshot
+from atlas_mcp.domain.snapshots.project import (
     ProjectChangeSetDataset,
     ProjectSnapshot,
 )
-from gds_etl_workbench.tools.change_sets.project import (
+from atlas_mcp.tools.change_sets.project import (
     register_project_change_set_tools,
 )
 from mcp import Client

@@ -21,7 +21,7 @@ Use the selected **Navigator** web workspace: continuous KPMG-blue left navigati
 and brand corner, white Meridian/ATLAS lockup, white header and working areas,
 blue page headings and actions, and readable dense working text. The selected
 navigation item is white with blue text; other items use white text on blue.
-Tenant entry and local Workbench retain their existing Signature mastheads.
+Tenant entry and Atlas Local Workbench retain their existing Signature mastheads.
 Tables/ledgers suit comparable records; cards suit summaries or choices.
 Reuse semantic tokens instead of copying colors. Use shared outline icons, not emoji.
 The current palette is light-only. Use short functional motion and reduced-motion
@@ -62,9 +62,9 @@ wordmark. Use KPMG-inspired colors without the official KPMG logo.
   and Tenant Lock dialogs (20px) use normal-width Open Sans SemiBold in ink; entry and Project
   identity reduce to 24px and 20px on mobile.
 - Shared lockup: 32px Meridian symbol, 11px gap, 23px Open Sans SemiBold **ATLAS**
-  with 1.8px tracking. Use identical proportions on tenant entry, web and Workbench.
-- Canonical vector: `web_app/frontend/public/assets/atlas.svg`; Workbench packages
-  an identical `workbench/atlas.svg`. The web imports the canonical asset so Vite
+  with 1.8px tracking. Use identical proportions on tenant entry, web and Atlas Local Workbench.
+- Canonical vector: `web_app/frontend/public/assets/atlas.svg`; Atlas Local Workbench packages
+  an identical `atlas-local-workbench/atlas.svg`. The web imports the canonical asset so Vite
   emits a content-hashed URL; fixed URLs can retain an older logo in browser caches.
   Both headers reference that asset rather than redrawing it.
   Scope `brightness(0) invert(1)` to blue brand areas for the white
@@ -74,21 +74,21 @@ wordmark. Use KPMG-inspired colors without the official KPMG logo.
   white on dark browser tabs. Keep the
   32×32 viewBox and even-odd aperture. The extension icon is an antialiased
   512×512 PNG using the same silhouette on a pale tile.
-- Fonts and OFL license ship in web `public/assets/fonts` and Workbench `fonts`.
-  Workbench embeds font data in generated `fonts/fonts.css` for offline file launch;
-  regenerate with `python3 atlas/build_workbench_fonts.py` after changing fonts.
-  Keep plugin builder, Connector setup/updater and web upload allowlists in sync.
+- Fonts and OFL license ship in web `public/assets/fonts` and Atlas Local Workbench `fonts`.
+  Atlas Local Workbench embeds font data in generated `fonts/fonts.css` for offline file launch;
+  regenerate with `python3 atlas/build_local_workbench_fonts.py` after changing fonts.
+  Keep Atlas Plugin builder, Atlas Bridge packaging and Atlas Platform upload allowlists in sync.
 - Preserve desktop navigation collapse and mobile bottom navigation. The mobile web
   header stays white, with the blue wordmark above wrapping Tenant/Project rows; bottom
-  navigation is blue with a white selected item. Workbench dataset navigation stays
+  navigation is blue with a white selected item. Atlas Local Workbench dataset navigation stays
   vertical on desktop and horizontal at 58rem and below.
   Tenant entry keeps clear space around the logo; sign-in details and long Tenant
   names wrap within their available width at small sizes.
   On mobile web, the Project ribbon stays in document flow so the taller masthead
   cannot cover its workflow links.
 
-Rebuild the plugin ZIP, Connector ZIP and extension VSIX when their packaged sources
-change. Brand assets do not change transport, authorization or workflow contracts.
+Rebuild the Atlas Plugin ZIP, Atlas Bridge VSIX and Atlas Platform upload when their
+packaged sources change. Brand assets do not change transport, authorization or workflow contracts.
 
 ## Navigation and hierarchy
 

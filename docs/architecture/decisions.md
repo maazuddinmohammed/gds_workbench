@@ -377,6 +377,42 @@ separate operational validation beyond local contract and synthetic output tests
 
 ## Atlas host compatibility
 
+### Component naming (2026-11-01)
+
+Atlas names the overall product. Atlas Plugin includes agent instructions, local
+helpers and Atlas Local Workbench. Atlas Bridge names the VS Code extension,
+Atlas MCP the governed tool server, and Atlas Platform the web application.
+The canonical glossary is in `CONTEXT.md`; distributed agents use the same names
+in `atlas/atlas-plugin/references/platform/architecture.md`.
+
+Atlas Local Workbench lives in `atlas/atlas-plugin/atlas-local-workbench/`, with
+`open-local-workbench.sh` and `open-local-workbench.ps1` launchers. Its browser entry
+symbol is `AtlasLocalWorkbenchApp`; Atlas Bridge and local helpers import shared
+serialization/validation from the renamed directory. It remains bundled in Atlas
+Plugin. Rebuild the plugin ZIP and Bridge bundle/VSIX together when those imports change.
+Existing local report provenance values (`run_by` / `generated_by`: `workbench`)
+remain stable so saved work continues to validate. They identify Atlas Local
+Workbench, not a separate component. Reopen the app using the renamed launcher;
+old bookmarks must be updated, and the browser may request folder access again.
+
+Source paths are `atlas/atlas-bridge`, `mcp_server/atlas_mcp` and
+`web_app/backend/atlas_platform`. Python distributions are `atlas-mcp` and
+`atlas-platform-api`; the worker command is `atlas-platform-worker`.
+The Platform's internal `AgentStageRunner` executes model workflow stages; it is
+unrelated to Atlas Bridge and retains its descriptive name.
+
+This is a source/package rename, not a cloud or database migration. Existing
+deployment URLs, Microsoft identity and environment settings, SQL runtime roles,
+the extension publisher, Databricks bundle identity and persisted workspace/browser
+keys remain valid. The private Stage transport marker retains
+`x-gds-mcp-client: atlas-stage-runner` so deployed client/server pairs interoperate.
+Generated-output safety markers also remain stable.
+
+The extension ID, settings, Check tool and plugin MCP connection now use Bridge/MCP
+names. Existing users must follow the setup guide's first-update instructions,
+disable the old extension, transfer customized settings and check authentication.
+No installation, identity change or deployment happens merely by rebuilding.
+
 Atlas runs in VS Code Copilot using one plugin and one deterministic Stage engine.
 Copilot connects to governed MCP tools through the plugin's MCP configuration;
 the extension exposes Check and Stage through VS Code language-model tools.
@@ -386,18 +422,18 @@ governed steps.
 
 The installed plugin lives at `Tools/Atlas/atlas`, separate from working folders.
 Updates replace the whole plugin folder with a matching release, retaining a
-backup until verification. The matching Stage Runner VSIX is installed separately.
+backup until verification. The matching Atlas Bridge VSIX is installed separately.
 Local builds change no cloud identity, backend authorization or deployment.
 
 ## Atlas boundaries enforced in code
 
 Stage upload tools (`stage_*`, `begin_*`, `put_*`, `commit_*`) are listed and callable
-only on requests with `x-gds-mcp-client: atlas-stage-runner`, which the Stage Runner
+only on requests with `x-gds-mcp-client: atlas-stage-runner`, which the Atlas Bridge
 sends. Other connections, including Copilot's, receive an audited
-`stage_runner_required` refusal. The header is self-declared, so it is not
+`atlas_bridge_required` refusal. The header is self-declared, so it is not
 authentication: every tool still authorizes the Principal. It stops an agent from
 uploading drafts without the runner's local-approval digest check. In-memory
-sessions act as the runner only under development identity. Release the Stage Runner
+sessions act as the runner only under development identity. Release the Atlas Bridge
 before the server; older servers ignore the header.
 
 Apply requires `expected_candidate_digest`, the `candidate_digest` of the validation
@@ -405,11 +441,11 @@ the user approved. Project Apply compares it with the stored validation before
 revalidating; Metadata Apply compares it with its fresh revalidation because current
 metadata can change. A mismatch is `candidate_digest_conflict` and writes nothing.
 Recording a new validation clears the local Apply approval. The argument breaks older
-callers, so server 0.3.0 releases together with plugin 0.4.1, after Stage Runner 0.3.0.
+callers, so server 0.3.0 releases together with plugin 0.4.1, after Atlas Bridge 0.3.0.
 
 `project_input_scope` and `profiling_profile` are web-managed: only the web app's
 governed Input Scope command and Profiling runs change them. Atlas treats them as
-read-only: helper writes, Workbench editing and Stage Runner manifests refuse them,
+read-only: helper writes, Atlas Local Workbench editing and Atlas Bridge manifests refuse them,
 and local validation reports stale drafts as `web_managed_dataset`. The server
 enforces the rule too: MCP Stage, Begin, Put and Commit refuse both datasets with
 `web_managed_dataset` before writing anything (`WEB_MANAGED_PROJECT_DATASETS` in
@@ -430,7 +466,7 @@ Batch ID lists are required on batched Objects and shared across a run. Separate
 runs represent different selections. Request UUIDs provide idempotency, frozen
 context digests reject metadata changes, and claim tokens fence stale/cancelled
 workers. Existing Project/Tenant locks and one-running-workflow-per-Tenant remain.
-The Databricks connector attempts statement cancellation; Workbench cancellation guarantees no later
+The Databricks connector attempts statement cancellation; Atlas Platform cancellation guarantees no later
 save even if Databricks has not yet stopped its statement. Internal credential
 and worker functions are never exposed as tools. SQL changes are fresh-install
 contracts, not populated-database migrations.

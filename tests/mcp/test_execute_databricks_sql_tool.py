@@ -9,27 +9,27 @@ from typing import Any, LiteralString
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.databricks_sql import ValidatedDatabricksSql
-from gds_etl_workbench.domain.errors import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.adapters.mcp.tool_audit import ToolCallAuditMiddleware
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.databricks_sql import ValidatedDatabricksSql
+from atlas_mcp.domain.errors import (
     DatabricksStatementFailedError,
     DependencyUnavailableError,
 )
-from gds_etl_workbench.infrastructure.databricks_sql import (
+from atlas_mcp.infrastructure.databricks_sql import (
     DatabricksSqlConnection,
     DatabricksSqlExecutionResult,
 )
-from gds_etl_workbench.infrastructure.postgres import (
+from atlas_mcp.infrastructure.postgres import (
     DatabricksConnectionValuesRecord,
     ReadinessRecord,
     ReadIsolation,
     ReadTransaction,
     ToolCallLogRecord,
 )
-from gds_etl_workbench.tools.databricks.execute_sql import (
+from atlas_mcp.tools.databricks.execute_sql import (
     ExecuteDatabricksSqlResult,
     register_execute_databricks_sql_tool,
 )

@@ -1,5 +1,5 @@
 {
-  "name": "gds-workbench-databricks-app",
+  "name": "atlas-platform-app",
   "version": "0.1.0",
   "private": true,
   "engines": {
@@ -9,7 +9,7 @@
     "web_app/frontend"
   ],
   "scripts": {
-    "build": "npm run build --workspace=gds-workbench-web",
-    "check": "npm run check --workspace=gds-workbench-web"
+    "build": "npm run build --workspace=atlas-platform-web",
+    "check": "npm run check --workspace=atlas-platform-web"
   }
 }

@@ -1,7 +1,7 @@
-# MCP server
+# Atlas MCP
 
 Python Azure App Service exposing stateless Streamable HTTP at `/mcp`.
-`gds_etl_workbench/runtime.py` and `tools/` define the current public inventory;
+`atlas_mcp/runtime.py` and `tools/` define the current public inventory;
 Pydantic contracts beside handlers define exact arguments/results. No copied API
 schema in docs is authoritative.
 
@@ -13,7 +13,7 @@ Databricks SQL preflight. It exposes no MCP prompts/resources, foundational CRUD
 individual graph mutation, arbitrary PostgreSQL, credential reads, uploads or code
 execution. Atlas owns interaction and local review. Stage upload tools are listed and
 callable only on requests carrying `x-gds-mcp-client: atlas-stage-runner`; others get
-an audited `stage_runner_required` refusal. That header is not authentication.
+an audited `atlas_bridge_required` refusal. That header is not authentication.
 
 Metadata Change Sets own physical registration. Project Change Sets own scope and
 authored Project sections, including Entity-owned Mapping, Code and Validation.
@@ -97,7 +97,7 @@ Breaking for older clients:
   Calls without it fail argument validation; a mismatch is
   `candidate_digest_conflict` and writes nothing.
 - Stage upload tools work only on requests carrying
-  `x-gds-mcp-client: atlas-stage-runner`; others get `stage_runner_required`.
+  `x-gds-mcp-client: atlas-stage-runner`; others get `atlas_bridge_required`.
 
 Fixed:
 
@@ -105,5 +105,5 @@ Fixed:
   missing definition, so Atlas rejected every Metadata record copied from a Snapshot.
   Install a fresh Metadata Snapshot to get the fixed schemas.
 
-Release order: Atlas Stage Runner 0.3.0 first (older servers ignore its header), then
-server 0.3.0 together with Atlas plugin 0.4.1. Each release needs separate approval.
+Release order: Atlas Bridge 0.3.0 first (older servers ignore its header), then
+server 0.3.0 together with Atlas Plugin 0.4.1. Each release needs separate approval.

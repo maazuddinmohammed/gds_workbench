@@ -9,24 +9,24 @@ from uuid import UUID
 
 import httpx2
 import pytest
-from gds_etl_workbench.domain.modeling_records import PhysicalObjectKey
+from atlas_mcp.domain.modeling_records import PhysicalObjectKey
+from atlas_platform.features.mapping.complete_candidate import (
+    CompleteMappingCandidateValidator,
+)
+from atlas_platform.features.subject_areas import SubjectAreaCandidateValidator
+from atlas_platform.features.workflows.authoring.repair import (
+    ValidationRepairRunner,
+    load_default_agent_context_policy,
+)
 from mapping_fixtures import mapping_candidate, mapping_preparation
 from pydantic import JsonValue
+
 from tests.web_backend.test_agent_usage import (
     MemoryRecorder,
     _request,
     _response,
     _responses_response,
     _router,
-)
-
-from gds_workbench_api.features.mapping.complete_candidate import (
-    CompleteMappingCandidateValidator,
-)
-from gds_workbench_api.features.subject_areas import SubjectAreaCandidateValidator
-from gds_workbench_api.features.workflows.authoring.repair import (
-    ValidationRepairRunner,
-    load_default_agent_context_policy,
 )
 
 

@@ -3,12 +3,12 @@
 from typing import TYPE_CHECKING
 
 import pytest
-from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.tools.change_sets.project import (
+from atlas_mcp.adapters.mcp.tool_audit import ToolCallAuditMiddleware
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.tools.change_sets.project import (
     register_project_change_set_tools,
 )
-from gds_etl_workbench.tools.modeling.read_project_section import (
+from atlas_mcp.tools.modeling.read_project_section import (
     register_read_project_section_tool,
 )
 from mcp import Client

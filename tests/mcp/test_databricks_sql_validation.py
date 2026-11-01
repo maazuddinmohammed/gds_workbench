@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import pytest
-
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.domain.databricks_sql import (
+from atlas_mcp.domain.databricks_sql import (
     DatabricksStatementKind,
     validate_databricks_sql,
 )
+from atlas_mcp.domain.errors import InvalidRequestError
 
 
 def test_validation_accepts_multistatement_read_and_temporary_objects() -> None:

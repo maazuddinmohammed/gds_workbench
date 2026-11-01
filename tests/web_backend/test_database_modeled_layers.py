@@ -9,9 +9,9 @@ from typing import LiteralString
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.dimensional import (
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.dimensional import (
     DatabaseDimensionalService,
     DimensionalAttributeContextSource,
     DimensionalAttributeFilters,
@@ -20,7 +20,7 @@ from gds_workbench_api.features.dimensional import (
     DimensionalObjectFilters,
     DimensionalRelationshipFilters,
 )
-from gds_workbench_api.features.logical import (
+from atlas_platform.features.logical import (
     DatabaseLogicalService,
     EntitySubjectArea,
     LogicalAttributeContextSource,

@@ -4,15 +4,15 @@
 from typing import Any, LiteralString, cast
 
 import pytest
-from gds_etl_workbench.application.project_read import ProjectReadContext
-from gds_etl_workbench.application.project_snapshot import build_project_snapshot
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.infrastructure.postgres import ReadTransaction
-from tests.mcp.project_test_fixtures import project_details, project_input_scope_records
-
-from gds_workbench_api.features.workflows.authoring.context import (
+from atlas_mcp.application.project_read import ProjectReadContext
+from atlas_mcp.application.project_snapshot import build_project_snapshot
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_mcp.infrastructure.postgres import ReadTransaction
+from atlas_platform.features.workflows.authoring.context import (
     PostgresAgentContextRepository,
 )
+
+from tests.mcp.project_test_fixtures import project_details, project_input_scope_records
 
 
 class SnapshotRows:

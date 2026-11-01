@@ -1,4 +1,4 @@
-name: GDS Workbench Databricks App
+name: Atlas Platform Databricks App
 
 on:
   pull_request:
@@ -64,11 +64,11 @@ jobs:
       - name: Check MCP formatting
         run: >-
           uv run --frozen --project mcp_server ruff format --check
-          mcp_server/gds_etl_workbench
+          mcp_server/atlas_mcp
       - name: Check MCP lint
         run: >-
           uv run --frozen --project mcp_server ruff check
-          mcp_server/gds_etl_workbench
+          mcp_server/atlas_mcp
       - name: Check MCP types
         run: uv run --frozen --project mcp_server pyright --project mcp_server
 
@@ -93,7 +93,7 @@ jobs:
         run: >-
           uv run --frozen --project web_app/backend python -m pytest
           -c web_app/backend/pyproject.toml tests/web_packaging
-      - name: Test Atlas instruction, Stage Runner and evaluation contracts
+      - name: Test Atlas instruction, Atlas Bridge and evaluation contracts
         run: >-
           uv run --frozen --project web_app/backend python -m pytest
           -c web_app/backend/pyproject.toml
@@ -101,10 +101,10 @@ jobs:
           tests/atlas/test_eval_harness.py tests/atlas/test_shared_modeling_rules.py
       - name: Check formatting
         working-directory: web_app/backend
-        run: uv run --frozen ruff format --check gds_workbench_api
+        run: uv run --frozen ruff format --check atlas_platform
       - name: Check lint
         working-directory: web_app/backend
-        run: uv run --frozen ruff check gds_workbench_api
+        run: uv run --frozen ruff check atlas_platform
       - name: Check types
         run: uv run --frozen --project web_app/backend pyright --project web_app/backend
 

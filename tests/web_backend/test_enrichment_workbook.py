@@ -2,10 +2,10 @@ from datetime import UTC, datetime
 from io import BytesIO
 
 import pytest
-from gds_workbench_api.features.metadata_enrichment.workbook import (
+from atlas_platform.features.metadata_enrichment.workbook import (
     build_enrichment_workbook,
 )
-from gds_workbench_api.features.project_input_scope.contracts import (
+from atlas_platform.features.project_input_scope.contracts import (
     ProjectInputScopeAttribute,
     ProjectInputScopeObject,
 )

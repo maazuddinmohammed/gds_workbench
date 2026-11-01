@@ -4,7 +4,7 @@ from typing import Any
 
 import httpx2
 import pytest
-from gds_workbench_api.integrations.agents.usage import ProviderUsageHooks
+from atlas_platform.integrations.agents.usage import ProviderUsageHooks
 
 from tests.web_backend.test_agent_usage import MemoryRecorder
 

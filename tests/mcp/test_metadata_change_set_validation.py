@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from gds_etl_workbench.application.change_sets.contracts import (
+from atlas_mcp.application.change_sets.contracts import (
     bounded_validation_outcome,
 )
-from gds_etl_workbench.application.change_sets.metadata_validation import (
+from atlas_mcp.application.change_sets.metadata_validation import (
     MetadataChangeSetValidation,
     ValidationIssue,
     validate_metadata_documents,

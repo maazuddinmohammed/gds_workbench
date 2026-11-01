@@ -8,20 +8,20 @@ from copy import deepcopy
 from typing import Any, cast
 
 import pytest
-from jsonschema import Draft202012Validator
-from tests.web_backend.test_logical_executor import _context_bundle
-
-from gds_workbench_api.features.workflows.authoring.context_contracts import (
+from atlas_platform.features.workflows.authoring.context_contracts import (
     INPUT_EXAMPLES,
     WORKFLOW_INPUTS,
     workflow_input_contracts,
 )
-from gds_workbench_api.features.workflows.authoring.context_inputs import (
+from atlas_platform.features.workflows.authoring.context_inputs import (
     project_context_inputs,
 )
-from gds_workbench_api.features.workflows.authoring.context_readers import (
+from atlas_platform.features.workflows.authoring.context_readers import (
     FrozenContextReaders,
 )
+from jsonschema import Draft202012Validator
+
+from tests.web_backend.test_logical_executor import _context_bundle
 
 
 @pytest.mark.parametrize(

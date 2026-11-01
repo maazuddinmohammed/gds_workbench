@@ -3,7 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const { validateSubagentPolicy } = require("../workbench/core.js");
+const { validateSubagentPolicy } = require("../atlas-local-workbench/core.js");
 const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const digest = /^[0-9a-f]{64}$/;

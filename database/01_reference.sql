@@ -1,4 +1,4 @@
--- GDS ETL Workbench Release 1: canonical Reference data.
+-- Atlas Release 1: canonical Reference data.
 -- Fresh-install DDL only. Execute numbered files exactly once in numeric order.
 CREATE SCHEMA reference;
 

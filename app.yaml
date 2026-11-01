@@ -4,7 +4,7 @@ command:
   - --frozen
   - python
   - -m
-  - gds_workbench_api.app_process
+  - atlas_platform.app_process
 
 env:
   - name: NODE_ENV

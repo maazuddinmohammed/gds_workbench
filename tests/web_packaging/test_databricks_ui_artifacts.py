@@ -82,8 +82,8 @@ def test_builder_creates_exact_ui_upload_roots(tmp_path: Path) -> None:
         APP_ROOT_FILES | APP_ROOT_DIRECTORIES
     )
     assert {path.name for path in result.output_directory.iterdir()} == {
-        "gds-workbench-app-source",
-        "gds-workbench-app-source.zip",
+        "atlas-platform-app-source",
+        "atlas-platform-app-source.zip",
         "artifact-manifest.json",
         "SHA256SUMS.txt",
         "UPLOAD_INSTRUCTIONS.md",
@@ -113,24 +113,24 @@ def test_generated_app_contains_runtime_source_only(tmp_path: Path) -> None:
     assert {
         path.name
         for path in (result.app_source_directory / "web_app/backend").iterdir()
-    } == {"pyproject.toml", "gds_workbench_api"}
+    } == {"pyproject.toml", "atlas_platform"}
 
     assert "mcp_server/pyproject.toml" in app_files
-    assert "mcp_server/gds_etl_workbench/runtime.py" in app_files
+    assert "mcp_server/atlas_mcp/runtime.py" in app_files
     assert "web_app/backend/pyproject.toml" in app_files
     assert (
         result.app_source_directory / "web_app/backend/pyproject.toml"
     ).read_bytes() == (ROOT / "web_app/backend/pyproject.toml").read_bytes()
     assert "web_app/backend/uv.lock" not in app_files
-    assert "web_app/backend/gds_workbench_api/app_process.py" in app_files
-    assert "web_app/backend/gds_workbench_api/dependencies.py" in app_files
+    assert "web_app/backend/atlas_platform/app_process.py" in app_files
+    assert "web_app/backend/atlas_platform/dependencies.py" in app_files
     assert (
-        "web_app/backend/gds_workbench_api/config/agent_capabilities.json" in app_files
+        "web_app/backend/atlas_platform/config/agent_capabilities.json" in app_files
     )
     assert (
-        "web_app/backend/gds_workbench_api/features/profiling/execution.py" in app_files
+        "web_app/backend/atlas_platform/features/profiling/execution.py" in app_files
     )
-    assert "web_app/backend/gds_workbench_api/config/profiling.json" in app_files
+    assert "web_app/backend/atlas_platform/config/profiling.json" in app_files
     assert "web_app/frontend/index.html" in app_files
     assert "web_app/frontend/src/main.tsx" in app_files
     assert "web_app/frontend/public/assets/atlas.svg" in app_files
@@ -173,7 +173,7 @@ def test_operator_instructions_use_folder_upload_as_the_primary_ui_path() -> Non
     instructions = INSTRUCTIONS_PATH.read_text(encoding="utf-8")
     normalized = " ".join(instructions.split())
 
-    assert "Upload the expanded `gds-workbench-app-source` directory" in normalized
+    assert "Upload the expanded `atlas-platform-app-source` directory" in normalized
     assert "Do not import the ZIP as notebooks" in normalized
     assert "flatten Python/package paths" in normalized
     assert "databricks workspace import-dir" in instructions
@@ -284,8 +284,8 @@ def test_manifest_fingerprint_matches_packaged_runtime_and_detects_stale_worker(
     result = builder.build_uploads(tmp_path / "release")
     manifest = json.loads(result.manifest.read_text(encoding="utf-8"))
     expected = manifest["expected_installed_source"]
-    api_root = result.app_source_directory / "web_app/backend/gds_workbench_api"
-    shared_root = result.app_source_directory / "mcp_server/gds_etl_workbench"
+    api_root = result.app_source_directory / "web_app/backend/atlas_platform"
+    shared_root = result.app_source_directory / "mcp_server/atlas_mcp"
     fingerprint = runpy.run_path(str(api_root / "runtime_diagnostics.py"))[
         "source_tree_sha256"
     ]
@@ -368,22 +368,22 @@ def test_extracted_app_workflow_runtime_assembles_from_source(
                 "import asyncio, json; "
                 "from importlib.resources import files; "
                 "from pathlib import Path; "
-                "import gds_etl_workbench, gds_workbench_api; "
+                "import atlas_mcp, atlas_platform; "
                 "source = Path.cwd().resolve(); "
                 "assert all(Path(module.__file__).resolve().is_relative_to(source) "
-                "for module in (gds_etl_workbench, gds_workbench_api)); "
-                "from gds_etl_workbench.application.authorization import AuthorizationService; "
-                "from gds_workbench_api.capabilities import load_default_agent_capabilities; "
-                "from gds_workbench_api.features.profiling.execution import "
+                "for module in (atlas_mcp, atlas_platform)); "
+                "from atlas_mcp.application.authorization import AuthorizationService; "
+                "from atlas_platform.capabilities import load_default_agent_capabilities; "
+                "from atlas_platform.features.profiling.execution import "
                 "load_default_profiling_policy; "
                 "assert load_default_profiling_policy().model_dump() == "
-                "json.loads(files('gds_workbench_api').joinpath('config', "
+                "json.loads(files('atlas_platform').joinpath('config', "
                 "'profiling.json').read_text(encoding='utf-8')); "
-                "from gds_workbench_api.features.workflows.execution.assembly import "
+                "from atlas_platform.features.workflows.execution.assembly import "
                 "create_workflow_runtime_services; "
-                "from gds_workbench_api.integrations.agents.configuration import "
+                "from atlas_platform.integrations.agents.configuration import "
                 "AgentRuntimeConfiguration; "
-                "from gds_workbench_api.integrations.databricks import "
+                "from atlas_platform.integrations.databricks import "
                 "create_databricks_execution_adapters; "
                 "services = create_workflow_runtime_services("
                 "database=object(), authorizer=AuthorizationService(), "
@@ -483,7 +483,7 @@ def test_failed_rebuild_preserves_previous_generated_output(
     builder = _load_builder()
     output = tmp_path / "release"
     builder.build_uploads(output)
-    original_checksum = _sha256(output / "gds-workbench-app-source.zip")
+    original_checksum = _sha256(output / "atlas-platform-app-source.zip")
 
     def fail_build(_destination: Path) -> None:
         raise builder.ArtifactBuildError("simulated build failure")
@@ -492,7 +492,7 @@ def test_failed_rebuild_preserves_previous_generated_output(
     with pytest.raises(builder.ArtifactBuildError, match="simulated build failure"):
         builder.build_uploads(output, replace=True)
 
-    assert _sha256(output / "gds-workbench-app-source.zip") == original_checksum
+    assert _sha256(output / "atlas-platform-app-source.zip") == original_checksum
 
 
 @pytest.mark.parametrize("winerror", [5, 32, 33])
@@ -540,7 +540,7 @@ def test_persistent_windows_publish_lock_restores_or_preserves_previous_build(
     builder = _load_builder()
     output = tmp_path / "release"
     builder.build_uploads(output)
-    original_checksum = _sha256(output / "gds-workbench-app-source.zip")
+    original_checksum = _sha256(output / "atlas-platform-app-source.zip")
     original_replace = Path.replace
     attempts: dict[str, int] = {}
     pauses: list[float] = []
@@ -563,12 +563,12 @@ def test_persistent_windows_publish_lock_restores_or_preserves_previous_build(
     if restore_locked:
         (backup,) = tmp_path.glob(".release-build-*/previous")
         assert str(backup) in str(caught.value)
-        assert _sha256(backup / "gds-workbench-app-source.zip") == original_checksum
+        assert _sha256(backup / "atlas-platform-app-source.zip") == original_checksum
         assert attempts["previous"] == 6
         assert not output.exists()
     else:
         assert "--output" in str(caught.value)
-        assert _sha256(output / "gds-workbench-app-source.zip") == original_checksum
+        assert _sha256(output / "atlas-platform-app-source.zip") == original_checksum
         assert attempts["previous"] == 1
         assert not list(tmp_path.glob(".release-build-*"))
 
@@ -579,7 +579,7 @@ def test_publish_failure_never_removes_previous_build_when_destination_reappears
     builder = _load_builder()
     output = tmp_path / "release"
     builder.build_uploads(output)
-    original_checksum = _sha256(output / "gds-workbench-app-source.zip")
+    original_checksum = _sha256(output / "atlas-platform-app-source.zip")
     original_replace = Path.replace
 
     def occupied_destination(source: Path, destination: Path) -> Path:
@@ -595,5 +595,5 @@ def test_publish_failure_never_removes_previous_build_when_destination_reappears
 
     (backup,) = tmp_path.glob(".release-build-*/previous")
     assert str(backup) in str(caught.value)
-    assert _sha256(backup / "gds-workbench-app-source.zip") == original_checksum
+    assert _sha256(backup / "atlas-platform-app-source.zip") == original_checksum
     assert (output / "other-writer.txt").read_text(encoding="utf-8") == "preserve"

@@ -12,22 +12,24 @@ from unittest.mock import AsyncMock
 
 import httpx2
 import pytest
-from gds_etl_workbench.domain.errors import DependencyUnavailableError, WorkbenchError
-from gds_workbench_api.capabilities import load_default_agent_capabilities
-from gds_workbench_api.features.workflows.authoring.agent_execution import AgentExecutionRouter
-from gds_workbench_api.features.workflows.authoring.repair import (
+from atlas_mcp.domain.errors import AtlasError, DependencyUnavailableError
+from atlas_platform.capabilities import load_default_agent_capabilities
+from atlas_platform.features.workflows.authoring.agent_execution import (
+    AgentExecutionRouter,
+)
+from atlas_platform.features.workflows.authoring.repair import (
     AgentCandidateValidation,
     ValidationRepairRunner,
     load_default_agent_context_policy,
 )
-from gds_workbench_api.features.workflows.usage.contracts import ModelTokenUsage
-from gds_workbench_api.integrations.agents import adapters, anthropic_model
-from gds_workbench_api.integrations.agents.adapters import (
+from atlas_platform.features.workflows.usage.contracts import ModelTokenUsage
+from atlas_platform.integrations.agents import adapters, anthropic_model
+from atlas_platform.integrations.agents.adapters import (
     OpenAIAgentsSdkAdapter,
     OpenAIProviderCredentials,
 )
-from gds_workbench_api.integrations.agents.anthropic_model import FoundryAnthropicModel
-from gds_workbench_api.integrations.agents.configuration import AgentProviderConnection
+from atlas_platform.integrations.agents.anthropic_model import FoundryAnthropicModel
+from atlas_platform.integrations.agents.configuration import AgentProviderConnection
 from openai import DefaultAsyncHttpxClient
 from pydantic import JsonValue, SecretStr
 
@@ -329,7 +331,7 @@ async def test_native_invalid_retry_after_keeps_bounded_exponential_backoff(
         lambda _: httpx2.Response(429, headers=headers, json={"error": {"type": "busy"}}),
     )
     try:
-        with pytest.raises(WorkbenchError) as raised:
+        with pytest.raises(AtlasError) as raised:
             await router.execute(_request(model_code=CLAUDE_CODE))
     finally:
         await router.close()
@@ -360,7 +362,7 @@ async def test_native_retry_after_over_cap_stops_without_premature_retry(
         lambda _: httpx2.Response(429, headers=headers, json={"error": {"type": "busy"}}),
     )
     try:
-        with pytest.raises(WorkbenchError) as raised:
+        with pytest.raises(AtlasError) as raised:
             await router.execute(_request(model_code=CLAUDE_CODE))
     finally:
         await router.close()
@@ -417,7 +419,7 @@ async def test_native_redirect_never_forwards_provider_credentials(
 
     router = _router(monkeypatch, None, handler, api_key=api_key)
     try:
-        with pytest.raises(WorkbenchError) as raised:
+        with pytest.raises(AtlasError) as raised:
             await router.execute(_request(model_code=CLAUDE_CODE))
     finally:
         await router.close()
@@ -539,7 +541,7 @@ async def test_native_refusal_or_truncation_never_accepts_partial_candidate(
         models=models,
     )
     try:
-        with pytest.raises(WorkbenchError) as raised:
+        with pytest.raises(AtlasError) as raised:
             await router.execute(_request(model_code=CLAUDE_CODE))
     finally:
         await router.close()
@@ -579,7 +581,7 @@ async def test_native_http_failures_are_bounded_and_redacted(
         ),
     )
     try:
-        with pytest.raises(WorkbenchError) as raised:
+        with pytest.raises(AtlasError) as raised:
             await router.execute(_request(model_code=CLAUDE_CODE))
     finally:
         await router.close()
@@ -659,7 +661,7 @@ async def test_native_tools_keep_catalog_result_budget_and_turn_limits(
         update={"local_tool_catalog": catalog},
     )
     try:
-        with pytest.raises(WorkbenchError) as raised:
+        with pytest.raises(AtlasError) as raised:
             await router.execute(request)
     finally:
         await router.close()

@@ -6,9 +6,9 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, LiteralString, cast
 
 import pytest
-from gds_etl_workbench.application.change_sets.project_apply import ProjectMaterializer
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.domain.modeling_records import (
+from atlas_mcp.application.change_sets.project_apply import ProjectMaterializer
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_mcp.domain.modeling_records import (
     GeneratedCodeRecord,
     GeneratedCodeSourceSystemRecord,
     LogicalEntityRecord,
@@ -19,7 +19,7 @@ from gds_etl_workbench.domain.modeling_records import (
     PhysicalObjectKey,
     ValidationGroupRecord,
 )
-from gds_etl_workbench.infrastructure.postgres import WriteTransaction
+from atlas_mcp.infrastructure.postgres import WriteTransaction
 
 from tests.mcp.project_test_fixtures import complete_project_graph
 
@@ -152,7 +152,7 @@ async def test_physical_keys_use_placement_tenant_and_fence_source_to_project() 
 
 @pytest.mark.asyncio
 async def test_entity_resolution_distinguishes_schemas() -> None:
-    from gds_etl_workbench.application.modeling.modeled_layer import LOGICAL
+    from atlas_mcp.application.modeling.modeled_layer import LOGICAL
 
     transaction = ScriptedTransaction(
         [
@@ -479,7 +479,7 @@ async def test_template_resolution_and_cache_are_scoped_to_mapping_layer() -> No
 
 @pytest.mark.asyncio
 async def test_project_settings_apply_preserves_identity() -> None:
-    from gds_etl_workbench.domain.modeling_records import ProjectDetailsRecord
+    from atlas_mcp.domain.modeling_records import ProjectDetailsRecord
 
     from tests.mcp.project_test_fixtures import project_details
 

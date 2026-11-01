@@ -3,18 +3,18 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import ToolPolicy
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_workbench_api.features.mapping.read_router import create_mapping_review_router
-from gds_workbench_api.features.mapping.read_service import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.authorization import ToolPolicy
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_platform.features.mapping.read_router import create_mapping_review_router
+from atlas_platform.features.mapping.read_service import (
     DatabaseMappingReviewService,
     MappingReadDatabase,
 )
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 def test_attribute_reads_scope_sql_and_pagination_to_the_parent_object() -> None:

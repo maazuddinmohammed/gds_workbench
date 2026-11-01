@@ -9,16 +9,16 @@ from pathlib import Path
 from typing import LiteralString, cast
 
 import pytest
-from gds_workbench_api import database as database_module
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.workflows.execution import (
+from atlas_platform import database as database_module
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.workflows.execution import (
     DatabaseWorkflowClaimRepository,
     WorkerRunResult,
     WorkflowClaimRunner,
     WorkflowExecutionClaim,
 )
-from gds_workbench_api.features.workflows.execution.fence import assert_workflow_run_claim
-from gds_workbench_api.features.workflows.execution.worker import workflow_failure_category
+from atlas_platform.features.workflows.execution.fence import assert_workflow_run_claim
+from atlas_platform.features.workflows.execution.worker import workflow_failure_category
 
 from tests.mcp.conftest import DisposablePostgres, disposable_postgres
 from tests.web_backend.test_database_workflow_usage import _run

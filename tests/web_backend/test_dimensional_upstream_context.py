@@ -7,18 +7,36 @@ from datetime import UTC, datetime
 from typing import Any, Literal, LiteralString, cast
 
 import pytest
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project_validation import (
     PhysicalProjectCatalog,
 )
-from gds_etl_workbench.domain.modeling_records import (
+from atlas_mcp.domain.modeling_records import (
     AttributePhysicalSourceRecord,
     LogicalObjectSourceRecord,
     PhysicalAttributeKey,
     PhysicalObjectKey,
 )
-from gds_etl_workbench.domain.snapshots.project import ProjectSnapshot
+from atlas_mcp.domain.snapshots.project import ProjectSnapshot
+from atlas_platform.features.dimensional.service import _candidate_validator
+from atlas_platform.features.workflows.authoring.context import (
+    AgentContextLimits,
+    AgentContextUnavailableError,
+    PostgresAgentContextRepository,
+    focus_subject_area,
+)
+from atlas_platform.features.workflows.authoring.context_contracts import (
+    workflow_input_contracts,
+)
+from atlas_platform.features.workflows.authoring.context_inputs import (
+    OBJECT_FIELDS,
+    natural_key,
+)
+from atlas_platform.features.workflows.authoring.context_readers import (
+    FrozenContextReaders,
+)
 from jsonschema import Draft202012Validator
 from pydantic import JsonValue
+
 from tests.mcp.project_test_fixtures import DIMENSIONAL_FACT_TYPES
 from tests.web_backend.test_agent_context import (
     _CUSTOMERS,
@@ -32,24 +50,6 @@ from tests.web_backend.test_dimensional_candidate import _candidate
 from tests.web_backend.test_dimensional_executor import (
     _audit_template,
     _technical_template,
-)
-
-from gds_workbench_api.features.dimensional.service import _candidate_validator
-from gds_workbench_api.features.workflows.authoring.context import (
-    AgentContextLimits,
-    AgentContextUnavailableError,
-    PostgresAgentContextRepository,
-    focus_subject_area,
-)
-from gds_workbench_api.features.workflows.authoring.context_contracts import (
-    workflow_input_contracts,
-)
-from gds_workbench_api.features.workflows.authoring.context_inputs import (
-    OBJECT_FIELDS,
-    natural_key,
-)
-from gds_workbench_api.features.workflows.authoring.context_readers import (
-    FrozenContextReaders,
 )
 
 

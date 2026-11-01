@@ -5,13 +5,13 @@ from dataclasses import replace
 from typing import Any, cast
 
 import pytest
-from gds_etl_workbench.application.metadata_snapshot.archive import (
+from atlas_mcp.application.metadata_snapshot.archive import (
     EncodedDataset,
     SnapshotContractError,
     build_root_documents,
     encode_dataset,
 )
-from gds_etl_workbench.domain.snapshots.metadata import DATASETS
+from atlas_mcp.domain.snapshots.metadata import DATASETS
 
 
 def empty_datasets() -> tuple[EncodedDataset, ...]:

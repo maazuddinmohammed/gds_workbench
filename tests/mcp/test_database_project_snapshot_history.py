@@ -5,28 +5,28 @@ from typing import Literal, cast
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.application.change_sets.project import (
+from atlas_mcp.application.change_sets.project import (
     load_project_physical_scope,
 )
-from gds_etl_workbench.application.change_sets.project_apply import ProjectMaterializer
-from gds_etl_workbench.application.change_sets.project_validation import (
+from atlas_mcp.application.change_sets.project_apply import ProjectMaterializer
+from atlas_mcp.application.change_sets.project_validation import (
     validate_future_graph,
 )
-from gds_etl_workbench.application.project_read import ProjectReadContext
-from gds_etl_workbench.application.project_snapshot import (
-    build_project_snapshot,
-    read_project_review_snapshot,
-)
-from gds_etl_workbench.application.modeling.modeled_layer import (
+from atlas_mcp.application.modeling.modeled_layer import (
     DIMENSIONAL,
     LOGICAL,
     attributes_sql,
     entities_sql,
 )
-from gds_etl_workbench.application.modeling.subject_area import (
+from atlas_mcp.application.modeling.subject_area import (
     CURRENT_SUBJECT_AREA_TABLES_SQL,
 )
-from gds_etl_workbench.domain.snapshots.project import project_snapshot_records
+from atlas_mcp.application.project_read import ProjectReadContext
+from atlas_mcp.application.project_snapshot import (
+    build_project_snapshot,
+    read_project_review_snapshot,
+)
+from atlas_mcp.domain.snapshots.project import project_snapshot_records
 
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.project_test_fixtures import (

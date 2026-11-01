@@ -1,4 +1,4 @@
-# Atlas web application
+# Atlas Platform
 
 React and FastAPI run on one Databricks App origin with an embedded durable workflow
 worker. The App connects directly to PostgreSQL, Foundry and governed Databricks SQL;

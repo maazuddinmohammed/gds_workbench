@@ -6,16 +6,15 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import UUID
 
-from fastapi.testclient import TestClient
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import RequestPrincipal
-
-from gds_workbench_api.features.subject_areas.router import ExecuteSubjectAreaRunRequest
-from gds_workbench_api.features.workflows.authoring.lifecycle import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.configuration import AuthMode
+from atlas_mcp.domain.authorization import RequestPrincipal
+from atlas_platform.features.subject_areas.router import ExecuteSubjectAreaRunRequest
+from atlas_platform.features.workflows.authoring.lifecycle import (
     AgentWorkflowRunStart,
 )
-from gds_workbench_api.main import create_app
+from atlas_platform.main import create_app
+from fastapi.testclient import TestClient
 
 _CLAIM_TOKEN = UUID("44444444-4444-4444-8444-444444444444")
 _EXECUTE = "/api/v1/tenants/7/projects/18/subject-areas/runs/1048/execute"

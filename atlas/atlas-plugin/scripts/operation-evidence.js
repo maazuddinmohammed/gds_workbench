@@ -2,7 +2,7 @@
 
 // Decode transport once; never repair transcripts or persist raw tool envelopes.
 const fs = require("node:fs");
-const {stableStringify} = require("../workbench/core.js");
+const {stableStringify} = require("../atlas-local-workbench/core.js");
 const {object, uuid} = require("./workspace-state.js");
 
 function readResponse(file) {

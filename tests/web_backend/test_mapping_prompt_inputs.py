@@ -5,18 +5,18 @@ from copy import deepcopy
 from typing import Any, cast
 
 import pytest
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_workbench_api.features.mapping.execution_context import (
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_platform.features.mapping.execution_context import (
     build_mapping_execution_context,
 )
-from gds_workbench_api.features.workflows.authoring.downstream_inputs import (
+from atlas_platform.features.workflows.authoring.downstream_inputs import (
     downstream_input_contracts,
 )
-from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
+from atlas_platform.features.workflows.authoring.prompt_inputs import (
     get_prompt_input_contract,
     project_prompt_input_values,
 )
-from gds_workbench_api.prompt_rendering import PromptVariableDefinition
+from atlas_platform.prompt_rendering import PromptVariableDefinition
 from jsonschema import Draft202012Validator
 
 from tests.web_backend.mapping_fixtures import mapping_preparation

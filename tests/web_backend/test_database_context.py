@@ -6,17 +6,17 @@ from uuid import uuid4
 
 import httpx2
 import pytest
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.configuration import AuthMode
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.context import DatabaseContextService
-from gds_workbench_api.features.context.contracts import (
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.configuration import AuthMode
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.context import DatabaseContextService
+from atlas_platform.features.context.contracts import (
     ContextGroupFilters,
     ContextRecordFilters,
     ContextRecordNotFoundError,
 )
-from gds_workbench_api.main import create_app
+from atlas_platform.main import create_app
 
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.test_database_project_change_set_round_trip import (

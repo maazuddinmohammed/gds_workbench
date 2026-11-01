@@ -176,13 +176,13 @@ async def test_cancel_service_interrupts_the_worker_and_rejects_late_writes(
 ) -> None:
     import asyncio
 
-    from gds_etl_workbench.application.authorization import AuthorizationService
-    from gds_workbench_api.capabilities import load_default_agent_capabilities
-    from gds_workbench_api.database import WebPostgresDatabase
-    from gds_workbench_api.features.workflows.commands import (
+    from atlas_mcp.application.authorization import AuthorizationService
+    from atlas_platform.capabilities import load_default_agent_capabilities
+    from atlas_platform.database import WebPostgresDatabase
+    from atlas_platform.features.workflows.commands import (
         DatabaseWorkflowCommandService,
     )
-    from gds_workbench_api.features.workflows.execution import (
+    from atlas_platform.features.workflows.execution import (
         DatabaseWorkflowClaimRepository,
         WorkerRunResult,
         WorkflowClaimRunner,

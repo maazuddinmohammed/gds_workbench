@@ -14,45 +14,45 @@ from uuid import UUID
 
 import httpx2
 import pytest
-from gds_etl_workbench import runtime as runtime_module
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.adapters.mcp.server import create_mcp_server
-from gds_etl_workbench.adapters.mcp.stage_runner_gate import (
-    STAGE_RUNNER_CLIENT,
-    STAGE_RUNNER_HEADER,
+from atlas_mcp import runtime as runtime_module
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.adapters.mcp.atlas_bridge_gate import (
+    ATLAS_BRIDGE_CLIENT,
+    ATLAS_BRIDGE_HEADER,
     STAGE_UPLOAD_TOOLS,
 )
-from gds_etl_workbench.application.metadata_snapshot.archive import (
+from atlas_mcp.adapters.mcp.server import create_mcp_server
+from atlas_mcp.application.metadata_snapshot.archive import (
     SnapshotArchive,
     build_dataset_document,
 )
-from gds_etl_workbench.configuration import AuthMode, Environment, RuntimeSettings
-from gds_etl_workbench.domain.errors import DependencyUnavailableError
-from gds_etl_workbench.domain.snapshots.description import (
+from atlas_mcp.configuration import AuthMode, Environment, RuntimeSettings
+from atlas_mcp.domain.errors import DependencyUnavailableError
+from atlas_mcp.domain.snapshots.description import (
     compact_authoring_schema,
 )
-from gds_etl_workbench.domain.snapshots.metadata import DATASETS_BY_NAME
-from gds_etl_workbench.domain.snapshots.project import (
+from atlas_mcp.domain.snapshots.metadata import DATASETS_BY_NAME
+from atlas_mcp.domain.snapshots.project import (
     CHANGE_SET_DATASETS_BY_NAME,
 )
-from gds_etl_workbench.domain.snapshots.project import (
+from atlas_mcp.domain.snapshots.project import (
     DATASETS_BY_NAME as PROJECT_DATASETS_BY_NAME,
 )
-from gds_etl_workbench.infrastructure.postgres import (
+from atlas_mcp.infrastructure.postgres import (
     ReadinessRecord,
     ReadIsolation,
     ReadTransaction,
     ToolCallLogRecord,
     WriteTransaction,
 )
-from gds_etl_workbench.runtime import (
+from atlas_mcp.runtime import (
     create_application,
     create_application_from_environment,
 )
-from gds_etl_workbench.tools.snapshots.metadata import (
+from atlas_mcp.tools.snapshots.metadata import (
     get_metadata_snapshot as metadata_snapshot_module,
 )
-from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
+from atlas_mcp.tools.snapshots.metadata.get_metadata_snapshot import (
     ReadyMetadataSnapshot,
 )
 from mcp import Client
@@ -756,7 +756,7 @@ async def test_easy_auth_principal_reaches_list_tenants_over_stateless_http() ->
 
 
 @pytest.mark.asyncio
-async def test_only_the_stage_runner_connection_sees_and_calls_stage_upload_tools() -> None:
+async def test_only_the_atlas_bridge_connection_sees_and_calls_stage_upload_tools() -> None:
     settings = replace(
         development_settings(),
         environment=Environment.PRODUCTION,
@@ -786,8 +786,8 @@ async def test_only_the_stage_runner_connection_sees_and_calls_stage_upload_tool
     async with application.router.lifespan_context(application):
         for client_name, client_headers in (
             ("agent", {}),
-            ("forged-value", {STAGE_RUNNER_HEADER: "copilot"}),
-            ("stage-runner", {STAGE_RUNNER_HEADER: STAGE_RUNNER_CLIENT}),
+            ("forged-value", {ATLAS_BRIDGE_HEADER: "copilot"}),
+            ("bridge", {ATLAS_BRIDGE_HEADER: ATLAS_BRIDGE_CLIENT}),
         ):
             async with httpx2.AsyncClient(
                 transport=httpx2.ASGITransport(app=application),
@@ -817,12 +817,12 @@ async def test_only_the_stage_runner_connection_sees_and_calls_stage_upload_tool
                         )
 
     assert len(STAGE_UPLOAD_TOOLS) == 8
-    assert visible["stage-runner"] >= STAGE_UPLOAD_TOOLS
-    assert visible["agent"] == visible["stage-runner"] - STAGE_UPLOAD_TOOLS
+    assert visible["bridge"] >= STAGE_UPLOAD_TOOLS
+    assert visible["agent"] == visible["bridge"] - STAGE_UPLOAD_TOOLS
     assert visible["forged-value"] == visible["agent"]
     assert refused.is_error is True
     assert refused.structured_content is None
-    assert "stage_runner_required:" in refused.content[0].text
+    assert "atlas_bridge_required:" in refused.content[0].text
     assert [
         (record.tool_name, record.status, record.failure_code)
         for record in database.audit_records
@@ -830,7 +830,7 @@ async def test_only_the_stage_runner_connection_sees_and_calls_stage_upload_tool
 
 
 @pytest.mark.asyncio
-async def test_in_memory_sessions_act_as_the_stage_runner_only_with_development_identity() -> (
+async def test_in_memory_sessions_act_as_the_atlas_bridge_only_with_development_identity() -> (
     None
 ):
     production = replace(

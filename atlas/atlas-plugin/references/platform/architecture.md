@@ -2,6 +2,22 @@
 
 Load for architecture questions or to resolve responsibility; ordinary workflows need only their relevant record and method guides.
 
+## Component names
+
+| Name | Responsibility |
+|---|---|
+| **Atlas** | The overall product. |
+| **Atlas Plugin** | Agent skills, references and local helpers. |
+| **Atlas Local Workbench** | Local browser interface for reviewing and editing drafts. |
+| **Atlas Bridge** | VS Code extension for Microsoft sign-in, connection checks and approved Stage uploads. |
+| **Atlas MCP** | Server exposing governed tools to agents and Atlas Bridge. |
+| **Atlas Platform** | Web application for administration, metadata, Projects and workflows. |
+
+Use these names in explanations and handoffs. Stage and Apply remain workflow actions.
+
+Atlas Local Workbench source is bundled in `atlas-local-workbench/`. Its launchers
+are `scripts/open-local-workbench.sh` and `scripts/open-local-workbench.ps1`.
+
 ## Concepts and ownership
 
 - **Tenant** is an authorization and metadata ownership boundary. Physical storage can belong to a different GDS Tenant; never infer ownership from placement.
@@ -16,12 +32,12 @@ Load for architecture questions or to resolve responsibility; ordinary workflows
 ```text
 Agent: intent, evidence interpretation, modeling decisions
     → local helpers: snapshots, complete draft records, deterministic checks
-    → Workbench: review and local editing
-    → VS Code Stage Runner: bounded, digest-verified transport
-    → MCP/application/PostgreSQL: authorization, locks, revisions, validation, Apply
+    → Atlas Local Workbench: review and local editing
+    → Atlas Bridge: bounded, digest-verified transport
+    → Atlas MCP/shared application/PostgreSQL: authorization, locks, revisions, validation, Apply
 ```
 
-The web application and MCP use shared backend/domain rules. The local browser and CLI share validation/serialization; they cannot replace server authorization. Plugin, Stage Runner and deployed backend are separately versioned. Check actual capabilities before claiming support.
+Atlas Platform and Atlas MCP use shared backend/domain rules. The local browser and CLI share validation/serialization; they cannot replace server authorization. Atlas Plugin, Atlas Bridge and deployed backend are separately versioned. Check actual capabilities before claiming support.
 
 Applied records are authoritative. Snapshots are immutable baselines. The effective local view overlays pending complete records by canonical identity. See [state](state.md), [record protection](../record-state.md) and [governance](governance.md).
 

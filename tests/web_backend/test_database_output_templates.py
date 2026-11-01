@@ -2,10 +2,10 @@ from collections.abc import Mapping
 from uuid import uuid4
 
 import pytest
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.output_templates import DatabaseOutputTemplateService
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.domain.authorization import ActorKind, RequestPrincipal
+from atlas_platform.database import WebPostgresDatabase
+from atlas_platform.features.output_templates import DatabaseOutputTemplateService
 from psycopg import Connection
 from psycopg.types.json import Jsonb
 

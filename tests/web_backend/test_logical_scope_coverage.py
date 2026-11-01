@@ -8,7 +8,26 @@ from dataclasses import replace
 from typing import Any, cast
 
 import pytest
+from atlas_platform.features.workflows.authoring.agent_execution import (
+    agent_input_payload,
+)
+from atlas_platform.features.workflows.authoring.context import (
+    AgentAuthoringContext,
+)
+from atlas_platform.features.workflows.authoring.no_op import AuthoringNoOpReceipt
+from atlas_platform.features.workflows.authoring.prompt_inputs import (
+    list_prompt_input_contracts,
+)
+from atlas_platform.features.workflows.authoring.repair import (
+    AgentCandidateValidationError,
+    AgentContextPolicy,
+)
+from atlas_platform.prompt_rendering import (
+    PromptComponentTemplates,
+    PromptVariableDefinition,
+)
 from pydantic import JsonValue
+
 from tests.mcp.project_test_fixtures import complete_project_graph
 from tests.web_backend.test_default_prompt_contracts import DEFAULTS
 from tests.web_backend.test_logical_executor import (
@@ -21,25 +40,6 @@ from tests.web_backend.test_logical_executor import (
     _principal,
     _selected_object,
     _service,
-)
-
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
-    agent_input_payload,
-)
-from gds_workbench_api.features.workflows.authoring.context import (
-    AgentAuthoringContext,
-)
-from gds_workbench_api.features.workflows.authoring.no_op import AuthoringNoOpReceipt
-from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
-    list_prompt_input_contracts,
-)
-from gds_workbench_api.features.workflows.authoring.repair import (
-    AgentCandidateValidationError,
-    AgentContextPolicy,
-)
-from gds_workbench_api.prompt_rendering import (
-    PromptComponentTemplates,
-    PromptVariableDefinition,
 )
 
 

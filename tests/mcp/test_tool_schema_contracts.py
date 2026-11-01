@@ -4,30 +4,29 @@ import json
 from typing import cast
 
 import pytest
+from atlas_mcp.adapters.auth.identity import IdentityProvider
+from atlas_mcp.adapters.mcp.server import create_mcp_server
+from atlas_mcp.adapters.mcp.tool_audit import ToolCallAuditMiddleware
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.application.change_sets.contracts import (
+    decode_canonical_base64_fragment,
+)
+from atlas_mcp.configuration import AuthMode, RuntimeSettings
+from atlas_mcp.domain.snapshots.metadata import (
+    DATASETS_BY_NAME as METADATA_DATASETS_BY_NAME,
+)
+from atlas_mcp.domain.snapshots.project import (
+    CHANGE_SET_DATASETS_BY_NAME,
+    DATASETS_BY_NAME,
+)
+from atlas_mcp.infrastructure.postgres import Database
+from atlas_mcp.tools.snapshots.project.describe_project_dataset import (
+    register_describe_project_dataset_tool,
+)
 from jsonschema.validators import validator_for
 from mcp import Client
 from mcp.server.mcpserver import MCPServer
 from mcp.types import Tool
-
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.adapters.mcp.server import create_mcp_server
-from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.contracts import (
-    decode_canonical_base64_fragment,
-)
-from gds_etl_workbench.configuration import AuthMode, RuntimeSettings
-from gds_etl_workbench.domain.snapshots.metadata import (
-    DATASETS_BY_NAME as METADATA_DATASETS_BY_NAME,
-)
-from gds_etl_workbench.domain.snapshots.project import (
-    CHANGE_SET_DATASETS_BY_NAME,
-    DATASETS_BY_NAME,
-)
-from gds_etl_workbench.infrastructure.postgres import Database
-from gds_etl_workbench.tools.snapshots.project.describe_project_dataset import (
-    register_describe_project_dataset_tool,
-)
 
 EXPECTED_PUBLIC_TOOLS = {
     "list_tenants",

@@ -4,7 +4,7 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createApiClient } from "../../api";
-import { WorkbenchApp, createWorkbenchRouter } from "../../app";
+import { AtlasPlatformApp, createAtlasPlatformRouter } from "../../app";
 import type { MetadataDatasetDescription } from "./api";
 
 describe("governed Metadata experience", () => {
@@ -165,7 +165,7 @@ describe("governed Metadata experience", () => {
 });
 
 function renderMetadata(fetcher: ReturnType<typeof metadataFetchStub>, path = "/tenants/7/metadata") {
-  return render(<WorkbenchApp router={createWorkbenchRouter({
+  return render(<AtlasPlatformApp router={createAtlasPlatformRouter({
     api: createApiClient(fetcher),
     history: createMemoryHistory({ initialEntries: [path] }),
   })} />);

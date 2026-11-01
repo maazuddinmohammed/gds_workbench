@@ -4,7 +4,7 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
 
 import { createApiClient } from "../../api";
-import { createWorkbenchRouter, WorkbenchApp } from "../../app";
+import { createAtlasPlatformRouter, AtlasPlatformApp } from "../../app";
 import type { TenantHomeRecord, TenantRole } from "../tenants/api";
 import type { ProjectDetail } from "./api";
 
@@ -68,8 +68,8 @@ function setup(options: { role?: TenantRole; locked?: boolean; ownedLock?: boole
     if (url.endsWith("/prompts/projects/18/assignments")) return response({ project_id: 18, items: [] });
     return response({ error: { code: "not_found" } }, 404);
   });
-  const router = createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: [`/tenants/7/projects/18/settings${options.layer ? `?layer=${options.layer}` : ""}`] }) });
-  render(<WorkbenchApp router={router} />);
+  const router = createAtlasPlatformRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: [`/tenants/7/projects/18/settings${options.layer ? `?layer=${options.layer}` : ""}`] }) });
+  render(<AtlasPlatformApp router={router} />);
   return { fetcher, router, allowRefresh: () => { failRefresh = false; } };
 }
 

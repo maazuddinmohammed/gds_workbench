@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 
 import pytest
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_workbench_api.prompt_rendering import (
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_platform.prompt_rendering import (
     PromptComponentTemplates,
     PromptVariableDefinition,
     render_prompt,
